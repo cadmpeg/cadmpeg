@@ -12,7 +12,8 @@ use cadmpeg_ir::features::FinitePoint3;
 #[cfg(test)]
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -353,6 +354,35 @@ impl<'de, const LOWER: usize, const UPPER: usize> Deserialize<'de> for ScalarLan
     }
 }
 
+/// The two serialized local-slot orders of a class-23 parameter map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "[u32; 2]", into = "[u32; 2]")]
+pub(crate) enum Class23Slots {
+    OneTwo,
+    TwoOne,
+}
+
+impl TryFrom<[u32; 2]> for Class23Slots {
+    type Error = &'static str;
+
+    fn try_from(slots: [u32; 2]) -> Result<Self, Self::Error> {
+        match slots {
+            [1, 2] => Ok(Self::OneTwo),
+            [2, 1] => Ok(Self::TwoOne),
+            _ => Err("class-23 local slots must be [1,2] or [2,1]"),
+        }
+    }
+}
+
+impl From<Class23Slots> for [u32; 2] {
+    fn from(slots: Class23Slots) -> Self {
+        match slots {
+            Class23Slots::OneTwo => [1, 2],
+            Class23Slots::TwoOne => [2, 1],
+        }
+    }
+}
+
 /// Closed payload grammar of a consolidated edge-definition frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
@@ -362,7 +392,22 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Width-coded operand.
         operand: u32,
     },
-    /// Three operand references followed by eight or nine scalar lanes.
+    /// Eight-scalar class-`0x23` affine parameter map.
+    Affine23 {
+        /// Ordered local representation slots.
+        slots: Class23Slots,
+        /// Target representation's parameter interval.
+        target_range: IncreasingParameterInterval,
+        /// Source representation's parameter interval.
+        source_range: IncreasingParameterInterval,
+        /// Positive, repeated endpoint residual bound.
+        tolerance: PositiveReal,
+        /// Positive source-to-target multiplier.
+        scale: PositiveReal,
+        /// Source-to-target translation.
+        offset: FiniteReal,
+    },
+    /// Eight class-`0x24` or nine class-`0x23` scalar lanes.
     Scalar {
         /// Two compact operands followed by one persistent operand.
         operands: [u32; 3],
@@ -392,8 +437,8 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
     },
 }
 
-/// Decode a complete class-specific edge-definition payload without inferring
-/// geometric meanings for its operand or scalar lanes.
+/// Decode a complete class-specific edge-definition payload.
+/// Retain unassigned scalar lanes without inferring their geometric roles.
 #[must_use]
 pub(crate) fn consolidated_edge_definition_data(
     class: u8,
@@ -493,6 +538,9 @@ fn edge_definition_data_with<E>(
         if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
             return None;
         }
+        if class == 0x23 && scalar_bytes.len() == 64 {
+            return Some(Ok(class23_affine_map_payload(payload)?));
+        }
         let values = match lane(scalar_bytes) {
             Ok(Some(values)) => values,
             Ok(None) => return None,
@@ -519,28 +567,47 @@ fn edge_definition_data_with<E>(
     .transpose()
 }
 
-fn edge_definition_is_scalar_eight(definition: &ConsolidatedEdgeDefinition) -> bool {
-    if !matches!(
-        definition.class,
-        ConsolidatedEdgeDefinitionClass::Class23 | ConsolidatedEdgeDefinitionClass::Class24
-    ) || definition.frame.payload.first() != Some(&0x82)
-    {
-        return false;
+fn class23_affine_map_payload(payload: &[u8]) -> Option<ConsolidatedEdgeDefinitionData> {
+    if payload.len() != 70 {
+        return None;
     }
-    let payload = &definition.frame.payload;
-    let mut at = 1;
-    let parsed = (|| {
-        compact_int(payload, &mut at)?;
-        compact_int(payload, &mut at)?;
-        persistent_ref(payload, &mut at)?;
-        let scalar_bytes = payload.get(at..)?;
-        if scalar_bytes.len() != 64 {
-            return None;
-        }
-        let values = read_f64_array::<8>(scalar_bytes, 0)?;
-        Some(values[2] == values[7])
-    })();
-    parsed == Some(true)
+    let slots = match payload.get(..6)? {
+        [0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d] => Class23Slots::OneTwo,
+        [0x82, 0x09, 0x05, 0x0a, 0x87, 0x0d] => Class23Slots::TwoOne,
+        _ => return None,
+    };
+    let values = read_f64_array::<8>(payload, 6)?;
+    if values[2] != values[7] {
+        return None;
+    }
+    let target_range = IncreasingParameterInterval::between(values[0], values[1])?;
+    let source_range = IncreasingParameterInterval::between(values[3], values[4])?;
+    let tolerance = PositiveReal::new(values[2].get())?;
+    let scale = PositiveReal::new(values[5].get())?;
+    let offset = values[6];
+    if slots == Class23Slots::TwoOne
+        && (target_range != source_range || scale.get() != 1.0 || offset.get() != 0.0)
+    {
+        return None;
+    }
+    if !source_range
+        .endpoints()
+        .into_iter()
+        .zip(target_range.endpoints())
+        .all(|(source, target)| {
+            (scale.get() * source + offset.get() - target).abs() <= tolerance.get()
+        })
+    {
+        return None;
+    }
+    Some(ConsolidatedEdgeDefinitionData::Affine23 {
+        slots,
+        target_range,
+        source_range,
+        tolerance,
+        scale,
+        offset,
+    })
 }
 
 fn edge_definition_is_typed_class25(definition: &ConsolidatedEdgeDefinition) -> bool {
@@ -910,11 +977,23 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             }
             let use_run = use_runs.get(&use0.byte_offset())?;
             let definition = use_run.definition.as_ref()?;
-            edge_definition_is_scalar_eight(definition).then_some((
-                parameter,
-                circles.get(&circle.byte_offset())?,
-                use_run,
-            ))
+            let ConsolidatedEdgeDefinitionData::Affine23 {
+                slots: Class23Slots::OneTwo,
+                target_range,
+                ..
+            } = class23_affine_map_payload(&definition.frame.payload)?
+            else {
+                return None;
+            };
+            if use_run.uses[0].references() != Some(&[1, 2][..])
+                || use_run.uses[1].references() != Some(&[2, 3][..])
+            {
+                return None;
+            }
+            let circle = circles.get(&circle.byte_offset())?;
+            (target_range.endpoints().map(f64::to_bits)
+                == circle.range.endpoints().map(f64::to_bits))
+            .then_some((parameter, circle, use_run))
         })();
         let Some((parameter, circle, use_run)) = candidate else {
             continue;
@@ -2779,3 +2858,6 @@ mod tests {
 
 #[cfg(test)]
 mod decoder_tests;
+
+#[cfg(test)]
+mod parameter_maps;

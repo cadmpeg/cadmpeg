@@ -292,6 +292,57 @@ mod tests {
                 .contains("data differs")
         );
     }
+    #[test]
+    fn native_affine23_wire_rejects_data_that_differs_from_the_frame() {
+        const MAP_TOLERANCE: f64 = 1.0e-12;
+        let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
+        for value in [
+            4.0_f64,
+            8.0,
+            MAP_TOLERANCE,
+            1.0,
+            3.0,
+            2.0,
+            2.0,
+            MAP_TOLERANCE,
+        ] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let source = crate::families::consolidated::records::ConsolidatedEdgeDefinition {
+            frame: ConsolidatedRawFrame::new(
+                12,
+                ConsolidatedFrameWidth::One,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                payload,
+            )
+            .expect("checked map frame"),
+            class: ConsolidatedEdgeDefinitionClass::Class23,
+        };
+        let value = crate::test_support::with_service_context(|ctx| {
+            CatiaConsolidatedEdgeDefinition::from_source(ctx, source)
+        })
+        .expect("admit affine map");
+        let wire = serde_json::to_value(&value).expect("serialize affine map");
+        assert_eq!(wire["data"]["kind"], "affine23");
+        assert_eq!(wire["data"]["target_range"], serde_json::json!([4.0, 8.0]));
+        assert_eq!(
+            serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
+                .expect("load affine map"),
+            value
+        );
+        for (field, replacement) in [
+            ("offset", serde_json::json!(3.0)),
+            ("scale", serde_json::json!(3.0)),
+            ("slots", serde_json::json!([2, 1])),
+        ] {
+            let mut contradictory = wire.clone();
+            contradictory["data"][field] = replacement;
+            assert!(
+                serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(contradictory).is_err()
+            );
+        }
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.

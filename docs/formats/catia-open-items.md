@@ -198,13 +198,13 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Bind implicit-axis parameters to directed endpoints or derivatives to determine the sign. Bind the control-`80` descriptor to its following definition before assigning the four scalar roles.
 
-### SN-06. Analytic-circle class-`0x23` definition
+### SN-06. Reversed class-`0x23` parameter slots
 
-**Question.** What are the operands and the roles of the eight scalar lanes in an analytic-circle class-`0x23` edge definition?
+**Question.** Which directed parameter mapping applies to reversed `(2,1)` slots in a non-identity class-`0x23` map?
 
-**Known.** `catia.md` §6.3 "Class-`23` and class-`24` scalar edge definitions have payload" defines the class-`0x23` wrapper role in an exact pcurve dependency chain.
+**Known.** `catia.md` §6.3 defines the eight-scalar affine map, local slots, fixed operand, and adjacent circle binding. The reversed identity form has identical source and target intervals, unit scale, and zero offset; either direction gives the same map.
 
-**Need.** We must know the direct definition to read a circle without an independent identity binding.
+**Need.** Bind both parameter representations of a reversed non-identity map independently to determine its direction.
 
 ### SN-07. Standalone class-`0x24` record
 

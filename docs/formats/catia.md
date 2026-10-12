@@ -631,11 +631,33 @@ More generally, an immediately adjacent B-family class-`23`, class-`24`, or clas
 
 Class-`23` and class-`24` scalar edge definitions have payload `82 <compact operand> <compact operand> <persistent operand> <eight or nine f64le scalars>`. The persistent operand uses the compact grammar or `0a <u16le>`. The scalar lane consumes the remainder of the frame, every value is finite, and scalar 2 equals the final scalar. The nine-scalar class-`23` form additionally carries three equal `(start,end,tolerance)` triples with unit scalar 5. A compact class-`24` definition has payload `81 <compact operand> 0f 87` and no scalar lane; the preceding width-coded frame header token is separate.
 
+An eight-scalar class-`23` parameter map has this 70-byte payload:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | map marker `82` |
+| `+1` | `u8[2]` | ordered local slots `05 09` or `09 05` |
+| `+3` | `bytes[3]` | fixed operand `0a 87 0d`, value 3463 |
+| `+6` | `f64le[2]` | target parameter interval |
+| `+22` | `f64le` | positive endpoint tolerance |
+| `+30` | `f64le[2]` | source parameter interval |
+| `+46` | `f64le` | positive parameter scale |
+| `+54` | `f64le` | parameter offset |
+| `+62` | `f64le` | repeated endpoint tolerance |
+
+Every scalar is finite. Both intervals are strictly increasing. The two tolerance
+words are identical. For local slot order `(1,2)`, the map is
+`target=scale·source+offset`; each endpoint residual is at most the stored
+tolerance. The reversed `(2,1)` identity form has identical source and target
+intervals, unit scale, and zero offset. Retain the slot order. The fixed operand
+is the constant 3463. The surrounding source-closed production supplies the
+representation identity and geometric placement.
+
 A class-`25` scalar definition begins `82 <allocation operand> <allocation operand> <persistent operand>`. An allocation operand uses the compact grammar, `06 <u8>`, `0a <u16le>`, or one raw nonzero byte congruent to 2 or 3 modulo 4. The persistent operand uses the compact grammar, `0a <u16le>`, or `0b <u16le>`; the two explicit leads remain distinct encodings of the same numeric lane. The remaining payload is either 7, 8, 9, or 10 finite `f64le` scalars, or five finite `f64le` scalars followed by a marker and a finite trailing scalar lane. Marker `82` carries 5–7 trailing scalars, `83` carries 8–9, `89` carries 20, and `8b` carries 24. The marker is a scalar-lane boundary, not part of either adjacent scalar.
 
 A class-`25` descriptor edge run is the contiguous B-family sequence `18,25,06,06,5e`. Its class-`18` payload is `08 <identity:u16le> <control> <two or three f64le scalars>`, where control is `02` or `0a` and every scalar is finite. The descriptor is owned by that edge run only when the adjacent class-`25` payload closes under its scalar grammar.
 
-An analytic circle edge run is the contiguous B-family sequence `18,19,23,06,06,5e`. The exact class-`18` descriptor and typed class-`19` arc-length circle are the analytic carrier of the edge whose class-`23` definition has eight scalar lanes. Any intervening framed record breaks the carrier relation.
+An analytic circle edge run is the contiguous B-family sequence `18,19,23,06,06,5e` in one bounded record source. Its class-`23` affine map has local slots `(1,2)`, and the two use vectors are `(1,2)` and `(2,3)`. The map target interval is bit-identical to the class-`19` arc-length interval. The exact class-`18` descriptor supplies the source representation, and class `19` supplies the circle center pair, radius, interval, and chart shift. In source descriptors with control `08` or `88`, the first scalar and its negation repeat the map source limits within the stored map tolerance. Control `08` carries an explicit unit direction in its final scalar pair. Any intervening framed record breaks the carrier relation.
 
 Every structurally complete `a5/a6/a7` or `b2/b3/b4 03 20` jet is retained as a typed native pcurve record when its support reference or edge run remains unbound. Once bound to a support surface and edge occurrence, the equivalent neutral degree-5 NURBS uses sixfold piece boundaries and retains the native evaluation range. Support identity and leading-extrapolation count remain attached to the native record.
 

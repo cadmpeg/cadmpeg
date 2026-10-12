@@ -1236,9 +1236,11 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         bytes
     }
 
-    let mut parameter = vec![0x05, 0x00];
-    parameter.extend_from_slice(&12.0_f64.to_le_bytes());
-    parameter.extend_from_slice(&34.0_f64.to_le_bytes());
+    const MAP_TOLERANCE: f64 = 1.0e-6;
+    let mut parameter = vec![0x05, 0x02];
+    for value in [12.0_f64, 4.0, 9.0] {
+        parameter.extend_from_slice(&value.to_le_bytes());
+    }
     let mut circle = vec![0x05];
     for value in [12.0_f64, 34.0, 5.0, 0.0, 10.0] {
         circle.extend_from_slice(&value.to_le_bytes());
@@ -1246,13 +1248,22 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     circle.push(0x01);
     circle.extend_from_slice(&0.0_f64.to_le_bytes());
     let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 10.0, 1.0e-6, 4.0, 9.0, 1.0, -2.0, 1.0e-6] {
+    for value in [
+        0.0_f64,
+        10.0,
+        MAP_TOLERANCE,
+        4.0,
+        9.0,
+        2.0,
+        -8.0,
+        MAP_TOLERANCE,
+    ] {
         definition.extend_from_slice(&value.to_le_bytes());
     }
     let mut bytes = record(0x18, 0x15, &parameter);
     bytes.extend_from_slice(&record(0x19, 0x05, &circle));
     bytes.extend_from_slice(&record(0x23, 0x05, &definition));
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(3, 139, 142));
 
     let runs =
         crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(&bytes);
@@ -1268,6 +1279,40 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     assert_eq!(
         run.definition.frame.pos,
         parameter.len() + circle.len() + 10
+    );
+
+    let mut mismatched_circle = bytes.clone();
+    let circle_lower = parameter.len() + 5 + 5 + 1 + 3 * 8;
+    mismatched_circle[circle_lower..circle_lower + 8].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    assert!(
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(
+            &mismatched_circle
+        )
+        .is_empty()
+    );
+
+    let mut signed_zero_circle = bytes.clone();
+    signed_zero_circle[circle_lower..circle_lower + 8].copy_from_slice(&(-0.0_f64).to_le_bytes());
+    assert!(
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(
+            &signed_zero_circle
+        )
+        .is_empty()
+    );
+
+    let mut reversed_identity = bytes.clone();
+    let definition_payload = parameter.len() + circle.len() + 15;
+    reversed_identity[definition_payload + 1..definition_payload + 3]
+        .copy_from_slice(&[0x09, 0x05]);
+    for (offset, value) in [(30, 0.0_f64), (38, 10.0), (46, 1.0), (54, 0.0)] {
+        let at = definition_payload + offset;
+        reversed_identity[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    assert!(
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(
+            &reversed_identity
+        )
+        .is_empty()
     );
 
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -1293,6 +1338,16 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         crate::native::CatiaNative::load(&namespace).expect("load analytic circle binding"),
         native
     );
+
+    let mut inconsistent = native.clone();
+    inconsistent.consolidated_circles[0].range =
+        cadmpeg_ir::topology::IncreasingParameterInterval::new([-1.0, 10.0])
+            .expect("increasing contradictory circle interval");
+    let mut inconsistent_namespace = cadmpeg_ir::NativeNamespace::default();
+    inconsistent
+        .store(&mut inconsistent_namespace)
+        .expect("store contradictory circle");
+    assert!(crate::native::CatiaNative::load(&inconsistent_namespace).is_err());
 
     let mut invalid = native;
     invalid.consolidated_edge_nodes[0]
@@ -1331,9 +1386,10 @@ fn analytic_circle_edge_carriers_and_retained_frames_refuse_collection_limits() 
         bytes.extend_from_slice(payload);
         bytes
     }
-    let mut parameter = vec![0x05, 0x00];
-    parameter.extend_from_slice(&12.0_f64.to_le_bytes());
-    parameter.extend_from_slice(&34.0_f64.to_le_bytes());
+    let mut parameter = vec![0x05, 0x02];
+    for value in [12.0_f64, 4.0, 9.0] {
+        parameter.extend_from_slice(&value.to_le_bytes());
+    }
     let mut circle = vec![0x05];
     for value in [12.0_f64, 34.0, 5.0, 0.0, 10.0] {
         circle.extend_from_slice(&value.to_le_bytes());
@@ -1341,13 +1397,13 @@ fn analytic_circle_edge_carriers_and_retained_frames_refuse_collection_limits() 
     circle.push(0x01);
     circle.extend_from_slice(&0.0_f64.to_le_bytes());
     let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 10.0, 0.001, 4.0, 9.0, 1.0, -2.0, 0.001] {
+    for value in [0.0_f64, 10.0, 0.001, 4.0, 9.0, 2.0, -8.0, 0.001] {
         definition.extend_from_slice(&value.to_le_bytes());
     }
     let mut bytes = record(0x18, 0x15, &parameter);
     bytes.extend_from_slice(&record(0x19, 0x05, &circle));
     bytes.extend_from_slice(&record(0x23, 0x05, &definition));
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(3, 139, 142));
     let records = crate::wire::records::consolidated_records(&bytes);
     let mut refused = HashSet::new();
     for limit in 0..256 {

@@ -782,6 +782,25 @@ Parsed by:
 | 1 | 1 | `control` | `u8` | little | spec | \| `+1` \| `u8` \| scalar control \| |
 | 2 | 8 | `first_scalar` | `f64` | little | spec | \| `+2` \| `f64le` \| first stored scalar \| |
 
+## `class23_affine_map`
+
+Spec §6.3 · layout: byte offsets · size: 70 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| map marker `82` \| · value `130` |
+| 1 | 2 | `local_slots` | `u8[2]` | little | spec | \| `+1` \| `u8[2]` \| ordered local slots `05 09` or `09 05` \| |
+| 3 | 3 | `fixed_operand` | `bytes[3]` | little | spec | \| `+3` \| `bytes[3]` \| fixed operand `0a 87 0d`, value 3463 \| · value `[10, 135, 13]` |
+| 6 | 16 | `target_range` | `f64[2]` | little | spec | \| `+6` \| `f64le[2]` \| target parameter interval \| |
+| 22 | 8 | `tolerance` | `f64` | little | spec | \| `+22` \| `f64le` \| positive endpoint tolerance \| |
+| 30 | 16 | `source_range` | `f64[2]` | little | spec | \| `+30` \| `f64le[2]` \| source parameter interval \| |
+| 46 | 8 | `scale` | `f64` | little | spec | \| `+46` \| `f64le` \| positive parameter scale \| |
+| 54 | 8 | `offset` | `f64` | little | spec | \| `+54` \| `f64le` \| parameter offset \| |
+| 62 | 8 | `repeated_tolerance` | `f64` | little | spec | \| `+62` \| `f64le` \| repeated endpoint tolerance \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

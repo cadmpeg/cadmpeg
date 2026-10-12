@@ -972,3 +972,19 @@ All records were joined to exact native frame bytes. The 45 owner charts in
 14 files satisfy the complete side controls and scalar relations, including
 50 implicit-axis side records. Regression tests reject contradictory controls,
 non-unit explicit directions, and each incorrect implicit-line scalar.
+
+Class-`0x23` affine-map verification covers 454 eight-scalar definitions in 21
+files. All definition frames match their native bytes. Every stored interval is
+increasing, both tolerance words agree and are positive, scale is positive, and
+both endpoint residuals satisfy the stored tolerance. The maximum ratio of
+residual to tolerance is 0.7071067811865475. The 166 complete analytic-circle
+runs in 10 files close in one logical source and have exact target-circle range
+agreement. Ninety source descriptors repeat the symmetric map interval,
+including 12 explicit unit directions. The 108 reversed-slot definitions are
+identity maps; reversed non-identity direction remains open.
+
+One identical map payload accompanies two center pairs separated by 44.45 mm.
+Both center pairs and radii match the sibling FTC-08 STEP geometry within
+`1e-8` mm. Multiple STEP Z placements share each pair and radius; this comparison
+checks the pair and radius. Circle geometry and placement remain supplied by
+the bound carrier.

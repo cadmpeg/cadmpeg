@@ -1,6 +1,6 @@
 use super::test_consolidated::valid_consolidated_plane_geometry;
 use crate::container;
-use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+use crate::families::consolidated::records::{Class23Slots, ConsolidatedEdgeDefinitionData};
 use crate::native::edge_node::consolidated_vertex_identities;
 use crate::native::edge_node::CatiaConsolidatedEdgeNode;
 use crate::native::projection::{
@@ -144,15 +144,17 @@ pub(super) fn validate_consolidated_edge_runs(
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
             let circle = circles.get(binding.circle.as_str());
-            node.uses.is_some()
+            node.uses.as_ref().is_some_and(|uses| uses.references == [[1, 2], [2, 3]])
                 && definition.is_some_and(|definition| {
                     u8::from(definition.class()) == 0x23
                         && matches!(
                             definition.data(),
-                            Some(ConsolidatedEdgeDefinitionData::Scalar {
-                                ref values,
+                            Some(ConsolidatedEdgeDefinitionData::Affine23 {
+                                slots: Class23Slots::OneTwo,
+                                target_range,
                                 ..
-                            }) if values.len() == 8
+                            }) if circle.is_some_and(|circle| target_range.endpoints().map(f64::to_bits)
+                                == circle.range.endpoints().map(f64::to_bits))
                         )
                         && circle.is_some_and(|circle| {
                             binding.descriptor.pos < circle.byte_offset
