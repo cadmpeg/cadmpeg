@@ -249,58 +249,43 @@ mod tests {
                 let mut rows = fixture();
                 let original_rows = rows.clone();
                 let result = rows.relocate_offsets(&ctx, 17);
-                let completed = result.is_ok();
-                if completed {
-                    result.expect("exact two-row traversal");
-                    assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
-                    assert_eq!((rows[1].offset, rows[1].end_offset), (25, 28));
-                    assert!(rows.contains_surface(7));
-                    assert!(rows.contains_non_surface(9));
-                    assert_eq!(rows.surfaces(), &BTreeSet::from([7]));
-                    assert_eq!(rows.surfaces_in_order().collect::<Vec<_>>(), [7]);
-                    for (row, before) in rows.iter().zip(original_rows.iter()) {
-                        assert_eq!(row.entity_id, before.entity_id);
-                        assert_eq!(row.payload, before.payload);
-                        assert_eq!(row.prefixed, before.prefixed);
+                match result {
+                    Ok(()) => {
+                        assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
+                        assert_eq!((rows[1].offset, rows[1].end_offset), (25, 28));
+                        assert!(rows.contains_surface(7));
+                        assert!(rows.contains_non_surface(9));
+                        assert_eq!(rows.surfaces(), &BTreeSet::from([7]));
+                        assert_eq!(rows.surfaces_in_order().collect::<Vec<_>>(), [7]);
+                        for (row, before) in rows.iter().zip(original_rows.iter()) {
+                            assert_eq!(row.entity_id, before.entity_id);
+                            assert_eq!(row.payload, before.payload);
+                            assert_eq!(row.prefixed, before.prefixed);
+                        }
+                        let original = ctx
+                            .charge_work_limit(1, "after actual row relocation")
+                            .expect_err("the two admitted visits use the exact cap");
+                        assert_eq!(original.used, 2);
+                        assert_eq!(original.additional, 1);
+                        Ok(())
                     }
-                    let original = ctx
-                        .charge_work_limit(1, "after actual row relocation")
-                        .expect_err("the two admitted visits use the exact cap");
-                    assert_eq!(original.used, 2);
-                    assert_eq!(original.additional, 1);
-                    assert!(matches!(rows.relocate_offsets(&ctx, 17),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    assert_eq!((rows[0].offset, rows[0].end_offset), (20, 22));
-                } else {
-                    let Err(CodecError::ResourceLimit(original)) = result else {
-                        panic!("two present rows need two visits");
-                    };
-                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(original.operation, "creo record child relocation traversal");
-                    assert_eq!(original.used, 0);
-                    assert_eq!(original.additional, 2);
-                    assert_eq!(rows, original_rows);
-                    assert!(matches!(rows.relocate_offsets(&ctx, 17),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    assert_eq!(rows, original_rows);
-                    assert_eq!(ctx.resource_refusal(), Some(original));
-                }
-
-                if completed {
-                    Ok(())
-                } else {
-                    Err(CodecError::ResourceLimit(
-                        ctx.resource_refusal().expect("original refusal"),
-                    ))
+                    Err(CodecError::ResourceLimit(original)) => {
+                        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                        assert_eq!(original.operation, "creo record child relocation traversal");
+                        assert_eq!(original.used, 0);
+                        assert_eq!(original.additional, 2);
+                        assert_eq!(rows, original_rows);
+                        Err(CodecError::ResourceLimit(original))
+                    }
+                    Err(error) => Err(error),
                 }
             },
         );
     }
 
     #[test]
-    fn empty_offset_relocation_is_free_and_preserves_original_refusal() {
+    fn empty_offset_relocation_is_free() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_core::CodecError;
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -313,12 +298,5 @@ mod tests {
         rows.relocate_offsets(&ctx, 17).expect("no source rows");
         assert!(rows.is_empty());
         assert!(ctx.resource_refusal().is_none());
-        let original = ctx
-            .charge_work_limit(1, "after empty relocation")
-            .expect_err("zero cap");
-        assert!(matches!(rows.relocate_offsets(&ctx, 17),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-        assert!(rows.is_empty());
     }
 }

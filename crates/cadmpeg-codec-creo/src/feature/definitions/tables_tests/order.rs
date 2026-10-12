@@ -155,3 +155,16 @@ fn incomplete_order_tables_do_not_resolve_identifiers() {
     assert!(!order.is_complete());
     assert_eq!(order.internal_id(10), None);
 }
+
+#[test]
+fn positional_order_rows_stop_at_definition_end() {
+    let definition = b"\xf8\x02\xf7\x42\xfb\xe2\xf7\x43\x09\x01\0\xf1\xf7\x42\xe2\x0a";
+    let mut payload = definition.to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    let table = positional_order_table(&payload, 0, definition.len(), 66).expect("declared table");
+    assert_eq!(table.declared_count, 2);
+    assert!(table.has_prototype);
+    assert!(!table.is_complete());
+    assert!(table.rows.is_empty());
+    assert_eq!(table.internal_id(10), None);
+}

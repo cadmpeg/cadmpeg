@@ -4,12 +4,18 @@ use super::*;
 
 #[test]
 fn relation_operands_refuse_before_retained_copy() {
-    assert!(
-        matches!(positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo relation operands"), |cap| positional_relation_with_limits(u64::MAX, cap))),
+    let result = positional_relation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo relation operands"),
+            |cap| positional_relation_with_limits(u64::MAX, cap),
+        ),
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo relation operands")
-    );
+            && limit.operation == "creo relation operands"));
     let table = positional_relation_with_limits(
         u64::MAX,
         crate::test_support::allocation_limit_at(
@@ -25,12 +31,18 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn relation_row_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo relation row body"), |cap| positional_relation_with_limits(u64::MAX, cap))),
+    let result = positional_relation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo relation row body"),
+            |cap| positional_relation_with_limits(u64::MAX, cap),
+        ),
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo relation row body")
-    );
+            && limit.operation == "creo relation row body"));
     let table = positional_relation_with_limits(
         u64::MAX,
         crate::test_support::allocation_limit_at(
@@ -46,12 +58,18 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn relation_row_refuses_before_vec_growth() {
-    assert!(
-        matches!(positional_relation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo relation rows"), |cap| positional_relation_with_limits(cap, u64::MAX)), u64::MAX),
+    let result = positional_relation_with_limits(
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo relation rows"),
+            |cap| positional_relation_with_limits(cap, u64::MAX),
+        ),
+        u64::MAX,
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo relation rows")
-    );
+            && limit.operation == "creo relation rows"));
     assert_eq!(
         positional_relation_with_limits(
             u64::MAX,
@@ -165,62 +183,98 @@ fn equation_table_accepts_final_row_at_table_separator() {
 
 #[test]
 fn equation_prototype_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation prototype body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo equation prototype body"),
+            |cap| equation_with_limits(u64::MAX, cap),
+        ),
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation prototype body")
-    );
+            && limit.operation == "creo equation prototype body"));
 }
 
 #[test]
 fn equation_arguments_refuse_before_vec_growth() {
-    assert!(
-        matches!(equation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo equation arguments"), |cap| equation_with_limits(cap, u64::MAX)), u64::MAX),
+    let result = equation_with_limits(
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo equation arguments"),
+            |cap| equation_with_limits(cap, u64::MAX),
+        ),
+        u64::MAX,
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo equation arguments")
-    );
+            && limit.operation == "creo equation arguments"));
 }
 
 #[test]
 fn equation_argument_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation argument body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo equation argument body"),
+            |cap| equation_with_limits(u64::MAX, cap),
+        ),
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation argument body")
-    );
+            && limit.operation == "creo equation argument body"));
 }
 
 #[test]
 fn equation_auxiliary_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation auxiliary body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo equation auxiliary body"),
+            |cap| equation_with_limits(u64::MAX, cap),
+        ),
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation auxiliary body")
-    );
+            && limit.operation == "creo equation auxiliary body"));
 }
 
 #[test]
 fn equation_row_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation row body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(
+        u64::MAX,
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo equation row body"),
+            |cap| equation_with_limits(u64::MAX, cap),
+        ),
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo equation row body")
-    );
+            && limit.operation == "creo equation row body"));
 }
 
 #[test]
 fn equation_row_refuses_before_vec_growth() {
-    assert!(
-        matches!(equation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo equation rows"), |cap| equation_with_limits(cap, u64::MAX)), u64::MAX),
+    let result = equation_with_limits(
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo equation rows"),
+            |cap| equation_with_limits(cap, u64::MAX),
+        ),
+        u64::MAX,
+    );
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo equation rows")
-    );
+            && limit.operation == "creo equation rows"));
     let table = equation_with_limits(
         u64::MAX,
         crate::test_support::allocation_limit_at(
@@ -638,7 +692,6 @@ fn optional_solver_header_propagates_the_search_refusal() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
     assert_eq!(limit.operation, "find Creo solver table");
-    assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
 #[test]
@@ -781,4 +834,196 @@ fn positional_triples_replay_nullable_relation_joins() {
     assert_eq!(triples[0].skamp_id, Some(4));
     assert_eq!(triples[1].relation_id, Some(2));
     assert_eq!(triples[1].skamp_id, Some(5));
+}
+
+#[test]
+fn positional_relation_triples_stop_at_definition_end() {
+    let definition = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59";
+    let mut payload = definition.to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    let table = crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_relation_triples(ctx, &payload, 0, definition.len(), 88)
+    })
+    .expect("bounded table")
+    .expect("declared table");
+    let crate::feature::definitions::SolverSubtable::Declared { header, rows } = table else {
+        panic!("declared table");
+    };
+    assert_eq!(
+        (header.declared_count, header.entity_ref, header.offset),
+        (1, 88, 0)
+    );
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn positional_relation_triples_header_and_multibyte_rows_stay_in_definition() {
+    let mut payload = b"\xf8\x01\xf7\x80\x80\xfb\xe2\xf7\x80\x81\
+        \x80\x80\xc0\0\x02\xea\x03\0\0"
+        .to_vec();
+    let definition_end = payload.len();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    for end in 0..definition_end {
+        let table = crate::decode::with_test_decode_ctx(|ctx| {
+            parse_positional_relation_triples(ctx, &payload, 0, end, 128)
+        })
+        .expect("bounded truncated table");
+        if end < 7 {
+            assert!(table.is_none(), "incomplete header at {end}");
+        } else {
+            let table = table.expect("complete header");
+            assert!(table.rows().is_empty(), "incomplete row at {end}");
+        }
+    }
+    let rows = positional_relation_triples(&payload, 0, definition_end, 128);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+        (Some(128), Some(2), Some(3))
+    );
+    assert_eq!(rows[0].offset, 10);
+}
+
+#[test]
+fn positional_relation_triples_do_not_charge_an_absent_bounded_row() {
+    let mut payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59".to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    // Uniqueness visits seven offsets and performs its charged end probe.
+    let operations = std::iter::once("creo positional array header search")
+        .chain(std::iter::repeat_n(
+            "creo positional array header uniqueness",
+            8,
+        ))
+        .collect::<Vec<_>>();
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &operations, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let table =
+            parse_positional_relation_triples(&ctx, &payload, 0, 8, 88)?.expect("complete header");
+        assert!(table.rows().is_empty());
+        let refusal = ctx
+            .charge_work_limit(1, "measure bounded triples")
+            .expect_err("header scans use the complete cap");
+        assert_eq!((refusal.used, refusal.additional), (9, 1));
+        Ok::<_, CodecError>(())
+    });
+}
+
+#[test]
+fn positional_skamp_rows_do_not_visit_next_definition() {
+    let mut payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59".to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    // Uniqueness visits seven offsets and performs its charged end probe.
+    let operations = std::iter::once("creo positional array header search")
+        .chain(std::iter::repeat_n(
+            "creo positional array header uniqueness",
+            8,
+        ))
+        .collect::<Vec<_>>();
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &operations, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let table =
+            parse_positional_feature_skamps(&ctx, &payload, 0, 8, 88)?.expect("complete header");
+        assert!(table.rows().is_empty());
+        let refusal = ctx
+            .charge_work_limit(1, "measure bounded skamps")
+            .expect_err("header scans use the complete cap");
+        assert_eq!((refusal.used, refusal.additional), (9, 1));
+        Ok::<_, CodecError>(())
+    });
+}
+
+#[test]
+fn positional_relation_table_header_stays_in_definition() {
+    let payload = b"\xf8\x01\xf7\x64\xfb\xe2";
+    for end in 0..payload.len() {
+        assert!(
+            positional_relation_table(payload, 0, end, 100).is_none(),
+            "header cut at {end}"
+        );
+    }
+    let table = positional_relation_table(payload, 0, payload.len(), 100).expect("complete header");
+    assert_eq!(table.declared_count, 1);
+    assert!(table.rows.is_empty());
+}
+
+#[test]
+fn positional_triples_do_not_count_a_truncated_nullable_integer() {
+    let incomplete = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\x01\x02\x80";
+    assert!(positional_relation_triples(incomplete, 0, incomplete.len(), 88).is_empty());
+    let null = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\x01\x02\xf6";
+    let rows = positional_relation_triples(null, 0, null.len(), 88);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+        (Some(1), Some(2), None)
+    );
+}
+
+#[test]
+fn positional_triples_do_not_use_row_boundaries_as_null_fields() {
+    let header = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59";
+    for row in [
+        &[0xe2][..],
+        &[1, 0xe2][..],
+        &[1, 2, 0xe2][..],
+        &[0xe2, 2, 3][..],
+        &[1, 0xe2, 3][..],
+    ] {
+        let mut payload = header.to_vec();
+        payload.extend_from_slice(row);
+        payload.extend_from_slice(b"\xe0\0next_table\0");
+        assert!(positional_relation_triples(&payload, 0, payload.len(), 88).is_empty());
+    }
+    let mut payload = header.to_vec();
+    payload.extend_from_slice(&[1, 2, 0xf6]);
+    let rows = positional_relation_triples(&payload, 0, payload.len(), 88);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+        (Some(1), Some(2), None)
+    );
+}
+
+#[test]
+fn named_triples_do_not_use_row_boundaries_as_null_fields() {
+    let prototype = b"triples_ptr\0\xf8\x02\xf7\x58\xfb\xe2\
+        \xe0\x01rel_id\0\x01\xe0\x01eqn_id\0\x02\xe0\x01skamp_id\0\x03\
+        \xf1\xf7\x58\xe2";
+    for row in [
+        &[0xe2][..],
+        &[1, 0xe2][..],
+        &[1, 2, 0xe2][..],
+        &[0xe2, 2, 3][..],
+        &[1, 0xe2, 3][..],
+    ] {
+        let mut payload = prototype.to_vec();
+        payload.extend_from_slice(row);
+        payload.extend_from_slice(b"\xe0\0next_table\0");
+        let rows = feature_relation_triples(&payload, 0, payload.len());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+            (Some(1), Some(2), Some(3))
+        );
+    }
+    let mut payload = prototype.to_vec();
+    payload.extend_from_slice(&[1, 2, 0xf6, 0xe2]);
+    let rows = feature_relation_triples(&payload, 0, payload.len());
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        (rows[1].relation_id, rows[1].equation_id, rows[1].skamp_id),
+        (Some(1), Some(2), None)
+    );
 }

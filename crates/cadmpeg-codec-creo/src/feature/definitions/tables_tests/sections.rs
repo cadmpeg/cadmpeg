@@ -43,12 +43,15 @@ fn named_section_reference_plane_refuses_before_vec_growth() {
             )
         })
     };
-    assert!(
-        matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo named section reference planes"), run)),
+    let result = run(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo named section reference planes"),
+        run,
+    ));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo named section reference planes")
-    );
+            && refusal.operation == "creo named section reference planes"));
     assert_eq!(
         run(u64::MAX)
             .expect("section admitted")
@@ -162,4 +165,53 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
     assert_eq!(section.sketch_plane_entity_id, Some(42));
     assert_eq!(section.reference_plane_datum_geometry_id, Some(6));
     assert_eq!(section.sketch_plane_flip, None);
+}
+
+#[test]
+fn positional_section_rows_stop_at_definition_end() {
+    let definition = b"\x07S2D1\0\x01\xf6\xe1\xf6\x02\0\xf8\x01\xf7\x39\xfb\xe2\xf7\x3a";
+    let mut payload = definition.to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    let section = positional_section_3d(&payload, 0, definition.len()).expect("section header");
+    assert_eq!(section.sketch_plane_entity_id, Some(2));
+    assert_eq!(section.sketch_plane_flip, Some(BinaryFlag::Clear));
+    assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
+    assert!(
+        matches!(section.reference_planes, ReferencePlanes::Positional(rows) if rows.is_empty())
+    );
+}
+
+#[test]
+fn positional_section_header_and_multibyte_rows_stay_in_definition() {
+    let mut payload = b"\x07S2D1\0\x01\xf6\xe1\xf6\x80\x01\0\xf8\x01\xf7\x81\x39\xfb\xe2\xf7\x81\x3a\x80\x06\x05\xf6\x03\xf6\x01".to_vec();
+    let definition_end = payload.len();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    for end in 6..definition_end {
+        let section = positional_section_3d(&payload, 0, end).expect("section name");
+        assert!(
+            matches!(section.reference_planes, ReferencePlanes::Positional(rows) if rows.is_empty()),
+            "end {end}"
+        );
+        if end <= 11 {
+            assert_eq!(section.sketch_plane_entity_id, None, "incomplete plane ID");
+        }
+    }
+    let section = positional_section_3d(&payload, 0, definition_end).expect("complete section");
+    assert_eq!(section.sketch_plane_entity_id, Some(1));
+    assert_eq!(
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        [6]
+    );
+}
+
+#[test]
+fn named_section_reference_stops_before_saved_result() {
+    let payload = b"\xe0\0gsec3d_ptr\0\xe0\0ref_planes\0\xf8\x01\xf7\x80\
+        \xe0\0p_saved_result\0";
+    let section = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::feature::definitions::section_3d(ctx, payload, 0, payload.len())
+    })
+    .expect("placement admitted")
+    .expect("named placement");
+    assert_eq!(section.reference_planes, ReferencePlanes::Named(Vec::new()));
 }

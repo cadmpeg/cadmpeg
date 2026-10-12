@@ -2572,6 +2572,7 @@ fn decode_parameter_scalar(
     const DICT_PREFIXES: &[u8] = &[
         0x5e, 0x60, 0x68, 0x6f, 0x71, 0x74, 0x81, 0x85, 0x8b, 0x90, 0x91, 0x99, 0xa1, 0xa2, 0xb7,
     ];
+    let payload = payload.get(..end)?;
     let prefix = *payload.get(offset)?;
     if DICT_PREFIXES.contains(&prefix) && offset + 7 <= end {
         let (first, second) = if prefix == 0xb7 {
@@ -2633,9 +2634,7 @@ fn unresolved_variable_guess_end(
     let Some(delimiter) = delimiter else {
         return Ok(None);
     };
-    let suffix_start = delimiter
-        .checked_sub((delimiter - offset - 1).min(SUFFIX_BYTES))
-        .ok_or_else(|| CodecError::malformed("Creo variable suffix position underflows"))?;
+    let suffix_start = delimiter - (delimiter - offset - 1).min(SUFFIX_BYTES);
     let mut candidate = None;
     for start in suffix_start..delimiter {
         if variable_row_trailing_fields(payload, start, delimiter).is_some()
@@ -2654,7 +2653,10 @@ fn decode_variable_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
-    let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
+    let Some(payload) = payload.get(..end) else {
+        return Ok((ScalarLane::Undefined, offset));
+    };
+    let Some(&prefix) = payload.get(offset) else {
         return Ok((ScalarLane::Undefined, offset));
     };
     if matches!(prefix, 0x90 | 0xd7) && offset + 7 <= end {
@@ -2714,7 +2716,12 @@ fn decode_variable_scalar(
         0xdd => Some([0xc0, 0x0c]),
         _ => None,
     };
-    if let (Some(head), Some(tail)) = (variable_dict, payload.get(offset + 1..offset + 7)) {
+    if let (Some(head), Some(tail)) = (
+        variable_dict,
+        payload
+            .get(offset + 1..offset + 7)
+            .filter(|_| offset + 7 <= end),
+    ) {
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(tail);
@@ -2747,6 +2754,9 @@ fn decode_section_coordinate_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
+    let Some(payload) = payload.get(..end) else {
+        return Ok((ScalarLane::Undefined, offset));
+    };
     match payload.get(offset) {
         Some(0x00 | 0x34) if offset + 3 <= end => return Ok((ScalarLane::Undefined, offset + 3)),
         Some(0x01) if offset + 4 <= end => return Ok((ScalarLane::Undefined, offset + 4)),
@@ -2769,16 +2779,15 @@ fn decode_variable_guess(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
+    let Some(payload) = payload.get(..end) else {
+        return Ok((ScalarLane::Undefined, offset));
+    };
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
         let complete_suffix = (0..3).all(|_| {
-            if trailing >= end || payload[trailing] >= 0xc0 {
+            let Some((_, next)) = psb::complete_compact_int(payload, trailing) else {
                 return false;
-            }
-            let (_, next) = psb::compact_int(payload, trailing);
-            if next <= trailing {
-                return false;
-            }
+            };
             trailing = next;
             true
         });
@@ -2890,6 +2899,9 @@ fn variable_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureVariableTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"var_arr\0",
@@ -2957,19 +2969,29 @@ fn variable_table(
             break;
         }
         let row_offset = cursor;
-        let (variable_type, next) = psb::compact_int(payload, cursor);
+        let Some((variable_type, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         if cursor >= end || payload[cursor] >= 0xc0 {
             break;
         }
-        let (key, next) = psb::compact_int(payload, cursor);
+        let Some((key, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -2978,13 +3000,15 @@ fn variable_table(
             if payload[cursor] >= 0xc0 {
                 break;
             }
-            let (field, next) = psb::compact_int(payload, cursor);
-            if next == cursor {
+            let Some((field, next)) = psb::complete_compact_int(payload, cursor) else {
                 break;
-            }
+            };
             trailing[trailing_count] = Some(field);
             trailing_count += 1;
             cursor = next;
+        }
+        if trailing_count != 3 {
+            break;
         }
         let Some(delimiter) = ctx.position_by(
             &payload[cursor..end],
@@ -3028,6 +3052,9 @@ fn positional_variable_table(
     table_class: u32,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureVariableTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let candidate_at = |table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -3075,16 +3102,26 @@ fn positional_variable_table(
     'rows: while cursor < end && rows.len() < row_limit {
         ctx.next_charged(&mut (cursor..end), "creo positional variable row traversal")?;
         let row_offset = cursor;
-        let (variable_type, next) = psb::compact_int(payload, cursor);
+        let Some((variable_type, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
-        let (key, next) = psb::compact_int(payload, cursor);
+        let Some((key, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -3093,30 +3130,30 @@ fn positional_variable_table(
             if payload[cursor] >= 0xc0 {
                 break 'rows;
             }
-            let (field, next) = psb::compact_int(payload, cursor);
-            if next <= cursor {
-                break 'rows;
-            }
+            let Some((field, next)) = psb::complete_compact_int(payload, cursor) else {
+                break;
+            };
             trailing[trailing_count] = Some(field);
             trailing_count += 1;
             cursor = next;
         }
-        if rows.len() + 1 < row_limit {
-            if rows.is_empty() {
-                if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
-                    || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
-                        != Some(reference_bytes)
-                    || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
-                {
-                    break;
-                }
-                cursor += prototype_separator_len;
-            } else {
-                if payload.get(cursor) != Some(&0xe2) {
-                    break;
-                }
-                cursor += 1;
+        if trailing_count != 3 {
+            break;
+        }
+        if rows.is_empty() {
+            if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
+                || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
+                    != Some(reference_bytes)
+                || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
+            {
+                break;
             }
+            cursor += prototype_separator_len;
+        } else if rows.len() + 1 < row_limit {
+            if payload.get(cursor) != Some(&0xe2) {
+                break;
+            }
+            cursor += 1;
         }
         let row = FeatureVariableRow {
             variable_type: variable_type.into(),
@@ -3148,7 +3185,7 @@ fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
     };
     match head {
         0..=0x7f => (Some(u32::from(head)), offset + 1),
-        0x80..=0xbf => payload.get(offset + 1).map_or((None, offset + 1), |&tail| {
+        0x80..=0xbf => payload.get(offset + 1).map_or((None, offset), |&tail| {
             (
                 Some((u32::from(head - 0x80) << 8) | u32::from(tail)),
                 offset + 2,
@@ -3189,6 +3226,14 @@ fn next_bounded_compact_int(payload: &[u8], offset: usize) -> Option<(u32, usize
     }
     let (value, next) = psb::compact_int(payload, offset);
     (next > offset).then_some((value, next))
+}
+
+fn next_nullable_solver_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
+    if payload.get(*offset) == Some(&0xf6) {
+        *offset += 1;
+        return Ok(None);
+    }
+    next_solver_int(payload, offset).map(Some).ok_or(())
 }
 
 fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
@@ -3312,9 +3357,9 @@ pub(crate) fn equation_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureEquationTable>, CodecError> {
-    if start > end || end > payload.len() {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
         return Ok(None);
-    }
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"eqtn_arr\0",
@@ -3649,6 +3694,9 @@ fn segment_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureSegmentTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"segtab_ptr\0",
@@ -3724,6 +3772,9 @@ fn named_segment_values(
     label: &[u8],
     count: usize,
 ) -> Result<Option<NamedSegmentValues>, CodecError> {
+    let Some(payload) = payload.get(..close).filter(|_| cursor <= close) else {
+        return Ok(None);
+    };
     let Some(offset) = ctx.find_bytes_in(
         payload,
         label,
@@ -3826,6 +3877,9 @@ fn segment_table_body(
     end: usize,
     prototype_row: PrototypeRow,
 ) -> Result<Option<FeatureSegmentTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| table <= end && cursor <= end) else {
+        return Ok(None);
+    };
     let has_elided_prototype = prototype_row == PrototypeRow::Elided;
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
         return Ok(None);
@@ -4135,6 +4189,9 @@ fn order_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureOrderTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"order_table\0",
@@ -4274,30 +4331,42 @@ fn positional_order_table(
     end: usize,
     table_class: u32,
 ) -> Result<Option<FeatureOrderTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((table, declared_count, cursor, _)) =
         first_positional_array(ctx, payload, start, end, table_class)?
     else {
         return Ok(None);
     };
-    let prototype = (|| {
-        (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let (_, mut prototype) = psb::reference_id(payload, cursor + 1).ok()?;
+    let prototype = 'prototype: {
+        if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+            break 'prototype None;
+        }
+        let Ok((_, mut prototype)) = psb::reference_id(payload, cursor + 1) else {
+            break 'prototype None;
+        };
         for _ in 0..3 {
             let (_, next) = segment_int(payload, prototype);
-            (next > prototype).then_some(())?;
+            if next <= prototype {
+                break 'prototype None;
+            }
             prototype = next;
         }
-        (payload.get(prototype..prototype + 2) == Some(&[0xf1, psb::token::ENTITY_REF]))
-            .then_some(())?;
-        let (class, after_reference) = psb::reference_id(payload, prototype + 2).ok()?;
-        (class == table_class && payload.get(after_reference) == Some(&0xe2)).then_some(())?;
+        if payload.get(prototype..prototype + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
+            break 'prototype None;
+        }
+        let Ok((class, after_reference)) = psb::reference_id(payload, prototype + 2) else {
+            break 'prototype None;
+        };
+        if class != table_class || payload.get(after_reference) != Some(&0xe2) {
+            break 'prototype None;
+        }
         Some(after_reference + 1)
-    })();
-    // The declared count of a positional order table counts its prototype row.
-    // A declared count of zero with the prototype row present states a body-row
-    // count the table cannot hold, and refuses the table. Each row consumes at
-    // least one byte before its 0xe2 separator, so the row count cannot exceed
-    // the unread bytes in the table window.
+    };
+    // The declared count includes the prototype. Derive a body-row limit only
+    // when a complete prototype has following bytes. With no following bytes,
+    // preserve the header and prototype without visiting a body row.
     let row_limit = match prototype.filter(|&rows_start| rows_start < end) {
         Some(_) => {
             let Some(declared_body_rows) = declared_count.checked_sub(1) else {
@@ -4429,6 +4498,9 @@ fn section_3d(
 ) -> Result<Option<FeatureSection3d>, CodecError> {
     const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
     const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(section) = ctx.find_bytes_in(
         payload,
         GSEC3D,
@@ -4478,6 +4550,7 @@ fn section_3d(
         placement_end,
         "find Creo feature definition field",
     )? {
+        let payload = &payload[..placement_end];
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
         if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
             let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -4591,6 +4664,9 @@ fn positional_section_3d(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureSection3d>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((section, name_end)) = ctx.find_map(
         payload[start..end].windows(4).enumerate(),
         |(relative, _)| {
@@ -4753,6 +4829,9 @@ fn named_dimension_reference(
     start: usize,
     end: usize,
 ) -> Result<Option<(FeatureDimensionReference, usize)>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(item_label) = ctx.find_bytes_in(
         payload,
         b"item_id\0",
@@ -4820,6 +4899,9 @@ fn dimension_reference_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureDimensionReferenceTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"dim_ref\0",
@@ -4960,6 +5042,9 @@ fn labeled_dimension(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimension>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(type_label) = ctx.find_bytes_in(
         payload,
         b"type\0",
@@ -5056,6 +5141,9 @@ fn positional_dimension(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimension>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let (dimension_type, cursor) = segment_int(payload, start);
     let Some(dimension_type) = dimension_type else {
         return Ok(None);
@@ -5111,6 +5199,9 @@ fn dimension_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"dimtab_ptr\0",
@@ -5207,6 +5298,9 @@ fn positional_dimension_table(
     table_class: u32,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((table, declared_count, mut cursor, reference_bytes)) =
         first_positional_array(ctx, payload, start, end, table_class)?
     else {
@@ -5315,6 +5409,9 @@ fn feature_skamps(
     start: usize,
     end: usize,
 ) -> Result<Vec<FeatureSkamp>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(Vec::new());
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"skamp_ptr\0",
@@ -5407,6 +5504,9 @@ fn feature_skamps(
         prototype_items.push(item);
     }
     while prototype_items.len() < index_from_u32(prototype_item_count) {
+        if item_cursor >= prototype_end {
+            return Ok(Vec::new());
+        }
         ctx.next_charged(
             &mut (prototype_items.len()..index_from_u32(prototype_item_count)),
             "creo feature skamps cursor traversal",
@@ -5551,6 +5651,9 @@ fn named_array_class(
     start: usize,
     end: usize,
 ) -> Result<Option<u32>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(offset) = ctx.find_bytes_in(payload, label, start, end, "find Creo array class")?
     else {
         return Ok(None);
@@ -5580,6 +5683,9 @@ fn named_solver_table_header(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureSolverTableHeader>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(offset) = ctx.find_bytes_in(payload, label, start, end, "find Creo solver table")?
     else {
         return Ok(None);
@@ -5740,6 +5846,9 @@ fn positional_feature_skamps(
     end: usize,
     table_class: u32,
 ) -> Result<Option<SolverSubtable<FeatureSkamp>>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((table, count, mut cursor, table_class_encoding)) =
         positional_array_header(ctx, payload, start, end, table_class)?
     else {
@@ -6052,6 +6161,9 @@ fn feature_relation_triples(
     start: usize,
     end: usize,
 ) -> Result<Vec<FeatureRelationTriple>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(Vec::new());
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"triples_ptr\0",
@@ -6112,9 +6224,15 @@ fn feature_relation_triples(
             "creo feature relation triples cursor traversal",
         )?;
         let row_offset = cursor;
-        let relation_id = next_solver_int(payload, &mut cursor);
-        let equation_id = next_solver_int(payload, &mut cursor);
-        let skamp_id = next_solver_int(payload, &mut cursor);
+        let Ok(relation_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let Ok(equation_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let Ok(skamp_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
         let terminal_named_boundary = rows.len() + 1 == index_from_u32(declared_count)
             && payload.get(cursor).is_some_and(|byte| *byte >= 0xe0);
         if payload.get(cursor) != Some(&0xe2) && !terminal_named_boundary {
@@ -6141,6 +6259,9 @@ fn positional_relation_triples(
     end: usize,
     table_class: u32,
 ) -> Result<Option<SolverSubtable<FeatureRelationTriple>>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((table, count, mut cursor, class_encoding)) =
         positional_array_header(ctx, payload, start, end, table_class)?
     else {
@@ -6171,21 +6292,15 @@ fn positional_relation_triples(
             "creo positional relation triples cursor traversal",
         )?;
         let offset = cursor;
-        let before_relation = cursor;
-        let relation_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_relation {
+        let Ok(relation_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
-        let before_equation = cursor;
-        let equation_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_equation {
+        };
+        let Ok(equation_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
-        let before_skamp = cursor;
-        let skamp_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_skamp {
+        };
+        let Ok(skamp_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
+        };
         let row = FeatureRelationTriple {
             relation_id,
             equation_id,
@@ -6254,6 +6369,9 @@ fn relation_table(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureRelationTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(table) = ctx.find_bytes_in(
         payload,
         b"relat_ptr\0",
@@ -6414,9 +6532,7 @@ fn positional_relation_rows(
             break;
         }
         let mut suffix = None;
-        let suffix_begin = row_end
-            .checked_sub((row_end - after_used).min(SUFFIX_BYTES))
-            .ok_or_else(|| CodecError::malformed("Creo relation suffix position underflows"))?;
+        let suffix_begin = row_end - (row_end - after_used).min(SUFFIX_BYTES);
         for suffix_start in suffix_begin..row_end {
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
             let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);
@@ -6463,6 +6579,9 @@ fn positional_relation_table(
     end: usize,
     table_class: u32,
 ) -> Result<Option<FeatureRelationTable>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((table, declared_count, cursor, reference_bytes)) =
         first_positional_array(ctx, payload, start, end, table_class)?
     else {
@@ -6505,6 +6624,9 @@ fn saved_section_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    let Some(payload) = payload.get(..end).filter(|_| offset <= end) else {
+        return (None, offset);
+    };
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return (None, offset);
     };
@@ -6588,6 +6710,9 @@ fn saved_line_block(
     cache: &scalar::ScalarCache,
     entities: &mut Vec<FeatureSavedEntity>,
 ) -> Result<(), CodecError> {
+    let Some(payload) = payload.get(..segment_end).filter(|_| cursor <= segment_end) else {
+        return Ok(());
+    };
     if payload.get(cursor) == Some(&0xf1) {
         cursor = ctx
             .position_by(
@@ -6868,6 +6993,9 @@ fn saved_named_scalars<const N: usize>(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<[Option<f64>; N]>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(window) = payload.get(start..end) else {
         return Ok(None);
     };
@@ -6924,6 +7052,9 @@ fn saved_arc_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    let Some(payload) = payload.get(..end).filter(|_| offset <= end) else {
+        return (None, offset);
+    };
     if payload.get(offset) == Some(&0x18)
         && payload.get(offset + 1).is_some_and(|next| {
             matches!(
@@ -7018,6 +7149,9 @@ fn saved_positional_generated_entities(
     else {
         return Ok(());
     };
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(());
+    };
     let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
     let mut starts = Vec::new();
     for separator in ctx.admit_iter(start..end, "creo saved generated start traversal")? {
@@ -7062,6 +7196,7 @@ fn saved_positional_generated_entities(
             .get(index + 1)
             .and_then(|next| next.checked_sub(1))
             .unwrap_or(end);
+        let payload = &payload[..row_end];
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
@@ -7468,6 +7603,9 @@ fn saved_spline_entities(
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
     const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(());
+    };
     let mut search = start;
     while let Some(entity_offset) = ctx.find_bytes_in(
         payload,
@@ -7486,6 +7624,7 @@ fn saved_spline_entities(
                 "find Creo feature definition field",
             )?
             .unwrap_or(end);
+        let payload = &payload[..body_end];
         let points_label = ctx.find_bytes_in(
             payload,
             POINTS,
@@ -7619,6 +7758,9 @@ fn saved_spline_parameters(
 ) -> Result<Option<DecodedField<Vec<f64>>>, CodecError> {
     const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
     const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(label) = ctx.find_bytes_in(
         payload,
         PARAMETERS,

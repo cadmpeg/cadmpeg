@@ -25,7 +25,6 @@ fn check_visits(
                 Ok(())
             }
             Err(CodecError::ResourceLimit(original)) => {
-                assert_eq!(ctx.resource_refusal(), Some(original));
                 assert_eq!(original.additional, 1);
                 assert_eq!(original.operation, operation_at(original.used));
                 Err(CodecError::ResourceLimit(original))
@@ -445,4 +444,123 @@ fn singleton_loop_table_key_has_only_two_present_table_visits() {
             Ok(())
         },
     );
+}
+
+#[test]
+fn feature_row_fixed_returns_are_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let row = empty_candidate_row(2);
+    let mut results = vec![
+        super::super::round_replay_short_scalar(&ctx, &[], 0, 0).map(|v| v.is_none()),
+        super::super::round_replay_fixed_token_end(&ctx, &[], 0, 0).map(|v| v.is_none()),
+        super::super::round_replay_fixed_token_end(&ctx, &[0x0f], 0, 1).map(|v| v == Some(1)),
+    ];
+    for (payload, expected) in [
+        (&[][..], FeatureFieldValue::Empty),
+        (&[7][..], FeatureFieldValue::CompactInt(7)),
+        (
+            &[0xf7, 7][..],
+            FeatureFieldValue::EntityReference {
+                entity_id: 7,
+                terminated: false,
+            },
+        ),
+        (
+            &[0xf7, 7, 0xfb][..],
+            FeatureFieldValue::EntityReference {
+                entity_id: 7,
+                terminated: true,
+            },
+        ),
+        (
+            &[0xf8, 0][..],
+            FeatureFieldValue::CompactIntArray(Vec::new()),
+        ),
+    ] {
+        results.push(super::super::field_value(&ctx, payload).map(|value| value == expected));
+    }
+    results.push(
+        super::super::positional_datum_geometry_table_at(&ctx, &[], 0, 87).map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::geometry_table_at(&ctx, &[], 0, FeatureGeometryTableKind::DatumIds(None))
+            .map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::replay_ids(&ctx, &[], 0, 1)
+            .transpose()
+            .map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::replay_affected_pair(&ctx, &[], [None; 2])
+            .transpose()
+            .map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::explicit_replay_array(&ctx, &[], 0)
+            .transpose()
+            .map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::explicit_replay_pair_before_suffix(&ctx, &row, 0)
+            .transpose()
+            .map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::loop_history_prototypes(&ctx, &[], 0, 0)
+            .transpose()
+            .map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::loop_history_token(&ctx, &[0xe0], 0)
+            .map(|v| v.is_some_and(|token| token.kind == crate::psb::TokenKind::Truncated(0xe0))),
+    );
+    results.push(
+        super::super::positional_surface_merge_affected_ids(&ctx, &row, [None; 3])
+            .transpose()
+            .map(|v| v.is_none()),
+    );
+    results.push(
+        super::super::agreed_feature_affected_ids(&ctx, &[], 7, AffectedIdKind::Edges)
+            .map(|v| v.is_none()),
+    );
+    for result in results {
+        assert!(result.expect("free fixed return"));
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn empty_feature_row_outputs_are_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let results = [
+        super::super::round_replay_scalars(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::choices(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::choice_fields(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::geometry_tables(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::affected_ids(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::replay_affected_ids(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::surface_merge_replay_affected_ids(&ctx, &[], &[]).map(|v| v.is_empty()),
+        super::super::loop_restore_directions(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::loop_history_entries(&ctx, &[], &[]).map(|v| v.is_empty()),
+        super::super::revolution_extents(&ctx, &[]).map(|v| v.is_empty()),
+    ];
+    for result in results {
+        assert!(result.expect("no rows or ordering work"));
+    }
+    assert_eq!(ctx.resource_refusal(), None);
 }

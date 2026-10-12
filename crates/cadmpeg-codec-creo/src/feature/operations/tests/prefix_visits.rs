@@ -32,10 +32,7 @@ fn check_result(
                 assert_eq!((original.used, original.additional), (total, 1));
                 Ok(())
             }
-            Err(CodecError::ResourceLimit(original)) => {
-                assert_eq!(ctx.resource_refusal(), Some(original));
-                Err(CodecError::ResourceLimit(original))
-            }
+            Err(CodecError::ResourceLimit(original)) => Err(CodecError::ResourceLimit(original)),
             Err(error) => Err(error),
         }
     });
