@@ -20,11 +20,19 @@ fn axis() -> RevolutionAxis {
 
 fn transform() -> crate::placement::FeatureSectionTransform {
     crate::placement::FeatureSectionTransform::new(
-        7, Some(3), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
-    ).expect("orthonormal section frame")
+        7,
+        Some(3),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("orthonormal section frame")
 }
 
-fn assert_free_rejection(mut query: impl FnMut(&DecodeContext<'_>) -> Result<Option<()>, CodecError>) {
+fn assert_free_rejection(
+    mut query: impl FnMut(&DecodeContext<'_>) -> Result<Option<()>, CodecError>,
+) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -42,9 +50,14 @@ fn unknown_revolution_boundary_is_free_at_zero_budget() {
     let axis = axis();
     assert_free_rejection(|ctx| {
         revolution_boundary_pcurve(
-            ctx, &surface, [0.0; 3], &axis, &"unsupported boundary",
+            ctx,
+            &surface,
+            [0.0; 3],
+            &axis,
+            &"unsupported boundary",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        ).map(|value| value.map(|_| ()))
+        )
+        .map(|value| value.map(|_| ()))
     });
 }
 
@@ -58,9 +71,15 @@ fn unsupported_revolved_sketch_is_free_at_zero_budget() {
     let transform = transform();
     assert_free_rejection(|ctx| {
         revolved_brep_surface(
-            ctx, &transform, &geometry, false, &axis, &"unsupported sketch",
+            ctx,
+            &transform,
+            &geometry,
+            false,
+            &axis,
+            &"unsupported sketch",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        ).map(|value| value.map(|_| ()))
+        )
+        .map(|value| value.map(|_| ()))
     });
 }
 
@@ -69,16 +88,28 @@ fn zero_revolution_tangent_is_free_at_zero_budget() {
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(0.0, 0.0),
-    }).expect("finite line endpoints");
-    let segment = crate::decode::with_test_decode_ctx(|ctx| ProfileEntity::new(ctx, geometry, false))
-        .expect("fixed profile admission").expect("finite profile endpoints");
+    })
+    .expect("finite line endpoints");
+    let segment =
+        crate::decode::with_test_decode_ctx(|ctx| ProfileEntity::new(ctx, geometry, false))
+            .expect("fixed profile admission")
+            .expect("finite profile endpoints");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let axis = axis();
     let transform = transform();
     assert_free_rejection(|ctx| {
         revolution_face_sense(
-            ctx, &transform, &segment, &surface, &axis, 1.0,
-            (&"zero profile tangent", &mut crate::lane_refusal::LaneRefusals::new()),
-        ).map(|value| value.map(|_| ()))
+            ctx,
+            &transform,
+            &segment,
+            &surface,
+            &axis,
+            1.0,
+            (
+                &"zero profile tangent",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            ),
+        )
+        .map(|value| value.map(|_| ()))
     });
 }
