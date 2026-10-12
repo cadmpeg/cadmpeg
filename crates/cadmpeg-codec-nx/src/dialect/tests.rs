@@ -40,6 +40,8 @@ fn container(legacy_cfb: bool, version: u8) -> Container<'static> {
         },
         entries: Vec::new(),
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     }
@@ -336,5 +338,23 @@ fn dialect_classification_refuses_work_limit() {
             assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
         },
+    );
+}
+
+#[test]
+fn schema_carrier_labels_refuse_materialized_storage_at_the_named_boundary() {
+    let bytes = single_part_prt();
+    let scan = crate::decode::Scan {
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &bytes)
+        })
+        .unwrap(),
+        streams: extract_streams(&bytes),
+    };
+    crate::test_support::resource_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "nx schema carrier labels",
+        |ctx| classify_layers(ctx, &scan),
     );
 }

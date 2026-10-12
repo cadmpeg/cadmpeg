@@ -111,14 +111,15 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
     );
     assert_eq!(by_name["D1"].value, None);
     assert_eq!(
-        parameters_with_unevaluable_expressions(
-            &cadmpeg_test_support::service_decode_context(),
-            &parameters,
-            &HashMap::new(),
-            &HashSet::new(),
-            &[],
-        )
-        .unwrap(),
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let _storage;
+            let aliases;
+            (aliases, _storage) =
+                ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new())
+                    .unwrap();
+            parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap()
+        },
         1
     );
 }
@@ -171,7 +172,12 @@ fn layered_parameter_aliases_match_materialized_precedence() {
         let materialized = aliases.materialize(owner.as_ref());
         let layered = aliases.for_owner(owner.as_ref());
         for alias in ["Width", "global-id", "local-id", "missing"] {
-            assert_eq!(layered.get(alias), materialized.get(alias));
+            assert_eq!(
+                layered
+                    .get(&cadmpeg_test_support::service_decode_context(), alias)
+                    .unwrap(),
+                materialized.get(alias)
+            );
         }
     }
 }
@@ -182,9 +188,10 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
         definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
     };
     let ctx = cadmpeg_test_support::service_decode_context();
-    let tokens = expression_identifier_tokens(&ctx, "\"\" + Width")
-        .unwrap()
-        .expect("closed quotes");
+    let tokens_storage;
+    let tokens;
+    (tokens, tokens_storage) = expression_identifier_tokens(&ctx, "\"\" + Width").unwrap();
+    let tokens = tokens.expect("closed quotes");
     assert_eq!(
         tokens
             .iter()
@@ -192,11 +199,15 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
             .collect::<Vec<_>>(),
         ["Width"]
     );
-    assert!(!tokens.iter().any(definite_parameter_reference));
+    assert!(!tokens
+        .iter()
+        .any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
+    drop((tokens, tokens_storage));
 
-    let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
-        .unwrap()
-        .expect("closed quotes");
+    let _named_storage;
+    let named;
+    (named, _named_storage) = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"").unwrap();
+    let named = named.expect("closed quotes");
     assert_eq!(
         named
             .iter()
@@ -204,7 +215,9 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
             .collect::<Vec<_>>(),
         ["D1@Sketch1"]
     );
-    assert!(named.iter().all(definite_parameter_reference));
+    assert!(named
+        .iter()
+        .all(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
 }
 
 #[test]
@@ -252,7 +265,10 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
         by_name["Reference"].value,
         Some(ParameterValue::Length(Length::new(6.0).unwrap()))
     );
-    assert!(!unquoted_expression_identifier("4"));
+    assert!(
+        !unquoted_expression_identifier(&cadmpeg_test_support::service_decode_context(), "4")
+            .unwrap()
+    );
     assert_eq!(
         rewrite_parameter_expression(
             &cadmpeg_test_support::service_decode_context(),
@@ -573,4 +589,593 @@ fn stored_configuration_id_precedes_ordinal_fallback() {
         .unwrap(),
         [(0, 0)]
     );
+}
+
+#[test]
+fn alias_lookup_refusal_does_not_become_a_missing_alias() {
+    let aliases = ParameterAliases {
+        global: HashMap::new(),
+        exact: HashMap::new(),
+        document_local: HashMap::new(),
+        feature_local: HashMap::new(),
+    };
+    let view = aliases.for_owner(None);
+    for work_limit in [0, 5] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // Five work units admit one hash lookup of the five-byte alias.
+        policy.limits.max_work_units = work_limit;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = view.get(&ctx, "Width").unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal");
+        };
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+}
+
+#[test]
+fn alias_update_lookup_refusal_preserves_the_existing_binding() {
+    let parameter = ParameterId::mint("test:test:parameter#width").unwrap();
+    let mut aliases = HashMap::from([(String::from("Width"), Some(parameter.clone()))]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One work unit admits the owner step; the five-byte lookup must refuse.
+    policy.limits.max_work_units = 1;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::history::parameters::insert_parameter_alias(
+        &ctx,
+        &mut aliases,
+        String::from("Width"),
+        &parameter,
+    )
+    .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("resource refusal");
+    };
+    assert_eq!(limit.operation, "look up mutable SLDPRT hash key");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    assert_eq!(limit.additional, 5);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(aliases.get("Width"), Some(&Some(parameter)));
+}
+
+fn scratch_parameters() -> Vec<DesignParameter> {
+    let mut owner = feature("owner", Some("1"), 0);
+    owner
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Note"), "plain text".into());
+    project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }],
+    )
+    .unwrap()
+}
+
+/// Alias tables are scratch: their copies count against the scoped limit.
+#[test]
+fn parameter_aliases_refuse_scoped_limit() {
+    let parameters = scratch_parameters();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "retain SLDPRT parameter alias",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new())
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+/// Read-only validation borrows stated values instead of copying their text.
+#[test]
+fn parameter_value_states_borrow_stated_values() {
+    let parameters = scratch_parameters();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "retain SLDPRT parameter value text",
+        None,
+    );
+    assert_eq!(
+        parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(),
+        0
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn reverse_parameter_dependency_chain_evaluates_all_values() {
+    let mut owner = feature("chain", Some("1"), 0);
+    for index in 0..40 {
+        let name = cadmpeg_core::text::NonBlankString::try_from(format!("D{index:02}")).unwrap();
+        let expression = if index == 39 {
+            "1".to_owned()
+        } else {
+            format!("D{:02}+1", index + 1)
+        };
+        owner.parameters.insert(name, expression);
+    }
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![owner],
+    }];
+    let parameters =
+        project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    for (index, parameter) in parameters.iter().enumerate() {
+        assert_eq!(
+            parameter.value,
+            Some(ParameterValue::Integer(40 - i64::try_from(index).unwrap()))
+        );
+        assert_eq!(parameter.ordinal, 39 - u32::try_from(index).unwrap());
+    }
+}
+
+#[test]
+fn repeated_parameter_ids_keep_source_pass_replacements() {
+    let mut first = scratch_parameters().remove(0);
+    first.name = "First".into();
+    first.expression = "Known + 1".into();
+    first.value = None;
+    let mut known = first.clone();
+    known.name = "Known".into();
+    known.expression = "1".into();
+    known.value = Some(ParameterValue::Integer(1));
+    let mut consumer = first.clone();
+    consumer.id = ParameterId::mint("synthetic:test:parameter#consumer").unwrap();
+    consumer.name = "Consumer".into();
+    consumer.expression = "Known + 1".into();
+    let mut parameters = [first, known, consumer];
+    super::evaluate_parameter_expressions(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+        &HashMap::new(),
+        &HashSet::new(),
+    )
+    .unwrap();
+    assert_eq!(parameters[0].value, Some(ParameterValue::Integer(2)));
+    assert_eq!(parameters[1].value, Some(ParameterValue::Integer(1)));
+    assert_eq!(parameters[2].value, Some(ParameterValue::Integer(3)));
+}
+
+#[test]
+fn parameter_retries_follow_numeric_and_non_ascii_aliases() {
+    for (consumer, producer) in [("0Consumer", "9Alias"), ("D01", "ä")] {
+        let mut owner = feature("aliases", Some("1"), 0);
+        for (name, expression) in [
+            (consumer, format!("{producer} + 1")),
+            (producer, "D00 + 1".to_owned()),
+            ("D00", "1".to_owned()),
+        ] {
+            owner.parameters.insert(
+                cadmpeg_core::text::NonBlankString::try_from(name).unwrap(),
+                expression,
+            );
+        }
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }];
+        let parameters =
+            project_parameters(&cadmpeg_test_support::service_decode_context(), &histories)
+                .unwrap();
+        let value = |name| {
+            parameters
+                .iter()
+                .find(|parameter| parameter.name == name)
+                .unwrap()
+                .value
+                .as_ref()
+                .unwrap()
+        };
+        assert_eq!(value(consumer), &ParameterValue::Integer(3));
+        assert_eq!(value(producer), &ParameterValue::Integer(2));
+        assert_eq!(value("D00"), &ParameterValue::Integer(1));
+    }
+}
+
+#[test]
+fn display_modifier_aliases_do_not_block_expression_evaluation() {
+    let mut owner = feature("modifiers", Some("1"), 0);
+    owner.parameters = BTreeMap::from([
+        (
+            cadmpeg_core::nonblank_literal!("D1"),
+            "(<MOD-DIAM>12mm) + 1mm".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("MOD"), "MOD + 1".into()),
+    ]);
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![owner],
+    }];
+    let parameters =
+        project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    assert_eq!(
+        parameters[0].value,
+        Some(ParameterValue::Length(Length::new(13.0).unwrap()))
+    );
+    assert_eq!(parameters[1].value, None);
+}
+
+#[test]
+fn coherence_without_dependencies_builds_no_value_index() {
+    let parameters = scratch_parameters();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "collect SLDPRT parameter value states",
+        None,
+    );
+    assert_eq!(
+        super::parameters_with_incoherent_evaluated_values(&ctx, &parameters, &aliases, &[])
+            .unwrap(),
+        0
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn coherence_without_a_stated_value_leaves_expression_unread() {
+    let mut parameter = scratch_parameters().remove(0);
+    parameter.value = None;
+    parameter.expression = " ".repeat(128 * 1024);
+    parameter.dependencies = cadmpeg_ir::features::DistinctMembers::try_from(
+        vec![parameter.id.clone()],
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .unwrap();
+    let parameters = [parameter];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 4096;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    assert_eq!(
+        super::parameters_with_incoherent_evaluated_values(&ctx, &parameters, &aliases, &[])
+            .unwrap(),
+        0
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn empty_quoted_equation_alias_evaluates_without_a_dependency() {
+    let mut owner = feature("owner", Some("1"), 0);
+    owner.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("Width"), "1".into()),
+        (
+            cadmpeg_core::nonblank_literal!("Consumer"),
+            "\"\" + 1".into(),
+        ),
+    ]);
+    owner.dimension_properties.insert(
+        "Width".into(),
+        BTreeMap::from([(cadmpeg_core::nonblank_literal!("EquationId"), String::new())]),
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let parameters = project_parameters(
+        &ctx,
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }],
+    )
+    .unwrap();
+    assert_eq!(
+        parameters
+            .iter()
+            .find(|p| p.name.as_str() == "Width")
+            .unwrap()
+            .value,
+        Some(ParameterValue::Integer(1))
+    );
+    assert_eq!(
+        parameters
+            .iter()
+            .find(|p| p.name.as_str() == "Consumer")
+            .unwrap()
+            .value,
+        Some(ParameterValue::Integer(2))
+    );
+    let _storage;
+    let aliases;
+    (aliases, _storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    assert_eq!(
+        parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(),
+        0
+    );
+    assert!(expression_identifiers("\"\"").next().is_none());
+    assert!(parameters
+        .iter()
+        .find(|p| p.name.as_str() == "Consumer")
+        .unwrap()
+        .dependencies
+        .is_empty());
+}
+
+#[test]
+fn unescaped_quoted_identifier_does_not_search_for_escapes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let expression = format!("\"{}\"", "z".repeat(4096));
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "unescape SLDPRT parameter identifier",
+        None,
+    );
+    let (tokens, _storage) = super::expression_identifier_tokens(&ctx, &expression).unwrap();
+    assert_eq!(
+        tokens.unwrap()[0].value(),
+        &expression[1..expression.len() - 1]
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+fn referenced_validation_parameters() -> Vec<DesignParameter> {
+    let mut producer = scratch_parameters().remove(0);
+    producer.name = "Producer".into();
+    producer.expression = "1".into();
+    producer.value = Some(ParameterValue::Integer(1));
+    let mut consumer = producer.clone();
+    consumer.id = ParameterId::mint("synthetic:test:parameter#consumer").unwrap();
+    consumer.name = "Consumer".into();
+    consumer.expression = "Producer + 1".into();
+    consumer.value = Some(ParameterValue::Integer(2));
+    vec![producer, consumer]
+}
+
+#[test]
+fn validation_value_index_refuses_materialized_limit_when_referenced() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let parameters = referenced_validation_parameters();
+    let aliases = ParameterAliases::new(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameters,
+        &HashMap::new(),
+        &HashSet::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        parameters_with_unevaluable_expressions(
+            &cadmpeg_test_support::service_decode_context(),
+            &parameters,
+            &aliases,
+            &[]
+        )
+        .unwrap(),
+        0
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "collect SLDPRT parameter value states",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[])
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn literal_validation_builds_no_value_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let parameters = vec![referenced_validation_parameters().remove(0); 128];
+    let aliases = ParameterAliases::new(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameters,
+        &HashMap::new(),
+        &HashSet::new(),
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(),
+        0
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn blocked_consumers_borrow_one_long_producer_identity() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut producer = scratch_parameters().remove(0);
+    producer.owner = None;
+    producer.id =
+        ParameterId::mint(format!("synthetic:test:parameter#{}", "p".repeat(8192))).unwrap();
+    producer.name = "Producer".into();
+    producer.expression = "Producer + 1".into();
+    producer.value = None;
+    let mut parameters = (0..64)
+        .map(|index| {
+            let mut consumer = producer.clone();
+            consumer.id =
+                ParameterId::mint(format!("synthetic:test:parameter#consumer-{index}")).unwrap();
+            consumer.name = format!("Consumer{index}");
+            consumer
+        })
+        .collect::<Vec<_>>();
+    parameters.push(producer);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Alias tables and one blocker group fit; 65 copies of the producer ID do not.
+    policy.limits.max_materialized_bytes = 256 * 1024;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::evaluate_parameter_expressions(&ctx, &mut parameters, &HashMap::new(), &HashSet::new())
+        .unwrap();
+    assert!(parameters.iter().all(|parameter| parameter.value.is_none()));
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "released evaluation storage",
+    )
+    .unwrap();
+}
+
+#[test]
+fn configured_validation_reference_builds_no_model_value_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let parameters = referenced_validation_parameters();
+    let aliases = ParameterAliases::new(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameters,
+        &HashMap::new(),
+        &HashSet::new(),
+    )
+    .unwrap();
+    let mut configuration = design_configuration("configured", 0, Some(0), None);
+    configuration
+        .parameter_values
+        .insert(parameters[0].id.clone(), ParameterValue::Integer(10));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[configuration])
+            .unwrap(),
+        0
+    );
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn expression_rewrite_skips_output_storage_without_replacements() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        rewrite_parameter_expression(&ctx, &"A+".repeat(4096), &HashMap::new()).unwrap(),
+        None
+    );
+    ctx.finish_session().unwrap();
+
+    policy.limits.max_materialized_bytes = u64::MAX;
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        rewrite_parameter_expression(&ctx, "A + A", &HashMap::from([("B".into(), "C".into())]))
+            .unwrap(),
+        None
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn expression_rewrite_preserves_unicode_quotes_and_repeated_token_offsets() {
+    let aliases = HashMap::from([
+        ("A".into(), "quoted\"owner".into()),
+        ("β".into(), "δ".into()),
+    ]);
+    assert_eq!(
+        rewrite_parameter_expression(
+            &cadmpeg_test_support::service_decode_context(),
+            "A + A + \"β\"",
+            &aliases
+        )
+        .unwrap()
+        .as_deref(),
+        Some("\"quoted\"\"owner\" + \"quoted\"\"owner\" + \"δ\"")
+    );
+}
+
+#[test]
+fn expression_rewrite_refuses_admitted_output_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for dimension in [
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::WorkUnits,
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "rewrite SLDPRT parameter expression",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    _ => unreachable!(),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                rewrite_parameter_expression(
+                    &ctx,
+                    "A + A",
+                    &HashMap::from([("A".into(), "B".into())]),
+                )?;
+                ctx.finish_session()
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+        );
+    }
 }

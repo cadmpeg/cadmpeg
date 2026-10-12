@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OperationTerminalDiscriminator {
     origin: u64,
+    end: u64,
     type_indices: [CompactIndexAtom; 2],
     flags: [u8; 4],
     trailing_indices: Vec<CompactIndexAtom>,
@@ -21,22 +22,64 @@ impl OperationTerminalDiscriminator {
         flags: [u8; 4],
         trailing_indices: Vec<CompactIndexAtom>,
     ) -> Result<Self, &'static str> {
-        let start = origin
-            .checked_add(17)
-            .ok_or("source_offset: terminal discriminator overflows")?;
-        type_indices
-            .iter()
-            .chain(&trailing_indices)
-            .try_fold(start, |at, token| {
-                at.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len()))
-            })
-            .ok_or("source_offset: terminal discriminator end overflows")?;
+        let end = match Self::extent(origin, type_indices, &trailing_indices, |tokens| {
+            Ok::<_, std::convert::Infallible>(tokens.iter())
+        }) {
+            Ok(end) => end?,
+            Err(error) => match error {},
+        };
         Ok(Self {
             origin,
+            end,
             type_indices,
             flags,
             trailing_indices,
         })
+    }
+
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        origin: u64,
+        type_indices: [CompactIndexAtom; 2],
+        flags: [u8; 4],
+        trailing_indices: Vec<CompactIndexAtom>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(
+            Self::extent(origin, type_indices, &trailing_indices, |tokens| {
+                ctx.admit_iter(tokens, "NX terminal discriminator token widths")
+            })?
+            .map(|end| Self {
+                origin,
+                end,
+                type_indices,
+                flags,
+                trailing_indices,
+            }),
+        )
+    }
+
+    fn extent<'a, E, I: Iterator<Item = &'a CompactIndexAtom>>(
+        origin: u64,
+        type_indices: [CompactIndexAtom; 2],
+        trailing_indices: &'a [CompactIndexAtom],
+        admit: impl FnOnce(&'a [CompactIndexAtom]) -> Result<I, E>,
+    ) -> Result<Result<u64, &'static str>, E> {
+        let Some(start) = origin.checked_add(17) else {
+            return Ok(Err("source_offset: terminal discriminator overflows"));
+        };
+        let Some(start) = start.checked_add(
+            type_indices
+                .iter()
+                .map(|token| u64_from_index(token.raw().len()))
+                .sum::<u64>(),
+        ) else {
+            return Ok(Err("source_offset: terminal discriminator end overflows"));
+        };
+        let mut end = Some(start);
+        for token in admit(trailing_indices)? {
+            end = end.and_then(|at| at.checked_add(u64_from_index(token.raw().len())));
+        }
+        Ok(end.ok_or("source_offset: terminal discriminator end overflows"))
     }
     pub(crate) fn origin(&self) -> u64 {
         self.origin
@@ -68,14 +111,10 @@ impl OperationTerminalDiscriminator {
             (*token, offset)
         })
     }
-    pub(crate) fn relocate(self, base: u64) -> Option<Self> {
-        Self::new(
-            base.checked_add(self.origin)?,
-            self.type_indices,
-            self.flags,
-            self.trailing_indices,
-        )
-        .ok()
+    pub(crate) fn relocate(mut self, base: u64) -> Option<Self> {
+        self.origin = base.checked_add(self.origin)?;
+        self.end = base.checked_add(self.end)?;
+        Some(self)
     }
 }
 
@@ -87,84 +126,89 @@ pub(crate) fn operation_terminal_discriminator(
     if record.payload().last() != Some(&0) {
         return Ok(None);
     }
-    ctx.charge_work(
-        u64_from_index(record.payload().len()),
-        "scan NX terminal discriminator",
-    )?;
 
-    let decode = |start: usize| {
+    let decode = |start: usize| -> Result<Option<_>, CodecError> {
         if record.payload().get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
-            return None;
+            return Ok(None);
         }
         let mut at = start + 3;
-        let first = CompactIndexAtom::read(record.payload().get(at..)?)?;
+        let Some(first) = record.payload().get(at..).and_then(CompactIndexAtom::read) else {
+            return Ok(None);
+        };
         at += first.raw().len();
-        let second = CompactIndexAtom::read(record.payload().get(at..)?)?;
+        let Some(second) = record.payload().get(at..).and_then(CompactIndexAtom::read) else {
+            return Ok(None);
+        };
         at += second.raw().len();
         if record.payload().get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
-            return None;
+            return Ok(None);
         }
         at += 4;
-        let flags = record
+        let Some(flags) = record
             .payload()
             .get(at..at + 4)
-            .and_then(|bytes| bytes.try_into().ok())?;
+            .and_then(|bytes| bytes.try_into().ok())
+        else {
+            return Ok(None);
+        };
         at += 4;
         if record.payload().get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
-            return None;
+            return Ok(None);
         }
         at += 5;
 
         let trailing_end = record.payload().len() - 1;
-        let trailing_bytes = record.payload().get(at..trailing_end)?;
+        let Some(trailing_bytes) = record.payload().get(at..trailing_end) else {
+            return Ok(None);
+        };
         let mut scan = 0;
         let mut trailing_count = 0;
         while scan < trailing_bytes.len() {
-            let token = CompactIndexAtom::read(trailing_bytes.get(scan..)?)?;
+            ctx.charge_work(1, "NX terminal discriminator trailing validation")?;
+            let Some(token) = trailing_bytes.get(scan..).and_then(CompactIndexAtom::read) else {
+                return Ok(None);
+            };
             scan += token.raw().len();
             trailing_count += 1;
         }
 
-        let origin = u64::try_from(record.payload_offset().checked_add(start)?).ok()?;
-        let token_bytes = first
-            .raw()
-            .len()
-            .checked_add(second.raw().len())?
-            .checked_add(trailing_bytes.len())?;
-        origin
-            .checked_add(17)?
-            .checked_add(u64_from_index(token_bytes))?;
+        let Some(origin) = record
+            .payload_offset()
+            .checked_add(start)
+            .map(u64_from_index)
+        else {
+            return Ok(None);
+        };
+        let token_bytes = first.raw().len() + second.raw().len() + trailing_bytes.len();
+        if origin
+            .checked_add(17)
+            .and_then(|origin| origin.checked_add(u64_from_index(token_bytes)))
+            .is_none()
+        {
+            return Ok(None);
+        }
 
-        Some((
+        Ok(Some((
             origin,
             [first, second],
             flags,
             trailing_bytes,
             trailing_count,
-        ))
+        )))
     };
 
     let mut found = None;
-    for start in record
-        .payload()
-        .len()
-        .checked_sub(18)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
-        if record.payload().get(start..start + 3) == Some(&[0x01, 0x01, 0x02]) {
-            ctx.charge_work(
-                u64_from_index(record.payload().len() - start),
-                "scan NX terminal discriminator candidate",
-            )?;
+    if let Some(range_end) = record.payload().len().checked_sub(18) {
+        let mut starts = 0..range_end;
+        while let Some(start) = ctx.next_charged(&mut starts, "scan NX terminal discriminator")? {
+            let Some(candidate) = decode(start)? else {
+                continue;
+            };
+            if found.is_some() {
+                return Ok(None);
+            }
+            found = Some(candidate);
         }
-        let Some(candidate) = decode(start) else {
-            continue;
-        };
-        if found.is_some() {
-            return Ok(None);
-        }
-        found = Some(candidate);
     }
     let Some((origin, indices, flags, trailing_bytes, trailing_count)) = found else {
         return Ok(None);
@@ -173,6 +217,7 @@ pub(crate) fn operation_terminal_discriminator(
     let mut trailing_indices = ctx.collection_vec(trailing_count, operation)?;
     let mut scan = 0;
     while scan < trailing_bytes.len() {
+        ctx.charge_work(1, "NX terminal discriminator trailing materialization")?;
         let Some(tail) = trailing_bytes.get(scan..) else {
             return Ok(None);
         };
@@ -182,7 +227,10 @@ pub(crate) fn operation_terminal_discriminator(
         scan += token.raw().len();
         trailing_indices.push(token);
     }
-    Ok(OperationTerminalDiscriminator::new(origin, indices, flags, trailing_indices).ok())
+    Ok(
+        OperationTerminalDiscriminator::from_wire(ctx, origin, indices, flags, trailing_indices)?
+            .ok(),
+    )
 }
 
 #[cfg(test)]
@@ -198,46 +246,37 @@ mod tests {
     }
 
     fn terminal_limit_error(
-        adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &str,
     ) -> cadmpeg_core::CodecError {
         let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
 
-        crate::test_support::with_decode_context_over(payload, adjust, |ctx| {
+        crate::test_support::resource_refusal_at(payload, dimension, operation, |ctx| {
             let record = OperationPayload::new(payload, 200, "EXTRUDE").unwrap();
             operation_terminal_discriminator(ctx, record)
-                .expect_err("terminal discriminator refusal")
         })
     }
 
     #[test]
     fn om_terminal_discriminator_route_refuses_collection_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_collection_items = 0;
-        };
         assert!(
-            matches!(terminal_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(terminal_limit_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "NX terminal discriminator trailing indices"), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
     }
 
     #[test]
     fn om_terminal_discriminator_route_refuses_retained_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_retained_bytes = 0;
-        };
         assert!(
-            matches!(terminal_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(terminal_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "NX terminal discriminator trailing indices"), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
     }
 
     #[test]
     fn om_terminal_discriminator_route_refuses_work_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_work_units = 0;
-        };
         assert!(
-            matches!(terminal_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(terminal_limit_error(cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX terminal discriminator trailing validation"), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
     }

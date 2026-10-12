@@ -243,7 +243,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !feature_family(record, "Shell")) {
+            if match existing {
+                Some(record) => !feature_family(record, "Shell"),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
                     feature.id
@@ -312,11 +315,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let selection = face_selection_value(faces);
             if selection.is_none()
                 && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
-                || existing.is_some_and(|record| {
-                    !feature_family(record, "Thicken")
-                        && !feature_family(record, "Thickness")
-                        && !feature_input_class(record, NativeClassKind::Thicken)
-                })
+                || match existing {
+                    Some(record) => {
+                        !feature_family(record, "Thicken")
+                            && !feature_family(record, "Thickness")
+                            && !feature_input_class(record, NativeClassKind::Thicken)
+                    }
+                    None => false,
+                }
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported thicken semantics",
@@ -581,8 +587,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 native.is_some()
                     || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
             };
-            if existing.is_some_and(|record| !feature_family(record, "Draft"))
-                || pull_plane.is_some()
+            if match existing {
+                Some(record) => !feature_family(record, "Draft"),
+                None => false,
+            } || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())
                 || existing.is_none()

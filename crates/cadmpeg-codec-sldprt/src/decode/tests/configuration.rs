@@ -17,6 +17,20 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeMap;
 
+fn configuration_body<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    source: &BodyId,
+) -> crate::decode::ConfigurationBodyIdentity<'ctx> {
+    let storage;
+    let id;
+    (id, storage) = ctx
+        .with_scoped_storage("retain SLDPRT body ID", || {
+            source.try_clone_for_decode(ctx, "retain SLDPRT body ID")
+        })
+        .unwrap();
+    crate::decode::ConfigurationBodyIdentity { id, storage }
+}
+
 #[test]
 fn configuration_partitions_require_explicit_source_identity() {
     let mut ir = CadIr::empty();
@@ -47,13 +61,14 @@ fn configuration_partitions_require_explicit_source_identity() {
     let second = BodyId::mint("test:model:entity#body:second").expect("identity grammar");
     let third = BodyId::mint("test:model:entity#body:third").expect("identity grammar");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &mut ir,
         vec![
-            (7, vec![third.clone()]),
-            (5, vec![first.clone()]),
-            (5, vec![second.clone()]),
+            (7, vec![configuration_body(&ctx, &third)]),
+            (5, vec![configuration_body(&ctx, &first)]),
+            (5, vec![configuration_body(&ctx, &second)]),
         ],
     )
     .unwrap();
@@ -100,10 +115,11 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &mut ir,
-        vec![(5, vec![body.clone()])],
+        vec![(5, vec![configuration_body(&ctx, &body)])],
     )
     .unwrap();
 
@@ -137,13 +153,14 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assign_configuration_bodies(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &mut ir,
-        vec![(3, vec![body.clone()])],
+        vec![(3, vec![configuration_body(&ctx, &body)])],
     )
     .unwrap();
-    mark_active_configuration(&mut ir);
+    mark_active_configuration(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
 
     assert_eq!(ir.model.configurations.len(), 1);
     let configuration = &ir.model.configurations[0];
@@ -203,7 +220,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         Vec::new(),
     )
     .unwrap();
-    mark_active_configuration(&mut ir);
+    mark_active_configuration(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
@@ -571,4 +588,135 @@ fn configuration_suppression_and_override_references_are_coherent() {
     assert!(report.losses.iter().any(|loss| {
         loss.message == "1 configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; 1 configuration(s) reference missing parameter overrides."
     }));
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn out_of_range_partition_body_identity_is_not_retained() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let body = cadmpeg_ir::topology::Body {
+        id: BodyId::mint("test:model:entity#body:unclaimed").unwrap(),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let mut workspace = ctx
+        .reserve_scoped(0, "configuration body copy test workspace")
+        .unwrap();
+    let identities = crate::decode::copy_body_ids(&ctx, &[body], &mut workspace).unwrap();
+    assign_configuration_bodies(
+        &ctx,
+        &mut ir,
+        vec![(usize::try_from(4_294_967_296_u64).unwrap(), identities)],
+    )
+    .unwrap();
+    assert!(ir.model.configurations.is_empty());
+    drop(workspace);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn duplicate_configuration_body_keys_release_lookup_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let body = BodyId::mint("test:model:entity#body:repeated").unwrap();
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "append SLDPRT partition configuration",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let bodies = (0..2).map(|_| configuration_body(&ctx, &body)).collect();
+            ctx.with_scoped_storage("configuration output test workspace", || {
+                assign_configuration_bodies(&ctx, &mut CadIr::empty(), vec![(5, bodies)])
+            })
+            .map(drop)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("configuration output boundary");
+    };
+    // Only the partition map, its output vector and its first identity remain live.
+    let map_node = 11 * (std::mem::size_of::<u32>() + std::mem::size_of::<Vec<BodyId>>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<Vec<BodyId>>();
+    let output_vector = 4 * std::mem::size_of::<BodyId>();
+    assert_eq!(
+        limit.used,
+        u64::try_from(map_node + output_vector + body.as_str().len()).unwrap()
+    );
+}
+
+#[test]
+fn configuration_body_storage_promotes_only_the_selected_identity() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let source = BodyId::mint("test:model:entity#body:stored").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("test:model:configuration#stored").unwrap(),
+        ordinal: 0,
+        active: false,
+        source_index: Some(5),
+        name: None,
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The body text moves intact. The first output vector has four ID slots.
+    let retained = source.as_str().len() + 4 * std::mem::size_of::<BodyId>();
+    policy.limits.max_retained_bytes = u64::try_from(retained).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let identity = configuration_body(&ctx, &source);
+    assign_configuration_bodies(&ctx, &mut ir, vec![(5, vec![identity])]).unwrap();
+    assert_eq!(
+        ir.model.configurations[0].bodies.as_deref(),
+        Some([source].as_slice())
+    );
+    assert!(ctx.resource_refusal().is_none());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn configuration_body_storage_preserves_original_promotion_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let source = BodyId::mint("test:model:entity#body:stored").unwrap();
+    let mut ir = CadIr::empty();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(source.as_str().len() - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let identity = configuration_body(&ctx, &source);
+    let error = assign_configuration_bodies(&ctx, &mut ir, vec![(5, vec![identity])]).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected configuration body promotion refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain SLDPRT body ID");
+    assert_eq!(limit.used, 0);
+    assert_eq!(
+        limit.additional,
+        u64::try_from(source.as_str().len()).unwrap()
+    );
+    assert_eq!(limit.limit, policy.limits.max_retained_bytes);
+    assert!(ir.model.configurations.is_empty());
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
+    );
 }

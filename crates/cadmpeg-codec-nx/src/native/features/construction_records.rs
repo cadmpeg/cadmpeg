@@ -55,7 +55,7 @@ pub(super) fn resolved_feature_payload_references<'h, 'ctx>(
     decode: impl Fn(
         crate::om::operation_record::OperationPayload<'_>,
         u64,
-    ) -> Option<Vec<(PayloadIndexToken, u64)>>,
+    ) -> Result<Option<Vec<(PayloadIndexToken, u64)>>, CodecError>,
 ) -> Result<
     (
         Vec<ResolvedFeaturePayloadReference<'h>>,
@@ -63,7 +63,7 @@ pub(super) fn resolved_feature_payload_references<'h, 'ctx>(
     ),
     cadmpeg_core::CodecError,
 > {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut storage = ctx.reserve_scoped(0, "NX resolved feature payload references")?;
     let mut references = Vec::new();
     for history_section in
@@ -75,7 +75,7 @@ pub(super) fn resolved_feature_payload_references<'h, 'ctx>(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(decoded) = decode(record.payload_view(), entry_offset) else {
+            let Some(decoded) = decode(record.payload_view(), entry_offset)? else {
                 continue;
             };
             for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
@@ -108,21 +108,21 @@ pub(in crate::native) fn feature_projected_curve_references(
 ) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
     let (references, _references_storage) =
         resolved_feature_payload_references(ctx, history, |record, base| {
-            crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(
-                |field| {
-                    field
-                        .into_references()
-                        .into_iter()
-                        .map(|reference| {
-                            Some((
-                                reference.token,
-                                base.checked_add(cadmpeg_core::decode::u64_from_index(
-                                    reference.offset,
-                                ))?,
-                            ))
-                        })
-                        .collect()
-                },
+            Ok(
+                crate::om::projected_references::ProjectedCurveReferences::read(ctx, record)?
+                    .and_then(|field| {
+                        field
+                            .into_references()
+                            .map(|reference| {
+                                Some((
+                                    reference.token,
+                                    base.checked_add(cadmpeg_core::decode::u64_from_index(
+                                        reference.offset,
+                                    ))?,
+                                ))
+                            })
+                            .collect()
+                    }),
             )
         })?;
     let mut output = Vec::new();
@@ -339,7 +339,7 @@ pub(in crate::native) fn feature_point_construction_headers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeaturePointConstructionHeader>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut headers = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -397,7 +397,7 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
     container: &Container,
     headers: &[FeaturePointConstructionHeader],
 ) -> Result<Vec<FeaturePointConstructionScalarLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     for header in ctx.admit_iter(headers, "build NX point scalar lanes")? {
         let Some(expected_target) = header.data_block.as_deref() else {
@@ -527,14 +527,16 @@ pub(in crate::native) fn feature_surface_construction_references(
 ) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError> {
     let (references, _references_storage) =
         resolved_feature_payload_references(ctx, history, |record, base| {
-            crate::om::surface_envelope::surface_feature_payload_references(record)
-                .and_then(|field| field.relocate(base))
-                .map(|field| field.references().into_iter().collect())
-                .or_else(|| {
-                    crate::om::surface_envelope::thru_curve_payload_references(record)
-                        .and_then(|field| field.relocate(base))
-                        .map(|field| field.references().into_iter().collect())
-                })
+            Ok(
+                crate::om::surface_envelope::surface_feature_payload_references(ctx, record)?
+                    .and_then(|field| field.relocate(base))
+                    .map(|field| field.references().into_iter().collect())
+                    .or_else(|| {
+                        crate::om::surface_envelope::thru_curve_payload_references(record)
+                            .and_then(|field| field.relocate(base))
+                            .map(|field| field.references().into_iter().collect())
+                    }),
+            )
         })?;
     let mut output = Vec::new();
     for reference in ctx.admit_iter(references, "build NX surface construction references")? {
@@ -623,7 +625,7 @@ pub(in crate::native) fn feature_swp104_leading_branches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSwp104LeadingBranch>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -888,7 +890,7 @@ pub(in crate::native) fn feature_extrude_profile_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureExtrudeProfileReference>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -899,17 +901,18 @@ pub(in crate::native) fn feature_extrude_profile_references(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let decoded = match crate::om::extrude_profile::extrude_profile_references(
-                ctx,
-                record.payload_view(),
-            ) {
-                Ok(Some(field)) => field,
-                Ok(None) => continue,
-                Err(error) => {
-                    return Err(error);
-                }
-            };
-            let Some(decoded) = decoded.relocate(entry_offset) else {
+            let (decoded, _decoded_storage) =
+                match crate::om::extrude_profile::extrude_profile_references(
+                    ctx,
+                    record.payload_view(),
+                ) {
+                    Ok((Some(field), storage)) => (field, storage),
+                    Ok((None, _)) => continue,
+                    Err(error) => {
+                        return Err(error);
+                    }
+                };
+            let Some(decoded) = decoded.relocate(ctx, entry_offset)? else {
                 continue;
             };
             for (ordinal, (token, source_offset, witness_source_offset)) in
@@ -1060,10 +1063,11 @@ pub(in crate::native) fn feature_operation_body_scalar_triples(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let rows = crate::om::body_scalar_triple::operation_body_scalar_triples(
-                ctx,
-                record.body_view(),
-            )?;
+            let (rows, _rows_storage) =
+                crate::om::body_scalar_triple::operation_body_scalar_triples(
+                    ctx,
+                    record.body_view(),
+                )?;
             for triple in ctx.admit_iter(rows, "visit NX operation body scalar triples")? {
                 let Some(scalars) = triple.scalars.relocate(entry_offset) else {
                     continue;
@@ -1461,7 +1465,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureOperationBodyReferenceLane>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -1635,7 +1639,7 @@ pub(in crate::native) fn feature_extrude_payload_32_branches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureExtrudePayload32Branch>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -1646,7 +1650,8 @@ pub(in crate::native) fn feature_extrude_payload_32_branches(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let frame = crate::om::extrude_32::extrude_payload_32_branch(ctx, record.body_view())?;
+            let (frame, _frame_storage) =
+                crate::om::extrude_32::extrude_payload_32_branch(ctx, record.body_view())?;
             let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
                 continue;
             };
@@ -1833,7 +1838,7 @@ pub(in crate::native) fn feature_block_construction_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureBlockConstructionReference>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?

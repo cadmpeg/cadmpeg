@@ -672,9 +672,11 @@ pub(in crate::native) fn feature_draft_construction_references(
 ) -> Result<Vec<FeatureDraftConstructionReference>, cadmpeg_core::CodecError> {
     let (references, _references_storage) =
         resolved_feature_payload_references(ctx, history, |record, base| {
-            crate::om::draft_references::draft_feature_payload_references(record)
-                .and_then(|field| field.relocate(base))
-                .map(|field| field.references().into_iter().collect())
+            Ok(
+                crate::om::draft_references::draft_feature_payload_references(ctx, record)?
+                    .and_then(|field| field.relocate(base))
+                    .map(|field| field.references().into_iter().collect()),
+            )
         })?;
     let mut output = Vec::new();
     for reference in ctx.admit_iter(references, "build NX draft construction references")? {
@@ -712,7 +714,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureDraftConstructionIndexLane>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -723,13 +725,15 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let lane = crate::om::draft_leading::scan(ctx, record.payload_view())?;
+            let (lane, _lane_storage) = crate::om::draft_leading::scan(ctx, record.payload_view())?;
             let Some(lane) = lane else {
                 continue;
             };
             let section_ordinal = if let Some(graph) =
-                crate::om::draft_references::draft_feature_payload_references(record.payload_view())
-            {
+                crate::om::draft_references::draft_feature_payload_references(
+                    ctx,
+                    record.payload_view(),
+                )? {
                 let index_extent = usize::from(lane.declared_count())
                     .checked_sub(1)
                     .ok_or_else(|| {

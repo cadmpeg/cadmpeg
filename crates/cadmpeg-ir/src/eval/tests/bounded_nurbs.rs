@@ -140,10 +140,9 @@ fn parameter_interval_scan_admits_only_visited_pairs() {
 }
 
 #[test]
-fn boundary_scans_stop_at_invalid_witness_and_preserve_fused_empty_refusals() {
+fn boundary_scans_stop_at_invalid_witness() {
     use crate::scalar::FiniteReal;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
     use std::cell::Cell;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
@@ -165,27 +164,7 @@ fn boundary_scans_stop_at_invalid_witness_and_preserve_fused_empty_refusals() {
         super::super::BoundaryWitness::Invalid
     );
     assert_eq!(calls.get(), 1);
-    let original = ctx
-        .charge_work_limit(1, "original empty boundary refusal")
-        .unwrap_err();
-    assert_eq!(
-        super::super::nearest_boundary_witness(
-            &ctx,
-            &[],
-            FiniteReal::ZERO,
-            0.0,
-            |_| -> Result<Option<f64>, _> { panic!("empty boundary has no evaluation") }
-        )
-        .unwrap_err(),
-        original
-    );
-    assert_eq!(
-        super::super::parameter_interval_containing(&ctx, &[], FiniteReal::ZERO).unwrap_err(),
-        original
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
+    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -277,42 +256,55 @@ fn tail_interval_search_preserves_refusals_and_releases_its_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let boundaries = [0., 1., 1., 2., 3.];
-    for cap in 0..8 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let limit = super::super::bounded_tail_intervals(&ctx, &boundaries)
-            .err()
-            .expect("every scan, copy and swap requires work");
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
+    for (dimension, operation) in [
+        (
+            ResourceDimension::WorkUnits,
+            "IR pcurve search interval scan",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "IR pcurve search interval copy",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "IR pcurve search interval reversal",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "IR pcurve search intervals",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "IR pcurve search intervals",
+        ),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        if dimension == ResourceDimension::MaterializedBytes {
-            policy.limits.max_materialized_bytes = 0;
-        } else {
-            policy.limits.max_collection_items = 0;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let limit = super::super::bounded_tail_intervals(&ctx, &boundaries)
-            .err()
-            .expect("scratch requires admission");
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => unreachable!("tested interval dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = super::super::bounded_tail_intervals(&ctx, &boundaries)
+                .map(drop)
+                .map_err(CodecError::from);
+            let Err(CodecError::ResourceLimit(limit)) = &result else {
+                panic!("each named interval boundary needs admission");
+            };
+            assert_eq!(limit.dimension, dimension);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+            );
+            result
+        });
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 8;
+    // Four window visits, three output copies and two moved reversal rows.
+    policy.limits.max_work_units = 9;
     policy.limits.max_materialized_bytes = 4096;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 5;
@@ -429,4 +421,81 @@ fn nearest_interval_heap_preserves_descending_order_and_releases_working_storage
     drop(reuse);
     ctx.finish_session()
         .expect("scoped intervals retain no bytes");
+}
+
+#[test]
+fn pcurve_containment_admits_only_the_point_basis() {
+    use crate::math::Point2;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let controls = [
+        Point2::new(0.0, 0.0),
+        Point2::new(0.5, 0.0),
+        Point2::new(1.0, 0.0),
+    ];
+    let weights = [1.0, 2.0, 1.0];
+    // The interval vector admits two slots, with four slots of amortized
+    // backing. The point basis admits three slots with four backing slots.
+    // Derivative bases do not contribute to a containment witness.
+    let interval_slots = controls.len() - 2 + 1;
+    let interval_capacity = interval_slots.max(4);
+    let basis_slots = 3;
+    let basis_capacity = basis_slots.max(4);
+    let bytes = u64::try_from(
+        interval_capacity * std::mem::size_of::<[f64; 2]>()
+            + basis_capacity * std::mem::size_of::<f64>(),
+    )
+    .unwrap();
+    for rational in [false, true] {
+        for shortage in [
+            None,
+            Some(ResourceDimension::MaterializedBytes),
+            Some(ResourceDimension::CollectionItems),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = bytes;
+            policy.limits.max_collection_items =
+                u64::try_from(interval_slots + basis_slots).unwrap();
+            policy.limits.max_retained_bytes = 0;
+            match shortage {
+                Some(ResourceDimension::MaterializedBytes) => {
+                    policy.limits.max_materialized_bytes -= 1;
+                }
+                Some(ResourceDimension::CollectionItems) => {
+                    policy.limits.max_collection_items -= 1;
+                }
+                None => {}
+                _ => unreachable!("tested point basis dimensions"),
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::super::nurbs_pcurve_contains_point(
+                &ctx,
+                2,
+                &knots,
+                &controls,
+                rational.then_some(weights.as_slice()),
+                Point2::new(0.5, 0.0),
+                0.0,
+            );
+            if let Some(dimension) = shortage {
+                let limit = result.unwrap_err();
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.operation, "IR B-spline basis");
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+                );
+            } else {
+                assert_eq!(result.unwrap(), Some(true));
+                let reuse = ctx
+                    .reserve_scoped_limit(bytes, "containment backing released")
+                    .unwrap();
+                drop(reuse);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
 }

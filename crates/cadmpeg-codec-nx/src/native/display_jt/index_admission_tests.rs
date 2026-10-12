@@ -25,6 +25,8 @@ fn one_row_index() -> Container<'static> {
             body: DirEntryBody::File { offset: 0, len: 32 },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     }

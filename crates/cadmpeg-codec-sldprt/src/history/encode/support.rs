@@ -48,7 +48,7 @@ pub(super) fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str 
 pub(super) fn require_same_family(
     existing: Option<&Feature>,
     feature_id: &FeatureId,
-    families: &[&str],
+    families: &[&'static str],
 ) -> Result<(), CodecError> {
     if existing.is_some_and(|record| !families.iter().any(|family| feature_family(record, family)))
     {

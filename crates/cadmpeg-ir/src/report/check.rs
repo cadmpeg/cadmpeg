@@ -172,6 +172,18 @@ pub struct ValidationReport {
 }
 
 impl ValidationReport {
+    /// Stops at the first error or blocking finding.
+    pub fn is_ok_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(!ctx.any_by(
+            &self.findings,
+            |finding| Ok(finding.severity >= Severity::Error),
+            "decode report error search",
+        )?)
+    }
+
     /// Number of findings at or above [`Severity::Error`].
     pub fn error_count(&self) -> usize {
         self.findings
@@ -208,5 +220,48 @@ mod tests {
             <Check as DecodeCost>::FIXED_BYTES,
             Some(u64::try_from(std::mem::size_of::<Check>()).expect("test size fits"))
         );
+    }
+    #[test]
+    fn decode_report_search_admits_its_source() {
+        use super::{Finding, ValidationReport};
+        use crate::report::Severity;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let report = ValidationReport {
+            entity_counts: std::collections::BTreeMap::new(),
+            findings: [
+                Severity::Error,
+                Severity::Warning,
+                Severity::Blocking,
+                Severity::Info,
+            ]
+            .into_iter()
+            .map(|severity| Finding {
+                check: Check::Identity,
+                severity,
+                message: String::new(),
+                entity: None,
+            })
+            .collect(),
+            losses: Vec::new(),
+        };
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(report.is_ok_for_decode(&ctx).unwrap(), report.is_ok());
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "decode report error search",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                report.is_ok_for_decode(&ctx).map(|_| ())
+            },
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(!report.is_ok_for_decode(&ctx).unwrap());
+        ctx.finish_session().unwrap();
     }
 }
