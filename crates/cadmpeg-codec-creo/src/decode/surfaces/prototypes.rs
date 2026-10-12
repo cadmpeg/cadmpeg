@@ -32,69 +32,42 @@ fn push_prototype_loss(
     Ok(())
 }
 
-pub(super) fn prototype_field<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    record: &'a crate::surface::SurfacePrototypeRecord,
-    name: &str,
-) -> Result<Option<&'a crate::surface::SurfaceNamedParameter>, cadmpeg_core::CodecError> {
-    crate::decode::uniqueness::exactly_one_by(
-        ctx,
-        record.parameters(),
-        |field| {
-            ctx.equal(
-                field.name.as_str(),
-                name,
-                "creo prototype field name comparison",
-            )
-        },
-        "creo prototype field search",
-    )
-}
-
 pub(in super::super) fn prototype_scalar(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
-) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    let Some(field) = prototype_field(ctx, record, name)? else {
-        return Ok(None);
-    };
-    Ok(match &field.value {
+) -> Option<f64> {
+    let field = record.field(name)?;
+    match &field.value {
         crate::surface::SurfaceNamedValue::ScalarSequence(values) if values.len() == 1 => {
             Some(values[0])
         }
         _ => None,
-    })
+    }
 }
 
 pub(super) fn prototype_tabulated_chart_origin(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
-) -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
+) -> Option<[f64; 3]> {
     if record.family
         != crate::surface::SurfacePrototypeFamily::Extrusion(
             crate::surface::ExtrusionLabel::TabulatedCylinder,
         )
     {
-        return Ok(None);
+        return None;
     }
-    let Some(field) = prototype_field(ctx, record, "local_sys")? else {
-        return Ok(None);
-    };
+    let field = record.field("local_sys")?;
     let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else {
-        return Ok(None);
+        return None;
     };
     if array.dimensions() != 4 || array.count() != 3 {
-        return Ok(None);
+        return None;
     }
-    let Ok(values) = <&[Option<f64>; 12]>::try_from(array.values()) else {
-        return Ok(None);
-    };
+    let values: &[Option<f64>; 12] = array.values().try_into().ok()?;
     if values.iter().all(|value| value.is_some_and(f64::is_finite)) {
-        return Ok(values[9]
+        return values[9]
             .zip(values[10])
             .zip(values[11])
-            .map(|((x, y), z)| [x, y, z]));
+            .map(|((x, y), z)| [x, y, z]);
     }
     let compact_chart = values[..7]
         .iter()
@@ -103,14 +76,14 @@ pub(super) fn prototype_tabulated_chart_origin(
             .iter()
             .all(|value| value.is_some_and(f64::is_finite))
         && values[10..12].iter().all(Option::is_none);
-    Ok(if compact_chart {
+    if compact_chart {
         values[7]
             .zip(values[8])
             .zip(values[9])
             .map(|((x, y), z)| [x, y, z])
     } else {
         None
-    })
+    }
 }
 
 fn prototype_vector_array(
@@ -118,7 +91,7 @@ fn prototype_vector_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Result<Option<Vec<[f64; 3]>>, cadmpeg_core::CodecError> {
-    let Some(field) = prototype_field(ctx, record, name)? else {
+    let Some(field) = record.field(name) else {
         return Ok(None);
     };
     let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else {
@@ -128,16 +101,13 @@ fn prototype_vector_array(
         return Ok(None);
     }
     let mut triples = Vec::new();
-    let mut coordinates = array.values().chunks(3);
+    let mut coordinates = array.values().chunks_exact(3);
     while coordinates.len() != 0 {
         let Some(coordinates) =
             ctx.next_charged(&mut coordinates, "creo prototype vector array traversal")?
         else {
             break;
         };
-        if coordinates.len() != 3 {
-            continue;
-        }
         let [Some(x), Some(y), Some(z)] = coordinates else {
             return Ok(None);
         };
@@ -148,31 +118,23 @@ fn prototype_vector_array(
 }
 
 fn prototype_mixed_derivatives(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
-) -> Result<Option<[[f64; 3]; 4]>, cadmpeg_core::CodecError> {
-    let Some(field) = prototype_field(ctx, record, "end_uv_deriv")? else {
-        return Ok(None);
-    };
+) -> Option<[[f64; 3]; 4]> {
+    let field = record.field("end_uv_deriv")?;
     let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else {
-        return Ok(None);
+        return None;
     };
     if array.count() != 3 {
-        return Ok(None);
+        return None;
     }
-    let Ok(values) = <&[Option<f64>; 12]>::try_from(array.values()) else {
-        return Ok(None);
-    };
+    let values: &[Option<f64>; 12] = array.values().try_into().ok()?;
     let mut derivatives = [[0.0; 3]; 4];
     for (derivative, coordinates) in derivatives.iter_mut().zip(values.chunks_exact(3)) {
         for (slot, value) in derivative.iter_mut().zip(coordinates) {
-            let Some(value) = *value else {
-                return Ok(None);
-            };
-            *slot = value;
+            *slot = (*value)?;
         }
     }
-    Ok(Some(derivatives))
+    Some(derivatives)
 }
 
 fn prototype_parameter_array(
@@ -180,7 +142,7 @@ fn prototype_parameter_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let Some(field) = prototype_field(ctx, record, name)? else {
+    let Some(field) = record.field(name) else {
         return Ok(None);
     };
     let crate::surface::SurfaceNamedValue::CountedScalarArray(array) = &field.value else {
@@ -225,7 +187,7 @@ fn prototype_spline_nurbs(
         let Some(v_derivatives) = prototype_vector_array(ctx, record, "end_v_tangts")? else {
             return Ok(None);
         };
-        let Some(mixed_derivatives) = prototype_mixed_derivatives(ctx, record)? else {
+        let Some(mixed_derivatives) = prototype_mixed_derivatives(record) else {
             return Ok(None);
         };
         crate::interpolation_grid::InterpolationGrid::try_new(
@@ -255,20 +217,10 @@ fn prototype_spline_nurbs(
 type PrototypeLocalFrame = ([f64; 3], [f64; 3], [f64; 3]);
 
 fn prototype_local_frame(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
-) -> Result<Option<PrototypeLocalFrame>, cadmpeg_core::CodecError> {
-    let Some(field) = prototype_field(ctx, record, "local_sys")? else {
-        return Ok(None);
-    };
-    Ok(local_frame_from_field(&record.family, &field.value))
-}
-
-fn local_frame_from_field(
-    family: &crate::surface::SurfacePrototypeFamily,
-    value: &crate::surface::SurfaceNamedValue,
-) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
-    let crate::surface::SurfaceNamedValue::ScalarArray(array) = value else {
+) -> Option<PrototypeLocalFrame> {
+    let field = record.field("local_sys")?;
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else {
         return None;
     };
     (array.dimensions() == 4 && array.count() == 3).then_some(())?;
@@ -281,7 +233,10 @@ fn local_frame_from_field(
     let [first, middle, third, origin] = local_system_lanes(slots);
     let first_norm = dot(first, first).sqrt();
     let reference = normalize(first)?;
-    let torus = matches!(family, crate::surface::SurfacePrototypeFamily::Torus(_));
+    let torus = matches!(
+        record.family,
+        crate::surface::SurfacePrototypeFamily::Torus(_)
+    );
     let mut second_candidates =
         [(middle, torus), (third, true)]
             .into_iter()
@@ -666,7 +621,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         let mut geometry_storage = ctx.reserve_scoped(0, "creo prototype geometry")?;
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(ctx, record)? else {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -681,10 +636,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Cylinder(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(ctx, record)? else {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
-                let Some(radius) = prototype_scalar(ctx, record, "radius")?
+                let Some(radius) = prototype_scalar(record, "radius")
                     .filter(|radius| radius.is_finite() && *radius > 0.0)
                 else {
                     continue;
@@ -702,16 +657,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Torus(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(ctx, record)? else {
+                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
                 let point = Point3::from(origin);
                 let axis = Vector3::from(axis);
                 let reference = Vector3::from(reference);
                 let prototype_radii = match (
-                    prototype_scalar(ctx, record, "radius1")?
+                    prototype_scalar(record, "radius1")
                         .filter(|radius| radius.is_finite() && *radius >= 0.0),
-                    prototype_scalar(ctx, record, "radius2")?
+                    prototype_scalar(record, "radius2")
                         .filter(|radius| radius.is_finite() && *radius > 0.0),
                 ) {
                     (Some(radius1), Some(radius2)) => Some([radius1, radius2]),

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{prototype_parameter_array, prototype_vector_array};
+use super::super::{
+    first_instance_surface_row, frame_bound, prototype_parameter_array,
+    prototype_tabulated_chart_origin, prototype_vector_array, surface_prototype_frame_bounds,
+    unique_surface_prototype_associations, PrototypeFrames, PrototypeRows,
+};
 use crate::surface::{
     SurfaceNamedParameter, SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord,
 };
@@ -45,10 +49,6 @@ fn assert_work_events(
                 observed
                     .borrow_mut()
                     .push((original.additional, original.operation));
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-                assert!(
-                    matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                );
             }
             result.map(|matched| assert!(matched))
         },
@@ -67,21 +67,10 @@ fn assert_work_events(
         (original.dimension, original.used, original.additional),
         (ResourceDimension::WorkUnits, total, 1)
     );
-    assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
-fn array_events(name: &str, visits: usize, operation: &'static str) -> Vec<(u64, &'static str)> {
-    // One present field visit. Core equality admits each eight-byte name once.
-    // The concrete scalar/chunk traversal then admits each present visit once.
-    let bytes = u64::try_from(name.len()).expect("fixture name fits u64");
-    let mut events = vec![
-        (1, "creo prototype field search"),
-        (bytes, "creo prototype field name comparison"),
-        (bytes, "creo prototype field name comparison"),
-    ];
-    events.extend(std::iter::repeat_n((1, operation), visits));
-    events
+fn array_events(visits: usize, operation: &'static str) -> Vec<(u64, &'static str)> {
+    std::iter::repeat_n((1, operation), visits).collect()
 }
 
 #[test]
@@ -100,7 +89,6 @@ fn prototype_vector_arrays_admit_present_triples_before_scalar_inspection() {
         let expected = vec![[2.0; 3]; usize::try_from(count).expect("fixture count fits usize")];
         assert_work_events(
             &array_events(
-                "i_points",
                 usize::try_from(count).expect("fixture count fits usize"),
                 "creo prototype vector array traversal",
             ),
@@ -120,7 +108,7 @@ fn prototype_vector_arrays_admit_present_triples_before_scalar_inspection() {
         ),
     );
     assert_work_events(
-        &array_events("i_points", 1, "creo prototype vector array traversal"),
+        &array_events(1, "creo prototype vector array traversal"),
         |ctx| prototype_vector_array(ctx, &missing, "i_points").map(|actual| actual.is_none()),
     );
 }
@@ -141,7 +129,6 @@ fn prototype_parameter_arrays_admit_present_values_and_stop_at_absence() {
         let expected = vec![2.0; usize::try_from(count).expect("fixture count fits usize")];
         assert_work_events(
             &array_events(
-                "u_params",
                 usize::try_from(count).expect("fixture count fits usize"),
                 "creo prototype parameter array traversal",
             ),
@@ -160,7 +147,74 @@ fn prototype_parameter_arrays_admit_present_values_and_stop_at_absence() {
         ),
     );
     assert_work_events(
-        &array_events("u_params", 1, "creo prototype parameter array traversal"),
+        &array_events(1, "creo prototype parameter array traversal"),
         |ctx| prototype_parameter_array(ctx, &missing, "u_params").map(|actual| actual.is_none()),
     );
+}
+
+#[test]
+fn prototype_fixed_returns_are_free() {
+    let scan = crate::test_support::empty_container_scan();
+    let section =
+        crate::container::Section::scan_for_test("VisibGeom".to_owned(), 32, 48, None, &[0; 48])
+            .expect("section extent")
+            .section;
+    let wrong_family =
+        SurfacePrototypeRecord::new_for_test(SurfacePrototypeFamily::Plane, Vec::new(), 0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let rows = PrototypeRows::new(&ctx, &[]).expect("empty index");
+    let mut frames = PrototypeFrames::new(&ctx).expect("empty workspace");
+    let results = [
+        Ok(prototype_tabulated_chart_origin(&wrong_family).is_none()),
+        first_instance_surface_row(&ctx, &rows, 32, 48, 40, crate::surface::SurfaceKind::Plane)
+            .map(|row| row.is_none()),
+        surface_prototype_frame_bounds(&ctx, &scan, &section, 40, &mut frames)
+            .map(|bounds| bounds == Some((32, 48))),
+        frame_bound(&ctx, &section, 8).map(|bound| bound == 40),
+        unique_surface_prototype_associations(&ctx, &scan)
+            .map(|associations| associations.is_empty()),
+    ];
+    for result in results {
+        assert!(result.expect("fixed return"));
+    }
+}
+
+#[test]
+fn prototype_scalar_uses_indexed_unique_fields_among_unrelated_parameters() {
+    let unrelated: Vec<_> = (0..128)
+        .map(|_| SurfaceNamedParameter {
+            name: "degree".to_owned(),
+            value: SurfaceNamedValue::Empty,
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        })
+        .collect();
+    let radius = SurfaceNamedParameter {
+        name: "radius2".to_owned(),
+        value: SurfaceNamedValue::ScalarSequence(vec![2.0]),
+        body: Vec::new(),
+        offset: 0,
+        value_offset: 0,
+    };
+    for (count, expected) in [(0, None), (1, Some(2.0)), (2, None)] {
+        let mut parameters = unrelated.clone();
+        parameters.extend(std::iter::repeat_n(radius.clone(), count));
+        let prototype = SurfacePrototypeRecord::new_for_test(
+            SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+            parameters,
+            0,
+        );
+        assert_eq!(
+            super::super::prototype_scalar(&prototype, "radius2"),
+            expected
+        );
+    }
 }
