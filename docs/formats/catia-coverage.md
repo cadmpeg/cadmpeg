@@ -1243,3 +1243,19 @@ bounds-containment failures; swapping those two populations causes two.
 Each population selects one sibling STEP body with matching topology. This
 comparison permits exporter refitting and surface deduplication; it checks
 coordinates and incidence independently of carrier-family counts.
+
+An independent 79-file source sweep verifies 27,231 analytic-record
+parameter-length words and 40,085 rows in complete surface-owned support
+tables. The analytic word is big-endian at record offset `+3`; the support
+word is big-endian at row offset `+4`. The analytic length includes the
+two-byte parameter prefix and excludes the kind byte. The first three
+trimmed-face bounds values are the AABB center, including the point used by
+the admitted cylinder and torus branch rules.
+
+A broader center-azimuth rule conflicts with 75 cone and 38 sphere face
+witnesses on already checked, branch-bearing standard circles. Those counts
+compare against emitted intervals. Independent raw STEP verification proves
+four cone conflicts in `collet.CATPart`: the selected arc midpoint agrees
+within `4.506e-7` mm, and the center-selected complement misses by 11.5 mm.
+The broader rule remains outside decoder admission; additional source-bound
+branch relations remain in SN-15.

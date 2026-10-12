@@ -363,6 +363,8 @@ Separately framed native records or source-closed support constructions
 supply the spatial curve; an unresolved construction leaves that carrier
 unknown.
 
+At row-relative `+4`, a `u16be` parameter-length word is `2` for a line, `18` for a circle, and `0` for a spline. The nonzero lengths count the two-byte `00 33` prefix and the inline carrier-parameter bytes; the kind byte lies outside that count.
+
 The table begins immediately after the complete face-local surface roster and has one row per spine edge. Circle center and radius use BE f32. The two trailing references are adjacent face ordinals and form an edge-to-face incidence graph. The `u24` `tag` is the edge object id in the file-global allocation journal. A `b5 03 5e` record with the same object id is that row's native edge record. Its second and third references are the ordered start and end vertex identities. Positional roster row `i` maps its identity to `05 08 01` coordinate row `i`; this fixes the row's ordered endpoint pair without a curve-identity condition. A checked `tag+1` identity present in the roster may corroborate one endpoint of an existing geometric domain when its coordinate belongs to that domain; `tag+2` is checked in the same way. These successor identities never establish a native ordered pair without the object-id edge relation. Shared identities constrain analytic and spline rows to one injective vertex-coordinate assignment. The byte sequence `ff 46` encodes a widened face ordinal as `ff <u32le>`.
 
 The class-`5e` `curve_ref` names the edge's curve object in the same journal. It is not the edge object's id and does not bind the class-`5e` record to a standard row. Bind the row to the class-`5e` record by equality between `0x60.tag` and the class-`5e` record object id.
@@ -436,11 +438,11 @@ A standard occurrence pcurve is parameterized in physical edge-row direction. It
 
 ### 5.8 Analytic surface records in `SurfacicReps`
 
-Interleaved in face order with the 47-byte freeform cores. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`.
+Interleaved in face order with the 47-byte freeform cores. Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`.
 
-`prebyte` counts the two-byte `00 33` prefix plus the carrier-parameter bytes. The kind byte is outside that count. Each record contains `prebyte − 2` carrier-parameter bytes, ten little-endian f32 trimmed-face bounds, and one face-sense byte. Its complete length is `prebyte + 47`. The admitted kind/prebyte pairs are listed below. The sense byte is part of the record. Adjacent records need no separator; a marker inside a parameter or bounds field does not close the record.
+The big-endian `parameter_length` word at record-relative `+3` counts the two-byte `00 33` prefix plus the carrier-parameter bytes. The kind byte is outside that count. Each record contains `parameter_length − 2` carrier-parameter bytes, ten little-endian f32 trimmed-face bounds, and one face-sense byte. Its complete length is `parameter_length + 47`. The admitted kind/length pairs are listed below. The sense byte is part of the record. Adjacent records need no separator; a marker inside a parameter or bounds field does not close the record.
 
-Cylinder and torus payloads store a face-side witness point as three little-endian f32 values immediately after their big-endian carrier parameters: cylinder at marker-relative `+27`, torus at `+31`. For a cylinder section circle, exactly one complementary endpoint interval contains the witness azimuth. For a torus isoparametric circle, exactly one complementary interval of its varying periodic chart coordinate contains the corresponding witness coordinate. A candidate in either the major or minor chart lane is valid only when its lifted pcurve midpoint lies on the stored circle within `2e-3` mm. Exactly one lane and interval must remain. That interval is the face's angular branch; the witness's constant chart coordinate need not equal the boundary circle's constant coordinate.
+Cylinder and torus payloads use the first three little-endian f32 values of the trimmed-face bounds block as a face-side witness: cylinder at marker-relative `+27`, torus at `+31`. This point is the trimmed face's AABB center. The same bounds block starts at plane `+3`, sphere `+19`, and cone `+27`; its presence alone supplies no angular-branch relation for those carriers. For a cylinder section circle, exactly one complementary endpoint interval contains the witness azimuth. For a torus isoparametric circle, exactly one complementary interval of its varying periodic chart coordinate contains the corresponding witness coordinate. A candidate in either the major or minor chart lane is valid only when its lifted pcurve midpoint lies on the stored circle within `2e-3` mm. Exactly one lane and interval must remain. That interval is the face's angular branch; the witness's constant chart coordinate need not equal the boundary circle's constant coordinate.
 
 A generated standard line carrier begins at its stored start vertex, has unit direction toward its end vertex, and uses the distance interval `[0, |end-start|]`. A standard circle carrier uses radians in its orthonormal reference frame. When both endpoint identities select one vertex, the circle seam is that vertex and its interval is `[0,2π]`. An incident cylinder or torus witness selects the angular branch when it lies strictly inside exactly one complementary interval. A witness at an interval endpoint supplies no branch constraint and preserves the canonical unwrapped interval. Every incident witness that selects a branch must select the same oriented interval after conversion into the circle frame.
 
@@ -458,19 +460,19 @@ Generated analytic circles and ellipses use their canonical angular edge paramet
 
 Endpoint angles alone identify the full analytic carrier, not the serialized edge interval. A derived circle or ellipse retains no edge parameter interval or pcurve until a face-side branch witness or a native parameter incidence selects one endpoint arc.
 
-| Surface  | kind   | prebyte | length | sign byte |
-| -------- | ------ | ------- | -----: | --------- |
-| plane    | `0x32` | `0x02`  |     49 | start+48  |
-| cylinder | `0x33` | `0x1a`  |     73 | start+72  |
-| cone     | `0x34` | `0x1a`  |     73 | start+72  |
-| sphere   | `0x35` | `0x12`  |     65 | start+64  |
-| torus    | `0x38` | `0x1e`  |     77 | start+76  |
+| Surface  | kind   | parameter length | record length | sign byte |
+| -------- | ------ | ---------------- | ------------: | --------- |
+| plane    | `0x32` | `0x0002` |     49 | start+48  |
+| cylinder | `0x33` | `0x001a` |     73 | start+72  |
+| cone     | `0x34` | `0x001a` |     73 | start+72  |
+| sphere   | `0x35` | `0x0012` |     65 | start+64  |
+| torus    | `0x38` | `0x001e` |     77 | start+76  |
 
-Cylinder and cone share prebyte and length; the kind byte distinguishes them. The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. For curved surface kinds, the sign defines face sense relative to the canonical normal.
+Cylinder and cone share the parameter-length word and record length; the kind byte distinguishes them. The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. For curved surface kinds, the sign defines face sense relative to the canonical normal.
 
 A sequential walker over the SURFACE section consumes exactly one fixed-length analytic record or 47-byte freeform core per face and terminates on the first `0x60` curve-support row. The unique contiguous chain fixes face-carrier order; raw `00 33` signature order does not, because identical signatures also occur inside parameter payloads.
 
-**Standard analytic parameter records** (BE f32 unless noted): sphere `00 12 00 33 35 [cx cy cz radius]`; torus `00 1e 00 33 38 [cx cy cz ax ay major minor]` (`az = sign(major)·sqrt(1−ax²−ay²)`, major radius `|major|`); cone `00 1a 00 33 34 [apex_x apex_y apex_z ax ay semi_angle]` (`apex` is where radius=0, `az = sign(semi_angle)·sqrt(1−ax²−ay²)`, half-angle `|semi_angle|`); cylinder `00 1a 00 33 33 [px py pz ax ay radius]` (`az` sign carried by the sign of `radius`, radius `|radius|`). Sphere, torus, and cone parameters are inline in the kind record. Plane parameters use a tag-bridged record. Cylinder and torus records carry an LE-f32 witness point at marker-relative cylinder `+27..+38` and torus `+31..+42`. The witness selects the angular interval containing that point.
+**Standard analytic parameter records** (BE f32 unless noted): sphere `00 12 00 33 35 [cx cy cz radius]`; torus `00 1e 00 33 38 [cx cy cz ax ay major minor]` (`az = sign(major)·sqrt(1−ax²−ay²)`, major radius `|major|`); cone `00 1a 00 33 34 [apex_x apex_y apex_z ax ay semi_angle]` (`apex` is where radius=0, `az = sign(semi_angle)·sqrt(1−ax²−ay²)`, half-angle `|semi_angle|`); cylinder `00 1a 00 33 33 [px py pz ax ay radius]` (`az` sign carried by the sign of `radius`, radius `|radius|`). Sphere, torus, and cone parameters are inline in the kind record. Plane parameters use a tag-bridged record. Cylinder and torus records use the trimmed-face AABB center at marker-relative cylinder `+27..+38` and torus `+31..+42` as the witness under the chart and midpoint invariants above.
 
 For each stored binary32 axis pair, compute `norm2 = f64(ax)*f64(ax) + f64(ay)*f64(ay)` before recovering `az`. If `1−norm2 <= 4*ε_f32`, set `az=0`; otherwise use `sign*sqrt(1−norm2)`, where `sign` is taken from the signed companion field. Normalize the recovered axis after this step. This removes binary32 unit-sphere roundoff while preserving a genuine third component and the stored hemisphere. A tag-bridged plane normal is normalized under the same rule. A zero or non-finite reconstructed direction does not define a carrier.
 

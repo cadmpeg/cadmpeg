@@ -124,15 +124,14 @@ Spec §3.5 · layout: byte offsets · size: 47 B
 
 Spec §5.8 · layout: byte offsets · size: 49 B
 
-Record start is `marker_pos − 5`. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
+Record start is `marker_pos − 5`. Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`. |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| plane \| `0x32` \| `0x02` \| 49 \| start+48 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| plane \| `0x32` \| `0x02` \| 49 \| start+48 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`. |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| plane \| `0x32` \| `0x0002` \| 49 \| start+48 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| plane \| `0x32` \| `0x0002` \| 49 \| start+48 \| |
 | 48 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -142,21 +141,20 @@ Unstated regions:
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser maps the plane marker to its analytic surface kind.
-- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-prebyte map matches the spec table row for the plane.
+- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-length low-byte map matches the spec table row for the plane.
 
 ## `analytic_surface_cylinder`
 
 Spec §5.8 · layout: byte offsets · size: 73 B
 
-Cylinder and cone share prebyte and length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
+Cylinder and cone share the parameter-length word and record length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| cylinder \| `0x33` \| `0x1a` \| 73 \| start+72 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| cylinder \| `0x33` \| `0x1a` \| 73 \| start+72 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| cylinder \| `0x33` \| `0x001a` \| 73 \| start+72 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| cylinder \| `0x33` \| `0x001a` \| 73 \| start+72 \| |
 | 72 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -166,7 +164,7 @@ Unstated regions:
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser maps the cylinder marker to its analytic surface kind.
-- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-prebyte map matches the shared cylinder/cone row.
+- `crates/cadmpeg-codec-catia/src/families/standard/records.rs` — The parser's kind-to-length low-byte map matches the shared cylinder/cone row.
 
 ## `analytic_surface_cone`
 
@@ -174,11 +172,10 @@ Spec §5.8 · layout: byte offsets · size: 73 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| cone \| `0x34` \| `0x1a` \| 73 \| start+72 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| cone \| `0x34` \| `0x1a` \| 73 \| start+72 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| cone \| `0x34` \| `0x001a` \| 73 \| start+72 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| cone \| `0x34` \| `0x001a` \| 73 \| start+72 \| |
 | 72 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -191,11 +188,10 @@ Spec §5.8 · layout: byte offsets · size: 65 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| sphere \| `0x35` \| `0x12` \| 65 \| start+64 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| sphere \| `0x35` \| `0x12` \| 65 \| start+64 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| sphere \| `0x35` \| `0x0012` \| 65 \| start+64 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| sphere \| `0x35` \| `0x0012` \| 65 \| start+64 \| |
 | 64 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -208,11 +204,10 @@ Spec §5.8 · layout: byte offsets · size: 77 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 3 | 1 | `zero` | `u8` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> |
-| 4 | 1 | `prebyte` | `u8` | little | spec | \| torus \| `0x38` \| `0x1e` \| 77 \| start+76 \| |
-| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>` |
-| 7 | 1 | `kind` | `u8` | little | spec | \| torus \| `0x38` \| `0x1e` \| 77 \| start+76 \| |
+| 0 | 3 | `target_tag` | `u24` | little | spec | Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 3 | 2 | `parameter_length` | `u16` | big | spec | \| torus \| `0x38` \| `0x001e` \| 77 \| start+76 \| |
+| 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
+| 7 | 1 | `kind` | `u8` | little | spec | \| torus \| `0x38` \| `0x001e` \| 77 \| start+76 \| |
 | 76 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
 
 Unstated regions:
@@ -957,6 +952,16 @@ Parsed by:
 | 73 | 16 | `v_range` | `f64[2]` | little | spec | \| `+73` \| `f64le[2]` \| cylinder V limits \| |
 | 89 | 1 | `terminal` | `u8` | little | spec | \| `+89` \| `u8` \| cylinder terminal `03` \| |
 | 90 | 8 | `range_origin` | `f64` | little | spec | \| `+90` \| `f64le` \| cylinder redundant range origin \| |
+
+## `standard_curve_support_header`
+
+Spec §5.5 · layout: byte offsets · size: 6 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | edge_support_row := 60 <tag:u24le> <curve_body> <face_ref> <face_ref> |
+| 1 | 3 | `allocation_tag` | `u24` | little | spec | edge_support_row := 60 <tag:u24le> <curve_body> <face_ref> <face_ref> |
+| 4 | 2 | `parameter_length` | `u16` | big | spec | At row-relative `+4`, a `u16be` parameter-length word |
 
 ## Not tabulated
 

@@ -123,7 +123,7 @@ pub(crate) mod freeform_surface_core {
 /// Spec §5.8. Record length 49 B.
 ///
 /// ```text
-/// Record start is `marker_pos − 5`. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
+/// Record start is `marker_pos − 5`. Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets.
 /// ```
 pub(crate) mod analytic_surface_plane {
     /// Record length in bytes. Spec §5.8.
@@ -139,7 +139,7 @@ pub(crate) mod analytic_surface_plane {
 /// Spec §5.8. Record length 73 B.
 ///
 /// ```text
-/// Cylinder and cone share prebyte and length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
+/// Cylinder and cone share the parameter-length word and record length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32.
 /// ```
 pub(crate) mod analytic_surface_cylinder {
     /// Record length in bytes. Spec §5.8.

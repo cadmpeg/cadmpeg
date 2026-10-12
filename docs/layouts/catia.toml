@@ -263,44 +263,38 @@ anchor = "`sign ∈ {+1=0x01, −1=0xff}`"
 name = "analytic_surface_plane"
 kind = "byte"
 section = "5.8"
-anchor = "| plane    | `0x32` | `0x02`  |     49 | start+48  |"
+anchor = "| plane    | `0x32` | `0x0002` |     49 | start+48  |"
 size = 49
-note = "Record start is `marker_pos − 5`. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets."
+note = "Record start is `marker_pos − 5`. Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`. The payload holds BE f32 parameters; the spec states its slot order but no per-slot offsets."
 
 [[record.field]]
 name = "target_tag"
 offset = 0
 type = "u24"
 source = "spec"
-anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`."
+anchor = "Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`."
 
 [[record.field]]
-name = "zero"
+name = "parameter_length"
 offset = 3
-type = "u8"
+type = "u16"
+endianness = "big"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
-
-[[record.field]]
-name = "prebyte"
-offset = 4
-type = "u8"
-source = "spec"
-anchor = "| plane    | `0x32` | `0x02`  |     49 | start+48  |"
+anchor = "| plane    | `0x32` | `0x0002` |     49 | start+48  |"
 
 [[record.field]]
 name = "marker"
 offset = 5
 type = "bytes[2]"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "`tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
 name = "kind"
 offset = 7
 type = "u8"
 source = "spec"
-anchor = "| plane    | `0x32` | `0x02`  |     49 | start+48  |"
+anchor = "| plane    | `0x32` | `0x0002` |     49 | start+48  |"
 
 [[record.field]]
 name = "sign"
@@ -322,50 +316,44 @@ note = "The parser maps the plane marker to its analytic surface kind."
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
 contains = "Self::Plane => 0x02,"
-note = "The parser's kind-to-prebyte map matches the spec table row for the plane."
+note = "The parser's kind-to-length low-byte map matches the spec table row for the plane."
 
 [[record]]
 name = "analytic_surface_cylinder"
 kind = "byte"
 section = "5.8"
-anchor = "| cylinder | `0x33` | `0x1a`  |     73 | start+72  |"
+anchor = "| cylinder | `0x33` | `0x001a` |     73 | start+72  |"
 size = 73
-note = "Cylinder and cone share prebyte and length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32."
+note = "Cylinder and cone share the parameter-length word and record length; the kind byte distinguishes them. Payload slots are `[px py pz ax ay radius]` as BE f32."
 
 [[record.field]]
 name = "target_tag"
 offset = 0
 type = "u24"
 source = "spec"
-anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
-name = "zero"
+name = "parameter_length"
 offset = 3
-type = "u8"
+type = "u16"
+endianness = "big"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
-
-[[record.field]]
-name = "prebyte"
-offset = 4
-type = "u8"
-source = "spec"
-anchor = "| cylinder | `0x33` | `0x1a`  |     73 | start+72  |"
+anchor = "| cylinder | `0x33` | `0x001a` |     73 | start+72  |"
 
 [[record.field]]
 name = "marker"
 offset = 5
 type = "bytes[2]"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "`tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
 name = "kind"
 offset = 7
 type = "u8"
 source = "spec"
-anchor = "| cylinder | `0x33` | `0x1a`  |     73 | start+72  |"
+anchor = "| cylinder | `0x33` | `0x001a` |     73 | start+72  |"
 
 [[record.field]]
 name = "sign"
@@ -387,13 +375,13 @@ note = "The parser maps the cylinder marker to its analytic surface kind."
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
 contains = "Self::Cylinder => 0x1a,"
-note = "The parser's kind-to-prebyte map matches the shared cylinder/cone row."
+note = "The parser's kind-to-length low-byte map matches the shared cylinder/cone row."
 
 [[record]]
 name = "analytic_surface_cone"
 kind = "byte"
 section = "5.8"
-anchor = "| cone     | `0x34` | `0x1a`  |     73 | start+72  |"
+anchor = "| cone     | `0x34` | `0x001a` |     73 | start+72  |"
 size = 73
 
 [[record.field]]
@@ -401,35 +389,29 @@ name = "target_tag"
 offset = 0
 type = "u24"
 source = "spec"
-anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
-name = "zero"
+name = "parameter_length"
 offset = 3
-type = "u8"
+type = "u16"
+endianness = "big"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
-
-[[record.field]]
-name = "prebyte"
-offset = 4
-type = "u8"
-source = "spec"
-anchor = "| cone     | `0x34` | `0x1a`  |     73 | start+72  |"
+anchor = "| cone     | `0x34` | `0x001a` |     73 | start+72  |"
 
 [[record.field]]
 name = "marker"
 offset = 5
 type = "bytes[2]"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "`tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
 name = "kind"
 offset = 7
 type = "u8"
 source = "spec"
-anchor = "| cone     | `0x34` | `0x1a`  |     73 | start+72  |"
+anchor = "| cone     | `0x34` | `0x001a` |     73 | start+72  |"
 
 [[record.field]]
 name = "sign"
@@ -447,7 +429,7 @@ note = "Parameter payload `[apex_x apex_y apex_z ax ay semi_angle]` as BE f32; �
 name = "analytic_surface_sphere"
 kind = "byte"
 section = "5.8"
-anchor = "| sphere   | `0x35` | `0x12`  |     65 | start+64  |"
+anchor = "| sphere   | `0x35` | `0x0012` |     65 | start+64  |"
 size = 65
 
 [[record.field]]
@@ -455,35 +437,29 @@ name = "target_tag"
 offset = 0
 type = "u24"
 source = "spec"
-anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
-name = "zero"
+name = "parameter_length"
 offset = 3
-type = "u8"
+type = "u16"
+endianness = "big"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
-
-[[record.field]]
-name = "prebyte"
-offset = 4
-type = "u8"
-source = "spec"
-anchor = "| sphere   | `0x35` | `0x12`  |     65 | start+64  |"
+anchor = "| sphere   | `0x35` | `0x0012` |     65 | start+64  |"
 
 [[record.field]]
 name = "marker"
 offset = 5
 type = "bytes[2]"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "`tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
 name = "kind"
 offset = 7
 type = "u8"
 source = "spec"
-anchor = "| sphere   | `0x35` | `0x12`  |     65 | start+64  |"
+anchor = "| sphere   | `0x35` | `0x0012` |     65 | start+64  |"
 
 [[record.field]]
 name = "sign"
@@ -501,7 +477,7 @@ note = "Parameter payload `[cx cy cz radius]` as BE f32; §5.8 states the slot o
 name = "analytic_surface_torus"
 kind = "byte"
 section = "5.8"
-anchor = "| torus    | `0x38` | `0x1e`  |     77 | start+76  |"
+anchor = "| torus    | `0x38` | `0x001e` |     77 | start+76  |"
 size = 77
 
 [[record.field]]
@@ -509,35 +485,29 @@ name = "target_tag"
 offset = 0
 type = "u24"
 source = "spec"
-anchor = "Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "Grammar: `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
-name = "zero"
+name = "parameter_length"
 offset = 3
-type = "u8"
+type = "u16"
+endianness = "big"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind>"
-
-[[record.field]]
-name = "prebyte"
-offset = 4
-type = "u8"
-source = "spec"
-anchor = "| torus    | `0x38` | `0x1e`  |     77 | start+76  |"
+anchor = "| torus    | `0x38` | `0x001e` |     77 | start+76  |"
 
 [[record.field]]
 name = "marker"
 offset = 5
 type = "bytes[2]"
 source = "spec"
-anchor = "`tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`"
+anchor = "`tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>`"
 
 [[record.field]]
 name = "kind"
 offset = 7
 type = "u8"
 source = "spec"
-anchor = "| torus    | `0x38` | `0x1e`  |     77 | start+76  |"
+anchor = "| torus    | `0x38` | `0x001e` |     77 | start+76  |"
 
 [[record.field]]
 name = "sign"
@@ -2626,3 +2596,32 @@ offset = 90
 type = "f64"
 source = "spec"
 anchor = "| `+90` | `f64le` | cylinder redundant range origin |"
+
+[[record]]
+name = "standard_curve_support_header"
+kind = "byte"
+section = "5.5"
+anchor = "At row-relative `+4`, a `u16be` parameter-length word"
+size = 6
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "edge_support_row := 60 <tag:u24le> <curve_body> <face_ref> <face_ref>"
+
+[[record.field]]
+name = "allocation_tag"
+offset = 1
+type = "u24"
+source = "spec"
+anchor = "edge_support_row := 60 <tag:u24le> <curve_body> <face_ref> <face_ref>"
+
+[[record.field]]
+name = "parameter_length"
+offset = 4
+type = "u16"
+endianness = "big"
+source = "spec"
+anchor = "At row-relative `+4`, a `u16be` parameter-length word"
