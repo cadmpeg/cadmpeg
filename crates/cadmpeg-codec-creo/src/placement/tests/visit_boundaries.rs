@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 fn section(reference_planes: ReferencePlanes) -> FeatureSection3d {
@@ -30,10 +30,10 @@ fn empty_sources(rows: &crate::surface::SurfaceRows) -> PlacementSources<'_> {
 
 #[test]
 fn carrier_reference_selection_admits_present_ids_and_stops_at_first_conflict() {
-    for (ids, expected) in [
-        (vec![7], Some(7)),
-        (vec![7, 7], Some(7)),
-        (vec![7, 8, 7, 7], None),
+    for (ids, visits, expected) in [
+        (vec![7], 1, Some(7)),
+        (vec![7, 7], 2, Some(7)),
+        (vec![7, 8, 7, 7], 2, None),
     ] {
         let positional = ids
             .iter()
@@ -56,6 +56,23 @@ fn carrier_reference_selection_admits_present_ids_and_stops_at_first_conflict() 
                 |ctx| super::super::unique_carrier_reference_id(ctx, section),
             );
             assert_eq!(actual, expected);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = visits;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert_eq!(
+                super::super::unique_carrier_reference_id(&ctx, section)
+                    .expect("exact reference visits"),
+                expected
+            );
+            let refusal = ctx
+                .charge_work_limit(1, "after exact owner work")
+                .expect_err("exact cap exhausted");
+            assert_eq!(
+                (refusal.dimension, refusal.used, refusal.additional),
+                (ResourceDimension::WorkUnits, visits, 1)
+            );
+
             if expected.is_none() {
                 let short = match &section.reference_planes {
                     ReferencePlanes::Named(ids) => {
@@ -145,5 +162,239 @@ fn generated_parent_admits_each_present_datum_plane_and_envelope_without_termina
             super::super::generated_parent_plane_equation(ctx, 1, [0.0, 1.0, 0.0], &mut lookup)
         });
         assert_eq!(actual, expected);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = if sources.plane_envelopes.is_empty() {
+            1
+        } else {
+            2
+        };
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut lookup = super::super::PlacementLookup::new(&ctx, &sources, &[]).expect("lookup");
+        lookup.feature_datums = Some(std::collections::HashMap::from([(
+            1,
+            sources.datums.iter().collect(),
+        )]));
+        lookup.feature_planes = Some(std::collections::HashMap::from([(
+            1,
+            sources.surface_rows.iter().collect(),
+        )]));
+        lookup.datums = Some(std::collections::HashMap::new());
+        lookup.models = Some(std::collections::HashMap::new());
+        lookup.outlines = Some(std::collections::HashMap::new());
+        lookup.envelopes = Some(std::collections::HashMap::from([(
+            7,
+            sources.plane_envelopes.iter().collect(),
+        )]));
+        assert_eq!(
+            super::super::generated_parent_plane_equation(&ctx, 1, [0.0, 1.0, 0.0], &mut lookup)
+                .expect("exact cached owner visits"),
+            expected
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (
+                ResourceDimension::WorkUnits,
+                if sources.plane_envelopes.is_empty() {
+                    1
+                } else {
+                    2
+                },
+                1
+            )
+        );
+    }
+}
+
+#[test]
+fn fixed_and_empty_carrier_reference_selection_is_free() {
+    let mut explicit = section(ReferencePlanes::Named(vec![7, 8]));
+    explicit.reference_plane_datum_geometry_id = Some(9);
+    let cases = [
+        (section(ReferencePlanes::Named(Vec::new())), None),
+        (section(ReferencePlanes::Positional(Vec::new())), None),
+        (explicit, Some(9)),
+    ];
+    for (section, expected) in &cases {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(
+            super::super::unique_carrier_reference_id(&ctx, section)
+                .expect("fixed or empty selection"),
+            *expected
+        );
+    }
+}
+
+#[test]
+fn empty_generated_parent_visits_and_cached_placement_queries_are_free() {
+    let rows = crate::surface::SurfaceRows::from_rows(Vec::new());
+    let sources = empty_sources(&rows);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut lookup = super::super::PlacementLookup::new(&ctx, &sources, &[]).expect("empty lookup");
+    assert_eq!(
+        super::super::generated_parent_plane_equation(&ctx, 42, [1.0, 0.0, 0.0], &mut lookup)
+            .expect("empty parent rows"),
+        None
+    );
+    assert!(lookup.plane_row(7).expect("empty plane row").is_none());
+    assert!(lookup.definition(7).expect("empty definition").is_none());
+    assert!(matches!(
+        lookup.datum(7).expect("empty datum"),
+        super::super::RowLookup::Missing
+    ));
+    assert!(matches!(
+        lookup.model(7).expect("empty model"),
+        super::super::RowLookup::Missing
+    ));
+    assert!(matches!(
+        lookup.outline(7).expect("empty outline"),
+        super::super::RowLookup::Missing
+    ));
+    assert!(lookup.envelope_rows(7).expect("empty envelopes").is_empty());
+    assert!(!lookup.is_generated_datum(7).expect("empty generated datum"));
+    assert!(lookup
+        .feature_datums(7)
+        .expect("empty feature datums")
+        .is_empty());
+    assert!(lookup
+        .feature_planes(7)
+        .expect("empty feature planes")
+        .is_empty());
+    assert!(lookup.parameter(7).expect("empty parameters").is_none());
+    assert_eq!(lookup.equation(7).expect("empty equation"), None);
+    assert_eq!(
+        lookup
+            .generated_equation(7)
+            .expect("empty generated equation"),
+        None
+    );
+    assert_eq!(
+        lookup.transform_position(7, &[]).expect("empty transforms"),
+        None
+    );
+}
+
+#[test]
+fn fixed_placement_routes_are_free() {
+    let rows = crate::surface::SurfaceRows::from_rows(Vec::new());
+    let sources = empty_sources(&rows);
+    let mut definition = blank_definition();
+    definition.identity = crate::feature::definitions::DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(42),
+        owner_feature_id: None,
+    };
+    let section = section(ReferencePlanes::Named(Vec::new()));
+    let table = FeatureEntityTable::new(42, 0, Vec::new(), &std::collections::BTreeSet::new(), 17);
+    let transform = FeatureSectionTransform::new(
+        42,
+        None,
+        [1.0, 2.0, 3.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        17,
+    )
+    .expect("fixed transform");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut lookup = super::super::PlacementLookup::new(&ctx, &sources, &[]).expect("empty lookup");
+    assert_eq!(
+        parse_generated_cylinder_section_transform(&ctx, &definition, &[], &mut lookup)
+            .expect("no owning feature"),
+        None
+    );
+    assert_eq!(
+        parse_generated_planar_section_transform(&ctx, &definition, &[], &mut lookup)
+            .expect("no owning feature"),
+        None
+    );
+    assert!(!generated_planar_table_shape(&ctx, &table).expect("empty table"));
+    assert_eq!(
+        super::super::reference_flip_for_reference(&ctx, &section, None)
+            .expect("fixed reference flip"),
+        None
+    );
+    assert_eq!(
+        super::super::apply_section_orientation(&ctx, transform.clone(), &section)
+            .expect("fixed orientation"),
+        transform
+    );
+    assert_eq!(
+        super::super::definition_local_frame_transform(&ctx, &definition, &section)
+            .expect("no owning feature"),
+        None
+    );
+    assert_eq!(
+        super::super::generated_cap_pair_plane_equation(&table, &mut lookup)
+            .expect("empty cap table"),
+        None
+    );
+    let reference = (
+        7,
+        SignedPlaneEquation {
+            normal: [1.0, 0.0, 0.0],
+            offset: 0.0,
+        },
+    );
+    assert_eq!(
+        super::super::zero_offset_standard_section_plane_equation(
+            &ctx,
+            &definition,
+            &section,
+            reference,
+            &[],
+            &mut lookup
+        )
+        .expect("no owning feature"),
+        None
+    );
+}
+
+#[test]
+fn unique_placement_plane_row_fast_path_is_free() {
+    for kind in [SurfaceKind::Plane, SurfaceKind::Cylinder] {
+        let rows = crate::surface::SurfaceRows::from_rows(vec![SurfaceRow {
+            id: 7,
+            kind,
+            feature_id: 42,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 17,
+        }]);
+        let sources = empty_sources(&rows);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut lookup =
+            super::super::PlacementLookup::new(&ctx, &sources, &[]).expect("empty lookup");
+        assert_eq!(
+            lookup.plane_row(7).expect("unique row").map(|row| (
+                row.id,
+                row.feature_id,
+                row.offset
+            )),
+            (kind == SurfaceKind::Plane).then_some((7, 42, 17))
+        );
     }
 }

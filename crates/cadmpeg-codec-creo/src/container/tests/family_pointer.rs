@@ -32,6 +32,9 @@ fn assert_bounded_pointer(payload: &[u8], completion: &[u8], expected: Option<Fa
         assert_eq!(result, expected);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
+        let work = 1 + u64::try_from(HEADER.len() + payload.len() + POINTER_LABEL.len())
+            .expect("bounded section search");
+        policy.limits.max_work_units = work;
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
@@ -40,6 +43,10 @@ fn assert_bounded_pointer(payload: &[u8], completion: &[u8], expected: Option<Fa
             family_table(&ctx, std::slice::from_ref(&section)).expect("borrowed pointer search"),
             expected
         );
+        let exact = ctx
+            .charge_work_limit(1, "after bounded pointer work")
+            .expect_err("exact cap exhausted");
+        assert_eq!((exact.used, exact.additional), (work, 1));
         let refusal = crate::test_support::last_refusal_at(
             &[],
             ResourceDimension::WorkUnits,
@@ -49,6 +56,7 @@ fn assert_bounded_pointer(payload: &[u8], completion: &[u8], expected: Option<Fa
         let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else {
             panic!("family pointer work boundary");
         };
+        assert_eq!((refusal.used, refusal.additional), (1, work - 1));
         if let Some(previous) = &previous_refusal {
             assert_eq!(&refusal, previous, "foreign tail changes no admitted work");
         }

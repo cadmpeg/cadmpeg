@@ -19,20 +19,29 @@ pub(crate) fn value_index<'a, K: LegacyCode>(
     index: &mut BTreeMap<(usize, &'a str), Vec<&'a ValueRecord<K>>>,
 ) -> Result<(), CodecError> {
     for record in ctx.admit_iter(records, "creo legacy value index traversal")? {
-        if let Some(parent) = record.parent {
-            let key = (parent, record.name.as_str());
-            match ctx.entry_btree_map(index, key, "creo legacy value index nodes")? {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    let mut values = Vec::new();
-                    ctx.reserve_vec(&mut values, 1, "creo legacy value index rows")?;
-                    values.push(record);
-                    entry.insert(values);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let values = entry.get_mut();
-                    ctx.reserve_vec(values, 1, "creo legacy value index rows")?;
-                    values.push(record);
-                }
+        index_value(ctx, record, index)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn index_value<'a, K: LegacyCode>(
+    ctx: &DecodeContext<'_>,
+    record: &'a ValueRecord<K>,
+    index: &mut BTreeMap<(usize, &'a str), Vec<&'a ValueRecord<K>>>,
+) -> Result<(), CodecError> {
+    if let Some(parent) = record.parent {
+        let key = (parent, record.name.as_str());
+        match ctx.entry_btree_map(index, key, "creo legacy value index nodes")? {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let mut values = Vec::new();
+                ctx.reserve_vec(&mut values, 1, "creo legacy value index rows")?;
+                values.push(record);
+                entry.insert(values);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let values = entry.get_mut();
+                ctx.reserve_vec(values, 1, "creo legacy value index rows")?;
+                values.push(record);
             }
         }
     }
