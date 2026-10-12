@@ -513,40 +513,4 @@ mod tests {
         );
         assert!(grid.is_some());
     }
-
-    fn work_output<T>(
-        run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-    ) -> T {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let capped = |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_entities = 0;
-            policy.limits.max_recursion_depth = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = run(&ctx);
-            if let Err(CodecError::ResourceLimit(original)) = &result {
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-            }
-            result
-        };
-        let work =
-            crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, capped);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_entities = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        run(&ctx).expect("walker admits the unchanged fixture")
-    }
 }

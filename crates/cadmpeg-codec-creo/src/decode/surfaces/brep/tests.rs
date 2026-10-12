@@ -196,21 +196,9 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         offset: 0,
     });
     scan.topology.face_components = vec![
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new_for_test(ctx, vec![1], vec![10])
-        })
-        .expect("component admission")
-        .expect("valid component fixture"),
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![11])
-        })
-        .expect("component admission")
-        .expect("valid component fixture"),
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new_for_test(ctx, vec![1, 5], vec![12])
-        })
-        .expect("component admission")
-        .expect("valid component fixture"),
+        crate::topology::FaceComponent::new_for_test(vec![1], vec![10]),
+        crate::topology::FaceComponent::new_for_test(vec![5], vec![11]),
+        crate::topology::FaceComponent::new_for_test(vec![1, 5], vec![12]),
     ];
 
     assert_eq!(
@@ -222,16 +210,8 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         .cloned()
         .collect::<Vec<_>>(),
         vec![
-            crate::decode::with_test_decode_ctx(
-                |ctx| crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![11])
-            )
-            .expect("component admission")
-            .expect("valid component fixture"),
-            crate::decode::with_test_decode_ctx(
-                |ctx| crate::topology::FaceComponent::new_for_test(ctx, vec![1, 5], vec![12])
-            )
-            .expect("component admission")
-            .expect("valid component fixture"),
+            crate::topology::FaceComponent::new_for_test(vec![5], vec![11]),
+            crate::topology::FaceComponent::new_for_test(vec![1, 5], vec![12]),
         ]
     );
 
@@ -258,13 +238,12 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
 #[test]
 fn admitted_face_component_refs_refuse_collection_limit() {
     let mut scan = crate::test_support::empty_container_scan();
-    scan.topology.face_components.push(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new_for_test(ctx, vec![5], Vec::new())
-        })
-        .expect("component admission")
-        .expect("valid component fixture"),
-    );
+    scan.topology
+        .face_components
+        .push(crate::topology::FaceComponent::new_for_test(
+            vec![5],
+            Vec::new(),
+        ));
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
@@ -545,28 +524,23 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             })
             .collect(),
     ));
-    scan.topology.face_components.push(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![10, 11, 12])
-        })
-        .expect("component admission")
-        .expect("valid component fixture"),
-    );
+    scan.topology
+        .face_components
+        .push(crate::topology::FaceComponent::new_for_test(
+            vec![5],
+            vec![10, 11, 12],
+        ));
     scan.topology.vertices = [1_u32, 2, 3]
         .into_iter()
         .zip([10_u32, 11, 12])
         .map(|(id, curve_id)| {
-            crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new_for_test(
-                    ctx,
-                    id,
-                    vec![crate::topology::HalfEdgeId {
-                        curve_id,
-                        side: crate::topology::Side::Zero,
-                    }],
-                )
-            })
-            .expect("vertex admission")
+            crate::topology::TopologicalVertex::new_for_test(
+                id,
+                vec![crate::topology::HalfEdgeId {
+                    curve_id,
+                    side: crate::topology::Side::Zero,
+                }],
+            )
             .expect("valid vertex fixture")
         })
         .collect();

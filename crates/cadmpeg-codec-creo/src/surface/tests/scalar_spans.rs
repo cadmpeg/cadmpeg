@@ -2,6 +2,31 @@
 
 use crate::surface::{opaque_spans, scalar_frames, SurfaceParameterScalar};
 
+fn exact_work<T>(
+    expected: usize,
+    items: usize,
+    retained: usize,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    let work =
+        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_collection_items = u64_from_index(items);
+            policy.limits.max_retained_bytes = u64_from_index(retained);
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            run(&ctx)
+        });
+    assert_eq!(work, u64_from_index(expected), "source-derived work bound");
+}
+
 #[test]
 fn opaque_scalar_spans_visit_each_token_once_without_a_terminal_probe() {
     for count in [0, 1, 7, 17, 257] {
@@ -13,6 +38,7 @@ fn opaque_scalar_spans_visit_each_token_once_without_a_terminal_probe() {
                 offset,
             })
             .collect();
+        exact_work(count, 0, 0, |ctx| opaque_spans(ctx, &body, &tokens));
         let spans = crate::test_support::assert_work_boundaries(
             if count == 0 {
                 &[]
@@ -39,6 +65,12 @@ fn opaque_scalar_spans_preserve_prefix_middle_and_terminal_gap_identity() {
             body.push(0xe4);
             body.extend(std::iter::repeat_n(0xed, gap));
         }
+        exact_work(
+            3 + 4 * gap,
+            4,
+            4 * std::mem::size_of::<crate::surface::SurfaceParameterOpaqueSpan>() + 4 * gap,
+            |ctx| opaque_spans(ctx, &body, &tokens),
+        );
         let spans = super::work_output(|ctx| opaque_spans(ctx, &body, &tokens));
         assert_eq!(spans.len(), 4);
         for (index, span) in spans.iter().enumerate() {
@@ -64,6 +96,16 @@ fn scalar_frames_visit_each_start_adjacent_pair_and_copied_token_once() {
             } else {
                 usize::from(count != 0)
             };
+            let backing = if count == 0 {
+                0
+            } else {
+                4 * std::mem::size_of::<crate::surface::SurfaceParameterScalarFrame>()
+                    + 4 * std::mem::size_of::<SurfaceParameterScalar>() * frame_count
+                    + count
+            };
+            exact_work(2 * count, count + frame_count, backing, |ctx| {
+                scalar_frames(ctx, &tokens)
+            });
             let frames = crate::test_support::assert_work_boundaries(
                 if count == 0 {
                     &[]
