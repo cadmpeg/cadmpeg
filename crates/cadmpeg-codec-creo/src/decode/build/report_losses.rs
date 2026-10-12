@@ -1235,11 +1235,17 @@ mod tests {
     /// reader can find it; the count alone names nothing.
     #[test]
     fn an_unstatable_vertex_orbit_note_names_the_orbit() {
-        assert!(
-            crate::decode::with_test_decode_ctx(|ctx| unstatable_vertex_orbit_note(ctx, &[]))
-                .expect("empty orbit report admitted")
-                .is_none()
-        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        assert!(unstatable_vertex_orbit_note(&ctx, &[])
+            .expect("empty orbit report needs no resources")
+            .is_none());
         let note = crate::decode::with_test_decode_ctx(|ctx| {
             unstatable_vertex_orbit_note(
                 ctx,

@@ -129,10 +129,8 @@ impl CodecBackend for CreoCodec {
         })?;
         let scan_storage = scan_owned_storage.1;
         let scan = scan_owned_storage.0;
-        let summary = (|| {
-            let classification = dialect::classify(ctx, &scan)?;
-            container::summarize(ctx, &scan, classification)
-        })();
+        let classification = dialect::classify(ctx, &scan)?;
+        let summary = container::summarize(ctx, &scan, classification);
         drop(scan);
         drop(scan_storage);
         summary

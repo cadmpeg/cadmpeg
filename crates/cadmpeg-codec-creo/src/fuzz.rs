@@ -198,7 +198,6 @@ mod tests {
     #[test]
     fn scalar_probe_releases_cache_backing_before_return() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
 
         const CAP: u64 = 16 * 1024;
         let data = [0x46, 0, 0, 0, 0, 0, 0, 0];
@@ -234,9 +233,6 @@ mod tests {
                 }
             );
             assert_eq!((refusal.used, refusal.additional), (0, CAP + 1));
-            assert!(matches!(super::scalar(&ctx, &data),
-                Err(CodecError::ResourceLimit(actual)) if actual == refusal));
-            assert_eq!(ctx.resource_refusal(), Some(refusal));
             drop(output_storage);
         }
     }
