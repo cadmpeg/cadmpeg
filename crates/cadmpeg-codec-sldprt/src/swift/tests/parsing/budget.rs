@@ -509,7 +509,11 @@ fn swift_datum_identity_index_is_admitted_once_and_releases_scratch() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let identities = crate::swift::DatumIdentities::new(&root);
     assert_eq!(
-        identities.lookup(&ctx, "A10").unwrap(),
+        identities
+            .lookup(&ctx, "A10")
+            .unwrap()
+            .and_then(pmi_id)
+            .as_ref(),
         Some(&pmi_id("A10").unwrap())
     );
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
@@ -518,7 +522,11 @@ fn swift_datum_identity_index_is_admitted_once_and_releases_scratch() {
         None,
     );
     assert_eq!(
-        identities.lookup(&ctx, "A10").unwrap(),
+        identities
+            .lookup(&ctx, "A10")
+            .unwrap()
+            .and_then(pmi_id)
+            .as_ref(),
         Some(&pmi_id("A10").unwrap())
     );
     assert!(identities.lookup(&ctx, "A20").unwrap().is_none());
@@ -651,4 +659,362 @@ fn swift_reused_datum_system_drops_temporary_reference_storage() {
         expected,
         "the extra tolerance retains its two output identities, not a discarded reference vector"
     );
+}
+
+#[test]
+fn swift_pmi_identity_grammar_preserves_resource_refusal() {
+    crate::test_support::work_refusal_at("validate SWIFT PMI identity", |ctx| {
+        crate::swift::pmi_id_charged(ctx, "A10")
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        crate::swift::pmi_id_charged(&ctx, "A10").unwrap(),
+        pmi_id("A10")
+    );
+    assert!(crate::swift::pmi_id_charged(&ctx, " ").unwrap().is_none());
+}
+
+#[test]
+fn swift_derived_identity_grammars_preserve_resource_refusal() {
+    let root = semantic_root();
+    crate::test_support::work_refusal_at("validate SWIFT datum-system ID", |ctx| {
+        crate::swift::project_with_topology(
+            ctx,
+            &root,
+            None,
+            &crate::swift::RenderedDimensions::Borrowed(&[]),
+            None,
+            None,
+        )
+        .map(|_| ())
+    });
+    let mut tier = entity("GdtCompositeSurfaceProfile");
+    tier.doubles.insert("ToleranceLowerTier".into(), 0.1);
+    crate::test_support::work_refusal_at("validate SWIFT lower-tier ID", |ctx| {
+        let geometry = crate::swift::ProjectionGeometry::new(ctx, None, None, None);
+        project_lower_profile_tier(
+            ctx,
+            &reference("A10", "GdtCompositeSurfaceProfile"),
+            &tier,
+            &BTreeMap::new(),
+            &geometry,
+        )
+    });
+}
+
+#[test]
+fn swift_modifier_strings_and_slots_are_admitted() {
+    for value in [1, 2, 3] {
+        let copy = if value == 3 {
+            "format SWIFT PMI modifier"
+        } else {
+            "copy SWIFT PMI modifier"
+        };
+        crate::test_support::work_refusal_at(copy, |ctx| {
+            crate::swift::integer_modifier(ctx, Some(value))
+        });
+        let arena = DecodeArena::new();
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "collect SWIFT PMI modifiers",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                crate::swift::integer_modifier(&ctx, Some(value))
+            },
+        );
+    }
+    let root = semantic_root();
+    let tolerance = root.annotations.entities.get(1).unwrap();
+    let arena = DecodeArena::new();
+    for operation in ["copy SWIFT PMI modifier", "collect SWIFT PMI modifiers"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                crate::swift::tolerance_modifiers(&ctx, tolerance)
+            },
+        );
+    }
+    let mut flags = entity("GdtPosition");
+    for key in [
+        "IsFreeState",
+        "IsStatistical",
+        "IsToBeInspected",
+        "IsTangentPlane",
+        "ProjectedZoneEnabled",
+        "IsMaxTolerance",
+    ] {
+        flags.integers.insert(key.into(), 1);
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        crate::swift::tolerance_modifiers(&ctx, &flags).unwrap(),
+        [
+            "free_state",
+            "statistical",
+            "inspection",
+            "tangent_plane",
+            "projected_zone",
+            "maximum_tolerance"
+        ]
+    );
+    flags.doubles.insert("ProjectedZoneValue".into(), 4.0);
+    flags.doubles.insert("MaxTolerance".into(), 2.0);
+    assert_eq!(
+        crate::swift::tolerance_modifiers(&ctx, &flags).unwrap(),
+        [
+            "free_state",
+            "statistical",
+            "inspection",
+            "tangent_plane",
+            "projected_zone:4_mm",
+            "maximum_tolerance:2_mm"
+        ]
+    );
+    let mut tier = entity("GdtCompositeSurfaceProfile");
+    tier.doubles.insert("ToleranceLowerTier".into(), 0.1);
+    crate::test_support::work_refusal_at("copy SWIFT PMI modifier", |ctx| {
+        let geometry = crate::swift::ProjectionGeometry::new(ctx, None, None, None);
+        project_lower_profile_tier(
+            ctx,
+            &reference("A10", "GdtCompositeSurfaceProfile"),
+            &tier,
+            &BTreeMap::new(),
+            &geometry,
+        )
+    });
+    crate::test_support::work_refusal_at("copy SWIFT PMI modifier", |ctx| {
+        let identities = crate::swift::DatumIdentities::new(&root);
+        crate::swift::datum_references(ctx, tolerance, &identities)
+    });
+}
+
+#[test]
+fn swift_rejected_target_prefix_does_not_prepay_reference_tails() {
+    let mut work = None;
+    for tail in [1, 128] {
+        let mut datum = entity("GdtDatum");
+        datum.strings.insert("DatumIdentifier".into(), "A".into());
+        datum.features.references = vec![reference("F10", "GdtPlane"), reference(" ", "GdtPlane")];
+        datum
+            .features
+            .references
+            .extend((0..tail).map(|index| reference(&format!("tail{index}"), "GdtPlane")));
+        let features = BTreeMap::new();
+        let query = |ctx: &DecodeContext<'_>| {
+            let geometry = crate::swift::ProjectionGeometry::new(ctx, None, None, None);
+            crate::swift::project_datum(
+                ctx,
+                pmi_id("A10").unwrap(),
+                &datum,
+                || Ok(&features),
+                &geometry,
+            )
+        };
+        crate::test_support::work_refusal_at("scan SLDPRT targets values", query);
+        let error = crate::test_support::work_refusal_at("measure rejected target prefix", |ctx| {
+            assert!(query(ctx)?.is_none());
+            ctx.copy_retained_text("x", "measure rejected target prefix")
+        });
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("prefix measurement")
+        };
+        if let Some(expected) = work {
+            assert_eq!(limit.used, expected);
+        } else {
+            work = Some(limit.used);
+        }
+    }
+}
+
+#[test]
+fn swift_single_datum_query_does_not_mint_unqueried_identities() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let original = semantic_root();
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    for ordinal in 0..64 {
+        let mut datum = entity("GdtDatum");
+        datum.strings.insert("DatumIdentifier".into(), "A".into());
+        root.annotations.references.push(reference(
+            &format!("A{ordinal}{}", "x".repeat(128)),
+            "GdtDatum",
+        ));
+        root.annotations.entities.push(datum);
+    }
+    root.annotations
+        .references
+        .push(reference("A10", "GdtDatum"));
+    // Its own projection fails, but its source identity remains eligible.
+    let mut datum = original.annotations.entities.first().unwrap().clone();
+    datum.features.references.push(reference(" ", "GdtPlane"));
+    root.annotations.entities.push(datum);
+    let tolerance = original.annotations.entities.get(1).unwrap();
+    let long_id = &root.annotations.references.first().unwrap().id;
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "format SWIFT PMI identity",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let (id, storage) = ctx.with_scoped_storage("datum identity control", || {
+                crate::swift::pmi_id_charged(&ctx, long_id)
+            })?;
+            drop((id, storage));
+            Ok(())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("long identity control")
+    };
+    assert_eq!(
+        limit.additional,
+        u64::try_from(format!("sldprt:model:pmi#{long_id}").len()).unwrap()
+    );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
+    let no_features = BTreeMap::new();
+    assert!(crate::swift::project_datum(
+        &ctx,
+        pmi_id("A10").unwrap(),
+        root.annotations.entities.last().unwrap(),
+        || Ok(&no_features),
+        &geometry
+    )
+    .unwrap()
+    .is_none());
+    let identities = crate::swift::DatumIdentities::new(&root);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "format SWIFT PMI identity",
+        Some(limit.additional),
+    );
+    let references = crate::swift::datum_references(&ctx, tolerance, &identities).unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references.first().unwrap().datum, pmi_id("A10").unwrap());
+    drop((identities, probe, geometry));
+    ctx.finish_session().unwrap();
+    let mut invalid = root;
+    invalid.annotations.references.last_mut().unwrap().id = " ".into();
+    let mut tolerance = tolerance.clone();
+    tolerance
+        .related
+        .first_mut()
+        .unwrap()
+        .entity
+        .related
+        .first_mut()
+        .unwrap()
+        .entity
+        .annotations
+        .references
+        .first_mut()
+        .unwrap()
+        .id = " ".into();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(crate::swift::datum_references(
+        &ctx,
+        &tolerance,
+        &crate::swift::DatumIdentities::new(&invalid)
+    )
+    .unwrap()
+    .is_empty());
+}
+
+#[test]
+fn swift_related_descriptor_steps_preserve_resource_refusal() {
+    let mut payload = Vec::new();
+    encode_entity(&semantic_root(), &mut payload);
+    crate::test_support::work_refusal_at("scan SWIFT related descriptors", |ctx| {
+        parse_unique_root(ctx, &payload).map(|_| ())
+    });
+}
+
+#[test]
+fn swift_defined_area_unit_storage_is_admitted() {
+    for (kind, expected) in [
+        (Some(0), "rectangular"),
+        (Some(1), "circular"),
+        (Some(2), "sldprt:2"),
+        (None, "sldprt:unspecified"),
+    ] {
+        let mut tolerance = entity("GdtSurfaceProfile");
+        tolerance.integers.insert("PerUnitArea".into(), 1);
+        if let Some(kind) = kind {
+            tolerance.integers.insert("PerUnitAreaType".into(), kind);
+        }
+        let operation = if kind == Some(2) {
+            "format SWIFT defined-area unit"
+        } else {
+            "copy SWIFT defined-area unit"
+        };
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            crate::swift::defined_area(ctx, &tolerance)
+        });
+        let arena = DecodeArena::new();
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                crate::swift::defined_area(&ctx, &tolerance)
+            },
+        );
+        assert_eq!(
+            crate::swift::defined_area(&cadmpeg_test_support::service_decode_context(), &tolerance)
+                .unwrap(),
+            (None, Some(expected.into()), None)
+        );
+    }
+}
+
+#[test]
+fn swift_literal_related_names_do_not_charge_the_unmatched_text_extent() {
+    let mut work = None;
+    for length in [1, 128] {
+        let mut feature = entity("GdtCylinder");
+        feature.related = vec![RelatedObject {
+            name: "x".repeat(length),
+            class: "Other".into(),
+            entity: entity("Other"),
+        }];
+        let mut geometry = entity("GeoCylinder");
+        geometry.doubles.insert("R".into(), 2.0);
+        feature.related.push(RelatedObject {
+            name: "NomCylinder".into(),
+            class: geometry.class.clone(),
+            entity: geometry,
+        });
+        let error =
+            crate::test_support::work_refusal_at("measure literal related name search", |ctx| {
+                assert_eq!(
+                    crate::swift::nominal_radius(ctx, &feature, "NomCylinder")?
+                        .map(crate::swift::PositiveReal::get),
+                    Some(2.0)
+                );
+                ctx.copy_retained_text("x", "measure literal related name search")
+            });
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("literal search measurement")
+        };
+        if let Some(expected) = work {
+            assert_eq!(limit.used, expected);
+        } else {
+            work = Some(limit.used);
+        }
+    }
 }
