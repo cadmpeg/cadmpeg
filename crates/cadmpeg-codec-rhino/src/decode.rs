@@ -982,7 +982,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn flush_source_links(&mut self) -> Result<(), cadmpeg_core::CodecError> {
-        let ctx = self.expand.ctx();
+        let ctx: &cadmpeg_core::decode::DecodeContext<'_> = self.expand.ctx();
         let count = self.session.unknowns().len();
         let mut source_orders = 0..count;
         for _ in 0..count {
@@ -1052,7 +1052,7 @@ impl<'a> DecodeContext<'a> {
         if start == end {
             return Ok(());
         }
-        let ctx = self.expand.ctx();
+        let ctx: &cadmpeg_core::decode::DecodeContext<'_> = self.expand.ctx();
         self.pending_seeded_link_cursor = end;
         let mut pending = start..end;
         for _ in start..end {
