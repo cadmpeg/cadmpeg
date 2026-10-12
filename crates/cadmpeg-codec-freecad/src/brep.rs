@@ -3077,7 +3077,11 @@ fn parse_binary_prefix(
             continue;
         }
         let version = ctx
-            .strip_prefix(line, "Open CASCADE Topology V", "FreeCAD binary B-rep header prefix")?
+            .strip_prefix(
+                line,
+                "Open CASCADE Topology V",
+                "FreeCAD binary B-rep header prefix",
+            )?
             .and_then(|tail| tail.as_bytes().first())
             .and_then(|byte| byte.checked_sub(b'0'))
             .filter(|version| (1..=4).contains(version))
@@ -4589,29 +4593,44 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
         if count > self.remaining() {
             return Err(Self::truncated(label));
         }
+        // Credit covers only the intersection of this read and the prepaid extent.
+        let credited = count.min(self.prepaid_bytes);
         self.ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count.saturating_sub(self.prepaid_bytes)),
+            cadmpeg_core::decode::u64_from_index(count - credited),
             "FreeCAD binary B-rep read",
         )?;
-        self.prepaid_bytes = self.prepaid_bytes.saturating_sub(count);
+        self.prepaid_bytes -= credited;
         Ok(())
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
         let tail = self.view.unread();
-        let length = self.ctx
-            .position_by(tail, |byte| Ok(*byte == b'\n'), "FreeCAD binary B-rep line search")?
+        let length = self
+            .ctx
+            .position_by(
+                tail,
+                |byte| Ok(*byte == b'\n'),
+                "FreeCAD binary B-rep line search",
+            )?
             .ok_or_else(|| CodecError::malformed(format_args!("unterminated {label}")))?;
         // The search has already admitted every consumed byte, including the newline.
-        let line = self.view.take(length + 1).ok_or_else(|| Self::truncated(label))?;
-        self.ctx.validate_utf8(&line[..length], "FreeCAD binary B-rep UTF-8")?
+        let line = self
+            .view
+            .take(length + 1)
+            .ok_or_else(|| Self::truncated(label))?;
+        self.ctx
+            .validate_utf8(&line[..length], "FreeCAD binary B-rep UTF-8")?
             .map_err(|_| CodecError::malformed(format_args!("non-UTF-8 {label}")))
     }
 
     fn section_count(&mut self, name: &str) -> Result<usize, CodecError> {
         let line = loop {
             let line = self.line(name)?;
-            if !self.ctx.trim_text(line, "FreeCAD binary B-rep section trim")?.is_empty() {
+            if !self
+                .ctx
+                .trim_text(line, "FreeCAD binary B-rep section trim")?
+                .is_empty()
+            {
                 break line;
             }
         };
@@ -4629,7 +4648,8 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
                 "FreeCAD binary section diagnostic",
             ));
         }
-        self.ctx.parse_text::<usize>(count.unwrap_or(""), "FreeCAD binary B-rep section count")?
+        self.ctx
+            .parse_text::<usize>(count.unwrap_or(""), "FreeCAD binary B-rep section count")?
             .ok()
             .filter(|count| *count <= 1_000_000)
             .ok_or_else(|| CodecError::malformed(format_args!("invalid binary {name} count")))
