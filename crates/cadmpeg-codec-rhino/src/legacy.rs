@@ -4340,10 +4340,9 @@ pub(crate) fn decode_v1_with_header(
         coverage.record(ctx, key, count)?;
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-    source_fidelity.retain_unknown_records(
-        "rhino",
-        opaque_records.into_iter().chain(typed_source_records),
-    )?;
+    // The second batch is checked against the first, which is already retained.
+    source_fidelity.retain_unknown_records_for_decode(ctx, "rhino", opaque_records)?;
+    source_fidelity.retain_unknown_records_for_decode(ctx, "rhino", typed_source_records)?;
     Ok(Decoded {
         ir,
         body: DecodeBody {
