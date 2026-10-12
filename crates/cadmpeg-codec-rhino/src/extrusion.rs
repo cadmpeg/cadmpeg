@@ -702,7 +702,9 @@ fn nurbs_orientation(
 
     let mut previous = end;
     let mut twice_area = 0.0;
-    let knot_window_count = curve.knots().len().saturating_sub(1);
+    let Some(knot_window_count) = curve.knots().len().checked_sub(1) else {
+        return Err(error(offset, "extrusion profile has no nonempty spans"));
+    };
     let mut knot_windows = curve.knots()[..].windows(2);
     for _ in 0..knot_window_count {
         let pair = ctx
