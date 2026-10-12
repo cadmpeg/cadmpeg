@@ -363,6 +363,47 @@ fn reference_cycle_closes_at_first_active_alias() {
 }
 
 #[test]
+fn reference_cycle_closes_at_shallower_alias() {
+    let anchors = BTreeMap::from([
+        ("a".into(), Value::ExternalReference(2)),
+        (
+            "b".into(),
+            Value::List(vec![Value::ExternalReference(2), Value::Integer(7)]),
+        ),
+    ]);
+    let references = [
+        ReferenceEntry {
+            name: ReferenceName::Value(1),
+            uri: "#a".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(2),
+            uri: "#b".into(),
+        },
+    ];
+    for cap in [3, 4] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = cap;
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let result = ReferenceResolver::new(&references, &anchors, ctx)
+                .unwrap()
+                .resolve_value(&Value::ExternalReference(1), 0);
+            if cap == 4 {
+                assert_eq!(
+                    result.unwrap(),
+                    Value::List(vec![Value::Omitted, Value::Integer(7)])
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
+                if refusal.operation == "step_reference_depth_limit")
+                );
+            }
+        });
+    }
+}
+
+#[test]
 fn reference_cycle_uses_the_common_alias_ancestor() {
     let anchors = BTreeMap::from([
         ("a".into(), Value::ExternalReference(3)),
