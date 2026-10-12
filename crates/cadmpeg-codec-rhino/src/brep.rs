@@ -2099,7 +2099,9 @@ fn legacy_decoded_curve_endpoints(
                 let index = if side == 0 {
                     0
                 } else {
-                    nurbs.pole_count().saturating_sub(1)
+                    nurbs.pole_count().checked_sub(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("Rhino legacy Brep last pole index", 0, 1)
+                    })?
                 };
                 let message = if side == 0 {
                     "legacy Brep curve has no first pole"
