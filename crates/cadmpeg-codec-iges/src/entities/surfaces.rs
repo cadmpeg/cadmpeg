@@ -2024,6 +2024,8 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
+    let mut pending_storage = ctx.reserve_scoped(0, "iges pending procedural surfaces")?;
+    let mut pending_surfaces = Vec::new();
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
         let Some(entry) =
@@ -2243,8 +2245,10 @@ pub(super) fn project<'ctx>(
         drop(first_id);
         drop(second_id);
         drop(rail_storage);
-        let surface_id =
-            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let mut identity_storage = ctx.reserve_scoped(0, "iges surface attachment identity")?;
+        let surface_id = identity_storage.with_storage(|| {
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
+        })?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ctx.reserve_vec(
             &mut ir.model.surfaces,
@@ -2259,36 +2263,40 @@ pub(super) fn project<'ctx>(
         });
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        let _attached = ir.model.add_procedural_surface(
-            ctx,
-            &surface_id,
-            ProceduralSurface::new(
-                crate::ids::procedural_surface_admitted(
-                    &crate::ids::Stem::directory(entry.sequence),
+        let procedural = ProceduralSurface::new(
+            crate::ids::procedural_surface_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?,
+            ProceduralSurfaceDefinition::Ruled {
+                first: crate::ids::curve_admitted(
+                    &crate::ids::Stem::directory(first_sequence),
                     ctx,
                 )?,
-                ProceduralSurfaceDefinition::Ruled {
-                    first: crate::ids::curve_admitted(
-                        &crate::ids::Stem::directory(first_sequence),
-                        ctx,
-                    )?,
-                    second: crate::ids::curve_admitted(
-                        &crate::ids::Stem::directory(second_sequence),
-                        ctx,
-                    )?,
-                    cache: None,
-                },
-                Some(
-                    RecordBounds::try_new([
-                        Some(first_interval[0]),
-                        Some(first_interval[1]),
-                        Some(second_interval[0]),
-                        Some(second_interval[1]),
-                    ])
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                ),
+                second: crate::ids::curve_admitted(
+                    &crate::ids::Stem::directory(second_sequence),
+                    ctx,
+                )?,
+                cache: None,
+            },
+            Some(
+                RecordBounds::try_new([
+                    Some(first_interval[0]),
+                    Some(first_interval[1]),
+                    Some(second_interval[0]),
+                    Some(second_interval[1]),
+                ])
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
+        );
+        pending_storage.absorb(&mut identity_storage)?;
+        ctx.push_scoped_vec(
+            &mut pending_storage,
+            &mut pending_surfaces,
+            (surface_id, procedural),
+            "iges pending procedural surfaces",
         )?;
+        drop(identity_storage);
         super::push_attributed_loss_with_scoped_slots(
             ctx,
             &mut loss_slots_storage,
@@ -2548,8 +2556,10 @@ pub(super) fn project<'ctx>(
             } else {
                 directrix_id
             };
-            let surface_id =
-                crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+            let mut identity_storage = ctx.reserve_scoped(0, "iges surface attachment identity")?;
+            let surface_id = identity_storage.with_storage(|| {
+                crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
+            })?;
             let procedural_id = crate::ids::procedural_surface_admitted(
                 &crate::ids::Stem::directory(entry.sequence),
                 ctx,
@@ -2588,19 +2598,27 @@ pub(super) fn project<'ctx>(
             })?;
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            let _attached = ir.model.add_procedural_surface(ctx, &surface_id, ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Extrusion(
-                        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
-                            procedural_directrix,
-                            Some(parameter_interval),
-                            direction,
-                            Some(target),
-                            None,
-                        ),
+            let procedural = ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+                        procedural_directrix,
+                        Some(parameter_interval),
+                        direction,
+                        Some(target),
+                        None,
                     ),
-                    Some(bounds),
-                ))?;
+                ),
+                Some(bounds),
+            );
+            pending_storage.absorb(&mut identity_storage)?;
+            ctx.push_scoped_vec(
+                &mut pending_storage,
+                &mut pending_surfaces,
+                (surface_id, procedural),
+                "iges pending procedural surfaces",
+            )?;
+            drop(identity_storage);
             ctx.insert_scoped_btree_set(
                 &mut decoded_storage,
                 &mut decoded,
@@ -2783,8 +2801,10 @@ pub(super) fn project<'ctx>(
             sequences.record_curve(&placed_id, entry.sequence, ctx)?;
             placed_id
         };
-        let surface_id =
-            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let mut identity_storage = ctx.reserve_scoped(0, "iges surface attachment identity")?;
+        let surface_id = identity_storage.with_storage(|| {
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
+        })?;
         let u_knots = ctx.copy_slice(placed_directrix.knots(), "iges tabulated u knots")?;
         let mut v_knots = ctx.collection_vec(4, "iges tabulated v knots")?;
         v_knots.extend([0.0, 0.0, 1.0, 1.0]);
@@ -2871,26 +2891,30 @@ pub(super) fn project<'ctx>(
         })?;
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        let _attached = ir.model.add_procedural_surface(
-            ctx,
-            &surface_id,
-            ProceduralSurface::new(
-                crate::ids::procedural_surface_admitted(
-                    &crate::ids::Stem::directory(entry.sequence),
-                    ctx,
-                )?,
-                ProceduralSurfaceDefinition::Extrusion(
-                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
-                        procedural_directrix,
-                        Some(parameter_interval),
-                        direction,
-                        Some(target),
-                        None,
-                    ),
+        let procedural = ProceduralSurface::new(
+            crate::ids::procedural_surface_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?,
+            ProceduralSurfaceDefinition::Extrusion(
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+                    procedural_directrix,
+                    Some(parameter_interval),
+                    direction,
+                    Some(target),
+                    None,
                 ),
-                Some(bounds),
             ),
+            Some(bounds),
+        );
+        pending_storage.absorb(&mut identity_storage)?;
+        ctx.push_scoped_vec(
+            &mut pending_storage,
+            &mut pending_surfaces,
+            (surface_id, procedural),
+            "iges pending procedural surfaces",
         )?;
+        drop(identity_storage);
         ctx.insert_scoped_btree_set(
             &mut decoded_storage,
             &mut decoded,
@@ -3149,8 +3173,10 @@ pub(super) fn project<'ctx>(
             } else {
                 (generatrix_id, admitted_axis)
             };
-            let surface_id =
-                crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+            let mut identity_storage = ctx.reserve_scoped(0, "iges surface attachment identity")?;
+            let surface_id = identity_storage.with_storage(|| {
+                crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
+            })?;
             let procedural_id = crate::ids::procedural_surface_admitted(
                 &crate::ids::Stem::directory(entry.sequence),
                 ctx,
@@ -3173,9 +3199,7 @@ pub(super) fn project<'ctx>(
             });
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
-            let _attached = ir.model.add_procedural_surface(
-                ctx,
-                &surface_id,
+            let procedural =
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
                     procedural_axis,
@@ -3204,8 +3228,15 @@ pub(super) fn project<'ctx>(
                         ),
                     ))
                 })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            pending_storage.absorb(&mut identity_storage)?;
+            ctx.push_scoped_vec(
+                &mut pending_storage,
+                &mut pending_surfaces,
+                (surface_id, procedural),
+                "iges pending procedural surfaces",
             )?;
+            drop(identity_storage);
             ctx.insert_scoped_btree_set(
                 &mut decoded_storage,
                 &mut decoded,
@@ -3347,8 +3378,10 @@ pub(super) fn project<'ctx>(
         drop(weight_storage);
         drop(angular_controls);
         drop(angular_storage);
-        let surface_id =
-            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let mut identity_storage = ctx.reserve_scoped(0, "iges surface attachment identity")?;
+        let surface_id = identity_storage.with_storage(|| {
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
+        })?;
         let paired = pair_admitted_surface_poles(
             ctx,
             pole_rows,
@@ -3507,9 +3540,14 @@ pub(super) fn project<'ctx>(
                 ProceduralSurfaceDefinition::Revolution(admitted_payload),
                 Some(bounds),
             );
-            let _attached = ir
-                .model
-                .add_procedural_surface(ctx, &surface_id, procedural)?;
+            pending_storage.absorb(&mut identity_storage)?;
+            ctx.push_scoped_vec(
+                &mut pending_storage,
+                &mut pending_surfaces,
+                (surface_id, procedural),
+                "iges pending procedural surfaces",
+            )?;
+            drop(identity_storage);
         }
         ctx.insert_scoped_btree_set(
             &mut decoded_storage,
@@ -4216,8 +4254,10 @@ pub(super) fn project<'ctx>(
             }
         }
         let surface = candidate_storage.commit_value(surface)?;
-        let surface_id =
-            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let mut identity_storage = ctx.reserve_scoped(0, "iges surface attachment identity")?;
+        let surface_id = identity_storage.with_storage(|| {
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
+        })?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         ctx.reserve_vec(
             &mut ir.model.surfaces,
@@ -4234,17 +4274,28 @@ pub(super) fn project<'ctx>(
         let [v_lower, v_upper] = v_range.finite_endpoints();
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
-        let _attached = ir.model.add_procedural_surface(ctx, &surface_id, ProceduralSurface::new(
-                crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
-                ProceduralSurfaceDefinition::Exact(
-                    cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::from_legacy_intervals(
-                        u_range, v_range, 0, None,
-                    ),
+        let procedural = ProceduralSurface::new(
+            crate::ids::procedural_surface_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?,
+            ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::from_legacy_intervals(
+                    u_range, v_range, 0, None,
                 ),
-                Some(RecordBounds::from_finite([
-                    u_lower, u_upper, v_lower, v_upper,
-                ])),
-            ))?;
+            ),
+            Some(RecordBounds::from_finite([
+                u_lower, u_upper, v_lower, v_upper,
+            ])),
+        );
+        pending_storage.absorb(&mut identity_storage)?;
+        ctx.push_scoped_vec(
+            &mut pending_storage,
+            &mut pending_surfaces,
+            (surface_id, procedural),
+            "iges pending procedural surfaces",
+        )?;
+        drop(identity_storage);
         ctx.insert_scoped_btree_set(
             &mut decoded_storage,
             &mut decoded,
@@ -4253,6 +4304,11 @@ pub(super) fn project<'ctx>(
             "iges surfaces decoded sequences",
         )?;
     }
+
+    if !pending_surfaces.is_empty() {
+        let _attached = ir.model.add_procedural_surfaces(ctx, pending_surfaces)?;
+    }
+    drop(pending_storage);
 
     // Position lookups admit each appended offset. Evaluation copies only the
     // reachable supports, so unrelated model records are not reindexed.
