@@ -1,17 +1,86 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
 use crate::surface::{
     named_spline_scalar_slots, scalar_slots, sequential_named_local_system_slots,
-    take_spline_scalars, take_spline_vectors, ScalarBodyRefusal, SplineLabel,
+    take_spline_scalars, take_spline_vectors, ScalarBodyRefusal, ScalarTokenSlot, SplineLabel,
     SurfacePrototypeFamily,
 };
 
-fn check_work(run: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>) {
-    super::work_output(run);
+fn check_work(
+    work: u64,
+    retained: usize,
+    collection: usize,
+    run: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>,
+) {
+    let steps: Vec<_> =
+        std::iter::repeat_n(1, usize::try_from(work).expect("small Work control")).collect();
+    check_work_sequence(&steps, retained, collection, run);
+}
+
+fn check_work_sequence(
+    steps: &[u64],
+    retained: usize,
+    collection: usize,
+    run: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>,
+) {
+    check_work_sequence_with_materialized(steps, retained, collection, 0, run);
+}
+
+fn check_work_sequence_with_materialized(
+    steps: &[u64],
+    retained: usize,
+    collection: usize,
+    materialized: usize,
+    run: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>,
+) {
+    let work: u64 = steps.iter().sum();
+    for cap in 0..=work + 1 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_retained_bytes = u64_from_index(retained);
+        policy.limits.max_collection_items = u64_from_index(collection);
+        policy.limits.max_materialized_bytes = u64_from_index(materialized);
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let original = if cap < work {
+            let CodecError::ResourceLimit(refusal) =
+                run(&ctx).expect_err("actual source visit or copy")
+            else {
+                panic!("resource refusal");
+            };
+            let mut used = 0;
+            let additional = steps
+                .iter()
+                .copied()
+                .find(|additional| {
+                    if used + additional > cap {
+                        true
+                    } else {
+                        used += additional;
+                        false
+                    }
+                })
+                .expect("first source-derived charge exceeding cap");
+            assert_eq!((refusal.used, refusal.additional), (used, additional));
+            refusal
+        } else {
+            run(&ctx).expect("exact executed Work and backing costs");
+            let refusal = ctx
+                .charge_work_limit(cap - work + 1, "after declared slot visits")
+                .expect_err("exact remaining Work");
+            assert_eq!((refusal.used, refusal.additional), (work, cap - work + 1));
+            refusal
+        };
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+    }
 }
 
 #[test]
@@ -19,7 +88,14 @@ fn declared_scalar_slot_visits_match_encoded_tokens() {
     for count in [0_usize, 1, 7, 17, 257] {
         for lane in 0..3 {
             let body = vec![if lane == 1 { 0x10 } else { 0xe4 }; count];
-            check_work(|ctx| {
+            let capacity = if count == 0 { 0 } else { count.max(4) };
+            let retained = if lane == 2 {
+                capacity * std::mem::size_of::<ScalarTokenSlot>() + count
+            } else {
+                capacity * std::mem::size_of::<Option<f64>>()
+            };
+            let work = u64_from_index(count * if lane == 2 { 2 } else { 1 });
+            check_work(work, retained, count, |ctx| {
                 let cache = ScalarCache::default();
                 let mut refusal = ScalarBodyRefusal::default();
                 if lane == 2 {
@@ -62,8 +138,12 @@ fn declared_scalar_slot_visits_match_encoded_tokens() {
 fn positional_spline_scalar_visits_stop_before_unexecuted_storage() {
     for count in [0_usize, 1, 2, 4] {
         let body = vec![0xe4; count];
-
-        check_work(|ctx| {
+        let retained = if count == 0 {
+            0
+        } else {
+            4 * std::mem::size_of::<f64>()
+        };
+        check_work(u64_from_index(count), retained, count, |ctx| {
             let mut cursor = 0;
             let values = take_spline_scalars(
                 ctx,
@@ -78,7 +158,7 @@ fn positional_spline_scalar_visits_stop_before_unexecuted_storage() {
             Ok(())
         });
     }
-    check_work(|ctx| {
+    check_work(1, 0, 0, |ctx| {
         let mut cursor = 0;
         assert!(take_spline_scalars(
             ctx,
@@ -94,7 +174,7 @@ fn positional_spline_scalar_visits_stop_before_unexecuted_storage() {
     });
     // The complete eight-byte token exhausts the body. The second absent slot
     // is a metadata refusal and does not visit or allocate another token.
-    check_work(|ctx| {
+    check_work(1, 4 * std::mem::size_of::<f64>(), 1, |ctx| {
         let mut cursor = 0;
         assert!(take_spline_scalars(
             ctx,
@@ -121,7 +201,22 @@ fn positional_spline_vector_visits_match_complete_tuples() {
                 body.extend_from_slice(&raw);
             }
         }
-        check_work(|ctx| {
+        let mut steps = Vec::new();
+        let mut capacity = 0;
+        let mut overlap = 0;
+        for index in 0..count {
+            steps.extend([1; 3]);
+            if index == capacity {
+                if capacity != 0 {
+                    overlap = capacity * std::mem::size_of::<[f64; 3]>();
+                    steps.push(u64_from_index(overlap));
+                }
+                capacity = (2 * capacity).max(4);
+            }
+        }
+        // Candidate backing is scoped until the final complete vector is promoted.
+        let bytes = capacity * std::mem::size_of::<[f64; 3]>();
+        check_work_sequence_with_materialized(&steps, bytes, count, bytes + overlap, |ctx| {
             let mut cursor = 0;
             let vectors = take_spline_vectors(
                 ctx,
@@ -146,22 +241,64 @@ fn inherited_local_system_run_admits_encoded_dispatch_and_expanded_slots() {
         } else {
             vec![0xe7, 0x81, 0x01]
         }; // Two-byte compact count 257.
-        check_work(|ctx| {
-            let values = sequential_named_local_system_slots(
-                ctx,
-                &body,
-                count,
-                &ScalarCache::default(),
-                &mut ScalarBodyRefusal::default(),
-            )?;
-            assert_eq!(values, Some(vec![None; count]));
-            Ok(())
-        });
+        let work = 1 + u64_from_index(count);
+        for cap in 0..=work + 1 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_retained_bytes =
+                u64_from_index(count.max(4) * std::mem::size_of::<Option<f64>>());
+            policy.limits.max_collection_items = u64_from_index(count);
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let run = || {
+                sequential_named_local_system_slots(
+                    &ctx,
+                    &body,
+                    count,
+                    &ScalarCache::default(),
+                    &mut ScalarBodyRefusal::default(),
+                )
+            };
+            let original = if cap < work {
+                let CodecError::ResourceLimit(refusal) =
+                    run().expect_err("dispatch or whole inherited expansion")
+                else {
+                    panic!("resource refusal");
+                };
+                let (used, additional, operation) = if cap == 0 {
+                    (0, 1, "creo local-system scalar dispatch")
+                } else {
+                    (
+                        1,
+                        u64_from_index(count),
+                        "creo local-system inherited slots",
+                    )
+                };
+                assert_eq!(
+                    (refusal.used, refusal.additional, refusal.operation),
+                    (used, additional, operation)
+                );
+                refusal
+            } else {
+                assert_eq!(
+                    run().expect("one encoded dispatch and exact inherited expansion"),
+                    Some(vec![None; count])
+                );
+                let refusal = ctx
+                    .charge_work_limit(cap - work + 1, "after inherited slots")
+                    .expect_err("exact remaining Work");
+                assert_eq!((refusal.used, refusal.additional), (work, cap - work + 1));
+                refusal
+            };
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        }
     }
-
     // Invalid transitions execute only the one encoded-token dispatch.
     for body in [&[0xe7][..], &[0xe7, 0], &[0xe7, 2]] {
-        check_work(|ctx| {
+        check_work(1, 4 * std::mem::size_of::<Option<f64>>(), 1, |ctx| {
             assert!(sequential_named_local_system_slots(
                 ctx,
                 body,
@@ -178,46 +315,56 @@ fn inherited_local_system_run_admits_encoded_dispatch_and_expanded_slots() {
 #[test]
 fn spline_continuation_visits_preserve_token_interiors_and_implicit_zero() {
     for name in ["i_pnts", "i_points"] {
-        check_work(|ctx| {
+        check_work(
+            3,
+            4 * std::mem::size_of::<ScalarTokenSlot>() + 1,
+            2,
+            |ctx| {
+                let slots = named_spline_scalar_slots(
+                    ctx,
+                    &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
+                    name,
+                    &[0xe4, 0xf9, 0x00],
+                    2,
+                    &ScalarCache::default(),
+                    &mut ScalarBodyRefusal::default(),
+                )?;
+                assert_eq!(
+                    slots,
+                    Some(vec![(Some(1.0), vec![0xe4]), (Some(0.0), Vec::new())])
+                );
+                Ok(())
+            },
+        );
+    }
+    // The unresolved seven-byte token owns all of its embedded markers.
+    let body = [0xaa, 0xf9, 0x00, 0xe3, 0xe4, 0x18, 0xe0, 0xe4];
+    check_work_sequence(
+        &[1, 7, 1, 1],
+        4 * std::mem::size_of::<ScalarTokenSlot>() + 8,
+        2,
+        |ctx| {
             let slots = named_spline_scalar_slots(
                 ctx,
                 &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
-                name,
-                &[0xe4, 0xf9, 0x00],
+                "tangts",
+                &body,
                 2,
                 &ScalarCache::default(),
                 &mut ScalarBodyRefusal::default(),
             )?;
             assert_eq!(
                 slots,
-                Some(vec![(Some(1.0), vec![0xe4]), (Some(0.0), Vec::new())])
+                Some(vec![(None, body[..7].to_vec()), (Some(1.0), vec![0xe4])])
             );
             Ok(())
-        });
-    }
-    // The unresolved seven-byte token owns all of its embedded markers.
-    let body = [0xaa, 0xf9, 0x00, 0xe3, 0xe4, 0x18, 0xe0, 0xe4];
-    check_work(|ctx| {
-        let slots = named_spline_scalar_slots(
-            ctx,
-            &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
-            "tangts",
-            &body,
-            2,
-            &ScalarCache::default(),
-            &mut ScalarBodyRefusal::default(),
-        )?;
-        assert_eq!(
-            slots,
-            Some(vec![(None, body[..7].to_vec()), (Some(1.0), vec![0xe4])])
-        );
-        Ok(())
-    });
+        },
+    );
 }
 
 #[test]
 fn scalar_slot_free_results_return_without_work() {
-    check_work(|ctx| {
+    check_work(0, 0, 0, |ctx| {
         let cache = ScalarCache::default();
         let mut refusal = ScalarBodyRefusal::default();
         assert_eq!(

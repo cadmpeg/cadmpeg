@@ -195,54 +195,33 @@ fn primitive_strip_output_keeps_only_surviving_shaded_or_unshaded_backing() {
 }
 
 #[test]
-fn partial_shaded_construction_keeps_original_work_refusal_before_promotion() {
-    let bytes = u64::try_from(4 * std::mem::size_of::<PrimitiveShadedVertex>())
-        .expect("core minimum four output slots");
+fn shaded_strip_projection_refuses_work_before_length_promotion() {
+    let bytes =
+        super::strip_visits::strip_geometry_input(17, &[3], &[[0.0; 3]; 3], Some(&[[0.0; 3]; 3]));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let CodecError::ResourceLimit(boundary) = crate::test_support::last_refusal_at(
-        &[],
+        &bytes,
         ResourceDimension::WorkUnits,
-        "creo primitive shaded vertices",
-        |ctx| {
-            PrimitiveTriangleStrip::new(
-                ctx,
-                17,
-                finite_points(vec![[0.0; 3]; 3]),
-                Some(finite_points(vec![[0.0; 3]; 3])),
-                vec![3],
-            )
-        },
+        "creo primitive shaded vertex projection",
+        |ctx| triangle_strips(ctx, &bytes),
     ) else {
         panic!("work boundary");
     };
-    policy.limits.max_work_units = boundary.used;
-    policy.limits.max_materialized_bytes = bytes;
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let result = PrimitiveTriangleStrip::new(
-        &ctx,
-        17,
-        finite_points(vec![[0.0; 3]; 3]),
-        Some(finite_points(vec![[0.0; 3]; 3])),
-        vec![3],
-    );
-    let Err(CodecError::ResourceLimit(original)) = result else {
-        panic!("present pair must refuse");
+    assert_eq!(boundary.additional, 3);
+    policy.limits.max_work_units = boundary.limit;
+    policy.limits.max_materialized_bytes = CAP;
+    // Records and the shaded output buffer are admitted before projection.
+    // Lengths remain scoped until projection succeeds.
+    policy.limits.max_retained_bytes = u64::try_from(
+        4 * std::mem::size_of::<PrimitiveTriangleStrip>()
+            + 3 * std::mem::size_of::<PrimitiveShadedVertex>(),
+    )
+    .expect("backing before length promotion");
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(refusal)) = triangle_strips(&ctx, &bytes) else {
+        panic!("present projection must refuse");
     };
-    assert_eq!(
-        (
-            original.dimension,
-            original.operation,
-            original.used,
-            original.additional
-        ),
-        (
-            ResourceDimension::WorkUnits,
-            "creo primitive shaded vertices",
-            boundary.used,
-            boundary.additional
-        )
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert_eq!(refusal, boundary);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }

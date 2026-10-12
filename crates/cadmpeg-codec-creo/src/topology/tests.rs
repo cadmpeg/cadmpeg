@@ -163,11 +163,10 @@ fn edge_vertex_pairs_reject_duplicate_side_without_a_temporary_vector() {
 fn one_incident_vertex() -> (Vec<TopologicalVertex>, Vec<HalfEdge>) {
     let edge = orphan_edge();
     (
-        vec![crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new(ctx, 1, vec![edge.id])
-        })
-        .expect("vertex admission")
-        .expect("valid vertex fixture")],
+        vec![
+            crate::topology::TopologicalVertex::new_for_test(1, vec![edge.id])
+                .expect("valid vertex fixture"),
+        ],
         vec![edge],
     )
 }
@@ -677,23 +676,19 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
             next: None,
         },
     ];
-    let vertex = crate::decode::with_test_decode_ctx(|ctx| {
-        crate::topology::TopologicalVertex::new(
-            ctx,
-            1,
-            vec![
-                HalfEdgeId {
-                    curve_id: 7,
-                    side: crate::topology::Side::Zero,
-                },
-                HalfEdgeId {
-                    curve_id: 8,
-                    side: crate::topology::Side::Zero,
-                },
-            ],
-        )
-    })
-    .expect("vertex admission")
+    let vertex = crate::topology::TopologicalVertex::new_for_test(
+        1,
+        vec![
+            HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::Zero,
+            },
+            HalfEdgeId {
+                curve_id: 8,
+                side: crate::topology::Side::Zero,
+            },
+        ],
+    )
     .expect("valid vertex fixture");
 
     let incident_faces = with_service_context(|ctx| {
@@ -1104,166 +1099,6 @@ fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
 }
 
 #[test]
-fn closed_ring_constructor_rejects_empty_repeated_disconnected_and_mixed_faces() {
-    let a = HalfEdgeId {
-        curve_id: 1,
-        side: crate::topology::Side::Zero,
-    };
-    let b = HalfEdgeId {
-        curve_id: 2,
-        side: crate::topology::Side::Zero,
-    };
-    let face = std::num::NonZeroU32::new(10);
-    let graph = [
-        HalfEdge {
-            id: a,
-            face_id: face,
-            next: Some(b),
-        },
-        HalfEdge {
-            id: b,
-            face_id: face,
-            next: Some(a),
-        },
-    ];
-    with_service_context(|ctx| {
-        for ring in [vec![], vec![a, a], vec![a], vec![b]] {
-            assert!(super::Loop::new(ctx, face, ring, &graph)
-                .expect("ring validation")
-                .is_none());
-        }
-        let ring = super::Loop::new(ctx, face, vec![a, b], &graph)
-            .expect("ring validation")
-            .expect("closed ring");
-        assert_eq!(ring.half_edges(), [a, b]);
-        let mut mixed = graph.clone();
-        mixed[1].face_id = std::num::NonZeroU32::new(11);
-        assert!(super::Loop::new(ctx, face, vec![a, b], &mixed)
-            .expect("ring validation")
-            .is_none());
-        let mut duplicate = graph.to_vec();
-        duplicate.push(graph[0].clone());
-        assert!(super::Loop::new(ctx, face, vec![a, b], &duplicate)
-            .expect("ring validation")
-            .is_none());
-    });
-}
-
-#[test]
-fn face_component_constructor_rejects_zero_repeated_and_unordered_identity_sets() {
-    with_service_context(|ctx| {
-        for faces in [vec![], vec![0], vec![2, 0, 2, 1], vec![2, 1], vec![1, 1]] {
-            assert!(super::FaceComponent::new(ctx, faces, vec![1])
-                .expect("component validation")
-                .is_none());
-        }
-        for curves in [vec![2, 1], vec![1, 1]] {
-            assert!(super::FaceComponent::new(ctx, vec![1], curves)
-                .expect("component validation")
-                .is_none());
-        }
-        let component = super::FaceComponent::new(ctx, vec![1, 2], vec![0, 1])
-            .expect("component validation")
-            .expect("ordered component");
-        assert_eq!(component.face_ids(), [1, 2]);
-        assert_eq!(component.curve_ids(), [0, 1]);
-    });
-}
-
-#[test]
-fn checked_topology_constructors_propagate_work_refusal() {
-    let id = HalfEdgeId {
-        curve_id: 1,
-        side: crate::topology::Side::Zero,
-    };
-    let graph = [HalfEdge {
-        id,
-        face_id: None,
-        next: Some(id),
-    }];
-    let refusal = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo closed ring validation work",
-        |ctx| super::Loop::new(ctx, None, vec![id], &graph),
-    );
-    let CodecError::ResourceLimit(boundary) = refusal else {
-        panic!("resource refusal");
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = boundary.limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = super::Loop::new(&ctx, None, vec![id], &graph).expect_err("ring work refused");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("resource refusal");
-    };
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    policy.limits.max_work_units =
-        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::FaceComponent::new(&ctx, vec![1], vec![])
-        });
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let component = super::FaceComponent::new(&ctx, vec![1], vec![])
-        .expect("singleton has no adjacent comparison")
-        .expect("one face");
-    assert_eq!(component.face_ids(), [1]);
-    assert!(component.curve_ids().is_empty());
-}
-
-#[test]
-fn vertex_orbit_constructor_rejects_zero_empty_repeated_and_unordered_members() {
-    let a = HalfEdgeId {
-        curve_id: 1,
-        side: crate::topology::Side::Zero,
-    };
-    let b = HalfEdgeId {
-        curve_id: 2,
-        side: crate::topology::Side::Zero,
-    };
-    with_service_context(|ctx| {
-        assert!(super::TopologicalVertex::new(ctx, 0, vec![a])
-            .expect("vertex validation")
-            .is_none());
-        for members in [vec![], vec![a, a], vec![b, a]] {
-            assert!(super::TopologicalVertex::new(ctx, 1, members)
-                .expect("vertex validation")
-                .is_none());
-        }
-        let vertex = super::TopologicalVertex::new(ctx, 1, vec![a, b])
-            .expect("vertex validation")
-            .expect("ordered orbit");
-        assert_eq!(vertex.id.get(), 1);
-        assert_eq!(vertex.half_edges(), [a, b]);
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units =
-        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::TopologicalVertex::new(&ctx, 1, vec![a])
-        });
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let singleton = super::TopologicalVertex::new(&ctx, 1, vec![a])
-        .expect("one member has no adjacent comparison")
-        .expect("valid singleton orbit");
-    assert_eq!(singleton.id.get(), 1);
-    assert_eq!(singleton.half_edges(), [a]);
-    let error = super::TopologicalVertex::new(&ctx, 1, vec![a, b]).expect_err("orbit work refused");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("resource refusal");
-    };
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-}
-
-#[test]
 fn topology_successor_and_open_tail_walks_refuse_work() {
     let rows = [row(1, 2), row(2, 3), row(3, 99)];
     let (edges, loops) = crate::test_support::assert_work_boundaries(
@@ -1303,39 +1138,4 @@ fn half_edge_id_cost_excludes_struct_padding() {
         }
         assert_eq!(<HalfEdgeId as DecodeCost>::FIXED_BYTES, Some(5));
     });
-}
-
-fn work_output<T>(
-    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> T {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let capped = |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_entities = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = run(&ctx);
-        if let Err(CodecError::ResourceLimit(original)) = &result {
-            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-        }
-        result
-    };
-    let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, capped);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = work;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_entities = 0;
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    run(&ctx).expect("walker admits the unchanged fixture")
 }

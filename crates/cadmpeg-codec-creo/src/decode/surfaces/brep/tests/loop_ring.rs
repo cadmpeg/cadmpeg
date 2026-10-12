@@ -112,15 +112,13 @@ fn brep_native_loop_ring_preserves_service_order() {
 }
 
 #[test]
-fn brep_loop_ring_error_refuses_empty_source_ring_before_projection() {
+fn brep_loop_ring_has_no_empty_source_ring_after_topology_build() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    assert!(
-        crate::topology::Loop::new(&ctx, std::num::NonZeroU32::new(5), Vec::new(), &[])
-            .expect("no allocation for invalid ring")
-            .is_none()
-    );
+    let (edges, loops) = crate::topology::build(&ctx, &[]).expect("empty topology graph");
+    assert!(edges.is_empty());
+    assert!(loops.is_empty());
 }
