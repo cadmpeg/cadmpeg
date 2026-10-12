@@ -113,17 +113,19 @@ pub(super) fn decode_graph(
         })?;
     let body_records = typed_records.unwrap_or_default();
     let mut metadata_storage = ctx.reserve_scoped(0, "hold Parasolid graph metadata")?;
-    let body_modifiers = metadata_storage.with_storage(|| {
-        unique_body_modifiers(ctx, std::mem::take(&mut entity_facts.body_modifiers))
-    })?;
+    let (body_modifier_source, body_modifier_storage) = entity_facts.take_body_modifiers();
+    let body_modifiers = metadata_storage
+        .with_storage(|| unique_body_modifiers(ctx, body_modifier_source))?;
+    drop(body_modifier_storage);
+    let (face_color_source, face_color_storage) = entity_facts.take_face_colors();
+    let (face_color_versions, face_color_version_storage) =
+        entity_facts.take_face_color_versions();
     let ((face_colors, conflicting_face_colors), color_storage) =
         ctx.with_scoped_storage("hold selected Parasolid face colors", || {
-            unique_face_colors(
-                ctx,
-                std::mem::take(&mut entity_facts.face_colors),
-                std::mem::take(&mut entity_facts.face_color_versions),
-            )
+            unique_face_colors(ctx, face_color_source, face_color_versions)
         })?;
+    drop(face_color_storage);
+    drop(face_color_version_storage);
     let face_bridge_sequences = metadata_storage.with_storage(|| {
         sorted_topology_sequences(
             ctx,
@@ -1457,10 +1459,8 @@ pub(super) fn decode_graph(
         };
     }
     let mut bound_faces = BTreeSet::new();
-    for atom in ctx.admit_iter(
-        std::mem::take(&mut entity_facts.face_atoms),
-        "bind Parasolid face atoms",
-    )? {
+    let (face_atoms, face_atom_storage) = entity_facts.take_face_atoms();
+    for atom in ctx.admit_iter(face_atoms, "bind Parasolid face atoms")? {
         let Some(identity) = atom.identity.as_ref() else {
             continue;
         };
@@ -1488,6 +1488,7 @@ pub(super) fn decode_graph(
             )?;
         }
     }
+    drop(face_atom_storage);
     drop(entity_facts);
     solve_face_orientation(ctx, &mut out)?;
     synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;

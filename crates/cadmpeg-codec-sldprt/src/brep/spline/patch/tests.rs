@@ -36,7 +36,7 @@ fn retained_nurbs_curve_patch_preserves_descriptor_refusal() {
     assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
-fn retained_surface_refusal(operation: &'static str) {
+fn retained_surface_refusal(dimension: ResourceDimension, operation: &'static str) {
     let bytes = compact_counted_nurbs_surface_carrier(10, 11, 20);
     let baseline = cadmpeg_test_support::service_decode_context();
     let carrier = super::super::scan_surface_carriers(&baseline, &bytes, &mut Vec::new())
@@ -46,53 +46,71 @@ fn retained_surface_refusal(operation: &'static str) {
     let Some(SolvedSurfaceGeometry::Nurbs(old)) = carrier.geometry.solved() else {
         panic!("NURBS surface");
     };
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems,
-        operation,
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            let mut patched = bytes.clone();
-            let result = super::patch_nurbs_surface(&ctx, &mut patched, 0, old, old, 0.001);
-            if let Err(CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            }
-            result
-        },
-    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => unreachable!("retained patch boundary dimensions"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut patched = bytes.clone();
+        let result = super::patch_nurbs_surface(&ctx, &mut patched, 0, old, old, 0.001);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
     assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
 #[test]
 fn retained_nurbs_surface_patch_preserves_descriptor_refusal() {
-    retained_surface_refusal("collect Parasolid surface descriptors");
+    retained_surface_refusal(
+        ResourceDimension::CollectionItems,
+        "collect Parasolid surface descriptors",
+    );
 }
 
 #[test]
 fn retained_nurbs_surface_patch_preserves_compact_attribute_refusal() {
-    retained_surface_refusal("index Parasolid patch compact attributes");
+    retained_surface_refusal(
+        ResourceDimension::CollectionItems,
+        "index Parasolid patch compact attributes",
+    );
 }
 
 #[test]
 fn retained_nurbs_surface_patch_preserves_array_index_refusal() {
-    retained_surface_refusal("index Parasolid compact arrays");
+    retained_surface_refusal(
+        ResourceDimension::CollectionItems,
+        "index Parasolid compact arrays",
+    );
 }
 
 #[test]
 fn retained_nurbs_surface_patch_preserves_array_span_refusal() {
-    retained_surface_refusal("collect Parasolid patch array spans");
+    retained_surface_refusal(
+        ResourceDimension::CollectionItems,
+        "collect Parasolid patch array spans",
+    );
 }
 
 #[test]
 fn retained_nurbs_surface_patch_preserves_scalar_value_refusal() {
-    retained_surface_refusal("read Parasolid patch scalar values");
+    retained_surface_refusal(
+        ResourceDimension::WorkUnits,
+        "match Parasolid patch knot spans",
+    );
 }
 
 #[test]
 fn retained_nurbs_surface_patch_preserves_multiplicity_refusal() {
-    retained_surface_refusal("read Parasolid patch multiplicities");
+    retained_surface_refusal(
+        ResourceDimension::WorkUnits,
+        "match Parasolid patch multiplicity values",
+    );
 }
 
 #[test]

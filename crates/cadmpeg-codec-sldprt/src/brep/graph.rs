@@ -1099,13 +1099,13 @@ pub(crate) fn decode_bodies(
         };
         let mut scanned_facts = entity::scan_metadata(ctx, body, is_deltas)?;
         for color in ctx.admit_iter(
-            &mut scanned_facts.face_colors,
+            scanned_facts.face_colors_mut(),
             "order Parasolid face colors by stream",
         )? {
             color.stream_order = stream_order;
         }
         for version in ctx.admit_iter(
-            &mut scanned_facts.face_color_versions,
+            scanned_facts.face_color_versions_mut(),
             "order Parasolid face color versions by stream",
         )? {
             version.stream_order = stream_order;
