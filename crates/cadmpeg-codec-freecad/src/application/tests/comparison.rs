@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed application comparison parity with the former JSON comparison.
 
-use crate::native::{EntryRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+use crate::native::{
+    EntryRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyBody, PropertyFamily,
+    PropertyRecord, RetainedXml,
+};
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::Value;
 
 fn inputs() -> (Vec<ObjectRecord>, Vec<PropertyRecord>, Vec<EntryRecord>) {
     let object = ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Owner".into(), "Owner".into(),
-        ).unwrap(),
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .unwrap(),
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
@@ -24,7 +29,8 @@ fn inputs() -> (Vec<ObjectRecord>, Vec<PropertyRecord>, Vec<EntryRecord>) {
         document_attribute: Some("file".into()),
         object: Some("Other".to_owned()),
         subelements: vec!["Face1".into()],
-    }).unwrap();
+    })
+    .unwrap();
     let property = PropertyRecord {
         id: "fcstd:native:property#Owner:Data".into(),
         owner: object.id().clone(),
@@ -45,7 +51,8 @@ fn inputs() -> (Vec<ObjectRecord>, Vec<PropertyRecord>, Vec<EntryRecord>) {
         "fcstd:native:entry#shared.bin".into(),
         "shared.bin".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
-        Vec::new(), vec![7; 4096],
+        Vec::new(),
+        vec![7; 4096],
     );
     (vec![object], vec![property], vec![entry])
 }
@@ -53,8 +60,11 @@ fn inputs() -> (Vec<ObjectRecord>, Vec<PropertyRecord>, Vec<EntryRecord>) {
 fn assert_parity(change: impl FnOnce(&mut Vec<Value>), expected_match: bool) {
     let (objects, properties, entries) = inputs();
     let mut expected = crate::test_support::with_service_context(&[], |ctx| {
-        super::super::wire_records(ctx, &objects, &properties, &entries).unwrap()
-            .into_iter().map(|record| serde_json::to_value(record).unwrap()).collect::<Vec<_>>()
+        super::super::wire_records(ctx, &objects, &properties, &entries)
+            .unwrap()
+            .into_iter()
+            .map(|record| serde_json::to_value(record).unwrap())
+            .collect::<Vec<_>>()
     });
     expected.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     let mut actual = expected.clone();
@@ -65,8 +75,10 @@ fn assert_parity(change: impl FnOnce(&mut Vec<Value>), expected_match: bool) {
     });
     // This is the former comparison: typed JSON arena reads against serialized records.
     let old = crate::test_support::with_service_context(&[], |ctx| {
-        let actual = namespace.arena_iter_as_for_decode::<Value>(ctx, "applications")
-            .collect::<Result<Vec<_>, _>>().unwrap();
+        let actual = namespace
+            .arena_iter_as_for_decode::<Value>(ctx, "applications")
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         actual == expected
     });
     let typed = crate::test_support::with_service_context(&[], |ctx| {
@@ -152,9 +164,16 @@ field_cases!("/property_records/0/links/0/";
 
 #[test]
 fn application_typed_payload_last_byte_matches_json() {
-    assert_parity(|records| {
-        *records[0]["property_records"][0]["payloads"][0]["data"].as_array_mut().unwrap().last_mut().unwrap() = 8.into();
-    }, false);
+    assert_parity(
+        |records| {
+            *records[0]["property_records"][0]["payloads"][0]["data"]
+                .as_array_mut()
+                .unwrap()
+                .last_mut()
+                .unwrap() = 8.into();
+        },
+        false,
+    );
 }
 
 #[test]
@@ -164,19 +183,35 @@ fn application_typed_fewer_records_matches_json() {
 
 #[test]
 fn application_typed_more_records_matches_json() {
-    assert_parity(|records| {
-        let mut extra = records[0].clone();
-        extra["id"] = "fcstd:native:application#ZExtra".into();
-        records.push(extra);
-    }, false);
+    assert_parity(
+        |records| {
+            let mut extra = records[0].clone();
+            extra["id"] = "fcstd:native:application#ZExtra".into();
+            records.push(extra);
+        },
+        false,
+    );
 }
 
 #[test]
 fn application_typed_rejects_extra_missing_and_wrong_shape_fields() {
-    for path in ["", "/property_records/0", "/property_records/0/payloads/0", "/property_records/0/links/0"] {
-        assert_parity(|records| {
-            records[0].pointer_mut(path).unwrap().as_object_mut().unwrap().insert("extra".into(), Value::Null);
-        }, false);
+    for path in [
+        "",
+        "/property_records/0",
+        "/property_records/0/payloads/0",
+        "/property_records/0/links/0",
+    ] {
+        assert_parity(
+            |records| {
+                records[0]
+                    .pointer_mut(path)
+                    .unwrap()
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("extra".into(), Value::Null);
+            },
+            false,
+        );
         let fields = match path {
             "" => vec!["object", "order", "data"],
             "/property_records/0" => vec!["property", "family", "links"],
@@ -184,29 +219,75 @@ fn application_typed_rejects_extra_missing_and_wrong_shape_fields() {
             _ => vec!["document", "document_attribute", "object", "subelements"],
         };
         for field in fields {
-            assert_parity(|records| {
-                records[0].pointer_mut(path).unwrap().as_object_mut().unwrap().remove(field);
-            }, false);
+            assert_parity(
+                |records| {
+                    records[0]
+                        .pointer_mut(path)
+                        .unwrap()
+                        .as_object_mut()
+                        .unwrap()
+                        .remove(field);
+                },
+                false,
+            );
         }
     }
     for (path, fields) in [
-        ("/property_records/0", vec!["id", "object", "property", "type_name", "family", "order", "links", "byte_start", "byte_end", "byte_len", "sha256", "data", "payloads", "inert"]),
-        ("/property_records/0/payloads/0", vec!["entry", "name", "byte_len", "sha256", "data"]),
-        ("/property_records/0/links/0", vec!["document", "document_attribute", "object", "subelements"]),
+        (
+            "/property_records/0",
+            vec![
+                "id",
+                "object",
+                "property",
+                "type_name",
+                "family",
+                "order",
+                "links",
+                "byte_start",
+                "byte_end",
+                "byte_len",
+                "sha256",
+                "data",
+                "payloads",
+                "inert",
+            ],
+        ),
+        (
+            "/property_records/0/payloads/0",
+            vec!["entry", "name", "byte_len", "sha256", "data"],
+        ),
+        (
+            "/property_records/0/links/0",
+            vec!["document", "document_attribute", "object", "subelements"],
+        ),
     ] {
-        assert_parity(|records| {
-            let object = records[0].pointer_mut(path).unwrap();
-            *object = Value::Array(fields.iter().map(|field| object[*field].clone()).collect());
-        }, false);
+        assert_parity(
+            |records| {
+                let object = records[0].pointer_mut(path).unwrap();
+                *object = Value::Array(fields.iter().map(|field| object[*field].clone()).collect());
+            },
+            false,
+        );
     }
-    assert_parity(|records| {
-        records[0]["property_records"][0]["family"] = serde_json::json!({"file": null});
-    }, false);
-    for path in ["/order", "/byte_start", "/property_records/0/order", "/property_records/0/payloads/0/byte_len"] {
-        assert_parity(|records| {
-            let field = records[0].pointer_mut(path).unwrap();
-            *field = Value::from(field.as_f64().unwrap());
-        }, false);
+    assert_parity(
+        |records| {
+            records[0]["property_records"][0]["family"] = serde_json::json!({"file": null});
+        },
+        false,
+    );
+    for path in [
+        "/order",
+        "/byte_start",
+        "/property_records/0/order",
+        "/property_records/0/payloads/0/byte_len",
+    ] {
+        assert_parity(
+            |records| {
+                let field = records[0].pointer_mut(path).unwrap();
+                *field = Value::from(field.as_f64().unwrap());
+            },
+            false,
+        );
     }
 }
 
@@ -217,9 +298,18 @@ fn application_typed_comparisons_refuse_before_field_and_payload_work() {
     crate::test_support::with_service_context(&[], |ctx| {
         super::super::install(ctx, &mut namespace, &objects, &properties, &entries).unwrap();
     });
-    for operation in ["FreeCAD application field comparison", "FreeCAD application payload comparison"] {
-        crate::test_support::refusal_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, &[], operation, |ctx| {
-            super::super::matches_native(ctx, &namespace, &objects, &properties, &entries).map_err(cadmpeg_core::CodecError::from)
-        });
+    for operation in [
+        "FreeCAD application field comparison",
+        "FreeCAD application payload comparison",
+    ] {
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            operation,
+            |ctx| {
+                super::super::matches_native(ctx, &namespace, &objects, &properties, &entries)
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
     }
 }
