@@ -417,26 +417,30 @@ pub(in super::super) fn schema_feature_definition(
         };
         let mut sketch_storage = ctx.reserve_scoped(0, "creo schema sketch lookup")?;
         let sketch = match definition {
-            Some(definition) => match sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? {
-                Some(sketch) => {
-                    let sketch_found = ctx.any_by(
-                        &ir.model.sketches,
-                        |candidate| {
-                            ctx.equal(
-                                &candidate.id,
-                                &sketch,
-                                "creo schema sketch identity comparison",
-                            )
-                        },
-                        "creo schema sketch model lookup",
-                    )?;
-                    sketch_found.then_some(sketch)
+            Some(definition) => {
+                match sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? {
+                    Some(sketch) => {
+                        let sketch_found = ctx.any_by(
+                            &ir.model.sketches,
+                            |candidate| {
+                                ctx.equal(
+                                    &candidate.id,
+                                    &sketch,
+                                    "creo schema sketch identity comparison",
+                                )
+                            },
+                            "creo schema sketch model lookup",
+                        )?;
+                        sketch_found.then_some(sketch)
+                    }
+                    None => None,
                 }
-                None => None,
-            },
+            }
             None => None,
         };
-        let sketch = sketch.map(|sketch| sketch_storage.commit_value(sketch)).transpose()?;
+        let sketch = sketch
+            .map(|sketch| sketch_storage.commit_value(sketch))
+            .transpose()?;
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
         }));

@@ -164,10 +164,12 @@ fn unmatched_selected_coedge_refuses_work_and_skips_empty_shell_scan() {
     policy.limits.max_work_units = cap;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    assert!(bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&unmatched))
-        .expect("an unmatched coedge skips loop joins and the empty shell scan")
-        .bodies
-        .is_empty());
+    assert!(
+        bodies_containing_edges(&ctx, &ir, std::slice::from_ref(&unmatched))
+            .expect("an unmatched coedge skips loop joins and the empty shell scan")
+            .bodies
+            .is_empty()
+    );
     assert!(crate::decode::with_test_decode_ctx(|ctx| {
         bodies_containing_edges(ctx, &ir, std::slice::from_ref(&unmatched))
             .map(|bodies| bodies.bodies.is_empty())
@@ -197,25 +199,22 @@ fn selected_wire_shell_membership_short_circuits_after_first_match() {
     );
     let body = ir.model.bodies[0].id.clone();
     let named_needs = std::cell::RefCell::new(std::collections::BTreeSet::new());
-    crate::test_support::assert_work_boundaries(
-        &["creo selected shell wire edge lookup"],
-        |ctx| {
-            let result = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected));
-            if let Some(resource) = ctx.resource_refusal() {
-                if resource.operation == "creo selected shell wire edge lookup" {
-                    named_needs.borrow_mut().insert(
-                        resource
-                            .used
-                            .checked_add(resource.additional)
-                            .expect("work need"),
-                    );
-                }
+    crate::test_support::assert_work_boundaries(&["creo selected shell wire edge lookup"], |ctx| {
+        let result = bodies_containing_edges(ctx, &ir, std::slice::from_ref(&selected));
+        if let Some(resource) = ctx.resource_refusal() {
+            if resource.operation == "creo selected shell wire edge lookup" {
+                named_needs.borrow_mut().insert(
+                    resource
+                        .used
+                        .checked_add(resource.additional)
+                        .expect("work need"),
+                );
             }
-            result.map(|bodies| {
-                assert_eq!(bodies.bodies, vec![&body]);
-            })
-        },
-    );
+        }
+        result.map(|bodies| {
+            assert_eq!(bodies.bodies, vec![&body]);
+        })
+    });
     let named_refusals = named_needs.borrow().len();
     assert_eq!(named_refusals, 1, "the matched wire edge stops the scan");
     assert_eq!(
@@ -441,9 +440,8 @@ fn unicode_surface_output_body_id_charges_only_retained_copy_work() {
         next_surface: 0,
         offset: 0,
     });
-    let outputs = crate::test_support::assert_work_boundaries(
-        &["creo feature output body IDs"],
-        |ctx| {
+    let outputs =
+        crate::test_support::assert_work_boundaries(&["creo feature output body IDs"], |ctx| {
             let result = super::feature_output_bodies(ctx, &scan, &ir, 40);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
                 if resource.operation == "creo feature output body IDs" {
@@ -454,7 +452,6 @@ fn unicode_surface_output_body_id_charges_only_retained_copy_work() {
                 }
             }
             result
-        },
-    );
+        });
     assert_eq!(outputs, vec![body]);
 }

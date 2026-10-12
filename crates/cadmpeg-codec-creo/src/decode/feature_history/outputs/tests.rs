@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    bodies_containing_edges, decoded_feature_reference_name,
-    evaluated_sweep_body_kind, feature_output_bodies, feature_reference_name,
-    generated_edge_output_bodies, generated_input_output_bodies,
+    bodies_containing_edges, decoded_feature_reference_name, evaluated_sweep_body_kind,
+    feature_output_bodies, feature_reference_name, generated_edge_output_bodies,
+    generated_input_output_bodies,
 };
 
 #[test]
@@ -176,10 +176,10 @@ fn evaluated_sweep_candidate_refuses_before_scoped_text() {
 fn evaluated_sweep_body_refuses_before_retained_id() {
     let scan = crate::test_support::empty_container_scan();
     let ir = sweep_output_ir();
-    let outputs = crate::test_support::assert_retained_boundaries(
-        &["creo feature output body IDs"],
-        |ctx| feature_output_bodies(ctx, &scan, &ir, 40),
-    );
+    let outputs =
+        crate::test_support::assert_retained_boundaries(&["creo feature output body IDs"], |ctx| {
+            feature_output_bodies(ctx, &scan, &ir, 40)
+        });
     assert_eq!(outputs, vec![ir.model.bodies[0].id.clone()]);
 }
 
@@ -202,8 +202,8 @@ fn evaluated_sweep_body_refuses_before_output_row() {
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = feature_output_bodies(&ctx, &scan, &ir, 40)
-        .expect_err("one output needs a Vec row");
+    let error =
+        feature_output_bodies(&ctx, &scan, &ir, 40).expect_err("one output needs a Vec row");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems

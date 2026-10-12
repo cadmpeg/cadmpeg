@@ -724,7 +724,10 @@ fn source_property_schema_classes_retain_only_formatted_output() {
         ("featdefs_schema_class".to_owned(), "926".to_owned()),
         ("featdefs_row_schema_classes".to_owned(), "926".to_owned()),
     ]);
-    let output_bytes = expected.iter().map(|(key, value)| key.len() + value.len()).sum::<usize>();
+    let output_bytes = expected
+        .iter()
+        .map(|(key, value)| key.len() + value.len())
+        .sum::<usize>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(output_bytes);
@@ -733,8 +736,15 @@ fn source_property_schema_classes_retain_only_formatted_output() {
         .expect("only formatted property text is retained");
     assert_eq!(properties, expected);
     drop((properties, storage));
-    let refusal = ctx.charge_retained_limit(1, "source property retained boundary")
+    let refusal = ctx
+        .charge_retained_limit(1, "source property retained boundary")
         .expect_err("formatted output consumes the exact allowance");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional),
-        (ResourceDimension::RetainedBytes, cadmpeg_core::decode::u64_from_index(output_bytes), 1));
+    assert_eq!(
+        (refusal.dimension, refusal.used, refusal.additional),
+        (
+            ResourceDimension::RetainedBytes,
+            cadmpeg_core::decode::u64_from_index(output_bytes),
+            1
+        )
+    );
 }
