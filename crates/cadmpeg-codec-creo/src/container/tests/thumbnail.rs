@@ -1,21 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{has_thumbnail, scan_bytes_ok, ContainerScan};
+use super::super::{has_thumbnail, scan_bytes_ok, ContainerScan, JPEG_MAGIC};
 use crate::test_support::{build_toc_section_prt, jpeg_payload, unix_compress_literals};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-fn assert_positive_work(scan: &ContainerScan<'_>, operations: &[&str]) {
+fn assert_positive_work(scan: &ContainerScan<'_>, operations: &[(&str, u64)]) {
     assert!(crate::test_support::assert_work_boundaries(
-        operations,
+        &operations
+            .iter()
+            .map(|(operation, _)| *operation)
+            .collect::<Vec<_>>(),
         |ctx| has_thumbnail(ctx, scan)
     ));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    let work: u64 = operations.iter().map(|(_, amount)| amount).sum();
+    policy.limits.max_work_units = work;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(has_thumbnail(&ctx, scan).expect("borrowed thumbnail search"));
+    assert!(has_thumbnail(&ctx, scan).expect("source-derived thumbnail work"));
+    let refusal = ctx
+        .charge_work_limit(1, "after thumbnail work")
+        .expect_err("exact cap exhausted");
+    assert_eq!((refusal.used, refusal.additional), (work, 1));
 }
 
 #[test]
@@ -50,7 +59,13 @@ fn raw_jpeg_witness_skips_unrelated_expanded_sections() {
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
     assert_positive_work(
         &scan,
-        &["creo thumbnail section selection", "find Creo thumbnail"],
+        &[
+            ("creo thumbnail section selection", 1),
+            (
+                "find Creo thumbnail",
+                u64::try_from(thumbnail_length + JPEG_MAGIC.len()).expect("raw search extent"),
+            ),
+        ],
     );
 }
 
@@ -67,10 +82,16 @@ fn compressed_jpeg_witness_uses_expanded_payload_search() {
     assert_positive_work(
         &scan,
         &[
-            "creo thumbnail section selection",
-            "creo expanded section selection",
-            "creo expanded section name comparison",
-            "find Creo expanded thumbnail",
+            ("creo thumbnail section selection", 1),
+            ("creo expanded section selection", 1),
+            (
+                "creo expanded section name comparison",
+                u64::try_from(2 * NAME.len()).expect("two name comparisons"),
+            ),
+            (
+                "find Creo expanded thumbnail",
+                u64::try_from(jpeg.len() + JPEG_MAGIC.len()).expect("expanded search extent"),
+            ),
         ],
     );
 }

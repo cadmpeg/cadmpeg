@@ -243,29 +243,28 @@ impl<'a> Index<'a> {
             }
         }
 
+        let mut typed_field_names = HashMap::new();
         let mut integers_by_parent_name = BTreeMap::new();
-        legacy::value_index(
+        value_indexes(
             ctx,
             &persistence.integer_values.rows,
             &mut integers_by_parent_name,
+            &mut typed_field_names,
         )?;
         let mut reals_by_parent_name = BTreeMap::new();
-        legacy::value_index(
+        value_indexes(
             ctx,
             &persistence.real_values.rows,
             &mut reals_by_parent_name,
+            &mut typed_field_names,
         )?;
         let mut strings_by_parent_name = BTreeMap::new();
-        legacy::value_index(ctx, &persistence.string_values, &mut strings_by_parent_name)?;
-
-        let mut typed_field_names = HashMap::new();
-        add_typed_field_names(
+        value_indexes(
             ctx,
+            &persistence.string_values,
+            &mut strings_by_parent_name,
             &mut typed_field_names,
-            &persistence.integer_values.rows,
         )?;
-        add_typed_field_names(ctx, &mut typed_field_names, &persistence.real_values.rows)?;
-        add_typed_field_names(ctx, &mut typed_field_names, &persistence.string_values)?;
         add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_3_values.rows)?;
         add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_4_values.rows)?;
         add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_5_values.rows)?;
@@ -289,23 +288,45 @@ impl<'a> Index<'a> {
     }
 }
 
+fn value_indexes<'a, K: legacy::LegacyCode>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [legacy::ValueRecord<K>],
+    values: &mut BTreeMap<(usize, &'a str), Vec<&'a legacy::ValueRecord<K>>>,
+    typed_field_names: &mut HashMap<usize, Option<&'a str>>,
+) -> Result<(), CodecError> {
+    for record in ctx.admit_iter(records, "creo legacy family value index traversal")? {
+        legacy::index_value(ctx, record, values)?;
+        add_typed_field_name(ctx, typed_field_names, record)?;
+    }
+    Ok(())
+}
+
 fn add_typed_field_names<'a, K: legacy::LegacyCode>(
     ctx: &DecodeContext<'_>,
     index: &mut HashMap<usize, Option<&'a str>>,
     records: &'a [legacy::ValueRecord<K>],
 ) -> Result<(), CodecError> {
     for record in ctx.admit_iter(records, "creo legacy family typed field traversal")? {
-        if !record.name.starts_with("value(") {
-            continue;
-        }
-        if let Some(parent) = record.parent {
-            match ctx.entry_hash_map(index, parent, "creo legacy family typed-name nodes")? {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(record.name.as_str()));
-                }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    entry.insert(None);
-                }
+        add_typed_field_name(ctx, index, record)?;
+    }
+    Ok(())
+}
+
+fn add_typed_field_name<'a, K: legacy::LegacyCode>(
+    ctx: &DecodeContext<'_>,
+    index: &mut HashMap<usize, Option<&'a str>>,
+    record: &'a legacy::ValueRecord<K>,
+) -> Result<(), CodecError> {
+    if !record.name.starts_with("value(") {
+        return Ok(());
+    }
+    if let Some(parent) = record.parent {
+        match ctx.entry_hash_map(index, parent, "creo legacy family typed-name nodes")? {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(record.name.as_str()));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
             }
         }
     }
@@ -555,7 +576,12 @@ pub(crate) fn parse(
     let Some(index) = index_storage.with_storage(|| Index::build(ctx, persistence))? else {
         return Ok(None);
     };
-    parse_indexed(ctx, persistence, &index)
+    let mut table_storage = ctx.reserve_scoped(0, "creo legacy family table storage")?;
+    let table = table_storage.with_storage(|| parse_indexed(ctx, persistence, &index))?;
+    match table {
+        Some(table) => table_storage.commit_value(table).map(Some),
+        None => Ok(None),
+    }
 }
 
 fn parse_indexed(
@@ -590,9 +616,6 @@ fn parse_indexed(
     let Ok(generic_name) = optional_string(ctx, index, root.offset, "gen_name")? else {
         return Ok(None);
     };
-    let generic_name = generic_name
-        .map(|value| copy_string_value(ctx, value))
-        .transpose()?;
     let Some(item_rows) = array_elements(ctx, index, root.offset, ITEMS_ARRAY)? else {
         return Ok(None);
     };
@@ -764,7 +787,9 @@ fn parse_indexed(
         root_parent_name: ctx
             .copy_retained_text(&root_parent.name, "creo legacy family parent name")?,
         offset: root.offset,
-        generic_name,
+        generic_name: generic_name
+            .map(|value| copy_string_value(ctx, value))
+            .transpose()?,
         items,
         instances,
     }))
@@ -838,8 +863,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         match dimension {
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("the test only limits collection items and retained bytes"),
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
+            _ => panic!("family table storage dimension"),
         }
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
@@ -945,6 +970,81 @@ mod tests {
             },
             offset,
         }
+    }
+
+    #[test]
+    fn family_value_indexes_share_one_source_pass() {
+        let mut persistence = Persistence::default();
+        persistence
+            .integer_values
+            .rows
+            .push(integer("solid", VALUE_INTEGER, 1, 10));
+        persistence
+            .real_values
+            .rows
+            .push(real("root", VALUE_REAL, 2.0, 11));
+        persistence
+            .string_values
+            .push(string("item", VALUE_STRING, "value", 12));
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let index = super::Index::build(&ctx, &persistence)
+            .expect("value indexes")
+            .expect("unique offsets");
+        assert_eq!(
+            index.integers_by_parent_name[&(fixture_offset("solid"), VALUE_INTEGER)],
+            [&persistence.integer_values.rows[0]]
+        );
+        assert_eq!(
+            index.reals_by_parent_name[&(fixture_offset("root"), VALUE_REAL)],
+            [&persistence.real_values.rows[0]]
+        );
+        assert_eq!(
+            index.strings_by_parent_name[&(fixture_offset("item"), VALUE_STRING)],
+            [&persistence.string_values[0]]
+        );
+        assert_eq!(index.typed_field_names.len(), 3);
+        assert_eq!(
+            index.typed_field_names[&fixture_offset("solid")],
+            Some(VALUE_INTEGER)
+        );
+        assert_eq!(
+            index.typed_field_names[&fixture_offset("root")],
+            Some(VALUE_REAL)
+        );
+        assert_eq!(
+            index.typed_field_names[&fixture_offset("item")],
+            Some(VALUE_STRING)
+        );
+
+        persistence.integer_values.rows[0].parent = None;
+        persistence.real_values.rows[0].parent = None;
+        persistence.string_values[0].parent = None;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let index = super::Index::build(&ctx, &persistence)
+            .expect("one visit per parentless row")
+            .expect("unique offsets");
+        assert!(index.integers_by_parent_name.is_empty());
+        assert!(index.reals_by_parent_name.is_empty());
+        assert!(index.strings_by_parent_name.is_empty());
+        assert!(index.typed_field_names.is_empty());
+        let refusal = ctx
+            .charge_work_limit(1, "after family index work")
+            .expect_err("three row visits exhaust the cap");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (ResourceDimension::WorkUnits, 3, 1)
+        );
+        crate::test_support::assert_work_boundaries(
+            &["creo legacy family value index traversal"],
+            |ctx| super::Index::build(ctx, &persistence).map(|index| index.is_some()),
+        );
     }
 
     fn complete_table() -> Persistence {
@@ -1149,7 +1249,7 @@ mod tests {
     #[test]
     fn legacy_family_value_ids_refuse_before_string_growth() {
         assert_complete_table_limit(
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "creo legacy family value IDs",
         );
     }
@@ -1157,17 +1257,23 @@ mod tests {
     #[test]
     fn legacy_family_model_ids_refuse_before_string_growth() {
         assert_complete_table_limit(
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "creo legacy family model IDs",
         );
     }
 
     #[test]
-    fn legacy_family_parent_ids_refuse_before_string_growth() {
-        assert_complete_table_limit(
-            ResourceDimension::RetainedBytes,
-            "creo legacy family parent IDs",
-        );
+    fn legacy_family_parent_ids_are_in_committed_storage() {
+        for offset in [fixture_offset("solid"), usize::MAX] {
+            let mut persistence = complete_table();
+            persistence.objects[0].offset = offset;
+            persistence.objects[1].parent = Some(offset);
+            let (table, _) = assert_table_retained_storage(&persistence);
+            assert_eq!(
+                table.root_parent_id,
+                format!("creo:legacy_ascii:object#{offset}")
+            );
+        }
     }
 
     #[test]
@@ -1245,7 +1351,7 @@ mod tests {
     #[test]
     fn legacy_family_string_value_refuses_before_copy() {
         assert_complete_table_limit(
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "creo legacy family string value",
         );
     }
@@ -1253,17 +1359,19 @@ mod tests {
     #[test]
     fn legacy_family_instance_name_refuses_before_copy() {
         assert_complete_table_limit(
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "creo legacy family instance name",
         );
     }
 
     #[test]
-    fn legacy_family_parent_name_refuses_before_copy() {
-        assert_complete_table_limit(
-            ResourceDimension::RetainedBytes,
-            "creo legacy family parent name",
-        );
+    fn legacy_family_parent_name_is_in_committed_storage() {
+        for name in ["Solid", "Sld_FamilyInfo"] {
+            let mut persistence = complete_table();
+            persistence.objects[0].name = name.to_string();
+            let (table, _) = assert_table_retained_storage(&persistence);
+            assert_eq!(table.root_parent_name, name);
+        }
     }
 
     #[test]
@@ -1275,7 +1383,7 @@ mod tests {
         assert!(parse(&fixture).is_some());
         assert_limit_refusal(
             &fixture,
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "creo legacy family string value",
         );
     }
@@ -1361,5 +1469,213 @@ mod tests {
             table.instances[0].values[0].source_object_id,
             legacy::object_node_id(fixture_offset("value"))
         );
+    }
+
+    #[test]
+    fn empty_family_index_is_free() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let persistence = Persistence::default();
+        let index = super::Index::build(&ctx, &persistence)
+            .expect("empty index has no variable work or backing")
+            .expect("empty index is structurally valid");
+        assert!(index.object_by_offset.is_empty());
+    }
+
+    fn assert_rejected_candidate_releases_storage(persistence: &Persistence) {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 64 * 1024;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut scan_storage = ctx
+            .reserve_scoped(0, "fixture scan storage")
+            .expect("scan storage");
+        scan_storage
+            .with_storage(|| {
+                assert!(parse_checked(&ctx, persistence)?.is_none());
+                let replacement = ctx.reserve_scoped(
+                    policy.limits.max_materialized_bytes,
+                    "after rejected family candidate",
+                )?;
+                drop(replacement);
+                Ok::<(), CodecError>(())
+            })
+            .expect("rejected family data and indexes are dropped");
+    }
+
+    #[test]
+    fn rejected_family_generic_name_releases_storage() {
+        for name in ["GENERIC".to_string(), "G".repeat(64 * 1024 + 1)] {
+            let mut persistence = complete_table();
+            persistence
+                .string_values
+                .push(string("root", "gen_name", &name, 30));
+            persistence
+                .objects
+                .retain(|object| object.offset <= fixture_offset("root"));
+            assert_rejected_candidate_releases_storage(&persistence);
+        }
+    }
+
+    #[test]
+    fn rejected_family_items_release_storage() {
+        let mut persistence = complete_table();
+        persistence.objects[5].payload = ObjectPayload::Null;
+        assert_rejected_candidate_releases_storage(&persistence);
+    }
+
+    #[test]
+    fn rejected_family_instance_name_releases_storage() {
+        let mut persistence = complete_table();
+        persistence
+            .integer_values
+            .rows
+            .retain(|record| record.name != "attributes");
+        assert_rejected_candidate_releases_storage(&persistence);
+    }
+
+    #[test]
+    fn rejected_family_values_release_storage() {
+        let mut persistence = complete_table();
+        persistence.objects[7].payload = ObjectPayload::Array {
+            dimensions: vec![2],
+            elements: vec![legacy::object_node_id(9), legacy::object_node_id(20)],
+            complete: true,
+        };
+        persistence.objects.push(object(
+            "item",
+            ITEMS_ARRAY,
+            Some("items-array"),
+            ObjectPayload::Inline,
+            19,
+        ));
+        persistence.objects[2].payload = ObjectPayload::Array {
+            dimensions: vec![2],
+            elements: vec![legacy::object_node_id(4), legacy::object_node_id(19)],
+            complete: true,
+        };
+        let mut second_id = integer("item", "id", 18, 31);
+        second_id.parent = Some(19);
+        let mut second_type = integer("item", "type", 2, 32);
+        second_type.parent = Some(19);
+        let mut second_invisible = integer("item", "invisible", 0, 33);
+        second_invisible.parent = Some(19);
+        let mut second_name = string("item", "name", "d1", 34);
+        second_name.parent = Some(19);
+        persistence
+            .integer_values
+            .rows
+            .extend([second_id, second_type, second_invisible]);
+        persistence.string_values.push(second_name);
+        persistence.objects.push(object(
+            "value",
+            VALUES_ARRAY,
+            Some("values-array"),
+            ObjectPayload::Null,
+            20,
+        ));
+        assert_rejected_candidate_releases_storage(&persistence);
+    }
+
+    fn assert_table_retained_storage(persistence: &Persistence) -> (super::FamilyTable, u64) {
+        let expected = parse(persistence).expect("complete table");
+        let legacy::StringValue::Utf8 { text: item_name } = &expected.items[0].name else {
+            panic!("fixture item name");
+        };
+        let generic_bytes = match expected.generic_name.as_ref() {
+            Some(legacy::StringValue::Utf8 { text }) => text.capacity(),
+            Some(legacy::StringValue::Bytes { bytes }) => bytes.capacity(),
+            Some(legacy::StringValue::Null) | None => 0,
+        };
+        let instance = &expected.instances[0];
+        let retained = generic_bytes
+            + expected.items.capacity() * std::mem::size_of::<super::FamilyTableItem>()
+            + expected.instances.capacity() * std::mem::size_of::<super::FamilyTableInstance>()
+            + instance.values.capacity() * std::mem::size_of::<super::FamilyTableValue>()
+            + expected.root_parent_id.capacity()
+            + expected.root_parent_name.capacity()
+            + item_name.capacity()
+            + instance.name.capacity()
+            + instance.model_object_id.capacity()
+            + instance.values[0].source_object_id.capacity();
+        let retained = u64::try_from(retained).expect("live table storage");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained;
+        policy.limits.max_materialized_bytes = 64 * 1024;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let table = parse_checked(&ctx, persistence)
+            .expect("live storage cap")
+            .expect("table");
+        assert_eq!(table, expected);
+        let refusal = ctx
+            .charge_retained_limit(1, "after accepted table storage")
+            .expect_err("exact retained cap");
+        assert_eq!((refusal.used, refusal.additional), (retained, 1));
+
+        crate::test_support::assert_retained_boundaries(
+            &["creo legacy family table storage"],
+            |ctx| parse_checked(ctx, persistence),
+        );
+
+        (expected, retained)
+    }
+
+    #[test]
+    fn accepted_family_generic_name_preserves_its_value_and_storage() {
+        for value in [
+            legacy::StringValue::Utf8 {
+                text: "GENERIC".to_string(),
+            },
+            legacy::StringValue::Bytes {
+                bytes: vec![0xff, 0],
+            },
+            legacy::StringValue::Null,
+        ] {
+            let mut persistence = complete_table();
+            let mut record = string("root", "gen_name", "", 30);
+            record.payload = StringPayload::Scalar {
+                value: value.clone(),
+            };
+            persistence.string_values.push(record);
+            let (table, _) = assert_table_retained_storage(&persistence);
+            assert_eq!(table.generic_name, Some(value));
+        }
+    }
+
+    #[test]
+    fn accepted_family_table_commits_only_live_storage() {
+        let persistence = complete_table();
+        let (expected, retained) = assert_table_retained_storage(&persistence);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 64 * 1024;
+        let arena = DecodeArena::new();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut scan_storage = ctx
+            .reserve_scoped(0, "fixture family scan")
+            .expect("scan storage");
+        let table = scan_storage
+            .with_storage(|| parse_checked(&ctx, &persistence))
+            .expect("scoped table")
+            .expect("table");
+        assert_eq!(table, expected);
+        let remaining = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes - retained,
+                "family scratch released",
+            )
+            .expect("only live table remains");
+        drop(remaining);
+        drop(table);
+        drop(scan_storage);
+        ctx.reserve_scoped(policy.limits.max_materialized_bytes, "family scan released")
+            .expect("all family storage released");
     }
 }
