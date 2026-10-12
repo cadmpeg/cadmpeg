@@ -1429,7 +1429,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         assert!(transfer(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            graph,
+            &graph,
             &payload,
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
@@ -1620,7 +1620,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         assert!(transfer(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            graph,
+            &graph,
             &UnknownId::mint("catia:payload:unknown#test".to_string()).expect("identity grammar"),
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,

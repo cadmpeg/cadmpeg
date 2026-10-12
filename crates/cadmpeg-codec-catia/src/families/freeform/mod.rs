@@ -643,20 +643,13 @@ pub(super) fn try_decode_freeform_surfaces(
             Ok(index) => index,
             Err(error) => return Some(Err(error)),
         };
-        let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
-        // The graph moves into the transfer below. Keep the record identities the
+        // The graph is released before model validation. Keep the record identities the
         // topology loss notes must name.
         let b5_face_object_ids = admitted!(ctx.collect_vec(
             b5_graph
                 .iter()
                 .flat_map(|graph| graph.faces.iter().map(|face| face.object_id)),
             "catia_freeform_b5_face_ids"
-        ));
-        let b5_loop_object_ids = admitted!(ctx.collect_vec(
-            b5_graph
-                .iter()
-                .flat_map(|graph| graph.loops.keys().copied()),
-            "catia_freeform_b5_loop_ids"
         ));
         let census_face_object_ids = admitted!(ctx.collect_vec(
             census_object_records
@@ -687,7 +680,7 @@ pub(super) fn try_decode_freeform_surfaces(
             let transferred = match crate::families::b5::transfer::transfer(
                 &mut topology_ir,
                 &mut topology_annotations,
-                graph,
+                &graph,
                 &payload_id,
                 refusal,
                 &mut admission,
@@ -695,6 +688,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
             };
+            drop(graph);
             if transferred {
                 match neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns) {
                     Ok(admissible) => admissible,
@@ -945,35 +939,18 @@ pub(super) fn try_decode_freeform_surfaces(
         };
         let mut losses = Vec::new();
         if !wire_topology_transferred {
-            if topology_transferred && b5_complete {
+            if topology_transferred {
                 admitted!(crate::resource::push_loss(
                     ctx,
                     &mut losses,
                     CatiaLossCode::TopologyB5GaugeSubstituted,
                     format_args!(
-                "The B5 reference graph is closed; face sense and body kind use a deterministic \
-             topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
-             records, by object id ({}): {}.",
+                "The complete B5 reference graph uses inferred face orientation and body kind. \
+             Native face-to-carrier and outward-shell signs and source body dimension are not \
+             transferred. Gauged b5 03 5f face records, by object id ({}): {}.",
                 b5_face_object_ids.len(),
                 identity_statement(&b5_face_object_ids)
             ),
-                    "catia_freeform_topology_loss"
-                ));
-            } else if topology_transferred {
-                admitted!(crate::resource::push_loss(
-                    ctx,
-                    &mut losses,
-                    CatiaLossCode::TopologyB5SubsetIncomplete,
-                    format_args!(
-            "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant \
-             nodes and unresolved endpoint lifts remain outside the connected graph. Transferred \
-             b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
-             object id ({}): {}.",
-            b5_face_object_ids.len(),
-            identity_statement(&b5_face_object_ids),
-            b5_loop_object_ids.len(),
-            identity_statement(&b5_loop_object_ids)
-        ),
                     "catia_freeform_topology_loss"
                 ));
             } else if object_stream_selection_exhausted {

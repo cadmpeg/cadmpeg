@@ -25,6 +25,9 @@ pub(super) fn ownership_plan(
     ctx: &DecodeContext<'_>,
     graph: &B5Graph,
 ) -> Result<Option<OwnershipPlan>, CodecError> {
+    if !graph.complete || graph.faces.is_empty() {
+        return Ok(None);
+    }
     let mut face_ids = HashSet::new();
     ctx.reserve_set(
         &mut face_ids,

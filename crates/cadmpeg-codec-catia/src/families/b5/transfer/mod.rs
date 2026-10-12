@@ -28,9 +28,9 @@ use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
-    bounded_occurrence_range, edge_pcurve_parameters, face_loop_owner_counts, loop_chain_closes,
-    pcurve_nurbs_knots, pcurve_parameter_domain, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph,
-    B5OffsetSurface, B5SupportedSurface, B5Surface,
+    bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, pcurve_nurbs_knots,
+    pcurve_parameter_domain, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface,
+    B5SupportedSurface, B5Surface,
 };
 
 mod edges;
@@ -191,73 +191,14 @@ struct TransferPlan {
 pub(in crate::families) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    mut graph: B5Graph,
-    payload: &UnknownId,
-    refusal: &mut crate::nurbs::LaneRefusals,
-    admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    if !graph.complete {
-        graph.loops.retain(|_, loop_| {
-            loop_.members.iter().all(|member| {
-                (graph
-                    .pcurves
-                    .get(&member.pcurve)
-                    .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                    || graph
-                        .opaque_pcurves
-                        .get(&member.pcurve)
-                        .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                    || graph.implicit_pcurves.get(&member.pcurve) == Some(&loop_.surface))
-                    && graph.vertices.edges().contains_key(&member.edge)
-            }) && loop_chain_closes(loop_, graph.vertices.edges())
-        });
-        graph.faces.retain(|face| {
-            graph.surfaces.contains_key(&face.surface)
-                && !face.loops.is_empty()
-                && face.loops.iter().all(|loop_id| {
-                    graph
-                        .loops
-                        .get(loop_id)
-                        .is_some_and(|loop_| loop_.surface == face.surface)
-                })
-        });
-        let loop_owner_counts = face_loop_owner_counts(admission.ctx, &graph.faces)?;
-        graph.faces.retain(|face| {
-            face.loops
-                .iter()
-                .all(|loop_id| loop_owner_counts.get(loop_id).copied() == Some(1))
-        });
-        let mut referenced_loops = HashSet::new();
-        for face in &graph.faces {
-            for &loop_id in &face.loops {
-                admission.ctx.insert_hash_set(
-                    &mut referenced_loops,
-                    loop_id,
-                    "catia_b5_transfer_referenced_loops",
-                )?;
-            }
-        }
-        graph
-            .loops
-            .retain(|loop_id, _| referenced_loops.contains(loop_id));
-        if graph.faces.is_empty() || graph.loops.is_empty() {
-            return Ok(false);
-        }
-        graph.complete = true;
-    }
-    transfer_complete(ir, annotations, &graph, payload, refusal, admission)
-}
-
-/// Orchestrate the staged emit passes over a resolved [`TransferPlan`]. The pass
-/// order fixes the neutral-model arena and annotation order and must not change.
-fn transfer_complete(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     graph: &B5Graph,
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if !graph.complete {
+        return Ok(false);
+    }
     let Some(mut plan) = build_plan(admission.ctx, graph, payload, refusal)? else {
         return Ok(false);
     };

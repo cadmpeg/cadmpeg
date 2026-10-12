@@ -89,10 +89,8 @@ pub(crate) enum CatiaLossCode {
     TopologyGraphNotBuilt,
     /// E5 carriers decoded, but the reference graph did not close.
     TopologyE5GraphUnclosed,
-    /// B5 reference graph is closed; face sense and body kind use a topology gauge.
+    /// Complete B5 topology transfers under an inferred face-orientation and body-kind gauge.
     TopologyB5GaugeSubstituted,
-    /// A maximal reference-closed B5 subset transferred; remaining nodes stay native.
-    TopologyB5SubsetIncomplete,
     /// Object-stream graph exceeded the bounded work slice.
     TopologyObjectStreamWorkSliceExhausted,
     /// Object-stream and NURBS carriers decoded, but the B5 graph did not close.
@@ -141,7 +139,6 @@ impl CatiaLossCode {
         Self::TopologyGraphNotBuilt,
         Self::TopologyE5GraphUnclosed,
         Self::TopologyB5GaugeSubstituted,
-        Self::TopologyB5SubsetIncomplete,
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
         Self::TopologyZeroEntitySupportsRetained,
@@ -180,7 +177,6 @@ impl CatiaLossCode {
             Self::TopologyGraphNotBuilt => "topology.graph-not-built",
             Self::TopologyE5GraphUnclosed => "topology.e5-graph-unclosed",
             Self::TopologyB5GaugeSubstituted => "topology.b5-gauge-substituted",
-            Self::TopologyB5SubsetIncomplete => "topology.b5-subset-incomplete",
             Self::TopologyObjectStreamWorkSliceExhausted => {
                 "topology.object-stream-work-slice-exhausted"
             }
@@ -213,7 +209,6 @@ impl CatiaLossCode {
             | Self::TopologyFbbRowsWithheld
             | Self::TopologyGraphNotBuilt
             | Self::TopologyE5GraphUnclosed
-            | Self::TopologyB5SubsetIncomplete
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
             | Self::TopologyZeroEntityNotTransferred
@@ -247,7 +242,6 @@ impl CatiaLossCode {
             | Self::TopologyGraphNotBuilt
             | Self::TopologyE5GraphUnclosed
             | Self::TopologyB5GaugeSubstituted
-            | Self::TopologyB5SubsetIncomplete
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
             | Self::TopologyZeroEntitySupportsRetained
@@ -337,7 +331,6 @@ mod tests {
                 "topology.graph-not-built",
                 "topology.e5-graph-unclosed",
                 "topology.b5-gauge-substituted",
-                "topology.b5-subset-incomplete",
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
                 "topology.zero-entity-supports-retained",

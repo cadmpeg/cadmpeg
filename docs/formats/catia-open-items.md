@@ -394,13 +394,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the difference to validate and write the face.
 
-### OS-04. Object-stream body kind
+### OS-04. Object-stream body dimension
 
-**Question.** Which source field gives the object-stream body kind?
+**Question.** Which source ownership relation distinguishes a closed skin from a volume body?
 
-**Known.** One-body ownership and incidence give a stable topology gauge. They do not identify the source field.
+**Known.** `catia.md` §6.7 "A source-closed face-body ownership chain" defines the complete `65 -> 60 -> 61 -> 5f` payloads. Their counts and terminal controls supply no body-kind enum. Face-edge closure alone does not distinguish a shell attached to a body from a shell bounding a volume.
 
-**Need.** We must know the field to preserve the native body classification.
+**Need.** We must know the cell and domain dimensions to preserve source body kind.
 
 ### OS-05. Object-stream outward-shell sign
 

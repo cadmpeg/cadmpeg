@@ -837,3 +837,18 @@ pcurves. Transfer selects loop 400 as outer and loop 401 as inner from their
 location controls. All six vertex loci and every source annotation are checked.
 The plane and cone identity fixtures also check the middle occurrence sign
 against their common curve/pcurve stations; each direction product is `+1`.
+
+## Complete object-stream body populations
+
+B5 face-body transfer requires the complete selected source population.
+It retains an incomplete graph as native data and publishes no partial face
+body. The neutral body-kind gauge uses complete physical-edge incidence: closed
+components give solid, open components give sheet, and mixed or non-manifold
+incidence gives general. This gauge does not establish the source cell and
+domain dimensions. Ownership counts and terminal controls do not assign body
+kind. Complete closed-loop wire recovery remains a separate transfer.
+
+The completeness regression starts with two faces sharing all three edges.
+It removes one face's pcurve binding and marks the source graph incomplete.
+Transfer declines without mutating the neutral document; dropping that face
+would produce a sheet from a topology-closed population.

@@ -1627,7 +1627,7 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved. Gauged b5 03 5f face records, by object id (1): 500.",
+        "message": "The complete B5 reference graph uses inferred face orientation and body kind. Native face-to-carrier and outward-shell signs and source body dimension are not transferred. Gauged b5 03 5f face records, by object id (1): 500.",
         "severity": "warning"
       }
     ],

@@ -190,7 +190,7 @@ fn b5_transfer_propagates_ownership_collection_refusal() {
     let error = super::transfer(
         &mut ir,
         &mut cadmpeg_ir::AnnotationBuilder::new(),
-        graph,
+        &graph,
         &cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
             .expect("identity grammar"),
         &mut crate::nurbs::LaneRefusals::new(),
@@ -485,7 +485,7 @@ fn b5_region_id_map_refuses_collection_limit_before_growth() {
         super::transfer(
             &mut cadmpeg_ir::CadIr::empty(),
             &mut cadmpeg_ir::AnnotationBuilder::new(),
-            graph.clone(),
+            &graph,
             &payload,
             &mut crate::nurbs::LaneRefusals::new(),
             &mut admission,
@@ -666,7 +666,7 @@ fn b5_topology_entity_limit_refuses_before_first_model_append() {
         let error = super::transfer(
             &mut ir,
             &mut annotations,
-            graph,
+            &graph,
             &cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
                 .expect("identity grammar"),
             &mut crate::nurbs::LaneRefusals::new(),
