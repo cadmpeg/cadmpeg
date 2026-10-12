@@ -1157,7 +1157,8 @@ pub(in super::super) fn feature_source_properties<'ctx>(
             schema_class,
         )?;
     }
-    let row_schema_classes = feature_row_schema_classes(ctx, scan, feature_id)?;
+    let mut class_storage = ctx.reserve_scoped(0, "creo source property schema class evidence")?;
+    let row_schema_classes = class_storage.with_storage(|| feature_row_schema_classes(ctx, scan, feature_id))?;
     if !row_schema_classes.is_empty() {
         insert_feature_source_property(
             ctx,

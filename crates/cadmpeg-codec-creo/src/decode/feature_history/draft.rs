@@ -415,8 +415,9 @@ pub(in super::super) fn schema_feature_definition(
             },
             None => None,
         };
+        let mut sketch_storage = ctx.reserve_scoped(0, "creo schema sketch lookup")?;
         let sketch = match definition {
-            Some(definition) => match model_sketch_id(ctx, scan, definition)? {
+            Some(definition) => match sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? {
                 Some(sketch) => {
                     let sketch_found = ctx.any_by(
                         &ir.model.sketches,
@@ -435,6 +436,7 @@ pub(in super::super) fn schema_feature_definition(
             },
             None => None,
         };
+        let sketch = sketch.map(|sketch| sketch_storage.commit_value(sketch)).transpose()?;
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
         }));
