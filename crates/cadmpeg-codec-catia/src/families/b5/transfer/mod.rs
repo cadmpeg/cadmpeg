@@ -294,9 +294,8 @@ fn referenced_surface_ids(
                 construction.carrier_surface,
             )?;
         } else if let Some(extrusion) = extrusions.get(&construction_id) {
-            for (support, _, _) in extrusion.directrix.supports() {
-                add_referenced_surface(ctx, &mut referenced, &mut pending, *support)?;
-            }
+            let (support, _, _) = extrusion.directrix.support();
+            add_referenced_surface(ctx, &mut referenced, &mut pending, *support)?;
         }
     }
     Ok(referenced)
@@ -1070,19 +1069,13 @@ pub(in crate::families) fn resolved_surface_procedural_definition(
     })
 }
 
-/// Neutral support evidence for one side of an exact extrusion directrix.
+/// Neutral support evidence for an exact extrusion directrix.
 #[derive(Clone, PartialEq)]
 pub(in crate::families) struct ResolvedExtrusionSupport {
     /// Persistent support-surface identity.
     pub(in crate::families) surface_object_id: u32,
     /// Exact neutral support geometry.
     pub(in crate::families) surface: SurfaceGeometry,
-    /// Exact parameter-space directrix occurrence.
-    pub(in crate::families) pcurve: PcurveGeometry,
-    /// Native interval used by this support occurrence.
-    pub(in crate::families) pcurve_parameter_range: [f64; 2],
-    /// Exact model-space lift when the support chart admits one.
-    curve: Option<CurveGeometry>,
 }
 
 /// Exact neutral construction of one extrusion directrix.
@@ -1130,12 +1123,11 @@ pub(in crate::families) struct ResolvedExtrusionSurface {
 }
 
 impl ResolvedExtrusionSurface {
-    pub(in crate::families) fn supports(&self) -> impl Iterator<Item = &ResolvedExtrusionSupport> {
-        let support = match &self.directrix {
+    pub(in crate::families) fn support(&self) -> &ResolvedExtrusionSupport {
+        match &self.directrix {
             ResolvedExtrusionDirectrix::SurfaceCurve { support, .. }
             | ResolvedExtrusionDirectrix::Offset { support, .. } => support,
-        };
-        std::iter::once(support)
+        }
     }
 }
 
@@ -1149,15 +1141,6 @@ fn copy_resolved_extrusion_support(
     Ok(ResolvedExtrusionSupport {
         surface_object_id: support.surface_object_id,
         surface,
-        pcurve: support
-            .pcurve
-            .try_clone_for_decode(ctx, "catia_b5_extrusion_support_pcurve_copy")?,
-        pcurve_parameter_range: support.pcurve_parameter_range,
-        curve: support
-            .curve
-            .as_ref()
-            .map(|curve| copy_lifted_curve(ctx, curve))
-            .transpose()?,
     })
 }
 
@@ -1248,10 +1231,10 @@ pub(in crate::families) fn resolved_extrusion_surface(
             pcurve_parameter_range,
         ): (u32, u32, [FiniteReal; 2])|
          -> Result<
-            Option<ResolvedExtrusionSupport>,
+            Option<(ResolvedExtrusionSupport, CurveGeometry)>,
             cadmpeg_core::CodecError,
         > {
-            (|| -> Option<Result<ResolvedExtrusionSupport, cadmpeg_core::CodecError>> {
+            (|| -> Option<Result<(ResolvedExtrusionSupport, CurveGeometry), cadmpeg_core::CodecError>> {
                 let source_surface = graph.surfaces.get(&surface_object_id)?;
                 let surface =
                     match resolved_surface_geometry(ctx, graph, surface_object_id, refusal) {
@@ -1260,92 +1243,35 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         Err(error) => return Some(Err(error)),
                     };
                 let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-                let knots = match pcurve_nurbs_knots(ctx, pcurve) {
-                    Ok(Some(knots)) => knots,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let knots = match ctx.collect_vec(
-                    knots.into_iter().map(FiniteReal::get),
-                    "catia_b5_extrusion_pcurve_knots",
-                ) {
-                    Ok(knots) => knots,
-                    Err(error) => return Some(Err(error)),
-                };
                 let domain = pcurve_parameter_domain(pcurve)?;
                 bounded_occurrence_range(pcurve_parameter_range, domain)?;
-                let points = match ctx.collect_vec(
-                    pcurve
-                        .control_points
-                        .iter()
-                        .map(|point| neutral_pcurve_point(point.get(), source_surface)),
-                    "catia_b5_extrusion_pcurve_points",
-                ) {
-                    Ok(points) => points,
-                    Err(error) => return Some(Err(error)),
-                };
-                let weights = match pcurve
-                    .weights
-                    .as_ref()
-                    .map(|weights| {
-                        ctx.collect_vec(
-                            weights.iter().copied().map(PositiveReal::get),
-                            "catia_b5_extrusion_pcurve_weights",
-                        )
-                    })
-                    .transpose()
-                {
-                    Ok(weights) => weights,
-                    Err(error) => return Some(Err(error)),
-                };
-                let nurbs = match crate::nurbs::note_refusal(
-                    ctx,
-                    match PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false)
-                    {
-                        Ok(result) => result,
-                        Err(error) => return Some(Err(error)),
-                    },
-                    refusal,
-                    format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
-                ) {
-                    Ok(Some(nurbs)) => nurbs,
+                let curve = match pcurves::parameterized_lift(ctx, pcurve, source_surface) {
+                    Ok(Some(curve)) => curve,
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
-                let curve = match pcurves::parameterized_lift(ctx, pcurve, source_surface) {
-                    Ok(curve) => curve,
-                    Err(error) => return Some(Err(error)),
-                };
-                Some(Ok(ResolvedExtrusionSupport {
+                Some(Ok((ResolvedExtrusionSupport {
                     surface_object_id,
                     surface,
-                    pcurve: pcurve_geometry,
-                    pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
-                    curve,
-                }))
+                }, curve)))
             })()
             .transpose()
         };
         let directrix = match &extrusion.directrix {
             B5ExtrusionDirectrix::SurfaceCurve { support, .. } => {
-                let support = match resolve_support(*support) {
+                let (resolved_support, curve) = match resolve_support(*support) {
                     Ok(Some(value)) => value,
                     Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let curve = match copy_lifted_curve(ctx, support.curve.as_ref()?) {
-                    Ok(curve) => curve,
                     Err(error) => return Some(Err(error)),
                 };
                 let curve = match curve_on_parameter_range(
                     ctx,
                     curve,
-                    support.pcurve_parameter_range,
+                    support.2.map(FiniteReal::get),
                     active,
                     &format_args!(
                         "b5 extrusion directrix on surface record #{}",
-                        support.surface_object_id
+                        resolved_support.surface_object_id
                     ),
                     refusal,
                 ) {
@@ -1353,7 +1279,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
+                ResolvedExtrusionDirectrix::SurfaceCurve { support: resolved_support, curve }
             }
             B5ExtrusionDirectrix::Offset {
                 source,
@@ -1368,13 +1294,9 @@ pub(in crate::families) fn resolved_extrusion_surface(
                 else {
                     return None;
                 };
-                let support = match resolve_support(*support) {
+                let (support, source_curve) = match resolve_support(*support) {
                     Ok(Some(value)) => value,
                     Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let source_curve = match copy_lifted_curve(ctx, support.curve.as_ref()?) {
-                    Ok(curve) => curve,
                     Err(error) => return Some(Err(error)),
                 };
                 let source_curve = match curve_on_parameter_range(

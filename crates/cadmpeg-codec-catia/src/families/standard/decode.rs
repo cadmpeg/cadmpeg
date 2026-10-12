@@ -3615,7 +3615,7 @@ enum StandardSurfaceEvidence {
 #[derive(Clone, Copy)]
 enum StandardSupportLocation {
     Offset(usize),
-    ExtrusionSide(usize, usize),
+    Extrusion(usize),
 }
 
 enum StandardSupportRef<'a> {
@@ -3648,8 +3648,9 @@ struct StandardEvidenceStore {
 impl StandardEvidenceStore {
     fn support_at(&self, location: StandardSupportLocation) -> Option<StandardSupportRef<'_>> {
         let index = match location {
-            StandardSupportLocation::Offset(index)
-            | StandardSupportLocation::ExtrusionSide(index, _) => index,
+            StandardSupportLocation::Offset(index) | StandardSupportLocation::Extrusion(index) => {
+                index
+            }
         };
         let procedure = self.evidence.get(index)?.as_ref()?.procedure_ref()?;
         match (location, procedure) {
@@ -3658,12 +3659,9 @@ impl StandardEvidenceStore {
                 StandardSurfaceProcedure::Offset { support, .. },
             ) => Some(StandardSupportRef::Offset(support)),
             (
-                StandardSupportLocation::ExtrusionSide(_, side),
+                StandardSupportLocation::Extrusion(_),
                 StandardSurfaceProcedure::Extrusion(extrusion),
-            ) => extrusion
-                .supports()
-                .nth(side)
-                .map(|support| StandardSupportRef::Geometry(&support.surface)),
+            ) => Some(StandardSupportRef::Geometry(&extrusion.support().surface)),
             _ => None,
         }
     }
@@ -3709,28 +3707,20 @@ impl StandardEvidenceStore {
             Some(evidence),
             "catia_standard_evidence_records",
         )?;
-        let mut support_locations = [None, None];
-        match self.evidence[index]
+        let support_location = match self.evidence[index]
             .as_ref()
             .and_then(StandardSurfaceEvidence::procedure_ref)
         {
             Some(StandardSurfaceProcedure::Offset {
                 support_object_id, ..
-            }) => {
-                support_locations[0] =
-                    Some((*support_object_id, StandardSupportLocation::Offset(index)));
-            }
-            Some(StandardSurfaceProcedure::Extrusion(extrusion)) => {
-                for (side, support) in extrusion.supports().enumerate() {
-                    support_locations[side] = Some((
-                        support.surface_object_id,
-                        StandardSupportLocation::ExtrusionSide(index, side),
-                    ));
-                }
-            }
-            _ => {}
-        }
-        for (object_id, location) in support_locations.into_iter().flatten() {
+            }) => Some((*support_object_id, StandardSupportLocation::Offset(index))),
+            Some(StandardSurfaceProcedure::Extrusion(extrusion)) => Some((
+                extrusion.support().surface_object_id,
+                StandardSupportLocation::Extrusion(index),
+            )),
+            _ => None,
+        };
+        if let Some((object_id, location)) = support_location {
             self.merge_support(ctx, object_id, location)?;
         }
         ctx.admit_hash_map_entry(
@@ -3760,16 +3750,17 @@ impl StandardEvidenceStore {
                 .is_some_and(|candidate| {
                     candidate.equivalent(&StandardSupportRef::Offset(support))
                 }),
-            StandardSurfaceProcedure::Extrusion(extrusion) => extrusion.supports().all(|side| {
+            StandardSurfaceProcedure::Extrusion(extrusion) => {
+                let support = extrusion.support();
                 self.supports
-                    .get(&side.surface_object_id)
+                    .get(&support.surface_object_id)
                     .copied()
                     .flatten()
                     .and_then(|location| self.support_at(location))
                     .is_some_and(|candidate| {
-                        candidate.equivalent(&StandardSupportRef::Geometry(&side.surface))
+                        candidate.equivalent(&StandardSupportRef::Geometry(&support.surface))
                     })
-            }),
+            }
             StandardSurfaceProcedure::RollingBall { .. }
             | StandardSurfaceProcedure::Revolution(_) => true,
         }

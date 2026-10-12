@@ -532,10 +532,10 @@ impl B5ExtrusionDirectrix {
         }
     }
 
-    pub(super) fn supports(&self) -> &[(u32, u32, [FiniteReal; 2])] {
+    pub(super) fn support(&self) -> &(u32, u32, [FiniteReal; 2]) {
         match self {
-            Self::SurfaceCurve { support, .. } => std::slice::from_ref(support),
-            Self::Offset { source, .. } => source.supports(),
+            Self::SurfaceCurve { support, .. } => support,
+            Self::Offset { source, .. } => source.support(),
         }
     }
 }
@@ -1198,13 +1198,12 @@ fn parse_from_records_with_class21(
     }
     let mut extrusion_pcurves = HashSet::new();
     for extrusion in extrusion_surfaces.values() {
-        for (_, pcurve, _) in extrusion.directrix.supports() {
-            ctx.insert_hash_set(
-                &mut extrusion_pcurves,
-                *pcurve,
-                "catia_b5_extrusion_pcurve_ids",
-            )?;
-        }
+        let (_, pcurve, _) = extrusion.directrix.support();
+        ctx.insert_hash_set(
+            &mut extrusion_pcurves,
+            *pcurve,
+            "catia_b5_extrusion_pcurve_ids",
+        )?;
     }
     let mut offset_surfaces = BTreeMap::new();
     let mut supported_surfaces = BTreeMap::new();
@@ -4467,10 +4466,8 @@ fn parse_extrusion_surface_with_context(
     } else if !directrix_contains_active {
         let source_range = directrix.parameter_range().endpoints();
         let active_span = active[1] - active[0];
-        let suffix_span = directrix
-            .supports()
-            .first()
-            .and_then(|support| object_stream_pcurves.get(&support.1))
+        let suffix_span = object_stream_pcurves
+            .get(&directrix.support().1)
             .and_then(|candidate| candidate.class_21_suffix_scalar);
         if !parameter_range_spans_agree(source_range, active)
             || !suffix_span.is_some_and(|span| parameter_spans_agree(span.get(), active_span))
@@ -4585,7 +4582,7 @@ fn translated_directrix_span_count(
     )?)
     .ok()?;
     (target_span_count == 1 && source_span_count > 1).then_some(())?;
-    let [support] = directrix.supports().try_into().ok()?;
+    let support = directrix.support();
     let pcurve = object_stream_pcurves.get(&support.1)?;
     (pcurve.class == 0x21).then_some(())?;
     let suffix_span = pcurve.class_21_suffix_scalar?.get();

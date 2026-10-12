@@ -480,13 +480,12 @@ pub(super) fn parameterized_lift(
         if scale < 0.0 {
             curve.reverse_parameterization(ctx)?;
         }
-        let mapped = ctx.collect_vec(
-            curve.knots().iter().map(|knot| {
-                let coordinate = if scale < 0.0 { -*knot } else { *knot };
-                knots[0].get() + (coordinate - q0) * scale
-            }),
-            "catia_b5_parameterized_isocurve_knots",
-        )?;
+        let (mut mapped, _storage) = ctx
+            .scoped_vector_storage(curve.knots().len(), "catia_b5_parameterized_isocurve_knots")?;
+        for knot in curve.knots() {
+            let coordinate = if scale < 0.0 { -*knot } else { *knot };
+            mapped.push(knots[0].get() + (coordinate - q0) * scale);
+        }
         if curve
             .edit_knots(ctx, |knots| knots.copy_from_slice(&mapped))?
             .is_err()

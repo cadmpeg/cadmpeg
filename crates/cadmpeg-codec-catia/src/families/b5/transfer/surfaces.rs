@@ -1175,8 +1175,7 @@ mod tests {
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
 
-    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
-    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::math::Vector3;
 
     use crate::families::b5::transfer::{
         ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
@@ -1292,18 +1291,6 @@ mod tests {
                     .expect("identity grammar"),
             ),
         ]);
-        let pcurve = |x| PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
-                None,
-                false,
-            )
-            .expect("fixture pcurve construction admission")
-            .expect("valid support pcurve"),
-        };
         let extrusion = ResolvedExtrusionSurface {
             surface_object_id: 30,
             directrix_object_id: 40,
@@ -1324,9 +1311,6 @@ mod tests {
                         )
                         .expect("valid plane"),
                     )),
-                    pcurve: pcurve(0.0),
-                    pcurve_parameter_range: [0.0, 1.0],
-                    curve: None,
                 },
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
