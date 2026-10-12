@@ -227,7 +227,10 @@ pub(super) fn synthesize_cylinder_seams(
                     center.z - ref_direction.z * radius,
                 )))
             };
-            let (Some(seam_a), Some(seam_b)) = (seam_point(ea)?, seam_point(eb)?) else {
+            let Some(seam_a) = seam_point(ea)? else {
+                continue;
+            };
+            let Some(seam_b) = seam_point(eb)? else {
                 continue;
             };
             let mut point_of =

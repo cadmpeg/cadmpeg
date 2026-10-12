@@ -1002,13 +1002,13 @@ pub(super) fn nurbs_edge_parameter_range(
         let Some([start, end]) = endpoints()? else {
             return Ok(None);
         };
-        match (
-            nurbs_parameter_at_point(ctx, curve, start)?,
-            nurbs_parameter_at_point(ctx, curve, end)?,
-        ) {
-            (InverseResolution::Unique(start), InverseResolution::Unique(end)) => [start, end],
-            _ => return Ok(None),
-        }
+        let InverseResolution::Unique(start) = nurbs_parameter_at_point(ctx, curve, start)? else {
+            return Ok(None);
+        };
+        let InverseResolution::Unique(end) = nurbs_parameter_at_point(ctx, curve, end)? else {
+            return Ok(None);
+        };
+        [start, end]
     };
     if !range[0].is_finite()
         || !range[1].is_finite()
