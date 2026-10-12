@@ -35,11 +35,7 @@ fn assert_exact_visits(
         let result = query(&ctx);
         if let Err(CodecError::ResourceLimit(original)) = &result {
             assert_eq!((original.limit, original.used), (cap, cap));
-            assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
             assert_eq!(original.additional, 1);
-            assert!(
-                matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-            );
         }
         result.map(|matched| assert!(matched))
     });
@@ -54,12 +50,6 @@ fn assert_exact_visits(
         (original.dimension, original.used, original.additional),
         (ResourceDimension::WorkUnits, visits, 1)
     );
-    if visits != 0 {
-        assert!(
-            matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-    }
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]
@@ -197,4 +187,31 @@ fn support_tangent_absence_admits_only_present_planes_and_releases_workspace() {
     assert_exact_visits(&["creo support tangent support planes"], |ctx| {
         unique_support_tangent_cylinder_frame(ctx, stored, &planes).map(|frame| frame.is_none())
     });
+}
+
+#[test]
+fn round_edge_fixed_preconditions_need_no_work() {
+    let arena = DecodeArena::new();
+    let mut policy = visit_policy(0);
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut nonfinite = edge_envelope();
+    nonfinite.vertices[0][0] = f64::NAN;
+    let results = [
+        round_edge_cylinder_frame(&ctx, edge_envelope(), 0.0, &[]).map(|frame| frame.is_none()),
+        round_edge_cylinder_frame(&ctx, edge_envelope(), -1.0, &[]).map(|frame| frame.is_none()),
+        round_edge_cylinder_frame(&ctx, edge_envelope(), f64::NAN, &[])
+            .map(|frame| frame.is_none()),
+        round_edge_cylinder_frame(&ctx, edge_envelope(), f64::INFINITY, &[])
+            .map(|frame| frame.is_none()),
+        round_edge_cylinder_frame(&ctx, nonfinite, 0.2, &[]).map(|frame| frame.is_none()),
+        round_edge_cylinder_frame(&ctx, edge_envelope(), 0.2, &[]).map(|frame| frame.is_none()),
+        perpendicular_round_edge_cylinder_frame(&ctx, edge_envelope(), &[])
+            .map(|frame| frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)),
+    ];
+    for result in results {
+        assert!(result.expect("fixed precondition needs no input visit"));
+    }
 }

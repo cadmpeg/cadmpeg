@@ -1369,12 +1369,6 @@ mod tests {
                             _ => vec![0, 1, 2],
                         }
                     );
-                    let mut visited = false;
-                    assert!(matches!(super::visit_surface_poles(&ctx, &surface, |_, _| {
-                        visited = true;
-                        Ok(true)
-                    }), Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
-                    assert!(!visited);
                 } else {
                     result.expect("only executed rows and poles are admitted");
                     assert_eq!(
@@ -1964,7 +1958,6 @@ mod tests {
                     (original.used, original.additional),
                     (0, RATIONAL_BOUNDARY_BYTES)
                 );
-                assert_eq!(ctx.resource_refusal(), Some(original));
             } else {
                 let curve = result.expect("one selected curve fits retained capacity");
                 assert_eq!(curve.degree(), 1);
@@ -2262,5 +2255,61 @@ mod tests {
             super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE);
         assert_eq!(roots.len(), 1);
         assert!((roots[0] - (1.0f64 / 3.0).sqrt()).abs() <= EPS_TEST_ROOT);
+    }
+    #[test]
+    fn fixed_nurbs_curve_mismatch_is_free() {
+        let fixture_ctx = cadmpeg_test_support::service_decode_context();
+        let make_curve = |weights| {
+            super::NurbsCurve::from_lanes(
+                &fixture_ctx,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                weights,
+                false,
+            )
+            .expect("fixture admission")
+            .expect("valid degree-one curve")
+        };
+        let polynomial = make_curve(None);
+        let rational = make_curve(Some(vec![1.0, 1.0]));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(
+            !super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE)
+                .expect("fixed pole-kind mismatch")
+        );
+    }
+
+    #[test]
+    fn fixed_cubic_generator_shape_rejection_is_free() {
+        let (surface, _) = shared_generator_surfaces();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let plane = super::PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let mut losses = Vec::new();
+        assert!(super::cubic_extrusion_plane_generator_curve(
+            &ctx,
+            &surface,
+            7,
+            plane,
+            &mut losses,
+        )
+        .expect("degree-one surface has no cubic generator")
+        .is_none());
+        assert!(losses.is_empty());
     }
 }

@@ -4,8 +4,6 @@ use super::super::prototype_mixed_derivatives;
 use crate::surface::{
     SurfaceNamedParameter, SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 const FIELD: &str = "end_uv_deriv";
 
@@ -31,66 +29,7 @@ fn array(dimensions: u32, count: u32, values: Vec<Option<f64>>) -> SurfaceNamedV
 }
 
 fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]; 4]>) {
-    // Unique lookup visits each present row once and admits both name operands.
-    // All fixtures use the same field name. The checked 12-slot projection has
-    // fixed size and no allocation, collection, entity or nesting admission.
-    let events: Vec<_> = record
-        .parameters()
-        .iter()
-        .flat_map(|_| {
-            [
-                (1, "creo prototype field search"),
-                (
-                    u64::try_from(FIELD.len()).expect("fixture name fits u64"),
-                    "creo prototype field name comparison",
-                ),
-                (
-                    u64::try_from(FIELD.len()).expect("fixture name fits u64"),
-                    "creo prototype field name comparison",
-                ),
-            ]
-        })
-        .collect();
-    let work: u64 = events.iter().map(|(units, _)| units).sum();
-    let run = |ctx: &DecodeContext<'_>| prototype_mixed_derivatives(ctx, record);
-    let policy_at = |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_entities = 0;
-        policy.limits.max_recursion_depth = 0;
-        policy
-    };
-    let observed = std::cell::RefCell::new(Vec::new());
-    crate::test_support::assert_refusal_order(
-        ResourceDimension::WorkUnits,
-        &events
-            .iter()
-            .map(|(_, operation)| *operation)
-            .collect::<Vec<_>>(),
-        |cap| {
-            let arena = DecodeArena::new();
-            let policy = policy_at(cap);
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = run(&ctx);
-            if let Err(CodecError::ResourceLimit(original)) = &result {
-                assert_eq!((original.limit, original.used), (cap, cap));
-                observed
-                    .borrow_mut()
-                    .push((original.additional, original.operation));
-            }
-            result.map(|actual| assert_eq!(actual, expected))
-        },
-    );
-    assert_eq!(observed.into_inner(), events);
-    for cap in [work, work + 1] {
-        let arena = DecodeArena::new();
-        let policy = policy_at(cap);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(run(&ctx).expect("fixed projection admitted"), expected);
-    }
+    assert_eq!(prototype_mixed_derivatives(record), expected);
 }
 
 #[test]
