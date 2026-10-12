@@ -1409,12 +1409,14 @@ fn a5_cubic_two_site_knots_are_clamped() {
 
 #[test]
 fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
-    for header_token in [5, 9, 13, 29, 17] {
+    let expected = parsed_a5_freeform_curves(&a5_freeform_curve_stream()).remove(0);
+    for header_token in (1..=u8::MAX).step_by(4) {
         let mut bytes = a5_freeform_curve_stream();
         bytes[7] = header_token;
         let curves = parsed_a5_freeform_curves(&bytes);
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[0].header_token, u32::from(header_token));
+        assert_eq!(curves[0].sites, expected.sites);
         assert_eq!(
             crate::test_support::with_service_context(|ctx| curves[0].knots(ctx))
                 .expect("service resource budget"),
@@ -1427,9 +1429,11 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     wrong_degree[9] = 17;
     assert!(parsed_a5_freeform_curves(&wrong_degree).is_empty());
 
-    let mut invalid_header_token = a5_freeform_curve_stream();
-    invalid_header_token[7] = 18;
-    assert!(parsed_a5_freeform_curves(&invalid_header_token).is_empty());
+    for header_token in (0..=u8::MAX).filter(|token| token % 4 != 1) {
+        let mut invalid_header_token = a5_freeform_curve_stream();
+        invalid_header_token[7] = header_token;
+        assert!(parsed_a5_freeform_curves(&invalid_header_token).is_empty());
+    }
 }
 
 #[test]

@@ -160,14 +160,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 3. Standard nested `V5_CFV2`
 
-### SN-01. `a5 03 32` header type codes
-
-**Question.** What does each header token `05`, `09`, `0d`, and `1d` select?
-
-**Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." defines the A5 header as one canonical width-1 compact integer (`4n+1`, `0 ≤ n ≤ 63`). The header value is retained, but no selector role is assigned.
-
-**Need.** We must know the selection rule to write the correct token.
-
 ### SN-02. `a5 03 32` numeric continuation
 
 **Question.** What fields follow the three aligned jet blocks in each numeric-continuation length class?
@@ -183,6 +175,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** The record framing gives the token width and value.
 
 **Need.** We must know the selector namespace to interpret and write the edge record.
+
+**Note.** The canonical A5 class-`32` header does not select a rolling-ball variant. Its generic meaning also remains unknown. A controlled producer save that measures the exact streamed object must establish the meaning before a fresh writer can derive the header value.
 
 ### SN-04. Class-`0x5e` terminal byte
 

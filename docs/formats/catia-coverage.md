@@ -863,3 +863,18 @@ The 79-file byte check resolves all 32,870 later reference slots of 30,056
 complete counted face records as loops repeating the face carrier. Arduino's
 unique 54-loop face matches the sibling STEP file's unique 54-bound face by
 plane origin and axes; both faces have one carrier.
+
+## A5 rolling-ball header values
+
+The parser retains every canonical width-1 header value and applies one
+degree-5 jet grammar. The regression covers all 64 canonical values with
+unchanged site data and rejects all 192 noncanonical bytes.
+
+An independent byte check joins all 183 typed A5 jets in clothes-basket,
+spray-bottle, NIST CTC-02, and NIST CTC-05 to unique native frames. Every knot
+and all 30 value and derivative channels per site match exactly. The nine
+header bytes are `05`, `09`, `0d`, `19`, `1d`, `25`, `2d`, `35`, and `3d`.
+Source-extent reconstruction closes the spray-bottle frame at offset 809,757.
+All sites satisfy equal ball radii and the opening-angle equation within
+`1e-9`; the largest relative radius residual is `1.40e-12`, and the largest
+angle residual is `7.72e-12` radians.
