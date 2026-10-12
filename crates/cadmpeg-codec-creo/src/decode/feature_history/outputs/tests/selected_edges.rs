@@ -422,3 +422,39 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     })
     .expect("service profile admits output bodies"));
 }
+
+#[test]
+fn unicode_surface_output_body_id_charges_only_retained_copy_work() {
+    let (mut ir, _) = selected_edge_ir();
+    let body = BodyId::mint("creo:test:body#é").expect("identity grammar");
+    ir.model.bodies[0].id = body.clone();
+    ir.model.regions[0].body = body.clone();
+    ir.model.faces[0].surface =
+        SurfaceId::mint("creo:visibgeom:surface#7").expect("identity grammar");
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 40,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    });
+    let outputs = crate::test_support::assert_work_boundaries(
+        &["creo feature output body IDs"],
+        |ctx| {
+            let result = super::feature_output_bodies(ctx, &scan, &ir, 40);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+                if resource.operation == "creo feature output body IDs" {
+                    assert_eq!(
+                        resource.additional,
+                        cadmpeg_core::decode::u64_from_index(body.as_str().len())
+                    );
+                }
+            }
+            result
+        },
+    );
+    assert_eq!(outputs, vec![body]);
+}
