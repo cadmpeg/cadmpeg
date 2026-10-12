@@ -436,8 +436,10 @@ current levels require those matrices and representative fixtures.
 - Complete consolidated cone-face chart records retain their reference-and-
   control program, angular scale, and cone half-angle before the program's
   higher-level roles resolve. Consolidated parameter-space points retain all
-  four stored prefix selectors with ordered one-, two-, three-, or five-scalar
-  payloads. Controls enforce the scalar count and explicit unit direction.
+  source-local compact operands with their exact inline or one- through
+  four-byte integer encodings and ordered one-, two-, three-, or five-scalar
+  payloads. Controls enforce scalar count, negative centered-domain start,
+  and explicit unit direction.
   Owner charts require complete constant-axis tuples or the implicit-line
   half-span, midpoint, and boundary relation. A cone-face chart binds its
   immediately following complete
@@ -1357,3 +1359,55 @@ The [CGM generic-fillet description](https://www.maruf.ca/files/caadoc/CAAGobTec
 defines center and two limiting loci. It does not define the bridge's wire
 order. The hand bridge's last three references lack retained alias targets,
 so their proposed locus labels remain unassigned under SN-18.
+
+Independent class-`18` verification uses logical descriptor framing,
+compact operands, finite lanes, and complete control closure:
+
+| Population | Count | Scope |
+| --- | ---: | --- |
+| CATPart inputs | 79 | Both corpus roots |
+| Files with candidates | 34 | Header token 5, finite compatible lane |
+| Admitted records | 26,398 | Complete control closure |
+| Inline operands | 15,097 | One-byte `4n+1` |
+| u8 operands | 3,408 | `04` and one integer byte |
+| u16 operands | 6,237 | `08` and two integer bytes |
+| u24 operands | 1,656 | `0c` and three integer bytes |
+| u32 operands | 0 | Established grammar; synthetic regression |
+| Other-control abstentions | 112 | Finite length-compatible candidates |
+| Distinct operand values | 4,855 | Range 1 through 1,727,824 |
+| Previous native records | 4,507 | The 78-model baseline, operands 1 through 4 |
+
+No admitted centered start is nonnegative. The maximum explicit direction
+norm error is `4.440892098500626e-16`, dimensionless. The raw sweep contains
+21,891 records beyond the decoded baseline, including `apartman.CATPart`.
+
+| Four-operand run relation | Runs | Scope |
+| --- | ---: | --- |
+| Complete contiguous runs | 477 | The 78-model baseline |
+| Admitted owner charts | 45 | Carrier/bridge/rectangle context |
+| Opposing-side order | 429 | Operand pairs `(1,2)` and `(3,4)` |
+| Consecutive-edge order | 48 | The other runs |
+| Closed consecutive runs | 47 | Endpoint closure |
+| Open consecutive chains | 1 | HTC run at physical offset 806574 |
+
+Endpoint closure alone does not establish owner-chart side order. The FTC
+map at 1559012, HTC map at 811022, and basket map at 191651 independently
+consume source/target operands `(3,2)`, `(5,4)`, and `(30,29)` from adjacent
+class-`18` records.
+
+The complete constructed container passes native validation for all 26,398
+admitted records, with exact values, scalar bits, encoding forms, and offsets;
+all 112 other-control rows remain excluded. Fresh original decodes and checks
+verify 20,259 records in the 33 decodable positive files. Their complete
+neutral models remain exact. Existing construction references preserve their
+source offsets when the enlarged point arena renumbers IDs. The other 45
+inputs have no candidates. `apartman.CATPart` reaches its existing 512-unit
+ordered-face constraint refusal; its 6,139 source records are verified in the
+constructed container. The local verification harness uses a 128-million
+collection-item ceiling for the FTC10 native serialization.
+
+The public CGM articles [How to Associate Topology with Geometry](https://library.plmcoach.com/caadoc/online/CAACgmModel/CAACgmTaTobTopoCreate.htm)
+and [Using the CGM Data Checker](https://www.maruf.ca/files/caadoc/CAACgmTechArticles/CAACgmDataChecker.htm)
+describe multiple curve representations per edge and parameter mappings
+between their domains. These object roles support the representation context;
+they do not assign serialized class numbers or join bare operand values.

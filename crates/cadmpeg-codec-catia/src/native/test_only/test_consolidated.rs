@@ -332,10 +332,10 @@ pub(super) fn validate_consolidated_parameter_points(
     for (index, point) in points.iter().enumerate() {
         let frame_overhead = point
             .byte_len
-            .checked_sub(u64::from(point.payload.layout()));
+            .checked_sub(u64::from(point.payload.byte_len(point.operand)));
         if point.id != format!("catia:consolidated:parameter-point#{index}")
             || !matches!(frame_overhead, Some(5..=7))
-            || !matches!(point.prefix.as_u8(), 0x05 | 0x09 | 0x0d | 0x11)
+            || !point.payload.matches_control(point.control)
             || index > 0 && points[index - 1].byte_offset >= point.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

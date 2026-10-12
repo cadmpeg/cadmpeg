@@ -3,7 +3,80 @@
 
 use super::parsed_owner_charts;
 use crate::families::b2::records::b2_parameter_points;
-use crate::test_support::test_b2::{b2_owner_chart_stream, b2_parameter_point_stream};
+use crate::test_support::test_b2::{
+    b2_compact_parameter_operand_stream, b2_owner_chart_stream, b2_parameter_point_stream,
+};
+
+#[test]
+fn parameter_points_retain_wide_and_nonminimal_compact_operands() {
+    let bytes = b2_compact_parameter_operand_stream();
+    let points = b2_parameter_points(&bytes);
+    assert_eq!(
+        points.iter().map(|p| p.operand.value()).collect::<Vec<_>>(),
+        [220, 65_390, 1_727_824, u32::MAX, 1]
+    );
+    assert_eq!(
+        points
+            .iter()
+            .map(|p| p.operand.byte_len())
+            .collect::<Vec<_>>(),
+        [2, 3, 4, 5, 2]
+    );
+    assert_eq!(points.last().unwrap().end, bytes.len());
+    assert!(points.windows(2).all(|p| p[0].end == p[1].pos));
+    for point in points {
+        assert_eq!(
+            point.payload.byte_len(point.operand),
+            u8::try_from(point.end - point.pos - 5).unwrap()
+        );
+    }
+}
+
+#[test]
+fn parameter_points_abstain_on_truncation_extra_words_and_centered_empty_domain() {
+    let valid = b2_compact_parameter_operand_stream();
+    let first_end = b2_parameter_points(&valid)[0].end;
+    let first = &valid[..first_end];
+    for length in 0..first.len() {
+        assert!(b2_parameter_points(&first[..length]).is_empty());
+    }
+    let mut extra = first.to_vec();
+    extra[3] += 8;
+    extra.extend_from_slice(&0.0f64.to_le_bytes());
+    assert!(b2_parameter_points(&extra).is_empty());
+    for control in [0x08, 0x48, 0x88] {
+        for t0 in [0.0f64, 1.0] {
+            let count = if control == 0x08 { 5 } else { 3 };
+            let mut bytes = vec![0xb2, 0x03, 0x18, 2 + 8 * count, 5, 5, control];
+            for value in [t0, 2.0, 3.0, 1.0, 0.0]
+                .into_iter()
+                .take(usize::from(count))
+            {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+            assert!(b2_parameter_points(&bytes).is_empty());
+        }
+    }
+}
+
+#[test]
+fn owner_chart_compares_operand_values_independently_of_compact_width() {
+    let original = b2_owner_chart_stream(0x28);
+    let records = crate::wire::records::consolidated_records(&original);
+    let mut bytes = Vec::new();
+    for record in records {
+        let frame = &original[record.range().unwrap()];
+        if record.class() != 0x18 {
+            bytes.extend_from_slice(frame);
+            continue;
+        }
+        bytes.extend_from_slice(&frame[..3]);
+        bytes.extend_from_slice(&[frame[3] + 1, frame[4], 0x04, frame[5] / 4]);
+        bytes.extend_from_slice(&frame[6..]);
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(parsed_owner_charts(&bytes, &records).len(), 1);
+}
 
 #[test]
 fn parameter_point_controls_require_matching_scalar_count_and_unit_direction() {

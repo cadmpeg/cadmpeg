@@ -73,6 +73,31 @@ pub(crate) fn b2_reference_list_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_compact_parameter_operand_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for operand in [
+        vec![0x04, 220],
+        vec![0x08, 0x6e, 0xff],
+        vec![0x0c, 0x50, 0x5d, 0x1a],
+        vec![0x10, 0xff, 0xff, 0xff, 0xff],
+        vec![0x04, 1],
+    ] {
+        bytes.extend_from_slice(&[
+            0xb2,
+            0x03,
+            0x18,
+            u8::try_from(operand.len() + 1 + 24).expect("compact operand fixture"),
+            0x05,
+        ]);
+        bytes.extend_from_slice(&operand);
+        bytes.push(0x02);
+        for value in [12.0, 6.0, 7.0] {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
+    bytes
+}
+
 pub(crate) fn b2_owner_packet_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x62, 0x52, 0x05, 0x89];
     for (index, value) in [1000u16, 1, 1001, 2, 1002, 3, 1003, 4, 1004]

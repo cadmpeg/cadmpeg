@@ -778,7 +778,7 @@ Parsed by:
 | 0 | 6 | `branch` | `bytes[6]` | little | spec | \| `+0` \| `bytes[6]` \| absent scalar jet: `05 00 00 00 00 00` \| · value `[5, 0, 0, 0, 0, 0]` |
 | 6 | 16 | `maximal_u` | `f64[2]` | little | spec | \| `+6` \| `f64le[2]` \| maximal U limits \| |
 
-## `consolidated_parameter_point_prefix`
+## `consolidated_parameter_point_inline_prefix`
 
 Spec §6.4 · layout: byte offsets · size: 10 B
 
@@ -787,7 +787,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `selector` | `u8` | little | spec | \| `+0` \| `u8` \| side selector \| |
+| 0 | 1 | `inline_operand` | `u8` | little | spec | \| `+0` \| `u8` \| inline compact representation operand \| |
 | 1 | 1 | `control` | `u8` | little | spec | \| `+1` \| `u8` \| scalar control \| |
 | 2 | 8 | `first_scalar` | `f64` | little | spec | \| `+2` \| `f64le` \| first stored scalar \| |
 

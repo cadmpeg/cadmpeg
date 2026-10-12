@@ -196,25 +196,25 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     };
     assert_eq!(
         [
-            two_scalars.prefix.as_u8(),
-            three_scalars.prefix.as_u8(),
-            five_scalars.prefix.as_u8(),
-            last_three_scalars.prefix.as_u8()
+            two_scalars.operand.value(),
+            three_scalars.operand.value(),
+            five_scalars.operand.value(),
+            last_three_scalars.operand.value()
         ],
-        [0x05, 0x09, 0x0d, 0x11]
+        [1, 2, 3, 4]
     );
-    assert_eq!(two_scalars.payload.layout(), 0x12);
+    assert_eq!(two_scalars.payload.byte_len(two_scalars.operand), 0x12);
     assert_eq!(two_scalars.control, 0x12);
     assert!(matches!(
         &two_scalars.payload,
         crate::families::b2::records::B2ParameterPointPayload::TwoScalars { values } if *values == [2.0, 3.0]
     ));
-    assert_eq!(three_scalars.payload.layout(), 0x1a);
+    assert_eq!(three_scalars.payload.byte_len(three_scalars.operand), 0x1a);
     assert!(matches!(
         &three_scalars.payload,
         crate::families::b2::records::B2ParameterPointPayload::ThreeScalars { values } if *values == [11.0, 4.0, 5.0]
     ));
-    assert_eq!(five_scalars.payload.layout(), 0x2a);
+    assert_eq!(five_scalars.payload.byte_len(five_scalars.operand), 0x2a);
     assert!(matches!(
         &five_scalars.payload,
         crate::families::b2::records::B2ParameterPointPayload::FiveScalars { values }
@@ -245,6 +245,46 @@ fn consolidated_parameter_point_wire_rejects_contradictory_controls() {
     let mut wire = serde_json::to_value(&native.consolidated_parameter_points[2])
         .expect("serialize explicit line");
     wire["payload"]["values"][3] = serde_json::json!(2.0);
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
+    );
+}
+
+#[test]
+fn parameter_operand_native_round_trip_preserves_all_compact_widths() {
+    let native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_b2::b2_compact_parameter_operand_stream(),
+    );
+    assert_eq!(
+        native
+            .consolidated_parameter_points
+            .iter()
+            .map(|p| p.operand.value())
+            .collect::<Vec<_>>(),
+        [220, 65_390, 1_727_824, u32::MAX, 1]
+    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store compact parameter operands");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load compact parameter operands"),
+        native
+    );
+    for (encoding, invalid) in [
+        ("inline", 64),
+        ("u8", 256),
+        ("u16", 65536),
+        ("u24", 0x0100_0000),
+    ] {
+        let mut wire = serde_json::to_value(&native.consolidated_parameter_points[0]).unwrap();
+        wire["operand"] = serde_json::json!({"value":invalid,"encoding":encoding});
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
+        );
+    }
+    let mut wire = serde_json::to_value(&native.consolidated_parameter_points[0]).unwrap();
+    wire["byte_len"] = serde_json::json!(5);
     assert!(
         serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
     );

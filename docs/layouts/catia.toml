@@ -2175,19 +2175,19 @@ source = "spec"
 anchor = "| `+6` | `f64le[2]` | maximal U limits |"
 
 [[record]]
-name = "consolidated_parameter_point_prefix"
+name = "consolidated_parameter_point_inline_prefix"
 parsed_by = "crates/cadmpeg-codec-catia/src/families/b2/records.rs"
 kind = "byte"
 section = "6.4"
-anchor = "The parameter-space payload prefix is:"
+anchor = "the parameter-space payload prefix is:"
 size = 10
 
 [[record.field]]
-name = "selector"
+name = "inline_operand"
 offset = 0
 type = "u8"
 source = "spec"
-anchor = "| `+0` | `u8` | side selector |"
+anchor = "| `+0` | `u8` | inline compact representation operand |"
 
 [[record.field]]
 name = "control"

@@ -197,8 +197,7 @@ struct CatiaConsolidatedParameterPointWireRef<'a> {
     id: &'a str,
     byte_offset: u64,
     byte_len: u64,
-    layout: u8,
-    prefix: u8,
+    operand: crate::families::b2::records::parameter_operand::B2ParameterOperand,
     control: u8,
     payload: &'a crate::families::b2::records::B2ParameterPointPayload,
 }
@@ -212,8 +211,7 @@ impl Serialize for CatiaConsolidatedParameterPoint {
             id: &self.id,
             byte_offset: self.byte_offset,
             byte_len: self.byte_len,
-            layout: self.payload.layout(),
-            prefix: self.prefix.as_u8(),
+            operand: self.operand,
             control: self.control,
             payload: &self.payload,
         }

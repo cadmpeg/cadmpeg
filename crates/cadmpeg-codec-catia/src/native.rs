@@ -941,9 +941,9 @@ pub(crate) struct CatiaConsolidatedParameterPoint {
     byte_offset: u64,
     /// Complete framed-record length.
     byte_len: u64,
-    /// First byte of the two-byte class-specific prefix.
-    prefix: crate::families::b2::records::B2ParameterPointPrefix,
-    /// Second byte of the two-byte class-specific prefix.
+    /// Source-local representation operand with its compact encoding.
+    operand: crate::families::b2::records::parameter_operand::B2ParameterOperand,
+    /// Scalar control immediately following the operand.
     control: u8,
     /// Layout-specific finite scalar lane.
     payload: B2ParameterPointPayload,
@@ -954,8 +954,7 @@ struct CatiaConsolidatedParameterPointWire {
     id: String,
     byte_offset: u64,
     byte_len: u64,
-    layout: u8,
-    prefix: u8,
+    operand: crate::families::b2::records::parameter_operand::B2ParameterOperand,
     control: u8,
     payload: B2ParameterPointPayload,
 }
@@ -967,8 +966,7 @@ impl From<CatiaConsolidatedParameterPoint> for CatiaConsolidatedParameterPointWi
             id: value.id,
             byte_offset: value.byte_offset,
             byte_len: value.byte_len,
-            layout: value.payload.layout(),
-            prefix: value.prefix.as_u8(),
+            operand: value.operand,
             control: value.control,
             payload: value.payload,
         }
@@ -979,19 +977,17 @@ impl TryFrom<CatiaConsolidatedParameterPointWire> for CatiaConsolidatedParameter
     type Error = String;
 
     fn try_from(wire: CatiaConsolidatedParameterPointWire) -> Result<Self, Self::Error> {
-        if wire.layout != wire.payload.layout() || !wire.payload.matches_control(wire.control) {
-            return Err(format!(
-                "parameter-point layout {:#04x} or control does not match payload",
-                wire.layout
-            ));
+        let overhead = wire
+            .byte_len
+            .checked_sub(u64::from(wire.payload.byte_len(wire.operand)));
+        if !matches!(overhead, Some(5..=7)) || !wire.payload.matches_control(wire.control) {
+            return Err("parameter-point frame length or control does not match payload".into());
         }
-        let prefix = crate::families::b2::records::B2ParameterPointPrefix::from_u8(wire.prefix)
-            .ok_or_else(|| format!("unknown parameter-point prefix {:#04x}", wire.prefix))?;
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
             byte_len: wire.byte_len,
-            prefix,
+            operand: wire.operand,
             control: wire.control,
             payload: wire.payload,
         })
@@ -9001,7 +8997,7 @@ fn consolidated_parameter_points(
             )?,
             byte_offset: u64_from_index(point.pos),
             byte_len: u64_from_index(point.end - point.pos),
-            prefix: point.prefix,
+            operand: point.operand,
             control: point.control,
             payload: point.payload,
         };

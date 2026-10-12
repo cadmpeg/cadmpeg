@@ -67,11 +67,11 @@ fn b2_parameter_point_parser_reads_ordered_scalar_layouts() {
     assert_eq!(
         points
             .iter()
-            .map(|point| point.prefix.as_u8())
+            .map(|point| point.operand.value())
             .collect::<Vec<_>>(),
-        [0x05, 0x09, 0x0d, 0x11]
+        [1, 2, 3, 4]
     );
-    assert_eq!(points[0].payload.layout(), 0x12);
+    assert_eq!(points[0].payload.byte_len(points[0].operand), 0x12);
     assert!(matches!(
         &points[0].payload,
         B2ParameterPointPayload::TwoScalars { values } if *values == [2.0, 3.0]
@@ -622,10 +622,10 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
                     .into_iter()
                     .find(|point| point.pos == pos)
                     .expect("chart selector record")
-                    .prefix
-                    .as_u8()
+                    .operand
+                    .value()
             }),
-            [0x05, 0x09, 0x0d, 0x11]
+            [1, 2, 3, 4]
         );
 
         let owner_pos = chart.owner_pos;
@@ -671,10 +671,10 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
                     .into_iter()
                     .find(|point| point.pos == pos)
                     .expect("chart selector record")
-                    .prefix
-                    .as_u8()
+                    .operand
+                    .value()
             }),
-            [0x05, 0x09, 0x0d, 0x11]
+            [1, 2, 3, 4]
         );
     }
 }

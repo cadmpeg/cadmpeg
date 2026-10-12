@@ -276,14 +276,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Note.** Independent standard-versus-STEP topology verifies all 134 eyebolt faces uniquely by joint adjacency refinement. The spring graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
 
-### SN-20. Class-`0x18` parameter-point selectors
-
-**Question.** What does each of the four prefix selectors in a `b2`, `b3`, or `b4 03 18` parameter-point record select?
-
-**Known.** The decoder retains the four selectors and the parameter-point payload. In the source-closed owner carrier chart, selectors `05` and `09` are opposing constant-parameter sides, and selectors `0d` and `11` define the lower and upper orthogonal sides through full tuples or symmetric implicit-axis lines. `B:28` uses constant first-parameter sides. `B:2b` and `A:32` use constant second-parameter sides. `catia.md` §6.4 defines the exact scalar relation and zero elision.
-
-**Need.** We must define these selectors outside the owner carrier chart.
-
 ### SN-21. `b2 03 3b` chart program
 
 **Question.** What does each reference and control in a `b2 03 3b` cone-face chart program represent?

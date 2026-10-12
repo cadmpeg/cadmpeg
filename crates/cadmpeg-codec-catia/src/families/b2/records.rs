@@ -23,6 +23,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::mem::size_of;
 
+pub(crate) mod parameter_operand;
+use parameter_operand::B2ParameterOperand;
+
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
     ExactDeviation, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3, HypotLength,
@@ -74,64 +77,34 @@ pub(crate) struct B2ParameterPoint {
     pub(crate) pos: usize,
     /// Exclusive end of the complete framed record.
     pub(crate) end: usize,
-    /// First byte of the two-byte class-specific prefix.
-    pub(crate) prefix: B2ParameterPointPrefix,
-    /// Second byte of the two-byte class-specific prefix.
+    /// Source-local representation operand with its compact encoding.
+    pub(crate) operand: B2ParameterOperand,
+    /// Scalar control immediately following the operand.
     pub(crate) control: u8,
     /// Layout-specific finite scalar lane.
     pub(crate) payload: B2ParameterPointPayload,
-}
-
-/// Closed set of class-`0x18` parameter-point prefixes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum B2ParameterPointPrefix {
-    Sel05,
-    Sel09,
-    Sel0d,
-    Sel11,
-}
-
-impl B2ParameterPointPrefix {
-    pub(crate) fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0x05 => Some(Self::Sel05),
-            0x09 => Some(Self::Sel09),
-            0x0d => Some(Self::Sel0d),
-            0x11 => Some(Self::Sel11),
-            _ => None,
-        }
-    }
-
-    pub(crate) const fn as_u8(self) -> u8 {
-        match self {
-            Self::Sel05 => 0x05,
-            Self::Sel09 => 0x09,
-            Self::Sel0d => 0x0d,
-            Self::Sel11 => 0x11,
-        }
-    }
 }
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum B2ParameterPointPayload {
-    /// One retained scalar after two zero tuple fields are elided (`L=0x0a`).
+    /// One retained scalar after two zero tuple fields are elided.
     Scalar {
         /// Stored scalar.
         value: FiniteReal,
     },
-    /// Two stored scalars in source order (`L=0x12`).
+    /// Two stored scalars in source order.
     TwoScalars {
         /// Ordered finite scalar lane.
         values: FiniteVector<2>,
     },
-    /// Three stored scalars in source order (`L=0x1a`).
+    /// Three stored scalars in source order.
     ThreeScalars {
         /// Ordered finite scalar lane.
         values: FiniteVector<3>,
     },
-    /// Unsplit five-scalar layout (`L=0x2a`).
+    /// Unsplit five-scalar layout.
     FiveScalars {
         /// Stored scalar payload.
         values: FiniteVector<5>,
@@ -139,13 +112,14 @@ pub(crate) enum B2ParameterPointPayload {
 }
 
 impl B2ParameterPointPayload {
-    pub(crate) const fn layout(&self) -> u8 {
-        match self {
-            Self::Scalar { .. } => 0x0a,
-            Self::TwoScalars { .. } => 0x12,
-            Self::ThreeScalars { .. } => 0x1a,
-            Self::FiveScalars { .. } => 0x2a,
-        }
+    pub(crate) const fn byte_len(&self, operand: B2ParameterOperand) -> u8 {
+        let count = match self {
+            Self::Scalar { .. } => 1,
+            Self::TwoScalars { .. } => 2,
+            Self::ThreeScalars { .. } => 3,
+            Self::FiveScalars { .. } => 5,
+        };
+        operand.byte_len() + 1 + 8 * count
     }
 
     fn scalars(&self) -> ([f64; 5], usize) {
@@ -163,8 +137,12 @@ impl B2ParameterPointPayload {
     pub(crate) fn matches_control(&self, control: u8) -> bool {
         let (values, len) = self.scalars();
         match control {
-            0x08 => len == 5 && (values[3].hypot(values[4]) - 1.0).abs() <= EPS_PARAMETER_LINE,
-            0x48 | 0x88 => len == 3,
+            0x08 => {
+                len == 5
+                    && values[0] < 0.0
+                    && (values[3].hypot(values[4]) - 1.0).abs() <= EPS_PARAMETER_LINE
+            }
+            0x48 | 0x88 => len == 3 && values[0] < 0.0,
             control if control < 0x20 && matches!(control & 3, 1 | 2) => {
                 usize::try_from((control & 0x1c).count_ones())
                     .is_ok_and(|omitted| len + omitted == 3)
@@ -1240,7 +1218,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 parameter_points.get(&side_0d.byte_offset())?,
                 parameter_points.get(&side_11.byte_offset())?,
             ];
-            if points.map(|point| point.prefix.as_u8()) != [0x05, 0x09, 0x0d, 0x11]
+            if points.map(|point| point.operand.value()) != [1, 2, 3, 4]
                 || !owner_chart_bounds_match(carrier_kind, &points, &owner.numeric_tail)
             {
                 return None;
@@ -1920,22 +1898,23 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
         if frame.header_token != 5 {
             return None;
         }
-        let prefix = B2ParameterPointPrefix::from_u8(*data.get(frame.payload)?)?;
-        let layout = u8::try_from(frame.end - frame.payload).ok()?;
-        let control = *data.get(frame.payload + 1)?;
-        let at = frame.payload + 2;
-        let payload = match layout {
-            0x0a => B2ParameterPointPayload::Scalar {
-                value: f64_le(data, at)?,
+        let bytes = data.get(frame.payload..frame.end)?;
+        let mut at = 0;
+        let operand = B2ParameterOperand::read(bytes, &mut at)?;
+        let control = *bytes.get(at)?;
+        at += 1;
+        let payload = match bytes.len() - at {
+            8 => B2ParameterPointPayload::Scalar {
+                value: f64_le(bytes, at)?,
             },
-            0x12 => B2ParameterPointPayload::TwoScalars {
-                values: read_f64_array::<2>(data, at)?.into(),
+            16 => B2ParameterPointPayload::TwoScalars {
+                values: read_f64_array::<2>(bytes, at)?.into(),
             },
-            0x1a => B2ParameterPointPayload::ThreeScalars {
-                values: read_f64_array::<3>(data, at)?.into(),
+            24 => B2ParameterPointPayload::ThreeScalars {
+                values: read_f64_array::<3>(bytes, at)?.into(),
             },
-            0x2a => B2ParameterPointPayload::FiveScalars {
-                values: read_f64_array::<5>(data, at)?.into(),
+            40 => B2ParameterPointPayload::FiveScalars {
+                values: read_f64_array::<5>(bytes, at)?.into(),
             },
             _ => return None,
         };
@@ -1945,7 +1924,7 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
         Some(B2ParameterPoint {
             pos: frame.pos,
             end: frame.end,
-            prefix,
+            operand,
             control,
             payload,
         })
