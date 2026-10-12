@@ -7086,25 +7086,18 @@ fn parse_face(
     if !surfaces.contains_key(&surface) {
         return Ok(None);
     }
-    let Some(canonical_surface) = canonical_surface_id(surface_aliases, surface) else {
+    if canonical_surface_id(surface_aliases, surface).is_none() {
         return Ok(None);
-    };
+    }
     let mut loop_ids = Vec::new();
     for &reference in &references[1..] {
-        if loops.contains_key(&reference) {
-            ctx.push_vec(&mut loop_ids, reference, "catia_b5_face_loop_ids")?;
-        } else {
-            let repeats_carrier = surfaces.contains_key(&reference)
-                && canonical_surface_id(surface_aliases, reference) == Some(canonical_surface);
-            if !repeats_carrier {
-                // A distinct surface reference is a multi-surface variant. Its
-                // composition is not represented by the neutral Face type, so
-                // keep the typed record but withhold the face from topology.
-                return Ok(None);
-            }
-            // A face may repeat its carrier through an alias identity. This is
-            // the same carrier incidence, not a multi-surface face.
+        if loops
+            .get(&reference)
+            .is_none_or(|loop_| loop_.surface != surface)
+        {
+            return Ok(None);
         }
+        ctx.push_vec(&mut loop_ids, reference, "catia_b5_face_loop_ids")?;
     }
     if loop_ids.is_empty() {
         return Ok(None);

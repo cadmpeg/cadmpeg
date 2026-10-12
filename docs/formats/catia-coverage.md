@@ -852,3 +852,14 @@ The completeness regression starts with two faces sharing all three edges.
 It removes one face's pcurve binding and marks the source graph incomplete.
 Transfer declines without mutating the neutral document; dropping that face
 would produce a sheet from a topology-closed population.
+
+## Single-carrier object-stream faces
+
+A counted face has one carrier and any number of owned loops. Transfer rejects
+an extra surface alias in a loop slot. Carrier construction dependencies remain
+separate from face ownership.
+
+The 79-file byte check resolves all 32,870 later reference slots of 30,056
+complete counted face records as loops repeating the face carrier. Arduino's
+unique 54-loop face matches the sibling STEP file's unique 54-bound face by
+plane origin and axes; both faces have one carrier.

@@ -378,14 +378,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 4. Object stream
 
-### OS-01. Multi-surface class-`0x5f` face
-
-**Question.** How does a `b5 03 5f` face select and combine more than one surface record?
-
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" defines single-carrier object-stream face, loop, edge, and vertex incidence.
-
-**Need.** We must know the multi-surface rule to transfer the face.
-
 ### OS-02. Class-`0x5f` terminal controls
 
 **Question.** What is the semantic difference between terminal controls `03` and `05` in a `b5 03 5f` face?
