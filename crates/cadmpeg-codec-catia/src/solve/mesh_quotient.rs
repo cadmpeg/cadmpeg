@@ -4060,8 +4060,10 @@ pub(super) fn propagate_common_boundary_components<'storage>(
                         storage: Some(storage),
                     };
                     let mut processed = 0usize;
-                    while let Some(&face) = ordered_faces.get(cursor + processed) {
-                        ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
+                    let mut faces = ordered_faces[cursor..].iter();
+                    while let Some(&face) =
+                        ctx.next_charged(&mut faces, "catia_mesh_quotient_iteration")?
+                    {
                         let Some(next) = advance_boundary_component_states(
                             ctx,
                             &domains[face],

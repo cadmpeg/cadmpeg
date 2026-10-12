@@ -215,6 +215,31 @@ fn incidence_components_order_prerequisites_without_joining_domains() {
 }
 
 #[test]
+fn incidence_ready_component_visit_refuses_before_ordering() {
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]], vec![[4, 4]]];
+    let dependencies = [Vec::new(), vec![0], Vec::new()];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut components = vec![vec![0], vec![1], vec![2]];
+        crate::solve::incidence::order_incidence_components_by_constraints(
+            ctx,
+            &mut components,
+            &choices,
+            AssignmentOrder::new(None, Some(&dependencies)),
+        )
+        .map(|valid| valid.map(|()| components))
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("component order"),
+        Some(vec![vec![2], vec![0], vec![1]])
+    );
+    let refused = crate::test_support::with_work_refusal("catia_incidence_ready_visit", run);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_incidence_ready_visit")
+    );
+}
+
+#[test]
 fn incidence_component_order_refuses_incoming_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

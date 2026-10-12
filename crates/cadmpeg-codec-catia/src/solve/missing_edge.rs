@@ -3603,8 +3603,9 @@ fn standard_mesh_missing_edge_assignment_domains(
             })?;
         }
         let mut trails = Vec::<EndpointTrail>::new();
-        while let Some(&smallest) = unseen.first() {
-            ctx.charge_work(1, "catia_missing_edge_iteration")?;
+        while let Some(&smallest) =
+            ctx.find_by(&unseen, |_| Ok(true), "catia_missing_edge_iteration")?
+        {
             // Start at the smallest edge with an open end, else the smallest edge.
             let open_start = ctx.find_by(
                 unseen.iter().copied(),
@@ -6572,9 +6573,12 @@ pub(crate) fn motif_port_points(
         }
         at += 3;
     }
-    while trims.get(at).is_some_and(|record| record.kind == 0x4a) {
-        ctx.charge_work(1, "catia_missing_edge_iteration")?;
-        let Some((first, last)) = columns(&trims[at]) else {
+    let mut quads = trims[at..].iter();
+    while let Some(record) = ctx
+        .next_charged(&mut quads, "catia_missing_edge_iteration")?
+        .filter(|record| record.kind == 0x4a)
+    {
+        let Some((first, last)) = columns(record) else {
             return Ok(None);
         };
         emit_column(ctx, &mut seen, first)?;
