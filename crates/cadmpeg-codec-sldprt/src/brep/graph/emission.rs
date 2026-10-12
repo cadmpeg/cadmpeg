@@ -114,14 +114,13 @@ pub(super) fn decode_graph(
     let body_records = typed_records.unwrap_or_default();
     let mut metadata_storage = ctx.reserve_scoped(0, "hold Parasolid graph metadata")?;
     let (body_modifier_source, body_modifier_storage) = entity_facts.take_body_modifiers();
-    let body_modifiers = metadata_storage
-        .with_storage(|| unique_body_modifiers(ctx, body_modifier_source))?;
+    let body_modifiers =
+        metadata_storage.with_storage(|| unique_body_modifiers(ctx, body_modifier_source))?;
     drop(body_modifier_storage);
     let (face_color_source, face_color_storage) = entity_facts.take_face_colors();
-    let (face_color_versions, face_color_version_storage) =
-        entity_facts.take_face_color_versions();
-    let ((face_colors, conflicting_face_colors), color_storage) =
-        ctx.with_scoped_storage("hold selected Parasolid face colors", || {
+    let (face_color_versions, face_color_version_storage) = entity_facts.take_face_color_versions();
+    let ((face_colors, conflicting_face_colors), color_storage) = ctx
+        .with_scoped_storage("hold selected Parasolid face colors", || {
             unique_face_colors(ctx, face_color_source, face_color_versions)
         })?;
     drop(face_color_storage);
