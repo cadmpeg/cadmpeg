@@ -3783,7 +3783,11 @@ mod tests {
         sector_mut_with_size(file, SECTOR_SIZE, id)
     }
 
-    pub(super) fn sector_mut_with_size(file: &mut [u8], sector_size: usize, id: usize) -> &mut [u8] {
+    pub(super) fn sector_mut_with_size(
+        file: &mut [u8],
+        sector_size: usize,
+        id: usize,
+    ) -> &mut [u8] {
         let start = sector_size * (id + 1);
         &mut file[start..start + sector_size]
     }
