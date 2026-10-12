@@ -12,6 +12,7 @@ use crate::variant::Variant;
 pub(crate) mod a5a8;
 pub(crate) mod b2;
 pub(crate) mod b5;
+pub(crate) mod chamfer;
 pub(crate) mod consolidated;
 pub(crate) mod e5;
 mod freeform;

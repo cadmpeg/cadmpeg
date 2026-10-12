@@ -37,10 +37,10 @@ pub(crate) const DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT: Coverage
     CoverageKey::new("decoded_complete_schema_configuration_row_chain_count");
 pub(crate) const DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey::new("decoded_complex_constraint_range_count");
-pub(crate) const DECODED_CONSOLIDATED_CONE_FACE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_consolidated_cone_face_count");
-pub(crate) const DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT: CoverageKey =
-    CoverageKey::new("decoded_consolidated_cone_face_parameter_point_count");
+pub(crate) const DECODED_CONSOLIDATED_CHAMFER_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_chamfer_count");
+pub(crate) const DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_chamfer_parameter_point_count");
 pub(crate) const DECODED_CONSOLIDATED_EDGE_RUN_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_edge_run_count");
 pub(crate) const DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT: CoverageKey =
@@ -1042,8 +1042,8 @@ const ALL: &[CoverageKey] = &[
     DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT,
     DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT,
     DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT,
-    DECODED_CONSOLIDATED_CONE_FACE_COUNT,
-    DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
+    DECODED_CONSOLIDATED_CHAMFER_COUNT,
+    DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT,

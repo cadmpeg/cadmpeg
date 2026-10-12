@@ -1,8 +1,9 @@
+use crate::native::chamfer::{CatiaConsolidatedChamfer, CatiaObjectChamfer};
 use cadmpeg_core::decode::u64_from_index;
 
 use super::test_consolidated::{
-    validate_consolidated_circles, validate_consolidated_class5b5c_records,
-    validate_consolidated_class61_records, validate_consolidated_cone_faces,
+    validate_consolidated_chamfers, validate_consolidated_circles,
+    validate_consolidated_class5b5c_records, validate_consolidated_class61_records,
     validate_consolidated_cones, validate_consolidated_cylinders,
     validate_consolidated_embedded_cylinders, validate_consolidated_groups,
     validate_consolidated_line_profiles, validate_consolidated_parameter_points,
@@ -37,15 +38,14 @@ use crate::native::{
     range_interval, reference_signature, semantic_entity_indices, store_projection,
     terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
     CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
-    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
-    CatiaConsolidatedEdgeRun, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
-    CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
-    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList,
-    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
-    CatiaConsolidatedVertexIdentity, CatiaDesignObject, CatiaEntityReferenceIndex,
-    CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
-    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
-    CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
+    CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
+    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedLineProfile,
+    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
+    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution,
+    CatiaConsolidatedSphere, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
+    CatiaDesignObject, CatiaEntityReferenceIndex, CatiaExternalReference, CatiaFinjplSegment,
+    CatiaLegacyEntityRun, CatiaNative, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord,
+    CatiaPreviewImage, CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
     CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
     CatiaZeroEntityRecord, CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
@@ -569,9 +569,12 @@ impl CatiaNative {
         consolidated_class5b5c_records
             .sort_by_key(|record| (record.source_index, record.source_offset));
         validate_consolidated_class5b5c_records(&consolidated_class5b5c_records)?;
-        let mut consolidated_cone_faces: Vec<CatiaConsolidatedConeFace> =
-            namespace.arena_as("consolidated_cone_faces")?;
-        consolidated_cone_faces.sort_by_key(|face| face.byte_offset);
+        let mut consolidated_chamfers: Vec<CatiaConsolidatedChamfer> =
+            namespace.arena_as("consolidated_chamfers")?;
+        consolidated_chamfers.sort_by_key(|face| face.byte_offset);
+        let mut object_chamfers: Vec<CatiaObjectChamfer> = namespace.arena_as("object_chamfers")?;
+        object_chamfers.sort_by_key(|row| row.byte_offset);
+        super::test_consolidated::validate_object_chamfers(&object_chamfers)?;
         let mut consolidated_cones: Vec<CatiaConsolidatedCone> =
             namespace.arena_as("consolidated_cones")?;
         consolidated_cones.sort_by_key(|cone| cone.byte_offset);
@@ -603,7 +606,7 @@ impl CatiaNative {
             namespace.arena_as("consolidated_parameter_points")?;
         consolidated_parameter_points.sort_by_key(|point| point.byte_offset);
         validate_consolidated_parameter_points(&consolidated_parameter_points)?;
-        validate_consolidated_cone_faces(&consolidated_cone_faces, &consolidated_parameter_points)?;
+        validate_consolidated_chamfers(&consolidated_chamfers, &consolidated_parameter_points)?;
         let mut consolidated_plane_carriers: Vec<CatiaConsolidatedPlaneCarrier> =
             namespace.arena_as("consolidated_plane_carriers")?;
         consolidated_plane_carriers.sort_by_key(|carrier| carrier.byte_offset);
@@ -738,7 +741,8 @@ impl CatiaNative {
             consolidated_circles,
             consolidated_class61_records,
             consolidated_class5b5c_records,
-            consolidated_cone_faces,
+            consolidated_chamfers,
+            object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
             consolidated_embedded_cylinders,

@@ -20,9 +20,9 @@ use crate::test_support::test_a5_bound::{
 };
 use crate::test_support::test_a5a8::{a5_native_edge_identity_stream, a5_pcurve_stream};
 use crate::test_support::test_b2::{
-    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream, b2_circle_stream,
-    b2_class5b5c_stream, b2_cone_face_parameter_point_stream, b2_cone_face_stream, b2_cone_stream,
-    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
+    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
+    b2_chamfer_contact_stream, b2_chamfer_stream, b2_circle_stream, b2_class5b5c_stream,
+    b2_cone_stream, b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
     b2_fixed_owner_boundary_cycle_stream, b2_fixed_owner_boundary_face_node_cycle_stream,
     b2_group_stream, b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
     b2_owner_chart_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
@@ -780,19 +780,27 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
 }
 
 #[test]
-fn native_namespace_retains_consolidated_cone_face_charts() {
-    let native = crate::native::CatiaNative::decode(&b2_cone_face_parameter_point_stream());
-    let [face] = native.consolidated_cone_faces.as_slice() else {
-        panic!("one consolidated cone-face chart")
+fn native_namespace_retains_two_support_chamfers() {
+    let native = crate::native::CatiaNative::decode(&b2_chamfer_contact_stream());
+    let [face] = native.consolidated_chamfers.as_slice() else {
+        panic!("one compact chamfer")
     };
-    assert_eq!(face.program.len(), 16);
     assert_eq!(
-        face.angular_scale,
-        crate::test_support::test_b5::finite(1.5)
+        face.support_surfaces
+            .map(crate::wire::compact_unsigned::CompactUnsigned::value),
+        [1407, 788]
     );
     assert_eq!(
-        face.half_angle,
-        crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4)
+        face.support_pcurves
+            .map(crate::wire::compact_unsigned::CompactUnsigned::value),
+        [57, 55]
+    );
+    assert_eq!(
+        face.parameters.result_kind,
+        crate::families::chamfer::ChamferResultKind::Cone
+    );
+    assert!(
+        matches!(face.parameters.definition, crate::families::chamfer::ChamferDefinition::LengthAngle { length1, .. } if length1.get() == 1.5)
     );
     assert_eq!(
         face.parameter_points,
@@ -805,55 +813,51 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
     );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native
-        .store(&mut namespace)
-        .expect("store CATIA cone-face chart");
+    native.store(&mut namespace).expect("store CATIA chamfer");
     assert_eq!(
-        crate::native::CatiaNative::load(&namespace).expect("load CATIA cone-face chart"),
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA chamfer"),
         native
     );
 
     let mut invalid = native.clone();
-    invalid.consolidated_cone_faces[0].program.clear();
+    invalid.consolidated_chamfers[0].byte_len += 1;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA cone-face chart");
+        .expect("store invalid CATIA chamfer");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = native.clone();
-    invalid.consolidated_cone_faces[0]
-        .parameter_points
-        .swap(0, 1);
+    invalid.consolidated_chamfers[0].parameter_points.swap(0, 1);
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA cone-face parameter run");
+        .expect("store invalid CATIA chamfer contact run");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
-    let mut mixed = b2_cone_face_parameter_point_stream();
+    let mut mixed = b2_chamfer_contact_stream();
     mixed.extend_from_slice(&[0xb2, 0x03, 0x18, 0x02, 0x05, 0x99, 0x99]);
     let mixed = crate::native::CatiaNative::decode(&mixed);
-    assert!(mixed.consolidated_cone_faces[0].parameter_points.is_empty());
+    assert_eq!(mixed.consolidated_chamfers[0].parameter_points.len(), 4);
 
     let mut file = standard_catpart();
-    file.splice(16..16, b2_cone_face_parameter_point_stream());
+    file.splice(16..16, b2_chamfer_contact_stream());
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
     file[8..12].copy_from_slice(&be32(file_len));
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
-        .expect("decode CATIA cone-face chart");
+        .expect("decode CATIA chamfer");
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT.as_str()
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT.as_str()
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT.as_str()
         ),
         4
     );

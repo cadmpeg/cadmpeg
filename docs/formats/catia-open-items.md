@@ -276,14 +276,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Note.** Independent standard-versus-STEP topology verifies all 134 eyebolt faces uniquely by joint adjacency refinement. The spring graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
 
-### SN-21. `b2 03 3b` chart program
-
-**Question.** What does each reference and control in a `b2 03 3b` cone-face chart program represent?
-
-**Known.** `catia.md` §6.4 "**`b2/b3/b4 03 3b`** has width-coded header token" defines its bounded support-construction record.
-
-**Need.** We must know the program to bind and evaluate the chart.
-
 ### SN-22. Class-`0x60` group types
 
 **Question.** What does group type `2` select? What does each group type from `12` through `21` select?
@@ -401,15 +393,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 **Known.** `catia.md` §6.7 "`b5 03 37` (support-bound surface construction):" defines the support and result-carrier references.
 
 **Need.** We must know the operation and controls to construct the result surface directly.
-
-### OS-13. Class-`0x3b` support construction
-
-**Question.** What operation does a `b5 03 3b` support-bound construction represent? What do its first scalar and six controls mean?
-
-**Known.** `catia.md` §6.7 "`b5 03 3b` (two-scalar support-bound surface construction):" defines the bounded record and support references.
-
-**Need.** We must know the operation and fields to construct the result surface directly.
-
 
 ## 5. Zero-entity `a9 03`
 

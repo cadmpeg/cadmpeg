@@ -1,12 +1,12 @@
+use crate::native::chamfer::{CatiaConsolidatedChamfer, CatiaObjectChamfer};
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::{
     CatiaConsolidatedCircle, CatiaConsolidatedClass61Payload, CatiaConsolidatedClass61Record,
-    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
-    CatiaConsolidatedCylinderPayload, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
-    CatiaConsolidatedLineProfile, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
-    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedPlaneCarrierPayload,
-    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
-    CatiaConsolidatedTorus,
+    CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedCylinderPayload,
+    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedLineProfile,
+    CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
+    CatiaConsolidatedPlaneCarrierPayload, CatiaConsolidatedReferenceList,
+    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
 };
 use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -77,40 +77,72 @@ pub(super) fn validate_consolidated_groups(
     Ok(())
 }
 
-pub(super) fn validate_consolidated_cone_faces(
-    faces: &[CatiaConsolidatedConeFace],
+pub(super) fn validate_consolidated_chamfers(
+    rows: &[CatiaConsolidatedChamfer],
     parameter_points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let points_by_id = parameter_points
+    let points = parameter_points
         .iter()
         .map(|point| (point.id.as_str(), point))
         .collect::<HashMap<_, _>>();
-    for (index, face) in faces.iter().enumerate() {
-        let mut expected_point_offset = face.byte_offset.checked_add(face.byte_len);
-        let parameter_run_valid = face.parameter_points.iter().all(|id| {
-            match (expected_point_offset, points_by_id.get(id.as_str())) {
-                (Some(expected), Some(point)) if point.byte_offset == expected => {
-                    expected_point_offset = point.byte_offset.checked_add(point.byte_len);
-                    expected_point_offset.is_some()
-                }
-                _ => false,
+    for (index, row) in rows.iter().enumerate() {
+        let mut next = row.byte_offset.checked_add(row.byte_len);
+        let valid_contacts = row.parameter_points.iter().enumerate().all(|(index, id)| {
+            let Some(point) = points.get(id.as_str()) else {
+                return false;
+            };
+            if Some(point.byte_offset) != next
+                || point.operand.value() != u32::try_from(index + 1).unwrap_or(u32::MAX)
+            {
+                return false;
             }
+            next = point.byte_offset.checked_add(point.byte_len);
+            next.is_some()
         });
-        let frame_overhead = face
-            .byte_len
-            .checked_sub(u64::try_from(face.program.len()).unwrap_or(u64::MAX));
-        if face.id != format!("catia:consolidated:cone-face#{index}")
-            || face.program.len() < 16
-            || face.program.first() != Some(&0x85)
-            || !face.program.ends_with(&[0x03, 0x11])
-            || !matches!(frame_overhead, Some(21..=23))
-            || face.half_angle.get() >= std::f64::consts::FRAC_PI_2
-            || !parameter_run_valid
-            || index > 0 && faces[index - 1].byte_offset >= face.byte_offset
+        let payload_len = 24
+            + row
+                .support_surfaces
+                .iter()
+                .chain(&row.support_pcurves)
+                .map(|reference| u64::from(reference.byte_len()))
+                .sum::<u64>();
+        if row.id != format!("catia:consolidated:chamfer#{index}")
+            || !matches!(row.byte_len.checked_sub(payload_len), Some(5..=7))
+            || row
+                .support_surfaces
+                .iter()
+                .any(|reference| reference.byte_len() == 1)
+            || (row.support_pcurves[0].byte_len() == 1) != (row.support_pcurves[1].byte_len() == 1)
+            || !matches!(row.parameter_points.len(), 0 | 2 | 4)
+            || !valid_contacts
+            || index > 0 && rows[index - 1].byte_offset >= row.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated cone-face descriptor `{}` is structurally invalid",
-                face.id
+                "consolidated chamfer `{}` is structurally invalid",
+                row.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn validate_object_chamfers(
+    rows: &[CatiaObjectChamfer],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, row) in rows.iter().enumerate() {
+        let payload_len = 23
+            + row
+                .references
+                .iter()
+                .map(|reference| u64::from(reference.byte_len()))
+                .sum::<u64>();
+        if row.id != format!("catia:object:chamfer#{index}")
+            || row.byte_len != payload_len + 8
+            || index > 0 && rows[index - 1].byte_offset >= row.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object chamfer `{}` is structurally invalid",
+                row.id
             )));
         }
     }

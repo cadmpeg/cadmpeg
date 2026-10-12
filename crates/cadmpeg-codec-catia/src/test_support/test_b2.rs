@@ -478,7 +478,7 @@ pub(crate) fn b2_adjacent_face_counted_owner_stream() -> Vec<u8> {
     ]
 }
 
-pub(crate) fn b2_cone_face_stream() -> Vec<u8> {
+pub(crate) fn b2_chamfer_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
     record.extend_from_slice(&[
         0x85, 0x05, 0x08, 0x7f, 0x05, 0x08, 0x14, 0x03, 0xe5, 0xdd, 0x05, 0x01, 0x01, 0x05, 0x03,
@@ -489,9 +489,20 @@ pub(crate) fn b2_cone_face_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_cone_face_parameter_point_stream() -> Vec<u8> {
-    let mut bytes = b2_cone_face_stream();
-    bytes.extend_from_slice(&b2_parameter_point_stream());
+pub(crate) fn b2_chamfer_contact_stream() -> Vec<u8> {
+    let mut bytes = b2_cone_stream();
+    bytes.extend_from_slice(&b2_chamfer_stream());
+    for (operand, control, values) in [
+        (1, 0x01, [1.0, 4.0, 5.0]),
+        (2, 0x01, [2.0, 4.0, 5.0]),
+        (3, 0x02, [4.0, 1.0, 2.0]),
+        (4, 0x02, [5.0, 1.0, 2.0]),
+    ] {
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, 26, 0x05, 4 * operand + 1, control]);
+        for value in values {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
     bytes
 }
 

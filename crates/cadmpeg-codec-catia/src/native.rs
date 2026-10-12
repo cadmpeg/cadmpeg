@@ -31,6 +31,11 @@ use class5b5c::CatiaConsolidatedClass5b5cRecord;
 
 pub(crate) mod edge_definition;
 
+pub(crate) mod chamfer;
+use chamfer::{
+    consolidated_chamfers, object_chamfers, CatiaConsolidatedChamfer, CatiaObjectChamfer,
+};
+
 mod parameter_map;
 use parameter_map::CatiaSampledParameterMap;
 
@@ -942,7 +947,7 @@ pub(crate) struct CatiaConsolidatedParameterPoint {
     /// Complete framed-record length.
     byte_len: u64,
     /// Source-local representation operand with its compact encoding.
-    operand: crate::families::b2::records::parameter_operand::B2ParameterOperand,
+    operand: crate::wire::compact_unsigned::CompactUnsigned,
     /// Scalar control immediately following the operand.
     control: u8,
     /// Layout-specific finite scalar lane.
@@ -954,7 +959,7 @@ struct CatiaConsolidatedParameterPointWire {
     id: String,
     byte_offset: u64,
     byte_len: u64,
-    operand: crate::families::b2::records::parameter_operand::B2ParameterOperand,
+    operand: crate::wire::compact_unsigned::CompactUnsigned,
     control: u8,
     payload: B2ParameterPointPayload,
 }
@@ -1339,25 +1344,6 @@ pub(crate) struct CatiaConsolidatedGroup {
     byte_offset: u64,
     /// Compact group-type code.
     group_type: u32,
-}
-
-/// One complete consolidated cone-face chart descriptor.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaConsolidatedConeFace {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the framed record.
-    byte_offset: u64,
-    /// Complete framed-record length.
-    byte_len: u64,
-    /// Complete reference-and-control program preceding the scalars.
-    program: NativeBytes<Vec<u8>>,
-    /// Stored angular chart scale.
-    angular_scale: FiniteReal,
-    /// Cone half-angle in radians, strictly between zero and a quarter turn.
-    half_angle: cadmpeg_ir::scalar::PositiveAngle,
-    /// Complete immediately following parameter-point run.
-    pub(crate) parameter_points: Vec<String>,
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -7882,8 +7868,12 @@ define_catia_arenas! {
         /// Complete source-local consolidated class-`0x5b`/`0x5c` records.
         pub(crate) stored;
     },
-    consolidated_cone_faces: CatiaConsolidatedConeFace {
-        /// Complete consolidated cone-face chart descriptors.
+    consolidated_chamfers: CatiaConsolidatedChamfer {
+        /// Complete compact two-support chamfer constructions.
+        pub(crate) stored;
+    },
+    object_chamfers: CatiaObjectChamfer {
+        /// Complete object-id two-support chamfer constructions.
         pub(crate) stored;
     },
     consolidated_cones: CatiaConsolidatedCone {
@@ -8521,139 +8511,6 @@ mod consolidated_class_record_limit_tests {
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_class5b5c_id"));
     }
-}
-
-#[cfg(test)]
-mod consolidated_cone_face_limit_tests {
-    use super::{consolidated_cone_faces, consolidated_parameter_points};
-    use cadmpeg_core::CodecError;
-
-    #[test]
-    fn native_cone_face_output_and_id_refuse_limits() {
-        let bytes = crate::test_support::test_b2::b2_cone_face_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(17, |ctx| {
-            consolidated_cone_faces(ctx, &bytes, &records, &[])
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_faces"));
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_native_cone_face_id", |ctx| {
-                consolidated_cone_faces(ctx, &bytes, &records, &[])
-            });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_face_id"));
-    }
-
-    #[test]
-    fn native_cone_face_parameter_links_refuse_collection_limits() {
-        let bytes = crate::test_support::test_b2::b2_cone_face_parameter_point_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let points = crate::test_support::with_service_context(|ctx| {
-            consolidated_parameter_points(ctx, &bytes, &records)
-        })
-        .expect("service decode");
-        assert_eq!(points.len(), 4);
-        for (limit, operation) in [
-            (0, "catia_native_cone_face_point_index"),
-            (4, "catia_native_cone_face_class18_ends"),
-            (25, "catia_native_cone_face_positions"),
-            (29, "catia_native_cone_face_parameter_points"),
-        ] {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                consolidated_cone_faces(ctx, &bytes, &records, &points)
-            });
-            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-                if error.operation == operation));
-        }
-        let limited = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_native_cone_face_point_index_id",
-            |ctx| consolidated_cone_faces(ctx, &bytes, &records, &points),
-        );
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_face_point_index_id"));
-        let limited = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_native_cone_face_parameter_id",
-            |ctx| consolidated_cone_faces(ctx, &bytes, &records, &points),
-        );
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_face_parameter_id"));
-    }
-}
-
-fn consolidated_cone_faces(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-    parameter_points: &[CatiaConsolidatedParameterPoint],
-) -> Result<Vec<CatiaConsolidatedConeFace>, CodecError> {
-    let mut point_ids = HashMap::new();
-    for point in parameter_points {
-        let id = ctx.copy_retained_text(&point.id, "catia_native_cone_face_point_index_id")?;
-        ctx.insert_hash_map(
-            &mut point_ids,
-            point.byte_offset,
-            id,
-            "catia_native_cone_face_point_index",
-        )?;
-    }
-    let mut class18_ends = HashMap::new();
-    for record in records.iter().filter(|record| {
-        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x18
-    }) {
-        if let Some(range) = record.range() {
-            ctx.insert_hash_map(
-                &mut class18_ends,
-                range.start,
-                range.end,
-                "catia_native_cone_face_class18_ends",
-            )?;
-        }
-    }
-    let mut output = Vec::new();
-    for (index, face) in crate::families::b2::records::b2_cone_faces(ctx, bytes)?
-        .into_iter()
-        .enumerate()
-    {
-        let mut positions = Vec::new();
-        let mut next = face.end;
-        while let Some(&end) = class18_ends.get(&next) {
-            let position = u64_from_index(next);
-            ctx.push_vec(&mut positions, position, "catia_native_cone_face_positions")?;
-            next = end;
-        }
-        let mut bound_points = Vec::new();
-        for position in positions {
-            let Some(id) = point_ids.get(&position) else {
-                bound_points.clear();
-                break;
-            };
-            let id = ctx.copy_retained_text(id, "catia_native_cone_face_parameter_id")?;
-            ctx.push_vec(
-                &mut bound_points,
-                id,
-                "catia_native_cone_face_parameter_points",
-            )?;
-        }
-        let byte_offset = u64_from_index(face.pos);
-        let byte_len = u64_from_index(face.end - face.pos);
-        let value = CatiaConsolidatedConeFace {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:cone-face#{index:00}"),
-                "catia_native_cone_face_id",
-            )?,
-            byte_offset,
-            byte_len,
-            program: (face.program).into(),
-            angular_scale: face.angular_scale,
-            half_angle: face.half_angle,
-            parameter_points: bound_points,
-        };
-        ctx.push_vec(&mut output, value, "catia_native_cone_faces")?;
-    }
-    Ok(output)
 }
 
 fn consolidated_cones(
@@ -9987,12 +9844,13 @@ impl CatiaNative {
             consolidated_class5b5c_records(ctx, bytes, consolidated_records)?;
         let consolidated_parameter_points =
             consolidated_parameter_points(ctx, bytes, consolidated_records)?;
-        let consolidated_cone_faces = consolidated_cone_faces(
+        let consolidated_chamfers = consolidated_chamfers(
             ctx,
             bytes,
             consolidated_records,
             &consolidated_parameter_points,
         )?;
+        let object_chamfers = object_chamfers(ctx, bytes)?;
         let consolidated_cones = consolidated_cones(ctx, bytes, consolidated_records)?;
         let consolidated_cylinders = consolidated_cylinders(ctx, bytes, consolidated_records)?;
         let (consolidated_groups, consolidated_embedded_cylinders) =
@@ -10070,7 +9928,8 @@ impl CatiaNative {
             consolidated_circles,
             consolidated_class61_records,
             consolidated_class5b5c_records,
-            consolidated_cone_faces,
+            consolidated_chamfers,
+            object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
             consolidated_embedded_cylinders,

@@ -14,17 +14,13 @@ use cadmpeg_ir::geometry::analytic::ConeSurface;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{
-    Angle, FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveAngle,
-    PositiveLength, PositiveReal,
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
 };
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::mem::size_of;
-
-pub(crate) mod parameter_operand;
-use parameter_operand::B2ParameterOperand;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
@@ -40,6 +36,7 @@ use crate::wire::bytes::{
     allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane_charged, read_f64_array,
     u32_le_24, AllocationReferenceEncoding,
 };
+use crate::wire::compact_unsigned::CompactUnsigned;
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
@@ -78,7 +75,7 @@ pub(crate) struct B2ParameterPoint {
     /// Exclusive end of the complete framed record.
     pub(crate) end: usize,
     /// Source-local representation operand with its compact encoding.
-    pub(crate) operand: B2ParameterOperand,
+    pub(crate) operand: CompactUnsigned,
     /// Scalar control immediately following the operand.
     pub(crate) control: u8,
     /// Layout-specific finite scalar lane.
@@ -112,7 +109,7 @@ pub(crate) enum B2ParameterPointPayload {
 }
 
 impl B2ParameterPointPayload {
-    pub(crate) const fn byte_len(&self, operand: B2ParameterOperand) -> u8 {
+    pub(crate) const fn byte_len(&self, operand: CompactUnsigned) -> u8 {
         let count = match self {
             Self::Scalar { .. } => 1,
             Self::TwoScalars { .. } => 2,
@@ -122,7 +119,7 @@ impl B2ParameterPointPayload {
         operand.byte_len() + 1 + 8 * count
     }
 
-    fn scalars(&self) -> ([f64; 5], usize) {
+    pub(in crate::families::b2) fn scalars(&self) -> ([f64; 5], usize) {
         match self {
             Self::Scalar { value } => ([value.get(), 0.0, 0.0, 0.0, 0.0], 1),
             Self::TwoScalars { values } => ([values[0], values[1], 0.0, 0.0, 0.0], 2),
@@ -490,21 +487,6 @@ pub(crate) struct B2AdjacentFaceCountedOwner {
     pub(crate) owner: B2CountedOwner,
 }
 
-/// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct B2ConeFace {
-    /// Record byte offset.
-    pub(crate) pos: usize,
-    /// Exclusive end of the complete framed record.
-    pub(crate) end: usize,
-    /// Complete reference-and-control program preceding the scalars.
-    pub(crate) program: Vec<u8>,
-    /// Stored angular chart scale.
-    pub(crate) angular_scale: FiniteReal,
-    /// Cone half-angle in radians, strictly between zero and a quarter turn.
-    pub(crate) half_angle: PositiveAngle,
-}
-
 /// Settled terminal sense code in a class-`0x06` consolidated use record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum B2UseSense {
@@ -758,75 +740,6 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
             tail,
         })
     })
-}
-
-/// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
-pub(crate) fn b2_cone_faces(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-) -> Result<Vec<B2ConeFace>, CodecError> {
-    let mut faces = Vec::new();
-    let Some(last) = data.len().checked_sub(5) else {
-        return Ok(faces);
-    };
-    for pos in 0..last {
-        let Some(width) = data[pos]
-            .checked_sub(0xb1)
-            .filter(|width| (1..=3).contains(width))
-        else {
-            continue;
-        };
-        if !matches!(data.get(pos + 1), Some(0x03 | 0x13 | 0x83))
-            || data.get(pos + 2) != Some(&0x3b)
-        {
-            continue;
-        }
-        let payload = pos + 4 + usize::from(width);
-        let Some(end) = payload.checked_add(usize::from(data[pos + 3])) else {
-            continue;
-        };
-        if end > data.len() || end - payload < 0x20 {
-            continue;
-        }
-        let header_token = data[pos + 4..payload]
-            .iter()
-            .enumerate()
-            .fold(0u32, |value, (shift, byte)| {
-                value | (u32::from(*byte) << (8 * shift))
-            });
-        let scalar_at = end - 16;
-        let Some(program) = data.get(payload..scalar_at) else {
-            continue;
-        };
-        let Some(angular_scale) = f64_le(data, scalar_at) else {
-            continue;
-        };
-        let Some(half_angle) = f64_le(data, scalar_at + 8) else {
-            continue;
-        };
-        let Some(half_angle) = PositiveAngle::new(half_angle.get()) else {
-            continue;
-        };
-        if header_token == 5
-            && program.first() == Some(&0x85)
-            && program.ends_with(&[0x03, 0x11])
-            && half_angle.get() < std::f64::consts::FRAC_PI_2
-        {
-            let program = ctx.copy_slice(program, "catia_b2_cone_face_program")?;
-            ctx.push_vec(
-                &mut faces,
-                B2ConeFace {
-                    pos,
-                    end,
-                    program,
-                    angular_scale,
-                    half_angle,
-                },
-                "catia_b2_cone_faces",
-            )?;
-        }
-    }
-    Ok(faces)
 }
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
@@ -1900,7 +1813,7 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
         }
         let bytes = data.get(frame.payload..frame.end)?;
         let mut at = 0;
-        let operand = B2ParameterOperand::read(bytes, &mut at)?;
+        let operand = CompactUnsigned::read(bytes, &mut at)?;
         let control = *bytes.get(at)?;
         at += 1;
         let payload = match bytes.len() - at {

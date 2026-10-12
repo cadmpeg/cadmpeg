@@ -40,6 +40,7 @@ use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl
 use super::vecmath::{add, components, coordinates, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
+use crate::families::chamfer::{ChamferParameters, ChamferResultKind};
 use crate::layout::{b5_cone_payload, b5_loop_numeric_terminal};
 use crate::wire;
 use crate::wire::bytes::{f64_le, f64_point, read_f64_array};
@@ -566,13 +567,8 @@ pub(super) enum B5SupportedSurfaceParameters {
         /// Positive radius of the support-bound construction.
         construction_radius: PositiveLength,
     },
-    /// Class `3b`: six contiguous controls followed by two positive scalars.
-    ScalarPair {
-        /// Six contiguous control bytes.
-        controls: [u8; 6],
-        /// Two positive construction scalars.
-        scalars: [PositiveReal; 2],
-    },
+    /// Class `3b`: two-support chamfer controls and definition.
+    Chamfer(ChamferParameters),
 }
 
 /// One class-`06` incidence lane connecting curves to parameters at a vertex.
@@ -4901,6 +4897,17 @@ fn analytic_pcurve_range(
 
 fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
     (record.family == 0xb5 && record.payload.first() == Some(&0x85)).then_some(())?;
+    if record.class == 0x3b {
+        let (references, parameters) = super::chamfer::payload(&record.payload)?;
+        let references = references.map(crate::wire::object_reference::ObjectReference::value);
+        return Some(B5SupportedSurface {
+            object_id: record.object_id,
+            carrier_surface: references[0],
+            support_surfaces: [references[1], references[2]],
+            support_pcurves: [references[3], references[4]],
+            parameters: B5SupportedSurfaceParameters::Chamfer(parameters),
+        });
+    }
     let mut position = 1;
     let references = [
         wire::tokens::object_ref(&record.payload, &mut position, true)?,
@@ -4927,14 +4934,6 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
                 controls,
                 construction_radius,
             }
-        }
-        0x3b => {
-            let controls = record.payload[position..position + 6].try_into().ok()?;
-            let scalars = [
-                PositiveReal::new(f64_le(&record.payload, position + 6)?.get())?,
-                PositiveReal::new(f64_le(&record.payload, position + 14)?.get())?,
-            ];
-            B5SupportedSurfaceParameters::ScalarPair { controls, scalars }
         }
         _ => return None,
     };
@@ -4980,11 +4979,12 @@ fn supported_surface_parameters_match_carrier(
             },
         ) => relative_close(construction_radius.get(), carrier_radius.get()),
         (B5SupportedSurfaceParameters::Radius { .. }, B5Surface::RollingBall { .. }) => true,
-        (B5SupportedSurfaceParameters::ScalarPair { .. }, B5Surface::Plane { .. }) => true,
-        (
-            B5SupportedSurfaceParameters::ScalarPair { scalars, .. },
-            B5Surface::Cone { radial_angle, .. },
-        ) => relative_close(scalars[1].get(), radial_angle.get()),
+        (B5SupportedSurfaceParameters::Chamfer(parameters), B5Surface::Plane { .. }) => {
+            parameters.result_kind == ChamferResultKind::Plane
+        }
+        (B5SupportedSurfaceParameters::Chamfer(parameters), B5Surface::Cone { .. }) => {
+            parameters.result_kind == ChamferResultKind::Cone
+        }
         _ => false,
     }
 }

@@ -990,6 +990,24 @@ Spec §6.4 · layout: byte offsets · size: 14 B
 | 4 | 8 | `zeros` | `bytes[8]` | little | spec | \| `+4` \| `bytes[8]` \| construction zero lane \| |
 | 12 | 2 | `terminal` | `bytes[2]` | little | spec | \| `+12` \| `bytes[2]` \| construction terminal `01 05` \| |
 
+## `chamfer_control_scalar_tail`
+
+Spec §6.7 · layout: byte offsets · size: 22 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/chamfer.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `result_kind` | `u8` | little | spec | \| `+0` \| `u8` \| result kind: `05` cone, `09` plane \| |
+| 1 | 1 | `contact_order` | `u8` | little | spec | \| `+1` \| `u8` \| support contact order: `01` lower/upper, `05` upper/lower \| |
+| 2 | 1 | `fixed_literal` | `u8` | little | spec | \| `+2` \| `u8` \| fixed literal `01` \| · value `1` |
+| 3 | 1 | `support0_side` | `u8` | little | spec | \| `+3` \| `u8` \| support-0 inward halfspace: `03` negative, `05` positive \| |
+| 4 | 1 | `support1_side` | `u8` | little | spec | \| `+4` \| `u8` \| support-1 inward halfspace: `03` negative, `05` positive \| |
+| 5 | 1 | `definition_mode` | `u8` | little | spec | \| `+5` \| `u8` \| definition mode: `0d` two lengths, `11` length and angle \| |
+| 6 | 8 | `length1` | `f64` | little | spec | \| `+6` \| `f64le` \| positive support-0 setback Length1 \| |
+| 14 | 8 | `length2_or_angle` | `f64` | little | spec | \| `+14` \| `f64le` \| positive support-1 setback Length2 for `0d`, acute result/support-0 angle for `11` \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

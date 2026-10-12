@@ -433,18 +433,18 @@ current levels require those matrices and representative fixtures.
   complete source allocation graph. Endpoint coordinates validate the bound
   vertex owners: every contributing coordinate must agree pairwise within
   `2e-3` mm. Geometric proximity does not establish source identity.
-- Complete consolidated cone-face chart records retain their reference-and-
-  control program, angular scale, and cone half-angle before the program's
-  higher-level roles resolve. Consolidated parameter-space points retain all
-  source-local compact operands with their exact inline or one- through
-  four-byte integer encodings and ordered one-, two-, three-, or five-scalar
-  payloads. Controls enforce scalar count, negative centered-domain start,
-  and explicit unit direction.
-  Owner charts require complete constant-axis tuples or the implicit-line
-  half-span, midpoint, and boundary relation. A cone-face chart binds its
-  immediately following complete
-  parameter-space point run in serialized order; a mixed class-`0x18` run
-  remains unbound atomically.
+- Compact and object-id class-`3b` records retain typed two-support chamfer
+  references, result kind, contact order, support halfspaces, and either two
+  setbacks or a setback and acute angle. The exact referenced result carrier
+  supplies geometry. Compact contact ownership requires the adjacent result
+  kind and two parallel ordered bounds; a further pair must close their
+  rectangle. Unrelated following records remain independent.
+  Consolidated parameter-space points retain source-local compact operands
+  with exact inline or one- through four-byte integer encodings and ordered
+  scalar payloads. Controls enforce scalar count, negative centered-domain
+  start, and explicit unit direction. Owner charts require complete
+  constant-axis tuples or the implicit-line half-span, midpoint, and boundary
+  relation.
 - A consolidated revolution whose profile interval selects exactly one
   consolidated circle transfers a placed analytic directrix and neutral
   surface-of-revolution construction. A profile circle offset from the

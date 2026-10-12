@@ -197,7 +197,7 @@ struct CatiaConsolidatedParameterPointWireRef<'a> {
     id: &'a str,
     byte_offset: u64,
     byte_len: u64,
-    operand: crate::families::b2::records::parameter_operand::B2ParameterOperand,
+    operand: crate::wire::compact_unsigned::CompactUnsigned,
     control: u8,
     payload: &'a crate::families::b2::records::B2ParameterPointPayload,
 }

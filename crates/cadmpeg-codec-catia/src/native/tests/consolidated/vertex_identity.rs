@@ -5,8 +5,8 @@
 
 use super::{
     a5_native_edge_identity_stream, a5_native_edge_run_stream, a5_sphere_bound_edge_stream,
-    a5_torus_bound_edge_stream, b2_cone_face_parameter_point_stream, b2_cone_face_stream,
-    b2_cylinder_stream, b2_edge_node_stream, b2_owner_chart_stream, b2_plane_carrier_stream,
+    a5_torus_bound_edge_stream, b2_chamfer_contact_stream, b2_chamfer_stream, b2_cylinder_stream,
+    b2_edge_node_stream, b2_owner_chart_stream, b2_plane_carrier_stream,
     grouped_surface_alias_stream,
 };
 
@@ -404,15 +404,17 @@ fn native_namespace_retains_resolved_consolidated_sphere_supports() {
 }
 
 #[test]
-fn cone_face_followed_by_spanning_parameter_point_terminates() {
-    let bytes = b2_cone_face_parameter_point_stream();
-    let split = b2_cone_face_stream().len() + 6;
+fn chamfer_followed_by_spanning_parameter_point_terminates() {
+    let bytes = b2_chamfer_contact_stream();
+    let split =
+        crate::test_support::test_b2::b2_cone_stream().len() + b2_chamfer_stream().len() + 6;
     let records = crate::wire::records::consolidated_records_in_range_sources(
         &bytes,
         [[0..split, split..bytes.len()]],
     );
     let faces = crate::test_support::with_service_context(|ctx| {
-        crate::native::consolidated_cone_faces(ctx, &bytes, &records, &[]).expect("service decode")
+        crate::native::chamfer::consolidated_chamfers(ctx, &bytes, &records, &[])
+            .expect("service decode")
     });
     assert_eq!(faces.len(), 1);
     assert!(faces[0].parameter_points.is_empty());

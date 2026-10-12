@@ -5,6 +5,7 @@
 //! [`transfer`] lowers that graph into the neutral IR through staged emit
 //! passes. [`vecmath`] holds the vector helpers common to both.
 
+pub(crate) mod chamfer;
 pub(crate) mod graph;
 pub(crate) mod parameter_map;
 pub(super) mod transfer;

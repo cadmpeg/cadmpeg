@@ -2710,3 +2710,68 @@ offset = 12
 type = "bytes[2]"
 source = "spec"
 anchor = "| `+12` | `bytes[2]` | construction terminal `01 05` |"
+
+[[record]]
+name = "chamfer_control_scalar_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/chamfer.rs"
+kind = "byte"
+section = "6.7"
+anchor = "The shared chamfer tail starts immediately after the five references:"
+size = 22
+
+[[record.field]]
+name = "result_kind"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | result kind: `05` cone, `09` plane |"
+
+[[record.field]]
+name = "contact_order"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "| `+1` | `u8` | support contact order: `01` lower/upper, `05` upper/lower |"
+
+[[record.field]]
+name = "fixed_literal"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "| `+2` | `u8` | fixed literal `01` |"
+value = 1
+
+[[record.field]]
+name = "support0_side"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "| `+3` | `u8` | support-0 inward halfspace: `03` negative, `05` positive |"
+
+[[record.field]]
+name = "support1_side"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| `+4` | `u8` | support-1 inward halfspace: `03` negative, `05` positive |"
+
+[[record.field]]
+name = "definition_mode"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "| `+5` | `u8` | definition mode: `0d` two lengths, `11` length and angle |"
+
+[[record.field]]
+name = "length1"
+offset = 6
+type = "f64"
+source = "spec"
+anchor = "| `+6` | `f64le` | positive support-0 setback Length1 |"
+
+[[record.field]]
+name = "length2_or_angle"
+offset = 14
+type = "f64"
+source = "spec"
+anchor = "| `+14` | `f64le` | positive support-1 setback Length2 for `0d`, acute result/support-0 angle for `11` |"

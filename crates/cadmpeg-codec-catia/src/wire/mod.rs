@@ -4,6 +4,8 @@
 //! readers shared by the `b5` and `e5` families.
 
 pub(crate) mod bytes;
+pub(crate) mod compact_unsigned;
 pub(crate) mod cursor;
+pub(crate) mod object_reference;
 pub(crate) mod records;
 pub(crate) mod tokens;

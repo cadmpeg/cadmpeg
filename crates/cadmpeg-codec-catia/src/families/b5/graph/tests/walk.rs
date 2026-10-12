@@ -1592,13 +1592,16 @@ fn supported_surface_preserves_ordered_support_pcurves() {
             carrier_surface: 2,
             support_surfaces: [3, 4],
             support_pcurves: [5, 6],
-            parameters: B5SupportedSurfaceParameters::ScalarPair {
-                controls: [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
-                scalars: [
-                    crate::test_support::test_b5::positive(101.6),
-                    crate::test_support::test_b5::positive(20.0)
-                ],
-            },
+            parameters: B5SupportedSurfaceParameters::Chamfer(
+                crate::families::chamfer::ChamferParameters::decode(
+                    [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
+                    [
+                        crate::test_support::test_b5::finite(101.6),
+                        crate::test_support::test_b5::finite(20.0)
+                    ]
+                )
+                .expect("valid chamfer")
+            ),
         })
     );
     let scalar_pair = parse_supported_surface(&scalar_pair).expect("two-scalar supported surface");
@@ -1613,13 +1616,16 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &scalar_pair.parameters,
         &plane
     ));
-    let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
-        controls: [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
-        scalars: [
-            crate::test_support::test_b5::positive(0.76),
-            crate::test_support::test_b5::positive(std::f64::consts::FRAC_PI_4),
-        ],
-    };
+    let cone_parameters = B5SupportedSurfaceParameters::Chamfer(
+        crate::families::chamfer::ChamferParameters::decode(
+            [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+            [
+                crate::test_support::test_b5::finite(0.76),
+                crate::test_support::test_b5::finite(std::f64::consts::FRAC_PI_4),
+            ],
+        )
+        .expect("valid chamfer"),
+    );
     let cone = B5Surface::Cone {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
@@ -1637,7 +1643,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &cone_parameters,
         &cone
     ));
-    let wrong_cone = B5Surface::Cone {
+    let other_cone_angle = B5Surface::Cone {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
@@ -1650,9 +1656,9 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
-    assert!(!supported_surface_parameters_match_carrier(
+    assert!(supported_surface_parameters_match_carrier(
         &cone_parameters,
-        &wrong_cone
+        &other_cone_angle
     ));
     let construction = parse_supported_surface(&record).expect("supported surface");
     let pcurve0 = B5Record {
@@ -1687,7 +1693,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
 fn supported_surface_parameter_matching_is_scale_independent() {
     let radius = 1e-200_f64;
     let parameters = B5SupportedSurfaceParameters::Radius {
-        controls: [0; 6],
+        controls: [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
         construction_radius: crate::test_support::test_b5::positive_length(radius),
     };
     let cylinder = |carrier_radius| B5Surface::Cylinder {
@@ -1754,13 +1760,16 @@ fn supported_surface_parameter_matching_is_scale_independent() {
     }
 
     let half_angle = 1e-200_f64;
-    let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
-        controls: [0; 6],
-        scalars: [
-            crate::test_support::test_b5::positive(1.0),
-            crate::test_support::test_b5::positive(half_angle),
-        ],
-    };
+    let cone_parameters = B5SupportedSurfaceParameters::Chamfer(
+        crate::families::chamfer::ChamferParameters::decode(
+            [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+            [
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(half_angle),
+            ],
+        )
+        .expect("valid chamfer"),
+    );
     let cone = |carrier_radial_angle| B5Surface::Cone {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
@@ -1778,7 +1787,7 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         &cone_parameters,
         &cone(crate::test_support::test_b5::positive_angle(half_angle))
     ));
-    assert!(!supported_surface_parameters_match_carrier(
+    assert!(supported_surface_parameters_match_carrier(
         &cone_parameters,
         &cone(crate::test_support::test_b5::positive_angle(
             2.0 * half_angle

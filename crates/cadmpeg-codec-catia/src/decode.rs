@@ -1943,13 +1943,13 @@ fn finish_decode(
             native.consolidated_class61_records.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT,
-            native.consolidated_cone_faces.len(),
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_COUNT,
+            native.consolidated_chamfers.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT,
+            crate::coverage::DECODED_CONSOLIDATED_CHAMFER_PARAMETER_POINT_COUNT,
             native
-                .consolidated_cone_faces
+                .consolidated_chamfers
                 .iter()
                 .map(|face| face.parameter_points.len())
                 .sum(),

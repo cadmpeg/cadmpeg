@@ -12,8 +12,8 @@ use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
     b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
-    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream,
-    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
+    b2_class5b5c_stream, b2_cone_stream, b2_construction_use_stream, b2_counted_61_stream,
+    b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
     b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_group_stream,
     b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
     b2_offset_support_stream, b2_owner_chart_stream, b2_owner_chart_stream_with_extended_bridge,
@@ -24,7 +24,7 @@ use crate::test_support::test_b2::{
     b2_width_coded_owner_packet_stream, b2_width_coded_owner_with_allocation_stream,
     b3_cylinder_stream, b3_offset_support_stream,
 };
-use crate::test_support::test_b5::{finite, finite_vector, increasing, positive_angle};
+use crate::test_support::test_b5::{finite, finite_vector, increasing};
 
 fn parsed_b2_nurbs_curves(data: &[u8]) -> Vec<crate::families::b2::records::B2NurbsCurve> {
     crate::test_support::with_service_context(|ctx| {
@@ -1181,73 +1181,6 @@ fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
     let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
     assert_eq!(related.len(), 1);
     assert_eq!(related[0].face_node.target, 7);
-}
-
-#[test]
-fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
-    let records = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &b2_cone_face_stream())
-            .expect("service decode")
-    });
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].program.len(), 16);
-    assert_eq!(records[0].angular_scale, finite(1.5));
-    assert_eq!(
-        records[0].half_angle,
-        positive_angle(std::f64::consts::FRAC_PI_4)
-    );
-
-    let mut degenerate = b2_cone_face_stream();
-    let half_angle = degenerate.len() - 8;
-    degenerate[half_angle..].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &degenerate).expect("service decode")
-    })
-    .is_empty());
-}
-
-#[test]
-fn b2_cone_face_program_and_output_refuse_resource_limits() {
-    let bytes = b2_cone_face_stream();
-    for (limit, operation) in [
-        (15, "catia_b2_cone_face_program"),
-        (16, "catia_b2_cone_faces"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::b2::records::b2_cone_faces(ctx, &bytes)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    let limited = crate::test_support::with_retained_limit(15, |ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &bytes)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b2_cone_face_program")
-    );
-}
-
-#[test]
-fn b2_cone_face_parser_reads_a_complete_nested_frame() {
-    let nested = b2_cone_face_stream();
-    let mut bytes = vec![0xa5, 0x03, 0x7f];
-    bytes.extend_from_slice(
-        &u32::try_from(nested.len())
-            .expect("bounded nested frame")
-            .to_le_bytes(),
-    );
-    bytes.push(0x05);
-    bytes.extend(nested);
-    let records = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &bytes).expect("service decode")
-    });
-    let [record] = records.as_slice() else {
-        panic!("one nested cone-face chart")
-    };
-    assert_eq!(record.pos, 8);
 }
 
 #[test]
