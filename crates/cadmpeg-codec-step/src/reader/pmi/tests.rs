@@ -1771,3 +1771,5 @@ mod typed_work;
 
 mod characteristic_analysis;
 mod characteristic_claims;
+
+mod shared_graphs;

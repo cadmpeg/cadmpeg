@@ -532,3 +532,56 @@ fn annotation_discovery_shares_empty_single_child_cycles_across_roots() {
         });
     }
 }
+
+#[test]
+fn annotation_query_height_overflow_preserves_session_refusal() {
+    let exchange = exchange("#1=ITEM(#2);#2=TEXT_LITERAL('text',$,$,$);");
+    let setup = cadmpeg_test_support::service_decode_context();
+    let geometry =
+        crate::reader::geometry::decode(&exchange, &mut cadmpeg_ir::CadIr::empty(), &setup)
+            .expect("geometry");
+    with_session(&cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
+        let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
+        let mut visited = std::collections::HashSet::new();
+        let mut visited_storage = ctx.reserve_scoped(0, "test visited").expect("scope");
+        let mut summary = super::TextSummary::default();
+        let mut summary_storage = ctx.reserve_scoped(0, "test summary").expect("scope");
+        let error = index
+            .collect_text_summary(
+                (1, usize::MAX),
+                &exchange,
+                &geometry.value,
+                (&mut visited, &mut visited_storage),
+                (&mut summary, &mut summary_storage),
+            )
+            .expect_err("query height does not fit");
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+            panic!("query height resource refusal");
+        };
+        assert_eq!(refusal.operation, "STEP annotation query height overflow");
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    });
+}
+
+fn with_session<T>(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    use cadmpeg_core::{
+        decode::{DecodeArena, DecodeContext},
+        CodecError,
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, policy).expect("root");
+    let result = run(&ctx);
+    if let Some(refusal) = ctx.resource_refusal() {
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal)
+        );
+    } else {
+        ctx.finish_session().expect("completed session");
+    }
+    result
+}
+
+mod shared_graphs;

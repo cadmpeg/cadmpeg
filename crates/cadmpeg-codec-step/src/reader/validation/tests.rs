@@ -620,37 +620,47 @@ fn typed_validation_reference_descent_refuses_work_limit() {
     );
 }
 
-
 #[test]
 fn validation_representation_items_refuse_only_first_visit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let items = vec!["#4"; 1024].join(",");
-    let source = std::str::from_utf8(VALIDATION_COLLECTION_SOURCE).unwrap()
+    let source = std::str::from_utf8(VALIDATION_COLLECTION_SOURCE)
+        .unwrap()
         .replace("'unused',(#4)", &format!("'unused',({items})"));
-    let (exchange, _) = crate::test_support::with_service_context(
-        source.as_bytes(), crate::parse::parse_inner,
-    ).expect("validation exchange with a long item list");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("validation exchange with a long item list");
     let setup_arena = DecodeArena::new();
     let setup_policy = DecodePolicy::service();
-    let (setup_ctx, _) = DecodeContext::from_root_bytes(
-        source.as_bytes(), &setup_arena, &setup_policy,
-    ).unwrap();
-    assert_eq!(super::super::representation::item_values(
-        &setup_ctx, exchange.records().get(&2).expect("representation record"),
-    ).unwrap().unwrap().len(), 1024);
+    let (setup_ctx, _) =
+        DecodeContext::from_root_bytes(source.as_bytes(), &setup_arena, &setup_policy).unwrap();
+    assert_eq!(
+        super::super::representation::item_values(
+            &setup_ctx,
+            exchange.records().get(&2).expect("representation record"),
+        )
+        .unwrap()
+        .unwrap()
+        .len(),
+        1024
+    );
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "STEP representation item traversal", |cap| {
+        ResourceDimension::WorkUnits,
+        "STEP representation item traversal",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
             let mut ir = setup_ir.clone();
             let error = super::decode(&exchange, &geometry.value, &mut ir, &ctx)
-                .err().expect("refuse the first representation item visit");
+                .err()
+                .expect("refuse the first representation item visit");
             let CodecError::ResourceLimit(refusal) = error else {
                 panic!("representation item resource refusal");
             };
@@ -676,14 +686,17 @@ fn validation_reference_list_refuses_only_first_visit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let error = super::collect_validation_references(
-        &value, &validation_points, &mut referenced, &ctx,
-    ).expect_err("only the first list visit is refused");
+    let error =
+        super::collect_validation_references(&value, &validation_points, &mut referenced, &ctx)
+            .expect_err("only the first list visit is refused");
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("validation list resource refusal");
     };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(refusal.operation, "STEP collect validation references value traversal");
+    assert_eq!(
+        refusal.operation,
+        "STEP collect validation references value traversal"
+    );
     assert_eq!(refusal.used, 0);
     assert_eq!(refusal.additional, 1);
     assert!(referenced.is_empty());
@@ -691,3 +704,5 @@ fn validation_reference_list_refuses_only_first_visit() {
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }
+
+mod shared_units;
