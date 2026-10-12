@@ -2033,13 +2033,17 @@ mod tests {
     fn physical_ledger_role_names_use_scoped_materialized_storage() {
         let bytes = archive_bytes();
         let arena = DecodeArena::new();
-        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-            .expect("archive root");
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+                .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
-        let (spans, storage) = snapshot.physical_ledger(&limited).expect("ledger has no retained storage");
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
+        let (spans, storage) = snapshot
+            .physical_ledger(&limited)
+            .expect("ledger has no retained storage");
         for entry in snapshot.entries() {
             assert!(spans.iter().any(|span| matches!(&span.role,
                 ZipSpanRole::CompressedPayload(name) if name == &entry.name)));
@@ -2047,7 +2051,9 @@ mod tests {
                 ZipSpanRole::CentralName(name) if name == &entry.name)));
         }
         drop((spans, storage));
-        limited.finish_session().expect("role names leave no retained charge");
+        limited
+            .finish_session()
+            .expect("role names leave no retained charge");
     }
 
     #[test]
@@ -2074,14 +2080,18 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(limit);
-            let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("limited root");
+            let (limited, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
             let result = super::partition(&limited, 1, &regions);
             if limit == exact {
                 let (spans, storage) = result.expect("span and role name fit exactly");
                 assert_eq!(spans, regions);
                 drop((spans, storage));
-                limited.reserve_scoped(cadmpeg_core::decode::u64_from_index(exact), "released partition")
+                limited
+                    .reserve_scoped(
+                        cadmpeg_core::decode::u64_from_index(exact),
+                        "released partition",
+                    )
                     .expect("partition storage is released");
             } else {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
