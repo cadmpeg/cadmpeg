@@ -350,6 +350,82 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     }));
 }
 
+/// The byte-class scratch buffer must not be charged against `max_collection_items`.
+///
+/// It holds one [`ByteClass`] per INPUT BYTE, so billing its length to that ceiling makes the
+/// ceiling a function of file size rather than of decoded content: a large document whose
+/// decoded items fit the ceiling with room to spare would refuse on its byte length alone.
+///
+/// The gate is that padding a document with WHITESPACE, which adds bytes and no decoded items,
+/// must not change whether a modest item ceiling admits it. Two padding sizes rather than one,
+/// because a single size cannot separate "not charged" from "charged less".
+#[test]
+fn the_byte_class_scratch_buffer_is_not_charged_as_collection_items() {
+    use cadmpeg_core::decode::{DecodeMode, DecodePolicy, ResourceDimension, ResourceLimits};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    // Far above what this two-record fixture legitimately charges, far below either padded size.
+    const CEILING: u64 = 100_000;
+
+    let base = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
+    let padded = |bytes: usize| {
+        let marker = b"DATA;\n";
+        let at = base
+            .windows(marker.len())
+            .position(|w| w == marker)
+            .expect("fixture has a DATA section")
+            + marker.len();
+        let mut out = base[..at].to_vec();
+        out.extend(std::iter::repeat_n(b'\n', bytes));
+        out.extend_from_slice(&base[at..]);
+        out
+    };
+
+    let decode = |input: &[u8], max_collection_items: u64| {
+        let mut limits = ResourceLimits::desktop();
+        limits.max_collection_items = max_collection_items;
+        let options = DecodeOptions {
+            container_only: false,
+            policy: DecodePolicy {
+                mode: DecodeMode::Salvage,
+                limits,
+            },
+        };
+        crate::StepCodec::default().decode(&mut std::io::Cursor::new(input.to_vec()), &options)
+    };
+
+    let small = padded(1 << 20);
+    let large = padded(1 << 22);
+    assert!(
+        cadmpeg_core::decode::u64_from_index(small.len()) > CEILING
+            && cadmpeg_core::decode::u64_from_index(large.len()) > CEILING
+    );
+
+    // Instrument responds: with no item budget at all the decode must refuse on this dimension,
+    // so admitting it below is a reading rather than an absence.
+    let starved = decode(&small, 0).expect_err("a zero item budget must refuse");
+    match starved {
+        cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+            assert_eq!(
+                limit.dimension,
+                ResourceDimension::CollectionItems,
+                "the control must refuse on the dimension under test"
+            );
+        }
+        other => panic!("expected a CollectionItems refusal, got {other:?}"),
+    }
+
+    for (name, input) in [("1 MiB", &small), ("4 MiB", &large)] {
+        decode(input, CEILING).unwrap_or_else(|error| {
+            panic!(
+                "{name} of whitespace padding ({} bytes) must not consume the item ceiling: \
+                 {error:?}",
+                input.len()
+            )
+        });
+    }
+}
+
 #[test]
 fn byte_accounting_claims_controls_inside_print_directives() {
     let input = b"1\\\x01N\x02\\2";
