@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native records projected from presentation inventory.
 
+use std::borrow::Cow;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -30,8 +32,9 @@ pub(super) fn project(
         graphics_style_collections: Vec::new(),
         graphics_primary_color_styles: Vec::new(),
     };
-    for style in ctx.admit_iter(
-        &inventory.default_styles,
+    let mut default_styles = inventory.default_styles.iter();
+    while let Some(style) = ctx.next_charged(
+        &mut default_styles,
         "visit Inventor decode/presentation_native_projection items",
     )? {
         let token = style.identity.segment_token.as_str();
@@ -67,85 +70,103 @@ pub(super) fn project(
             "collect Inventor native default style",
         )?;
     }
-    for style in ctx.admit_iter(
-        &inventory.rendering_styles,
+    let mut rendering_styles = inventory.rendering_styles.iter();
+    while let Some(style) = ctx.next_charged(
+        &mut rendering_styles,
         "visit Inventor decode/presentation_native_projection items",
     )? {
         let token = style.identity.segment_token.as_str();
         let extension = style.extension.as_ref();
-        let wire = PmAppRenderingStyleRecordWire {
-            id: ctx.format_retained(
-                format_args!(
-                    "inventor:presentation:rendering-style#{token}-{}",
-                    style.identity.record_ordinal
-                ),
-                "retain Inventor rendering style id",
-            )?,
-            segment_token: ctx
-                .copy_retained_text(token, "retain Inventor rendering style token")?,
-            record_ordinal: style.identity.record_ordinal,
-            segment_version_major: style.segment_version_major,
-            header_value: style.header_value,
-            header_id: style.header_id,
-            state: style.state,
-            flags: style.flags,
-            values: style.values,
-            default_state: style.default_state,
-            value: style.value,
-            name_reference: style.name_reference,
-            name: ctx.copy_retained_text(&style.name, "retain Inventor rendering style text")?,
-            comment: ctx
-                .copy_retained_text(&style.comment, "retain Inventor rendering style text")?,
-            long_name: ctx
-                .copy_retained_text(&style.long_name, "retain Inventor rendering style text")?,
-            style_state: extension.map(|value| value.style_state),
-            style_label: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.style_label,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            asset_guid: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.asset_guid,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            material_id: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.material_id,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            asset_library_id: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.asset_library_id,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            style_values: extension.map(|value| value.style_values),
-            guid: extension
-                .map(|value| {
-                    ctx.copy_retained_text(&value.guid, "retain Inventor rendering extension text")
-                })
-                .transpose()?,
-            suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
-            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                style.suffix.window(),
-                "retain Inventor rendering style suffix digest",
-            )
-            .map(String::from)?,
+        let conversion = if let Some(detail) = crate::native::rendering_style_issue(
+            style.segment_version_major,
+            &style.comment,
+            extension.is_some(),
+        ) {
+            Err(Cow::Borrowed(detail))
+        } else {
+            let wire = PmAppRenderingStyleRecordWire {
+                id: ctx.format_retained(
+                    format_args!(
+                        "inventor:presentation:rendering-style#{token}-{}",
+                        style.identity.record_ordinal
+                    ),
+                    "retain Inventor rendering style id",
+                )?,
+                segment_token: ctx
+                    .copy_retained_text(token, "retain Inventor rendering style token")?,
+                record_ordinal: style.identity.record_ordinal,
+                segment_version_major: style.segment_version_major,
+                header_value: style.header_value,
+                header_id: style.header_id,
+                state: style.state,
+                flags: style.flags,
+                values: style.values,
+                default_state: style.default_state,
+                value: style.value,
+                name_reference: style.name_reference,
+                name: ctx
+                    .copy_retained_text(&style.name, "retain Inventor rendering style text")?,
+                comment: ctx
+                    .copy_retained_text(&style.comment, "retain Inventor rendering style text")?,
+                long_name: ctx
+                    .copy_retained_text(&style.long_name, "retain Inventor rendering style text")?,
+                style_state: extension.map(|value| value.style_state),
+                style_label: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.style_label,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                asset_guid: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.asset_guid,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                material_id: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.material_id,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                asset_library_id: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.asset_library_id,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                style_values: extension.map(|value| value.style_values),
+                guid: extension
+                    .map(|value| {
+                        ctx.copy_retained_text(
+                            &value.guid,
+                            "retain Inventor rendering extension text",
+                        )
+                    })
+                    .transpose()?,
+                suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
+                suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                    ctx,
+                    style.suffix.window(),
+                    "retain Inventor rendering style suffix digest",
+                )
+                .map(String::from)?,
+            };
+            match wire.into_record() {
+                Ok(record) => Ok(record),
+                Err(CodecError::Malformed(detail)) => Err(Cow::Owned(detail)),
+                Err(error) => return Err(error),
+            }
         };
-        match wire.into_record(ctx) {
+        match conversion {
             Ok(record) => {
                 ctx.charge_entities(1, "admit Inventor native rendering style")?;
                 ctx.push_vec(
@@ -154,9 +175,13 @@ pub(super) fn project(
                     "collect Inventor native rendering style",
                 )?;
             }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(CodecError::Malformed(detail)) => {
+            Err(detail) => {
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
+                ctx.reserve_capacity(
+                    &mut inventory.issues,
+                    1,
+                    "collect Inventor rendering conversion issue",
+                )?;
                 ctx.push_vec(
                     &mut inventory.issues,
                     RecordIssue {
@@ -166,16 +191,19 @@ pub(super) fn project(
                             .segment_token
                             .try_clone_for_decode(ctx, "retain Inventor rendering issue token")?,
                         record_ordinal: style.identity.record_ordinal,
-                        detail,
+                        detail: ctx.copy_retained_text(
+                            detail.as_ref(),
+                            "retain Inventor rendering issue detail",
+                        )?,
                     },
                     "collect Inventor rendering conversion issue",
                 )?;
             }
-            Err(error) => return Err(error),
         }
     }
-    for face in ctx.admit_iter(
-        &inventory.graphics_faces,
+    let mut graphics_faces = inventory.graphics_faces.iter();
+    while let Some(face) = ctx.next_charged(
+        &mut graphics_faces,
         "visit Inventor decode/presentation_native_projection items",
     )? {
         let token = face.identity.segment_token.as_str();
@@ -213,8 +241,9 @@ pub(super) fn project(
             "collect Inventor native graphics face",
         )?;
     }
-    for collection in ctx.admit_iter(
-        &inventory.graphics_style_collections,
+    let mut graphics_style_collections = inventory.graphics_style_collections.iter();
+    while let Some(collection) = ctx.next_charged(
+        &mut graphics_style_collections,
         "visit Inventor decode/presentation_native_projection items",
     )? {
         let token = collection.identity.segment_token.as_str();
@@ -244,8 +273,9 @@ pub(super) fn project(
             "collect Inventor native graphics style collection",
         )?;
     }
-    for style in ctx.admit_iter(
-        &inventory.graphics_primary_color_styles,
+    let mut graphics_primary_color_styles = inventory.graphics_primary_color_styles.iter();
+    while let Some(style) = ctx.next_charged(
+        &mut graphics_primary_color_styles,
         "visit Inventor decode/presentation_native_projection items",
     )? {
         let token = style.identity.segment_token.as_str();

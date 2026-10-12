@@ -21,6 +21,33 @@ fn drawing_diagnostic_refuses_at_matching_retained_limit() {
 }
 
 #[test]
+fn drawing_empty_exact_sources_are_free() {
+    let scalar = crate::native::ValueRecord {
+        tag: "Float".into(),
+        order: 0,
+        attributes: std::collections::BTreeMap::new(),
+        text: None,
+        raw_xml: String::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    assert_eq!(
+        super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar)
+            .expect("empty scalar attributes"),
+        None
+    );
+    let index = super::ensure_unique_property_names(&ctx, &[]).expect("empty property index");
+    assert!(index.0.is_empty());
+    drop(index);
+}
+
+#[test]
 fn drawing_record_collection_refuses_at_caller_limit() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
@@ -37,14 +64,74 @@ fn drawing_record_collection_refuses_at_caller_limit() {
         order: 0,
         data: None,
     };
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd drawing records", |ctx| {
+        super::transfer(ctx, std::slice::from_ref(&object), &[])
+    });
+}
+
+#[test]
+fn drawing_empty_object_and_neutral_transfers_are_zero_work() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer(&ctx, &[object], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd drawing records"));
+        .expect("context");
+
+    assert!(super::transfer(&ctx, &[], &[])
+        .expect("empty drawing object scan does no positive work")
+        .is_empty());
+    super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[], &[])
+        .expect("empty neutral drawing transfer does no positive work");
+}
+
+#[test]
+fn drawing_duplicate_property_index_does_not_charge_unvisited_suffix() {
+    let small = vec![
+        property_record(
+            "fcstd:native:object#View",
+            "Duplicate",
+            "App::PropertyString",
+        ),
+        property_record(
+            "fcstd:native:object#View",
+            "Duplicate",
+            "App::PropertyString",
+        ),
+    ];
+    let mut long = small.clone();
+    for index in 0..32 {
+        long.push(property_record(
+            "fcstd:native:object#View",
+            &format!("Suffix{index}"),
+            "App::PropertyString",
+        ));
+    }
+    assert_eq!(
+        work_before_duplicate_property_follow_up(&small),
+        work_before_duplicate_property_follow_up(&long)
+    );
+}
+
+#[test]
+fn drawing_malformed_page_carrier_does_not_charge_unvisited_object_suffix() {
+    let page = object_record("Page", "TechDraw::DrawPage");
+    let small = vec![page.clone(), object_record("Suffix0", "Part::Feature")];
+    let mut long = small.clone();
+    for index in 1..32 {
+        long.push(object_record(&format!("Suffix{index}"), "Part::Feature"));
+    }
+    let properties = [property_record(
+        "fcstd:native:object#Page",
+        "Views",
+        "App::PropertyString",
+    )];
+    assert_eq!(
+        work_before_malformed_drawing_object_suffix(&small, &properties),
+        work_before_malformed_drawing_object_suffix(&long, &properties)
+    );
 }
 
 fn resource_drawing_record() -> crate::native::DrawingRecord {
@@ -61,6 +148,84 @@ fn resource_drawing_record() -> crate::native::DrawingRecord {
         parameters: std::collections::BTreeMap::default(),
         side_entries: Vec::new(),
     }
+}
+
+fn object_record(name: &str, type_name: &str) -> crate::native::ObjectRecord {
+    crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            crate::native::native_id("object", name),
+            name.to_owned(),
+        )
+        .expect("object identity"),
+        type_name: type_name.to_owned(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    }
+}
+
+fn property_record(owner: &str, name: &str, type_name: &str) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: format!("fcstd:native:property#{name}"),
+        owner: owner.to_owned(),
+        name: name.to_owned(),
+        type_name: type_name.to_owned(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+    }
+}
+
+fn work_before_duplicate_property_follow_up(properties: &[crate::native::PropertyRecord]) -> u64 {
+    let property_refs = properties.iter().collect::<Vec<_>>();
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "after duplicate drawing property",
+        |ctx| {
+            assert!(matches!(
+                super::ensure_unique_property_names(ctx, &property_refs),
+                Err(cadmpeg_core::CodecError::Malformed(message))
+                    if message.contains("drawing property Duplicate occurs more than once")
+            ));
+            ctx.charge_work(1, "after duplicate drawing property")
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal")
+    };
+    assert_eq!(limit.operation, "after duplicate drawing property");
+    limit.used
+}
+
+fn work_before_malformed_drawing_object_suffix(
+    objects: &[crate::native::ObjectRecord],
+    properties: &[crate::native::PropertyRecord],
+) -> u64 {
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "after malformed drawing page carrier",
+        |ctx| {
+            assert!(matches!(
+                super::transfer(ctx, objects, properties),
+                Err(cadmpeg_core::CodecError::Malformed(message))
+                    if message.contains("Views has runtime type")
+            ));
+            ctx.charge_work(1, "after malformed drawing page carrier")
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal")
+    };
+    assert_eq!(limit.operation, "after malformed drawing page carrier");
+    limit.used
 }
 
 #[test]
@@ -88,66 +253,20 @@ fn drawing_native_identity_refuses_at_retained_limit() {
 #[test]
 fn drawing_model_identity_refuses_at_retained_limit() {
     let record = resource_drawing_record();
-    let identity = crate::native::model_id("drawing", &record.object, "entity").len();
-    // The neutral identity lookup reserves one entry up front: a four-bucket
-    // table of `(&str, DrawingId)` elements, 15 bytes of group padding
-    // (alignment 16), four control bytes and a 16-byte trailer. It is held as a
-    // transient reservation and then kept as scoped storage; the retained
-    // growth equals the transient bound, so the identity text that follows
-    // sees exactly the table behind it.
-    let lookup = 4 * std::mem::size_of::<(&str, cadmpeg_ir::drawings::DrawingId)>() + 15 + 4 + 16;
-    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
-    let refusal = |materialized: usize| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(materialized);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root");
-        match super::transfer_neutral(
-            &ctx,
-            &mut cadmpeg_ir::document::Model::default(),
-            std::slice::from_ref(&record),
-            &[],
-        ) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
-            other => panic!("expected a resource refusal, got {other:?}"),
-        }
-    };
-
-    // One byte under the table: its transient reservation is refused with
-    // nothing yet charged.
-    let limit = refusal(lookup - 1);
-    assert_eq!(
-        (
-            limit.dimension,
-            limit.operation,
-            limit.used,
-            limit.additional
-        ),
-        (
-            dimension,
-            "fcstd drawing neutral identities",
-            0,
-            cadmpeg_core::decode::u64_from_index(lookup)
-        )
-    );
-    // Exactly the table: growth fits, and the identity text is the first
-    // charge past it.
-    let limit = refusal(lookup + identity - 1);
-    assert_eq!(
-        (
-            limit.dimension,
-            limit.operation,
-            limit.used,
-            limit.additional
-        ),
-        (
-            dimension,
-            "FreeCAD model identity",
-            cadmpeg_core::decode::u64_from_index(lookup),
-            cadmpeg_core::decode::u64_from_index(identity)
-        )
-    );
+    for operation in ["FreeCAD model identity", "fcstd drawing neutral identities"] {
+        let error = crate::test_support::materialized_refusal_at(operation, |ctx| {
+            super::transfer_neutral(
+                ctx,
+                &mut cadmpeg_ir::document::Model::default(),
+                std::slice::from_ref(&record),
+                &[],
+            )
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == operation)
+        );
+    }
 }
 
 #[test]
@@ -211,32 +330,28 @@ fn drawing_template_identity_copy_refuses_at_retained_limit() {
 fn drawing_keyed_relationships_refuse_at_collection_limit() {
     let mut record = resource_drawing_record();
     record.relationships.insert("role".into(), Vec::new());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "named entry map nodes")
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "named entry map nodes", |ctx| {
+        super::transfer_neutral(
+            ctx,
+            &mut cadmpeg_ir::document::Model::default(),
+            std::slice::from_ref(&record),
+            &[],
+        )
+    });
 }
 
 #[test]
 fn drawing_keyed_parameters_refuse_at_collection_limit() {
     let mut record = resource_drawing_record();
     record.parameters.insert("role".into(), "value".into());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "named entry map nodes")
-    );
+    crate::test_support::assert_collection_refusal_at(&[], "named entry map nodes", |ctx| {
+        super::transfer_neutral(
+            ctx,
+            &mut cadmpeg_ir::document::Model::default(),
+            std::slice::from_ref(&record),
+            &[],
+        )
+    });
 }
 
 #[test]
@@ -254,11 +369,22 @@ fn drawing_direction_vector_refuses_nonfinite_components() {
         raw_xml: String::new(),
     };
     assert_eq!(
-        super::vector_value(&value(attributes.clone())),
+        crate::test_support::with_service_context(&[], |ctx| super::vector_value(
+            ctx,
+            &value(attributes.clone())
+        )
+        .expect("vector admission")),
         Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0, 0.0]).unwrap())
     );
     attributes.insert("valueY".into(), "inf".into());
-    assert_eq!(super::vector_value(&value(attributes)), None);
+    assert_eq!(
+        crate::test_support::with_service_context(&[], |ctx| super::vector_value(
+            ctx,
+            &value(attributes)
+        )
+        .expect("vector admission")),
+        None
+    );
 }
 
 #[test]
@@ -902,4 +1028,97 @@ fn drawing_wire_rejects_non_page_views() {
     assert!(error
         .to_string()
         .contains("non-page drawing record cannot carry views or a template"));
+}
+
+#[test]
+fn drawing_numeric_queries_refuse_at_caller_limit() {
+    let value = crate::native::ValueRecord {
+        tag: "PropertyVector".into(),
+        order: 0,
+        attributes: std::collections::BTreeMap::from([
+            ("valueX".into(), "1".into()),
+            ("valueY".into(), "2".into()),
+            ("valueZ".into(), "3".into()),
+        ]),
+        text: None,
+        raw_xml: String::new(),
+    };
+    for operation in [
+        "fcstd drawing vector attribute",
+        "fcstd drawing vector parsing",
+    ] {
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            operation,
+            |ctx| super::vector_value(ctx, &value),
+        );
+    }
+    let scalar = crate::native::ValueRecord {
+        tag: "Float".into(),
+        order: 0,
+        attributes: std::collections::BTreeMap::from([("value".into(), "1.5".into())]),
+        text: None,
+        raw_xml: String::new(),
+    };
+    for operation in [
+        "fcstd drawing scalar attributes",
+        "fcstd drawing scalar parsing",
+    ] {
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            operation,
+            |ctx| super::scalar_value(ctx, "X", "App::PropertyFloat", &scalar),
+        );
+    }
+}
+
+#[test]
+fn drawing_source_links_append_to_output() {
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#View:Source".into(),
+        owner: "fcstd:native:object#View".into(),
+        name: "Source".into(),
+        type_name: "App::PropertyLinkList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        order: 0,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: vec![None, None],
+            side_entries: Vec::new(),
+            dynamic: None,
+        },
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+    };
+    let properties = std::collections::BTreeMap::from([("Source", &property)]);
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut sources = vec![None];
+        super::append_source_links(ctx, &properties, "Source", &mut sources).expect("sources");
+        assert_eq!(sources.len(), 3);
+        assert!(sources.iter().all(Option::is_none));
+    });
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd drawing source links", |ctx| {
+        super::append_source_links(ctx, &properties, "Source", &mut Vec::new())
+    });
+}
+
+#[test]
+fn drawing_neutral_maps_release_nodes_and_retain_output() {
+    let mut record = resource_drawing_record();
+    record.relationships.insert("Role".into(), vec![None]);
+    record.parameters.insert("Extra".into(), "VALUE".into());
+    let error = crate::test_support::materialized_refusal_at("released drawing maps", |ctx| {
+        let mut model = cadmpeg_ir::document::Model::default();
+        super::transfer_neutral(ctx, &mut model, std::slice::from_ref(&record), &[])?;
+        assert_eq!(model.drawings[0].parameters["Extra"], "VALUE");
+        assert_eq!(
+            model.drawings[0].relationships["Role"][0].target,
+            cadmpeg_ir::ReferenceTarget::Null
+        );
+        ctx.reserve_scoped(u64::MAX, "released drawing maps")
+            .map(|_| ())
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.used == 0));
 }

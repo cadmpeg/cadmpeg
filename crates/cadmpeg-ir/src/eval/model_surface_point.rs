@@ -19,7 +19,7 @@ use super::placed_reach;
 use super::placed_vectors;
 use super::record_u_interval;
 use super::revision_surface_tail_has_current_cache;
-use super::rolling_ball_jet_point;
+use super::rolling_ball_jet_point_admitted;
 use super::scale_vector;
 use super::subset_support_parameters_with_derivatives;
 use super::surface_first_order;
@@ -488,7 +488,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 }
             }
             Some(definition @ ProceduralSurfaceDefinition::RollingBallJet(_)) => {
-                point_evaluation(rolling_ball_jet_point(definition, u, v))
+                point_evaluation(rolling_ball_jet_point_admitted(admission, definition, u, v))
             }
             Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
                 evaluate(admission, index, support, u, v, normal)

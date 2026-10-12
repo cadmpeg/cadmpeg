@@ -111,7 +111,8 @@ fn join<T>(
     let mut storage = ctx.reserve_scoped(0, "collect Inventor dialect join parts")?;
     let mut parts = Vec::new();
     storage.with_storage(|| {
-        for value in ctx.admit_iter(values, visit_operation)? {
+        let mut value_steps = values.iter();
+        while let Some(value) = ctx.next_charged(&mut value_steps, visit_operation)? {
             if let Some(value) = render(value)? {
                 ctx.push_vec(&mut parts, value, "collect Inventor dialect join parts")?;
             }
@@ -173,8 +174,9 @@ impl DialectRecovery {
         container: &InventorContainer<'_>,
     ) -> Result<Self, CodecError> {
         let mut schemas = Vec::new();
-        for descriptor in
-            ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")?
+        let mut database_steps = container.rse.databases.iter();
+        while let Some(descriptor) =
+            ctx.next_charged(&mut database_steps, "visit Inventor dialect items")?
         {
             if let Some(schema) = DatabaseDescriptor::declared_schema(descriptor) {
                 ctx.push_vec(&mut schemas, schema, "collect Inventor dialect schemas")?;
@@ -188,8 +190,9 @@ impl DialectRecovery {
         )?;
         ctx.dedup_vec(&mut schemas, "deduplicate Inventor dialect declarations")?;
         let mut unframed_schemas = Vec::new();
-        for descriptor in
-            ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")?
+        let mut database_steps = container.rse.databases.iter();
+        while let Some(descriptor) =
+            ctx.next_charged(&mut database_steps, "visit Inventor dialect items")?
         {
             if let DatabaseState::Unframed { schema, .. } = &descriptor.state {
                 ctx.push_vec(
@@ -210,7 +213,10 @@ impl DialectRecovery {
             "deduplicate Inventor dialect declarations",
         )?;
         let mut meta_streams = Vec::new();
-        for segment in ctx.admit_iter(&container.rse.segments, "visit Inventor dialect items")? {
+        let mut segment_steps = container.rse.segments.iter();
+        while let Some(segment) =
+            ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")?
+        {
             if let Some(declaration) = segment.meta.declaration(ctx)? {
                 ctx.push_vec(
                     &mut meta_streams,
@@ -230,7 +236,10 @@ impl DialectRecovery {
             "deduplicate Inventor dialect declarations",
         )?;
         let mut unframed_meta_streams = Vec::new();
-        for segment in ctx.admit_iter(&container.rse.segments, "visit Inventor dialect items")? {
+        let mut segment_steps = container.rse.segments.iter();
+        while let Some(segment) =
+            ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")?
+        {
             if let crate::rse::SegmentMetaState::Malformed {
                 declared: Some(declared),
                 ..
@@ -271,16 +280,17 @@ impl DialectRecovery {
     /// Evaluate identity and admission once from the parsed facts.
     pub(crate) fn classify(&self, ctx: &DecodeContext<'_>) -> Result<DialectMatch, CodecError> {
         let identity_verified = !self.schemas.is_empty()
-            && ctx
-                .admit_iter(&self.schemas, "classify Inventor schema declarations")?
-                .all(|schema| *schema == RseSchema::SCHEMA_31)
+            && ctx.all_by(
+                &self.schemas,
+                |schema| Ok(*schema == RseSchema::SCHEMA_31),
+                "classify Inventor schema declarations",
+            )?
             && !self.meta_streams.is_empty()
-            && ctx
-                .admit_iter(
-                    &self.meta_streams,
-                    "classify Inventor metadata declarations",
-                )?
-                .all(MetaStreamDeclaration::is_verified);
+            && ctx.all_by(
+                &self.meta_streams,
+                |declared| Ok(declared.is_verified()),
+                "classify Inventor metadata declarations",
+            )?;
         let framing_verified =
             self.unframed_schemas.is_empty() && self.unframed_meta_streams.is_empty();
         let dialect = if identity_verified {
@@ -393,16 +403,22 @@ impl DialectRecovery {
             ), "retain Inventor unframed schema reason")?, "collect Inventor dialect reasons")?;
         }
         if self.schemas.is_empty() {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    "no RSe database stream declares a schema".len(),
-                ),
+            let reason_text = "no RSe database stream declares a schema";
+            let mut reason = ctx.retained_string(
+                reason_text.len(),
                 "retain Inventor absent schema reason",
             )?;
-            ctx.push_vec(&mut reasons, "no RSe database stream declares a schema".to_owned(), "collect Inventor dialect reasons")?;
-        } else if ctx.admit_iter(&self.schemas, "classify Inventor schema declarations")?
-            .any(|schema| *schema != RseSchema::SCHEMA_31)
-        {
+            reason.push_str(reason_text);
+            ctx.push_vec(
+                &mut reasons,
+                reason,
+                "collect Inventor dialect reasons",
+            )?;
+        } else if ctx.any_by(
+            &self.schemas,
+            |schema| Ok(*schema != RseSchema::SCHEMA_31),
+            "classify Inventor schema declarations",
+        )? {
             let foreign = join(
                 ctx,
                 &self.schemas,
@@ -460,16 +476,22 @@ impl DialectRecovery {
             ), "retain Inventor unframed metadata reason")?, "collect Inventor dialect reasons")?;
         }
         if self.meta_streams.is_empty() {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(
-                    "no RSe segment metadata stream declares a marker and version".len(),
-                ),
+            let reason_text = "no RSe segment metadata stream declares a marker and version";
+            let mut reason = ctx.retained_string(
+                reason_text.len(),
                 "retain Inventor absent metadata reason",
             )?;
-            ctx.push_vec(&mut reasons, "no RSe segment metadata stream declares a marker and version".to_owned(), "collect Inventor dialect reasons")?;
-        } else if ctx.admit_iter(&self.meta_streams, "classify Inventor metadata declarations")?
-            .any(|declared| !declared.is_verified())
-        {
+            reason.push_str(reason_text);
+            ctx.push_vec(
+                &mut reasons,
+                reason,
+                "collect Inventor dialect reasons",
+            )?;
+        } else if ctx.any_by(
+            &self.meta_streams,
+            |declared| Ok(!declared.is_verified()),
+            "classify Inventor metadata declarations",
+        )? {
             let markers = join(
                 ctx,
                 &self.meta_streams,
@@ -557,7 +579,6 @@ fn kernel_layer(
     family: KernelFamily,
     header: &cadmpeg_asm::kernel_header::BinaryHeader,
 ) -> Result<DialectMatch, CodecError> {
-    ctx.charge_work(1, "classify Inventor kernel dialect")?;
     if let Some(major) = header.metadata.save_format_major() {
         ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
         ctx.charge_formatted_retained(
@@ -607,15 +628,17 @@ fn kernel_layer_for_state(
 }
 
 /// The complete host and optional kernel identity reported by both inspection
-/// and decode.
+/// and decode, with the loss the kernel layer reports when it did not verify.
 pub(crate) fn layers(
     ctx: &DecodeContext<'_>,
     primary: &DialectMatch,
     carrier: &ActiveCarrierState<'_>,
-) -> Result<DialectLayers, CodecError> {
+) -> Result<(DialectLayers, Option<LossNote>), CodecError> {
     let mut layers =
         DialectLayers::of(primary.try_clone_for_decode(ctx, "copy Inventor primary dialect")?);
+    let mut kernel_loss = None;
     if let Some(kernel) = kernel_layer_for_state(ctx, carrier)? {
+        kernel_loss = kernel_dialect_loss(ctx, &kernel)?;
         layers
             .insert_for_decode(ctx, kernel, "collect Inventor kernel dialect layer")
             .map_err(|error| match error {
@@ -629,7 +652,7 @@ pub(crate) fn layers(
                 }
             })?;
     }
-    Ok(layers)
+    Ok((layers, kernel_loss))
 }
 
 /// The recovery loss the kernel layer charges, if it recovered.
@@ -650,22 +673,21 @@ pub(crate) fn kernel_dialect_loss(
             if matched.format() == cadmpeg_asm::dialect::FORMAT =>
         {
             let mut declared_storage = ctx.reserve_scoped(0, "compose Inventor kernel declared save format")?;
-            let declared = declared_storage.with_storage(|| match (
-                matched.declared().get("save_format_major"),
-                matched.declared().get("save_format_minor"),
-            ) {
-                (Some(major), Some(minor)) => ctx.format_retained(
-                    format_args!("save format {major}.{minor}"),
-                    "retain Inventor kernel declared save format",
-                ),
-                (Some(major), None) => ctx.format_retained(
-                    format_args!("save format major {major}"),
-                    "retain Inventor kernel declared save format",
-                ),
-                (None, _) => {
-                    ctx.charge_retained(14, "retain Inventor kernel declared save format")?;
-                    Ok("no save format".to_owned())
-                }
+            let declared = declared_storage.with_storage(|| {
+                Ok::<_, CodecError>(match (
+                    matched.declared().get("save_format_major"),
+                    matched.declared().get("save_format_minor"),
+                ) {
+                    (Some(major), Some(minor)) => std::borrow::Cow::Owned(ctx.format_retained(
+                        format_args!("save format {major}.{minor}"),
+                        "retain Inventor kernel declared save format",
+                    )?),
+                    (Some(major), None) => std::borrow::Cow::Owned(ctx.format_retained(
+                        format_args!("save format major {major}"),
+                        "retain Inventor kernel declared save format",
+                    )?),
+                    (None, _) => std::borrow::Cow::Borrowed("no save format"),
+                })
             })?;
             let note = match matched.using(ctx)? {
                 Some(using) => InventorLossCode::KernelDialectUnverified.note(ctx, format_args!("the active kernel carrier declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"), "retain Inventor kernel dialect loss message")?,

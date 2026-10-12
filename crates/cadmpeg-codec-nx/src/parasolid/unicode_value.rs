@@ -36,63 +36,62 @@ impl<'a> UnicodeLane<'a> {
         ctx: &DecodeContext<'_>,
         bytes: &'a [u8],
     ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len() / 2),
-            "validate NX Unicode value lane",
-        )?;
-        let value = (|| {
-            if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
-                return None;
-            }
-            let mut high_surrogate = false;
-            for bytes in bytes.chunks_exact(2) {
-                let unit = View::u16_be_at(bytes, 0)?;
-                if high_surrogate {
-                    (0xdc00..=0xdfff).contains(&unit).then_some(())?;
-                    high_surrogate = false;
-                } else if (0xd800..=0xdbff).contains(&unit) {
-                    high_surrogate = true;
-                } else {
-                    (!(0xdc00..=0xdfff).contains(&unit)).then_some(())?;
+        if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
+            return Ok(None);
+        }
+        let mut high_surrogate = false;
+        let mut units = bytes.chunks_exact(2);
+        while let Some(raw) = ctx.next_charged(&mut units, "validate NX Unicode value lane")? {
+            let Some(unit) = View::u16_be_at(raw, 0) else {
+                return Ok(None);
+            };
+            if high_surrogate {
+                if !(0xdc00..=0xdfff).contains(&unit) {
+                    return Ok(None);
                 }
+                high_surrogate = false;
+            } else if (0xd800..=0xdbff).contains(&unit) {
+                high_surrogate = true;
+            } else if (0xdc00..=0xdfff).contains(&unit) {
+                return Ok(None);
             }
-            (!high_surrogate).then_some(Self(bytes))
-        })();
-        Ok(value)
+        }
+        Ok((!high_surrogate).then_some(Self(bytes)))
     }
 
     pub(super) fn materialize(self, ctx: &DecodeContext<'_>) -> Result<UnicodeValue, CodecError> {
         let count = self.0.len() / 2;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.0.len()),
-            "decode NX Unicode scalars",
-        )?;
         // Conversion scratch stays live through UTF-8 construction.
         let (mut code_units, _reservation) =
             ctx.temporary_vec(count, "NX Unicode conversion scratch")?;
-        for bytes in self.0.chunks_exact(2) {
+        let mut units = self.0.chunks_exact(2);
+        while let Some(bytes) = ctx.next_charged(&mut units, "decode NX Unicode code units")? {
             code_units.push(
                 View::u16_be_at(bytes, 0)
                     .ok_or_else(|| CodecError::malformed("invalid admitted NX Unicode lane"))?,
             );
         }
         let mut length = 0usize;
-        for scalar in char::decode_utf16(code_units.iter().copied()) {
+        for scalar in char::decode_utf16(
+            ctx.admit_iter(&code_units, "decode NX Unicode scalars")?
+                .copied(),
+        ) {
             let scalar =
                 scalar.map_err(|_| CodecError::malformed("invalid admitted NX Unicode scalar"))?;
             length = length.checked_add(scalar.len_utf8()).ok_or_else(|| {
                 ctx.refuse_codec_limit("NX Unicode UTF-8 payload", u64::MAX, u64::MAX)
             })?;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "copy NX Unicode scalars",
-        )?;
         let mut value = ctx.retained_string(length, "NX Unicode UTF-8 payload")?;
-        for scalar in char::decode_utf16(code_units) {
-            value.push(
+        for scalar in char::decode_utf16(
+            ctx.admit_iter(&code_units, "copy NX Unicode scalars")?
+                .copied(),
+        ) {
+            ctx.push_retained_char(
+                &mut value,
                 scalar.map_err(|_| CodecError::malformed("invalid admitted NX Unicode scalar"))?,
-            );
+                "NX Unicode UTF-8 payload",
+            )?;
         }
         Ok(UnicodeValue(value))
     }
@@ -101,6 +100,41 @@ impl<'a> UnicodeLane<'a> {
 #[cfg(test)]
 mod tests {
     use super::{UnicodeLane, UnicodeValue};
+
+    #[test]
+    fn unicode_character_copy_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        for (text, utf8_bytes) in [("μ", 2), ("🚀", 4)] {
+            let bytes = text
+                .encode_utf16()
+                .flat_map(u16::to_be_bytes)
+                .collect::<Vec<_>>();
+            let error = crate::test_support::resource_refusal_at(
+                &bytes,
+                ResourceDimension::WorkUnits,
+                "NX Unicode UTF-8 payload",
+                |ctx| UnicodeLane::new(ctx, &bytes)?.unwrap().materialize(ctx),
+            );
+            // Character copying counts its encoded UTF-8 bytes.
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "NX Unicode UTF-8 payload"
+                    && limit.additional == utf8_bytes)
+            );
+            crate::test_support::with_decode_context(|ctx| {
+                assert_eq!(
+                    UnicodeLane::new(ctx, &bytes)
+                        .unwrap()
+                        .unwrap()
+                        .materialize(ctx)
+                        .unwrap()
+                        .as_str(),
+                    text
+                );
+            });
+        }
+    }
 
     #[test]
     fn unicode_values_preserve_scalars_and_reject_empty_or_incomplete_lanes() {

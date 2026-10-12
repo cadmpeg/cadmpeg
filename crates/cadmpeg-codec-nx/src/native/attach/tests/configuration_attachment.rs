@@ -25,12 +25,13 @@ fn attach_one_configuration(
             super::super::attach_configurations(
                 ctx,
                 &mut ir,
-                std::iter::once((
+                &[(
                     "nx:arrangements:configuration#0",
                     "Primary",
                     0,
                     Some("nx:arrangements:attribute-use#0"),
-                )),
+                )],
+                |fields| Ok(*fields),
                 &mut annotations,
                 &stream,
             )?;

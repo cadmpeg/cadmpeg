@@ -97,45 +97,27 @@ impl From<cadmpeg_core::CodecError> for SketchCollectionError {
     }
 }
 
-fn distinct_sketch_members<'id>(
+fn distinct_sketch_members<'id, T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    identities: impl ExactSizeIterator<Item = &'id str>,
+    values: &'id [T],
+    mut identity: impl FnMut(&'id T) -> &'id str,
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    // Drop the temporary identities before their storage reservation.
-    let (storage, mut members) = {
-        let mut values = Vec::new();
-        let reservation = ctx.reserve_temporary_vec(&mut values, identities.len(), operation)?;
-        (reservation, values)
-    };
-    for identity in identities {
-        ctx.charge_work(1, operation)?;
-        let mut low = 0;
-        let mut high = members.len();
-        while low < high {
-            ctx.charge_work(1, operation)?;
-            let middle = low + (high - low) / 2;
-            let candidate: &str = members[middle];
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(candidate.len().min(identity.len())),
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let mut members = std::collections::BTreeSet::new();
+    ctx.all_by(
+        values,
+        |value| {
+            ctx.insert_scoped_btree_set(
+                &mut storage,
+                &mut members,
+                identity(value),
                 operation,
-            )?;
-            match candidate.cmp(identity) {
-                std::cmp::Ordering::Less => low = middle + 1,
-                std::cmp::Ordering::Greater => high = middle,
-                std::cmp::Ordering::Equal => return Ok(false),
-            }
-        }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(members.len() - low),
-            operation,
-        )?;
-        ctx.charge_work(1, operation)?;
-        members.insert(low, identity);
-    }
-    drop(members);
-    drop(storage);
-    Ok(true)
+                operation,
+            )
+        },
+        operation,
+    )
 }
 
 pub mod scaling;
@@ -572,16 +554,8 @@ impl SketchProfiles {
         entity: SketchEntityUse,
     ) -> Result<(), cadmpeg_core::CodecError> {
         const OPERATION: &str = "append sketch profile use";
-        ctx.charge_work(2, OPERATION)?;
         let mut profile = Vec::new();
         ctx.reserve_vec(&mut profile, 1, OPERATION)?;
-        if self.0.len() == self.0.capacity() {
-            ctx.charge_work(
-                u64::try_from(self.0.len())
-                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-        }
         ctx.reserve_vec(&mut self.0, 1, OPERATION)?;
         profile.push(entity);
         self.0.push(profile);
@@ -592,40 +566,31 @@ impl SketchProfiles {
     pub fn retain_uses(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut keep: impl FnMut(&SketchEntityUse) -> bool,
+        mut keep: impl FnMut(&SketchEntityUse) -> Result<bool, cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         const OPERATION: &str = "filter sketch profile uses";
-        let count = self.0.iter().try_fold(0usize, |count, profile| {
-            ctx.charge_work(1, OPERATION)?;
-            count
-                .checked_add(profile.len())
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
-        })?;
-        ctx.charge_work(
-            u64::try_from(count)
-                .ok()
-                .and_then(|count| count.checked_mul(4))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        let (mut decisions, _decision_storage) = ctx.temporary_vec(count, OPERATION)?;
-        for profile in &self.0 {
-            for usage in profile {
-                ctx.charge_work(
-                    u64::try_from(usage.entity.as_str().len())
-                        .ok()
-                        .and_then(|len| len.checked_add(1))
-                        .and_then(|work| work.checked_mul(4))
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                decisions.push(keep(usage));
+        let count = ctx
+            .admit_iter(&self.0, OPERATION)?
+            .try_fold(0usize, |count, profile| {
+                count
+                    .checked_add(profile.len())
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+            })?;
+        let mut decisions = ctx.temporary_vec(count, OPERATION)?;
+        for profile in ctx.admit_iter(&self.0, OPERATION)? {
+            for usage in ctx.admit_iter(profile, OPERATION)? {
+                decisions.0.push(keep(usage)?);
             }
         }
+        // Admit visits in both retention passes before changing any profile.
+        for profile in ctx.admit_iter(&self.0, OPERATION)? {
+            ctx.admit_iter(profile, OPERATION)?;
+        }
+        ctx.admit_iter(&self.0, OPERATION)?;
         let mut decision_index = 0;
         for profile in &mut self.0 {
             profile.retain(|_| {
-                let decision = decisions[decision_index];
+                let decision = decisions.0[decision_index];
                 decision_index += 1;
                 decision
             });
@@ -1043,7 +1008,6 @@ impl SketchGeometry {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         use SketchGeometryDefinition as Definition;
-        ctx.charge_work(1, operation)?;
         let definition = match self.definition() {
             Definition::Nurbs { curve } => Definition::Nurbs {
                 curve: curve.try_clone_for_decode(ctx, operation)?,
@@ -1077,15 +1041,7 @@ impl SketchGeometry {
                     .map(|document| ctx.copy_retained_text(document, operation))
                     .transpose()?;
                 let object = object.try_clone_for_decode(ctx, operation)?;
-                let mut copied_subelements = Vec::new();
-                ctx.reserve_vec(&mut copied_subelements, subelements.len(), operation)?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(subelements.len()),
-                    operation,
-                )?;
-                for subelement in subelements {
-                    copied_subelements.push(ctx.copy_retained_text(subelement, operation)?);
-                }
+                let copied_subelements = ctx.copy_retained_strings(subelements, operation)?;
                 Definition::ExternalReference {
                     document,
                     object,
@@ -1896,7 +1852,6 @@ impl SpatialSketchProfile {
         operation: &'static str,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
-        ctx.charge_work(1, operation)?;
         let dot = n.x * u.x + n.y * u.y + n.z * u.z;
         if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
             return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
@@ -1906,11 +1861,7 @@ impl SpatialSketchProfile {
                 "spatial profile boundary must be nonempty and contain distinct entities",
             ));
         }
-        if !distinct_sketch_members(
-            ctx,
-            boundary.iter().map(|use_| use_.entity.as_str()),
-            operation,
-        )? {
+        if !distinct_sketch_members(ctx, &boundary, |use_| use_.entity.as_str(), operation)? {
             return Ok(Err(
                 "spatial profile boundary must be nonempty and contain distinct entities",
             ));
@@ -2475,11 +2426,10 @@ impl TryFrom<crate::geometry::nurbs::NurbsCurve> for SpatialSketchNurbsCurve {
         if curve.degree() == 0 {
             return Err("spatial sketch NURBS degree must be at least one");
         }
-        if curve
-            .weights()
-            .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
-        {
-            return Err("spatial sketch NURBS weights must be positive");
+        if let crate::geometry::nurbs::NurbsPoles3::Rational { points } = curve.pole_rows() {
+            if points.iter().any(|pole| pole.weight.get() <= 0.0) {
+                return Err("spatial sketch NURBS weights must be positive");
+            }
         }
         Ok(Self(curve))
     }
@@ -2533,7 +2483,6 @@ impl SpatialSketchGeometry {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         use SpatialSketchGeometryDefinition as Definition;
-        ctx.charge_work(1, operation)?;
         let definition = match &self.0 {
             Definition::Nurbs { curve } => Definition::Nurbs {
                 curve: SpatialSketchNurbsCurve(curve.0.try_clone_for_decode(ctx, operation)?),
@@ -3186,7 +3135,7 @@ impl_sketch_decode_cost!(SketchCircularPatternInstance, |value| (
 ));
 
 /// Checked two-axis rectangular sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "SketchRectangularPatternWire",
@@ -3264,7 +3213,7 @@ impl SketchRectangularPattern {
 }
 
 /// Checked circular sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "SketchCircularPatternWire",
@@ -3490,15 +3439,6 @@ struct SketchPatternDirectionWire {
 }
 
 impl SketchPatternDirectionWire {
-    fn from_direction(value: &SketchPatternDirection) -> Self {
-        Self {
-            direction: value.direction.get(),
-            spacing: value.spacing,
-            distance: value.distance.clone(),
-            count_parameter: value.count_parameter.clone(),
-        }
-    }
-
     fn into_direction(self) -> Result<SketchPatternDirection, &'static str> {
         SketchPatternDirection::new(
             self.direction,
@@ -3550,18 +3490,6 @@ struct SketchCircularPatternWire {
     instances: Vec<SketchCircularPatternInstance>,
 }
 
-impl From<SketchRectangularPattern> for SketchRectangularPatternWire {
-    fn from(pattern: SketchRectangularPattern) -> Self {
-        Self {
-            directions: [
-                SketchPatternDirectionWire::from_direction(&pattern.directions[0]),
-                SketchPatternDirectionWire::from_direction(&pattern.directions[1]),
-            ],
-            rows: pattern.rows,
-        }
-    }
-}
-
 impl TryFrom<SketchRectangularPatternWire> for SketchRectangularPattern {
     type Error = &'static str;
 
@@ -3571,19 +3499,6 @@ impl TryFrom<SketchRectangularPatternWire> for SketchRectangularPattern {
         Self::new(directions, wire.rows).ok_or(
             "rectangular pattern rows must form one non-empty grid whose instances have one fixed positive entity arity",
         )
-    }
-}
-
-impl From<SketchCircularPattern> for SketchCircularPatternWire {
-    fn from(pattern: SketchCircularPattern) -> Self {
-        Self {
-            center: pattern.center,
-            angle: pattern.angle,
-            angle_parameter: pattern.angle_parameter,
-            count_parameter: pattern.count_parameter,
-            seed: pattern.seed,
-            instances: pattern.instances.into_iter().collect(),
-        }
     }
 }
 
@@ -3852,7 +3767,7 @@ impl SketchPolygon {
                 "entities requires at least three distinct polygon members",
             ));
         }
-        if !distinct_sketch_members(ctx, entities.iter().map(SketchEntityId::as_str), operation)? {
+        if !distinct_sketch_members(ctx, &entities, SketchEntityId::as_str, operation)? {
             return Ok(Err(
                 "entities requires at least three distinct polygon members",
             ));
@@ -5073,3 +4988,5 @@ cadmpeg_core::named_optional_field!(deserialize_font, String, "font");
 cadmpeg_core::named_optional_field!(deserialize_native_flags, u64, "native_flags");
 
 mod identity_rewrite;
+
+mod serialization;

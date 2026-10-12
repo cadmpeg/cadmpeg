@@ -63,6 +63,93 @@ impl PayloadFamily {
     }
 }
 
+/// Classification words a section name or stream description contains.
+///
+/// Each word matches anywhere in the text, ignoring ASCII case. One admitted
+/// pass finds every word, so a text is classified once, when it is admitted,
+/// and each later test reads one bit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct NameWords(u8);
+
+impl NameWords {
+    const PARTITION: u8 = 1;
+    const DELTAS: u8 = 2;
+    const GHOST: u8 = 4;
+    const RESOLVED_FEATURES: u8 = 8;
+
+    /// A text that contains only the word `partition`.
+    #[cfg(test)]
+    pub(crate) const PARTITION_ONLY: Self = Self(Self::PARTITION);
+
+    /// A text that contains only the word `resolvedfeatures`.
+    #[cfg(test)]
+    pub(crate) const RESOLVED_FEATURES_ONLY: Self = Self(Self::RESOLVED_FEATURES);
+
+    /// Classify `text` in one pass. Each position compares a fixed number of
+    /// bytes against each word.
+    pub(crate) fn of(
+        ctx: &DecodeContext<'_>,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let bytes = text.as_bytes();
+        let mut words = 0;
+        for start in ctx.admit_iter(0..bytes.len(), operation)? {
+            let rest = &bytes[start..];
+            for (word, bit) in [
+                (&b"partition"[..], Self::PARTITION),
+                (b"deltas", Self::DELTAS),
+                (b"ghost", Self::GHOST),
+                (b"resolvedfeatures", Self::RESOLVED_FEATURES),
+            ] {
+                if starts_with_word(rest, word) {
+                    words |= bit;
+                }
+            }
+        }
+        Ok(Self(words))
+    }
+
+    pub(crate) fn partition(self) -> bool {
+        self.0 & Self::PARTITION != 0
+    }
+
+    pub(crate) fn deltas(self) -> bool {
+        self.0 & Self::DELTAS != 0
+    }
+
+    pub(crate) fn ghost(self) -> bool {
+        self.0 & Self::GHOST != 0
+    }
+
+    pub(crate) fn resolved_features(self) -> bool {
+        self.0 & Self::RESOLVED_FEATURES != 0
+    }
+}
+
+/// Whether `bytes` begins with `word`, ignoring ASCII case.
+/// Each word is a literal of at most sixteen bytes, so the test is fixed work.
+fn starts_with_word(bytes: &[u8], word: &[u8]) -> bool {
+    bytes
+        .get(..word.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(word))
+}
+
+/// The text after the last `/` of `path`, or all of it. The search from the
+/// end charges each byte it visits.
+fn path_basename<'a>(
+    ctx: &DecodeContext<'_>,
+    path: &'a str,
+    operation: &'static str,
+) -> Result<&'a str, CodecError> {
+    Ok(
+        match ctx.rposition_by(path.as_bytes(), |byte| Ok(*byte == b'/'), operation)? {
+            Some(slash) => &path[slash + 1..],
+            None => path,
+        },
+    )
+}
+
 /// Classify a decompressed block payload by signature.
 ///
 /// Unknown signatures return [`PayloadFamily::Unknown`].
@@ -71,7 +158,6 @@ pub(crate) fn payload_family(
     payload: &[u8],
     operation: &'static str,
 ) -> Result<PayloadFamily, CodecError> {
-    ctx.charge_work(0, operation)?;
     Ok(if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         PayloadFamily::PngPreview
     } else if is_bmp_thumbnail(payload) {
@@ -107,25 +193,25 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
     header_size == 40 && matches!(bits_per_pixel, 1 | 4 | 8 | 16 | 24 | 32)
 }
 
+/// Decode a nibble-swapped section name. Every swapped byte is printable
+/// ASCII, so each one is one character of the name.
 fn nibble_swap_name_charged(
     ctx: &DecodeContext<'_>,
     raw: &[u8],
 ) -> Result<Option<String>, CodecError> {
-    let work = u64_from_index(raw.len()).checked_mul(3).ok_or_else(|| {
-        ctx.refuse_codec_limit("validate SLDPRT section name", u64::MAX, u64::MAX)
-    })?;
-    ctx.charge_work(work, "validate SLDPRT section name")?;
-    if !raw
-        .iter()
-        .all(|byte| (0x20..0x7f).contains(&byte.rotate_left(4)))
-    {
+    if !ctx.all_by(
+        raw,
+        |byte| Ok((0x20..0x7f).contains(&byte.rotate_left(4))),
+        "validate SLDPRT section name",
+    )? {
         return Ok(None);
     }
-    let mut bytes = ctx.copy_retained(raw, "retain SLDPRT section name")?;
-    for byte in &mut bytes {
-        *byte = byte.rotate_left(4);
+    let mut name = String::new();
+    ctx.try_reserve_retained_text(&mut name, raw.len(), "retain SLDPRT section name")?;
+    for byte in ctx.admit_iter(raw, "retain SLDPRT section name")? {
+        name.push(char::from(byte.rotate_left(4)));
     }
-    Ok(String::from_utf8(bytes).ok())
+    Ok(Some(name))
 }
 
 /// The admitted name of one compressed block.
@@ -165,6 +251,8 @@ pub(crate) struct Block {
     pub(crate) comp_sz: u32,
     /// OPC section name and admitted source owner.
     pub(crate) section: BlockName,
+    /// Classification words of the section name.
+    pub(crate) name_words: NameWords,
     /// Payload family from its signature or extracted Parasolid streams.
     pub(crate) family: PayloadFamily,
     /// The decompressed payload bytes.
@@ -213,6 +301,8 @@ pub(crate) struct CacheCell {
 pub(crate) struct CompoundStream {
     /// Storage-qualified stream path and admitted source owner.
     pub(crate) path: cadmpeg_ir::StreamName,
+    /// Classification words of the stream path.
+    pub(crate) name_words: NameWords,
     /// Unique directory entry identifier.
     pub(crate) directory_id: u32,
     /// First regular or mini sector identifier.
@@ -268,6 +358,15 @@ impl<'a> Section<'a> {
         }
     }
 
+    /// Classification words of [`Self::name`]; a block without a section
+    /// name has none.
+    pub(crate) fn name_words(self) -> NameWords {
+        match self {
+            Self::Block(block) => block.name_words,
+            Self::Compound(stream) => stream.name_words,
+        }
+    }
+
     pub(crate) fn ordinal(self) -> usize {
         match self {
             Self::Block(block) => block.offset,
@@ -288,10 +387,16 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub(crate) fn site_key(self) -> String {
+    pub(crate) fn site_key(self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
         match self {
-            Self::Block(block) => format!("block@{}", block.offset),
-            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
+            Self::Block(block) => ctx.format_retained(
+                format_args!("block@{}", block.offset),
+                "format SLDPRT Parasolid site key",
+            ),
+            Self::Compound(stream) => ctx.format_retained(
+                format_args!("compound@{}", stream.directory_id),
+                "format SLDPRT Parasolid site key",
+            ),
         }
     }
 
@@ -311,7 +416,21 @@ impl<'a> Section<'a> {
 }
 
 impl ContainerScan<'_> {
-    pub(crate) fn sections(&self) -> impl Iterator<Item = Section<'_>> {
+    /// Every section, with the whole traversal admitted before the first.
+    pub(crate) fn sections(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<impl Iterator<Item = Section<'_>>, CodecError> {
+        let blocks = ctx.admit_iter(&self.blocks, "scan SLDPRT block sections")?;
+        let streams = ctx.admit_iter(&self.compound_streams, "scan SLDPRT compound sections")?;
+        Ok(blocks
+            .map(Section::Block)
+            .chain(streams.map(Section::Compound)))
+    }
+
+    /// Every section, one fixed step at a time, for a search that charges
+    /// each step it takes.
+    pub(crate) fn section_steps(&self) -> impl Iterator<Item = Section<'_>> {
         self.blocks
             .iter()
             .map(Section::Block)
@@ -321,13 +440,6 @@ impl ContainerScan<'_> {
 
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
-
-pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
-}
 
 /// Test whether a prefix contains the container marker after its outer header.
 ///
@@ -339,37 +451,28 @@ pub(crate) fn looks_like_sldprt(
     if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
         let (probe, _storage) =
             CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
-        if let Some(paths) = probe.paths() {
-            for path in paths {
-                ctx.charge_work(
-                    u64_from_index(path.len()),
-                    "compare SolidWorks directory evidence",
-                )?;
-                ctx.charge_work(
-                    u64_from_index(path.len()),
-                    "scan SolidWorks directory basename",
-                )?;
-                if path
-                    .rsplit('/')
-                    .next()
-                    .is_some_and(|name| name.eq_ignore_ascii_case("ISolidWorksInformation"))
-                {
-                    return Ok(true);
-                }
-            }
-        }
-        return Ok(false);
+        let Some(paths) = probe.paths() else {
+            return Ok(false);
+        };
+        return ctx.any_by(
+            paths,
+            |path| {
+                Ok(
+                    path_basename(ctx, path, "scan SolidWorks directory basename")?
+                        .eq_ignore_ascii_case("ISolidWorksInformation"),
+                )
+            },
+            "compare SolidWorks directory evidence",
+        );
     }
-    if prefix.len() < outer_hdr::LEN + MARKER.len() {
+    let Some(body) = prefix.get(outer_hdr::LEN..) else {
         return Ok(false);
-    }
-    ctx.charge_work(
-        u64_from_index(prefix.len() - outer_hdr::LEN),
+    };
+    ctx.any_by(
+        body.windows(MARKER.len()),
+        |window| Ok(window == MARKER),
         "scan SolidWorks detection marker",
-    )?;
-    Ok(prefix[outer_hdr::LEN..]
-        .windows(MARKER.len())
-        .any(|w| w == MARKER))
+    )
 }
 
 fn completed_scan_charged<'a>(
@@ -391,9 +494,9 @@ fn completed_scan_charged<'a>(
         solidworks: SolidWorksEnvelopeScan::default(),
     };
     let solidworks = scan_solidworks_envelopes(
-        scan.sections()
+        scan.section_steps()
             .map(|section| (section.name(), section.payload())),
-        &ScanAdmission::Decode(ctx),
+        ctx,
     )?;
     scan.solidworks = solidworks;
     Ok(scan)
@@ -401,10 +504,6 @@ fn completed_scan_charged<'a>(
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
 /// false-positive-free), then as a cache cell, then as a directory entry.
-enum ScanAdmission<'a, 'ctx> {
-    Probe,
-    Decode(&'ctx DecodeContext<'a>),
-}
 
 #[derive(Default)]
 struct NativeMarkers {
@@ -420,16 +519,21 @@ fn walk_native_markers(
     mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
     mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
 ) -> Result<NativeMarkers, CodecError> {
-    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT native markers")?;
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
     let mut i = outer_hdr::LEN;
-    while i + MARKER.len() <= bytes.len() {
-        if bytes[i..i + MARKER.len()] != MARKER {
-            i += 1;
-            continue;
-        }
+    // Each search step compares one fixed-width window; bytes a block spans
+    // are skipped, not searched.
+    while let Some(relative) = match bytes.get(i..) {
+        Some(rest) => ctx.position_by(
+            rest.windows(MARKER.len()),
+            |window| Ok(window == MARKER),
+            "scan SLDPRT native markers",
+        )?,
+        None => None,
+    } {
+        i += relative;
         if let Some(block) = try_one_block(i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
             ctx.reserve_vec(&mut blocks, 1, "admit SLDPRT block")?;
@@ -473,8 +577,10 @@ fn compound_stream(
             "compose annotation stream name",
         )?,
     };
+    let name_words = NameWords::of(ctx, path.as_str(), "classify SLDPRT section name")?;
     Ok(CompoundStream {
         path,
+        name_words,
         directory_id,
         start_sector,
         payload: bytes,
@@ -539,16 +645,14 @@ fn compound_streams(
 ) -> Result<Vec<CompoundStream>, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
     let mut streams = Vec::new();
-    for entry in snapshot.entries() {
+    for entry in ctx.admit_iter(snapshot.entries(), "scan SLDPRT compound entries")? {
         let CompoundEntry::Stream(entry) = entry else {
             continue;
         };
         let view = snapshot.open(ctx, entry)?;
         let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
         let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
-        let mut path = String::new();
-        ctx.try_reserve_retained_text(&mut path, entry.path().len(), "retain SLDPRT stream path")?;
-        path.push_str(entry.path());
+        let path = ctx.copy_retained_text(entry.path(), "retain SLDPRT stream path")?;
         let stream = compound_stream(
             ctx,
             path,
@@ -635,11 +739,18 @@ impl RawBlock {
                 "compose annotation stream name",
             )?),
         };
+        let name_words = match &section {
+            BlockName::Named(name) => {
+                NameWords::of(ctx, name.as_str(), "classify SLDPRT section name")?
+            }
+            BlockName::Anonymous(_) => NameWords::default(),
+        };
         Ok(Block {
             offset: self.offset,
             type_id: self.type_id,
             comp_sz: self.comp_sz,
             section,
+            name_words,
             family: self.family,
             payload: self.payload,
             ps_streams: self.ps_streams,
@@ -860,7 +971,7 @@ pub(crate) fn summarize(
 ) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
 
-    for b in &scan.blocks {
+    for b in ctx.admit_iter(&scan.blocks, "scan SLDPRT summarize values")? {
         ctx.charge_work(
             u64_from_index(b.payload.len()),
             "hash SLDPRT inventory payload",
@@ -945,7 +1056,7 @@ pub(crate) fn summarize(
         )?;
     }
 
-    for d in &scan.directory {
+    for d in ctx.admit_iter(&scan.directory, "scan SLDPRT summarize values")? {
         let mut attributes = BTreeMap::new();
         ctx.insert_btree_map(
             &mut attributes,
@@ -980,7 +1091,7 @@ pub(crate) fn summarize(
         )?;
     }
 
-    for c in &scan.cache_cells {
+    for c in ctx.admit_iter(&scan.cache_cells, "scan SLDPRT summarize values")? {
         let mut attributes = BTreeMap::new();
         ctx.insert_btree_map(
             &mut attributes,
@@ -1015,7 +1126,7 @@ pub(crate) fn summarize(
         )?;
     }
 
-    for stream in &scan.compound_streams {
+    for stream in ctx.admit_iter(&scan.compound_streams, "scan SLDPRT summarize values")? {
         let family = payload_family(ctx, &stream.payload, "classify SLDPRT inventory payload")?;
         ctx.charge_work(
             u64_from_index(stream.payload.len()),
@@ -1098,7 +1209,7 @@ pub(crate) fn notes_charged(
         ),
         "retain SLDPRT container note",
     )?);
-    notes.push(match active_parasolid_summary(scan) {
+    notes.push(match active_parasolid_summary(ctx, scan)? {
         Some((name, size, schema)) => ctx.format_retained(
             format_args!(
                 "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
@@ -1123,27 +1234,35 @@ pub(crate) fn notes_charged(
 }
 
 pub(crate) fn active_parasolid_summary<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
-) -> Option<(&'a str, usize, &'a crate::parasolid::StreamHeader)> {
-    let selected = select_active_parasolid_site(scan)?;
-    Some((
+) -> Result<Option<(&'a str, usize, &'a crate::parasolid::StreamHeader)>, CodecError> {
+    let Some(selected) = select_active_parasolid_site(ctx, scan)? else {
+        return Ok(None);
+    };
+    Ok(Some((
         selected.section.source_stream().as_str(),
         selected.payload.len(),
         selected.header,
-    ))
+    )))
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
-pub(crate) fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
-    scan.blocks
-        .iter()
-        .flat_map(|block| &block.ps_streams)
-        .chain(
-            scan.compound_streams
-                .iter()
-                .flat_map(|stream| &stream.ps_streams),
-        )
-        .any(|stream| crate::parasolid::is_body_stream(&stream.header))
+pub(crate) fn has_parasolid_body_stream(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<bool, CodecError> {
+    ctx.any_by(
+        scan.section_steps(),
+        |section| {
+            ctx.any_by(
+                section.ps_streams(),
+                |stream| Ok(stream.header.is_body_stream()),
+                "scan SLDPRT framed body streams",
+            )
+        },
+        "scan SLDPRT block sections",
+    )
 }
 
 /// One selected Parasolid partition stream and its source site.
@@ -1162,8 +1281,8 @@ impl ActiveParasolidSite<'_> {
         self.section.source_stream()
     }
 
-    pub(crate) fn site_key(&self) -> String {
-        self.section.site_key()
+    pub(crate) fn site_key(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        self.section.site_key(ctx)
     }
 }
 
@@ -1174,43 +1293,53 @@ impl ActiveParasolidSite<'_> {
 /// as a non-ghost, non-deltas partition. A manifest or explicit source index
 /// narrows the candidates; with no index exactly one candidate is required.
 pub(crate) fn select_active_parasolid_site<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
-) -> Option<ActiveParasolidSite<'a>> {
-    let active_configuration = active_configuration_index(scan);
+) -> Result<Option<ActiveParasolidSite<'a>>, CodecError> {
+    const OPERATION: &str = "scan SLDPRT section body streams";
+    let active_configuration = active_configuration_index(ctx, scan)?;
     let mut selected = None;
-    for section in scan.sections() {
-        let name = section.name().unwrap_or("");
-        let section_is_partition = contains_ascii_case_insensitive(name, "partition")
-            && !contains_ascii_case_insensitive(name, "ghost")
-            && !contains_ascii_case_insensitive(name, "deltas")
-            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
-        let section_is_admissible = !contains_ascii_case_insensitive(name, "ghost")
-            && !contains_ascii_case_insensitive(name, "deltas")
-            && !contains_ascii_case_insensitive(name, "resolvedfeatures");
-        let sole_body_stream = section
-            .ps_streams()
-            .iter()
-            .filter(|stream| crate::parasolid::is_body_stream(&stream.header))
+    let mut sections = scan.section_steps();
+    while let Some(section) = ctx.next_charged(&mut sections, "scan SLDPRT block sections")? {
+        let name = section.name_words();
+        if name.ghost() || name.deltas() || name.resolved_features() {
+            continue;
+        }
+        let sole_body_stream = ctx
+            .admit_iter(section.ps_streams(), "count SLDPRT section body streams")?
+            .filter(|stream| stream.header.is_body_stream())
             .count()
             == 1;
-        for stream in section.ps_streams() {
-            if !crate::parasolid::is_body_stream(&stream.header) {
-                continue;
-            }
-            let description = &stream.header.description;
-            if !section_is_admissible
-                || contains_ascii_case_insensitive(description, "ghost")
-                || contains_ascii_case_insensitive(description, "deltas")
-                || !(contains_ascii_case_insensitive(description, "partition")
-                    || sole_body_stream && section_is_partition)
-                || active_configuration.is_some_and(|active| {
-                    section.name().and_then(configuration_index) != Some(active)
-                })
+        // The section's configuration index, read at most once and only for
+        // a stream every other test admits.
+        let mut configuration = None;
+        let mut streams = section.ps_streams().iter();
+        while let Some(stream) = ctx.next_charged(&mut streams, OPERATION)? {
+            let description = stream.header.words;
+            if !stream.header.is_body_stream()
+                || description.ghost()
+                || description.deltas()
+                || !(description.partition() || sole_body_stream && name.partition())
             {
                 continue;
             }
+            if let Some(active) = active_configuration {
+                let index = match configuration {
+                    Some(index) => index,
+                    None => *configuration.insert(
+                        section
+                            .name()
+                            .map(|name| configuration_index(ctx, name))
+                            .transpose()?
+                            .flatten(),
+                    ),
+                };
+                if index != Some(active) {
+                    continue;
+                }
+            }
             if selected.is_some() {
-                return None;
+                return Ok(None);
             }
             selected = Some(ActiveParasolidSite {
                 section,
@@ -1219,31 +1348,57 @@ pub(crate) fn select_active_parasolid_site<'a>(
             });
         }
     }
-    selected
+    Ok(selected)
 }
 
-pub(crate) fn configuration_index(section: &str) -> Option<usize> {
-    let start = section
-        .as_bytes()
-        .windows(b"config-".len())
-        .position(|window| window.eq_ignore_ascii_case(b"config-"))?
-        + b"config-".len();
-    let digit_count = section.as_bytes()[start..]
-        .iter()
-        .take_while(|byte| byte.is_ascii_digit())
-        .count();
-    (digit_count > 0)
-        .then(|| section[start..start + digit_count].parse().ok())
-        .flatten()
+/// The configuration index a section name states after `config-`, ignoring
+/// ASCII case.
+pub(crate) fn configuration_index(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    section: &str,
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    const MARKER: &[u8; 7] = b"config-";
+    let bytes = section.as_bytes();
+    let Some(marker) = ctx.position_by(
+        bytes.windows(MARKER.len()),
+        |window| Ok(window.eq_ignore_ascii_case(MARKER)),
+        "scan SLDPRT configuration section marker",
+    )?
+    else {
+        return Ok(None);
+    };
+    let start = marker + MARKER.len();
+    let digits = &bytes[start..];
+    let digit_count = ctx
+        .position_by(
+            digits,
+            |byte| Ok(!byte.is_ascii_digit()),
+            "scan SLDPRT configuration section digits",
+        )?
+        .unwrap_or(digits.len());
+    if digit_count == 0 {
+        return Ok(None);
+    }
+    Ok(ctx
+        .parse_text::<usize>(
+            &section[start..start + digit_count],
+            "parse SLDPRT configuration section index",
+        )?
+        .ok())
 }
 
-pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    explicit_active_configuration_index(scan).or_else(|| {
-        scan.solidworks
-            .manifest_active_configuration
-            .unique_ref()
-            .map(|(index, _)| index)
-    })
+pub(crate) fn active_configuration_index(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    Ok::<_, cadmpeg_core::CodecError>(explicit_active_configuration_index(ctx, scan)?.or_else(
+        || {
+            scan.solidworks
+                .manifest_active_configuration
+                .unique_ref()
+                .map(|(index, _)| index)
+        },
+    ))
 }
 
 /// Return the active configuration's unique manifest identity, when one
@@ -1254,45 +1409,122 @@ fn manifest_active_configuration(scan: &ContainerScan<'_>) -> Option<(usize, Opt
     scan.solidworks.manifest_active_configuration.unique()
 }
 
-fn is_features_manifest_name(name: Option<&str>) -> bool {
-    name.and_then(|name| name.rsplit('/').next())
-        .is_some_and(|name| name.eq_ignore_ascii_case("Features"))
+fn is_features_manifest_name(
+    ctx: &DecodeContext<'_>,
+    name: Option<&str>,
+) -> Result<bool, CodecError> {
+    let Some(name) = name else {
+        return Ok(false);
+    };
+    Ok(
+        path_basename(ctx, name, "scan SLDPRT manifest section name")?
+            .eq_ignore_ascii_case("Features"),
+    )
+}
+
+/// The value of the attribute of `node` named `name` outside any namespace,
+/// the attribute `roxmltree::Node::attribute` finds. Each visited attribute is
+/// charged; `name` is a literal, so each comparison is fixed work.
+fn unqualified_attribute<'a>(
+    ctx: &DecodeContext<'_>,
+    node: roxmltree::Node<'a, '_>,
+    name: &str,
+    operation: &'static str,
+) -> Result<Option<&'a str>, CodecError> {
+    Ok(ctx
+        .find_by(
+            node.attributes(),
+            |attribute| Ok(attribute.namespace().is_none() && attribute.name() == name),
+            operation,
+        )?
+        .map(|attribute| attribute.value()))
+}
+
+/// The first element below `root`, in document order, that `matches`
+/// accepts. Each visited node is charged before `matches` reads it.
+fn find_element<'a, 'input>(
+    ctx: &DecodeContext<'_>,
+    root: roxmltree::Node<'a, 'input>,
+    mut matches: impl FnMut(roxmltree::Node<'a, 'input>) -> Result<bool, CodecError>,
+    operation: &'static str,
+) -> Result<Option<roxmltree::Node<'a, 'input>>, CodecError> {
+    ctx.find_by(
+        root.descendants(),
+        |node| Ok(node.is_element() && matches(*node)?),
+        operation,
+    )
 }
 
 /// Resolve a manifest row to its configuration name without depending on XML
 /// namespace prefixes or on the order of the model rows.
 fn manifest_configuration_name(
-    admission: &ScanAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     document: &roxmltree::Document<'_>,
     row: roxmltree::Node<'_, '_>,
     id: &str,
 ) -> Result<Option<String>, CodecError> {
-    let direct = row.attribute("swName").filter(|value| !value.is_empty());
-    let model = row
-        .attribute("swModelRef")
-        .and_then(|reference| {
-            document.descendants().find(|node| {
-                node.tag_name().name() == "swModel" && node.attribute("id") == Some(reference)
-            })
-        })
-        .or_else(|| {
-            document.descendants().find(|node| {
-                node.tag_name().name() == "swModel"
-                    && node.attribute("swConfigurationId") == Some(id)
-            })
-        });
-    let name = direct.or_else(|| {
-        model
-            .and_then(|node| node.attribute("swConfigurationName"))
-            .filter(|value| !value.is_empty())
-    });
-    admission.copy_opt(name, "retain SLDPRT manifest configuration name")
+    const OPERATION: &str = "resolve SLDPRT manifest configuration name";
+    let model_with = |attribute: &str, value: &str| {
+        find_element(
+            ctx,
+            document.root(),
+            |node| {
+                Ok(node.tag_name().name() == "swModel"
+                    && match unqualified_attribute(ctx, node, attribute, OPERATION)? {
+                        Some(stated) => {
+                            ctx.equal_bytes(stated.as_bytes(), value.as_bytes(), OPERATION)?
+                        }
+                        None => false,
+                    })
+            },
+            OPERATION,
+        )
+    };
+    let name = match ctx
+        .xml_attribute(row, "swName", OPERATION)?
+        .filter(|value| !value.is_empty())
+    {
+        Some(name) => Some(name),
+        None => {
+            let referenced = match unqualified_attribute(ctx, row, "swModelRef", OPERATION)? {
+                Some(reference) => model_with("id", reference)?,
+                None => None,
+            };
+            let model = match referenced {
+                Some(model) => Some(model),
+                None => model_with("swConfigurationId", id)?,
+            };
+            match model {
+                Some(model) => ctx
+                    .xml_attribute(model, "swConfigurationName", OPERATION)?
+                    .filter(|value| !value.is_empty()),
+                None => None,
+            }
+        }
+    };
+    name.map(|value| ctx.copy_retained_text(value, "retain SLDPRT manifest configuration name"))
+        .transpose()
 }
 
-fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
-    let active = active_configuration_name_ref(scan)?;
-    let indices = scan.solidworks.configuration_source_indices.get(active)?;
-    (indices.len() == 1).then(|| indices[0])
+fn explicit_active_configuration_index(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    let Some(active) = active_configuration_name_ref(scan) else {
+        return Ok(None);
+    };
+    let Some(indices) = ctx.get_btree_map(
+        &scan.solidworks.configuration_source_indices,
+        active,
+        "look up SLDPRT ordered key",
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(match indices.as_slice() {
+        [index] => Some(*index),
+        _ => None,
+    })
 }
 
 pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> Option<&'a str> {
@@ -1327,106 +1559,40 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     }
 }
 
-pub(crate) struct EnvelopeText<'a> {
-    text: String,
-    _scope: Option<ScopedReservation<'a>>,
+/// XML text of one section: borrowed when the payload is UTF-8, decoded into
+/// scoped storage when it is UTF-16.
+pub(crate) struct EnvelopeText<'ctx, 'bytes> {
+    text: std::borrow::Cow<'bytes, str>,
+    _scope: Option<ScopedReservation<'ctx>>,
 }
 
-impl EnvelopeText<'_> {
+impl EnvelopeText<'_, '_> {
     pub(crate) fn as_str(&self) -> &str {
         &self.text
     }
 }
 
-impl ScanAdmission<'_, '_> {
-    fn text<'scope>(
-        &'scope self,
-        bytes: &[u8],
-    ) -> Result<Option<EnvelopeText<'scope>>, CodecError> {
-        match self {
-            Self::Probe => Ok(xml_text(bytes).map(|text| EnvelopeText { text, _scope: None })),
-            Self::Decode(ctx) => xml_text_charged(ctx, bytes, "materialize SLDPRT XML text"),
-        }
-    }
-
-    fn copy_str(&self, value: &str, operation: &'static str) -> Result<String, CodecError> {
-        match self {
-            Self::Probe => Ok(value.to_owned()),
-            Self::Decode(ctx) => {
-                let mut copy = String::new();
-                ctx.try_reserve_retained_text(&mut copy, value.len(), operation)?;
-                copy.push_str(value);
-                Ok(copy)
-            }
-        }
-    }
-
-    fn copy_opt(
-        &self,
-        value: Option<&str>,
-        operation: &'static str,
-    ) -> Result<Option<String>, CodecError> {
-        value
-            .map(|value| self.copy_str(value, operation))
-            .transpose()
-    }
-
-    fn charge_item(&self, operation: &'static str) -> Result<(), CodecError> {
-        if let Self::Decode(ctx) = self {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        Ok(())
-    }
-
-    fn reserve_vec<T>(
-        &self,
-        values: &mut Vec<T>,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        if let Self::Decode(ctx) = self {
-            ctx.reserve_vec(values, 1, operation)?;
-        }
-        Ok(())
-    }
-
-    fn new_string(&self, bytes: usize, operation: &'static str) -> Result<String, CodecError> {
-        match self {
-            Self::Probe => Ok(String::with_capacity(bytes)),
-            Self::Decode(ctx) => {
-                let mut value = String::new();
-                ctx.try_reserve_retained_text(&mut value, bytes, operation)?;
-                Ok(value)
-            }
-        }
-    }
-}
-
-pub(crate) fn xml_text_charged<'ctx>(
+pub(crate) fn xml_text_charged<'ctx, 'bytes>(
     ctx: &'ctx DecodeContext<'_>,
-    bytes: &[u8],
+    bytes: &'bytes [u8],
     operation: &'static str,
-) -> Result<Option<EnvelopeText<'ctx>>, CodecError> {
-    ctx.charge_work(u64_from_index(bytes.len()), operation)?;
+) -> Result<Option<EnvelopeText<'ctx, 'bytes>>, CodecError> {
     let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
-    if bytes.starts_with(&[0xff, 0xfe]) {
-        let utf16 = &bytes[2..];
+    if let Some(utf16) = bytes.strip_prefix(&[0xff, 0xfe]) {
         let (text, scope) =
             ctx.utf16le_lossy_scoped_text(utf16, utf16.len() / 2, false, operation)?;
-        Ok(Some(EnvelopeText {
-            text,
+        return Ok(Some(EnvelopeText {
+            text: std::borrow::Cow::Owned(text),
             _scope: Some(scope),
-        }))
-    } else {
-        let Ok(source) = std::str::from_utf8(bytes) else {
-            return Ok(None);
-        };
-        let (mut text, scope) = ctx.scoped_string(source.len(), operation)?;
-        text.push_str(source);
-        Ok(Some(EnvelopeText {
-            text,
-            _scope: Some(scope),
-        }))
+        }));
     }
+    Ok(ctx
+        .validate_utf8(bytes, operation)?
+        .ok()
+        .map(|text| EnvelopeText {
+            text: std::borrow::Cow::Borrowed(text),
+            _scope: None,
+        }))
 }
 
 /// Metadata from the first parsed `swSolidWorks` envelope.
@@ -1458,7 +1624,7 @@ enum ManifestActiveConfiguration {
 }
 
 impl ManifestActiveConfiguration {
-    fn merge(&mut self, current: Self) {
+    fn merge(&mut self, ctx: &DecodeContext<'_>, current: Self) -> Result<(), CodecError> {
         match (&mut *self, current) {
             (_, Self::Absent) | (Self::Ambiguous, _) => {}
             (_, Self::Ambiguous) => *self = Self::Ambiguous,
@@ -1467,7 +1633,8 @@ impl ManifestActiveConfiguration {
                 if *previous_index != index
                     || matches!(
                         (previous_name.as_deref(), name.as_deref()),
-                        (Some(previous), Some(current)) if previous != current
+                        (Some(previous), Some(current)) if previous.len() != current.len()
+                            || !ctx.equal(previous, current, "compare SLDPRT active configuration names")?
                     )
                 {
                     *self = Self::Ambiguous;
@@ -1476,6 +1643,7 @@ impl ManifestActiveConfiguration {
                 }
             }
         }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -1492,99 +1660,149 @@ impl ManifestActiveConfiguration {
     }
 }
 
+/// Whether `value` is non-empty and every byte is an ASCII digit.
+fn is_decimal(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    Ok(!value.is_empty()
+        && ctx.all_by(
+            value.as_bytes(),
+            |byte| Ok(byte.is_ascii_digit()),
+            operation,
+        )?)
+}
+
 fn scan_solidworks_envelopes<'a>(
     sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
-    admission: &ScanAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<SolidWorksEnvelopeScan, CodecError> {
+    const ATTRIBUTES: &str = "read SLDPRT envelope attributes";
     let mut scan = SolidWorksEnvelopeScan::default();
-    for (section, payload) in sections {
-        let Some(text) = admission.text(payload)? else {
+    let mut sections = sections.into_iter();
+    while let Some((section, payload)) =
+        ctx.next_charged(&mut sections, "scan SLDPRT envelope sections")?
+    {
+        let Some(text) = xml_text_charged(ctx, payload, "materialize SLDPRT XML text")? else {
             continue;
         };
-        let admitted;
-        let probe_document;
-        let document = match admission {
-            ScanAdmission::Decode(ctx) => {
-                admitted = match ctx.parse_xml(&text.text, "SLDPRT envelope XML tree") {
-                    Ok(tree) => tree,
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(_) => continue,
-                };
-                admitted.document()
-            }
-            ScanAdmission::Probe => {
-                probe_document = match roxmltree::Document::parse(&text.text) {
-                    Ok(document) => document,
-                    Err(_) => continue,
-                };
-                &probe_document
-            }
+        let admitted = match ctx.parse_xml(text.as_str(), "SLDPRT envelope XML tree") {
+            Ok(tree) => tree,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => continue,
         };
-        let root = document.root_element();
-        if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
+        let document = admitted.document();
+        let root = ctx.xml_root_element(document, "find SLDPRT envelope root")?;
+        let root_name = root.tag_name().name();
+        let is_envelope = root_name == "swSolidWorks";
+        if is_envelope && is_features_manifest_name(ctx, section)? {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(admission, document)?);
+                .merge(ctx, manifest_active_configuration_in(ctx, document)?)?;
         }
-        if root.tag_name().name().contains("Keywords") {
-            for configuration in document
-                .descendants()
-                .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
+        if ctx.contains_text(root_name, "Keywords", "classify SLDPRT envelope root")? {
+            let mut nodes = document.descendants();
+            while let Some(configuration) =
+                ctx.next_charged(&mut nodes, "scan SLDPRT keyword configurations")?
             {
-                let Some(name) = configuration.attribute("Name") else {
+                if !configuration.is_element() || configuration.tag_name().name() != "Configuration"
+                {
                     continue;
-                };
-                let Some(index) = configuration
-                    .attribute("SourceIndex")
-                    .filter(|value| {
-                        !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
-                    })
-                    .and_then(|value| value.parse::<usize>().ok())
+                }
+                let Some(name) = unqualified_attribute(ctx, configuration, "Name", ATTRIBUTES)?
                 else {
                     continue;
                 };
-                if let Some(indices) = scan.configuration_source_indices.get_mut(name) {
-                    admission
-                        .reserve_vec(indices, "collect SLDPRT configuration source indices")?;
-                    indices.push(index);
+                let Some(value) =
+                    unqualified_attribute(ctx, configuration, "SourceIndex", ATTRIBUTES)?
+                else {
+                    continue;
+                };
+                if !is_decimal(ctx, value, "scan SLDPRT configuration source index digits")? {
+                    continue;
+                }
+                let Ok(index) =
+                    ctx.parse_text::<usize>(value, "parse SLDPRT configuration source index")?
+                else {
+                    continue;
+                };
+                if let Some(indices) = ctx.get_mut_btree_map(
+                    &mut (scan.configuration_source_indices),
+                    name,
+                    "look up mutable SLDPRT ordered key",
+                )? {
+                    ctx.push_vec(
+                        indices,
+                        index,
+                        "collect SLDPRT configuration source indices",
+                    )?;
                 } else {
-                    admission.charge_item("collect SLDPRT configuration source names")?;
                     let name =
-                        admission.copy_str(name, "retain SLDPRT configuration source name")?;
-                    let mut indices = Vec::new();
-                    admission
-                        .reserve_vec(&mut indices, "collect SLDPRT configuration source indices")?;
+                        ctx.copy_retained_text(name, "retain SLDPRT configuration source name")?;
+                    let mut indices =
+                        ctx.collection_vec(1, "collect SLDPRT configuration source indices")?;
                     indices.push(index);
-                    scan.configuration_source_indices.insert(name, indices);
+                    ctx.insert_btree_map(
+                        &mut (scan.configuration_source_indices),
+                        name,
+                        indices,
+                        "collect SLDPRT configuration source names",
+                    )?;
                 }
             }
         }
-        if root.tag_name().name() != "swSolidWorks" {
+        if !is_envelope {
             continue;
         }
-        for name in root
-            .descendants()
-            .filter(|node| node.has_tag_name("swModel"))
-            .filter_map(|node| node.attribute("swConfigurationName"))
-        {
-            if !scan.configuration_names.contains(name) {
-                admission.charge_item("collect SLDPRT configuration names")?;
-                let name = admission.copy_str(name, "retain SLDPRT configuration name")?;
-                scan.configuration_names.insert(name);
+        let mut nodes = root.descendants();
+        while let Some(model) = ctx.next_charged(&mut nodes, "scan SLDPRT envelope models")? {
+            if !model.has_tag_name("swModel") {
+                continue;
+            }
+            let Some(name) = unqualified_attribute(ctx, model, "swConfigurationName", ATTRIBUTES)?
+            else {
+                continue;
+            };
+            if !ctx.contains_btree_set(
+                &scan.configuration_names,
+                name,
+                "look up SLDPRT configuration names",
+            )? {
+                let name = ctx.copy_retained_text(name, "retain SLDPRT configuration name")?;
+                ctx.insert_btree_set(
+                    &mut scan.configuration_names,
+                    name,
+                    "collect SLDPRT configuration names",
+                )?;
             }
         }
         if scan.first.is_some() {
             continue;
         }
-        let model = root.descendants().find(|node| node.has_tag_name("swModel"));
+        let model = find_element(
+            ctx,
+            root,
+            |node| Ok(node.has_tag_name("swModel")),
+            "find SLDPRT envelope model",
+        )?;
+        let mut source_attributes_storage =
+            ctx.reserve_scoped(0, "SLDPRT temporary configuration attributes")?;
         let mut source_attributes = BTreeMap::new();
-        for configuration in root
-            .descendants()
-            .filter(|node| node.has_tag_name("swConfiguration"))
+        let mut nodes = root.descendants();
+        while let Some(configuration) =
+            ctx.next_charged(&mut nodes, "scan SLDPRT envelope configurations")?
         {
-            let Some(slot) = configuration.attribute("swID") else {
+            if !configuration.has_tag_name("swConfiguration") {
+                continue;
+            }
+            let Some(slot) = unqualified_attribute(ctx, configuration, "swID", ATTRIBUTES)? else {
                 continue;
             };
-            if !slot.bytes().all(|byte| byte.is_ascii_digit()) {
+            if !ctx.all_by(
+                slot.as_bytes(),
+                |byte| Ok(byte.is_ascii_digit()),
+                "scan SLDPRT configuration slot digits",
+            )? {
                 continue;
             }
             for (source, target) in [
@@ -1593,39 +1811,59 @@ fn scan_solidworks_envelopes<'a>(
                 ("swConfigurationFlags", "flags"),
                 ("swConfigurationAlternateName", "alternate_name"),
             ] {
-                if let Some(value) = configuration.attribute(source) {
-                    if !source_attributes.contains_key(&(slot, target)) {
-                        admission.charge_item("collect SLDPRT configuration attributes")?;
-                    }
-                    source_attributes.insert((slot, target), value);
+                if let Some(value) = unqualified_attribute(ctx, configuration, source, ATTRIBUTES)?
+                {
+                    source_attributes_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut source_attributes,
+                            (slot, target),
+                            value,
+                            "collect SLDPRT configuration attributes",
+                        )
+                    })?;
                 }
             }
         }
         let mut configuration_attributes = BTreeMap::new();
-        for ((slot, target), value) in source_attributes {
-            let length = "sw_configuration_".len() + slot.len() + 1 + target.len();
-            let mut key = admission.new_string(length, "retain SLDPRT configuration key")?;
-            key.push_str("sw_configuration_");
-            key.push_str(slot);
-            key.push('_');
-            key.push_str(target);
-            let value = admission.copy_str(value, "retain SLDPRT configuration value")?;
-            admission.charge_item("retain SLDPRT configuration attribute")?;
-            configuration_attributes.insert(key, value);
+        for ((slot, target), value) in
+            ctx.admit_iter(source_attributes, "retain SLDPRT configuration attributes")?
+        {
+            let key = ctx.format_retained(
+                format_args!("sw_configuration_{slot}_{target}"),
+                "retain SLDPRT configuration key",
+            )?;
+            let value = ctx.copy_retained_text(value, "retain SLDPRT configuration value")?;
+            ctx.insert_btree_map(
+                &mut (configuration_attributes),
+                key,
+                value,
+                "retain SLDPRT configuration attribute",
+            )?;
         }
+        let retained_attribute = |node: Option<roxmltree::Node<'_, '_>>,
+                                  attribute: &str,
+                                  operation: &'static str|
+         -> Result<Option<String>, CodecError> {
+            match node {
+                Some(node) => ctx
+                    .xml_attribute(node, attribute, ATTRIBUTES)?
+                    .map(|value| ctx.copy_retained_text(value, operation))
+                    .transpose(),
+                None => Ok(None),
+            }
+        };
         scan.first = Some(SolidWorksEnvelope {
-            sw_version: admission.copy_opt(root.attribute("swVersion"), "retain SLDPRT version")?,
-            creation_time: admission.copy_opt(
-                root.attribute("swCreationTime"),
+            sw_version: retained_attribute(Some(root), "swVersion", "retain SLDPRT version")?,
+            creation_time: retained_attribute(
+                Some(root),
+                "swCreationTime",
                 "retain SLDPRT creation time",
             )?,
-            path: admission.copy_opt(root.attribute("swPath"), "retain SLDPRT path")?,
-            model_name: admission.copy_opt(
-                model.and_then(|node| node.attribute("swName")),
-                "retain SLDPRT model name",
-            )?,
-            configuration_name: admission.copy_opt(
-                model.and_then(|node| node.attribute("swConfigurationName")),
+            path: retained_attribute(Some(root), "swPath", "retain SLDPRT path")?,
+            model_name: retained_attribute(model, "swName", "retain SLDPRT model name")?,
+            configuration_name: retained_attribute(
+                model,
+                "swConfigurationName",
                 "retain SLDPRT envelope configuration name",
             )?,
             configuration_attributes,
@@ -1635,17 +1873,20 @@ fn scan_solidworks_envelopes<'a>(
 }
 
 fn manifest_active_configuration_in(
-    admission: &ScanAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     document: &roxmltree::Document<'_>,
 ) -> Result<ManifestActiveConfiguration, CodecError> {
+    const ATTRIBUTES: &str = "read SLDPRT manifest configuration attributes";
     let mut any_configuration = false;
     let mut active = None;
-    for row in document
-        .descendants()
-        .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
-    {
+    let mut nodes = document.descendants();
+    while let Some(row) = ctx.next_charged(&mut nodes, "scan SLDPRT manifest configurations")? {
+        if !row.is_element() || row.tag_name().name() != "swConfiguration" {
+            continue;
+        }
         any_configuration = true;
-        if row.attribute("swMostRecentConfiguration") == Some("YES") {
+        if unqualified_attribute(ctx, row, "swMostRecentConfiguration", ATTRIBUTES)? == Some("YES")
+        {
             if active.is_some() {
                 return Ok(ManifestActiveConfiguration::Ambiguous);
             }
@@ -1658,31 +1899,27 @@ fn manifest_active_configuration_in(
     let Some(row) = active else {
         return Ok(ManifestActiveConfiguration::Ambiguous);
     };
-    let Some(id) = row.attribute("swID") else {
+    let Some(id) = unqualified_attribute(ctx, row, "swID", ATTRIBUTES)? else {
         return Ok(ManifestActiveConfiguration::Ambiguous);
     };
-    let Some(index) = (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
-        .then(|| id.parse::<usize>().ok())
-        .flatten()
-    else {
+    if !is_decimal(ctx, id, "scan SLDPRT active configuration id digits")? {
+        return Ok(ManifestActiveConfiguration::Ambiguous);
+    }
+    let Ok(index) = ctx.parse_text::<usize>(id, "parse SLDPRT active configuration id")? else {
         return Ok(ManifestActiveConfiguration::Ambiguous);
     };
     Ok(ManifestActiveConfiguration::Unique(
         index,
-        manifest_configuration_name(admission, document, row, id)?,
+        manifest_configuration_name(ctx, document, row, id)?,
     ))
 }
 
 /// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
 pub(crate) fn first_solidworks_envelope<'a>(
+    ctx: &DecodeContext<'_>,
     payloads: impl IntoIterator<Item = &'a [u8]>,
-) -> Option<SolidWorksEnvelope> {
-    scan_solidworks_envelopes(
-        payloads.into_iter().map(|payload| (None, payload)),
-        &ScanAdmission::Probe,
-    )
-    .ok()
-    .and_then(|scan| scan.first)
+) -> Result<Option<SolidWorksEnvelope>, CodecError> {
+    Ok(scan_solidworks_envelopes(payloads.into_iter().map(|payload| (None, payload)), ctx)?.first)
 }
 
 pub(crate) fn solidworks_envelope<'a>(

@@ -73,17 +73,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
 
     /// The resource refusal recorded by an allocation, charge or evaluation.
     pub(super) fn refused(&self) -> Option<ResourceLimit> {
-        if let Some(limit) = *self.refusal.borrow() {
-            return Some(limit);
-        }
-        let original = self
-            .admission
-            .work(0, "observe geometry evaluation refusal")
-            .err();
-        if let Some(limit) = original {
-            *self.refusal.borrow_mut() = Some(limit);
-        }
-        original
+        *self.refusal.borrow()
     }
 
     /// `Err` with the recorded resource refusal, or `Ok` when nothing was refused.
@@ -135,7 +125,6 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         if self.refusal.borrow().is_some() {
             return None;
         }
-        self.work(0, work_operation)?;
         let mut values = values.into_iter();
         let mut output = Vec::new();
         while values.size_hint() != (0, Some(0)) {
@@ -155,7 +144,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         count: usize,
         operation: &'static str,
     ) -> Option<()> {
-        self.work(0, operation)?;
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         match self.admission.context() {
             Some(context) => {
                 let mut storage = self.storage.borrow_mut();
@@ -177,7 +168,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         count: usize,
         operation: &'static str,
     ) -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
-        self.work(0, operation)?;
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         let mut values = Vec::new();
         let storage = match self.admission.context() {
             Some(context) => {
@@ -201,7 +194,9 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         source: &[T],
         operation: &'static str,
     ) -> Option<Vec<T>> {
-        self.work(0, operation)?;
+        if self.refusal.borrow().is_some() {
+            return None;
+        }
         let mut values = Vec::new();
         match self.admission.context() {
             Some(context) => {
@@ -403,20 +398,21 @@ pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
 
 /// Reusable point-evaluation storage for repeated parameters on one NURBS curve.
 /// The basis is admitted once; evaluations mutate that storage and borrow poles.
-pub struct NurbsPointEvaluator<'curve, 'ctx> {
+pub struct NurbsPointEvaluator<'curve, 'ctx, 'arena> {
     curve: &'curve NurbsCurve,
+    ctx: &'ctx DecodeContext<'arena>,
     basis: SupportValues<f64>,
     _storage: Option<ScopedReservation<'ctx>>,
 }
 
-impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
+impl<'curve, 'ctx, 'arena: 'ctx> NurbsPointEvaluator<'curve, 'ctx, 'arena> {
     /// Admit the basis storage before allocating it.
     pub fn new(
-        ctx: &'ctx DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'arena>,
         curve: &'curve NurbsCurve,
     ) -> Result<Self, ResourceLimit> {
         let support = curve.knots().len() - curve.pole_count();
-        let (basis, storage) = if support <= 2 {
+        let basis = if support <= 2 {
             (
                 SupportValues::Inline {
                     values: [0.0; 2],
@@ -425,28 +421,32 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 None,
             )
         } else {
-            {
+            let (storage, mut basis) = {
                 let mut basis = Vec::new();
                 let storage =
                     ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
-                ctx.charge_work_limit(u64_from_index(support), "IR B-spline basis work")?;
-                basis.extend(std::iter::repeat_n(0.0, support));
-                (SupportValues::Heap(basis), Some(storage))
-            }
+                (storage, basis)
+            };
+            basis.extend(
+                ctx.admit_iter(0..support, "IR B-spline basis work")?
+                    .map(|_| 0.0),
+            );
+            (SupportValues::Heap(basis), Some(storage))
         };
         Ok(Self {
             curve,
-            basis,
-            _storage: storage,
+            ctx,
+            basis: basis.0,
+            _storage: basis.1,
         })
     }
 
     /// Evaluate in the knot domain without allocating another basis or pole window.
     pub fn point(
         &mut self,
-        ctx: &DecodeContext<'_>,
         parameter: f64,
     ) -> Result<Result<FinitePoint3, EvaluationFailure<Point3>>, ResourceLimit> {
+        let ctx = self.ctx;
         let _depth = if matches!(&self.basis, SupportValues::Heap(_)) {
             let depth = ctx.enter_nested_limit("geometry evaluation nesting")?;
             Some(depth)

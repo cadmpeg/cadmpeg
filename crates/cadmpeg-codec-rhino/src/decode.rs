@@ -1310,11 +1310,7 @@ impl<'a> DecodeContext<'a> {
                             )?)))
                         }
                     };
-                    if session.any_by(
-                        &validation.findings,
-                        |finding| Ok(finding.severity >= Severity::Error),
-                        "Rhino candidate acceptance traversal",
-                    )? {
+                    if !validation.is_ok_for_decode(session)? {
                         return Ok(Err(CandidateError::Validation(validation_findings(
                             session,
                             &validation,
@@ -8302,9 +8298,9 @@ fn stage_curve_tree(
                     record: Some(unknown.try_clone_for_decode(ctx, "Rhino typed identity copy")?),
                 }),
                 Some(ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                        parameters, components, None,
-                    )
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new_for_decode(
+                        ctx, parameters, components, None,
+                    )?
                     .map_err(crate::curves::GeometryError::unpositioned)?,
                 )),
             )
@@ -9226,9 +9222,9 @@ fn commit_curve_tree(
                     record: source.record,
                 }),
                 Some(ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                        parameters, components, None,
-                    )
+                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new_for_decode(
+                        ctx, parameters, components, None,
+                    )?
                     .map_err(str::to_owned)?,
                 )),
             )

@@ -16,18 +16,8 @@ use std::fmt::{Display, Formatter};
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::RenderingStyleExtension;
 
-fn retained_digest(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(64, operation)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "hash Inventor native record bytes",
-    )?;
-    Ok(cadmpeg_ir::hash::sha256_hex(bytes))
-}
+// u32::MAX has ten decimal digits.
+const MAX_RECORD_ORDINAL_DIGITS: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -473,45 +463,87 @@ pub(crate) struct AssemblyPlacementRecordWire {
     pub(crate) suffix_sha256: String,
 }
 
-impl AssemblyPlacementRecordWire {
+#[derive(Debug)]
+pub(crate) struct AssemblyPlacementRecordConversionError {
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) error: CodecError,
+}
+
+impl AssemblyPlacementRecord {
     pub(crate) fn from_placement(
         ctx: &DecodeContext<'_>,
-        placement: &crate::assembly::AssemblyPlacement<'_>,
-    ) -> Result<Self, CodecError> {
+        placement: crate::assembly::AssemblyPlacement<'_>,
+    ) -> Result<Self, AssemblyPlacementRecordConversionError> {
+        let crate::assembly::AssemblyPlacement {
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
+            transform,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
+            suffix,
+        } = placement;
+        let Some(suffix_len) =
+            std::num::NonZeroU64::new(cadmpeg_core::decode::u64_from_index(suffix.window().len()))
+        else {
+            return Err(AssemblyPlacementRecordConversionError {
+                segment_token,
+                record_ordinal,
+                error: CodecError::malformed("suffix_len must not be zero"),
+            });
+        };
+        let id = match ctx.format_retained(
+            format_args!("inventor:assembly:placement#{segment_token}-{record_ordinal}"),
+            "retain Inventor assembly placement id",
+        ) {
+            Ok(id) => id,
+            Err(error) => {
+                return Err(AssemblyPlacementRecordConversionError {
+                    segment_token,
+                    record_ordinal,
+                    error,
+                });
+            }
+        };
+        let suffix_sha256 = match cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+            ctx,
+            suffix.window(),
+            "retain Inventor assembly placement suffix digest",
+        ) {
+            Ok(digest) => digest,
+            Err(error) => {
+                return Err(AssemblyPlacementRecordConversionError {
+                    segment_token,
+                    record_ordinal,
+                    error,
+                });
+            }
+        };
         Ok(Self {
-            id: ctx.format_retained(
-                format_args!(
-                    "inventor:assembly:placement#{}-{}",
-                    placement.segment_token, placement.record_ordinal
-                ),
-                "retain Inventor assembly placement id",
-            )?,
-            segment_token: ctx.copy_retained_text(
-                &placement.segment_token,
-                "retain Inventor assembly placement token",
-            )?,
-            record_ordinal: placement.record_ordinal,
-            header_id: placement.header_id,
-            owner_reference: placement.owner_reference,
-            attribute_reference: placement.attribute_reference,
-            state: placement.state,
-            transform_prefix: placement.transform_prefix,
-            transform_encoding: {
-                let (value_mask, zero_mask) = placement.transform.masks();
-                [value_mask, zero_mask]
-            },
-            transform: placement.transform.rows(),
-            branch: placement.branch,
-            graphics_state: placement.graphics_state,
-            occurrence_id: placement.occurrence_id,
-            graphics_index: placement.graphics_index,
-            object_reference: placement.object_reference,
-            suffix_len: cadmpeg_core::decode::u64_from_index(placement.suffix.window().len()),
-            suffix_sha256: retained_digest(
-                ctx,
-                placement.suffix.window(),
-                "retain Inventor assembly placement suffix digest",
-            )?,
+            id,
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
+            transform,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
+            suffix_len,
+            suffix_sha256,
         })
     }
 }
@@ -519,45 +551,73 @@ impl AssemblyPlacementRecordWire {
 impl AssemblyPlacementRecordWire {
     pub(crate) fn into_record(
         self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<AssemblyPlacementRecord, CodecError> {
-        let transform = crate::compact_matrix::CompactMatrix::try_from_rows(
-            ctx,
-            self.transform_encoding[0],
-            self.transform_encoding[1],
-            self.transform,
-        )?;
-        let Some(suffix_len) = std::num::NonZeroU64::new(self.suffix_len) else {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                "suffix_len must not be zero",
-                "retain Inventor placement conversion issue",
-            )?));
+    ) -> Result<AssemblyPlacementRecord, AssemblyPlacementRecordConversionError> {
+        let Self {
+            id,
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
+            transform_encoding,
+            transform: transform_rows,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
+            suffix_len: raw_suffix_len,
+            suffix_sha256: raw_suffix_sha256,
+        } = self;
+        let transform = match crate::compact_matrix::CompactMatrix::try_from_rows(
+            transform_encoding[0],
+            transform_encoding[1],
+            transform_rows,
+        ) {
+            Ok(transform) => transform,
+            Err(error) => {
+                return Err(AssemblyPlacementRecordConversionError {
+                    segment_token,
+                    record_ordinal,
+                    error,
+                });
+            }
+        };
+        let Some(suffix_len) = std::num::NonZeroU64::new(raw_suffix_len) else {
+            return Err(AssemblyPlacementRecordConversionError {
+                segment_token,
+                record_ordinal,
+                error: CodecError::malformed("suffix_len must not be zero"),
+            });
         };
         let suffix_sha256 =
-            match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
+            match cadmpeg_ir::hash::digest::Sha256Digest::try_from(raw_suffix_sha256) {
                 Ok(suffix_sha256) => suffix_sha256,
                 Err(error) => {
-                    return Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("suffix_sha256: {error}"),
-                        "retain Inventor placement conversion issue",
-                    )?));
+                    return Err(AssemblyPlacementRecordConversionError {
+                        segment_token,
+                        record_ordinal,
+                        error: CodecError::malformed(format_args!("suffix_sha256: {error}")),
+                    });
                 }
             };
         Ok(AssemblyPlacementRecord {
-            id: self.id,
-            segment_token: self.segment_token,
-            record_ordinal: self.record_ordinal,
-            header_id: self.header_id,
-            owner_reference: self.owner_reference,
-            attribute_reference: self.attribute_reference,
-            state: self.state,
-            transform_prefix: self.transform_prefix,
+            id,
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
             transform,
-            branch: self.branch,
-            graphics_state: self.graphics_state,
-            occurrence_id: self.occurrence_id,
-            graphics_index: self.graphics_index,
-            object_reference: self.object_reference,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
             suffix_len,
             suffix_sha256,
         })
@@ -676,10 +736,7 @@ pub(crate) struct PmAppRenderingStyleRecordWire {
 }
 
 impl PmAppRenderingStyleRecordWire {
-    pub(crate) fn into_record(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<PmAppRenderingStyleRecord, CodecError> {
+    pub(crate) fn into_record(self) -> Result<PmAppRenderingStyleRecord, CodecError> {
         let extension = match (
             self.style_state,
             self.style_label,
@@ -708,10 +765,9 @@ impl PmAppRenderingStyleRecordWire {
                 guid,
             }),
             _ => {
-                return Err(CodecError::Malformed(ctx.copy_retained_text(
+                return Err(CodecError::malformed(
                     "rendering style extension fields must be present together",
-                    "retain Inventor rendering conversion issue",
-                )?));
+                ));
             }
         };
         if let Some(detail) = rendering_style_issue(
@@ -719,19 +775,15 @@ impl PmAppRenderingStyleRecordWire {
             &self.comment,
             extension.is_some(),
         ) {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                detail,
-                "retain Inventor rendering conversion issue",
-            )?));
+            return Err(CodecError::malformed(detail));
         }
         let suffix_sha256 =
             match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
                 Ok(suffix_sha256) => suffix_sha256,
                 Err(error) => {
-                    return Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("suffix_sha256: {error}"),
-                        "retain Inventor rendering conversion issue",
-                    )?));
+                    return Err(CodecError::malformed(format_args!(
+                        "suffix_sha256: {error}"
+                    )));
                 }
             };
         Ok(PmAppRenderingStyleRecord {
@@ -928,63 +980,29 @@ impl PmGraphicsStyleCollectionRecord {
         segment_version_major: u8,
         style_references: PmDcPairedReferenceList<[u32; 2]>,
     ) -> Result<Self, CodecError> {
-        let suffix = ctx.strip_prefix(
-            &id,
-            "inventor:presentation:graphics-style-collection#",
-            "match Inventor graphics style collection identity",
-        )?;
-        let (valid_token, valid_ordinal) = match suffix {
-            Some(suffix) => match ctx.rsplit_once(
-                suffix,
-                "-",
-                "split Inventor graphics style collection identity",
-            )? {
-                Some((token, ordinal)) => {
-                    let valid_token = ctx.equal(
-                        token,
-                        segment_token.as_str(),
-                        "compare Inventor graphics style collection token",
-                    )?;
-                    let valid_ordinal = if valid_token {
-                        let ordinal_is_zero = ctx.equal(
-                            ordinal,
-                            "0",
-                            "compare Inventor graphics style collection ordinal",
-                        )?;
-                        let canonical = ordinal_is_zero
-                            || !ctx.starts_with(
-                                ordinal,
-                                "0",
-                                "check Inventor graphics style collection ordinal",
-                            )?;
-                        if canonical {
-                            let digits = ctx
-                                .admit_iter(
-                                    ordinal.as_bytes(),
-                                    "scan Inventor graphics style collection ordinal",
-                                )?
-                                .all(u8::is_ascii_digit);
-                            if digits {
-                                ctx.parse_text::<u32>(
-                                    ordinal,
-                                    "parse Inventor graphics style collection ordinal",
-                                )? == Ok(record_ordinal)
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
-                    (valid_token, valid_ordinal)
-                }
-                None => (false, false),
-            },
-            None => (false, false),
+        let location = id
+            .strip_prefix("inventor:presentation:graphics-style-collection#")
+            .and_then(|suffix| {
+                let token_len = segment_token.as_str().len();
+                let token = suffix.get(..token_len)?;
+                let ordinal = suffix.get(token_len..)?.strip_prefix('-')?;
+                Some((token, ordinal))
+            });
+        let valid = match location {
+            Some((token, ordinal))
+                if !ordinal.is_empty() && ordinal.len() <= MAX_RECORD_ORDINAL_DIGITS =>
+            {
+                ctx.equal(
+                    token,
+                    segment_token.as_str(),
+                    "compare Inventor graphics style collection token",
+                )? && (ordinal == "0" || !ordinal.starts_with('0'))
+                    && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                    && ordinal.parse::<u32>() == Ok(record_ordinal)
+            }
+            _ => false,
         };
-        if !(valid_token && valid_ordinal) {
+        if !valid {
             return Err(CodecError::Malformed(
                 "graphics style collection id disagrees with its location".into(),
             ));
@@ -1361,18 +1379,20 @@ impl RseRecordRecord {
             )?,
             payload_offset: frame.payload_offset,
             payload_len: u64::from(frame.payload_len()?),
-            payload_sha256: retained_digest(
+            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                 ctx,
                 frame.payload.window(),
                 "retain Inventor RSe payload digest",
-            )?,
+            )?
+            .into(),
             trailing_payload_len: frame.trailing_payload_len()?,
             trailer_len: cadmpeg_core::decode::u64_from_index(frame.trailer.window().len()),
-            trailer_sha256: retained_digest(
+            trailer_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                 ctx,
                 frame.trailer.window(),
                 "retain Inventor RSe trailer digest",
-            )?,
+            )?
+            .into(),
         })
     }
     pub(crate) fn type_index(&self) -> u8 {
@@ -1704,10 +1724,9 @@ impl ActiveCarrierRecord {
         ctx: &DecodeContext<'_>,
         state: &crate::kernel::ActiveCarrierState<'_>,
     ) -> Result<Self, CodecError> {
-        let id = ctx.copy_retained_text(
-            "inventor:kernel:active-carrier#root",
-            "retain Inventor active carrier id",
-        )?;
+        let id_text = "inventor:kernel:active-carrier#root";
+        let mut id = ctx.retained_string(id_text.len(), "retain Inventor active carrier id")?;
+        id.push_str(id_text);
         Ok(match state {
             crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
             crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
@@ -1729,11 +1748,12 @@ impl ActiveCarrierRecord {
                 schema: carrier.schema,
                 carrier_len: carrier.carrier_len,
                 carrier_offset: carrier.carrier_offset,
-                carrier_sha256: retained_digest(
+                carrier_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                     ctx,
                     carrier.bytes.window(),
                     "retain Inventor active carrier digest",
-                )?,
+                )?
+                .into(),
                 selected_key: carrier.selected_key,
                 enabled: carrier.enabled,
                 delta_state: carrier.delta_state,
@@ -1806,15 +1826,183 @@ mod tests {
     fn rendering_style(value: serde_json::Value) -> Result<PmAppRenderingStyleRecord, String> {
         let wire = serde_json::from_value::<PmAppRenderingStyleRecordWire>(value)
             .map_err(|error| error.to_string())?;
-        wire.into_record(&super::test_ctx())
-            .map_err(|error| error.to_string())
+        wire.into_record().map_err(|error| error.to_string())
     }
 
     fn assembly_placement(value: serde_json::Value) -> Result<AssemblyPlacementRecord, String> {
         let wire = serde_json::from_value::<AssemblyPlacementRecordWire>(value)
             .map_err(|error| error.to_string())?;
-        wire.into_record(&super::test_ctx())
-            .map_err(|error| error.to_string())
+        wire.into_record()
+            .map_err(|failure| failure.error.to_string())
+    }
+
+    #[test]
+    fn fixed_placement_conversion_error_uses_no_retained_bytes() {
+        use cadmpeg_core::CodecError;
+        let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
+            "id": "placement", "segment_token": "segment", "record_ordinal": 0,
+            "header_id": 0, "owner_reference": 0, "attribute_reference": 0,
+            "state": 0, "transform_prefix": false, "transform_encoding": [0, 0],
+            "transform": [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]], "branch": 0, "graphics_state": 0,
+            "occurrence_id": 0, "graphics_index": 0, "object_reference": 0,
+            "suffix_len": 0, "suffix_sha256": "0".repeat(64)
+        })).expect("wire fixture");
+        // A fixed refusal message is returned, with no model text allocation.
+        assert!(matches!(
+            wire.into_record(),
+            Err(failure)
+                if matches!(&failure.error, CodecError::Malformed(detail)
+                    if detail == "suffix_len must not be zero")
+        ));
+    }
+
+    #[test]
+    fn placement_digest_uses_ir_sha256_admission() {
+        use cadmpeg_core::decode::{
+            DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View,
+        };
+        use cadmpeg_core::CodecError;
+        let suffix = b"abc";
+        let placement = || crate::assembly::AssemblyPlacement {
+            segment_token: "segment".into(),
+            record_ordinal: 1,
+            header_id: 0,
+            owner_reference: 0,
+            attribute_reference: 0,
+            state: 0,
+            transform_prefix: false,
+            transform: crate::compact_matrix::CompactMatrix::try_new(0, 0, |_| {
+                Ok(cadmpeg_ir::scalar::FiniteReal::ZERO)
+            })
+            .expect("finite matrix"),
+            branch: 0,
+            graphics_state: 0,
+            occurrence_id: 0,
+            graphics_index: 0,
+            object_reference: 0,
+            suffix: View::over_retained(suffix),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Formatting scans and writes the identity once each, then hashing
+        // visits the three suffix bytes. Digest text has fixed size.
+        let source_prior = 2 * "inventor:assembly:placement#segment-1".len() + suffix.len();
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(source_prior);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let record = AssemblyPlacementRecord::from_placement(&ctx, placement())
+            .expect("exact input-sized work admits the digest");
+        assert_eq!(
+            record.suffix_sha256.as_str(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+
+        ctx.finish_session()
+            .expect("exact work completes the session");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "retain Inventor assembly placement suffix digest",
+            |cap| {
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+                let result = AssemblyPlacementRecord::from_placement(&ctx, placement())
+                    .map_err(|failure| failure.error);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert!(matches!(ctx.finish_session(),
+                        Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                }
+                result
+            },
+        );
+        // The identity is retained before the 64-byte digest text.
+        assert!(matches!(
+            error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor assembly placement suffix digest"
+                    && limit.used == cadmpeg_core::decode::u64_from_index(
+                        "inventor:assembly:placement#segment-1".len())
+                    && limit.additional == 64
+        ));
+    }
+
+    #[test]
+    fn graphics_style_identity_admits_only_variable_comparisons() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+        let token = cadmpeg_ir::ids::IdentityKey::try_new("segment").expect("token");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The token comparison reads 7 + 7 bytes. The known token length
+        // locates the delimiter; ordinal validation reads at most ten bytes.
+        policy.limits.max_work_units = 14;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let references = super::PmDcPairedReferenceList::new(None, Vec::new()).expect("list");
+        super::PmGraphicsStyleCollectionRecord::new(
+            &ctx,
+            "inventor:presentation:graphics-style-collection#segment-0".into(),
+            token.clone(),
+            0,
+            17,
+            references,
+        )
+        .expect("variable work fits");
+        assert!(matches!(ctx.charge_work(1, "probe identity work"),
+            Err(CodecError::ResourceLimit(limit)) if limit.used == 14 && limit.additional == 1));
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let references = super::PmDcPairedReferenceList::new(None, Vec::new()).expect("list");
+        assert!(matches!(super::PmGraphicsStyleCollectionRecord::new(&ctx,
+            "wrong:namespace#segment-0".into(), token, 0, 17, references),
+            Err(CodecError::Malformed(detail)) if detail == "graphics style collection id disagrees with its location"));
+    }
+
+    #[test]
+    fn graphics_style_ordinal_length_refuses_before_token_scan() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+        let token = cadmpeg_ir::ids::IdentityKey::try_new("segment").expect("token");
+        let id = format!(
+            "inventor:presentation:graphics-style-collection#segment-{}",
+            "1".repeat(4096)
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let references = super::PmDcPairedReferenceList::new(None, Vec::new()).expect("list");
+        assert!(matches!(super::PmGraphicsStyleCollectionRecord::new(&ctx,
+            id, token, 0, 17, references), Err(CodecError::Malformed(detail))
+            if detail == "graphics style collection id disagrees with its location"));
+    }
+
+    #[test]
+    fn graphics_style_identity_uses_the_token_byte_boundary() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+        let token = cadmpeg_ir::ids::IdentityKey::try_new("seg-λ").expect("token");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Only both six-byte token operands need variable comparison work.
+        policy.limits.max_work_units =
+            2 * cadmpeg_core::decode::u64_from_index(token.as_str().len());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let references = super::PmDcPairedReferenceList::new(None, Vec::new()).expect("list");
+        super::PmGraphicsStyleCollectionRecord::new(
+            &ctx,
+            "inventor:presentation:graphics-style-collection#seg-λ-4294967295".into(),
+            token.clone(),
+            u32::MAX,
+            17,
+            references,
+        )
+        .expect("known byte boundary");
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let references = super::PmDcPairedReferenceList::new(None, Vec::new()).expect("list");
+        assert!(matches!(super::PmGraphicsStyleCollectionRecord::new(&ctx,
+            "inventor:presentation:graphics-style-collection#seg-😀-0".into(),
+            token, 0, 17, references), Err(CodecError::Malformed(detail))
+            if detail == "graphics style collection id disagrees with its location"));
     }
 
     #[test]
@@ -1985,6 +2173,37 @@ mod tests {
     }
 
     #[test]
+    fn active_carrier_fixed_id_admits_exact_storage_without_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let id = "inventor:kernel:active-carrier#root";
+        let id_bytes = cadmpeg_core::decode::u64_from_index(id.len());
+        let state = crate::kernel::ActiveCarrierState::NotApplicable;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = id_bytes - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let Err(CodecError::ResourceLimit(limit)) = ActiveCarrierRecord::from_state(&ctx, &state)
+        else {
+            panic!("active-carrier ID must refuse below its exact retained size");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "retain Inventor active carrier id");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, id_bytes);
+
+        policy.limits.max_retained_bytes = id_bytes;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ActiveCarrierRecord::from_state(&ctx, &state).expect("exact storage admitted"),
+            ActiveCarrierRecord::NotApplicable { id: id.to_owned() }
+        );
+    }
+
+    #[test]
     fn active_carrier_admission_requires_one_arena_record() {
         let record = ActiveCarrierRecord::NotApplicable {
             id: "inventor:kernel:active-carrier#root".into(),
@@ -2019,16 +2238,106 @@ mod tests {
                 },
             ],
         ] {
+            let record_count = records.len();
             namespace
                 .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
                 .expect("valid wire records");
-            assert!(
+            assert_eq!(
                 ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
                     .expect_err("invalid cardinality")
-                    .to_string()
-                    .contains("active_carrier")
+                    .to_string(),
+                format!(
+                    "native record conversion failed: active_carrier must contain exactly one record; found {record_count}"
+                )
             );
         }
+    }
+
+    #[test]
+    fn active_carrier_typed_read_precedes_cardinality_and_refusal_is_sticky() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::native::NativeConvertError;
+
+        let empty_namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ActiveCarrierRecord::read(&ctx, &empty_namespace)
+                .expect_err("empty cardinality is checked without retained storage")
+                .to_string(),
+            "native record conversion failed: active_carrier must contain exactly one record; found 0"
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+
+        let records = [
+            ActiveCarrierRecord::Unavailable {
+                id: format!("inventor:kernel:active-carrier#{}", "a".repeat(4_096)),
+                detail: "first detail ".repeat(1_024),
+            },
+            ActiveCarrierRecord::Unavailable {
+                id: format!("inventor:kernel:active-carrier#{}", "b".repeat(4_096)),
+                detail: "second detail ".repeat(1_024),
+            },
+        ];
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
+            .expect("two valid carrier wires");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let storage_refusal = match ActiveCarrierRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("typed storage must precede cardinality: {other:?}"),
+        };
+        // An empty typed vector grows to four slots before the first wire copy.
+        assert_eq!(storage_refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(storage_refusal.operation, "load typed native record");
+        assert_eq!(storage_refusal.used, 0);
+        assert_eq!(
+            storage_refusal.additional,
+            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<ActiveCarrierRecord>())
+        );
+        assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
+
+        assert_eq!(ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
+            .expect_err("valid typed records still report their cardinality")
+            .to_string(),
+            "native record conversion failed: active_carrier must contain exactly one record; found 2");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let first_refusal = match ActiveCarrierRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("typed native copy should refuse work: {other:?}"),
+        };
+        assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first_refusal.operation, "select typed native arena");
+        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
+    }
+
+    #[test]
+    fn active_carrier_invalid_first_record_precedes_cardinality() {
+        let records = [
+            serde_json::json!({"id": "inventor:kernel:active-carrier#0", "state": "unavailable"}),
+            serde_json::json!({"id": "inventor:kernel:active-carrier#1", "state": "not_applicable"}),
+        ];
+        let ctx = crate::native::test_ctx();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(&ctx, "active_carrier", &records)
+            .expect("raw carrier records");
+        assert_eq!(ActiveCarrierRecord::read(&ctx, &namespace)
+            .expect_err("the invalid first carrier is checked before cardinality")
+            .to_string(),
+            "native arena active_carrier: native record inventor:kernel:active-carrier#0: unavailable active carrier requires detail");
     }
 
     #[test]
