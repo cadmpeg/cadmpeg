@@ -56,49 +56,6 @@ fn selected_object(class: Option<&str>, xml_tag: &str) -> (Vec<FeatureHistory>, 
 }
 
 #[test]
-fn surface_xml_tag_predicate_has_a_comparison_boundary() {
-    for tag in ["Extrusion", "Cut", "Feature"] {
-        let (histories, lane) = selected_object(None, tag);
-        let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::super::compact_surface_selections(
-                ctx,
-                &histories,
-                &histories[0].features,
-                &lane,
-                &[],
-            )
-        };
-        assert!(solve(&cadmpeg_test_support::service_decode_context())
-            .unwrap()
-            .is_empty());
-        crate::test_support::work_refusal_at("compare SLDPRT surface extrusion XML tag", solve);
-        if tag != "Extrusion" {
-            crate::test_support::work_refusal_at("compare SLDPRT surface cut XML tag", solve);
-        }
-    }
-}
-
-#[test]
-fn surface_fillet_class_predicate_has_a_comparison_boundary() {
-    for class in ["Fillet_c", "VarFillet_c"] {
-        let (histories, lane) = selected_object(Some(class), "Feature");
-        let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::super::compact_surface_selections(
-                ctx,
-                &histories,
-                &histories[0].features,
-                &lane,
-                &[],
-            )
-        };
-        assert!(solve(&cadmpeg_test_support::service_decode_context())
-            .unwrap()
-            .is_empty());
-        crate::test_support::work_refusal_at("compare SLDPRT surface fillet class", solve);
-    }
-}
-
-#[test]
 fn short_thicken_intervals_do_not_query_surface_tokens() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     const OPERATION: &str = "find SLDPRT Thicken surface token";

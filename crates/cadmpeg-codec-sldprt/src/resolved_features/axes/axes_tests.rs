@@ -1432,12 +1432,14 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         .ids(&ctx, &mut endpoint_ids_storage, owned, true)
         .unwrap();
 
+    let mut points = None;
     assert_eq!(
         profile_roster_origin_axis_endpoints(
             &ctx,
-            "profile-native",
+            owned,
             &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
             &curve_endpoints,
+            &mut points
         )
         .expect("origin axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 0.01]])
@@ -1445,9 +1447,10 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
     assert_eq!(
         profile_roster_principal_axis_endpoints(
             &ctx,
-            "profile-native",
+            owned,
             &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
             &curve_endpoints,
+            &mut points
         )
         .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
@@ -1460,9 +1463,10 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         let ids = queries.ids(ctx, &mut storage, owned, true)?;
         profile_roster_principal_axis_endpoints(
             ctx,
-            "profile-native",
+            owned,
             &super::LaneMarkerIndex::new(ctx, markers.iter().copied())?,
             &ids,
+            &mut None,
         )
     });
     assert!(super::profile_roster_implicit_axis_endpoints(
