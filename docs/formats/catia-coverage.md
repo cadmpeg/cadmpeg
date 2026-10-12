@@ -922,3 +922,27 @@ Terminals `01/02/21/25` occur `32/3/93/3` times. All four reference lanes use
 the one-byte backward-distance or owned-child forms. These are source-byte
 grammar checks; the four operand roles remain unassigned, and the existing
 five-reference parser abstains on this production.
+
+## Object-stream edge terminals
+
+The existing B5 parser accepts all eight observed terminal forms and requires
+payload exhaustion. Its regression checks that changing only the terminal
+preserves the edge identity, curve reference, ordered vertices, and ordered
+parameter incidences.
+
+An independent complete-payload screen over all 79 CATParts finds 130,884 B5
+edge layouts. The counts for `01/02/21/22/25/26/29/2a` are
+`4,921/455/114,559/7,454/998/1/1,465/1,031`. This is a structural byte census,
+not a count of transferred neutral edges. All 30 groups with identical ordered
+reference tuples and different terminals use `21` and `29`. Each frame in
+those groups, and the single `26` frame at physical offset 840,956 in
+ssd-crucial-mx500-carter-inf, has unique descriptor ownership and exact logical
+source closure. The rare frame selects edge object 4427636 and references
+`(4427641,4427634,4427627,4427642,4427643)`.
+Face 4427632 names loop 4427633, whose first edge is this `26` edge. The
+loop's four signed edge occurrences close through exact vertex identities;
+the other terminals are `21`, `22`, and `21`.
+
+These checks establish the wire grammar and retained identity separation.
+They do not establish the terminal's meaning or a rule for choosing a new
+terminal from geometry.

@@ -780,6 +780,28 @@ Its first control can differ from `0d`, and its remaining controls can differ fr
 - An `a8 03 34` surface with an unresolved pole data remains an identity-bearing surface node. Its object id participates in face, loop, and pcurve references and its payload is retained byte-exactly; unresolved carrier geometry does not erase those topology references.
 - `b5 03 27/28/29/2a/2b/2d` analytic surfaces: plane origin+unit chart basis, cylinder origin+unit frame+radius+angular gauge, cone reference origin+orthonormal frame+radial-plane angle+slant chart, sphere center+radius-scaled frame, torus center+orthonormal frame+major/minor radii, and revolution profile reference+axis origin+direction+angular gauge. The profile reference uses the same positional-byte token forms as loop members; the axis fields immediately follow its variable-width token.
 
+The B5 edge terminal has the following one-byte allocation-reference
+decomposition. Preserve both its value and its addressing form; equal values
+in different forms have distinct wire encodings. The terminal exhausts the
+payload after the five object references.
+
+| Terminal | Value | Form |
+| --- | ---: | --- |
+| `01` | 0 | backward distance |
+| `02` | 0 | selector2 |
+| `21` | 8 | backward distance |
+| `22` | 8 | selector2 |
+| `25` | 9 | backward distance |
+| `26` | 9 | selector2 |
+| `29` | 10 | backward distance |
+| `2a` | 10 | selector2 |
+
+Distinct edge objects can have identical ordered curve, vertex, and parameter
+references with different terminals. In ssd-crucial-mx500-carter-inf, edge
+objects 4425557, 4469071, and 4527226 all reference
+`(4425502,3978457,3978459,4425503,4425504)`; their terminals are `21`, `29`, and
+`29`, respectively. Keep their object identities distinct.
+
 For `b5 03 0e`, the 73-byte payload is `80 point:3f64le direction:3f64le one:f64le parameter_range:2f64le`. The direction is unit length, the fixed scalar is exactly `1`, and the parameter interval is strictly increasing. The chart is `P(U)=point+U·direction`.
 
 For `b5 03 0f`, the 113-byte payload is `80 center:3f64le direction_x:3f64le direction_y:3f64le radius:f64le parameter_range:2f64le one:f64le chart_origin:f64le`. The directions are orthogonal unit vectors, the radius is positive, and `one=1`. Dividing the active parameter interval and `chart_origin` by the radius produces a strictly increasing angular interval inside a centered full-turn domain beginning at `chart_origin/radius`; the active interval spans at most `2π`. The arc-length chart is `P(U)=center+radius·(cos(U/radius)·direction_x+sin(U/radius)·direction_y)`.

@@ -236,10 +236,12 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
     let mut standard = record;
     for terminal_control in [0x01, 0x02, 0x21, 0x22, 0x25, 0x26, 0x29, 0x2a] {
         *standard.payload.last_mut().expect("tail") = terminal_control;
-        assert_eq!(
-            parse_edge(&standard).map(|edge| edge.terminal_control.as_byte()),
-            Some(terminal_control)
-        );
+        let edge = parse_edge(&standard).expect("complete edge under each terminal");
+        assert_eq!(edge.object_id, 17);
+        assert_eq!(edge.support, 18);
+        assert_eq!(edge.vertices, [15, 21]);
+        assert_eq!(edge.parameter_incidences, [19, 20]);
+        assert_eq!(edge.terminal_control.as_byte(), terminal_control);
     }
     standard.payload.pop();
     assert!(parse_edge(&standard).is_none());
