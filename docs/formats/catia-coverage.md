@@ -1314,3 +1314,46 @@ separates surface-relative limits from Cartesian bounding boxes, and the
 defines boxes for limited parts of surfaces. That API distinction supports
 the Cartesian envelope interpretation; it does not identify a serialized
 carrier or prove which API method produced the cache.
+
+Independent source parsing verifies 765 ordinary fixed-owner/node joins in
+the 78 checked documents. Every node is immediately followed by its owner,
+every target's checked successor equals the ninth owner identity, and every
+terminal satisfies the admitted grammar. None of those targets or successors
+equals a standard carrier tag. Only 93 targets fall within the file's
+standard face-ordinal range; 97 target instances repeat. The 18 files with
+both standard faces and fixed owners have unequal population counts.
+The checked documents contain 12,897 faces in the standard namespaces across
+68 files; this count includes every emitted standard population.
+
+The spring and eyebolt four-edge preludes reproduce their local simple
+cycles and ninth-identity-plus-ten relations. Their eight curve references
+have no numeric match among standard edge-support tags. Two other owner/tag
+equalities occur in eyebolt owner 67,398: slots zero and four equal carrier
+tags 1,389 and 1,393, whose cylinder geometries are identical. Those equalities
+do not select an owner face ordinal.
+
+A separate 79-file byte sweep finds 14 complete eight-reference class-37
+constructions: ten in spray bottle and four in NIST CTC02. Nine have controls
+`11 09 03 03`, and five have `11 09 05 05`. Each has eight references, eight
+zero bytes, terminal `01 05`, and a backward-distance-one first reference.
+Logical-source reconstruction verifies a preceding rolling-ball carrier for
+all 14, including a carrier split across physical extents. Their 99 stored
+sites satisfy the two-radius and rolling-angle relations independently.
+The ten all-width tails have the observed pcurve-pair difference two and
+three-reference pattern `[base+3,base,base+2]`; the four backward-addressed
+tails remain in their own addressing form. One construction closes the
+current fixed-owner chart relation. The other complete payloads do not imply
+fixed-nine recognition or a new neutral construction.
+
+Fresh sibling STEP documents for spring and eyebolt pass model checks.
+Independent vertex, edge-endpoint, and face-loop multiset comparisons match
+their native topology at `0.002` mm. Spring has 84 faces, 166 edges,
+332 coedges, and 84 vertices; eyebolt has 134 faces, 268 edges, 536 coedges,
+and 136 vertices. Joint weighted face-adjacency refinement gives 134 unique
+eyebolt face matches and 42 two-face spring classes. Exact adjacency
+isomorphisms verify both graphs; the spring mapping remains non-unique.
+
+The [CGM generic-fillet description](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/Surfaces.htm)
+defines center and two limiting loci. It does not define the bridge's wire
+order. The hand bridge's last three references lack retained alias targets,
+so their proposed locus labels remain unassigned under SN-18.

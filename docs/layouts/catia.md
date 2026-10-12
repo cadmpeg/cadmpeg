@@ -980,6 +980,16 @@ Parsed by:
 | 46 | 8 | `y_bounds` | `f32[2]` | little | spec | \| `+46` \| `f32le[2]` \| owner Cartesian Y bounds \| |
 | 54 | 8 | `z_bounds` | `f32[2]` | little | spec | \| `+54` \| `f32le[2]` \| owner Cartesian Z bounds \| |
 
+## `eight_reference_construction_tail`
+
+Spec §6.4 · layout: byte offsets · size: 14 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `controls` | `bytes[4]` | little | spec | \| `+0` \| `bytes[4]` \| construction controls `11 09 03 03` or `11 09 05 05` \| |
+| 4 | 8 | `zeros` | `bytes[8]` | little | spec | \| `+4` \| `bytes[8]` \| construction zero lane \| |
+| 12 | 2 | `terminal` | `bytes[2]` | little | spec | \| `+12` \| `bytes[2]` \| construction terminal `01 05` \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

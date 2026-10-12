@@ -264,15 +264,17 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Note.** The all-compact face-boundary predicate remains separate. Tagged alternating and width-coded envelopes do not bind a standard face by its AABB or by source position.
 
-### SN-18. Class-`0x62` owner-to-face binding
+### SN-18. Eight-reference construction identities
 
-**Question.** Which field binds a fixed `b2`, `b3`, or `b4 03 62` owner packet to its face record?
+**Question.** Which objects do the last three references of an eight-reference class-`37` construction select, and which source relation proves their geometric roles?
 
-**Known.** A complete class-`0x5f` node immediately preceding a fixed-nine owner binds to that owner when its target's checked successor is the ninth owner identity. Terminal `03 05` admits every fixed-nine grammar. Terminal `03 03` admits the all-compact grammar only. The node target and owner identities are allocation-local. Every compact fixed-nine identity retains its wire addressing form. Backward-distance identities resolve within the packet's contiguous local class-`0x5d`/`0x5e` allocation sequence; the exact class-`0x65` separator payload `81 03 05 0d` starts a new allocation sequence, and raw weak identities do not enter that walk. The source-closed carrier/bridge/four-side/owner production binds the owner packet to one carrier chart and proves its complete parameter rectangle. The five-reference class-`0x37` bridge is a supported-surface construction that names the carrier surface, two support surfaces, two support pcurves, six controls, and construction radius. A width-coded support value selects a unique outer alias row by persistent tag and inherits that row's canonical surface tag; other addressing forms remain allocation-local. The eight-reference A-family bridge remains structurally retained. This relation does not assign a standard face ordinal.
+**Known.** `catia.md` §6.4 "An eight-reference B-family" defines the complete reference program, both control tuples, zero lane, terminal, and source-local rolling-ball carrier relation. Ordinary local owner/node joins use the checked successor relation; closed four-edge preludes use the separate ninth-identity-plus-ten relation. Neither local relation supplies a standard face ordinal. Standard face order belongs to the independent surface roster, whose complete rows contain no owner or node identity field.
 
-**Need.** We must assign the eight-reference bridge and identify the allocation-group relation that maps the supported-surface identities or bound node target to a standard face ordinal without comparing local identities across groups.
+**Need.** Resolve the referenced objects in their actual allocation or factory namespace and verify their geometry against the rolling-ball center and limiting loci before assigning those roles. Preserve every unassigned reference and addressing form.
 
-**Note.** The all-compact model-space box can nominate one geometric face, but this geometric witness does not define the source identity join. A count-framed `03 62` packet has a variable allocation-reference lane and an opaque nonempty tail; it is not a fixed-nine packet with the admitted numeric rectangle and model-space bounds. Its adjacent `03 5f` successor relation names the counted owner packet only. It does not join a standalone `a5 03 34` frame or assign a standard face ordinal. Control-net containment and boundary coincidence remain geometric candidates, not allocation identity.
+**Conflict.** The public generic-fillet description lists center points, first limit, and second limit. The serialized jet stores first limit, second limit, and center instead. Public constructor descriptions therefore do not establish bridge wire order. In the spray-bottle hand record, references 781, 778, and 780 have no retained outer alias-row target; the `[base+3,base,base+2]` numeric pattern alone supplies no locus identity.
+
+**Note.** Independent standard-versus-STEP topology verifies all 134 eyebolt faces uniquely by joint adjacency refinement. The spring graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
 
 ### SN-20. Class-`0x18` parameter-point selectors
 

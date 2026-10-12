@@ -2682,3 +2682,31 @@ offset = 54
 type = "f32[2]"
 source = "spec"
 anchor = "| `+54` | `f32le[2]` | owner Cartesian Z bounds |"
+
+[[record]]
+name = "eight_reference_construction_tail"
+kind = "byte"
+section = "6.4"
+anchor = "An eight-reference B-family class-`37` construction payload"
+size = 14
+
+[[record.field]]
+name = "controls"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "| `+0` | `bytes[4]` | construction controls `11 09 03 03` or `11 09 05 05` |"
+
+[[record.field]]
+name = "zeros"
+offset = 4
+type = "bytes[8]"
+source = "spec"
+anchor = "| `+4` | `bytes[8]` | construction zero lane |"
+
+[[record.field]]
+name = "terminal"
+offset = 12
+type = "bytes[2]"
+source = "spec"
+anchor = "| `+12` | `bytes[2]` | construction terminal `01 05` |"
