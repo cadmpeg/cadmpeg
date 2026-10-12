@@ -73,23 +73,30 @@ pub(super) fn decode<'ctx>(
     ir: &mut CadIr,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<
-    StageOutcome<(
+    (
+        StageOutcome<(
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+        )>,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    )>,
+    ),
     CodecError,
 > {
     let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP stage report buffers")?);
     let mut claim_storage = ctx.reserve_scoped(0, "STEP stage claim storage")?;
+    let mut report_text = ctx.reserve_scoped(0, "STEP PMI report text storage")?;
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut measure_cache = MeasureCache::new(ctx)?;
     if !exchange.has_entity_matching(ctx, is_pmi_entity_name)? {
-        return Ok(StageOutcome {
-            value: (claim_storage, slot_storage.into_inner()),
-            claims: BTreeSet::new(),
-            losses: Vec::new(),
-            notes: Vec::new(),
-        });
+        return Ok((
+            StageOutcome {
+                value: (claim_storage, slot_storage.into_inner()),
+                claims: BTreeSet::new(),
+                losses: Vec::new(),
+                notes: Vec::new(),
+            },
+            report_text,
+        ));
     }
     let mut base_aspects = BTreeSet::new();
     for entity in exchange.entities_any(ctx, &["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])? {
@@ -651,9 +658,13 @@ pub(super) fn decode<'ctx>(
                     ctx.push_scoped_vec(
                         &mut slot_storage.borrow_mut(),
                         &mut losses,
-                        StepLossCode::DecodeWarning.note(format!(
+                        StepLossCode::DecodeWarning.note(ctx.format_scoped_text(
+                            &mut report_text,
+                            format_args!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )),
+                    ),
+                            "STEP PMI diagnostic text",
+                        )?),
                         "step_pmi_losses",
                     )?;
                 }
@@ -661,9 +672,13 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
-                        "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
-                    )),
+                    StepLossCode::DecodeWarning.note(ctx.format_scoped_text(
+                        &mut report_text,
+                        format_args!(
+                            "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
+                        ),
+                        "STEP PMI diagnostic text",
+                    )?),
                     "step_pmi_losses",
                 )?;
             }
@@ -686,9 +701,13 @@ pub(super) fn decode<'ctx>(
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                    StepLossCode::DecodeWarning.note(ctx.format_scoped_text(
+                        &mut report_text,
+                        format_args!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )),
+                    ),
+                        "STEP PMI diagnostic text",
+                    )?),
                     "step_pmi_losses",
                 )?;
             }
@@ -697,9 +716,13 @@ pub(super) fn decode<'ctx>(
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
-                    "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
-                )),
+                StepLossCode::DecodeWarning.note(ctx.format_scoped_text(
+                    &mut report_text,
+                    format_args!(
+                        "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
+                    ),
+                    "STEP PMI diagnostic text",
+                )?),
                 "step_pmi_losses",
             )?;
         }
@@ -1026,9 +1049,9 @@ pub(super) fn decode<'ctx>(
             PlacementSelection::Unique(placement) => Some(placement),
             PlacementSelection::Ambiguous(count) => {
                 ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses, StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
-                    format!(
+                    ctx.format_retained(format_args!(
                         "presentation annotation #{id} has {count} reachable placement carriers with no unique placement"
-                    ),
+                    ), "STEP PMI placement ambiguity warning")?,
                 ), "step_pmi_losses")?;
                 None
             }
@@ -1209,12 +1232,15 @@ pub(super) fn decode<'ctx>(
         (&mut typed, &mut claim_storage),
         ctx,
     )?;
-    Ok(StageOutcome {
-        value: (claim_storage, slot_storage.into_inner()),
-        claims: typed,
-        losses,
-        notes: Vec::new(),
-    })
+    Ok((
+        StageOutcome {
+            value: (claim_storage, slot_storage.into_inner()),
+            claims: typed,
+            losses,
+            notes: Vec::new(),
+        },
+        report_text,
+    ))
 }
 
 fn set_dimension_tolerance(
@@ -1398,6 +1424,10 @@ fn resolve_geometric_item_usages(
         ctx.reserve_scoped(0, "STEP resolve_geometric_item_usages scratch")?;
     let mut target_storage = ctx.reserve_scoped(0, "STEP PMI target indices")?;
     let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
+    // A completed definition/item query has fixed targets and claim status.
+    // Keep the first result inline so one usage needs no memo allocation.
+    let mut first_usage = None;
+    let mut usage_results = BTreeMap::new();
 
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     {
@@ -1519,126 +1549,174 @@ fn resolve_geometric_item_usages(
             else {
                 continue;
             };
-            let mut annotation_storage = ctx.reserve_scoped(0, "STEP usage annotation scratch")?;
-            let mut annotation_indices = BTreeSet::new();
-            if let Some(items) = ctx.get_btree_map(
-                &aspect_annotations,
-                &definition,
-                "STEP pmi aspect_annotations get",
-            )? {
-                {
-                    let mut visited_items = items.iter();
-                    for _ in 0..visited_items.len() {
-                        let &index = ctx
-                            .next_charged(&mut visited_items, "STEP optional collection traversal")?
-                            .ok_or_else(|| {
-                                CodecError::malformed("STEP PMI traversal source ended early")
-                            })?;
-                        annotation_storage.with_storage(|| {
-                            ctx.insert_btree_set(
-                                &mut annotation_indices,
-                                index,
-                                "step_pmi_usage_annotation_indices",
-                            )
-                        })?;
-                    }
-                }
-            }
-            if let Some(aspects) = ctx.get_btree_map(
-                &relationship_aspects,
-                &definition,
-                "STEP pmi relationship_aspects get",
-            )? {
-                {
-                    let mut visited_items = aspects.iter();
-                    for _ in 0..visited_items.len() {
-                        let aspect = ctx
-                            .next_charged(&mut visited_items, "STEP pmi aspects traversal")?
-                            .ok_or_else(|| {
-                                CodecError::malformed("STEP PMI traversal source ended early")
-                            })?;
-                        if let Some(items) = ctx.get_btree_map(
-                            &aspect_annotations,
-                            aspect,
-                            "STEP pmi aspect_annotations get",
-                        )? {
-                            {
-                                let mut visited_items = items.iter();
-                                for _ in 0..visited_items.len() {
-                                    let &index = ctx
-                                        .next_charged(
-                                            &mut visited_items,
-                                            "STEP optional collection traversal",
-                                        )?
-                                        .ok_or_else(|| {
-                                            CodecError::malformed(
-                                                "STEP PMI traversal source ended early",
-                                            )
-                                        })?;
-                                    annotation_storage.with_storage(|| {
-                                        ctx.insert_btree_set(
-                                            &mut annotation_indices,
-                                            index,
-                                            "step_pmi_usage_annotation_indices",
+            let pair = (definition, identified_item);
+            let cached = match first_usage {
+                Some((previous, claimed)) if previous == pair => Some(claimed),
+                _ => ctx
+                    .get_btree_map(&usage_results, &pair, "STEP geometric usage result lookup")?
+                    .copied(),
+            };
+            let claimed = if let Some(claimed) = cached {
+                claimed
+            } else {
+                let claimed = (|| -> Result<bool, CodecError> {
+                    let mut annotation_storage =
+                        ctx.reserve_scoped(0, "STEP usage annotation scratch")?;
+                    let mut annotation_indices = BTreeSet::new();
+                    if let Some(items) = ctx.get_btree_map(
+                        &aspect_annotations,
+                        &definition,
+                        "STEP pmi aspect_annotations get",
+                    )? {
+                        {
+                            let mut visited_items = items.iter();
+                            for _ in 0..visited_items.len() {
+                                let &index = ctx
+                                    .next_charged(
+                                        &mut visited_items,
+                                        "STEP optional collection traversal",
+                                    )?
+                                    .ok_or_else(|| {
+                                        CodecError::malformed(
+                                            "STEP PMI traversal source ended early",
                                         )
                                     })?;
+                                annotation_storage.with_storage(|| {
+                                    ctx.insert_btree_set(
+                                        &mut annotation_indices,
+                                        index,
+                                        "step_pmi_usage_annotation_indices",
+                                    )
+                                })?;
+                            }
+                        }
+                    }
+                    if let Some(aspects) = ctx.get_btree_map(
+                        &relationship_aspects,
+                        &definition,
+                        "STEP pmi relationship_aspects get",
+                    )? {
+                        {
+                            let mut visited_items = aspects.iter();
+                            for _ in 0..visited_items.len() {
+                                let aspect = ctx
+                                    .next_charged(&mut visited_items, "STEP pmi aspects traversal")?
+                                    .ok_or_else(|| {
+                                        CodecError::malformed(
+                                            "STEP PMI traversal source ended early",
+                                        )
+                                    })?;
+                                if let Some(items) = ctx.get_btree_map(
+                                    &aspect_annotations,
+                                    aspect,
+                                    "STEP pmi aspect_annotations get",
+                                )? {
+                                    {
+                                        let mut visited_items = items.iter();
+                                        for _ in 0..visited_items.len() {
+                                            let &index = ctx
+                                                .next_charged(
+                                                    &mut visited_items,
+                                                    "STEP optional collection traversal",
+                                                )?
+                                                .ok_or_else(|| {
+                                                    CodecError::malformed(
+                                                        "STEP PMI traversal source ended early",
+                                                    )
+                                                })?;
+                                            annotation_storage.with_storage(|| {
+                                                ctx.insert_btree_set(
+                                                    &mut annotation_indices,
+                                                    index,
+                                                    "step_pmi_usage_annotation_indices",
+                                                )
+                                            })?;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            }
-            if annotation_indices.is_empty() {
-                continue;
-            }
-            let (targets_buffer, _target_storage) = ctx
-                .with_scoped_storage("STEP geometric usage target scratch", || {
-                    topology_targets(identified_item, topology, geometry_sources, ctx)
-                })?;
-            let targets = targets_buffer;
-            if targets.is_empty() {
-                continue;
-            }
-            {
-                let mut visited_items = annotation_indices.into_iter();
-                for _ in 0..visited_items.len() {
-                    let annotation_index = ctx
-                        .next_charged(&mut visited_items, "STEP pmi annotation_indices traversal")?
-                        .ok_or_else(|| {
-                            CodecError::malformed("STEP PMI traversal source ended early")
-                        })?;
-                    let annotation = &mut ir.model.pmi[annotation_index.get()];
-                    let mut pmi_source = targets[..].iter();
-                    for _ in 0..pmi_source.len() {
-                        let target = ctx
-                            .next_charged(
-                                &mut pmi_source,
-                                "STEP resolve geometric item usages traversal",
-                            )?
-                            .ok_or_else(|| {
-                                CodecError::malformed("STEP PMI traversal source ended early")
-                            })?;
-                        let seen = target_index(
-                            &mut target_indices,
-                            &mut target_storage,
-                            annotation_index.get(),
-                            &annotation.targets,
-                            ctx,
-                        )?;
-                        push_target(
-                            (seen, &mut target_storage),
-                            &mut annotation.targets,
-                            target_key(target),
-                            || copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity"),
-                            ctx,
-                            "step_pmi_geometric_usage_targets",
-                        )?;
+                    if annotation_indices.is_empty() {
+                        return Ok(false);
                     }
+                    let (targets_buffer, _target_storage) = ctx
+                        .with_scoped_storage("STEP geometric usage target scratch", || {
+                            topology_targets(identified_item, topology, geometry_sources, ctx)
+                        })?;
+                    let targets = targets_buffer;
+                    if targets.is_empty() {
+                        return Ok(false);
+                    }
+                    {
+                        let mut visited_items = annotation_indices.into_iter();
+                        for _ in 0..visited_items.len() {
+                            let annotation_index = ctx
+                                .next_charged(
+                                    &mut visited_items,
+                                    "STEP pmi annotation_indices traversal",
+                                )?
+                                .ok_or_else(|| {
+                                    CodecError::malformed("STEP PMI traversal source ended early")
+                                })?;
+                            let annotation = &mut ir.model.pmi[annotation_index.get()];
+                            let mut pmi_source = targets[..].iter();
+                            for _ in 0..pmi_source.len() {
+                                let target = ctx
+                                    .next_charged(
+                                        &mut pmi_source,
+                                        "STEP resolve geometric item usages traversal",
+                                    )?
+                                    .ok_or_else(|| {
+                                        CodecError::malformed(
+                                            "STEP PMI traversal source ended early",
+                                        )
+                                    })?;
+                                let seen = target_index(
+                                    &mut target_indices,
+                                    &mut target_storage,
+                                    annotation_index.get(),
+                                    &annotation.targets,
+                                    ctx,
+                                )?;
+                                push_target(
+                                    (seen, &mut target_storage),
+                                    &mut annotation.targets,
+                                    target_key(target),
+                                    || {
+                                        copy_pmi_target(
+                                            target,
+                                            ctx,
+                                            "step_pmi_geometric_usage_identity",
+                                        )
+                                    },
+                                    ctx,
+                                    "step_pmi_geometric_usage_targets",
+                                )?;
+                            }
+                        }
+                    }
+                    drop(annotation_storage);
+                    Ok(true)
+                })()?;
+                if first_usage.is_none() {
+                    first_usage = Some((pair, claimed));
+                } else {
+                    scratch_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut usage_results,
+                            pair,
+                            claimed,
+                            "STEP geometric usage results",
+                        )
+                    })?;
                 }
+                claimed
+            };
+            if claimed {
+                claim_storage
+                    .with_storage(|| ctx.insert_btree_set(typed, id, "step_pmi_typed_claims"))?;
             }
-            drop(annotation_storage);
-            claim_storage
-                .with_storage(|| ctx.insert_btree_set(typed, id, "step_pmi_typed_claims"))?;
         }
     }
     Ok(())
@@ -2583,7 +2661,29 @@ fn copy_pmi_target(
 }
 
 fn datum_target_form(value: &str, ctx: &DecodeContext<'_>) -> Result<DatumTargetForm, CodecError> {
-    let form = value.trim();
+    let mut boundary = value.chars();
+    let mut form = value;
+    while !boundary.as_str().is_empty() {
+        let character = ctx
+            .next_charged(&mut boundary, "STEP datum target form boundary scan")?
+            .expect("nonempty leading boundary");
+        if !character.is_whitespace() {
+            break;
+        }
+        form = boundary.as_str();
+    }
+    while !boundary.as_str().is_empty() {
+        let character = ctx
+            .next_charged(
+                &mut boundary.by_ref().rev(),
+                "STEP datum target form boundary scan",
+            )?
+            .expect("nonempty trailing boundary");
+        if !character.is_whitespace() {
+            break;
+        }
+        form = &form[..form.len() - character.len_utf8()];
+    }
     if form.eq_ignore_ascii_case("point") {
         Ok(DatumTargetForm::Point)
     } else if form.eq_ignore_ascii_case("line") {
@@ -3032,15 +3132,15 @@ fn characteristic_values<'ctx>(
             NominalSelection::Absent => None,
             NominalSelection::Unique(value) => Some(value),
             NominalSelection::NamedAmbiguous(count) => {
-                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DimensionalNominalAmbiguous.note(format!(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DimensionalNominalAmbiguous.note(ctx.format_retained(format_args!(
                     "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {count} nominal value measures; the nominal is ambiguous"
-                )), "step_pmi_losses")?;
+                ), "STEP PMI diagnostic text")?), "step_pmi_losses")?;
                 None
             }
             NominalSelection::UnnamedAmbiguous(count) => {
-                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(ctx.format_retained(format_args!(
                     "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {count} unnamed measure values; the nominal is ambiguous"
-                )), "step_pmi_losses")?;
+                ), "STEP PMI diagnostic text")?), "step_pmi_losses")?;
                 None
             }
         };
@@ -3344,6 +3444,7 @@ struct MeasureWalk<'ctx> {
     blocked: [u64; MEASURE_DEPTH_WORDS],
     opaque: bool,
     values: HashMap<(u64, usize), SharedMeasureValue>,
+    unit_scales: BTreeMap<(u64, bool), Option<f64>>,
     selected: Vec<u64>,
     storage: ScopedReservation<'ctx>,
 }
@@ -3361,9 +3462,48 @@ impl<'ctx> MeasureWalk<'ctx> {
             blocked: [0; MEASURE_DEPTH_WORDS],
             opaque: false,
             values: HashMap::new(),
+            unit_scales: BTreeMap::new(),
             selected: Vec::new(),
             storage: ctx.reserve_scoped(0, "STEP measure completion scratch")?,
         })
+    }
+
+    // Explicit unit queries start at depth zero with an empty active path.
+    // Their result is fixed by the unit identity and quantity.
+    fn unit_scale(
+        &mut self,
+        id: u64,
+        angle: bool,
+        exchange: &Exchange,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<f64>, CodecError> {
+        let key = (id, angle);
+        if let Some(&scale) = ctx.get_btree_map(
+            &self.unit_scales,
+            &key,
+            "STEP PMI explicit unit scale lookup",
+        )? {
+            return Ok(scale);
+        }
+        let (scale, unit_storage) =
+            ctx.with_scoped_storage("STEP measure unit resolver scratch", || {
+                if angle {
+                    super::geometry::unit_scale_radians(id, exchange, &mut BTreeSet::new(), ctx)
+                } else {
+                    super::geometry::unit_scale_mm(id, exchange, &mut BTreeSet::new(), ctx)
+                }
+            })?;
+        drop(unit_storage);
+        let scale = scale.map(cadmpeg_ir::scalar::PositiveReal::get);
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut self.unit_scales,
+                key,
+                scale,
+                "STEP PMI explicit unit scales",
+            )
+        })?;
+        Ok(scale)
     }
 
     fn merge_blocked(&mut self, blocked: [u64; MEASURE_DEPTH_WORDS]) {
@@ -3584,55 +3724,29 @@ fn measure_inner(
             let scale = match quantity {
                 PmiQuantity::Length => {
                     let resolved = match unit {
-                        Some(unit) => {
-                            let (scale, _unit_storage) = ctx.with_scoped_storage(
-                                "STEP measure unit resolver scratch",
-                                || {
-                                    super::geometry::unit_scale_mm(
-                                        unit,
-                                        exchange,
-                                        &mut BTreeSet::new(),
-                                        ctx,
-                                    )
-                                },
-                            )?;
-                            scale
-                        }
+                        Some(unit) => walk.unit_scale(unit, false, exchange, ctx)?,
                         None => None,
                     };
                     if let Some(scale) = resolved {
-                        scale.get()
+                        scale
                     } else {
-                        ctx.push_scoped_vec(&mut measurements.losses.1.borrow_mut(), measurements.losses.0, StepLossCode::PmiLengthUnitUnresolved.note(format!(
+                        ctx.push_scoped_vec(&mut measurements.losses.1.borrow_mut(), measurements.losses.0, StepLossCode::PmiLengthUnitUnresolved.note(ctx.format_retained(format_args!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
-                            )), "step_pmi_losses")?;
+                            ), "STEP PMI measure unit warning")?), "step_pmi_losses")?;
                         measurements.length_scale
                     }
                 }
                 PmiQuantity::Angle => {
                     let resolved = match unit {
-                        Some(unit) => {
-                            let (scale, _unit_storage) = ctx.with_scoped_storage(
-                                "STEP measure unit resolver scratch",
-                                || {
-                                    super::geometry::unit_scale_radians(
-                                        unit,
-                                        exchange,
-                                        &mut BTreeSet::new(),
-                                        ctx,
-                                    )
-                                },
-                            )?;
-                            scale
-                        }
+                        Some(unit) => walk.unit_scale(unit, true, exchange, ctx)?,
                         None => None,
                     };
                     if let Some(scale) = resolved {
-                        scale.get()
+                        scale
                     } else {
-                        ctx.push_scoped_vec(&mut measurements.losses.1.borrow_mut(), measurements.losses.0, StepLossCode::PmiAngleUnitUnresolved.note(format!(
+                        ctx.push_scoped_vec(&mut measurements.losses.1.borrow_mut(), measurements.losses.0, StepLossCode::PmiAngleUnitUnresolved.note(ctx.format_retained(format_args!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
-                            )), "step_pmi_losses")?;
+                            ), "STEP PMI measure unit warning")?), "step_pmi_losses")?;
                         measurements.angle_scale
                     }
                 }

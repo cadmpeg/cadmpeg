@@ -611,7 +611,12 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
         // Keep that traversal over the shared decoded graph, and cache its
         // selection and diagnostic order for this query.
         let mut selected = SetId::default();
-        if self.graph.height(key.0)?.saturating_add(key.1) >= 256 {
+        let Some(height) = self.graph.height(key.0)?.checked_add(key.1) else {
+            return Err(self
+                .ctx
+                .refuse_codec_limit("STEP annotation query height overflow", 0, 1));
+        };
+        if height >= 256 {
             self.collect_cutoff_summary(
                 key,
                 (visited, visited_storage),

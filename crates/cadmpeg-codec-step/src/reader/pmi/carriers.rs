@@ -399,7 +399,14 @@ impl<'ctx, 'arena> CarrierGraph<'ctx, 'arena> {
                             }
                         }
                     }
-                    span = span.saturating_add(step);
+                    let Some(next_span) = span.checked_add(step) else {
+                        return Err(ctx.refuse_codec_limit(
+                            "STEP carrier component span overflow",
+                            0,
+                            1,
+                        ));
+                    };
+                    span = next_span;
                     member = node.previous;
                     if key == id {
                         break;
@@ -409,7 +416,9 @@ impl<'ctx, 'arena> CarrierGraph<'ctx, 'arena> {
                 for (target, accumulated) in summary.iter_mut().zip(accumulated) {
                     *target = accumulated.finish(&mut self.sets)?;
                 }
-                let height = span.saturating_add(suffix);
+                let Some(height) = span.checked_add(suffix) else {
+                    return Err(ctx.refuse_codec_limit("STEP carrier graph height overflow", 0, 1));
+                };
                 let mut member = head;
                 while let Some(key) = member {
                     ctx.charge_work(1, "STEP carrier component summary installation")?;
@@ -476,7 +485,10 @@ impl<'ctx, 'arena> CarrierGraph<'ctx, 'arena> {
             if let Some(&(child, weight)) = self.children(*id)?.get(*next) {
                 ctx.charge_work(1, "STEP bounded carrier edge traversal")?;
                 *next += 1;
-                let child_remaining = remaining.saturating_sub(weight);
+                let Some(child_remaining) = remaining.checked_sub(weight) else {
+                    // An edge beyond the query depth contributes no carriers.
+                    continue;
+                };
                 if let Some(child) = self.resolved(child, child_remaining)? {
                     for (target, local) in summary.iter_mut().zip(child) {
                         *target = self.sets.union(*target, local)?;
