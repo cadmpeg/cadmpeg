@@ -72,6 +72,7 @@ fn emitted_profile_entity_refuses_work_and_preserves_construction_state() {
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let mut losses = Vec::new();
             let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+            let mut entity_slots = ctx.reserve_scoped(0, "test section entity staging")?;
             transfer_section_entities(
                 ctx,
                 SectionEntityTransfer {
@@ -98,9 +99,11 @@ fn emitted_profile_entity_refuses_work_and_preserves_construction_state() {
                     profiles: Vec::new(),
                     profile_entities: &profile_entities,
                     losses: &mut losses,
+                    entity_slots: &mut entity_slots,
                     source_carriers: &mut source_carriers,
                 },
             )
+            .and_then(|rows| entity_slots.commit_value(rows))
         },
     );
     assert_eq!(entities.len(), 1);
@@ -193,6 +196,7 @@ fn mixed_section_families_keep_family_and_source_order() {
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let mut losses = Vec::new();
             let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+            let mut entity_slots = ctx.reserve_scoped(0, "test section entity staging")?;
             transfer_section_entities(
                 ctx,
                 SectionEntityTransfer {
@@ -218,9 +222,11 @@ fn mixed_section_families_keep_family_and_source_order() {
                     profiles: Vec::new(),
                     profile_entities: &empty_entities,
                     losses: &mut losses,
+                    entity_slots: &mut entity_slots,
                     source_carriers: &mut source_carriers,
                 },
             )
+            .and_then(|rows| entity_slots.commit_value(rows))
         },
     );
     assert_eq!(

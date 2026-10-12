@@ -106,17 +106,6 @@ fn section_row_suffix(
     }
 }
 
-fn push_section_entity(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    entities: &mut Vec<SketchEntity>,
-    entity: SketchEntity,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_entities(1, "admit Creo model sketch_entities")?;
-    ctx.reserve_vec(entities, 1, "creo section entities")?;
-    entities.push(entity);
-    Ok(())
-}
-
 fn placed_source_object(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     object_id: impl std::fmt::Display,
@@ -142,7 +131,7 @@ fn placed_source_object(
 }
 
 /// Source sketch, resolved geometry, profiles, and destinations for entity transfer.
-pub(super) struct SectionEntityTransfer<'a, 'ctx, 'input> {
+pub(super) struct SectionEntityTransfer<'a, 'ctx, 'input, 'stage> {
     pub scan: &'a ContainerScan<'a>,
     pub ir: &'a mut CadIr,
     pub annotations: &'a mut AnnotationBuilder,
@@ -165,12 +154,13 @@ pub(super) struct SectionEntityTransfer<'a, 'ctx, 'input> {
     pub profiles: Vec<Vec<SketchEntityUse>>,
     pub profile_entities: &'a BTreeSet<SketchEntityId>,
     pub losses: &'a mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub entity_slots: &'a mut cadmpeg_core::decode::ScopedReservation<'stage>,
     pub source_carriers: &'a mut crate::decode::source_carriers::SourceUnitCarriers<'ctx, 'input>,
 }
 
 pub(super) fn transfer_section_entities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    transfer: SectionEntityTransfer<'_, '_, '_>,
+    transfer: SectionEntityTransfer<'_, '_, '_, '_>,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
     let SectionEntityTransfer {
         scan,
@@ -196,6 +186,7 @@ pub(super) fn transfer_section_entities(
         profile_entities,
         losses,
         source_carriers,
+        entity_slots,
     } = transfer;
     let mut family_storage = ctx.reserve_scoped(0, "creo section family row storage")?;
     let mut circle_rows = Vec::new();
@@ -366,15 +357,13 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
     for segment in ctx.admit_iter(segments, "creo unresolved section segment rows")? {
         let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
@@ -424,14 +413,12 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
     for segment in ctx.admit_iter(&circle_rows, "creo entities circles segment rows")? {
         let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
@@ -493,14 +480,12 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
 
     for segment in ctx.admit_iter(&point_rows, "creo entities points segment rows")? {
@@ -563,14 +548,12 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, &[segment.point_id])?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
 
     for segment in ctx.admit_iter(
@@ -630,15 +613,13 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
 
     for segment in ctx.admit_iter(
@@ -704,15 +685,13 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
 
     for segment in ctx.admit_iter(
@@ -766,14 +745,12 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let geometry = native_section_geometry(ctx, "bounded_curve")?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
 
     for segment in ctx.admit_iter(&conic_rows, "creo entities conics segment rows")? {
@@ -817,13 +794,11 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let geometry = native_section_geometry(ctx, "conic")?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref)),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(true)
+            .with_native_ref(Some(native_ref));
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
 
     for segment in ctx.admit_iter(&opaque_rows, "creo entities opaque segment rows")? {
@@ -899,14 +874,12 @@ pub(super) fn transfer_section_entities(
         let sketch_copy =
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
-        push_section_entity(
-            ctx,
-            &mut entities,
-            SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref),
-        )?;
+        let entity = SketchEntity::new(id, sketch_copy, geometry)
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
 
     let mut identity_storage = ctx.reserve_scoped(0, "creo saved entity identity index")?;
@@ -1018,13 +991,16 @@ pub(super) fn transfer_section_entities(
             })?;
             generated_saved_geometries.push((external_id, copied));
         }
-        let native_ref = ctx.format_retained(
-            format_args!(
-                "{}:saved_entity#{internal_id}",
-                suffix_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?
-            ),
-            "creo saved entity native reference",
-        )?;
+        let native_ref = {
+            let mut reference_storage =
+                ctx.reserve_scoped(0, "creo saved base reference storage")?;
+            let reference =
+                reference_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?;
+            ctx.format_retained(
+                format_args!("{reference}:saved_entity#{internal_id}"),
+                "creo saved entity native reference",
+            )?
+        };
         let entity = SketchEntity::new(
             entity_storage.commit_value(entity_id)?,
             sketch_id.try_clone_for_decode(ctx, "creo saved entity sketch identity")?,
@@ -1042,7 +1018,8 @@ pub(super) fn transfer_section_entities(
                 "creo saved identity index nodes",
             )
         })?;
-        push_section_entity(ctx, &mut entities, entity)?;
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
         geometry_storage.with_storage(|| {
             ctx.reserve_vec(
                 &mut saved_section_geometries,
@@ -1218,7 +1195,8 @@ pub(super) fn transfer_section_entities(
                 "creo saved identity index nodes",
             )
         })?;
-        push_section_entity(ctx, &mut entities, entity)?;
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
         if let Some(external_id) = external_id.filter(|_| generated) {
             geometry_storage.with_storage(|| {
                 ctx.reserve_vec(
@@ -1274,7 +1252,9 @@ pub(super) fn transfer_section_entities(
                 "creo saved identity index nodes",
             )
         })?;
-        push_section_entity(ctx, &mut entities, candidate_storage.commit_value(entity)?)?;
+        let entity = candidate_storage.commit_value(entity)?;
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
+        ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
         Ok(ControlFlow::Continue(()))
     })?;
     let saved_profiles = saved_profile_chains(ctx, sketch_id, &generated_saved_geometries)?;
@@ -1604,10 +1584,10 @@ mod tests {
     mod set_owner_tests;
     use super::{
         admitted_endpoint_refs, copied_or_native_geometry, native_section_geometry,
-        placed_source_object, push_section_entity, section_row_suffix,
+        placed_source_object, section_row_suffix,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+    use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
 
     fn with_policy<T>(policy: &DecodePolicy, run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
         let arena = DecodeArena::new();
@@ -1821,47 +1801,6 @@ mod tests {
         let admitted = with_policy(&policy, |ctx| placed_source_object(ctx, expected))
             .expect("exact cap admits placed source");
         assert_eq!(admitted.object_id.as_str(), expected);
-    }
-
-    #[test]
-    fn section_entity_row_refuses_before_vector_growth() {
-        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let id = SketchEntityId::mint("creo:featdefs:sketch_entity#5:7").expect("valid entity ID");
-        let geometry = SketchGeometry::native(
-            cadmpeg_core::text::NonBlankString::try_from("line").expect("valid kind"),
-        );
-        let entity = || SketchEntity::new(id.clone(), sketch.clone(), geometry.clone());
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(
-            matches!(with_policy(&policy, |ctx| push_section_entity(ctx, &mut Vec::new(), entity())),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo section entities")
-        );
-        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            None,
-            |cap| {
-                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
-                trial_policy.limits.max_collection_items = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    &[],
-                    &trial_arena,
-                    &trial_policy,
-                )
-                .expect("root");
-                push_section_entity(&ctx, &mut Vec::new(), entity())
-            },
-        );
-        let mut entities = Vec::new();
-        with_policy(&policy, |ctx| {
-            push_section_entity(ctx, &mut entities, entity())
-        })
-        .expect("exact cap admits row");
-        assert_eq!(entities.len(), 1);
-        assert_eq!(entities[0].id(), &id);
     }
 
     #[test]
