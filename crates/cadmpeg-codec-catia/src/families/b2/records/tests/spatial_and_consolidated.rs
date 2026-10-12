@@ -308,6 +308,46 @@ fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
 }
 
 #[test]
+fn consolidated_edge_header_values_preserve_the_same_payload() {
+    let original = b2_edge_node_stream();
+    let expected = crate::families::b2::records::b2_edge_nodes(&original).remove(0);
+    for value in [1u16, 2, 3, 63, 64, 255, 256, 2232, 62701, u16::MAX] {
+        let token = match value {
+            0..=63 => vec![u8::try_from(4 * value + 1).expect("narrow header")],
+            64..=255 => vec![4, u8::try_from(value).expect("middle header")],
+            _ => {
+                let [low, high] = value.to_le_bytes();
+                vec![8, low, high]
+            }
+        };
+        let packed = token
+            .iter()
+            .enumerate()
+            .fold(0u32, |packed, (index, byte)| {
+                packed | (u32::from(*byte) << (8 * index))
+            });
+        let mut bytes = vec![
+            0xb1 + u8::try_from(token.len()).expect("header width"),
+            original[1],
+            original[2],
+            original[3],
+        ];
+        bytes.extend_from_slice(&token);
+        bytes.extend_from_slice(&original[5..]);
+        let [node] = crate::families::b2::records::b2_edge_nodes(&bytes)
+            .try_into()
+            .expect("one edge for every canonical header value");
+        assert_eq!(
+            node,
+            crate::families::b2::records::B2EdgeNode {
+                header_token: packed,
+                ..expected
+            }
+        );
+    }
+}
+
+#[test]
 fn consolidated_edge_nodes_accept_width_coded_terminal_two() {
     let mut bytes = b2_edge_node_stream();
     *bytes.last_mut().expect("edge terminal") = 0x02;

@@ -170,11 +170,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-03. Width-coded class-`0x5e` header token
 
-**Question.** What does the width-coded header token of a `b2`, `b3`, or `b4 03 5e` record select?
+**Question.** What generic object metadata does the compact header integer of a `b2`, `b3`, or `b4 03 5e` record represent?
 
-**Known.** The record framing gives the token width and value.
+**Known.** `catia.md` §6 "Header width and flag are independent" defines the canonical compact integer and its independent retention. The integer does not select an edge payload grammar or supply an object identity. Different values can occupy the same boundary-cycle role. The retained allocation-owner graph does not determine the integer.
 
-**Need.** We must know the selector namespace to interpret and write the edge record.
+**Need.** Establish the metadata meaning through a controlled producer save that measures the exact streamed objects. Do not derive it from partial allocation ownership or assign a link-count meaning from distribution alone.
 
 **Note.** The canonical A5 class-`32` header does not select a rolling-ball variant. Its generic meaning also remains unknown. A controlled producer save that measures the exact streamed object must establish the meaning before a fresh writer can derive the header value.
 

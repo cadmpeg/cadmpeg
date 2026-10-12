@@ -897,3 +897,17 @@ from that relation. Raw tail controls retain their source polarity.
 The frozen `standard_a5_rolling_ball` input lacks a tail and remains a rejection
 witness. `standard_a5_rolling_ball_complete_tail` adds the complete 79-byte
 production. CATIA has 23 frozen inputs and 69 golden files. The golden-file floor is 69.
+
+## Consolidated edge header integers
+
+The existing parser checks canonical compact header widths before it reads the
+five-reference edge payload. The header-value regression covers width
+transitions and the native values 2,232 and 62,701, with every other node field
+unchanged.
+
+An independent byte join verifies 31,420 typed edge frames in 32 of the 76
+checked CATParts. Their 51 logical sources use 105 header values from 1 through
+62,701, with widths 1/2/3 in 31,317/83/20 records. All five reference lanes and
+the complete terminal match the typed native data. Every source repeats header
+values; 29 sources have decreasing values in their sequence. The eyebolt and
+spring four-edge cycles both use `[2,1,1,1]`, with degree two at every endpoint.
