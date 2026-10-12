@@ -1551,7 +1551,6 @@ fn scalar_equality_components(
         })? {
             continue;
         }
-        ctx.charge_work(1, "creo scalar equality components")?;
         let mut component = BTreeSet::new();
         ctx.insert_btree_set(&mut component, seed, "creo section scalar component nodes")?;
         let mut queue_storage = ctx.reserve_scoped(0, "creo scalar pending scratch")?;

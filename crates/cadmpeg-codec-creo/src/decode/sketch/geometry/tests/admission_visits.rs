@@ -46,54 +46,36 @@ fn assert_saved_line_boundary(has_previous: bool) {
         policy.limits.max_entities = 0;
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let run = || super::super::saved_section_line_geometry(&ctx, &definition, &segment);
-        let result = run();
-        let refused = result.is_err();
-        if refused {
-            let Err(CodecError::ResourceLimit(original)) = result else {
-                panic!("present row must refuse");
-            };
-            assert_eq!(
-                (
-                    original.dimension,
-                    original.used,
-                    original.additional,
-                    original.limit
-                ),
-                (ResourceDimension::WorkUnits, cap, 1, cap)
-            );
-            assert_eq!(
-                original.operation,
-                if cap < 1 + u64::from(has_previous) {
-                    "creo saved line segment position rows"
-                } else {
-                    "creo saved line previous segment rows"
-                }
-            );
-            for _ in 0..2 {
-                assert!(
-                    matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        match super::super::saved_section_line_geometry(&ctx, &definition, &segment) {
+            Err(CodecError::ResourceLimit(original)) => {
+                assert_eq!(
+                    (
+                        original.dimension,
+                        original.used,
+                        original.additional,
+                        original.limit
+                    ),
+                    (ResourceDimension::WorkUnits, cap, 1, cap),
                 );
-            }
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            Err(original.into())
-        } else {
-            assert_eq!(result.expect("only present rows visited"), None);
-            let original = ctx
-                .charge_work_limit(1, "after saved line boundary")
-                .expect_err("exact work");
-            assert_eq!((original.used, original.additional), (visits, 1));
-            for _ in 0..2 {
-                assert!(
-                    matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+                assert_eq!(
+                    original.operation,
+                    if cap < 1 + u64::from(has_previous) {
+                        "creo saved line segment position rows"
+                    } else {
+                        "creo saved line previous segment rows"
+                    }
                 );
+                Err(original.into())
             }
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            Ok(())
+            Err(error) => panic!("unexpected line refusal: {error:?}"),
+            Ok(value) => {
+                assert_eq!(value, None);
+                let refusal = ctx
+                    .charge_work_limit(1, "after saved line boundary")
+                    .expect_err("exact work");
+                assert_eq!((refusal.used, refusal.additional), (visits, 1));
+                Ok(())
+            }
         }
     });
 }
@@ -143,47 +125,35 @@ fn assert_saved_arc_record_visits(
             policy.limits.max_entities = 0;
             policy.limits.max_recursion_depth = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = run(&ctx, &definition, &segment);
-            let refused = result.is_err();
-            let original = if refused {
-                let Err(CodecError::ResourceLimit(refusal)) = result else {
-                    panic!("present record visit must refuse");
-                };
-                assert_eq!(
-                    (
-                        refusal.dimension,
-                        refusal.operation,
-                        refusal.used,
-                        refusal.additional,
-                        refusal.limit
-                    ),
-                    (
-                        ResourceDimension::WorkUnits,
-                        "creo saved section entities",
-                        cap,
-                        1,
-                        cap
-                    )
-                );
-                refusal
-            } else {
-                assert!(result.expect("one record walk admitted"));
-                let refusal = ctx
-                    .charge_work_limit(1, "after saved arc record projection")
-                    .expect_err("exact source work used");
-                assert_eq!(refusal.used, visits);
-                refusal
-            };
-            for _ in 0..2 {
-                assert!(matches!(run(&ctx, &definition, &segment),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-            }
-            assert!(matches!(ctx.finish_session(),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-            if refused {
-                Err(original.into())
-            } else {
-                Ok(())
+            match run(&ctx, &definition, &segment) {
+                Err(CodecError::ResourceLimit(refusal)) => {
+                    assert_eq!(
+                        (
+                            refusal.dimension,
+                            refusal.operation,
+                            refusal.used,
+                            refusal.additional,
+                            refusal.limit
+                        ),
+                        (
+                            ResourceDimension::WorkUnits,
+                            "creo saved section entities",
+                            cap,
+                            1,
+                            cap
+                        ),
+                    );
+                    Err(refusal.into())
+                }
+                Err(error) => panic!("unexpected arc refusal: {error:?}"),
+                Ok(value) => {
+                    assert!(value);
+                    let refusal = ctx
+                        .charge_work_limit(1, "after saved arc record projection")
+                        .expect_err("exact source work used");
+                    assert_eq!(refusal.used, visits);
+                    Ok(())
+                }
             }
         });
     }

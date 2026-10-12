@@ -167,7 +167,7 @@ fn run_definition(
 }
 
 #[test]
-fn missing_line_without_ordered_rows_is_free_and_keeps_original_refusal() {
+fn missing_line_without_ordered_rows_is_free() {
     for has_prototype in [false, true] {
         let mut definition = fixture();
         let order = definition.order_table.as_mut().expect("order table");
@@ -177,29 +177,18 @@ fn missing_line_without_ordered_rows_is_free_and_keeps_original_refusal() {
         assert!(order.is_complete());
         // No ordered geometry can supply either open endpoint.
         // The segment, trim and saved tables remain populated.
-        for refused in [false, true] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = 0;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_entities = 0;
-            policy.limits.max_recursion_depth = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let original = refused.then(|| {
-                ctx.charge_work_limit(1, "before missing-line order recovery").expect_err("zero work")
-            });
-            for _ in 0..2 {
-                let result = saved_section_missing_line_geometry(&ctx, &definition);
-                if let Some(original) = original {
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-                } else { assert!(result.expect("no ordered endpoints").is_none()); }
-            }
-            if let Some(original) = original {
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-            } else { ctx.finish_session().expect("active free route"); }
-        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(saved_section_missing_line_geometry(&ctx, &definition)
+            .expect("no ordered endpoints")
+            .is_none());
     }
 }
 

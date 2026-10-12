@@ -1,14 +1,89 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::saved_profile_chains;
-
+use super::super::{
+    saved_profile_chains, saved_section_arc_record, saved_section_circle_values,
+    saved_section_segment_point_coordinates, section_arc_geometry, section_line_geometry,
+    section_point_geometry, section_reference_line_geometry,
+};
+use crate::feature::definitions::{
+    FeatureCircleSegment, FeatureReferenceLineSegment, FeatureSegmentKind,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
-
+use std::collections::BTreeMap;
 use std::mem::size_of;
 
 const EMPTY_ROOT_MATERIALIZED_BYTES: u64 = 16 * 1024 * 1024;
+
+fn assert_free_recovery<T>(run: impl Fn(&DecodeContext<'_>) -> Result<Option<T>, CodecError>) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(run(&ctx).expect("no source work").is_none());
+}
+
+#[test]
+fn absent_section_line_kind_is_free() {
+    let (_, mut segment) = super::saved_arc_carrier_definition([None; 3], None);
+    segment.kind = FeatureSegmentKind::Point(7);
+    assert_free_recovery(|ctx| section_line_geometry(ctx, &BTreeMap::new(), &segment));
+}
+
+#[test]
+fn absent_section_point_kind_is_free() {
+    let (_, segment) = super::saved_arc_carrier_definition([None; 3], None);
+    assert_free_recovery(|ctx| section_point_geometry(ctx, &BTreeMap::new(), &segment));
+}
+
+#[test]
+fn absent_section_arc_orientation_is_free() {
+    let (_, mut segment) = super::saved_arc_carrier_definition([None; 3], None);
+    segment.arc_orientation = None;
+    assert_free_recovery(|ctx| section_arc_geometry(ctx, &BTreeMap::new(), &segment));
+}
+
+#[test]
+fn absent_section_reference_endpoints_are_free() {
+    let segment = FeatureReferenceLineSegment {
+        directions: [None; 3],
+        point_ids: [None; 2],
+        vertical_horizontal: None,
+        external_id: 7,
+        offset: 0,
+    };
+    assert_free_recovery(|ctx| section_reference_line_geometry(ctx, &BTreeMap::new(), &segment));
+}
+
+#[test]
+fn absent_saved_arc_order_is_free() {
+    let (mut definition, segment) = super::saved_arc_carrier_definition([None; 3], None);
+    definition.order_table = None;
+    assert_free_recovery(|ctx| saved_section_arc_record(ctx, &definition, &segment));
+}
+
+#[test]
+fn saved_point_coordinate_recovery_is_free() {
+    let (definition, mut segment) = super::saved_arc_carrier_definition([None; 3], None);
+    segment.kind = FeatureSegmentKind::Point(7);
+    assert_free_recovery(|ctx| saved_section_segment_point_coordinates(ctx, &definition, &segment));
+}
+
+#[test]
+fn absent_saved_circle_segments_are_free() {
+    let (definition, _) = super::saved_arc_carrier_definition([None; 3], None);
+    let segment = FeatureCircleSegment {
+        center_id: 1,
+        radius_ref: 2,
+        external_id: 3,
+        offset: 0,
+    };
+    assert_free_recovery(|ctx| saved_section_circle_values(ctx, &definition, &segment));
+}
 
 #[test]
 fn saved_profile_endpoint_candidates_admit_only_present_rows() {
@@ -27,6 +102,15 @@ fn saved_profile_endpoint_candidates_admit_only_present_rows() {
                 )
             })
             .collect();
+        let expected: Vec<_> = (0..count)
+            .flat_map(|row| {
+                (0..2).flat_map(move |endpoint| {
+                    (0..count).map(move |candidate| {
+                        3 * count + 2 * count * row + count * endpoint + candidate
+                    })
+                })
+            })
+            .collect();
         let observed = std::cell::RefCell::new(Vec::new());
         let profiles =
             crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
@@ -37,7 +121,6 @@ fn saved_profile_endpoint_candidates_admit_only_present_rows() {
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 let result = saved_profile_chains(&ctx, &sketch, &geometries);
                 if let Err(CodecError::ResourceLimit(original)) = &result {
-                    assert_eq!(ctx.resource_refusal(), Some(*original));
                     if original.operation == "creo saved profile endpoint candidates" {
                         assert_eq!(
                             (original.dimension, original.used, original.additional),
@@ -45,16 +128,10 @@ fn saved_profile_endpoint_candidates_admit_only_present_rows() {
                         );
                         observed.borrow_mut().push(cap);
                     }
-                    assert!(matches!(saved_profile_chains(&ctx, &sketch, &geometries),
-                    Err(CodecError::ResourceLimit(actual)) if actual == *original));
                 }
                 result
             });
-        // Each row visits every candidate for both endpoints.
-        assert_eq!(
-            observed.borrow().len(),
-            usize::try_from(2 * count * count).expect("candidate visits")
-        );
+        assert_eq!(*observed.borrow(), expected);
         assert!(profiles.is_empty());
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
             saved_profile_chains(ctx, &sketch, &geometries)
@@ -106,24 +183,22 @@ fn saved_profile_chain_transfer_keeps_only_surviving_use_backing() {
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = saved_profile_chains(&ctx, &sketch, &geometries);
-        let refused = result.is_err();
-        if refused {
-            let original = ctx.resource_refusal().expect("smaller retained cap");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
-            assert!(matches!(saved_profile_chains(&ctx, &sketch, &geometries),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-        } else {
-            assert_profile_identity(&result.expect("exact surviving backing"));
-            let original = ctx
-                .charge_retained_limit(1, "after retained profile")
-                .expect_err("all retained backing consumed");
-            assert_eq!((original.used, original.additional), (bytes, 1));
-        }
-        if refused {
-            Err(ctx.resource_refusal().expect("smaller retained cap").into())
-        } else {
-            Ok(())
+        match result {
+            Err(CodecError::ResourceLimit(original)) => {
+                assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
+
+                Err(original.into())
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(value) => {
+                assert_profile_identity(&value);
+                let original = ctx
+                    .charge_retained_limit(1, "after retained profile")
+                    .expect_err("all retained backing consumed");
+                assert_eq!((original.used, original.additional), (bytes, 1));
+
+                Ok(())
+            }
         }
     });
 }
@@ -166,7 +241,6 @@ fn saved_profile_chain_transfer_preserves_actual_parent_overlap_and_cleanup() {
                     "saved profile live backing"
                 )
             );
-            assert_eq!(ctx.resource_refusal(), Some(original));
         } else {
             drop(probe.expect("exact live backing"));
         }

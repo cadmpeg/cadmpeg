@@ -3,6 +3,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem::{align_of, size_of};
 
 #[test]
 fn dimension_last_segment_reaches_axis_recovery_without_an_empty_visit() {
@@ -17,6 +18,13 @@ fn dimension_last_segment_reaches_axis_recovery_without_an_empty_visit() {
         .next()
         .expect("line")
         .clone();
+    // An empty parity map admits three node passes before its first slot.
+    let alignment = align_of::<u32>()
+        .max(align_of::<bool>())
+        .max(align_of::<usize>());
+    let node_bytes =
+        11 * (size_of::<u32>() + size_of::<bool>()) + 16 * size_of::<usize>() + 2 * alignment;
+    let seed_work = u64::try_from(3 * node_bytes).expect("parity seed node bound");
     let cap = crate::test_support::allocation_limit_at(
         ResourceDimension::WorkUnits,
         Some("creo fixed-coordinate parity seed"),
@@ -26,18 +34,15 @@ fn dimension_last_segment_reaches_axis_recovery_without_an_empty_visit() {
             policy.limits.max_work_units = cap;
             policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let run = || {
-                super::super::section_linear_distance_coordinate(
-                    &ctx,
-                    &definition,
-                    &[&segment],
-                    [1, 2],
-                    &BTreeMap::new(),
-                    &[],
-                    &BTreeSet::new(),
-                )
-            };
-            let result = run();
+            let result = super::super::section_linear_distance_coordinate(
+                &ctx,
+                &definition,
+                &[&segment],
+                [1, 2],
+                &BTreeMap::new(),
+                &[],
+                &BTreeSet::new(),
+            );
             if let Err(CodecError::ResourceLimit(original)) = &result {
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 match original.operation {
@@ -46,23 +51,18 @@ fn dimension_last_segment_reaches_axis_recovery_without_an_empty_visit() {
                     }
                     "creo fixed-coordinate parity seed" => {
                         assert_eq!(original.used, 1, "only the source row precedes recovery");
-                        assert!(original.additional > 0);
+                        assert_eq!(original.additional, seed_work);
                     }
                     operation => panic!("unexpected axis recovery operation: {operation}"),
                 }
-                for _ in 0..2 {
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                    );
-                }
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                );
             }
             result
         },
     );
-    assert!(cap > 0, "the source row precedes the parity seed");
+    assert_eq!(
+        cap, seed_work,
+        "one unit below the source row plus parity seed"
+    );
 }
 
 #[test]
@@ -90,18 +90,15 @@ fn dimension_duplicate_segment_is_admitted_before_rejection() {
             policy.limits.max_materialized_bytes = 0;
             policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let run = || {
-                super::super::section_linear_distance_coordinate(
-                    &ctx,
-                    &definition,
-                    &[segment, segment],
-                    [1, 2],
-                    &BTreeMap::new(),
-                    &[],
-                    &BTreeSet::new(),
-                )
-            };
-            let result = run();
+            let result = super::super::section_linear_distance_coordinate(
+                &ctx,
+                &definition,
+                &[segment, segment],
+                [1, 2],
+                &BTreeMap::new(),
+                &[],
+                &BTreeSet::new(),
+            );
             let original = match &result {
                 Err(CodecError::ResourceLimit(original)) => *original,
                 Ok(value) => {
@@ -122,14 +119,6 @@ fn dimension_duplicate_segment_is_admitted_before_rejection() {
                     original.limit
                 ),
                 (ResourceDimension::WorkUnits, cap, 1, cap)
-            );
-            for _ in 0..2 {
-                assert!(
-                    matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            }
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
             result
         },

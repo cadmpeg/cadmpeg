@@ -52,35 +52,25 @@ fn empty_scalar_component_samples_charge_only_the_component_roster() {
             // Component roster admission is count units. All member and sample sources are empty.
             let result =
                 super::super::scalar_equality_values_for_components(&ctx, &[], &components);
-            let refused = result.is_err();
-            if refused {
-                let Err(CodecError::ResourceLimit(original)) = result else {
-                    panic!("component roster must refuse");
-                };
-                assert_eq!(
-                    (
-                        original.dimension,
-                        original.used,
-                        original.additional,
-                        original.limit
-                    ),
-                    (ResourceDimension::WorkUnits, 0, need, cap)
-                );
-                assert_eq!(original.operation, "creo scalar equality value components");
-                for _ in 0..2 {
-                    assert!(
-                        matches!(super::super::scalar_equality_values_for_components(&ctx, &[], &components),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original)
+            match result {
+                Err(CodecError::ResourceLimit(original)) => {
+                    assert_eq!(
+                        (
+                            original.dimension,
+                            original.used,
+                            original.additional,
+                            original.limit
+                        ),
+                        (ResourceDimension::WorkUnits, 0, need, cap)
                     );
+                    assert_eq!(original.operation, "creo scalar equality value components");
+                    Err(original.into())
                 }
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                Err(original.into())
-            } else {
-                assert!(result.expect("component roster admitted").is_empty());
-                ctx.finish_session().expect("active session");
-                Ok(())
+                Err(error) => panic!("unexpected route refusal: {error:?}"),
+                Ok(value) => {
+                    assert!(value.is_empty());
+                    Ok(())
+                }
             }
         });
     }

@@ -34,7 +34,7 @@ fn scalar_component_loops_refuse_before_graph_visits() {
     ]);
     crate::test_support::assert_work_boundaries(
         &[
-            "creo scalar equality components",
+            "creo scalar adjacency nodes",
             "creo scalar equality graph visits",
         ],
         |ctx| super::scalar_equality_components(ctx, &adjacency),
