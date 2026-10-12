@@ -70,25 +70,96 @@ pub(super) fn derive(
     consolidated: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaSampledParameterMap>, CodecError> {
     let mut output = Vec::new();
-    let (records, temporary) = ctx.with_scoped_storage("catia_a8_map_workspace", || {
-        parameter_map::collect(ctx, bytes, sources, consolidated)
-    })?;
-    // Parsed arrays and payloads become the native records' retained storage.
-    temporary.commit()?;
-    for record in records {
-        let value = CatiaSampledParameterMap {
-            id: ctx.format_retained(
-                format_args!("catia:a8:sampled-parameter-map#{:00}", output.len()),
-                "catia_native_a8_parameter_map_id",
-            )?,
-            source_index: u64_from_index(record.source_index),
-            source_offset: u64_from_index(record.source_offset),
-            byte_offset: u64_from_index(record.byte_offset),
-            object_id: record.object_id,
-            payload: record.payload.into(),
-            data: record.data,
-        };
-        ctx.push_vec(&mut output, value, "catia_native_a8_parameter_maps")?;
+    for (source_index, source) in sources.iter().enumerate() {
+        let mut logical_start = 0usize;
+        let mut spanning_end = 0usize;
+        for extent in source {
+            let range = extent.range();
+            let logical_end = logical_start
+                .checked_add(range.len())
+                .ok_or_else(|| CodecError::malformed("A8 parameter-map source length overflows"))?;
+            let data = &bytes[range.clone()];
+            let work = u64_from_index(data.len()).checked_mul(4).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_a8_map_frame_scan", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_work(work, "catia_a8_map_frame_scan")?;
+            let mut position = if spanning_end > logical_start {
+                (spanning_end - logical_start).min(data.len())
+            } else {
+                0
+            };
+            while position < data.len() {
+                let source_offset = logical_start + position;
+                if let Some((end, family, class, object_id)) =
+                    crate::families::b5::graph::object_frame(data, position)
+                {
+                    if family == 0xa8 && class == 0x25 && data[position + 1] == 0x03 {
+                        let payload = &data[position + 11..end];
+                        let (parsed, reservation) = ctx
+                            .with_scoped_storage("catia_a8_map_candidate", || {
+                                parameter_map::parse(ctx, payload)
+                            })?;
+                        if let Some(map) = parsed {
+                            reservation.commit()?;
+                            let record = CatiaSampledParameterMap {
+                                id: ctx.format_retained(
+                                    format_args!(
+                                        "catia:a8:sampled-parameter-map#{:00}",
+                                        output.len()
+                                    ),
+                                    "catia_native_a8_parameter_map_id",
+                                )?,
+                                source_index: u64_from_index(source_index),
+                                source_offset: u64_from_index(source_offset),
+                                byte_offset: u64_from_index(range.start + position),
+                                object_id,
+                                payload: ctx.copy_retained(payload, "catia_a8_map_payload")?.into(),
+                                data: map,
+                            };
+                            ctx.push_vec(&mut output, record, "catia_native_a8_parameter_maps")?;
+                        }
+                    }
+                    position = end;
+                    continue;
+                }
+                if let Some(record) =
+                    crate::wire::records::parse_consolidated_record(data, position, data.len())
+                {
+                    if let Some(range) = record.range() {
+                        position = range.end;
+                        continue;
+                    }
+                }
+                // A consolidated frame may continue in the next physical extent.
+                // Only a frame starting at this peer position can suppress it.
+                if matches!(data[position], 0xa5..=0xa7 | 0xb2..=0xb4) {
+                    ctx.charge_work(
+                        u64::from(usize::BITS - consolidated.len().leading_zeros()),
+                        "catia_a8_map_spanning_lookup",
+                    )?;
+                    let index = consolidated.partition_point(|record| {
+                        (record.source_index(), record.source_range().start)
+                            < (source_index, source_offset)
+                    });
+                    if let Some(record) = consolidated.get(index).filter(|record| {
+                        record.source_index() == source_index
+                            && record.source_range().start == source_offset
+                            && record.range().is_none()
+                    }) {
+                        spanning_end = record.source_range().end;
+                        position = spanning_end
+                            .checked_sub(logical_start)
+                            .ok_or_else(|| {
+                                CodecError::malformed("spanning frame ends before its source start")
+                            })?
+                            .min(data.len());
+                        continue;
+                    }
+                }
+                position += 1;
+            }
+            logical_start = logical_end;
+        }
     }
     Ok(output)
 }

@@ -7015,10 +7015,7 @@ fn is_opaque_surface_class(class: u8) -> bool {
     matches!(class, 0x2c | 0x2e | 0x30 | 0x37 | 0x38 | 0x3b)
 }
 
-pub(in crate::families) fn object_frame(
-    bytes: &[u8],
-    start: usize,
-) -> Option<(usize, u8, u8, u32)> {
+pub(crate) fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
     if !matches!(bytes.get(start + 1), Some(0x03 | 0x13 | 0x83)) {
         return None;
     }
