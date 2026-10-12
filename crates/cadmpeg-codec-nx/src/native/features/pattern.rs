@@ -1104,7 +1104,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         {
             continue;
         }
-        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+        let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
             ctx,
             graph
                 .iter()
@@ -1123,7 +1123,10 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+        })?
+        else {
             continue;
         };
         let Some(operation_key) = operation_key(
@@ -1134,6 +1137,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:pattern-construction-payload#{operation_key}"),
             "NX pattern construction payload identity",

@@ -6342,21 +6342,32 @@ pub(super) fn feature_datum_plane_payloads(
             continue;
         };
         let mut reservation = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
+        let mut source_text_storage = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
         let mut data_blocks = Vec::new();
-        let owned = ctx.copy_retained_text(first_source, "copy NX datum plane source blocks")?;
+        let owned = ctx.copy_scoped_text(
+            first_source,
+            &mut source_text_storage,
+            "copy NX datum plane source blocks",
+        )?;
         reservation.with_storage(|| {
             ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks")
         })?;
         for source in sources {
-            let owned = ctx.copy_retained_text(source, "copy NX datum plane source blocks")?;
+            let owned = ctx.copy_scoped_text(
+                source,
+                &mut source_text_storage,
+                "copy NX datum plane source blocks",
+            )?;
             reservation.with_storage(|| {
                 ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks")
             })?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+        })?
+        else {
             continue;
         };
-        drop(reservation);
         let Some(joined) =
             JoinedPayload::from_source(ctx, content.block_ids(), content.blocks().len(), blocks)?
         else {
@@ -6372,6 +6383,7 @@ pub(super) fn feature_datum_plane_payloads(
             }
         };
         drop(lanes_storage);
+        let content = source_text_storage.commit_value(content)?;
         let key = identity_key(ctx, &header.id, "NX datum plane payload identity")?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:datum-plane-payload#{key}"),
@@ -6407,14 +6419,18 @@ pub(super) fn feature_datum_csys_payloads(
         let first = &construction.frame.members()[0].1;
         let second = &construction.frame.members()[1].1;
 
-        let data_blocks = [
-            ctx.copy_retained_text(first, "NX datum CSYS source block identity")?,
-            ctx.copy_retained_text(second, "NX datum CSYS source block identity")?,
-        ];
-        let Some(content) = FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)?
-        else {
+        let (content, source_storage) =
+            ctx.with_scoped_storage("NX datum CSYS source block identity", || {
+                let data_blocks = [
+                    ctx.copy_retained_text(first, "NX datum CSYS source block identity")?,
+                    ctx.copy_retained_text(second, "NX datum CSYS source block identity")?,
+                ];
+                FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)
+            })?;
+        let Some(content) = content else {
             continue;
         };
+        let content = source_storage.commit_value(content)?;
 
         let id = replace_operation_text(
             ctx,
@@ -7284,11 +7300,16 @@ pub(super) fn feature_sketch_construction_payloads(
             .map(|member| member.data_block.as_str())
             .chain(std::iter::once(construction.terminal_data_block.as_str()));
         let mut reservation = ctx.reserve_scoped(0, "copy NX sketch construction source blocks")?;
+        let mut source_text_storage =
+            ctx.reserve_scoped(0, "copy NX sketch construction source blocks")?;
         let mut data_blocks = Vec::new();
         for source in source_ids {
             ctx.charge_work(1, "copy NX sketch construction source blocks")?;
-            let owned =
-                ctx.copy_retained_text(source, "copy NX sketch construction source blocks")?;
+            let owned = ctx.copy_scoped_text(
+                source,
+                &mut source_text_storage,
+                "copy NX sketch construction source blocks",
+            )?;
             reservation.with_storage(|| {
                 ctx.push_vec(
                     &mut data_blocks,
@@ -7297,10 +7318,13 @@ pub(super) fn feature_sketch_construction_payloads(
                 )
             })?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+        })?
+        else {
             continue;
         };
-        drop(reservation);
+        let content = source_text_storage.commit_value(content)?;
         let id = replace_operation_text(
             ctx,
             &construction.id,

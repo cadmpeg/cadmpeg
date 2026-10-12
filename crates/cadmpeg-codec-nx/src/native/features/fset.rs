@@ -284,7 +284,7 @@ fn fset_construction_payload_from_group(
     source_blocks: &[(u16, Option<String>)],
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
-    let Some((data_blocks, _source_reservation)) = copy_block_ids(
+    let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
         ctx,
         source_blocks.iter().map(|(_, target)| target.as_deref()),
         "NX FSET source block references",
@@ -295,7 +295,10 @@ fn fset_construction_payload_from_group(
     if shared_block_store(ctx, &data_blocks, "validate NX FSET source block owners")?.is_none() {
         return Ok(None);
     }
-    let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+    let Some(content) = source_text_storage.with_storage(|| {
+        FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+    })?
+    else {
         return Ok(None);
     };
     let group_name = match group {
@@ -308,6 +311,7 @@ fn fset_construction_payload_from_group(
     else {
         return Ok(None);
     };
+    let content = source_text_storage.commit_value(content)?;
     let id = ctx.format_retained(
         format_args!("nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"),
         "NX FSET construction identity",
@@ -345,6 +349,59 @@ mod tests {
             })
             .collect();
         (graph, blocks)
+    }
+
+    #[test]
+    fn fset_missing_source_block_releases_candidate_copies() {
+        let (graph, mut blocks) = fset_construction_fixture();
+        blocks.remove("nx:om-data-blocks-0:block#2");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 65_536;
+            },
+            |ctx| {
+                assert!(super::fset_construction_payload_from_group(
+                    ctx,
+                    &graph,
+                    super::FeatureFsetReferenceGroup::First,
+                    graph.references.first().as_slice(),
+                    &blocks,
+                )?
+                .is_none());
+                let _checkpoint =
+                    ctx.reserve_scoped(65_536, "test fset rejected source scratch")?;
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn fset_missing_operation_key_releases_candidate_content() {
+        let (mut graph, blocks) = fset_construction_fixture();
+        graph.operation_label = "unkeyed".into();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 65_536;
+            },
+            |ctx| {
+                assert!(super::fset_construction_payload_from_group(
+                    ctx,
+                    &graph,
+                    super::FeatureFsetReferenceGroup::First,
+                    graph.references.first().as_slice(),
+                    &blocks,
+                )?
+                .is_none());
+                let _checkpoint = ctx.reserve_scoped(65_536, "test fset rejected key scratch")?;
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
     }
 
     fn fset_construction_limit_error(

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
+use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use serde::{
@@ -28,10 +29,8 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
         blocks: B,
         sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     ) -> Result<Self, String> {
-        blocks
-            .as_ref()
-            .iter()
-            .try_fold(0u64, |total, block| total.checked_add(block.byte_len))
+        validate_payload_lengths(&StandardAdmission, blocks.as_ref())
+            .unwrap_or_else(|never| match never {})
             .ok_or_else(|| "block_byte_lengths overflow byte_len".to_owned())?;
         Ok(Self { blocks, sha256 })
     }
@@ -55,6 +54,7 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
 }
 
 impl FeaturePayloadContent<Vec<FeaturePayloadBlock>> {
+    #[cfg(test)]
     pub(super) fn from_source<I>(
         ctx: &DecodeContext<'_>,
         ids: I,
@@ -64,10 +64,39 @@ impl FeaturePayloadContent<Vec<FeaturePayloadBlock>> {
         I: IntoIterator<Item = String>,
         I::IntoIter: ExactSizeIterator,
     {
+        Self::build_from_source(ctx, ids, blocks, None)
+    }
+
+    /// Consumes ids whose vector backing storage is held by `source_storage`.
+    /// The builder frees that backing storage and releases its reservation
+    /// before validating metadata or allocating the digest.
+    pub(super) fn from_scoped_source(
+        ctx: &DecodeContext<'_>,
+        ids: Vec<String>,
+        blocks: &BTreeMap<String, (&[u8], u64)>,
+        source_storage: ScopedReservation<'_>,
+    ) -> Result<Option<Self>, CodecError> {
+        Self::build_from_source(ctx, ids, blocks, Some(source_storage))
+    }
+
+    fn build_from_source<I>(
+        ctx: &DecodeContext<'_>,
+        ids: I,
+        blocks: &BTreeMap<String, (&[u8], u64)>,
+        source_storage: Option<ScopedReservation<'_>>,
+    ) -> Result<Option<Self>, CodecError>
+    where
+        I: IntoIterator<Item = String>,
+        I::IntoIter: ExactSizeIterator,
+    {
         let mut storage = ctx.reserve_scoped(0, "NX feature payload blocks")?;
-        let Some((rows, hash)) = payload_blocks_from_source(ctx, ids, blocks, &mut storage)? else {
+        let Some((rows, hash)) =
+            payload_blocks_from_source::<_, false>(ctx, ids, blocks, &mut storage, source_storage)?
+        else {
             return Ok(None);
         };
+        validate_payload_lengths(ctx, &rows)?
+            .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
         let blocks = storage.commit_value(rows)?;
         let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
             ctx,
@@ -88,8 +117,41 @@ impl<const N: usize> FeaturePayloadContent<[FeaturePayloadBlock; N]> {
         I: IntoIterator<Item = String>,
         I::IntoIter: ExactSizeIterator,
     {
+        Self::build_from_source(ctx, ids, blocks, None)
+    }
+
+    /// Consumes ids whose vector backing storage is held by `source_storage`.
+    /// The builder frees that backing storage and releases its reservation
+    /// before validating metadata or allocating the digest.
+    pub(super) fn from_scoped_source_array(
+        ctx: &DecodeContext<'_>,
+        ids: Vec<String>,
+        blocks: &BTreeMap<String, (&[u8], u64)>,
+        source_storage: ScopedReservation<'_>,
+    ) -> Result<Option<Self>, CodecError> {
+        Self::build_from_source(ctx, ids, blocks, Some(source_storage))
+    }
+
+    fn build_from_source<I>(
+        ctx: &DecodeContext<'_>,
+        ids: I,
+        blocks: &BTreeMap<String, (&[u8], u64)>,
+        source_storage: Option<ScopedReservation<'_>>,
+    ) -> Result<Option<Self>, CodecError>
+    where
+        I: IntoIterator<Item = String>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let ids = ids.into_iter();
+        if ids.len() != N {
+            drop(ids);
+            drop(source_storage);
+            return Ok(None);
+        }
         let mut storage = ctx.reserve_scoped(0, "NX feature payload blocks")?;
-        let Some((rows, hash)) = payload_blocks_from_source(ctx, ids, blocks, &mut storage)? else {
+        let Some((rows, hash)) =
+            payload_blocks_from_source::<_, true>(ctx, ids, blocks, &mut storage, source_storage)?
+        else {
             return Ok(None);
         };
         let Ok(blocks) = <[_; N]>::try_from(rows) else {
@@ -101,15 +163,34 @@ impl<const N: usize> FeaturePayloadContent<[FeaturePayloadBlock; N]> {
             hash.finalize().into(),
             "retain NX feature payload digest",
         )?;
-        Ok(Some(Self { blocks, sha256 }))
+        Self::new(blocks, sha256)
+            .map(Some)
+            .map_err(|_| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))
     }
 }
 
-fn payload_blocks_from_source<I>(
+/// Validates the length sum, admitting only the prefix read before overflow.
+fn validate_payload_lengths<A: Admission>(
+    admission: &A,
+    blocks: &[FeaturePayloadBlock],
+) -> Result<Option<u64>, A::Error> {
+    let mut total = 0u64;
+    for block in blocks {
+        admission.charge_work(1, "validate NX feature payload block lengths")?;
+        let Some(next) = total.checked_add(block.byte_len) else {
+            return Ok(None);
+        };
+        total = next;
+    }
+    Ok(Some(total))
+}
+
+fn payload_blocks_from_source<I, const FIXED: bool>(
     ctx: &DecodeContext<'_>,
     ids: I,
     blocks: &BTreeMap<String, (&[u8], u64)>,
     storage: &mut ScopedReservation<'_>,
+    source_storage: Option<ScopedReservation<'_>>,
 ) -> Result<Option<(Vec<FeaturePayloadBlock>, Sha256)>, CodecError>
 where
     I: IntoIterator<Item = String>,
@@ -117,10 +198,14 @@ where
 {
     let mut hash = Sha256::new();
     let mut rows = Vec::new();
-    let mut byte_len = 0u64;
     let mut ids = ids.into_iter();
     while ids.len() != 0 {
-        let Some(id) = ctx.next_charged(&mut ids, "scan NX feature payload block ids")? else {
+        let id = if FIXED {
+            ids.next()
+        } else {
+            ctx.next_charged(&mut ids, "scan NX feature payload block ids")?
+        };
+        let Some(id) = id else {
             return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
         };
         let Some((bytes, source_offset)) = ctx
@@ -130,16 +215,8 @@ where
             return Ok(None);
         };
         let length = u64_from_index(bytes.len());
-        byte_len = byte_len
-            .checked_add(length)
-            .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
         ctx.reserve_scoped_vec(storage, &mut rows, 1, "NX feature payload blocks")?;
-        ctx.charge_work(
-            length
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1))?,
-            "hash NX feature payload bytes",
-        )?;
+        ctx.charge_work(length, "hash NX feature payload bytes")?;
         hash.update(bytes);
         rows.push(FeaturePayloadBlock {
             id,
@@ -147,6 +224,8 @@ where
             source_offset,
         });
     }
+    drop(ids);
+    drop(source_storage);
     Ok(Some((rows, hash)))
 }
 
@@ -166,24 +245,32 @@ pub(super) fn block_store<'t>(
 
 /// Copies block ids into scoped storage; `None` when any block id is absent.
 ///
-/// The returned reservation keeps the id vector's storage accounted until the
-/// caller drops it. Every caller passes a fixed-size reference group, so the
-/// visit itself is constant work; each copied id is charged.
+/// The reservations own vector slots and copied text separately. The caller
+/// releases the slots when the vector is consumed and promotes text only when
+/// the payload is accepted. Every caller passes a fixed-size reference group.
 pub(super) fn copy_block_ids<'ctx, 'b>(
     ctx: &'ctx DecodeContext<'_>,
     blocks: impl Iterator<Item = Option<&'b str>>,
     operation: &'static str,
-) -> Result<Option<(Vec<String>, ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<
+    Option<(
+        Vec<String>,
+        ScopedReservation<'ctx>,
+        ScopedReservation<'ctx>,
+    )>,
+    CodecError,
+> {
     let mut reservation = ctx.reserve_scoped(0, operation)?;
+    let mut text_storage = ctx.reserve_scoped(0, operation)?;
     let mut ids = Vec::new();
     for block in blocks {
         let Some(block) = block else {
             return Ok(None);
         };
-        let copy = ctx.copy_retained_text(block, operation)?;
+        let copy = ctx.copy_scoped_text(block, &mut text_storage, operation)?;
         ctx.push_scoped_vec(&mut reservation, &mut ids, copy, operation)?;
     }
-    Ok(Some((ids, reservation)))
+    Ok(Some((ids, reservation, text_storage)))
 }
 
 /// True when every block id names `store` as its owner.
@@ -507,6 +594,130 @@ mod tests {
     }
 
     #[test]
+    fn payload_input_slots_end_before_digest_allocation() {
+        let ids = ["s:block#1", "s:block#2"];
+        let blocks = BTreeMap::from([
+            (ids[0].to_owned(), (b"a".as_slice(), 10)),
+            (ids[1].to_owned(), (b"b".as_slice(), 20)),
+        ]);
+        let text_bytes = ids.iter().map(|id| id.len()).sum::<usize>();
+        let rows_bytes = 4 * std::mem::size_of::<FeaturePayloadBlock>();
+        let source_slots = 4 * std::mem::size_of::<String>();
+        let peak = source_slots + rows_bytes + text_bytes;
+        let retained = rows_bytes + text_bytes + 64;
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(peak);
+                policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(retained);
+            },
+            |ctx| {
+                let (ids, source_storage, mut text_storage) = super::copy_block_ids(
+                    ctx,
+                    ids.into_iter().map(Some),
+                    "test payload source ids",
+                )?
+                .unwrap();
+                let content = text_storage
+                    .with_storage(|| {
+                        FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_scoped_source(
+                            ctx,
+                            ids,
+                            &blocks,
+                            source_storage,
+                        )
+                    })?
+                    .unwrap();
+                let content = text_storage.commit_value(content)?;
+                assert_eq!(content.blocks().len(), 2);
+                assert_eq!(content.byte_len(ctx)?, 2);
+                assert_eq!(
+                    content.sha256,
+                    cadmpeg_ir::hash::digest::Sha256Digest::digest(b"ab")
+                );
+                let _checkpoint = ctx.reserve_scoped(
+                    cadmpeg_core::decode::u64_from_index(peak),
+                    "test payload input scratch release",
+                )?;
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn payload_length_validation_stops_at_overflow() {
+        let blocks = [u64::MAX, 1, 1].map(|byte_len| FeaturePayloadBlock {
+            id: "block".into(),
+            byte_len,
+            source_offset: 0,
+        });
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 2,
+            |ctx| {
+                assert_eq!(super::validate_payload_lengths(ctx, &blocks)?, None);
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+        assert!(FeaturePayloadContent::new(
+            blocks,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn payload_array_visits_are_constant_work() {
+        let blocks = BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 8,
+            |ctx| {
+                let content = FeaturePayloadContent::<[FeaturePayloadBlock; 2]>::from_source_array(
+                    ctx,
+                    ["a".to_owned(), "a".to_owned()],
+                    &blocks,
+                )?
+                .unwrap();
+                assert_eq!(content.blocks().len(), 2);
+                assert_eq!(content.blocks()[0].byte_len, 3);
+                assert_eq!(content.blocks()[1].source_offset, 10);
+                assert_eq!(
+                    content.sha256,
+                    cadmpeg_ir::hash::digest::Sha256Digest::digest(b"abcabc"),
+                );
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn payload_variable_length_validation_has_named_work_boundary() {
+        let blocks = BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "validate NX feature payload block lengths",
+            |ctx| {
+                FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
+                    ctx,
+                    ["a".to_owned()],
+                    &blocks,
+                )
+            },
+        );
+        // One id visit, one one-byte key lookup, and three hash bytes precede validation.
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.used == 5 && limit.additional == 1));
+    }
+
+    #[test]
     fn payload_array_releases_row_storage_after_conversion() {
         let blocks = source_blocks();
         crate::test_support::with_decode_context_over(
@@ -687,6 +898,6 @@ mod tests {
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.operation == "hash NX feature payload bytes" && limit.used == 2 && limit.additional == 4));
+            if limit.operation == "hash NX feature payload bytes" && limit.used == 2 && limit.additional == 3));
     }
 }
