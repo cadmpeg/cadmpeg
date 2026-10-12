@@ -1411,3 +1411,8 @@ and [Using the CGM Data Checker](https://www.maruf.ca/files/caadoc/CAACgmTechArt
 describe multiple curve representations per edge and parameter mappings
 between their domains. These object roles support the representation context;
 they do not assign serialized class numbers or join bare operand values.
+
+Counted class-`0x60` records retain their complete source frame and every
+allocation-reference value and form. Consolidated cylinders share one parser,
+native arena, and support-binding representation. Their compact header operands
+are retained without assigning ownership from an adjacent reference list.

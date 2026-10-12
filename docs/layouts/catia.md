@@ -1008,6 +1008,17 @@ Parsed by:
 | 6 | 8 | `length1` | `f64` | little | spec | \| `+6` \| `f64le` \| positive support-0 setback Length1 \| |
 | 14 | 8 | `length2_or_angle` | `f64` | little | spec | \| `+14` \| `f64le` \| positive support-1 setback Length2 for `0d`, acute result/support-0 angle for `11` \| |
 
+## `consolidated_class60_count_prefix`
+
+Spec §6.5 · layout: byte offsets · size: 1 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/native/class60.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| reference count prefix `80+n` \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

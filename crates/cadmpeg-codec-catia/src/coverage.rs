@@ -686,8 +686,8 @@ pub(crate) const DECODED_CONSOLIDATED_CONE_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_cone_count");
 pub(crate) const DECODED_CONSOLIDATED_CYLINDER_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_cylinder_count");
-pub(crate) const DECODED_CONSOLIDATED_GROUP_COUNT: CoverageKey =
-    CoverageKey::new("decoded_consolidated_group_count");
+pub(crate) const DECODED_CONSOLIDATED_CLASS60_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("decoded_consolidated_class60_record_count");
 pub(crate) const DECODED_CONSOLIDATED_PARAMETER_POINT_COUNT: CoverageKey =
     CoverageKey::new("decoded_consolidated_parameter_point_count");
 pub(crate) const DECODED_CONSOLIDATED_PCURVE_COUNT: CoverageKey =
@@ -932,7 +932,7 @@ const ALL: &[CoverageKey] = &[
     DECODED_CONSOLIDATED_CLASS61_RECORD_COUNT,
     DECODED_CONSOLIDATED_CONE_COUNT,
     DECODED_CONSOLIDATED_CYLINDER_COUNT,
-    DECODED_CONSOLIDATED_GROUP_COUNT,
+    DECODED_CONSOLIDATED_CLASS60_RECORD_COUNT,
     DECODED_CONSOLIDATED_PARAMETER_POINT_COUNT,
     DECODED_CONSOLIDATED_PCURVE_COUNT,
     DECODED_CONSOLIDATED_REFERENCE_LIST_COUNT,

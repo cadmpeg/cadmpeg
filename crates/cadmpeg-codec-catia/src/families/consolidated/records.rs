@@ -23,13 +23,12 @@ use crate::families::b2::records::{
     b2_adjacent_face_counted_owners_from_records, b2_circles_from_records,
     b2_class25_descriptors_from_records, b2_closed_owner_boundary_edges, b2_cone_point,
     b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
-    b2_edge_nodes_from_records, b2_edge_parameters_from_records,
-    b2_embedded_cylinders_from_records, b2_face_nodes_5f_from_records,
+    b2_edge_nodes_from_records, b2_edge_parameters_from_records, b2_face_nodes_5f_from_records,
     b2_owner_identity_targets_from_records, b2_owner_packets_from_records,
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records,
     b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, B2Circle,
-    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder,
-    B2FaceNode5f, B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
+    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2FaceNode5f,
+    B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
     compact_int, persistent_ref, read_f64_array, AllocationReferenceEncoding,
@@ -387,13 +386,6 @@ pub(crate) enum ConsolidatedSupportBinding {
         /// Carrier record byte offset.
         pos: usize,
     },
-    /// Cylinder frame embedded in a `b2 03 60` wrapper.
-    EmbeddedCylinder {
-        /// Embedded frame byte offset.
-        pos: usize,
-        /// Enclosing wrapper byte offset.
-        wrapper_pos: usize,
-    },
     /// `b2 03 19` circle selected by constant-V and exact arc range.
     Circle {
         /// Carrier record byte offset.
@@ -445,7 +437,6 @@ pub(crate) struct ResolvedConsolidatedEdgeBlock {
 
 struct ConsolidatedCarriers<'a> {
     cylinders: &'a [B2Cylinder],
-    embedded_cylinders: &'a [B2EmbeddedCylinder],
     circles: &'a [B2Circle],
     cones: &'a [B2Cone],
     spheres: &'a [B2Sphere],
@@ -1514,10 +1505,6 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
     let points = object_stream_vertices_from_records(ctx, data, records)?;
-    let embedded = ctx.collect_vec(
-        b2_embedded_cylinders_from_records(data, records),
-        "catia_resolved_embedded_cylinders",
-    )?;
     let standalone = ctx.collect_vec(
         b2_cylinders_from_records(data, records),
         "catia_resolved_standalone_cylinders",
@@ -1535,7 +1522,6 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     let planes = b2_plane_carriers_from_records(ctx, data, records)?;
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
-        embedded_cylinders: &embedded,
         circles: &circles,
         cones: &cones,
         spheres: &spheres,
@@ -1655,11 +1641,13 @@ fn resolve_side_support(
         .circles
         .iter()
         .filter(|circle| circle.record_id == pcurve.support_id);
-    let embedded = carriers
-        .embedded_cylinders
-        .iter()
-        .filter(|value| value.object_id == pcurve.support_id);
-    let identity_count = circles.clone().count() + embedded.clone().count();
+    let identified_cylinders = carriers.cylinders.iter().filter(|value| {
+        value
+            .header
+            .compact_operand()
+            .is_some_and(|operand| operand.value() == pcurve.support_id)
+    });
+    let identity_count = circles.clone().count() + identified_cylinders.clone().count();
     if identity_count > 1 {
         return Ok(None);
     }
@@ -1667,14 +1655,11 @@ fn resolve_side_support(
         return Ok(pcurve_matches_circle(pcurve, circle)
             .then_some(ConsolidatedSupportBinding::Circle { pos: circle.pos }));
     }
-    if let Some(value) = embedded.clone().next() {
-        return Ok(pcurve_endpoints_match(pcurve, points, |uv| {
-            Ok(b2_cylinder_point(&value.cylinder, uv))
-        })?
-        .then_some(ConsolidatedSupportBinding::EmbeddedCylinder {
-            pos: value.pos,
-            wrapper_pos: value.wrapper_pos,
-        }));
+    if let Some(value) = identified_cylinders.clone().next() {
+        return Ok(
+            pcurve_endpoints_match(pcurve, points, |uv| Ok(b2_cylinder_point(value, uv)))?
+                .then_some(ConsolidatedSupportBinding::Cylinder { pos: value.pos }),
+        );
     }
     let mut winners = Vec::new();
     for cylinder in carriers.cylinders {
@@ -1682,20 +1667,6 @@ fn resolve_side_support(
             ctx.push_vec(
                 &mut winners,
                 ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos },
-                "catia_resolved_side_winners",
-            )?;
-        }
-    }
-    for value in carriers.embedded_cylinders {
-        if pcurve_endpoints_match(pcurve, points, |uv| {
-            Ok(b2_cylinder_point(&value.cylinder, uv))
-        })? {
-            ctx.push_vec(
-                &mut winners,
-                ConsolidatedSupportBinding::EmbeddedCylinder {
-                    pos: value.pos,
-                    wrapper_pos: value.wrapper_pos,
-                },
                 "catia_resolved_side_winners",
             )?;
         }
@@ -1814,23 +1785,6 @@ fn support_points(
     let points = match binding {
         ConsolidatedSupportBinding::Cylinder { pos } => {
             let Some(carrier) = carriers.cylinders.iter().find(|value| value.pos == *pos) else {
-                return Ok(None);
-            };
-            ctx.collect_options(
-                pcurve
-                    .sites
-                    .iter()
-                    .map(|site| b2_cylinder_point(carrier, site.point.get())),
-                "catia_resolved_support_points",
-            )?
-        }
-        ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
-            let Some(carrier) = carriers
-                .embedded_cylinders
-                .iter()
-                .find(|value| value.pos == *pos)
-                .map(|value| &value.cylinder)
-            else {
                 return Ok(None);
             };
             ctx.collect_options(
@@ -2357,7 +2311,6 @@ mod tests {
         let planes = [plane];
         let carriers = super::ConsolidatedCarriers {
             cylinders: &[],
-            embedded_cylinders: &[],
             circles: &[],
             cones: &[],
             spheres: &[],
@@ -2411,7 +2364,6 @@ mod tests {
         .collect();
         let carriers = super::ConsolidatedCarriers {
             cylinders: &cylinders,
-            embedded_cylinders: &[],
             circles: &[],
             cones: &[],
             spheres: &[],

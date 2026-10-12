@@ -1963,8 +1963,8 @@ fn finish_decode(
             native.consolidated_cylinders.len(),
         ),
         (
-            crate::coverage::DECODED_CONSOLIDATED_GROUP_COUNT,
-            native.consolidated_groups.len(),
+            crate::coverage::DECODED_CONSOLIDATED_CLASS60_RECORD_COUNT,
+            native.consolidated_class60_records.len(),
         ),
         (
             crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT,

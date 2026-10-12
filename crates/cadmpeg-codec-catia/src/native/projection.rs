@@ -651,13 +651,6 @@ pub(crate) fn native_consolidated_support_binding(
                 byte_offset: u64_from_index(*pos),
             }
         }
-        crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder {
-            pos,
-            wrapper_pos,
-        } => CatiaConsolidatedSupportBinding::EmbeddedCylinder {
-            byte_offset: u64_from_index(*pos),
-            wrapper_byte_offset: u64_from_index(*wrapper_pos),
-        },
         crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { pos } => {
             CatiaConsolidatedSupportBinding::Circle {
                 byte_offset: u64_from_index(*pos),

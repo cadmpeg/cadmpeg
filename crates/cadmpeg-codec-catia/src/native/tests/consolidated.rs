@@ -22,12 +22,13 @@ use crate::test_support::test_a5a8::{a5_native_edge_identity_stream, a5_pcurve_s
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
     b2_chamfer_contact_stream, b2_chamfer_stream, b2_circle_stream, b2_class5b5c_stream,
-    b2_cone_stream, b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
-    b2_fixed_owner_boundary_cycle_stream, b2_fixed_owner_boundary_face_node_cycle_stream,
-    b2_group_stream, b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
-    b2_owner_chart_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
-    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_sphere_stream, b2_torus_stream, b2_width_coded_owner_with_allocation_stream,
+    b2_class60_reference_stream, b2_cone_stream, b2_counted_61_stream, b2_cylinder_stream,
+    b2_edge_node_stream, b2_fixed_owner_boundary_cycle_stream,
+    b2_fixed_owner_boundary_face_node_cycle_stream, b2_implicit_axis_cylinder_stream,
+    b2_line_profile_stream, b2_long_61_stream, b2_owner_chart_stream, b2_parameter_point_stream,
+    b2_pcurve_stream, b2_plane_carrier_stream, b2_range_origin_cylinder_stream,
+    b2_reference_list_stream, b2_resolved_revolution_stream, b2_sphere_stream, b2_torus_stream,
+    b2_width_coded_owner_with_allocation_stream,
 };
 use crate::test_support::test_bytes::{be32, le_f64};
 use crate::test_support::test_container::{
@@ -76,29 +77,36 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 }
 
 #[test]
-fn native_namespace_retains_typed_consolidated_groups() {
-    let native = crate::native::CatiaNative::decode(&b2_group_stream());
-    let [group] = native.consolidated_groups.as_slice() else {
-        panic!("one consolidated group")
+fn native_namespace_retains_counted_class60_references() {
+    let native = crate::native::CatiaNative::decode(&b2_class60_reference_stream());
+    let [record] = native.consolidated_class60_records.as_slice() else {
+        panic!("one counted class-0x60 record")
     };
-    assert_eq!(group.byte_offset, 9);
-    assert_eq!(group.group_type, 3);
+    assert_eq!(record.frame.pos, 9);
+    assert_eq!(record.source_offset, 9);
+    assert_eq!(record.references[0].value, 3);
+    assert_eq!(
+        record.references[0].encoding,
+        crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
-        .expect("store CATIA consolidated groups");
+        .expect("store CATIA class-0x60 records");
     assert_eq!(
-        crate::native::CatiaNative::load(&namespace).expect("load CATIA consolidated groups"),
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x60 records"),
         native
     );
 
     let mut invalid = native;
-    invalid.consolidated_groups[0].id.push_str("-changed");
+    invalid.consolidated_class60_records[0]
+        .id
+        .push_str("-changed");
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA consolidated group for load validation");
+        .expect("store invalid class-0x60 record for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 

@@ -238,7 +238,7 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 `catia.md` §6.3 "The compact tag is separate" defines factory-local tag scope and the separate addressing forms. Complete consolidated analytic and freeform carrier payloads without their own persistent surface tag supply geometry through independent construction or geometric witnesses.
 
-**Need.** Identify the serialized factory context and any additional typed identity relation for support tags outside the admitted circle, embedded-cylinder, standard-carrier, and canonical-alias relations. Require a source-closed relation and its chart and endpoint invariants.
+**Need.** Identify the serialized factory context and any additional typed identity relation for support tags outside the admitted circle, cylinder-header, standard-carrier, and canonical-alias relations. Require a source-closed relation and its chart and endpoint invariants.
 
 **Conflict.** A unique class-`19` record with tag 125 and a pcurve with `op1=125` occupy the same source extent, but their U intervals differ and the pcurve is not constant in V. Distinct tags 113 and 126 lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
 
@@ -275,14 +275,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 **Conflict.** The public generic-fillet description lists center points, first limit, and second limit. The serialized jet stores first limit, second limit, and center instead. Public constructor descriptions therefore do not establish bridge wire order. In the spray-bottle hand record, references 781, 778, and 780 have no retained outer alias-row target; the `[base+3,base,base+2]` numeric pattern alone supplies no locus identity.
 
 **Note.** Independent standard-versus-STEP topology verifies all 134 eyebolt faces uniquely by joint adjacency refinement. The spring graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
-
-### SN-22. Class-`0x60` group types
-
-**Question.** What does group type `2` select? What does each group type from `12` through `21` select?
-
-**Known.** `catia.md` §6.5 `b2 03 60` defines type `3` as a cylinder chain.
-
-**Need.** We must know the other type namespaces to parse their groups.
 
 ### SN-23. Counted class-`0x61` fields
 

@@ -1563,23 +1563,6 @@ fn freeform_surface_carriers(
             "catia_freeform_surface_carriers",
         )?;
     }
-    for surface in crate::families::b2::records::b2_embedded_cylinders_from_records(data, records) {
-        let source_object = cgm_source(ctx, "surface", surface.object_id)?;
-        let source_tag = ctx.format_retained(
-            format_args!("b2_03_60:object_id:{:08x}", surface.object_id),
-            "catia_freeform_surface_source_tag",
-        )?;
-        ctx.push_vec(
-            &mut surfaces,
-            FreeformSurfaceCarrier {
-                pos: surface.pos,
-                geometry: surface.cylinder.surface_geometry(),
-                source_object,
-                source_tag,
-            },
-            "catia_freeform_surface_carriers",
-        )?;
-    }
     for surface in crate::families::b2::records::b2_cones_from_records(data, records) {
         let source_object =
             cgm_source_key(ctx, "b2-03-29-frame", format_args!("{:010}", surface.pos))?;
@@ -2341,15 +2324,6 @@ fn append_resolved_consolidated_surface_curves(
             "catia_freeform_standalone_cylinders",
         )?;
     }
-    let mut embedded = HashMap::new();
-    for value in crate::families::b2::records::b2_embedded_cylinders_from_records(data, records) {
-        ctx.insert_hash_map(
-            &mut embedded,
-            value.pos,
-            value,
-            "catia_freeform_embedded_cylinders",
-        )?;
-    }
     let mut cones = HashMap::new();
     for cone in crate::families::b2::records::b2_cones_from_records(data, records) {
         ctx.insert_hash_map(&mut cones, cone.pos, cone, "catia_freeform_cones")?;
@@ -2782,24 +2756,6 @@ fn append_resolved_consolidated_surface_curves(
                         cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
                     )
                 }
-            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
-                let Some(value) = embedded.get(pos) else {
-                    continue;
-                };
-                let carrier = value.cylinder.surface_geometry();
-                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = carrier else {
-                    continue;
-                };
-                let radius = cylinder.radius().get();
-                (
-                    (*pos, None),
-                    carrier,
-                    Some(cgm_source(admission.context(), "surface", value.object_id)?),
-                    ConsolidatedCarrierChart::Cylinder { radius },
-                    "consolidated_b2_03_60_cylinder",
-                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
-                )
-            }
             Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos }) => {
                 let Some(cone) = cones.get(pos) else {
                     continue;
@@ -4978,9 +4934,9 @@ mod tests {
     }
 
     #[test]
-    fn freeform_fallback_distinguishes_grouped_and_standalone_cylinders() {
+    fn freeform_fallback_uses_independent_cylinder_frame_offsets() {
         let mut bytes = crate::test_support::test_b2::b2_cylinder_stream();
-        bytes.extend_from_slice(&crate::test_support::test_b2::b2_embedded_cylinder_stream());
+        bytes.extend_from_slice(&crate::test_support::test_b2::b2_wide_cylinder_stream());
 
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers = crate::test_support::with_service_context(|ctx| {
@@ -4995,7 +4951,8 @@ mod tests {
         });
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
-        assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
+        assert!(carriers[1].source_tag.starts_with("b2_03_28:"));
+        assert_ne!(carriers[0].source_tag, carriers[1].source_tag);
     }
 
     #[test]

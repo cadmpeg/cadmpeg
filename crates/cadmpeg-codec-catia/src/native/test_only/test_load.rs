@@ -5,7 +5,6 @@ use super::test_consolidated::{
     validate_consolidated_chamfers, validate_consolidated_circles,
     validate_consolidated_class5b5c_records, validate_consolidated_class61_records,
     validate_consolidated_cones, validate_consolidated_cylinders,
-    validate_consolidated_embedded_cylinders, validate_consolidated_groups,
     validate_consolidated_line_profiles, validate_consolidated_parameter_points,
     validate_consolidated_pcurves, validate_consolidated_plane_carriers,
     validate_consolidated_reference_lists, validate_consolidated_revolutions,
@@ -39,13 +38,13 @@ use crate::native::{
     terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
     CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
     CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
-    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedLineProfile,
-    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
-    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution,
-    CatiaConsolidatedSphere, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
-    CatiaDesignObject, CatiaEntityReferenceIndex, CatiaExternalReference, CatiaFinjplSegment,
-    CatiaLegacyEntityRun, CatiaNative, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord,
-    CatiaPreviewImage, CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
+    CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
+    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList,
+    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
+    CatiaConsolidatedVertexIdentity, CatiaDesignObject, CatiaEntityReferenceIndex,
+    CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
+    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
+    CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
     CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
     CatiaZeroEntityRecord, CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
@@ -583,17 +582,12 @@ impl CatiaNative {
             namespace.arena_as("consolidated_cylinders")?;
         consolidated_cylinders.sort_by_key(|cylinder| cylinder.byte_offset);
         validate_consolidated_cylinders(&consolidated_cylinders)?;
-        let mut consolidated_groups: Vec<CatiaConsolidatedGroup> =
-            namespace.arena_as("consolidated_groups")?;
-        consolidated_groups.sort_by_key(|group| group.byte_offset);
-        validate_consolidated_groups(&consolidated_groups)?;
-        let mut consolidated_embedded_cylinders: Vec<CatiaConsolidatedEmbeddedCylinder> =
-            namespace.arena_as("consolidated_embedded_cylinders")?;
-        consolidated_embedded_cylinders.sort_by_key(|cylinder| cylinder.byte_offset);
-        validate_consolidated_embedded_cylinders(
-            &consolidated_embedded_cylinders,
-            &consolidated_groups,
-        )?;
+        let mut consolidated_class60_records: Vec<
+            crate::native::class60::CatiaConsolidatedClass60Record,
+        > = namespace.arena_as("consolidated_class60_records")?;
+        consolidated_class60_records
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        crate::native::class60::validate(&consolidated_class60_records)?;
         let mut consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile> =
             namespace.arena_as("consolidated_line_profiles")?;
         consolidated_line_profiles.sort_by_key(|line| line.byte_offset);
@@ -690,8 +684,6 @@ impl CatiaNative {
                 circles: &consolidated_circles,
                 cones: &consolidated_cones,
                 cylinders: &consolidated_cylinders,
-                embedded_cylinders: &consolidated_embedded_cylinders,
-                groups: &consolidated_groups,
                 planes: &consolidated_plane_carriers,
                 spheres: &consolidated_spheres,
                 tori: &consolidated_tori,
@@ -745,11 +737,10 @@ impl CatiaNative {
             object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
-            consolidated_embedded_cylinders,
             consolidated_domain_relations,
             consolidated_edge_nodes,
             consolidated_edge_runs,
-            consolidated_groups,
+            consolidated_class60_records,
             consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,

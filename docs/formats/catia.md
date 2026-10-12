@@ -617,7 +617,7 @@ The complete consolidated A-family width-1/2/3 class-`34` surface and B-family w
 
 When the `op1` support identity equals the persistent record identifier of exactly one class-`19` analytic circle and the pcurve has constant V with the same arc-length U range, that circle is the pcurve's support. Repeated class-`19` records carrying the identity leave the support unresolved. Without an identity match, the same chart invariants bind a circle only when exactly one class-`19` record satisfies them.
 
-An embedded layout-`0x5a` cylinder in a type-`3` class-`0x60` group is another explicit support target. Its compact embedded object identity and the class-`0x20` support identity must be equal, that identity must occur on exactly one embedded cylinder and on no class-`19` record, and both pcurve endpoint lifts must reach serialized object-stream vertices within `2e-3` mm. A duplicate identity or a failed endpoint witness leaves the support unresolved; the decoder does not replace an explicit identity mismatch with a geometric candidate. Standalone class-`0x28` cylinders and the other consolidated analytic carriers have no inline persistent support identity and continue to require their chart and endpoint witnesses.
+A consolidated class-`0x28` cylinder retains the compact representation operand when its complete frame header closes under the compact grammar. The packed header token and declared width are retained for every cylinder. A class-`0x20` support operand selects a cylinder only when that value occurs on exactly one retained cylinder and on no class-`19` record, and both pcurve endpoint lifts reach serialized object-stream vertices within `2e-3` mm. A duplicate operand or a failed endpoint witness leaves the support unresolved. Other consolidated analytic carriers require their chart and endpoint witnesses. Cylinder frames retain their own byte offsets and parameter domains independently of adjacent class-`0x60` reference lists.
 
 When the class-`0x20` support identity equals the tag of exactly one decoded standard `00 33` carrier in the face-local `SurfacicReps` roster, that carrier is the pcurve support. The pcurve uses the carrier's stored parameter chart without a rechart. Its parameter-interval endpoints must lift through that carrier to the edge's serialized endpoint loci before the side can bind to a standard edge or face. Duplicate standard carrier tags, an unknown carrier geometry, or a failed endpoint lift leave the side unresolved; the decoder does not select a face-local row by output order.
 
@@ -864,8 +864,16 @@ The complete fixed-nine numeric tail is 62 bytes:
 - **`b2 03 29`** stores the cone charts defined in §5.12.
 - **`b2 03 31`** constant-offset support: token `05`, a compact `08 <u16le>` or `0c <u24le>` carrier reference, signed `d:f64le`, then a strictly increasing parameter box `[u0,v0,u1,v1]:4×f64le` with `u0<u1` and `v0<v1`. It defines `O(u,v) = S(u,v) + d·n(u,v)` reconstructed from the carrier's analytic NURBS partials. The referenced consolidated carrier is the unique NURBS whose parameter domain contains the box and whose V-knot lane contains both `v0` and `v1` within `1e-3`. The construction preserves the carrier's U/V senses and has no extension flags.
 - **`b2 03 30`** construction-use wrapper with a `kind` discriminant: `0x01` offset (semantically identical to `b2 03 31` and resolved through the same carrier-domain rule), `0x19` offset-of-fillet (`R_eff = R_support + |d|`), `{0x05,0x15}` variable-radius domain wrappers. For `0x01`, the four scalar fields are the same strictly increasing parameter box. The wrapper payload ends after its four kind-specific f64 scalars.
-- **`b2 03 65`** is the constant group separator `81 03 05 0d`.
-- **`b2 03 60`** is a two-compact-integer typed group opener. The first integer is the fixed framing opcode `32`; the second is the group type. Type `3` opens a cylinder chain. Following `<pre> 03 28 5a <compact id>` frames carry the same 90-byte cylinder payload as standalone layout `0x5a` and belong to the type-3 group until the next opener.
+- **`b2 03 65`** has the one-child allocation form `81 03 05 0d`: one owned-child reference of ordinal zero, count control `05`, and terminal `0d`.
+- **`b2/b3/b4 <flag> 60`** stores a counted allocation-reference vector. Its payload is `80+n` followed by exactly `n` allocation references under the allocation-reference grammar in §6. The count is in `0..127`. The last reference ends at the frame boundary; the vector has no tail. Each reference retains its numeric value and addressing form. The raw frame retains the declared header width, independent flag, packed header token, and exact reference-token bytes. Reference values have bounded source-local scope.
+
+The class-`0x60` count prefix has this fixed layout:
+
+| Payload offset | Type | Field |
+|---|---|---|
+| `+0` | `u8` | reference count prefix `80+n` |
+
+For `81 09`, the list contains one backward-distance reference of value 2. For `84 03 07 0b 0f`, it contains four owned-child references of ordinals 0 through 3. Logical source coordinates order the records independently of physical extent placement. Class-`0x28` cylinders are independently length-closed geometry frames; a reference value in an adjacent list does not define cylinder ownership.
 
 ### 6.6 `a8` common object-stream freeform class
 

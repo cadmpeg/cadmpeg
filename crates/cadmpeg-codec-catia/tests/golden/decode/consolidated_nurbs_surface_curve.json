@@ -397,11 +397,16 @@
         "consolidated_chamfers": [],
         "consolidated_circles": [],
         "consolidated_class5b5c_records": [],
+        "consolidated_class60_records": [],
         "consolidated_class61_records": [],
         "consolidated_cones": [],
         "consolidated_cylinders": [
           {
             "byte_offset": 424,
+            "header": {
+              "header_token": 5,
+              "width": 1
+            },
             "id": "catia:consolidated:cylinder#0",
             "layout": 90,
             "origin": [
@@ -540,8 +545,6 @@
             "tolerance": 1e-6
           }
         ],
-        "consolidated_embedded_cylinders": [],
-        "consolidated_groups": [],
         "consolidated_line_profiles": [],
         "consolidated_owner_packets": [],
         "consolidated_parameter_points": [],
@@ -777,6 +780,7 @@
       "decoded_consolidated_chamfer_count": 0,
       "decoded_consolidated_chamfer_parameter_point_count": 0,
       "decoded_consolidated_circle_count": 0,
+      "decoded_consolidated_class60_record_count": 0,
       "decoded_consolidated_class61_record_count": 0,
       "decoded_consolidated_cone_count": 0,
       "decoded_consolidated_cylinder_count": 1,
@@ -784,7 +788,6 @@
       "decoded_consolidated_edge_run_endpoint_locus_count": 1,
       "decoded_consolidated_edge_run_shared_locus_count": 1,
       "decoded_consolidated_edge_run_support_binding_count": 2,
-      "decoded_consolidated_group_count": 0,
       "decoded_consolidated_line_profile_count": 0,
       "decoded_consolidated_parameter_point_count": 0,
       "decoded_consolidated_pcurve_count": 2,

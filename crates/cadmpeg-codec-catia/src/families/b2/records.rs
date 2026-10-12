@@ -48,8 +48,7 @@ const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_B2_RECORD_GEOMETRY: f64 = 1.0e-9;
 const EPS_B2_RECORD_EXACT_GEOMETRY: f64 = 1.0e-12;
 const EPS_PARAMETER_LINE: f64 = 1.0e-12;
-
-const B2_GROUP_SEPARATOR_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
+const B2_SINGLE_CHILD_ALLOCATION_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
@@ -921,7 +920,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
             && record
                 .payload()
                 .and_then(|payload| data.get(payload))
-                .is_some_and(|payload| payload == B2_GROUP_SEPARATOR_PAYLOAD.as_slice())
+                .is_some_and(|payload| payload == B2_SINGLE_CHILD_ALLOCATION_PAYLOAD.as_slice())
         {
             allocation.clear();
             continue;
@@ -2360,6 +2359,8 @@ fn parse_b2_nurbs_curve(
 /// Analytic cylinder support stored in a `b2 03 28` record.
 #[derive(Debug, Clone)]
 pub(crate) struct B2Cylinder {
+    /// Complete packed frame token with its declared width.
+    pub(crate) header: crate::wire::records::WidthCodedToken,
     /// Record byte offset.
     pub(crate) pos: usize,
     /// Cylinder-axis origin.
@@ -2540,106 +2541,6 @@ pub(crate) struct B2Torus {
     pub(crate) major_scale: PositiveReal,
     /// Scale from minor angle to stored V parameter.
     pub(crate) minor_scale: PositiveReal,
-}
-
-/// Constant `b2 03 65` separator preceding a typed group opener.
-#[derive(Debug, Clone)]
-#[cfg(test)]
-struct B2GroupSeparator {
-    /// Consolidated-frame header token.
-    pub(super) token: u32,
-}
-
-/// Typed group opener stored in a `b2 03 60` record.
-#[derive(Debug, Clone)]
-pub(crate) struct B2Group {
-    /// Record byte offset.
-    pub(crate) pos: usize,
-    /// Compact group-type code; type `3` opens a cylinder chain.
-    pub(crate) group_type: u32,
-}
-
-/// Cylinder frame following a type-3 `b2 03 60` group opener.
-#[derive(Debug, Clone)]
-pub(crate) struct B2EmbeddedCylinder {
-    /// Group-opener byte offset.
-    pub(crate) wrapper_pos: usize,
-    /// Embedded frame byte offset, including its varying pre-byte.
-    pub(crate) pos: usize,
-    /// Compact embedded object identifier.
-    pub(crate) object_id: u32,
-    /// Decoded `0x5a` cylinder frame.
-    pub(crate) cylinder: B2Cylinder,
-}
-
-/// Decode `0x5a` cylinder frames following type-3 `b2 03 60` group openers.
-#[must_use]
-#[cfg(test)]
-fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
-    let records = consolidated_records(data);
-    b2_embedded_cylinders_from_records(data, &records).collect()
-}
-
-pub(crate) fn b2_embedded_cylinders_from_records<'a>(
-    data: &'a [u8],
-    records: &'a [ConsolidatedRecord],
-) -> impl Iterator<Item = B2EmbeddedCylinder> + 'a {
-    let mut groups = b2_groups_from_records(data, records).peekable();
-    let mut active = None::<(usize, usize, usize)>;
-    std::iter::from_fn(move || loop {
-        if let Some((wrapper_pos, search, end)) = active.as_mut() {
-            while *search + 3 <= *end {
-                let Some(relative) = data[*search..*end]
-                    .windows(3)
-                    .position(|bytes| bytes == [0x03, 0x28, 0x5a])
-                else {
-                    break;
-                };
-                let marker = *search + relative;
-                *search = marker + 3;
-                let mut payload = marker + 3;
-                let Some(object_id) = compact_int(data, &mut payload) else {
-                    continue;
-                };
-                let Some(payload_end) = payload.checked_add(90) else {
-                    continue;
-                };
-                if payload_end > *end {
-                    continue;
-                }
-                let mut standalone = [0u8; 95];
-                standalone[..5].copy_from_slice(&[0xb2, 0x03, 0x28, 0x5a, 0]);
-                standalone[5..].copy_from_slice(&data[payload..payload_end]);
-                let Some(mut cylinder) = parse_b2_cylinder(
-                    &standalone,
-                    ConsolidatedFrame {
-                        pos: 0,
-                        payload: 5,
-                        end: 95,
-                        header_token: 0,
-                    },
-                ) else {
-                    continue;
-                };
-                cylinder.pos = marker - 1;
-                return Some(B2EmbeddedCylinder {
-                    wrapper_pos: *wrapper_pos,
-                    pos: marker - 1,
-                    object_id,
-                    cylinder,
-                });
-            }
-            active = None;
-        }
-        let group = groups.next()?;
-        if group.group_type == 3 {
-            active = Some((
-                group.pos,
-                group.pos + 3,
-                groups.peek().map_or(data.len(), |next| next.pos),
-            ));
-        }
-    })
 }
 
 fn b2_construction_offset_supports_from_records(
@@ -3109,46 +3010,6 @@ pub(crate) fn b2_spheres_from_records<'a>(
     })
 }
 
-/// Decode constant `b2 03 65` group separators.
-#[must_use]
-#[cfg(test)]
-fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
-    b_family_frames(data, 0x65)
-        .into_iter()
-        .filter(|frame| {
-            data.get(frame.payload..frame.end) == Some(B2_GROUP_SEPARATOR_PAYLOAD.as_slice())
-        })
-        .map(|frame| B2GroupSeparator {
-            token: frame.header_token,
-        })
-        .collect()
-}
-
-/// Decode `b2 03 60` typed group openers.
-#[must_use]
-#[cfg(test)]
-fn b2_groups(data: &[u8]) -> Vec<B2Group> {
-    let records = consolidated_records(data);
-    b2_groups_from_records(data, &records).collect()
-}
-
-pub(crate) fn b2_groups_from_records<'a>(
-    data: &'a [u8],
-    records: &'a [ConsolidatedRecord],
-) -> impl Iterator<Item = B2Group> + 'a {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x60).filter_map(move |frame| {
-        let mut at = frame.payload;
-        if compact_int(data, &mut at)? != 32 {
-            return None;
-        }
-        let group_type = compact_int(data, &mut at)?;
-        (at == frame.end).then_some(B2Group {
-            pos: frame.pos,
-            group_type,
-        })
-    })
-}
-
 /// Return the neutral carrier of a decoded B2 slant-coordinate cone chart.
 #[must_use]
 pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> SurfaceGeometry {
@@ -3192,23 +3053,14 @@ pub(crate) fn b2_cylinders_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = B2Cylinder> + 'a {
-    let mut embedded = b2_embedded_cylinders_from_records(data, records).peekable();
     family_frames_from_records(records, ConsolidatedFamily::B, 0x28)
         .filter_map(move |frame| parse_b2_cylinder(data, frame))
-        .filter(move |cylinder| {
-            while embedded
-                .peek()
-                .is_some_and(|entry| entry.pos < cylinder.pos)
-            {
-                embedded.next();
-            }
-            embedded
-                .peek()
-                .is_none_or(|entry| entry.pos != cylinder.pos)
-        })
 }
 
 fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder> {
+    let width = u8::try_from(frame.payload.checked_sub(frame.pos.checked_add(4)?)?).ok()?;
+    let width = ConsolidatedFrameWidth::try_from(width).ok()?;
+    let header = crate::wire::records::WidthCodedToken::new(width, frame.header_token).ok()?;
     let pos = frame.pos;
     let layout = u8::try_from(frame.end.checked_sub(frame.payload)?).ok()?;
     let p = frame.payload;
@@ -3237,6 +3089,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 _ => return None,
             };
             Some(B2Cylinder {
+                header,
                 pos,
                 origin,
                 frame: UnitFrame3::in_xy_plane(axis),
@@ -3264,6 +3117,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let u_range = IncreasingParameterInterval::new(u_range)?;
             let v_range = IncreasingParameterInterval::new(v_range)?;
             Some(B2Cylinder {
+                header,
                 pos,
                 origin,
                 frame: UnitFrame3::X_AXIS_Y_REFERENCE,
@@ -3292,6 +3146,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let u_range = IncreasingParameterInterval::new(u_range)?;
             let v_range = IncreasingParameterInterval::new(v_range)?;
             Some(B2Cylinder {
+                header,
                 pos,
                 origin,
                 frame: UnitFrame3::about_y_axis(vector),

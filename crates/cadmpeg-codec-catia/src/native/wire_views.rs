@@ -138,6 +138,7 @@ impl Serialize for CatiaConsolidatedCircle {
 struct CatiaConsolidatedCylinderWireRef<'a> {
     id: &'a str,
     byte_offset: u64,
+    header: crate::wire::records::WidthCodedToken,
     layout: u8,
     origin: &'a FiniteVector<3>,
     radius: &'a cadmpeg_ir::scalar::PositiveLength,
@@ -181,6 +182,7 @@ impl Serialize for CatiaConsolidatedCylinder {
         CatiaConsolidatedCylinderWireRef {
             id: &self.id,
             byte_offset: self.byte_offset,
+            header: self.header,
             layout: self.payload.layout(),
             origin: &self.origin,
             radius: &self.radius,

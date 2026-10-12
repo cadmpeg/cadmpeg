@@ -9,10 +9,10 @@ use crate::native::projection::{
 use crate::native::{
     repeated_reference_schema_selection, CatiaAliasRow, CatiaCatalog, CatiaConsolidatedCircle,
     CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
-    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedOwnerPacket,
-    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedSphere,
-    CatiaConsolidatedSupportBinding, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
-    CatiaFinjplSegment, CatiaObjectGraph, CatiaOwnerPacketPayload, CatiaValueBlock,
+    CatiaConsolidatedOwnerPacket, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
+    CatiaConsolidatedSphere, CatiaConsolidatedSupportBinding, CatiaConsolidatedTorus,
+    CatiaConsolidatedVertexIdentity, CatiaFinjplSegment, CatiaObjectGraph, CatiaOwnerPacketPayload,
+    CatiaValueBlock,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -53,8 +53,6 @@ pub(super) struct ConsolidatedSupportArenas<'a> {
     pub(super) circles: &'a [CatiaConsolidatedCircle],
     pub(super) cones: &'a [CatiaConsolidatedCone],
     pub(super) cylinders: &'a [CatiaConsolidatedCylinder],
-    pub(super) embedded_cylinders: &'a [CatiaConsolidatedEmbeddedCylinder],
-    pub(super) groups: &'a [CatiaConsolidatedGroup],
     pub(super) planes: &'a [CatiaConsolidatedPlaneCarrier],
     pub(super) spheres: &'a [CatiaConsolidatedSphere],
     pub(super) tori: &'a [CatiaConsolidatedTorus],
@@ -103,21 +101,6 @@ pub(super) fn validate_consolidated_edge_runs(
         .cylinders
         .iter()
         .map(|cylinder| cylinder.byte_offset)
-        .collect::<HashSet<_>>();
-    let group_offsets = supports
-        .groups
-        .iter()
-        .map(|group| (group.id.as_str(), group.byte_offset))
-        .collect::<HashMap<_, _>>();
-    let embedded_cylinder_offsets = supports
-        .embedded_cylinders
-        .iter()
-        .filter_map(|cylinder| {
-            Some((
-                cylinder.byte_offset,
-                *group_offsets.get(cylinder.group.as_str())?,
-            ))
-        })
         .collect::<HashSet<_>>();
     let plane_offsets = supports
         .planes
@@ -249,10 +232,6 @@ pub(super) fn validate_consolidated_edge_runs(
                 CatiaConsolidatedSupportBinding::Cylinder { byte_offset } => {
                     cylinder_offsets.contains(byte_offset)
                 }
-                CatiaConsolidatedSupportBinding::EmbeddedCylinder {
-                    byte_offset,
-                    wrapper_byte_offset,
-                } => embedded_cylinder_offsets.contains(&(*byte_offset, *wrapper_byte_offset)),
                 CatiaConsolidatedSupportBinding::Circle { byte_offset } => {
                     circle_offsets.contains(byte_offset)
                 }

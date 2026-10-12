@@ -12,17 +12,16 @@ use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
     b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
-    b2_class5b5c_stream, b2_cone_stream, b2_construction_use_stream, b2_counted_61_stream,
-    b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
-    b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_group_stream,
-    b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
-    b2_offset_support_stream, b2_owner_chart_stream, b2_owner_chart_stream_with_extended_bridge,
-    b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
-    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_revolution_stream, b2_sphere_stream, b2_topology_edge_run_stream,
-    b2_topology_metadata_stream, b2_torus_stream, b2_width_coded_owner_chart_stream,
-    b2_width_coded_owner_packet_stream, b2_width_coded_owner_with_allocation_stream,
-    b3_cylinder_stream, b3_offset_support_stream,
+    b2_class5b5c_stream, b2_class60_reference_stream, b2_cone_stream, b2_construction_use_stream,
+    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
+    b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_implicit_axis_cylinder_stream,
+    b2_line_profile_stream, b2_long_61_stream, b2_offset_support_stream, b2_owner_chart_stream,
+    b2_owner_chart_stream_with_extended_bridge, b2_owner_packet_stream, b2_parameter_point_stream,
+    b2_pcurve_stream, b2_plane_carrier_stream, b2_range_origin_cylinder_stream,
+    b2_reference_list_stream, b2_resolved_revolution_stream, b2_revolution_stream,
+    b2_sphere_stream, b2_topology_edge_run_stream, b2_topology_metadata_stream, b2_torus_stream,
+    b2_width_coded_owner_chart_stream, b2_width_coded_owner_packet_stream,
+    b2_width_coded_owner_with_allocation_stream, b3_cylinder_stream, b3_offset_support_stream,
 };
 use crate::test_support::test_b5::{finite, finite_vector, increasing};
 
@@ -453,7 +452,7 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
 #[test]
 fn fixed_owner_backward_identities_do_not_cross_group_separator() {
     let (mut bytes, _target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
-    bytes.splice(owner_pos..owner_pos, b2_group_stream());
+    bytes.splice(owner_pos..owner_pos, b2_class60_reference_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
 
     assert!(parsed_owner_identity_targets(&bytes, &records).is_empty());
@@ -1747,21 +1746,6 @@ fn b2_sphere_parser_rejects_invalid_scaled_frames_and_bounds() {
     let mut stream = b2_sphere_stream();
     stream[5 + 18 * 8..5 + 19 * 8].copy_from_slice(&0.25f64.to_le_bytes());
     assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
-}
-
-#[test]
-fn b2_group_parser_reads_separator_and_typed_opener() {
-    let bytes = b2_group_stream();
-    let separators = crate::families::b2::records::b2_group_separators(&bytes);
-    let groups = crate::families::b2::records::b2_groups(&bytes);
-    assert_eq!(separators.len(), 1);
-    assert_eq!(separators[0].token, 0x05);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].group_type, 3);
-
-    let mut invalid = bytes;
-    invalid[14] = 0x85;
-    assert!(crate::families::b2::records::b2_groups(&invalid).is_empty());
 }
 
 #[test]

@@ -3,10 +3,10 @@ use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::{
     CatiaConsolidatedCircle, CatiaConsolidatedClass61Payload, CatiaConsolidatedClass61Record,
     CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedCylinderPayload,
-    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedLineProfile,
-    CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
-    CatiaConsolidatedPlaneCarrierPayload, CatiaConsolidatedReferenceList,
-    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
+    CatiaConsolidatedLineProfile, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
+    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedPlaneCarrierPayload,
+    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
+    CatiaConsolidatedTorus,
 };
 use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -54,23 +54,6 @@ pub(super) fn validate_consolidated_class5b5c_records(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated class-0x5b/0x5c record `{}` is structurally invalid",
                 record.id
-            )));
-        }
-    }
-    Ok(())
-}
-
-pub(super) fn validate_consolidated_groups(
-    groups: &[CatiaConsolidatedGroup],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for (index, group) in groups.iter().enumerate() {
-        let expected_id = format!("catia:consolidated:group#{index}");
-        if group.id != expected_id
-            || index > 0 && groups[index - 1].byte_offset >= group.byte_offset
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated group `{}` is structurally invalid",
-                group.id
             )));
         }
     }
@@ -303,54 +286,6 @@ pub(super) fn validate_consolidated_cylinders(
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated cylinder `{}` is structurally invalid",
-                cylinder.id
-            )));
-        }
-    }
-    Ok(())
-}
-
-pub(super) fn validate_consolidated_embedded_cylinders(
-    cylinders: &[CatiaConsolidatedEmbeddedCylinder],
-    groups: &[CatiaConsolidatedGroup],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let groups = groups
-        .iter()
-        .enumerate()
-        .map(|(index, group)| {
-            (
-                group.id.as_str(),
-                (group, groups.get(index + 1).map(|next| next.byte_offset)),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    for (index, cylinder) in cylinders.iter().enumerate() {
-        let dot = |first: [f64; 3], second: [f64; 3]| {
-            first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
-        };
-        let group_valid =
-            groups
-                .get(cylinder.group.as_str())
-                .is_some_and(|(group, next_offset)| {
-                    group.group_type == 3
-                        && group.byte_offset < cylinder.byte_offset
-                        && next_offset.is_none_or(|next| cylinder.byte_offset < next)
-                });
-        if cylinder.id != format!("catia:consolidated:embedded-cylinder#{index}")
-            || !group_valid
-            || !matches!(cylinder.frame_token, 0x19 | 0x1c)
-            || cylinder.axis.get()[2] != 0.0
-            || cylinder.reference_direction.get()
-                != [-cylinder.axis.get()[1], cylinder.axis.get()[0], 0.0]
-            || dot(cylinder.axis.get(), cylinder.reference_direction.get()).abs() > 1.0e-9
-            || !crate::families::b2::records::circle_range_is_full_turn(
-                cylinder.radius.get(),
-                cylinder.u_range.endpoints(),
-            )
-            || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated embedded cylinder `{}` is structurally invalid",
                 cylinder.id
             )));
         }

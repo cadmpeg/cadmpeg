@@ -21,10 +21,9 @@ use crate::test_support::test_a5a8::{
 };
 use crate::test_support::test_b2::{
     b2_circle_stream, b2_cylinder_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
-    b2_embedded_cylinder_stream_with_object_id, b2_fixed_owner_boundary_cycle_stream,
-    b2_fixed_owner_boundary_face_node_cycle_stream, b2_line_profile_stream,
-    b2_plane_carrier_stream, b2_resolved_revolution_stream, b2_topology_edge_run_stream,
-    b3_cylinder_stream,
+    b2_fixed_owner_boundary_cycle_stream, b2_fixed_owner_boundary_face_node_cycle_stream,
+    b2_line_profile_stream, b2_plane_carrier_stream, b2_resolved_revolution_stream,
+    b2_topology_edge_run_stream, b2_wide_cylinder_stream_with_operand, b3_cylinder_stream,
 };
 use crate::test_support::test_b5::append_b5_record;
 use crate::test_support::test_bytes::{be32, le_f32};
@@ -643,7 +642,7 @@ fn consolidated_support_resolution_withholds_cross_family_matches() {
 #[test]
 fn consolidated_support_identity_mismatch_does_not_fall_back_to_geometry() {
     let mut bytes = a5_cone_bound_edge_stream();
-    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x1234));
+    bytes.extend_from_slice(&b2_wide_cylinder_stream_with_operand(0x1234));
 
     let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes)
         .expect("evaluator allocation succeeds");

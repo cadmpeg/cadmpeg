@@ -3,7 +3,7 @@ use cadmpeg_test_support::edit;
 use crate::families::b2::records::tests::b2_spatial_circle_stream;
 use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
-    b2_edge_node_stream, b2_embedded_cylinder_stream, inner_no_directory_b2_catpart,
+    b2_edge_node_stream, b2_wide_cylinder_stream, inner_no_directory_b2_catpart,
 };
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -56,31 +56,36 @@ fn b2_spatial_circle_parser_rejects_nonorthonormal_invalid_charts_and_nonfinite_
 }
 
 #[test]
-fn b2_composite_parser_reads_embedded_cylinder_frame() {
-    let bytes = b2_embedded_cylinder_stream();
-    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
+fn b2_cylinder_parser_reads_complete_wide_header() {
+    let bytes = b2_wide_cylinder_stream();
+    let cylinders = crate::families::b2::records::b2_cylinders(&bytes);
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].object_id, 0x5678);
-    assert_eq!(cylinders[0].wrapper_pos, 0);
     assert_eq!(
-        cylinders[0].cylinder.u_range.endpoints(),
+        cylinders[0]
+            .header
+            .compact_operand()
+            .expect("closed compact header")
+            .value(),
+        0x5678
+    );
+    assert_eq!(
+        cylinders[0].u_range.endpoints(),
         [0.0, 4.0 * std::f64::consts::PI]
     );
-    assert!(crate::families::b2::records::b2_cylinders(&bytes).is_empty());
 }
 
 #[test]
-fn b2_composite_parser_reads_the_complete_type_three_group() {
-    let one = b2_embedded_cylinder_stream();
+fn b2_cylinder_parser_reads_independent_repeated_frames() {
+    let one = b2_wide_cylinder_stream();
     let frame = one[7..].to_vec();
     let mut bytes = one;
     for _ in 0..30 {
         bytes.extend_from_slice(&frame);
     }
 
-    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
+    let cylinders = crate::families::b2::records::b2_cylinders(&bytes);
     assert_eq!(cylinders.len(), 31);
-    assert!(cylinders.iter().all(|cylinder| cylinder.wrapper_pos == 0));
+    assert!(cylinders.windows(2).all(|pair| pair[0].pos < pair[1].pos));
 }
 
 #[test]

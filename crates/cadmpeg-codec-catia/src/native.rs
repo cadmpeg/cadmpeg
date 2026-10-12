@@ -27,7 +27,9 @@ use projection::{
 };
 
 pub(crate) mod class5b5c;
+mod class60;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
+use class60::CatiaConsolidatedClass60Record;
 
 pub(crate) mod edge_definition;
 
@@ -689,6 +691,7 @@ pub(crate) struct CatiaConsolidatedCylinder {
     id: String,
     /// Byte offset of the framed record.
     byte_offset: u64,
+    header: crate::wire::records::WidthCodedToken,
     /// Cylinder-axis origin.
     origin: FiniteVector<3>,
     /// Cylinder radius.
@@ -705,6 +708,7 @@ pub(crate) struct CatiaConsolidatedCylinder {
 struct CatiaConsolidatedCylinderWire {
     id: String,
     byte_offset: u64,
+    header: crate::wire::records::WidthCodedToken,
     layout: u8,
     origin: FiniteVector<3>,
     radius: cadmpeg_ir::scalar::PositiveLength,
@@ -763,6 +767,7 @@ impl From<CatiaConsolidatedCylinder> for CatiaConsolidatedCylinderWire {
         Self {
             id: value.id,
             byte_offset: value.byte_offset,
+            header: value.header,
             layout,
             origin: value.origin,
             radius: value.radius,
@@ -858,80 +863,12 @@ impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
+            header: wire.header,
             origin: wire.origin,
             radius: wire.radius,
             u_range: wire.u_range,
             v_range: wire.v_range,
             payload,
-        })
-    }
-}
-
-/// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "CatiaConsolidatedEmbeddedCylinderWire")]
-pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the embedded frame, including its varying pre-byte.
-    byte_offset: u64,
-    /// Owning type-3 consolidated group.
-    group: String,
-    /// Compact embedded object identity.
-    object_id: u32,
-    /// Cylinder-axis origin.
-    origin: FiniteVector<3>,
-    /// Cylinder radius.
-    radius: cadmpeg_ir::scalar::PositiveLength,
-    /// Full-turn arc-length circumferential interval.
-    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    /// Axial interval.
-    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    /// Token selecting the serialized frame-vector role.
-    frame_token: u8,
-    /// Cylinder-axis unit direction.
-    axis: crate::checked::RelaxedHypotUnitVector3,
-    /// Unit direction from which the circumferential parameter is measured.
-    reference_direction: crate::checked::RelaxedHypotUnitVector3,
-}
-
-#[derive(Deserialize)]
-struct CatiaConsolidatedEmbeddedCylinderWire {
-    id: String,
-    byte_offset: u64,
-    group: String,
-    object_id: u32,
-    origin: FiniteVector<3>,
-    radius: cadmpeg_ir::scalar::PositiveLength,
-    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
-    frame_token: u8,
-    axis: crate::checked::RelaxedHypotUnitVector3,
-    reference_direction: crate::checked::RelaxedHypotUnitVector3,
-}
-
-impl TryFrom<CatiaConsolidatedEmbeddedCylinderWire> for CatiaConsolidatedEmbeddedCylinder {
-    type Error = String;
-    fn try_from(wire: CatiaConsolidatedEmbeddedCylinderWire) -> Result<Self, Self::Error> {
-        CatiaConsolidatedCylinderPayload::resolved_5a(
-            wire.radius,
-            wire.u_range,
-            wire.frame_token,
-            wire.axis,
-            wire.reference_direction,
-        )?;
-        Ok(Self {
-            id: wire.id,
-            byte_offset: wire.byte_offset,
-            group: wire.group,
-            object_id: wire.object_id,
-            origin: wire.origin,
-            radius: wire.radius,
-            u_range: wire.u_range,
-            v_range: wire.v_range,
-            frame_token: wire.frame_token,
-            axis: wire.axis,
-            reference_direction: wire.reference_direction,
         })
     }
 }
@@ -1335,17 +1272,6 @@ enum CatiaConsolidatedClass61Payload {
     },
 }
 
-/// One typed consolidated class-`0x60` group opener.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CatiaConsolidatedGroup {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the framed record.
-    byte_offset: u64,
-    /// Compact group-type code.
-    group_type: u32,
-}
-
 /// One complete consolidated historical edge run referencing two retained
 /// pcurve records.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1492,13 +1418,6 @@ pub(crate) enum CatiaConsolidatedSupportBinding {
     Cylinder {
         /// Carrier record byte offset.
         byte_offset: u64,
-    },
-    /// Cylinder frame embedded in a `b2 03 60` wrapper.
-    EmbeddedCylinder {
-        /// Embedded frame byte offset.
-        byte_offset: u64,
-        /// Enclosing wrapper byte offset.
-        wrapper_byte_offset: u64,
     },
     /// Arc-length `b2 03 19` circle.
     Circle {
@@ -7884,10 +7803,6 @@ define_catia_arenas! {
         /// Exact consolidated cylinder charts.
         pub(crate) stored;
     },
-    consolidated_embedded_cylinders: CatiaConsolidatedEmbeddedCylinder {
-        /// Exact cylinder charts embedded in type-3 consolidated groups.
-        pub(crate) stored;
-    },
     consolidated_domain_relations: CatiaConsolidatedDomainRelation {
         /// Complete source-local class-24 and class-25 scalar parameter relations.
         pub(crate) stored;
@@ -7900,8 +7815,8 @@ define_catia_arenas! {
         /// Complete consolidated historical edge runs.
         pub(crate) stored;
     },
-    consolidated_groups: CatiaConsolidatedGroup {
-        /// Typed consolidated class-`0x60` group openers.
+    consolidated_class60_records: CatiaConsolidatedClass60Record {
+        /// Complete counted allocation-reference lists.
         pub(crate) stored;
     },
     consolidated_line_profiles: CatiaConsolidatedLineProfile {
@@ -8588,6 +8503,7 @@ fn consolidated_cylinders(
                 "catia_native_cylinder_id",
             )?,
             byte_offset: u64_from_index(cylinder.pos),
+            header: cylinder.header,
             origin: cylinder.origin.coordinates().into(),
             radius: cylinder.radius,
             u_range: cylinder.u_range,
@@ -8599,65 +8515,9 @@ fn consolidated_cylinders(
     Ok(cylinders)
 }
 
-fn consolidated_cylinder_groups(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Result<
-    (
-        Vec<CatiaConsolidatedGroup>,
-        Vec<CatiaConsolidatedEmbeddedCylinder>,
-    ),
-    CodecError,
-> {
-    let mut groups = Vec::new();
-    let mut cylinders = Vec::new();
-    let mut embedded =
-        crate::families::b2::records::b2_embedded_cylinders_from_records(bytes, records).peekable();
-    for group in crate::families::b2::records::b2_groups_from_records(bytes, records) {
-        let group_pos = group.pos;
-        let group = CatiaConsolidatedGroup {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:group#{:00}", groups.len()),
-                "catia_native_group_id",
-            )?,
-            byte_offset: u64_from_index(group.pos),
-            group_type: group.group_type,
-        };
-        while embedded
-            .peek()
-            .is_some_and(|entry| entry.wrapper_pos == group_pos)
-        {
-            let Some(entry) = embedded.next() else { break };
-            let value = CatiaConsolidatedEmbeddedCylinder {
-                id: ctx.format_retained(
-                    format_args!(
-                        "catia:consolidated:embedded-cylinder#{:00}",
-                        cylinders.len()
-                    ),
-                    "catia_native_embedded_cylinder_id",
-                )?,
-                byte_offset: u64_from_index(entry.pos),
-                group: ctx.copy_retained_text(&group.id, "catia_native_embedded_cylinder_group")?,
-                object_id: entry.object_id,
-                origin: entry.cylinder.origin.coordinates().into(),
-                radius: entry.cylinder.radius,
-                u_range: entry.cylinder.u_range,
-                v_range: entry.cylinder.v_range,
-                frame_token: entry.cylinder.frame_token(),
-                axis: entry.cylinder.frame.axis(),
-                reference_direction: entry.cylinder.frame.reference(),
-            };
-            ctx.push_vec(&mut cylinders, value, "catia_native_embedded_cylinders")?;
-        }
-        ctx.push_vec(&mut groups, group, "catia_native_cylinder_groups")?;
-    }
-    Ok((groups, cylinders))
-}
-
 #[cfg(test)]
 mod consolidated_cylinder_limit_tests {
-    use super::{consolidated_cylinder_groups, consolidated_cylinders};
+    use super::consolidated_cylinders;
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -8679,27 +8539,6 @@ mod consolidated_cylinder_limit_tests {
         })
         .expect("service decode");
         assert_eq!(cylinders.len(), 1);
-    }
-
-    #[test]
-    fn native_embedded_cylinder_and_group_refuse_collection_limit() {
-        let bytes = crate::test_support::test_b2::b2_embedded_cylinder_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            consolidated_cylinder_groups(ctx, &bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_embedded_cylinders"));
-        let limited = crate::test_support::with_collection_limit(1, |ctx| {
-            consolidated_cylinder_groups(ctx, &bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cylinder_groups"));
-        let (groups, cylinders) = crate::test_support::with_service_context(|ctx| {
-            consolidated_cylinder_groups(ctx, &bytes, &records)
-        })
-        .expect("service decode");
-        assert_eq!((groups.len(), cylinders.len()), (1, 1));
     }
 }
 
@@ -9853,8 +9692,7 @@ impl CatiaNative {
         let object_chamfers = object_chamfers(ctx, bytes)?;
         let consolidated_cones = consolidated_cones(ctx, bytes, consolidated_records)?;
         let consolidated_cylinders = consolidated_cylinders(ctx, bytes, consolidated_records)?;
-        let (consolidated_groups, consolidated_embedded_cylinders) =
-            consolidated_cylinder_groups(ctx, bytes, consolidated_records)?;
+        let consolidated_class60_records = class60::records(ctx, bytes, consolidated_records)?;
         let consolidated_line_profiles =
             consolidated_line_profiles(ctx, bytes, consolidated_records)?;
         let mut consolidated_owner_packets =
@@ -9932,11 +9770,10 @@ impl CatiaNative {
             object_chamfers,
             consolidated_cones,
             consolidated_cylinders,
-            consolidated_embedded_cylinders,
             consolidated_domain_relations,
             consolidated_edge_nodes,
             consolidated_edge_runs,
-            consolidated_groups,
+            consolidated_class60_records,
             consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,

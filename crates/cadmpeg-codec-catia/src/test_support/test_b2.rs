@@ -615,7 +615,7 @@ pub(crate) fn b2_sphere_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_group_stream() -> Vec<u8> {
+pub(crate) fn b2_class60_reference_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x65, 0x04, 0x05, 0x81, 0x03, 0x05, 0x0d, 0xb2, 0x03, 0x60, 0x02, 0x05, 0x81,
         0x0d,
@@ -807,16 +807,27 @@ pub(crate) fn b2_construction_use_stream_for(domain: [f64; 4]) -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_embedded_cylinder_stream() -> Vec<u8> {
-    b2_embedded_cylinder_stream_with_object_id(0x5678)
+pub(crate) fn b2_wide_cylinder_stream() -> Vec<u8> {
+    b2_wide_cylinder_stream_with_operand(0x5678)
 }
 
-pub(crate) fn b2_embedded_cylinder_stream_with_object_id(object_id: u32) -> Vec<u8> {
+pub(crate) fn b2_wide_cylinder_stream_with_operand(operand: u16) -> Vec<u8> {
     let standalone = b2_cylinder_stream();
+    let token = compact_uint_bytes(u32::from(operand));
     let mut record = vec![
-        0xb2, 0x03, 0x60, 0x02, 0x05, 0x81, 0x0d, 0xb4, 0x03, 0x28, 0x5a,
+        0xb2,
+        0x03,
+        0x60,
+        0x02,
+        0x05,
+        0x81,
+        0x0d,
+        0xb1 + u8::try_from(token.len()).expect("u16 compact header width"),
+        0x03,
+        0x28,
+        0x5a,
     ];
-    record.extend_from_slice(&compact_uint_bytes(object_id));
+    record.extend_from_slice(&token);
     record.extend_from_slice(&standalone[5..]);
     record
 }
