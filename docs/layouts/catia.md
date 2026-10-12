@@ -801,6 +801,34 @@ Parsed by:
 | 54 | 8 | `offset` | `f64` | little | spec | \| `+54` \| `f64le` \| parameter offset \| |
 | 62 | 8 | `repeated_tolerance` | `f64` | little | spec | \| `+62` \| `f64le` \| repeated endpoint tolerance \| |
 
+## `class24_scalar_prefix`
+
+Spec §6.3 · layout: byte offsets · size: 1 B
+
+Two variable-width compact operands and a three-byte selector follow this marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class24.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| domain-relation marker `82` \| · value `130` |
+
+## `class24_target_domain`
+
+Spec §6.3 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the first scalar after the selector; the selector determines the remaining scalar words.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class24.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `lower` | `f64` | little | spec | \| `+0` \| `f64le` \| target lower parameter \| |
+| 8 | 8 | `upper` | `f64` | little | spec | \| `+8` \| `f64le` \| target upper parameter \| |
+| 16 | 8 | `signed_accuracy` | `f64` | little | spec | \| `+16` \| `f64le` \| signed accuracy \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

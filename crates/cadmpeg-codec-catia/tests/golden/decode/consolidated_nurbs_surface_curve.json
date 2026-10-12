@@ -434,6 +434,7 @@
             ]
           }
         ],
+        "consolidated_domain_relations": [],
         "consolidated_edge_nodes": [
           {
             "byte_offset": 411,

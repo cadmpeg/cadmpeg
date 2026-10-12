@@ -90,10 +90,10 @@ pub(crate) struct ConsolidatedClass25EdgeRun {
     pub(crate) node: B2EdgeNode,
 }
 
-/// Two adjacent oriented uses and their terminal native edge node.
+/// A native edge node and its two adjacent oriented uses.
 #[derive(Debug, Clone)]
 pub(crate) struct ConsolidatedEdgeUseRun {
-    /// Immediately preceding edge-definition frame in classes `0x23..=0x25`.
+    /// Adjacent source-closed edge-definition frame in classes `0x23..=0x25`.
     pub(crate) definition: Option<ConsolidatedEdgeDefinition>,
     /// The two serialized edge uses, in side order.
     pub(crate) uses: [B2UseMetadata; 2],
@@ -407,12 +407,17 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Source-to-target translation.
         offset: FiniteReal,
     },
-    /// Eight class-`0x24` or nine class-`0x23` scalar lanes.
-    Scalar {
+    /// Class-`0x24` parameter-domain relation.
+    Domain24 {
+        #[serde(flatten)]
+        relation: class24::Class24DomainRelation,
+    },
+    /// Nine class-`0x23` scalar lanes comprising three equal triples.
+    Scalar23 {
         /// Two compact operands followed by one persistent operand.
         operands: [u32; 3],
         /// Complete finite scalar lane.
-        values: ScalarLane<8, 9>,
+        values: [FiniteReal; 9],
     },
     /// Class-`0x25` three-operand form with one uninterrupted scalar lane.
     Scalar25 {
@@ -473,10 +478,14 @@ fn edge_definition_data_with<E>(
 ) -> Result<Option<ConsolidatedEdgeDefinitionData>, E> {
     (|| {
         if class == 0x24 && payload.first() == Some(&0x81) {
-            let mut at = 1;
-            let operand = compact_int(payload, &mut at)?;
-            return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
-                .then_some(Ok(ConsolidatedEdgeDefinitionData::Compact24 { operand }));
+            return Some(Ok(ConsolidatedEdgeDefinitionData::Compact24 {
+                operand: class24_compact_operand(payload)?,
+            }));
+        }
+        if class == 0x24 {
+            return Some(Ok(ConsolidatedEdgeDefinitionData::Domain24 {
+                relation: class24::parse(payload)?,
+            }));
         }
         if class == 0x25 && payload.first() == Some(&0x82) {
             let mut at = 1;
@@ -525,7 +534,7 @@ fn edge_definition_data_with<E>(
                 segment,
             }));
         }
-        if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
+        if class != 0x23 || payload.first() != Some(&0x82) {
             return None;
         }
         let mut at = 1;
@@ -535,36 +544,38 @@ fn edge_definition_data_with<E>(
             persistent_ref(payload, &mut at)?,
         ];
         let scalar_bytes = payload.get(at..)?;
-        if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
+        if !matches!(scalar_bytes.len(), 64 | 72) {
             return None;
         }
-        if class == 0x23 && scalar_bytes.len() == 64 {
+        if scalar_bytes.len() == 64 {
             return Some(Ok(class23_affine_map_payload(payload)?));
         }
-        let values = match lane(scalar_bytes) {
-            Ok(Some(values)) => values,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if values[2] != *values.last()? {
-            return None;
-        }
-        if values.len() == 9
-            && !(values[0] == values[3]
-                && values[0] == values[6]
-                && values[1] == values[4]
-                && values[1] == values[7]
-                && values[2] == values[5]
-                && values[5].get() == 1.0)
+        let values = read_f64_array::<9>(scalar_bytes, 0)?;
+        if !(values[0] == values[3]
+            && values[0] == values[6]
+            && values[1] == values[4]
+            && values[1] == values[7]
+            && values[2] == values[5]
+            && values[2] == values[8]
+            && values[5].get() == 1.0)
         {
             return None;
         }
-        Some(Ok(ConsolidatedEdgeDefinitionData::Scalar {
+        Some(Ok(ConsolidatedEdgeDefinitionData::Scalar23 {
             operands,
-            values: values.try_into().ok()?,
+            values,
         }))
     })()
     .transpose()
+}
+
+fn class24_compact_operand(payload: &[u8]) -> Option<u32> {
+    if payload.first() != Some(&0x81) {
+        return None;
+    }
+    let mut at = 1;
+    let operand = compact_int(payload, &mut at)?;
+    (payload.get(at..) == Some(&[0x0f, 0x87][..])).then_some(operand)
 }
 
 fn class23_affine_map_payload(payload: &[u8]) -> Option<ConsolidatedEdgeDefinitionData> {
@@ -1200,6 +1211,21 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         && record.family() == ConsolidatedFamily::B
                         && matches!(record.class(), 0x23..=0x25)
                 });
+            if let Some(operand) = definition
+                .filter(|record| record.class() == 0x24)
+                .and_then(ConsolidatedRecord::payload)
+                .and_then(|payload| class24_compact_operand(&data[payload]))
+            {
+                let first = operand.checked_add(1)?;
+                let second = operand.checked_add(2)?;
+                if uses[0].references() != Some(&[1, first][..])
+                    || uses[1].references() != Some(&[2, second][..])
+                    || uses[0].sense() != Some(crate::families::b2::records::B2UseSense::Sense88)
+                    || uses[1].sense() != Some(crate::families::b2::records::B2UseSense::Sense84)
+                {
+                    return None;
+                }
+            }
             identity_chain_consistent.then_some((definition, node))
         })();
         let Some((definition_record, node)) = candidate else {
@@ -1274,14 +1300,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             };
             let uses = [first, second];
             let payload = &data[definition_record.payload()?];
-            if payload.first() != Some(&0x81) {
-                return None;
-            }
-            let mut at = 1;
-            let operand = compact_int(payload, &mut at)?;
-            if payload.get(at..) != Some(&[0x0f, 0x87][..]) {
-                return None;
-            }
+            let operand = class24_compact_operand(payload)?;
             let identity_chain_consistent = operand
                 .checked_add(1)
                 .zip(operand.checked_add(2))
@@ -1289,7 +1308,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                     uses[0].references() == Some(&[node.start_parameter_ref, first][..])
                         && uses[1].references() == Some(&[node.end_parameter_ref, second][..])
                 })
-                && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2];
+                && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2]
+                && uses[0].sense() == Some(crate::families::b2::records::B2UseSense::Sense88)
+                && uses[1].sense() == Some(crate::families::b2::records::B2UseSense::Sense84);
             if !identity_chain_consistent {
                 return None;
             }
@@ -2861,3 +2882,5 @@ mod decoder_tests;
 
 #[cfg(test)]
 mod parameter_maps;
+
+pub(crate) mod class24;

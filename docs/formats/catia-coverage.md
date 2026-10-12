@@ -988,3 +988,39 @@ Both center pairs and radii match the sibling FTC-08 STEP geometry within
 `1e-8` mm. Multiple STEP Z placements share each pair and radius; this comparison
 checks the pair and radius. Circle geometry and placement remain supplied by
 the bound carrier.
+
+Class-`0x24` verification covers all 79 physical CATIA files. The independent
+descriptor-scoped byte inventory contains 7,141 complete scalar relations in
+31 files. All 13 selector forms consume the complete finite scalar lane and
+satisfy the interval, map, site, and accuracy rules. There are 3,751 explicit
+accuracy closures, 3,390 elided closures, eight negative signed accuracies,
+4,028 positive affine scales, 48 negative affine scales, and no zero affine
+scales. The maximum identity endpoint difference is
+`1.5273690223693848e-7`; the maximum affine residual is
+`1.862645149230957e-9`.
+
+Every scalar frame was also decoded through the production codec in a
+constructed standard CATIA container. All 7,141 native payloads and typed
+relations match the independent byte parse exactly, including signed zero.
+The neutral geometry arenas remain empty. The new
+`consolidated_domain_relations` arena retains the complete frame, bounded
+source index, logical source offset, and typed source relation, sites, and
+accuracy closure. Unresolved operands do not create geometry.
+
+All 5,276 compact definitions owned by native edge nodes in 33 files match
+independent four-frame source proofs. Their use vectors and senses agree with
+the compact operand. The 4,901 following definitions use node selectors
+`(1,2)`; the 375 preceding definitions use `(2,1)`. Regression tests cover
+both native round trips and reject contradictory operands and senses.
+
+The scalar golden fixture covers negative affine scale and signed repeated
+accuracy, plus selector `0001` with both target sites and an elided
+negative-zero accuracy. The 23 earlier frozen fixture inputs are unchanged;
+their decode snapshots only add the empty domain-relation arena.
+
+Fresh whole-file decoding and checking covers 35 files with 4,362 scalar
+relations and all 5,276 owned compact definitions. Their complete decoded
+documents match the earlier models outside the intended native parameter
+projections and the new arena. Apartman reaches the existing 512-step ordered
+face-constraint limit; its 2,779 scalar frames are covered by the separate
+frame-grammar verification above.

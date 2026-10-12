@@ -636,6 +636,7 @@
         "consolidated_cone_faces": [],
         "consolidated_cones": [],
         "consolidated_cylinders": [],
+        "consolidated_domain_relations": [],
         "consolidated_edge_nodes": [],
         "consolidated_edge_runs": [],
         "consolidated_embedded_cylinders": [],

@@ -220,48 +220,6 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
 }
 
 #[test]
-fn consolidated_edge_definition_decodes_general_scalar_layout() {
-    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
-
-    let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 2.0, 1.0e-6, 0.5, 1.5, 1.0, -0.5, 1.0e-6] {
-        payload.extend_from_slice(&value.to_le_bytes());
-    }
-    assert_eq!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload),
-        Some(ConsolidatedEdgeDefinitionData::Scalar {
-            operands: [1, 2, 3463],
-            values: vec![
-                crate::test_support::test_b5::finite(0.0),
-                crate::test_support::test_b5::finite(2.0),
-                crate::test_support::test_b5::finite(1.0e-6),
-                crate::test_support::test_b5::finite(0.5),
-                crate::test_support::test_b5::finite(1.5),
-                crate::test_support::test_b5::finite(1.0),
-                crate::test_support::test_b5::finite(-0.5),
-                crate::test_support::test_b5::finite(1.0e-6)
-            ]
-            .try_into()
-            .expect("admitted scalar arity"),
-        })
-    );
-    let mut class24_nine_scalars = payload.clone();
-    class24_nine_scalars.extend_from_slice(&1e-6_f64.to_le_bytes());
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(
-            0x24,
-            &class24_nine_scalars
-        )
-        .is_none()
-    );
-    payload.pop();
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload)
-            .is_none()
-    );
-}
-
-#[test]
 fn class23_nine_scalar_definition_requires_three_equal_triples() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
@@ -271,7 +229,7 @@ fn class23_nine_scalar_definition_requires_three_equal_triples() {
     }
     assert_eq!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x23, &payload),
-        Some(ConsolidatedEdgeDefinitionData::Scalar {
+        Some(ConsolidatedEdgeDefinitionData::Scalar23 {
             operands: [1, 2, 3463],
             values: vec![
                 crate::test_support::test_b5::finite(0.0),
@@ -289,17 +247,17 @@ fn class23_nine_scalar_definition_requires_three_equal_triples() {
         })
     );
 
-    let mut unequal_tolerances = payload;
     for offset in [6 + 2 * 8, 6 + 8 * 8] {
+        let mut unequal_tolerances = payload.clone();
         unequal_tolerances[offset..offset + 8].copy_from_slice(&2.0_f64.to_le_bytes());
+        assert!(
+            crate::families::consolidated::records::consolidated_edge_definition_data(
+                0x23,
+                &unequal_tolerances
+            )
+            .is_none()
+        );
     }
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(
-            0x23,
-            &unequal_tolerances
-        )
-        .is_none()
-    );
 }
 
 #[test]
@@ -716,7 +674,7 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
     let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(3, 139, 142));
 
     let runs = crate::families::consolidated::records::consolidated_edge_use_runs(&bytes);
     let [run] = runs.as_slice() else {
@@ -753,6 +711,22 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
             }
         )
     ));
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store preceding definition");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load preceding definition"),
+        native
+    );
+    let mut wrong_operand = bytes.clone();
+    wrong_operand[6] = 0x09;
+    assert!(super::consolidated_edge_use_runs(&wrong_operand).is_empty());
+    for (offset, sense) in [(17, 0x84), (26, 0x88)] {
+        let mut wrong_sense = bytes.clone();
+        wrong_sense[offset] = sense;
+        assert!(super::consolidated_edge_use_runs(&wrong_sense).is_empty());
+    }
 }
 
 #[test]
@@ -779,6 +753,20 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
             .and_then(super::ConsolidatedEdgeDefinition::data),
         Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 10 })
     );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store successor layout");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load successor layout"),
+        native
+    );
+    for (offset, sense) in [(28, 0x84), (37, 0x88)] {
+        let mut wrong_sense = bytes;
+        wrong_sense[offset] = sense;
+        assert!(super::consolidated_edge_use_runs(&wrong_sense).is_empty());
+    }
 }
 
 #[test]
@@ -786,7 +774,7 @@ fn consolidated_edge_use_rows_and_references_refuse_collection_limits() {
     use std::collections::HashSet;
 
     let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(3, 139, 142));
     let records = crate::wire::records::consolidated_records(&bytes);
     let mut refused = HashSet::new();
     for limit in 0..128 {
@@ -1675,7 +1663,7 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
 #[test]
 fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
-    for (kind, lower, upper) in [("scalar", 8, 9), ("scalar25", 7, 10)] {
+    for (kind, lower, upper) in [("scalar23", 9, 9), ("scalar25", 7, 10)] {
         for count in 0..=11 {
             let wire = serde_json::json!({"kind": kind, "operands": [1, 2, 3], "persistent_lead": 10, "values": vec![0.0; count]});
             let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);

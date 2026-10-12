@@ -2260,3 +2260,50 @@ offset = 62
 type = "f64"
 source = "spec"
 anchor = "| `+62` | `f64le` | repeated endpoint tolerance |"
+
+[[record]]
+name = "class24_scalar_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/consolidated/records/class24.rs"
+kind = "byte"
+section = "6.3"
+anchor = "A scalar class-`24` domain relation begins"
+size = 1
+note = "Two variable-width compact operands and a three-byte selector follow this marker."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | domain-relation marker `82` |"
+value = 130
+
+[[record]]
+name = "class24_target_domain"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/consolidated/records/class24.rs"
+kind = "byte"
+section = "6.3"
+anchor = "The first scalar follows the selector. Offsets in the next table are relative to that scalar:"
+size = 24
+note = "Offsets are relative to the first scalar after the selector; the selector determines the remaining scalar words."
+
+[[record.field]]
+name = "lower"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "| `+0` | `f64le` | target lower parameter |"
+
+[[record.field]]
+name = "upper"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "| `+8` | `f64le` | target upper parameter |"
+
+[[record.field]]
+name = "signed_accuracy"
+offset = 16
+type = "f64"
+source = "spec"
+anchor = "| `+16` | `f64le` | signed accuracy |"

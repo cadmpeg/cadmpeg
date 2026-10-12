@@ -629,7 +629,7 @@ When both middle references use the `4w` width-coded form, each operand is a for
 
 More generally, an immediately adjacent B-family class-`23`, class-`24`, or class-`25` record is the edge-definition frame owned by a `B:06, B:06, B:5e` run. The relation is structural: an intervening framed record leaves the use run without an edge-definition frame. Each definition retains its width, flag, header token, class, and complete class-specific payload.
 
-Class-`23` and class-`24` scalar edge definitions have payload `82 <compact operand> <compact operand> <persistent operand> <eight or nine f64le scalars>`. The persistent operand uses the compact grammar or `0a <u16le>`. The scalar lane consumes the remainder of the frame, every value is finite, and scalar 2 equals the final scalar. The nine-scalar class-`23` form additionally carries three equal `(start,end,tolerance)` triples with unit scalar 5. A compact class-`24` definition has payload `81 <compact operand> 0f 87` and no scalar lane; the preceding width-coded frame header token is separate.
+The nine-scalar class-`23` definition has payload `82 <compact operand> <compact operand> <persistent operand> <nine f64le scalars>`. The persistent operand uses the compact grammar or `0a <u16le>`. The scalar lane consumes the remainder of the frame, every value is finite, and the three `(start,end,tolerance)` triples are equal with unit scalar 5. The preceding width-coded frame header token is separate from the payload operands.
 
 An eight-scalar class-`23` parameter map has this 70-byte payload:
 
@@ -652,6 +652,42 @@ tolerance. The reversed `(2,1)` identity form has identical source and target
 intervals, unit scale, and zero offset. Retain the slot order. The fixed operand
 is the constant 3463. The surrounding source-closed production supplies the
 representation identity and geometric placement.
+
+A compact class-`24` definition has payload `81 <compact operand d> 0f 87` and no scalar lane. A source-closed edge-use production has use vectors `(1,d+1)` and `(2,d+2)` and senses `88` and `84`. The contiguous sequence is either `24,06,06,5e`, with node parameter selectors `(2,1)`, or `5e,24,06,06`, with selectors `(1,2)`. The compact operand supplies an edge-use relation.
+
+A scalar class-`24` domain relation begins with marker `82`, two compact operands in source-then-target order, and `0a <selector:u16le>` or `0b <selector:u16le>`:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | domain-relation marker `82` |
+
+The first scalar follows the selector. Offsets in the next table are relative to that scalar:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `f64le` | target lower parameter |
+| `+8` | `f64le` | target upper parameter |
+| `+16` | `f64le` | signed accuracy |
+
+The selector determines every subsequent word:
+
+| Selector | Source relation after the target fields | Target sites after the source relation |
+| --- | --- | --- |
+| `0587` | absent | absent |
+| `0586` | absent | lower |
+| `0585` | absent | upper |
+| `0584`, `0001` | absent | lower, upper |
+| `0987` | source lower, upper; implicit identity map | absent |
+| `0985` | source lower, upper; implicit identity map | upper |
+| `0984` | source lower, upper; implicit identity map | lower, upper |
+| `0d87` | source lower, upper, scale, offset | absent |
+| `0d86` | source lower, upper, scale, offset | lower |
+| `0d85` | source lower, upper, scale, offset | upper |
+| `0d84`, `0003` | source lower, upper, scale, offset | lower, upper |
+
+Every scalar is finite, and target and stored source intervals are strictly increasing. Affine scale is nonzero and may be negative. The affine equation is `target=scale·source+offset`; negative scale pairs source upper with target lower and source lower with target upper. Identity endpoints and affine evaluations agree with target endpoints under `abs=1e-7`, `rel=1e-12`, using the sum of absolute and relative bounds. The same bound admits rounding at stored target sites; both sites, when present, are ordered lower then upper. Absent source relations and absent sites have no serialized words.
+
+Lead `0a` appends one absolute-accuracy word, bit-identical to the magnitude of the signed accuracy. Lead `0b` omits this word and requires signed accuracy to be zero, retaining its sign. The complete frame is consumed. Selectors `0001` and `0003` retain their distinct encoded values. The two operands refer to source-local parameter representations. Geometric data belongs to the referenced carriers.
 
 A class-`25` scalar definition begins `82 <allocation operand> <allocation operand> <persistent operand>`. An allocation operand uses the compact grammar, `06 <u8>`, `0a <u16le>`, or one raw nonzero byte congruent to 2 or 3 modulo 4. The persistent operand uses the compact grammar, `0a <u16le>`, or `0b <u16le>`; the two explicit leads remain distinct encodings of the same numeric lane. The remaining payload is either 7, 8, 9, or 10 finite `f64le` scalars, or five finite `f64le` scalars followed by a marker and a finite trailing scalar lane. Marker `82` carries 5–7 trailing scalars, `83` carries 8–9, `89` carries 20, and `8b` carries 24. The marker is a scalar-lane boundary, not part of either adjacent scalar.
 

@@ -127,7 +127,23 @@ pub(super) fn validate_consolidated_edge_runs(
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
+        let compact_definition =
+            node.definition
+                .as_ref()
+                .and_then(|definition| match definition.data() {
+                    Some(ConsolidatedEdgeDefinitionData::Compact24 { operand }) => {
+                        Some((*operand, definition.frame().pos > node.byte_offset))
+                    }
+                    _ => None,
+                });
         let uses_valid = node.uses.as_ref().is_none_or(|uses| {
+            if let Some((operand, following)) = compact_definition {
+                return operand
+                    .checked_add(1)
+                    .zip(operand.checked_add(2))
+                    .is_some_and(|(first, second)| uses.references == [[1, first], [2, second]])
+                    && node.parameter_selectors == if following { [1, 2] } else { [2, 1] };
+            }
             node.curve_ref
                 .checked_sub(2)
                 .zip(node.curve_ref.checked_sub(1))
@@ -139,7 +155,8 @@ pub(super) fn validate_consolidated_edge_runs(
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
             node.uses.is_some()
                 && !definition.frame().payload.is_empty()
-                && definition.frame().pos < node.byte_offset
+                && (definition.frame().pos < node.byte_offset
+                    || compact_definition.is_some_and(|(_, following)| following))
         });
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();

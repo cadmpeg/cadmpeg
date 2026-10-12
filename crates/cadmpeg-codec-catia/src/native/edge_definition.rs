@@ -92,7 +92,6 @@ impl CatiaConsolidatedEdgeDefinition {
     pub(crate) fn frame(&self) -> &ConsolidatedRawFrame<u64> {
         &self.frame
     }
-    #[cfg(test)]
     pub(crate) fn class(&self) -> ConsolidatedEdgeDefinitionClass {
         self.class
     }
@@ -128,7 +127,9 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
             class: wire.class,
             data,
         };
-        if value.data != consolidated_edge_definition_data(value.class.into(), &value.frame.payload)
+        let derived = consolidated_edge_definition_data(value.class.into(), &value.frame.payload);
+        if serde_json::to_vec(&value.data).map_err(|error| error.to_string())?
+            != serde_json::to_vec(&derived).map_err(|error| error.to_string())?
         {
             return Err("edge-definition data differs from its class and payload".to_owned());
         }

@@ -706,6 +706,18 @@ impl CatiaNative {
         validate_alias_surface_tags(&alias_rows)?;
         validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
         let e5_curve_supports = namespace.arena_as("e5_curve_supports")?;
+        let mut consolidated_domain_relations: Vec<
+            crate::native::domain_relation::CatiaConsolidatedDomainRelation,
+        > = namespace.arena_as("consolidated_domain_relations")?;
+        consolidated_domain_relations
+            .sort_by_key(|relation| (relation.source_index, relation.source_offset));
+        for (index, relation) in consolidated_domain_relations.iter().enumerate() {
+            if relation.id != format!("catia:consolidated:domain-relation#{index:00}") {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "invalid consolidated domain relation identity".to_owned(),
+                ));
+            }
+        }
         Ok(Self {
             alias_rows,
             inline_fields,
@@ -718,6 +730,7 @@ impl CatiaNative {
             consolidated_cones,
             consolidated_cylinders,
             consolidated_embedded_cylinders,
+            consolidated_domain_relations,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,

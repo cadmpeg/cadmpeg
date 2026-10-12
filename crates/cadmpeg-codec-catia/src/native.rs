@@ -31,6 +31,9 @@ use class5b5c::CatiaConsolidatedClass5b5cRecord;
 
 pub(crate) mod edge_definition;
 
+mod domain_relation;
+use domain_relation::CatiaConsolidatedDomainRelation;
+
 mod edge_node;
 use edge_node::{
     consolidated_vertex_identities, edge_node_wires, edge_node_wires_charged, load_edge_nodes,
@@ -7896,6 +7899,10 @@ define_catia_arenas! {
         /// Exact cylinder charts embedded in type-3 consolidated groups.
         pub(crate) stored;
     },
+    consolidated_domain_relations: CatiaConsolidatedDomainRelation {
+        /// Complete source-local class-24 scalar parameter relations.
+        pub(crate) stored;
+    },
     consolidated_edge_nodes: CatiaConsolidatedEdgeNode {
         /// Structurally complete consolidated edge nodes.
         pub(crate) stored;
@@ -9991,6 +9998,8 @@ impl CatiaNative {
             consolidated_revolutions(ctx, bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_spheres = consolidated_spheres(ctx, bytes, consolidated_records)?;
         let consolidated_tori = consolidated_tori(ctx, bytes, consolidated_records)?;
+        let consolidated_domain_relations =
+            domain_relation::derive(ctx, bytes, consolidated_records)?;
         let zero_entity_range = container::outer_preamble_range(bytes).unwrap_or_else(|| {
             if bytes.starts_with(container::OUTER_MAGIC) {
                 0..0
@@ -10051,6 +10060,7 @@ impl CatiaNative {
             consolidated_cones,
             consolidated_cylinders,
             consolidated_embedded_cylinders,
+            consolidated_domain_relations,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_groups,

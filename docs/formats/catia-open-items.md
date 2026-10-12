@@ -206,13 +206,13 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Bind both parameter representations of a reversed non-identity map independently to determine its direction.
 
-### SN-07. Standalone class-`0x24` record
+### SN-07. Class-`0x24` operand namespaces
 
-**Question.** What does each field of a standalone class-`0x24` record represent?
+**Question.** Which source-local parameter representations do scalar class-`0x24` operands reference?
 
-**Known.** The decoder retains the framed record and its scalar lanes.
+**Known.** `catia.md` §6.3 "A scalar class-`24` domain relation begins" defines the complete selector grammar, source relation, target sites, and signed accuracy closure. Compact class-`24` operands close the two adjacent edge-use vectors. Scalar operands retain their source index and logical offset without a carrier binding.
 
-**Need.** We must know the fields to transfer its geometry.
+**Need.** Resolve scalar operands through an independently bound source-local owner before applying the parameter relation to a carrier. Obtain a complete witness before admitting any selector outside the listed grammar, including `0986`.
 
 ### SN-08. Class-`0x25` scalar lanes
 
