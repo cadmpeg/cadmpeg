@@ -73,14 +73,14 @@ impl CatiaConsolidatedEdgeDefinition {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let data =
-            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx,
-                definition.class.into(),
-                &definition.frame.payload,
-            )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(definition.frame.payload.len()),
+            "catia_native_edge_definition_parse",
+        )?;
+        let frame = definition.frame.into();
+        let data = data_from_frame(definition.class, &frame);
         Ok(Self {
-            frame: definition.frame.into(),
+            frame,
             class: definition.class,
             data,
         })
@@ -127,7 +127,7 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
             class: wire.class,
             data,
         };
-        let derived = consolidated_edge_definition_data(value.class.into(), &value.frame.payload);
+        let derived = data_from_frame(value.class, &value.frame);
         if serde_json::to_vec(&value.data).map_err(|error| error.to_string())?
             != serde_json::to_vec(&derived).map_err(|error| error.to_string())?
         {
@@ -135,6 +135,18 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
         }
         Ok(value)
     }
+}
+
+fn data_from_frame(
+    class: ConsolidatedEdgeDefinitionClass,
+    frame: &ConsolidatedRawFrame<u64>,
+) -> Option<ConsolidatedEdgeDefinitionData> {
+    if class == ConsolidatedEdgeDefinitionClass::Class25
+        && frame.flag != ConsolidatedFrameFlag::Flag03
+    {
+        return None;
+    }
+    consolidated_edge_definition_data(class.into(), &frame.payload)
 }
 
 #[cfg(test)]
@@ -233,26 +245,34 @@ mod tests {
     }
 
     #[test]
-    fn native_edge_definition_scalar_lane_refuses_before_retention() {
+    fn native_edge_definition_parse_refuses_work_before_projection() {
+        const MAP_ACCURACY: f64 = 1.0e-6;
         let mut payload = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
-        for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6] {
+        for value in [1.0_f64, 2.0, MAP_ACCURACY, 1.0, 2.0, 1.0, 0.0, MAP_ACCURACY] {
             payload.extend_from_slice(&value.to_le_bytes());
         }
+        let source = crate::families::consolidated::records::ConsolidatedEdgeDefinition {
+            frame: ConsolidatedRawFrame::new(
+                12,
+                ConsolidatedFrameWidth::One,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                payload,
+            )
+            .expect("checked map frame"),
+            class: ConsolidatedEdgeDefinitionClass::Class25,
+        };
         let service = crate::test_support::with_service_context(|ctx| {
-            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx, 0x25, &payload,
-            )
+            CatiaConsolidatedEdgeDefinition::from_source(ctx, source.clone())
         })
-        .expect("service profile admits scalar lane");
-        assert!(service.is_some());
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx, 0x25, &payload,
-            )
+        .expect("service parse");
+        assert!(service.data().is_some());
+        let limited = crate::test_support::with_work_limit(0, |ctx| {
+            CatiaConsolidatedEdgeDefinition::from_source(ctx, source)
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_edge_definition_scalars")
+            if limit.operation == "catia_native_edge_definition_parse")
         );
     }
 

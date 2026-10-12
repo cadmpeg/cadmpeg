@@ -829,6 +829,73 @@ Parsed by:
 | 8 | 8 | `upper` | `f64` | little | spec | \| `+8` \| `f64le` \| target upper parameter \| |
 | 16 | 8 | `signed_accuracy` | `f64` | little | spec | \| `+16` \| `f64le` \| signed accuracy \| |
 
+## `class25_scalar_prefix`
+
+Spec §6.3 · layout: byte offsets · size: 1 B
+
+Two allocation operands and a three-byte selector follow the marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| parameter-map marker `82` \| · value `130` |
+
+## `class25_target_domain`
+
+Spec §6.3 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the first scalar after the selector.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `lower` | `f64` | little | spec | \| `+0` \| `f64le` \| target lower parameter \| |
+| 8 | 8 | `upper` | `f64` | little | spec | \| `+8` \| `f64le` \| target upper parameter \| |
+| 16 | 8 | `signed_accuracy` | `f64` | little | spec | \| `+16` \| `f64le` \| signed accuracy \| |
+
+## `class25_affine_source`
+
+Spec §6.3 · layout: byte offsets · size: 56 B
+
+Offsets are relative to the first target scalar; the first 24 bytes contain the target interval and signed accuracy.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `source_lower` | `f64` | little | spec | \| `+24` \| `f64le` \| source lower parameter \| |
+| 32 | 8 | `source_upper` | `f64` | little | spec | \| `+32` \| `f64le` \| source upper parameter \| |
+| 40 | 8 | `scale` | `f64` | little | spec | \| `+40` \| `f64le` \| source-to-target scale \| |
+| 48 | 8 | `offset` | `f64` | little | spec | \| `+48` \| `f64le` \| source-to-target offset \| |
+
+Unstated regions:
+
+- `0..24` (24 B): The class25_target_domain table defines the target interval and signed accuracy at these offsets.
+
+## `class25_sampled_source`
+
+Spec §6.3 · layout: byte offsets · size: 41 B
+
+Offsets are relative to the first target scalar. The count selects both subsequent sample arrays.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `source_lower` | `f64` | little | spec | \| `+24` \| `f64le` \| sampled source lower parameter \| |
+| 32 | 8 | `source_upper` | `f64` | little | spec | \| `+32` \| `f64le` \| sampled source upper parameter \| |
+| 40 | 1 | `sample_count` | `u8` | little | spec | \| `+40` \| `u8` \| paired-sample count `80+n` \| |
+
+Unstated regions:
+
+- `0..24` (24 B): The class25_target_domain table defines the target interval and signed accuracy at these offsets.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

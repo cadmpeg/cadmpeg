@@ -12,6 +12,7 @@ pub(crate) mod test_annotations;
 pub(crate) mod test_b2;
 pub(crate) mod test_b5;
 pub(crate) mod test_bytes;
+pub(crate) mod test_class25;
 pub(crate) mod test_container;
 pub(crate) mod test_e5;
 pub(crate) mod test_formula;

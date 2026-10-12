@@ -7900,7 +7900,7 @@ define_catia_arenas! {
         pub(crate) stored;
     },
     consolidated_domain_relations: CatiaConsolidatedDomainRelation {
-        /// Complete source-local class-24 scalar parameter relations.
+        /// Complete source-local class-24 and class-25 scalar parameter relations.
         pub(crate) stored;
     },
     consolidated_edge_nodes: CatiaConsolidatedEdgeNode {

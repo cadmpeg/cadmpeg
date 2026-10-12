@@ -689,7 +689,58 @@ Every scalar is finite, and target and stored source intervals are strictly incr
 
 Lead `0a` appends one absolute-accuracy word, bit-identical to the magnitude of the signed accuracy. Lead `0b` omits this word and requires signed accuracy to be zero, retaining its sign. The complete frame is consumed. Selectors `0001` and `0003` retain their distinct encoded values. The two operands refer to source-local parameter representations. Geometric data belongs to the referenced carriers.
 
-A class-`25` scalar definition begins `82 <allocation operand> <allocation operand> <persistent operand>`. An allocation operand uses the compact grammar, `06 <u8>`, `0a <u16le>`, or one raw nonzero byte congruent to 2 or 3 modulo 4. The persistent operand uses the compact grammar, `0a <u16le>`, or `0b <u16le>`; the two explicit leads remain distinct encodings of the same numeric lane. The remaining payload is either 7, 8, 9, or 10 finite `f64le` scalars, or five finite `f64le` scalars followed by a marker and a finite trailing scalar lane. Marker `82` carries 5–7 trailing scalars, `83` carries 8–9, `89` carries 20, and `8b` carries 24. The marker is a scalar-lane boundary, not part of either adjacent scalar.
+A B-family scalar class-`25` parameter map uses the complete key `b2/b3/b4 03 25`. The A8 key `a8 03 25` identifies a separate extrusion directrix. A B-family map begins with marker `82`, a source allocation operand, a target allocation operand, and `0a <selector:u16le>` or `0b <selector:u16le>`. Allocation operands use the compact grammar, `06 <u8>`, `0a <u16le>`, or a nonzero single-byte `4n+2` or `4n+3` form. Their addressing forms remain distinct. The selector is a layout code, not a third operand.
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | parameter-map marker `82` |
+
+The first scalar follows the selector. These offsets are relative to that scalar:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `f64le` | target lower parameter |
+| `+8` | `f64le` | target upper parameter |
+| `+16` | `f64le` | signed accuracy |
+
+The selector determines the source relation and the target sites:
+
+| Selector | Source relation | Target sites |
+| --- | --- | --- |
+| `0d87` | affine | absent |
+| `0d86` | affine | lower |
+| `0d85` | affine | upper |
+| `0d84` | affine | lower, upper |
+| `0585` | absent | upper |
+| `1587` | paired samples | absent |
+| `1586` | paired samples | lower |
+| `1585` | paired samples | upper |
+| `1584` | paired samples | lower, upper |
+
+An affine source relation follows the target fields with these words:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+24` | `f64le` | source lower parameter |
+| `+32` | `f64le` | source upper parameter |
+| `+40` | `f64le` | source-to-target scale |
+| `+48` | `f64le` | source-to-target offset |
+
+Both intervals are strictly increasing, and scale is finite and nonzero. The equation is `target=scale·source+offset`. Negative scale pairs source upper with target lower and source lower with target upper. Evaluated endpoints agree under the sum of `abs=1e-7` and `rel=1e-12` bounds. Selector `0585` stores no source interval or coefficients.
+
+A sampled source relation requires lead `0a`. Its source bounds and count marker follow the target fields:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+24` | `f64le` | sampled source lower parameter |
+| `+32` | `f64le` | sampled source upper parameter |
+| `+40` | `u8` | paired-sample count `80+n` |
+
+The count marker is followed by exactly `n` target parameters, then exactly `n` source parameters, all `f64le`. Array index pairs the two parameters. Target parameters are strictly increasing; source parameters are strictly increasing or strictly decreasing. Every parameter lies inside its named interval. The intervals are validity bounds; the arrays need not include interval endpoints. Array order supplies the pairing.
+
+Stored target sites follow the affine coefficients or both sample arrays. Every site is finite and inside the target interval. Lower and upper sites, when both present, are ordered. Sites may be interior trim bounds.
+
+Every scalar is finite. Lead `0a` appends one fit-tolerance word after the sites, with `fit_tolerance >= abs(signed_accuracy)`. Fit tolerance is a distinct field. Lead `0b` omits that word and requires signed accuracy to be zero, retaining its sign. The selector-derived fields consume the complete frame. The two operands identify source-local parameter representations; the record contains parameter relations, not Cartesian geometry.
 
 A class-`25` descriptor edge run is the contiguous B-family sequence `18,25,06,06,5e`. Its class-`18` payload is `08 <identity:u16le> <control> <two or three f64le scalars>`, where control is `02` or `0a` and every scalar is finite. The descriptor is owned by that edge run only when the adjacent class-`25` payload closes under its scalar grammar.
 

@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Source-local scalar class-24 relations retained before operand resolution.
+//! Source-local scalar parameter relations retained before operand resolution.
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::families::consolidated::records::{
-    class24, ConsolidatedEdgeDefinition, ConsolidatedEdgeDefinitionClass,
+    consolidated_edge_definition_data, ConsolidatedEdgeDefinition, ConsolidatedEdgeDefinitionClass,
     ConsolidatedEdgeDefinitionData,
 };
-use crate::wire::records::{ConsolidatedFamily, ConsolidatedRawFrame, ConsolidatedRecord};
+use crate::wire::records::{
+    ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedRawFrame, ConsolidatedRecord,
+};
 
 use super::edge_definition::CatiaConsolidatedEdgeDefinition;
 
@@ -37,13 +39,17 @@ impl TryFrom<DomainRelationWire> for CatiaConsolidatedDomainRelation {
     type Error = &'static str;
 
     fn try_from(wire: DomainRelationWire) -> Result<Self, Self::Error> {
-        if wire.definition.class() != ConsolidatedEdgeDefinitionClass::Class24
-            || !matches!(
-                wire.definition.data(),
+        if !matches!(
+            (wire.definition.class(), wire.definition.data()),
+            (
+                ConsolidatedEdgeDefinitionClass::Class24,
                 Some(ConsolidatedEdgeDefinitionData::Domain24 { .. })
+            ) | (
+                ConsolidatedEdgeDefinitionClass::Class25,
+                Some(ConsolidatedEdgeDefinitionData::Domain25 { .. })
             )
-        {
-            return Err("native domain relation requires a scalar class-24 definition");
+        ) {
+            return Err("native domain relation requires a scalar class-24 or class-25 definition");
         }
         Ok(Self {
             id: wire.id,
@@ -61,7 +67,10 @@ pub(super) fn derive(
 ) -> Result<Vec<CatiaConsolidatedDomainRelation>, CodecError> {
     let mut relations = Vec::new();
     for record in records {
-        if record.family() != ConsolidatedFamily::B || record.class() != 0x24 {
+        if record.family() != ConsolidatedFamily::B || !matches!(record.class(), 0x24 | 0x25) {
+            continue;
+        }
+        if record.class() == 0x25 && record.flag() != ConsolidatedFrameFlag::Flag03 {
             continue;
         }
         ctx.charge_work(
@@ -71,7 +80,13 @@ pub(super) fn derive(
         let Some(payload) = record.payload() else {
             continue;
         };
-        if class24::parse(&bytes[payload.clone()]).is_none() {
+        if !matches!(
+            consolidated_edge_definition_data(record.class(), &bytes[payload.clone()]),
+            Some(
+                ConsolidatedEdgeDefinitionData::Domain24 { .. }
+                    | ConsolidatedEdgeDefinitionData::Domain25 { .. }
+            )
+        ) {
             continue;
         }
         let source = ConsolidatedEdgeDefinition {
@@ -79,7 +94,8 @@ pub(super) fn derive(
                 record,
                 ctx.copy_retained(&bytes[payload], "catia_domain_relation_payload")?,
             )?,
-            class: ConsolidatedEdgeDefinitionClass::Class24,
+            class: ConsolidatedEdgeDefinitionClass::try_from(record.class())
+                .map_err(CodecError::malformed)?,
         };
         let relation = CatiaConsolidatedDomainRelation {
             id: ctx.format_retained(

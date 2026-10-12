@@ -2307,3 +2307,127 @@ offset = 16
 type = "f64"
 source = "spec"
 anchor = "| `+16` | `f64le` | signed accuracy |"
+
+[[record]]
+name = "class25_scalar_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs"
+kind = "byte"
+section = "6.3"
+anchor = "A B-family scalar class-`25` parameter map"
+size = 1
+note = "Two allocation operands and a three-byte selector follow the marker."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | parameter-map marker `82` |"
+value = 130
+
+[[record]]
+name = "class25_target_domain"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs"
+kind = "byte"
+section = "6.3"
+anchor = "The first scalar follows the selector. These offsets are relative to that scalar:"
+size = 24
+note = "Offsets are relative to the first scalar after the selector."
+
+[[record.field]]
+name = "lower"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "| `+0` | `f64le` | target lower parameter |"
+
+[[record.field]]
+name = "upper"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "| `+8` | `f64le` | target upper parameter |"
+
+[[record.field]]
+name = "signed_accuracy"
+offset = 16
+type = "f64"
+source = "spec"
+anchor = "| `+16` | `f64le` | signed accuracy |"
+
+[[record]]
+name = "class25_affine_source"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs"
+kind = "byte"
+section = "6.3"
+anchor = "An affine source relation follows the target fields with these words:"
+size = 56
+note = "Offsets are relative to the first target scalar; the first 24 bytes contain the target interval and signed accuracy."
+
+[[record.gap]]
+offset = 0
+size = 24
+note = "The class25_target_domain table defines the target interval and signed accuracy at these offsets."
+
+[[record.field]]
+name = "source_lower"
+offset = 24
+type = "f64"
+source = "spec"
+anchor = "| `+24` | `f64le` | source lower parameter |"
+
+[[record.field]]
+name = "source_upper"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "| `+32` | `f64le` | source upper parameter |"
+
+[[record.field]]
+name = "scale"
+offset = 40
+type = "f64"
+source = "spec"
+anchor = "| `+40` | `f64le` | source-to-target scale |"
+
+[[record.field]]
+name = "offset"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "| `+48` | `f64le` | source-to-target offset |"
+
+[[record]]
+name = "class25_sampled_source"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/consolidated/records/class25.rs"
+kind = "byte"
+section = "6.3"
+anchor = "A sampled source relation requires lead `0a`. Its source bounds and count marker follow the target fields:"
+size = 41
+note = "Offsets are relative to the first target scalar. The count selects both subsequent sample arrays."
+
+[[record.gap]]
+offset = 0
+size = 24
+note = "The class25_target_domain table defines the target interval and signed accuracy at these offsets."
+
+[[record.field]]
+name = "source_lower"
+offset = 24
+type = "f64"
+source = "spec"
+anchor = "| `+24` | `f64le` | sampled source lower parameter |"
+
+[[record.field]]
+name = "source_upper"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "| `+32` | `f64le` | sampled source upper parameter |"
+
+[[record.field]]
+name = "sample_count"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "| `+40` | `u8` | paired-sample count `80+n` |"

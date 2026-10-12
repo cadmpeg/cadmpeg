@@ -1024,3 +1024,33 @@ documents match the earlier models outside the intended native parameter
 projections and the new arena. Apartman reaches the existing 512-step ordered
 face-constraint limit; its 2,779 scalar frames are covered by the separate
 frame-grammar verification above.
+
+
+Class-`0x25` verification scans all 79 physical CATIA files through
+`cadmpeg inspect`. It finds 6,091 distinct length-closed B2/B3/B4 flag-`03`
+candidates: 6,077 complete two-operand scalar maps in 29 files and 14 candidates
+outside that grammar. The complete maps comprise 4,604 affine relations,
+27 target-only relations, and 1,446 sampled relations. All nine selectors
+consume their complete frames and satisfy the numeric invariants.
+
+Among sampled maps, 1,409 source arrays increase and 37 decrease. All samples
+remain within their named intervals. Sample extrema differ from the interval
+bounds bit-for-bit in 276 records; seven differences exceed the stored
+accuracy. The arrays therefore retain their pairing and do not supply interval
+endpoints. Two spray-bottle affine maps retain fit tolerance `0.001` separately
+from signed accuracies `1.584409889836592e-8` and `1.1371036519709368e-8`.
+
+Every complete map was also decoded through the production codec in a
+constructed standard CATIA container. All 6,077 native payloads and typed maps
+match the independent byte parse exactly. Checking the resulting document
+reports zero errors and warnings; its neutral geometry arenas remain empty.
+The domain-relation arena retains allocation addressing forms, sample block
+order, source positions, signed accuracy, fit tolerance, and target sites.
+Operand binding and the separate multi-operand productions remain open.
+
+The parameter-map golden fixture covers paired arrays, decreasing source
+orientation, interior target sites, a distinct fit tolerance, and elided
+accuracy. All 72 earlier golden files, including their frozen inputs, remain
+byte-identical. Regression tests cover every bounded sample count from 2
+through 12 and reject a count exceeding the B-family payload capacity,
+contradictory map data, nonmonotone arrays, wrong frame flags, and A8 frames.

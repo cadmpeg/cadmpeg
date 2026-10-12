@@ -186,10 +186,7 @@ pub(super) fn validate_consolidated_edge_runs(
                     u8::from(definition.class()) == 0x25
                         && matches!(
                             definition.data(),
-                            Some(
-                                ConsolidatedEdgeDefinitionData::Scalar25 { .. }
-                                    | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
-                            )
+                            Some(ConsolidatedEdgeDefinitionData::Domain25 { .. })
                         )
                         && descriptor.byte_offset < definition.frame().pos
                 })

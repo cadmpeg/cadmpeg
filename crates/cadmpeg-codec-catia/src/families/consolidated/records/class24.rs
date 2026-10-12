@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::wire::bytes::compact_int;
 
+use super::parameter_relation::{endpoints_agree, TargetSites};
+
 /// An observed selector, including the distinct aliases 1 and 3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u16", into = "u16")]
@@ -56,23 +58,6 @@ pub(crate) enum Class24SourceRelation {
     },
 }
 
-/// Only target sites that have serialized words.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum Class24TargetSites {
-    Absent,
-    Lower {
-        parameter: FiniteReal,
-    },
-    Upper {
-        parameter: FiniteReal,
-    },
-    Both {
-        lower: FiniteReal,
-        upper: FiniteReal,
-    },
-}
-
 /// A complete scalar class-24 parameter relation; operand identities remain local.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Class24DomainRelation {
@@ -82,15 +67,7 @@ pub(crate) struct Class24DomainRelation {
     pub(crate) target_range: IncreasingParameterInterval,
     pub(crate) accuracy: Class24Accuracy,
     pub(crate) source: Class24SourceRelation,
-    pub(crate) sites: Class24TargetSites,
-}
-
-fn endpoints_agree(first: f64, second: f64) -> bool {
-    const ABSOLUTE: f64 = 1.0e-7;
-    const RELATIVE: f64 = 1.0e-12;
-    first.is_finite()
-        && second.is_finite()
-        && (first - second).abs() <= ABSOLUTE + RELATIVE * first.abs().max(second.abs())
+    pub(crate) sites: TargetSites,
 }
 
 /// Admit only a complete observed selector production and its numeric invariants.
@@ -156,11 +133,11 @@ pub(crate) fn parse(payload: &[u8]) -> Option<Class24DomainRelation> {
         .then_some(parameter)
     };
     let sites = match selector.0 {
-        0x0587 | 0x0987 | 0x0d87 => Class24TargetSites::Absent,
-        0x0586 | 0x0d86 => Class24TargetSites::Lower {
+        0x0587 | 0x0987 | 0x0d87 => TargetSites::Absent,
+        0x0586 | 0x0d86 => TargetSites::Lower {
             parameter: read_site(&mut view)?,
         },
-        0x0585 | 0x0985 | 0x0d85 => Class24TargetSites::Upper {
+        0x0585 | 0x0985 | 0x0d85 => TargetSites::Upper {
             parameter: read_site(&mut view)?,
         },
         0x0584 | 0x0984 | 0x0d84 | 1 | 3 => {
@@ -169,7 +146,7 @@ pub(crate) fn parse(payload: &[u8]) -> Option<Class24DomainRelation> {
             if lower.get() > upper.get() {
                 return None;
             }
-            Class24TargetSites::Both { lower, upper }
+            TargetSites::Both { lower, upper }
         }
         _ => return None,
     };

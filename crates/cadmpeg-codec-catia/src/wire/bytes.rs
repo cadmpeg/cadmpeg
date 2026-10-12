@@ -6,29 +6,12 @@
 //! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
-
-/// Read a complete lane of little-endian `f64` values, each finite.
-pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
-    if !bytes.len().is_multiple_of(8) {
-        return None;
-    }
-    let mut view = View::over_retained(bytes);
-    let arena = DecodeArena::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
-    let mut values = ctx
-        .collection_vec(bytes.len() / 8, "catia_finite_f64_lane")
-        .ok()?;
-    while !view.is_empty() {
-        values.push(FiniteReal::new(view.f64_le()?)?);
-    }
-    Some(values)
-}
 
 /// Read a finite lane retained by a decoded record after charging its bytes
 /// and collection slots to the active decode.
@@ -105,7 +88,8 @@ pub(crate) fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
 }
 
 /// Addressing form carried by one allocation reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum AllocationReferenceEncoding {
     /// `4n+1`: backward framed-record distance.
     BackwardDistance,
@@ -176,20 +160,18 @@ pub(crate) fn allocation_reference(bytes: &[u8], at: &mut usize) -> Option<Alloc
     }
 }
 
-/// Read one allocation reference and discard its wire addressing form.
-pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
-    Some(allocation_reference(bytes, at)?.value)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{allocation_ref, allocation_reference, AllocationReferenceEncoding};
+    use super::{allocation_reference, AllocationReferenceEncoding};
 
     #[test]
     fn allocation_refs_strip_single_byte_dialect_bits() {
         for (token, expected) in [(0x03, 0), (0x0b, 2), (0x22, 8), (0x23, 8)] {
             let mut at = 0;
-            assert_eq!(allocation_ref(&[token], &mut at), Some(expected));
+            assert_eq!(
+                allocation_reference(&[token], &mut at).map(|reference| reference.value),
+                Some(expected)
+            );
             assert_eq!(at, 1);
         }
     }

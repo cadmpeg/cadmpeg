@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete selector forms and contradictory parameter relations.
 
-use super::{parse, Class24Accuracy, Class24Selector, Class24SourceRelation, Class24TargetSites};
+use crate::families::consolidated::records::parameter_relation::TargetSites;
+
+use super::{parse, Class24Accuracy, Class24Selector, Class24SourceRelation};
 
 fn payload(selector: u16, lead: u8, values: &[f64]) -> Vec<u8> {
     let mut bytes = vec![0x82, 0x05, 0x09, lead];
@@ -61,10 +63,10 @@ fn class24_observed_selectors_consume_both_accuracy_forms() {
                 _ => false,
             });
             assert!(match suffix {
-                0x87 => matches!(relation.sites, Class24TargetSites::Absent),
-                0x86 => matches!(relation.sites, Class24TargetSites::Lower { .. }),
-                0x85 => matches!(relation.sites, Class24TargetSites::Upper { .. }),
-                0x84 => matches!(relation.sites, Class24TargetSites::Both { .. }),
+                0x87 => matches!(relation.sites, TargetSites::Absent),
+                0x86 => matches!(relation.sites, TargetSites::Lower { .. }),
+                0x85 => matches!(relation.sites, TargetSites::Upper { .. }),
+                0x84 => matches!(relation.sites, TargetSites::Both { .. }),
                 _ => false,
             });
             assert!(match lead {

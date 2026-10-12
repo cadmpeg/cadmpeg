@@ -1073,141 +1073,59 @@ fn fixed_owner_boundary_indexes_and_nested_targets_refuse_collection_limits() {
 }
 
 #[test]
-fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
-    use crate::families::consolidated::records::{
-        Class25PersistentLead, Class25ScalarSegment, ConsolidatedEdgeDefinitionData,
-    };
-
-    let operands = [0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
-    let mut plain = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6] {
-        plain.extend_from_slice(&value.to_le_bytes());
+fn consolidated_edge_definition_decodes_typed_class25_maps() {
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+    for bytes in [
+        crate::test_support::test_class25::affine_stream(),
+        crate::test_support::test_class25::sampled_stream(),
+    ] {
+        let mut bytes = bytes;
+        bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+        let native = crate::native::CatiaNative::decode(&bytes);
+        assert!(matches!(
+            native.consolidated_edge_nodes[0]
+                .definition
+                .as_ref()
+                .and_then(CatiaConsolidatedEdgeDefinition::data),
+            Some(ConsolidatedEdgeDefinitionData::Domain25 { .. })
+        ));
+        let mut descriptor_payload = vec![0x08, 0x34, 0x12, 0x02];
+        descriptor_payload.extend_from_slice(&3.0_f64.to_le_bytes());
+        descriptor_payload.extend_from_slice(&7.0_f64.to_le_bytes());
+        let mut described = vec![
+            0xb2,
+            0x03,
+            0x18,
+            u8::try_from(descriptor_payload.len()).expect("small descriptor"),
+            0x05,
+        ];
+        described.extend_from_slice(&descriptor_payload);
+        described.extend_from_slice(&bytes);
+        let runs = super::consolidated_class25_edge_runs(&described);
+        let [run] = runs.as_slice() else {
+            panic!("one described class25 map")
+        };
+        assert_eq!(run.descriptor.record_id, 0x1234);
+        assert_eq!(
+            cadmpeg_ir::scalar::FiniteReal::raw_lane(&run.descriptor.values),
+            [3.0, 7.0]
+        );
+        let native = crate::native::CatiaNative::decode(&described);
+        assert_eq!(
+            native.consolidated_edge_nodes[0]
+                .class25_descriptor
+                .as_ref()
+                .expect("native descriptor")
+                .control,
+            0x02
+        );
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        native.store(&mut namespace).expect("store described map");
+        assert_eq!(
+            crate::native::CatiaNative::load(&namespace).expect("load described map"),
+            native
+        );
     }
-    assert_eq!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &plain),
-        Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-            operands: [1, 57, 3463],
-            persistent_lead: Class25PersistentLead::Lead0a,
-            values: vec![
-                crate::test_support::test_b5::finite(1.0),
-                crate::test_support::test_b5::finite(2.0),
-                crate::test_support::test_b5::finite(1.0e-6),
-                crate::test_support::test_b5::finite(3.0),
-                crate::test_support::test_b5::finite(4.0),
-                crate::test_support::test_b5::finite(1.0),
-                crate::test_support::test_b5::finite(5.0),
-                crate::test_support::test_b5::finite(1.0e-6)
-            ]
-            .try_into()
-            .expect("admitted scalar arity"),
-        })
-    );
-
-    let mut segmented = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0] {
-        segmented.extend_from_slice(&value.to_le_bytes());
-    }
-    segmented.push(0x82);
-    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 1.0e-6] {
-        segmented.extend_from_slice(&value.to_le_bytes());
-    }
-    assert!(matches!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented),
-        Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            operands: [1, 57, 3463],
-            persistent_lead: Class25PersistentLead::Lead0a,
-            segment: Class25ScalarSegment::M82Six(ref trailing),
-            ..
-        }) if trailing.len() == 6
-    ));
-    segmented[46] = 0x84;
-    assert!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented)
-            .is_none()
-    );
-
-    let mut odd_lead = plain.clone();
-    odd_lead[3] = 0x0b;
-    odd_lead.drain(odd_lead.len() - 8..);
-    assert!(matches!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &odd_lead),
-        Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-            persistent_lead: Class25PersistentLead::Lead0b,
-            ref values,
-            ..
-        }) if values.len() == 7
-    ));
-
-    let mut long_segment = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0] {
-        long_segment.extend_from_slice(&value.to_le_bytes());
-    }
-    long_segment.push(0x89);
-    for value in 0..20 {
-        long_segment.extend_from_slice(&f64::from(value).to_le_bytes());
-    }
-    assert!(matches!(
-        crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &long_segment),
-        Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            segment: Class25ScalarSegment::M89(ref trailing),
-            ..
-        }) if trailing.len() == 20
-    ));
-
-    let mut bytes = vec![
-        0xb2,
-        0x03,
-        0x25,
-        u8::try_from(plain.len()).expect("fixture value fits u8"),
-        0x05,
-    ];
-    bytes.extend_from_slice(&plain);
-    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    assert!(matches!(
-        native.consolidated_edge_nodes[0]
-            .definition
-            .as_ref()
-            .and_then(CatiaConsolidatedEdgeDefinition::data),
-        Some(
-            crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
-                operands: [1, 57, 3463],
-                persistent_lead: Class25PersistentLead::Lead0a,
-                ..
-            }
-        )
-    ));
-
-    let mut descriptor_payload = vec![0x08, 0x34, 0x12, 0x02];
-    descriptor_payload.extend_from_slice(&3.0_f64.to_le_bytes());
-    descriptor_payload.extend_from_slice(&7.0_f64.to_le_bytes());
-    let mut described = vec![
-        0xb2,
-        0x03,
-        0x18,
-        u8::try_from(descriptor_payload.len()).expect("fixture value fits u8"),
-        0x05,
-    ];
-    described.extend_from_slice(&descriptor_payload);
-    described.extend_from_slice(&bytes);
-    let runs = crate::families::consolidated::records::consolidated_class25_edge_runs(&described);
-    let [run] = runs.as_slice() else {
-        panic!("one described class-25 edge run");
-    };
-    assert_eq!(run.descriptor.record_id, 0x1234);
-    assert_eq!(
-        cadmpeg_ir::scalar::FiniteReal::raw_lane(&run.descriptor.values),
-        [3.0, 7.0]
-    );
-    let native = crate::native::CatiaNative::decode(&described);
-    assert_eq!(
-        native.consolidated_edge_nodes[0]
-            .class25_descriptor
-            .as_ref()
-            .expect("native class-25 descriptor")
-            .control,
-        0x02
-    );
 }
 
 #[test]
@@ -1421,7 +1339,7 @@ fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
     descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
     descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
     let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
-    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0, 1.0, 5.0, 0.001] {
+    for value in [1.0_f64, 2.0, 0.001, 1.0, 2.0, 1.0, 0.0, 0.001] {
         definition.extend_from_slice(&value.to_le_bytes());
     }
     let mut bytes = vec![
@@ -1462,39 +1380,23 @@ fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
 }
 
 #[test]
-fn class25_edge_run_accepts_segmented_finite_lane_and_rejects_unknown_marker() {
+fn class25_edge_run_admits_complete_sampled_map_and_declines_wrong_count() {
     let mut descriptor = vec![0x08, 0x34, 0x12, 0x02];
     descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
     descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
-    let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
-    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0] {
-        definition.extend_from_slice(&value.to_le_bytes());
-    }
-    let marker = definition.len();
-    definition.push(0x82);
-    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 0.001] {
-        definition.extend_from_slice(&value.to_le_bytes());
-    }
     let mut bytes = vec![
         0xb2,
         0x03,
         0x18,
-        u8::try_from(descriptor.len()).expect("fixture value fits u8"),
+        u8::try_from(descriptor.len()).expect("small descriptor"),
         0x05,
     ];
     bytes.extend_from_slice(&descriptor);
-    bytes.extend_from_slice(&[
-        0xb2,
-        0x03,
-        0x25,
-        u8::try_from(definition.len()).expect("fixture value fits u8"),
-        0x05,
-    ]);
-    let definition_start = bytes.len();
-    bytes.extend_from_slice(&definition);
+    let map_start = bytes.len();
+    bytes.extend_from_slice(&crate::test_support::test_class25::sampled_stream());
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
     assert_eq!(super::consolidated_class25_edge_runs(&bytes).len(), 1);
-    bytes[definition_start + marker] = 0x84;
+    bytes[map_start + 5 + 6 + 40] = 0x83;
     assert!(super::consolidated_class25_edge_runs(&bytes).is_empty());
 }
 
@@ -1661,18 +1563,12 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
 }
 
 #[test]
-fn unsegmented_scalar_deserialization_rejects_arity_outside_its_grammar() {
+fn class23_scalar_deserialization_requires_nine_values() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
-    for (kind, lower, upper) in [("scalar23", 9, 9), ("scalar25", 7, 10)] {
-        for count in 0..=11 {
-            let wire = serde_json::json!({"kind": kind, "operands": [1, 2, 3], "persistent_lead": 10, "values": vec![0.0; count]});
-            let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
-            assert_eq!(
-                result.is_ok(),
-                (lower..=upper).contains(&count),
-                "{kind} {count}"
-            );
-        }
+    for count in 0..=11 {
+        let wire = serde_json::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
+        let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
+        assert_eq!(result.is_ok(), count == 9, "scalar23 {count}");
     }
 }
 
