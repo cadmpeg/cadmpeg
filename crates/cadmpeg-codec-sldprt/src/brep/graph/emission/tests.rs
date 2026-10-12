@@ -466,8 +466,8 @@ fn empty_face_graph_releases_metadata_and_annotation_stream() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 1024 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let facts = crate::brep::entity::scan_metadata(&ctx, &bytes, false).unwrap();
-    assert_eq!(facts.face_colors.len(), 1);
+    let mut facts = crate::brep::entity::scan_metadata(&ctx, &bytes, false).unwrap();
+    assert_eq!(facts.face_colors_mut().len(), 1);
     let decoded = super::decode_graph(
         &ctx,
         crate::brep::index::view::CarrierView::Retained(
@@ -516,9 +516,9 @@ fn exhausted_fact_shells_retire_before_orientation() {
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let facts = if with_facts {
-                    let facts = crate::brep::entity::scan_metadata(&ctx, &metadata, false)?;
-                    assert_eq!(facts.face_color_versions.len(), 1);
-                    assert!(facts.face_colors.is_empty());
+                    let mut facts = crate::brep::entity::scan_metadata(&ctx, &metadata, false)?;
+                    assert_eq!(facts.face_color_versions_mut().len(), 1);
+                    assert!(facts.face_colors_mut().is_empty());
                     facts
                 } else {
                     crate::brep::entity::FactsSource::empty(&ctx)?
