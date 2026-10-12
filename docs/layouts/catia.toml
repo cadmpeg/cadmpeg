@@ -2625,3 +2625,60 @@ type = "u16"
 endianness = "big"
 source = "spec"
 anchor = "At row-relative `+4`, a `u16be` parameter-length word"
+
+[[record]]
+name = "fixed_nine_owner_numeric_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b2/records.rs"
+kind = "byte"
+section = "6.4"
+anchor = "The complete fixed-nine numeric tail is 62 bytes:"
+size = 62
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "| `+0` | `bytes[5]` | owner numeric header |"
+
+[[record.field]]
+name = "lower"
+offset = 5
+type = "f64[2]"
+source = "spec"
+anchor = "| `+5` | `f64le[2]` | owner lower U/V corner |"
+
+[[record.field]]
+name = "upper"
+offset = 21
+type = "f64[2]"
+source = "spec"
+anchor = "| `+21` | `f64le[2]` | owner upper U/V corner |"
+
+[[record.field]]
+name = "marker"
+offset = 37
+type = "u8"
+source = "spec"
+anchor = "| `+37` | `u8` | owner numeric marker `01` |"
+
+[[record.field]]
+name = "x_bounds"
+offset = 38
+type = "f32[2]"
+source = "spec"
+anchor = "| `+38` | `f32le[2]` | owner Cartesian X bounds |"
+
+[[record.field]]
+name = "y_bounds"
+offset = 46
+type = "f32[2]"
+source = "spec"
+anchor = "| `+46` | `f32le[2]` | owner Cartesian Y bounds |"
+
+[[record.field]]
+name = "z_bounds"
+offset = 54
+type = "f32[2]"
+source = "spec"
+anchor = "| `+54` | `f32le[2]` | owner Cartesian Z bounds |"

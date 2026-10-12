@@ -1259,3 +1259,58 @@ four cone conflicts in `collet.CATPart`: the selected arc midpoint agrees
 within `4.506e-7` mm, and the center-selected complement misses by 11.5 mm.
 The broader rule remains outside decoder admission; additional source-bound
 branch relations remain in SN-15.
+
+Independent framing and allocation walks cover all 79 CATPart files and
+verify the fixed-nine owner census:
+
+| Reference encoding | Fixed-nine packets |
+| --- | ---: |
+| All-compact | 749 |
+| Tagged alternating | 112 |
+| Width-coded alternating | 107 |
+| Total | 968 |
+
+The 78 checked documents retain 951 of these packets, with bit-exact binary64
+rectangles and binary32 boxes. `apartman.CATPart` adds 17 all-compact packets
+verified directly from source. All 45 owner charts have complete seven-frame
+logical adjacency and four side relations equal to the stored rectangle:
+13 rolling-ball charts, one cylinder chart, and 31 torus charts. Among the
+906 decoded packets without charts, 577 resolve backward references; their
+1,521 targets comprise 327 vertex and 1,194 edge allocations, with no surface
+target. The inline rectangle remains retained without a carrier binding.
+
+An independent A5 knot, pole, weight, and complete-tail parser evaluates
+uncharted tagged and width-coded rectangles. Domain comparisons allow
+`0.002` parameter units and Cartesian comparisons allow `0.002` mm;
+evaluation uses the rectangle's intersection with the candidate domain.
+
+| Candidate result | Tagged owners | Width-coded owners |
+| --- | ---: | ---: |
+| Owners tested | 112 | 77 |
+| No domain candidate | 0 | 20 |
+| No four-corner candidate | 0 | 62 |
+| No 25-by-25 grid candidate | 0 | 63 |
+| One grid candidate | 72 | 12 |
+| Multiple grid candidates | 40 | 2 |
+
+The spring owner at offset 40,482 stores its complete 62-byte tail inline.
+Carriers at offsets 50,739 and 52,715 pass the corner-box check. A 101-by-101
+interior grid has zero coordinate violations on the first and 13,284 on the
+second. The second carrier's U domain falls short of the rectangle by
+`0.0010119222600337707` parameter units; this comparison clips that narrow
+excess and still rejects its interior. Corner containment supplies a candidate
+filter, rather than a carrier identity or a full-image proof.
+
+All 31 explicitly bound torus rectangles pass independent 513-by-513 grids,
+covering 8,158,239 sites. Minimum lower-side and upper-side Cartesian slack
+are both `0.0999755859375` mm. The CTC05 chart at owner offset 603,047 has
+two matching torus loci in the checked sibling STEP document, with opposite
+reference directions. The stored envelope is conservative and does not select
+one surface identity; its observed padding is not a required format constant.
+
+The [CGM surface documentation](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/Surfaces.htm)
+separates surface-relative limits from Cartesian bounding boxes, and the
+[foreign-surface contract](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/Attribute.htm)
+defines boxes for limited parts of surfaces. That API distinction supports
+the Cartesian envelope interpretation; it does not identify a serialized
+carrier or prove which API method produced the cache.

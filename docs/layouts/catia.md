@@ -963,6 +963,23 @@ Spec §5.5 · layout: byte offsets · size: 6 B
 | 1 | 3 | `allocation_tag` | `u24` | little | spec | edge_support_row := 60 <tag:u24le> <curve_body> <face_ref> <face_ref> |
 | 4 | 2 | `parameter_length` | `u16` | big | spec | At row-relative `+4`, a `u16be` parameter-length word |
 
+## `fixed_nine_owner_numeric_tail`
+
+Spec §6.4 · layout: byte offsets · size: 62 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b2/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `header` | `bytes[5]` | little | spec | \| `+0` \| `bytes[5]` \| owner numeric header \| |
+| 5 | 16 | `lower` | `f64[2]` | little | spec | \| `+5` \| `f64le[2]` \| owner lower U/V corner \| |
+| 21 | 16 | `upper` | `f64[2]` | little | spec | \| `+21` \| `f64le[2]` \| owner upper U/V corner \| |
+| 37 | 1 | `marker` | `u8` | little | spec | \| `+37` \| `u8` \| owner numeric marker `01` \| |
+| 38 | 8 | `x_bounds` | `f32[2]` | little | spec | \| `+38` \| `f32le[2]` \| owner Cartesian X bounds \| |
+| 46 | 8 | `y_bounds` | `f32[2]` | little | spec | \| `+46` \| `f32le[2]` \| owner Cartesian Y bounds \| |
+| 54 | 8 | `z_bounds` | `f32[2]` | little | spec | \| `+54` \| `f32le[2]` \| owner Cartesian Z bounds \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
