@@ -43,6 +43,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 
 use self::admissions::{pcurve_admission_note, PcurveAdmission};
 use self::associations::PcurveAssociations;
+use self::selection::PcurveSelections;
 use super::geometry::surface_periodic_domains;
 use super::index::CarrierIndex;
 use super::StageOutcome;
@@ -92,6 +93,7 @@ fn insert_topology_body_group(
 
 mod admissions;
 mod associations;
+mod selection;
 
 pub(super) struct TopologyData<'ctx> {
     pub(super) body_by_root: BTreeMap<u64, Vec<BodyId>>,
@@ -965,6 +967,7 @@ pub(super) fn decode<'ctx>(
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     let mut face_cache = FaceAttributeCache::new(ctx)?;
     let mut associations = PcurveAssociations::new(exchange, &decoded_pcurves, ctx)?;
+    let mut selections = PcurveSelections::new(ctx)?;
     let mut face_ancestor_storage = ctx.reserve_scoped(0, "STEP committed face ancestry")?;
     let mut claimed_face_ancestors = BTreeSet::new();
     let mut shell_ancestor_storage = ctx.reserve_scoped(0, "STEP committed shell ancestry")?;
@@ -1050,8 +1053,7 @@ pub(super) fn decode<'ctx>(
                 point_positions: carrier_index,
                 ctx,
             },
-            &mut face_cache,
-            &mut associations,
+            (&mut face_cache, &mut associations, &mut selections),
             scope_root,
             (&mut losses, &mut loss_storage),
         )?;
@@ -1226,6 +1228,7 @@ pub(super) fn decode<'ctx>(
             }
         }
     }
+    drop((face_cache, associations, selections));
     // Every admitted relation shares one class of unproved invariant, so the
     // document reports the class once with its count and named examples.
     if let Some(note) = pcurve_admission_note(&admissions, ctx)? {
@@ -3747,6 +3750,7 @@ struct BuildSources<'records, 'a, 'ctx, 'b> {
 struct BuildState<'ctx, 'ir, 'records, 'cache, 'arena> {
     face_cache: &'cache mut FaceAttributeCache<'ctx, 'records, 'arena>,
     associations: &'cache mut PcurveAssociations<'ctx, 'records, 'arena>,
+    selections: &'cache mut PcurveSelections<'ctx>,
     failure: Option<BuildFailure>,
     selection_index: Option<PcurveSelectionIndex<'ctx, 'ir>>,
 }
@@ -3771,8 +3775,11 @@ fn build<'ctx, 'records, 'arena>(
     id: u64,
     root: &RawRecord,
     sources: BuildSources<'records, '_, 'ctx, 'arena>,
-    face_cache: &mut FaceAttributeCache<'ctx, 'records, 'arena>,
-    associations: &mut PcurveAssociations<'ctx, 'records, 'arena>,
+    caches: (
+        &mut FaceAttributeCache<'ctx, 'records, 'arena>,
+        &mut PcurveAssociations<'ctx, 'records, 'arena>,
+        &mut PcurveSelections<'ctx>,
+    ),
     scope_root: bool,
     losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
 ) -> Result<BuildOutcome<'ctx>, CodecError> {
@@ -3795,9 +3802,11 @@ fn build<'ctx, 'records, 'arena>(
         }))?;
         return Ok(outcome);
     };
+    let (face_cache, associations, selections) = caches;
     let mut state = BuildState {
         face_cache,
         associations,
+        selections,
         failure: None,
         selection_index: None,
     };
@@ -3931,6 +3940,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     let BuildState {
         face_cache,
         associations,
+        selections,
         failure,
         selection_index,
     } = state;
@@ -4771,23 +4781,25 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                 if associated.is_empty() {
                                     None
                                 } else {
-                                    if selection_index.is_none() && associated.len() == 1 {
-                                        *selection_index =
-                                            Some(PcurveSelectionIndex::build(ir, ctx)?);
-                                    }
                                     match payload.with_storage(|| {
-                                        select_associated_pcurve(
-                                            selection_index.as_ref(),
-                                            exchange,
-                                            surface,
-                                            edge,
-                                            PcurveAssociationSources {
-                                                vdefs,
-                                                point_positions,
-                                                candidates: associated,
-                                            },
-                                            ctx,
-                                        )
+                                        selections.select(o.edge, surface, associated, ctx, || {
+                                            if selection_index.is_none() && associated.len() == 1 {
+                                                *selection_index =
+                                                    Some(PcurveSelectionIndex::build(ir, ctx)?);
+                                            }
+                                            select_associated_pcurve(
+                                                selection_index.as_ref(),
+                                                exchange,
+                                                surface,
+                                                edge,
+                                                PcurveAssociationSources {
+                                                    vdefs,
+                                                    point_positions,
+                                                    candidates: associated,
+                                                },
+                                                ctx,
+                                            )
+                                        })
                                     }) {
                                         Ok(selected) => {
                                             ctx.push_scoped_vec(

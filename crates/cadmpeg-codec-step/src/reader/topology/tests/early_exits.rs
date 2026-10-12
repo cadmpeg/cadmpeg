@@ -166,6 +166,7 @@ fn rejected_shell_face_work(tail: usize) -> u64 {
     let mut associations =
         super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx)
             .expect("empty associations");
+    let mut selections = super::super::PcurveSelections::new(&ctx).expect("empty selections");
     let mut cache = super::super::FaceAttributeCache::new(&ctx).expect("empty face cache");
     let mut storage = ctx
         .reserve_scoped(0, "test shell losses")
@@ -183,8 +184,7 @@ fn rejected_shell_face_work(tail: usize) -> u64 {
             point_positions: &carriers,
             ctx: &ctx,
         },
-        &mut cache,
-        &mut associations,
+        (&mut cache, &mut associations, &mut selections),
         false,
         (&mut Vec::new(), &mut storage),
     )

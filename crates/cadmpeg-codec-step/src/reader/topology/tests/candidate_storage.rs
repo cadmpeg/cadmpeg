@@ -41,6 +41,7 @@ fn repeated_rejected_shell_candidates_release_identity_and_region_storage() {
     let mut associations =
         super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx)
             .expect("empty associations");
+    let mut selections = super::super::PcurveSelections::new(&ctx).expect("empty selections");
     let mut cache = FaceAttributeCache::new(&ctx).expect("face cache");
     let mut storage = ctx.reserve_scoped(0, "test losses").expect("loss slots");
     let mut losses = Vec::new();
@@ -58,8 +59,7 @@ fn repeated_rejected_shell_candidates_release_identity_and_region_storage() {
                 point_positions: &carriers,
                 ctx: &ctx,
             },
-            &mut cache,
-            &mut associations,
+            (&mut cache, &mut associations, &mut selections),
             false,
             (&mut losses, &mut storage),
         )
@@ -77,7 +77,7 @@ fn repeated_rejected_shell_candidates_release_identity_and_region_storage() {
         drop((built, owner));
     }
     assert!(losses.is_empty());
-    drop((losses, storage, cache, associations));
+    drop((losses, storage, cache, associations, selections));
     assert_eq!(retained_bytes(&ctx), 0);
 }
 
@@ -188,6 +188,7 @@ fn rejected_named_face(name: &str, invalid: bool) {
     let mut associations =
         super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx)
             .expect("empty associations");
+    let mut selections = super::super::PcurveSelections::new(&ctx).expect("empty selections");
     let mut cache = FaceAttributeCache::new(&ctx).expect("face cache");
     let mut storage = ctx.reserve_scoped(0, "test losses").expect("loss slots");
     let mut losses = Vec::new();
@@ -204,8 +205,7 @@ fn rejected_named_face(name: &str, invalid: bool) {
             point_positions: &carriers,
             ctx: &ctx,
         },
-        &mut cache,
-        &mut associations,
+        (&mut cache, &mut associations, &mut selections),
         false,
         (&mut losses, &mut storage),
     )
