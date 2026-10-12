@@ -5083,7 +5083,7 @@ fn standard_limit_curve_bindings(
             else {
                 continue;
             };
-            let Some(parameter) = FiniteReal::new(0.5 * (start_parameter + end_parameter))
+            let Some(parameter) = FiniteReal::new(start_parameter.midpoint(end_parameter))
                 .and_then(|parameter| {
                     cadmpeg_ir::eval::map_nurbs_curve_parameter(&curves[curve], parameter)
                 })
@@ -7823,9 +7823,9 @@ fn resolve_standard_endpoint_pairs(
                         .map(|point| point.position().get()),
                 ) {
                     let midpoint = Point3::new(
-                        (start.x + end.x) * 0.5,
-                        (start.y + end.y) * 0.5,
-                        (start.z + end.z) * 0.5,
+                        start.x.midpoint(end.x),
+                        start.y.midpoint(end.y),
+                        start.z.midpoint(end.z),
                     );
                     midpoint.distance(center) <= EPS_ANTIPODAL_CIRCLE
                         && (start.distance(end) - 2.0 * radius).abs() <= EPS_ANTIPODAL_CIRCLE
@@ -7941,9 +7941,9 @@ fn resolve_standard_endpoint_pairs(
                 );
                 let segment_norm = segment.x.hypot(segment.y).hypot(segment.z);
                 let midpoint = Point3::new(
-                    (start_point.x + end_point.x) * 0.5,
-                    (start_point.y + end_point.y) * 0.5,
-                    (start_point.z + end_point.z) * 0.5,
+                    start_point.x.midpoint(end_point.x),
+                    start_point.y.midpoint(end_point.y),
+                    start_point.z.midpoint(end_point.z),
                 );
                 let follows_direction = direction.is_none_or(|direction| {
                     let direction_norm = direction.x.hypot(direction.y).hypot(direction.z);
@@ -9009,7 +9009,7 @@ fn nurbs_boundary_contains_point(
     else {
         return Ok(false);
     };
-    for seed in [lower, 0.5 * (lower + upper), upper] {
+    for seed in [lower, lower.midpoint(upper), upper] {
         if cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
             ctx,
             curve,
@@ -9519,7 +9519,7 @@ fn standard_face_boundary_witnesses(
                 cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::curve_point(
                     ctx,
                     &curve.geometry,
-                    0.5 * (start + end),
+                    start.midpoint(end),
                 ))?,
             )? {
                 ctx.push_vec(&mut witnesses, point.get(), "catia_a5_face_witness_points")?;

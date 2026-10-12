@@ -1131,3 +1131,8 @@ typed values, object identities, and physical and logical source positions.
 Only the two files above change model geometry. `apartman.CATPart` retains
 the baseline refusal at the 512-face ordered-constraint work limit; its 62
 complete maps are verified separately in the bounded production fixture.
+
+Standard-decoder midpoint arithmetic retains finite results for finite
+endpoints whose sum overflows. Behavioral regressions bind a quintic limit
+curve on positive and negative domains of magnitude `1e308` and retain both
+antipodal circle seams at an origin coordinate of `1e308` mm.
