@@ -4,7 +4,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
 
 #[test]
-fn reference_role_value_equality_is_admitted() {
+fn reference_role_value_is_classified() {
     let mut parameter = DesignParameter {
         id: ParameterId::mint("synthetic:test:parameter#reference").unwrap(),
         owner: None,
@@ -25,15 +25,6 @@ fn reference_role_value_equality_is_admitted() {
         "reference".into(),
     );
     assert!(is_reference_relation_parameter_in(&ctx, &parameter).unwrap());
-    let CodecError::ResourceLimit(limit) =
-        crate::test_support::work_refusal_at("match SLDPRT relation parameter role", |ctx| {
-            is_reference_relation_parameter_in(ctx, &parameter)
-        })
-    else {
-        panic!("role value equality must refuse");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.additional, 9);
 }
 
 fn handle_fixture() -> (Vec<FeatureInputLane>, FeatureInputOperand) {
@@ -75,7 +66,7 @@ fn handle_fixture() -> (Vec<FeatureInputLane>, FeatureInputOperand) {
 }
 
 #[test]
-fn declared_handle_owner_admits_class_name() {
+fn declared_handle_owner_selects_the_matching_class() {
     let (lanes, operand) = handle_fixture();
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(
@@ -83,29 +74,6 @@ fn declared_handle_owner_admits_class_name() {
         DeclaredEntityHandleOwner::Unique { lane, class } if std::ptr::eq(lane, &raw const lanes[0])
             && std::ptr::eq(class, &raw const lanes[0].classes[1]))
     );
-    let CodecError::ResourceLimit(limit) =
-        crate::test_support::work_refusal_at("match SLDPRT entity-handle class", |ctx| {
-            declared_entity_handle_owner(ctx, &lanes, &operand)
-        })
-    else {
-        panic!("owner class name must refuse");
-    };
-    assert_eq!(limit.additional, 11);
-}
-
-#[test]
-fn declared_slot_handle_admits_slot_class_name() {
-    let (lanes, operand) = handle_fixture();
-    let operation = "match SLDPRT slot-handle class";
-    let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(operation, |ctx| {
-        declared_slot_handle_dimension_center(ctx, &lanes, "feature", &operand, |_, _| {
-            Ok(Some([0, 0]))
-        })
-    }) else {
-        panic!("slot class name must refuse");
-    };
-    assert_eq!(limit.operation, operation);
-    assert_eq!(limit.additional, 12);
 }
 
 #[test]
@@ -158,4 +126,30 @@ fn declared_slot_handle_reuses_selected_reference_and_class() {
         assert_eq!(limit.operation, operation);
         drop(probe);
     }
+}
+
+#[test]
+fn declared_slot_handle_rejects_offsets_before_name_comparison() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let (mut lanes, operand) = handle_fixture();
+    lanes[0].classes[0].offset = 100;
+    lanes[0].classes[0].name = "unrelated".repeat(128);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let operation = "match SLDPRT slot-handle class";
+    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+    assert!(
+        declared_slot_handle_dimension_center(&ctx, &lanes, "feature", &operand, |_, _| Ok(Some(
+            [0, 0]
+        )))
+        .unwrap()
+        .is_none()
+    );
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
+        panic!("ineligible offsets must not compare names");
+    };
+    assert_eq!(limit.additional, 1);
 }

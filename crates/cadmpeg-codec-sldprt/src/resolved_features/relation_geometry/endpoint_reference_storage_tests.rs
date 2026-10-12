@@ -234,7 +234,7 @@ fn project_spatial(ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         &mut entities,
     )?;
     let (_, line) = output.expect("unique point-line witness");
-    let entity = entities.iter().find(|entity| entity.id() == &line).unwrap();
+    let entity = &entities[line];
     assert_eq!(
         entity.endpoint_refs,
         [
