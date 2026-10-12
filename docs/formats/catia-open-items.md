@@ -186,6 +186,10 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must determine what the decoded value means, whether it has any writer-level relation to a successor definition or carrier construction, and whether the four-reference width-coded variant has the same role. Do not use the local successor-layout correlation as a universal endpoint-orientation rule.
 
+**Note.** The four-reference grammar is established separately in `catia.md`
+§6.3 "A separate width-coded class-`5e` production". Its four operand roles and
+terminal meaning remain unresolved. Exact framing does not supply those roles.
+
 ### SN-05. Class-`0x18` descriptors
 
 **Question.** What does each field of a class-`0x18` descriptor represent?

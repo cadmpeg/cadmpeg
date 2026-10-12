@@ -911,3 +911,14 @@ checked CATParts. Their 51 logical sources use 105 header values from 1 through
 the complete terminal match the typed native data. Every source repeats header
 values; 29 sources have decreasing values in their sequence. The eyebolt and
 spring four-edge cycles both use `[2,1,1,1]`, with degree two at every endpoint.
+
+## Four-reference consolidated edge frames
+
+An independent scan of all 79 CATParts finds 131 complete four-reference
+class-`5e` frames: 90 in bike-handle and 41 in snap-ring. Every frame has one
+descriptor owner and closes inside its reconstructed logical source. Exactly
+130 frames are immediately followed by another complete width-coded frame.
+Terminals `01/02/21/25` occur `32/3/93/3` times. All four reference lanes use
+the one-byte backward-distance or owned-child forms. These are source-byte
+grammar checks; the four operand roles remain unassigned, and the existing
+five-reference parser abstains on this production.

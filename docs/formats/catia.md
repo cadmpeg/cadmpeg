@@ -614,6 +614,15 @@ A complete consolidated edge run is the contiguous framed sequence `F:20, F:20, 
 
 The compact successor edge run is `B:5e, B:24, B:06, B:06`. Let `d` be the class-`24` compact operand. The node endpoint selectors are `(1,2)` and the two use vectors are `(1,d+1)` and `(2,d+2)`, with senses `88` and `84`. Checked addition is required. A compact counted class-`62` owner uses only `4n+3` references to name zero-based allocation ordinals of owned class-`5e` frames. The allocation sequence begins with the first contiguous frame after the owner packet. Edge-node ordinals therefore identify occurrences within that owner allocation, not objects in the file-global journal.
 
+A separate width-coded class-`5e` production has a five-byte payload: four
+one-byte allocation references followed by one terminal. Each reference uses
+`4n+1` or `4n+3`. The terminal uses the same single-byte decomposition as the
+five-reference production. The observed terminals are `01`, `02`, `21`, and
+`25`. For example, `b2 03 5e 05 05 09 0f 07 0b 21` is one complete frame, with
+header value one, four reference values `(2,3,1,2)` in forms
+`(backward_distance,owned_child,owned_child,owned_child)`, and terminal value
+eight in backward-distance form.
+
 For compact class-`5e` endpoint walks, the local allocation sequence contains only B-family class-`5d` vertex records and class-`5e` edge records. A framing gap or bounded record-source boundary starts a new allocation scope. A source is one directory descriptor, and its extents are concatenated in logical-offset order. Extent fragmentation does not add a scope boundary or remove a spanning frame from ordinal accounting. Relative endpoint walks, predecessor-layout ownership, and logical adjacency can cross physical extents of one source but never cross a bounded record-source boundary. From edge ordinal `i`, a `4n+3` endpoint targets ordinal `i+1+n`, and a `4n+1` endpoint targets ordinal `i-n`; both operations are checked. A class-`5d` target is the endpoint vertex. A class-`5e` target resolves recursively to that edge's end endpoint. A cycle or a target outside the same scope leaves the endpoint unresolved.
 
 When both middle references use the `4w` width-coded form, each operand is a forward distance in the complete consolidated framed-record sequence of the same bounded record source. From edge-record index `i`, operand `d` selects record `i+d`. The pair supplies ordered endpoint identities only when both checked targets are B-family class-`18` endpoint records. Equal target-record offsets join incident edges. A missing target, a source-boundary crossing, a target of another class, or a mixed middle-reference encoding leaves both endpoints unresolved. The other explicit selector forms do not participate in either endpoint walk.
