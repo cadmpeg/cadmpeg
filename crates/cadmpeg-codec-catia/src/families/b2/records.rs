@@ -3265,7 +3265,10 @@ pub(crate) fn b2_resolved_revolutions_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2ResolvedRevolution>, CodecError> {
-    const DIRECT_PROFILE_LOOKUPS: usize = 255;
+    // A full hash index includes key work, table growth and slot moves.
+    // Build only after distinct direct queries have performed this many
+    // carrier visits per profile; repeated cached outcomes add no visits.
+    const PROFILE_INDEX_VISITS_PER_CIRCLE: u128 = 512;
     let mut revolutions = b2_revolutions_from_records(ctx, data, records)?.enumerate();
     let mut current = ctx.next_charged(&mut revolutions, "catia_b2_resolved_revolution_scan")?;
     if current.is_none() {
@@ -3287,19 +3290,17 @@ pub(crate) fn b2_resolved_revolutions_from_records(
         }
         Ok::<_, CodecError>(requests)
     })?;
-    // Small request populations avoid table storage and growth. Their direct
-    // searches have a fixed population bound; larger populations share one
-    // keyed table with tombstones.
-    let by_identity = if requests.0.len() > DIRECT_PROFILE_LOOKUPS {
-        Some(
-            ctx.unique_index(
-                circles
-                    .iter()
-                    .enumerate()
-                    .map(|(index, circle)| (circle.record_id, index)),
-                "catia_b2_revolution_identity_profiles",
-            )?,
-        )
+    let index_visits = u128::from(cadmpeg_core::decode::u64_from_index(circles.len()))
+        * PROFILE_INDEX_VISITS_PER_CIRCLE;
+    let mut identity_visits = 0_u128;
+    let mut by_identity = None;
+    // A cached outcome retains both ambiguity and absence. Only absence
+    // permits interval fallback. These tables are never traversed.
+    let mut identity_cache = if requests.0.len() > 1 {
+        Some((
+            HashMap::new(),
+            ctx.reserve_scoped(0, "catia_b2_revolution_identity_cache")?,
+        ))
     } else {
         None
     };
@@ -3312,23 +3313,58 @@ pub(crate) fn b2_resolved_revolutions_from_records(
         .enumerate()
     {
         let identity = u32::from(revolution.profile_allocation_id);
-        let (profile, absent) = if let Some((index, _storage)) = &by_identity {
-            let found =
-                ctx.get_hash_map(index, &identity, "catia_b2_revolution_identity_lookup")?;
-            (found.and_then(Option::as_ref).copied(), found.is_none())
+        let cached = if let Some((cache, _storage)) = &identity_cache {
+            ctx.get_hash_map(cache, &identity, "catia_b2_revolution_identity_lookup")?
+                .copied()
         } else {
-            let mut profile = None;
-            let mut ambiguous = false;
-            let mut candidates = circles.iter().enumerate();
-            while let Some((index, circle)) =
-                ctx.next_charged(&mut candidates, "catia_b2_revolution_identity_scan")?
-            {
-                if circle.record_id == identity && profile.replace(index).is_some() {
-                    ambiguous = true;
-                    break;
-                }
+            None
+        };
+        let (profile, absent) = if let Some(outcome) = cached {
+            outcome
+        } else {
+            if by_identity.is_none() && identity_visits > index_visits {
+                identity_cache = None;
+                by_identity = Some(
+                    ctx.unique_index(
+                        circles
+                            .iter()
+                            .enumerate()
+                            .map(|(index, circle)| (circle.record_id, index)),
+                        "catia_b2_revolution_identity_profiles",
+                    )?,
+                );
             }
-            (if ambiguous { None } else { profile }, profile.is_none())
+            if let Some((index, _storage)) = &by_identity {
+                let found =
+                    ctx.get_hash_map(index, &identity, "catia_b2_revolution_identity_lookup")?;
+                (found.and_then(Option::as_ref).copied(), found.is_none())
+            } else {
+                let mut profile = None;
+                let mut ambiguous = false;
+                let mut candidates = circles.iter().enumerate();
+                while let Some((index, circle)) =
+                    ctx.next_charged(&mut candidates, "catia_b2_revolution_identity_scan")?
+                {
+                    identity_visits += 1;
+                    if circle.record_id == identity && profile.replace(index).is_some() {
+                        ambiguous = true;
+                        break;
+                    }
+                }
+                let outcome = (if ambiguous { None } else { profile }, profile.is_none());
+                if let Some((cache, storage)) = &mut identity_cache {
+                    // discarded-value: this queried key was absent from the outcome cache.
+                    let _ = storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            cache,
+                            identity,
+                            outcome,
+                            "catia_b2_revolution_identity_cache",
+                        )
+                    })?;
+                }
+                outcome
+            }
         };
         if let Some(index) = profile {
             if interval_bits(circles[index].range) == interval_bits(revolution.profile_range) {
@@ -3343,42 +3379,74 @@ pub(crate) fn b2_resolved_revolutions_from_records(
             )?;
         }
     }
-    // Interval lookup exists only for identity misses. Small populations
-    // stop on their second interval match; exact identity bindings never build it.
-    let by_interval = if fallback.0.len() > DIRECT_PROFILE_LOOKUPS {
-        Some(
-            ctx.unique_index(
-                circles
-                    .iter()
-                    .enumerate()
-                    .map(|(index, circle)| (interval_bits(circle.range), index)),
-                "catia_b2_revolution_interval_profiles",
-            )?,
-        )
+    drop((by_identity, identity_cache));
+    // The fallback family has its own outcome cache and measured direct work.
+    // Identity ambiguity never reaches this route.
+    let mut interval_visits = 0_u128;
+    let mut by_interval = None;
+    let mut interval_cache = if fallback.0.len() > 1 {
+        Some((
+            HashMap::new(),
+            ctx.reserve_scoped(0, "catia_b2_revolution_interval_cache")?,
+        ))
     } else {
         None
     };
     for &request in ctx.admit_iter(&fallback.0, "catia_b2_revolution_fallback_visits")? {
         let interval = interval_bits(requests.0[request].1.profile_range);
-        bindings.0[request] = if let Some((index, _storage)) = &by_interval {
-            ctx.get_hash_map(index, &interval, "catia_b2_revolution_interval_lookup")?
-                .and_then(Option::as_ref)
+        let cached = if let Some((cache, _storage)) = &interval_cache {
+            ctx.get_hash_map(cache, &interval, "catia_b2_revolution_interval_lookup")?
                 .copied()
         } else {
-            let mut profile = None;
-            let mut candidates = circles.iter().enumerate();
-            while let Some((index, circle)) =
-                ctx.next_charged(&mut candidates, "catia_b2_revolution_interval_scan")?
-            {
-                if interval_bits(circle.range) == interval && profile.replace(index).is_some() {
-                    profile = None;
-                    break;
-                }
-            }
+            None
+        };
+        bindings.0[request] = if let Some(profile) = cached {
             profile
+        } else {
+            if by_interval.is_none() && interval_visits > index_visits {
+                interval_cache = None;
+                by_interval = Some(
+                    ctx.unique_index(
+                        circles
+                            .iter()
+                            .enumerate()
+                            .map(|(index, circle)| (interval_bits(circle.range), index)),
+                        "catia_b2_revolution_interval_profiles",
+                    )?,
+                );
+            }
+            if let Some((index, _storage)) = &by_interval {
+                ctx.get_hash_map(index, &interval, "catia_b2_revolution_interval_lookup")?
+                    .and_then(Option::as_ref)
+                    .copied()
+            } else {
+                let mut profile = None;
+                let mut candidates = circles.iter().enumerate();
+                while let Some((index, circle)) =
+                    ctx.next_charged(&mut candidates, "catia_b2_revolution_interval_scan")?
+                {
+                    interval_visits += 1;
+                    if interval_bits(circle.range) == interval && profile.replace(index).is_some() {
+                        profile = None;
+                        break;
+                    }
+                }
+                if let Some((cache, storage)) = &mut interval_cache {
+                    // discarded-value: this queried key was absent from the outcome cache.
+                    let _ = storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            cache,
+                            interval,
+                            profile,
+                            "catia_b2_revolution_interval_cache",
+                        )
+                    })?;
+                }
+                profile
+            }
         };
     }
-    drop((by_identity, by_interval, fallback));
+    drop((by_interval, interval_cache, fallback));
     let mut resolved = Vec::new();
     for (request, (revolution_index, revolution)) in ctx
         .admit_iter(requests.0, "catia_b2_resolved_revolution_scan")?
@@ -4050,11 +4118,17 @@ impl OffsetEventKind {
     }
 }
 
+enum OffsetCarrierMatch {
+    OutsideDomain,
+    KnotMiss,
+    Match,
+}
+
 fn offset_matches_carrier(
     ctx: &DecodeContext<'_>,
     offset: &B2OffsetSupport,
     carrier: &FreeformSurface,
-) -> Result<bool, CodecError> {
+) -> Result<OffsetCarrierMatch, CodecError> {
     let surface = &carrier.geometry;
     let (Some(&u_min), Some(&u_max), Some(&v_min), Some(&v_max)) = (
         surface.u_knots().first(),
@@ -4062,12 +4136,12 @@ fn offset_matches_carrier(
         surface.v_knots().first(),
         surface.v_knots().last(),
     ) else {
-        return Ok(false);
+        return Ok(OffsetCarrierMatch::OutsideDomain);
     };
     let u_span = u_max - u_min;
     let v_span = v_max - v_min;
     if !u_span.is_finite() || u_span <= 0.0 || !v_span.is_finite() || v_span <= 0.0 {
-        return Ok(false);
+        return Ok(OffsetCarrierMatch::OutsideDomain);
     }
     let [u0, u1] = offset.u_range.endpoints();
     let [v0, v1] = offset.v_range.endpoints();
@@ -4078,7 +4152,7 @@ fn offset_matches_carrier(
         && v0 >= v_min - v_tolerance
         && v1 <= v_max + v_tolerance)
     {
-        return Ok(false);
+        return Ok(OffsetCarrierMatch::OutsideDomain);
     }
     let v_knots = surface.v_knots().as_slice();
     let has_v_limit = |limit: f64| -> Result<bool, CodecError> {
@@ -4093,7 +4167,11 @@ fn offset_matches_carrier(
             .get(index)
             .is_some_and(|knot| (*knot - limit).abs() <= v_tolerance))
     };
-    Ok(has_v_limit(v0)? && has_v_limit(v1)?)
+    Ok(if has_v_limit(v0)? && has_v_limit(v1)? {
+        OffsetCarrierMatch::Match
+    } else {
+        OffsetCarrierMatch::KnotMiss
+    })
 }
 
 /// Bind offset boxes through ordered domain and knot endpoint walks. A query
@@ -4114,8 +4192,10 @@ pub(in crate::families) fn offset_support_carriers(
             while let Some((index, carrier)) =
                 ctx.next_charged(&mut candidates, "catia_b2_offset_carrier_scan")?
             {
-                if offset_matches_carrier(ctx, offset, carrier.borrow())?
-                    && selected.replace(index).is_some()
+                if matches!(
+                    offset_matches_carrier(ctx, offset, carrier.borrow())?,
+                    OffsetCarrierMatch::Match
+                ) && selected.replace(index).is_some()
                 {
                     selected = None;
                     break;
@@ -4178,7 +4258,7 @@ pub(in crate::families) fn offset_support_carriers(
         }
         let choices = ctx.alloc_filled(
             offsets.len(),
-            (usize::MAX, 0usize),
+            (usize::MAX, 0usize, 0usize, None::<usize>),
             "catia_b2_offset_query_choices",
         )?;
         for (index, offset) in ctx
@@ -4212,43 +4292,37 @@ pub(in crate::families) fn offset_support_carriers(
         return ctx.alloc_filled(offsets.len(), None, "catia_b2_offset_bindings");
     }
     bindings = ctx.alloc_filled(offsets.len(), None, "catia_b2_offset_bindings")?;
-    for evaluate in [false, true] {
-        let mut required = [!evaluate; 3];
+    let knot_cost = knot_count
+        .checked_mul(2048)
+        .ok_or_else(|| CodecError::malformed("CATIA offset knot index cost overflow"))?;
+    let mut domain_visits = 0_u128;
+    let mut saw_knot_miss = false;
+    let mut remaining_queries = offsets.len();
+    let mut build_knots = false;
+    // Plan domain lanes, resolve queries until observed knot rejection and
+    // performed searches justify a knot lane, then plan/evaluate the remainder.
+    // A MAX count marks a query whose binding is already final.
+    for stage in 0..4 {
+        if stage >= 2 && (!build_knots || remaining_queries == 0) {
+            break;
+        }
+        let evaluate = stage % 2 == 1;
+        let mut required = match stage {
+            0 => [true, true, false],
+            2 => [false, false, true],
+            _ => [false; 3],
+        };
+        let mut queries_left = [0usize; 3];
         if evaluate {
-            for &(_, query) in ctx.admit_iter(&choices, "catia_b2_offset_query_lanes")? {
-                required[query / 2] = true;
+            for &(count, query, _, _) in ctx.admit_iter(&choices, "catia_b2_offset_query_lanes")? {
+                if count != usize::MAX {
+                    required[query / 2] = true;
+                    queries_left[query / 2] += 1;
+                }
             }
         }
         for (lane, &required) in required.iter().enumerate() {
-            if !evaluate && lane == 2 {
-                let (domain_visits, max_candidates) = ctx.fold(
-                    &choices,
-                    (0_u128, 0_usize),
-                    |(total, maximum), &(count, _)| {
-                        let total = total
-                            .checked_add(u128::from(cadmpeg_core::decode::u64_from_index(count)))
-                            .ok_or_else(|| {
-                                CodecError::malformed("CATIA offset candidate count overflow")
-                            })?;
-                        Ok((total, maximum.max(count)))
-                    },
-                    "catia_b2_offset_query_lanes",
-                )?;
-                // Two domain candidates need at most two carrier checks with
-                // binary knot searches. Keep that fixed population off the
-                // knot-band construction route.
-                if max_candidates <= 2 {
-                    continue;
-                }
-                // Tree entries, grouped event slots and two event walks cost
-                // more than a knot visit. Build bands only when the remaining
-                // domain candidates amortize that construction.
-                let knot_cost = knot_count.checked_mul(2048).ok_or_else(|| {
-                    CodecError::malformed("CATIA offset knot index cost overflow")
-                })?;
-                if domain_visits <= knot_cost {
-                    continue;
-                }
+            if stage == 2 && lane == 2 {
                 index_storage.with_storage(|| {
                     for (index, carrier) in ctx
                         .admit_iter(carriers, "catia_b2_offset_domain_index_scan")?
@@ -4308,6 +4382,9 @@ pub(in crate::families) fn offset_support_carriers(
                         .admit_iter(offsets, "catia_b2_offset_carrier_scan")?
                         .enumerate()
                     {
+                        if choices[index].0 == usize::MAX {
+                            continue;
+                        }
                         for (endpoint, coordinate) in
                             offset.v_range.endpoints().into_iter().enumerate()
                         {
@@ -4332,82 +4409,176 @@ pub(in crate::families) fn offset_support_carriers(
                 continue;
             }
             let mut counts = ctx.with_scoped_storage("catia_b2_offset_active_slots", || {
-                ctx.alloc_filled(
-                    carriers.len(),
-                    (0usize, 0usize),
-                    "catia_b2_offset_active_counts",
-                )
+                ctx.alloc_filled(carriers.len(), 0usize, "catia_b2_offset_active_counts")
             })?;
             let mut active_count = 0;
+            // Fenwick prefix counts keep carrier-index order in reusable slots.
+            // Slot zero is unused; membership changes allocate no storage.
             let mut active = if evaluate {
-                Some((
-                    Vec::new(),
-                    ctx.reserve_scoped(0, "catia_b2_offset_active_carriers")?,
-                ))
+                Some(
+                    ctx.with_scoped_storage("catia_b2_offset_active_carriers", || {
+                        let slots = carriers.len().checked_add(1).ok_or_else(|| {
+                            CodecError::malformed("CATIA offset active slot count overflow")
+                        })?;
+                        ctx.alloc_filled(slots, 0usize, "catia_b2_offset_active_carriers")
+                    })?,
+                )
             } else {
                 None
             };
-            for (_, group) in ctx.admit_iter(events, "catia_b2_offset_event_scan")? {
-                for &event in ctx.admit_iter(group, "catia_b2_offset_event_scan")? {
+            let mut groups = events.iter();
+            'event_walk: while let Some((_, group)) =
+                ctx.next_charged(&mut groups, "catia_b2_offset_event_scan")?
+            {
+                let mut members = group.iter();
+                while let Some(&event) =
+                    ctx.next_charged(&mut members, "catia_b2_offset_event_scan")?
+                {
                     match event {
                         OffsetEventKind::Start(index) => {
-                            if counts.0[index].0 == 0 {
+                            if counts.0[index] == 0 {
                                 active_count += 1;
-                                if let Some((values, storage)) = &mut active {
-                                    counts.0[index].1 = values.len();
-                                    ctx.push_scoped_vec(
-                                        storage,
-                                        values,
-                                        index,
-                                        "catia_b2_offset_active_carriers",
-                                    )?;
+                                if let Some((values, _storage)) = &mut active {
+                                    let slots = values.len();
+                                    let mut path =
+                                        std::iter::successors(Some(index + 1), |&slot| {
+                                            slot.checked_add(1usize << slot.trailing_zeros())
+                                                .filter(|&next| next < slots)
+                                        });
+                                    while let Some(slot) = ctx
+                                        .next_charged(&mut path, "catia_b2_offset_active_update")?
+                                    {
+                                        values[slot] += 1;
+                                    }
                                 }
                             }
-                            counts.0[index].0 += 1;
+                            counts.0[index] += 1;
                         }
                         OffsetEventKind::End(index) => {
-                            counts.0[index].0 -= 1;
-                            if counts.0[index].0 == 0 {
+                            counts.0[index] -= 1;
+                            if counts.0[index] == 0 {
                                 active_count -= 1;
                                 if let Some((values, _storage)) = &mut active {
-                                    // The event visit pays for these fixed slot updates.
-                                    // Capacity stays reusable across entry/removal cycles.
-                                    let position = counts.0[index].1;
-                                    values.swap_remove(position);
-                                    if let Some(&moved) = values.get(position) {
-                                        counts.0[moved].1 = position;
+                                    let slots = values.len();
+                                    let mut path =
+                                        std::iter::successors(Some(index + 1), |&slot| {
+                                            slot.checked_add(1usize << slot.trailing_zeros())
+                                                .filter(|&next| next < slots)
+                                        });
+                                    while let Some(slot) = ctx
+                                        .next_charged(&mut path, "catia_b2_offset_active_update")?
+                                    {
+                                        values[slot] -= 1;
                                     }
                                 }
                             }
                         }
                         OffsetEventKind::Query { offset, endpoint } => {
                             let query = lane * 2 + endpoint;
+                            if stage != 0 && choices[offset].0 == usize::MAX {
+                                continue;
+                            }
                             if !evaluate {
                                 if active_count < choices[offset].0 {
-                                    choices[offset] = (active_count, query);
+                                    choices[offset].0 = active_count;
+                                    choices[offset].1 = query;
                                 }
                             } else if choices[offset].1 == query {
+                                queries_left[lane] -= 1;
+                                let preview = stage == 1 && build_knots;
                                 let Some((values, _storage)) = &active else {
                                     continue;
                                 };
-                                let mut selected = None;
-                                let mut candidates = values.iter();
-                                while let Some(&index) = ctx
+                                let mut selected = choices[offset].3;
+                                let mut first_rank = 0usize;
+                                let cut = choices[offset].2;
+                                if cut != 0 {
+                                    // Skip the source prefix already checked in the
+                                    // domain preview, even if the chosen lane changed.
+                                    let mut prefix = std::iter::successors(Some(cut), |&slot| {
+                                        let next = slot - (1usize << slot.trailing_zeros());
+                                        (next != 0).then_some(next)
+                                    });
+                                    while let Some(slot) = ctx.next_charged(
+                                        &mut prefix,
+                                        "catia_b2_offset_active_search",
+                                    )? {
+                                        first_rank += values[slot];
+                                    }
+                                }
+                                let mut last_seen = cut;
+                                let mut ambiguous = false;
+                                let mut candidates = first_rank..active_count;
+                                while let Some(rank) = ctx
                                     .next_charged(&mut candidates, "catia_b2_offset_carrier_scan")?
                                 {
-                                    if offset_matches_carrier(
+                                    // Select the rank-th active carrier by its prefix count.
+                                    let mut index = 0usize;
+                                    let mut remaining = rank;
+                                    let mut levels = (0..=carriers.len().ilog2()).rev();
+                                    while let Some(level) = ctx.next_charged(
+                                        &mut levels,
+                                        "catia_b2_offset_active_search",
+                                    )? {
+                                        let next = index + (1usize << level);
+                                        if next < values.len() && values[next] <= remaining {
+                                            index = next;
+                                            remaining -= values[next];
+                                        }
+                                    }
+                                    last_seen = index + 1;
+                                    let matched = offset_matches_carrier(
                                         ctx,
                                         &offsets[offset],
                                         carriers[index].borrow(),
-                                    )? && selected.replace(index).is_some()
+                                    )?;
+                                    if stage == 1 {
+                                        domain_visits += 1;
+                                        if matches!(matched, OffsetCarrierMatch::KnotMiss) {
+                                            saw_knot_miss = true;
+                                        }
+                                    }
+                                    if matches!(matched, OffsetCarrierMatch::Match)
+                                        && selected.replace(index).is_some()
                                     {
                                         selected = None;
+                                        ambiguous = true;
+                                        break;
+                                    }
+                                    if preview && rank == 1 && active_count > 2 {
                                         break;
                                     }
                                 }
-                                bindings[offset] = selected;
+                                if preview && !ambiguous && active_count > 2 {
+                                    // The first pair cannot decide uniqueness. Keep
+                                    // its match and source cut for the selected lane.
+                                    choices[offset].2 = last_seen;
+                                    choices[offset].3 = selected;
+                                } else {
+                                    bindings[offset] = selected;
+                                    choices[offset].0 = usize::MAX;
+                                    remaining_queries -= 1;
+                                }
+                                if stage == 1 && !preview && saw_knot_miss && remaining_queries != 0
+                                {
+                                    let completed = offsets.len() - remaining_queries;
+                                    // Use the actual early-exit visit rate, rather than
+                                    // the complete domain candidate population.
+                                    let estimated_remaining = domain_visits
+                                        * u128::from(cadmpeg_core::decode::u64_from_index(
+                                            remaining_queries,
+                                        ))
+                                        / u128::from(cadmpeg_core::decode::u64_from_index(
+                                            completed,
+                                        ));
+                                    build_knots = domain_visits > knot_cost
+                                        && estimated_remaining > knot_cost;
+                                }
                             }
                         }
+                    }
+                    if evaluate && queries_left[lane] == 0 {
+                        break 'event_walk;
                     }
                 }
             }
