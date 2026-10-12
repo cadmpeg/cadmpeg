@@ -41,11 +41,11 @@ pub(crate) fn b2_plane_carrier_stream() -> Vec<u8> {
 
 pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
-    for (prefix, values) in [
-        (0x05, vec![2.0f64, 3.0]),
-        (0x09, vec![11.0, 4.0, 5.0]),
-        (0x0d, vec![1.0, 2.0, 3.0, 4.0, 5.0]),
-        (0x11, vec![12.0, 6.0, 7.0]),
+    for (prefix, control, values) in [
+        (0x05, 0x12, vec![2.0f64, 3.0]),
+        (0x09, 0x01, vec![11.0, 4.0, 5.0]),
+        (0x0d, 0x08, vec![-1.0, 2.0, 3.0, 0.6, 0.8]),
+        (0x11, 0x02, vec![12.0, 6.0, 7.0]),
     ] {
         let length = 2 + 8 * values.len();
         bytes.extend_from_slice(&[
@@ -56,7 +56,7 @@ pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
             0x05,
             prefix,
         ]);
-        bytes.push(0x12);
+        bytes.push(control);
         for value in values {
             bytes.extend_from_slice(&le_f64(value));
         }
@@ -302,10 +302,20 @@ fn b2_owner_chart_stream_with_encoding(carrier_class: u8, width_coded: bool) -> 
         ),
         _ => unreachable!("carrier class checked above"),
     };
-    for (prefix, values) in [0x05, 0x09, 0x0d, 0x11].into_iter().zip(side_values) {
+    let controls = match carrier_class {
+        0x28 => [0x01, 0x01, 0x02, 0x02],
+        0x2b => [0x02, 0x02, 0x01, 0x01],
+        0x32 => [0x16, 0x06, 0x15, 0x05],
+        _ => unreachable!("carrier class checked above"),
+    };
+    for ((prefix, control), values) in [0x05, 0x09, 0x0d, 0x11]
+        .into_iter()
+        .zip(controls)
+        .zip(side_values)
+    {
         let length = u8::try_from(2 + values.len() * size_of::<f64>())
             .expect("owner-chart parameter-point length");
-        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, length, 0x05, prefix, 0x12]);
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, length, 0x05, prefix, control]);
         for value in values {
             bytes.extend_from_slice(&le_f64(value));
         }

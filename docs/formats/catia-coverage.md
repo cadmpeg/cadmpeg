@@ -429,8 +429,11 @@ current levels require those matrices and representative fixtures.
 - Complete consolidated cone-face chart records retain their reference-and-
   control program, angular scale, and cone half-angle before the program's
   higher-level roles resolve. Consolidated parameter-space points retain all
-  four stored prefix selectors with their UV, station-plus-UV, or five-scalar
-  payload. A cone-face chart binds its immediately following complete
+  four stored prefix selectors with ordered one-, two-, three-, or five-scalar
+  payloads. Controls enforce the scalar count and explicit unit direction.
+  Owner charts require complete constant-axis tuples or the implicit-line
+  half-span, midpoint, and boundary relation. A cone-face chart binds its
+  immediately following complete
   parameter-space point run in serialized order; a mixed class-`0x18` run
   remains unbound atomically.
 - A consolidated revolution whose profile interval selects exactly one
@@ -962,3 +965,10 @@ the other terminals are `21`, `22`, and `21`.
 These checks establish the wire grammar and retained identity separation.
 They do not establish the terminal's meaning or a rule for choosing a new
 terminal from geometry.
+
+Class-`0x18` control verification covers 4,507 parameter-space records in 31
+files: 3,634 low-control scalar lanes and 102 explicit unit directions.
+All records were joined to exact native frame bytes. The 45 owner charts in
+14 files satisfy the complete side controls and scalar relations, including
+50 implicit-axis side records. Regression tests reject contradictory controls,
+non-unit explicit directions, and each incorrect implicit-line scalar.

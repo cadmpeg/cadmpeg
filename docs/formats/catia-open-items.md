@@ -190,13 +190,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 §6.3 "A separate width-coded class-`5e` production". Its four operand roles and
 terminal meaning remain unresolved. Exact framing does not supply those roles.
 
-### SN-05. Class-`0x18` descriptors
+### SN-05. Implicit-axis class-`0x18` line direction
 
-**Question.** What does each field of a class-`0x18` descriptor represent?
+**Question.** Which signed unit direction do controls `48` and `88` imply, and what are the fields of the separate control-`80` descriptor grammar?
 
-**Known.** `catia.md` §6.4 `b2/b3/b4 03 18` defines the record family and its framing.
+**Known.** `catia.md` §6.4 defines the finite scalar counts, constant-axis tuples, zero elision, explicit unit direction, and owner-chart midpoint and half-span relations. The implicit controls identify the varying axis. A control-`80` descriptor can precede class `25` and carries a different four-scalar lane.
 
-**Need.** We must know the fields to interpret the descriptor.
+**Need.** Bind implicit-axis parameters to directed endpoints or derivatives to determine the sign. Bind the control-`80` descriptor to its following definition before assigning the four scalar roles.
 
 ### SN-06. Analytic-circle class-`0x23` definition
 
@@ -294,9 +294,9 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Question.** What does each of the four prefix selectors in a `b2`, `b3`, or `b4 03 18` parameter-point record select?
 
-**Known.** The decoder retains the four selectors and the parameter-point payload. In the source-closed owner carrier chart, selectors `05` and `09` are opposing constant-parameter sides, and selectors `0d` and `11` contain the lower and upper orthogonal bounds. `B:28` uses constant first-parameter sides. `B:2b` and `A:32` use constant second-parameter sides. `catia.md` §6.4 defines the exact scalar relation and zero elision.
+**Known.** The decoder retains the four selectors and the parameter-point payload. In the source-closed owner carrier chart, selectors `05` and `09` are opposing constant-parameter sides, and selectors `0d` and `11` define the lower and upper orthogonal sides through full tuples or symmetric implicit-axis lines. `B:28` uses constant first-parameter sides. `B:2b` and `A:32` use constant second-parameter sides. `catia.md` §6.4 defines the exact scalar relation and zero elision.
 
-**Need.** We must define these selectors outside the owner carrier chart and assign the remaining side-record scalars.
+**Need.** We must define these selectors outside the owner carrier chart.
 
 ### SN-21. `b2 03 3b` chart program
 

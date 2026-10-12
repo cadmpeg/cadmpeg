@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+mod parameter_points;
+
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -57,7 +59,7 @@ fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
 }
 
 #[test]
-fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
+fn b2_parameter_point_parser_reads_ordered_scalar_layouts() {
     use crate::families::b2::records::B2ParameterPointPayload;
 
     let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
@@ -72,14 +74,11 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     assert_eq!(points[0].payload.layout(), 0x12);
     assert!(matches!(
         &points[0].payload,
-        B2ParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
+        B2ParameterPointPayload::TwoScalars { values } if *values == [2.0, 3.0]
     ));
     assert!(matches!(
         &points[1].payload,
-        B2ParameterPointPayload::StationUv {
-            station,
-            uv,
-        } if station.get() == 11.0 && *uv == [4.0, 5.0]
+        B2ParameterPointPayload::ThreeScalars { values } if *values == [11.0, 4.0, 5.0]
     ));
     assert!(matches!(
         &points[2].payload,
@@ -87,10 +86,7 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     ));
     assert!(matches!(
         &points[3].payload,
-        B2ParameterPointPayload::StationUv {
-            station,
-            uv,
-        } if station.get() == 12.0 && *uv == [6.0, 7.0]
+        B2ParameterPointPayload::ThreeScalars { values } if *values == [12.0, 6.0, 7.0]
     ));
 }
 

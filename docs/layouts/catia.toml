@@ -2158,3 +2158,32 @@ offset = 6
 type = "f64[2]"
 source = "spec"
 anchor = "| `+6` | `f64le[2]` | maximal U limits |"
+
+[[record]]
+name = "consolidated_parameter_point_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b2/records.rs"
+kind = "byte"
+section = "6.4"
+anchor = "The parameter-space payload prefix is:"
+size = 10
+
+[[record.field]]
+name = "selector"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | side selector |"
+
+[[record.field]]
+name = "control"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "| `+1` | `u8` | scalar control |"
+
+[[record.field]]
+name = "first_scalar"
+offset = 2
+type = "f64"
+source = "spec"
+anchor = "| `+2` | `f64le` | first stored scalar |"

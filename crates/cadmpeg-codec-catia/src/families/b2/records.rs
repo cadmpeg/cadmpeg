@@ -47,6 +47,7 @@ use crate::wire::records::{
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_B2_RECORD_GEOMETRY: f64 = 1.0e-9;
 const EPS_B2_RECORD_EXACT_GEOMETRY: f64 = 1.0e-12;
+const EPS_PARAMETER_LINE: f64 = 1.0e-12;
 
 const B2_GROUP_SEPARATOR_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
 
@@ -120,17 +121,15 @@ pub(crate) enum B2ParameterPointPayload {
         /// Stored scalar.
         value: FiniteReal,
     },
-    /// Two-coordinate UV point (`L=0x12`).
-    Uv {
-        /// Surface-chart coordinates.
-        uv: FiniteVector<2>,
+    /// Two stored scalars in source order (`L=0x12`).
+    TwoScalars {
+        /// Ordered finite scalar lane.
+        values: FiniteVector<2>,
     },
-    /// Host-chain station followed by UV (`L=0x1a`).
-    StationUv {
-        /// Host-chain axial boundary station.
-        station: FiniteReal,
-        /// Surface-chart coordinates.
-        uv: FiniteVector<2>,
+    /// Three stored scalars in source order (`L=0x1a`).
+    ThreeScalars {
+        /// Ordered finite scalar lane.
+        values: FiniteVector<3>,
     },
     /// Unsplit five-scalar layout (`L=0x2a`).
     FiveScalars {
@@ -143,9 +142,34 @@ impl B2ParameterPointPayload {
     pub(crate) const fn layout(&self) -> u8 {
         match self {
             Self::Scalar { .. } => 0x0a,
-            Self::Uv { .. } => 0x12,
-            Self::StationUv { .. } => 0x1a,
+            Self::TwoScalars { .. } => 0x12,
+            Self::ThreeScalars { .. } => 0x1a,
             Self::FiveScalars { .. } => 0x2a,
+        }
+    }
+
+    fn scalars(&self) -> ([f64; 5], usize) {
+        match self {
+            Self::Scalar { value } => ([value.get(), 0.0, 0.0, 0.0, 0.0], 1),
+            Self::TwoScalars { values } => ([values[0], values[1], 0.0, 0.0, 0.0], 2),
+            Self::ThreeScalars { values } => ([values[0], values[1], values[2], 0.0, 0.0], 3),
+            Self::FiveScalars { values } => {
+                ([values[0], values[1], values[2], values[3], values[4]], 5)
+            }
+        }
+    }
+
+    /// Whether the scalar count and direction satisfy the stored control.
+    pub(crate) fn matches_control(&self, control: u8) -> bool {
+        let (values, len) = self.scalars();
+        match control {
+            0x08 => len == 5 && (values[3].hypot(values[4]) - 1.0).abs() <= EPS_PARAMETER_LINE,
+            0x48 | 0x88 => len == 3,
+            control if control < 0x20 && matches!(control & 3, 1 | 2) => {
+                usize::try_from((control & 0x1c).count_ones())
+                    .is_ok_and(|omitted| len + omitted == 3)
+            }
+            _ => false,
         }
     }
 }
@@ -1337,57 +1361,67 @@ fn owner_chart_bounds_match(
     points: &[&B2ParameterPoint; 4],
     tail: &CatiaOwnerNumericTail,
 ) -> bool {
-    let [first_lower, first_upper, second_lower, second_upper] =
-        if carrier == B2OwnerChartCarrier::B28 {
-            [
-                tail.lower()[0],
-                tail.upper()[0],
-                tail.lower()[1],
-                tail.upper()[1],
-            ]
-        } else {
-            [
-                tail.lower()[1],
-                tail.upper()[1],
-                tail.lower()[0],
-                tail.upper()[0],
-            ]
-        };
-    let side_lower = [first_lower, second_lower, second_upper];
-    let side_upper = [first_upper, second_lower, second_upper];
-    let side_05 = parameter_point_matches_tuple(points[0], side_lower);
-    let side_09 = parameter_point_matches_tuple(points[1], side_upper);
-    let sides_reversed = parameter_point_matches_tuple(points[0], side_upper)
-        && parameter_point_matches_tuple(points[1], side_lower);
-    (side_05 && side_09 || sides_reversed)
-        && parameter_point_contains(points[2], second_lower)
-        && parameter_point_contains(points[3], second_upper)
+    let (axis, lower, upper) = if carrier == B2OwnerChartCarrier::B28 {
+        (1, tail.lower(), tail.upper())
+    } else {
+        (
+            2,
+            [tail.lower()[1], tail.lower()[0]],
+            [tail.upper()[1], tail.upper()[0]],
+        )
+    };
+    let side_lower = [lower[0], lower[1], upper[1]];
+    let side_upper = [upper[0], lower[1], upper[1]];
+    let sides_match = (parameter_point_matches_tuple(points[0], axis, side_lower)
+        && parameter_point_matches_tuple(points[1], axis, side_upper))
+        || (parameter_point_matches_tuple(points[0], axis, side_upper)
+            && parameter_point_matches_tuple(points[1], axis, side_lower));
+    sides_match
+        && parameter_point_matches_boundary(points[2], axis, lower[1], [lower[0], upper[0]])
+        && parameter_point_matches_boundary(points[3], axis, upper[1], [lower[0], upper[0]])
 }
 
-fn parameter_point_scalars(point: &B2ParameterPoint) -> ([f64; 5], usize) {
-    match &point.payload {
-        B2ParameterPointPayload::Scalar { value } => ([value.get(), 0.0, 0.0, 0.0, 0.0], 1),
-        B2ParameterPointPayload::Uv { uv } => ([uv[0], uv[1], 0.0, 0.0, 0.0], 2),
-        B2ParameterPointPayload::StationUv { station, uv } => {
-            ([station.get(), uv[0], uv[1], 0.0, 0.0], 3)
-        }
-        B2ParameterPointPayload::FiveScalars { values } => {
-            ([values[0], values[1], values[2], values[3], values[4]], 5)
-        }
+fn parameter_point_matches_tuple(point: &B2ParameterPoint, axis: u8, expected: [f64; 3]) -> bool {
+    let control = expected
+        .iter()
+        .zip([0x10, 0x04, 0x08])
+        .fold(axis, |control, (value, bit)| {
+            if *value == 0.0 {
+                control | bit
+            } else {
+                control
+            }
+        });
+    let (values, len) = point.payload.scalars();
+    point.control == control
+        && expected
+            .into_iter()
+            .filter(|value| *value != 0.0)
+            .eq(values[..len].iter().copied())
+}
+
+fn parameter_point_matches_boundary(
+    point: &B2ParameterPoint,
+    side_axis: u8,
+    boundary: f64,
+    range: [f64; 2],
+) -> bool {
+    if parameter_point_matches_tuple(point, 3 - side_axis, [boundary, range[0], range[1]]) {
+        return true;
     }
-}
-
-fn parameter_point_matches_tuple(point: &B2ParameterPoint, expected: [f64; 3]) -> bool {
-    let (values, len) = parameter_point_scalars(point);
-    expected
-        .into_iter()
-        .filter(|value| *value != 0.0)
-        .eq(values[..len].iter().copied())
-}
-
-fn parameter_point_contains(point: &B2ParameterPoint, expected: f64) -> bool {
-    let (values, len) = parameter_point_scalars(point);
-    expected == 0.0 || values[..len].contains(&expected)
+    let half_span = range[1] * 0.5 - range[0] * 0.5;
+    let midpoint = range[0] * 0.5 + range[1] * 0.5;
+    let (control, expected) = if side_axis == 1 {
+        (0x88, [-half_span, midpoint, boundary])
+    } else {
+        (0x48, [-half_span, boundary, midpoint])
+    };
+    let (values, len) = point.payload.scalars();
+    point.control == control
+        && len == 3
+        && values[..3].iter().zip(expected).all(|(actual, expected)| {
+            (*actual - expected).abs() <= EPS_PARAMETER_LINE * expected.abs().max(1.0)
+        })
 }
 
 fn b2_fixed_owner_packet(
@@ -1894,21 +1928,20 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
             0x0a => B2ParameterPointPayload::Scalar {
                 value: f64_le(data, at)?,
             },
-            0x12 => B2ParameterPointPayload::Uv {
-                uv: read_f64_array::<2>(data, at)?.into(),
+            0x12 => B2ParameterPointPayload::TwoScalars {
+                values: read_f64_array::<2>(data, at)?.into(),
             },
-            0x1a => {
-                let values = read_f64_array::<3>(data, at)?;
-                B2ParameterPointPayload::StationUv {
-                    station: values[0],
-                    uv: [values[1], values[2]].into(),
-                }
-            }
+            0x1a => B2ParameterPointPayload::ThreeScalars {
+                values: read_f64_array::<3>(data, at)?.into(),
+            },
             0x2a => B2ParameterPointPayload::FiveScalars {
                 values: read_f64_array::<5>(data, at)?.into(),
             },
             _ => return None,
         };
+        if !payload.matches_control(control) {
+            return None;
+        }
         Some(B2ParameterPoint {
             pos: frame.pos,
             end: frame.end,

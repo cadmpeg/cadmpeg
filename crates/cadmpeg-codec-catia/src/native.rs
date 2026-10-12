@@ -973,9 +973,9 @@ impl TryFrom<CatiaConsolidatedParameterPointWire> for CatiaConsolidatedParameter
     type Error = String;
 
     fn try_from(wire: CatiaConsolidatedParameterPointWire) -> Result<Self, Self::Error> {
-        if wire.layout != wire.payload.layout() {
+        if wire.layout != wire.payload.layout() || !wire.payload.matches_control(wire.control) {
             return Err(format!(
-                "parameter-point layout {:#04x} does not match payload",
+                "parameter-point layout {:#04x} or control does not match payload",
                 wire.layout
             ));
         }

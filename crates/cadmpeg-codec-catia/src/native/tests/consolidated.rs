@@ -189,39 +189,36 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
 #[test]
 fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
-    let [uv, station_uv, five_scalars, station_uv_last] =
+    let [two_scalars, three_scalars, five_scalars, last_three_scalars] =
         native.consolidated_parameter_points.as_slice()
     else {
         panic!("four consolidated parameter points")
     };
     assert_eq!(
         [
-            uv.prefix.as_u8(),
-            station_uv.prefix.as_u8(),
+            two_scalars.prefix.as_u8(),
+            three_scalars.prefix.as_u8(),
             five_scalars.prefix.as_u8(),
-            station_uv_last.prefix.as_u8()
+            last_three_scalars.prefix.as_u8()
         ],
         [0x05, 0x09, 0x0d, 0x11]
     );
-    assert_eq!(uv.payload.layout(), 0x12);
-    assert_eq!(uv.control, 0x12);
+    assert_eq!(two_scalars.payload.layout(), 0x12);
+    assert_eq!(two_scalars.control, 0x12);
     assert!(matches!(
-        &uv.payload,
-        crate::families::b2::records::B2ParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
+        &two_scalars.payload,
+        crate::families::b2::records::B2ParameterPointPayload::TwoScalars { values } if *values == [2.0, 3.0]
     ));
-    assert_eq!(station_uv.payload.layout(), 0x1a);
+    assert_eq!(three_scalars.payload.layout(), 0x1a);
     assert!(matches!(
-        &station_uv.payload,
-        crate::families::b2::records::B2ParameterPointPayload::StationUv {
-            station,
-            uv,
-        } if station.get() == 11.0 && *uv == [4.0, 5.0]
+        &three_scalars.payload,
+        crate::families::b2::records::B2ParameterPointPayload::ThreeScalars { values } if *values == [11.0, 4.0, 5.0]
     ));
     assert_eq!(five_scalars.payload.layout(), 0x2a);
     assert!(matches!(
         &five_scalars.payload,
         crate::families::b2::records::B2ParameterPointPayload::FiveScalars { values }
-            if *values == [1.0, 2.0, 3.0, 4.0, 5.0]
+            if *values == [-1.0, 2.0, 3.0, 0.6, 0.8]
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -231,6 +228,25 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA parameter points"),
         native
+    );
+}
+
+#[test]
+fn consolidated_parameter_point_wire_rejects_contradictory_controls() {
+    let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
+    for (index, control) in [(0, 0x01), (1, 0x08), (2, 0x48)] {
+        let mut wire = serde_json::to_value(&native.consolidated_parameter_points[index])
+            .expect("serialize parameter point");
+        wire["control"] = serde_json::json!(control);
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
+        );
+    }
+    let mut wire = serde_json::to_value(&native.consolidated_parameter_points[2])
+        .expect("serialize explicit line");
+    wire["payload"]["values"][3] = serde_json::json!(2.0);
+    assert!(
+        serde_json::from_value::<crate::native::CatiaConsolidatedParameterPoint>(wire).is_err()
     );
 }
 
