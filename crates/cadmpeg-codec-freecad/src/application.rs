@@ -46,7 +46,8 @@ pub(crate) fn matches_native(
         Ord::cmp,
         "FreeCAD application records sort",
     )?;
-    let mut actual = namespace.arena_iter_as_for_decode::<ApplicationRecordWire>(ctx, "applications");
+    let mut actual =
+        namespace.arena_iter_as_for_decode::<ApplicationRecordWire>(ctx, "applications");
     let mut expected = expected.into_iter();
     while expected.len() != 0 {
         if actual.size_hint().1 == Some(0) {
@@ -90,15 +91,16 @@ pub(crate) fn matches_native(
 // These are serialization views, not independent preservation records. Payload bytes
 // borrow their authoritative entry; absent object data remains an Option until this
 // legacy wire boundary emits its empty-data and zero-offset representation.
-type ApplicationRecordView<'a> = ApplicationRecordWire<
-    &'a str,
-    &'a [u8],
-    &'a [String],
-    &'a [Option<LinkTarget>],
->;
+type ApplicationRecordView<'a> =
+    ApplicationRecordWire<&'a str, &'a [u8], &'a [String], &'a [Option<LinkTarget>]>;
 
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields, bound(deserialize = "S: Deserialize<'de>, B: Deserialize<'de>, D: Deserialize<'de>, L: Deserialize<'de>"))]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        deserialize = "S: Deserialize<'de>, B: Deserialize<'de>, D: Deserialize<'de>, L: Deserialize<'de>"
+    )
+)]
 struct ApplicationRecordWire<
     S = String,
     B = Vec<u8>,
@@ -124,7 +126,10 @@ struct ApplicationRecordWire<
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields, bound(deserialize = "S: Deserialize<'de>, B: Deserialize<'de>, L: Deserialize<'de>"))]
+#[serde(
+    deny_unknown_fields,
+    bound(deserialize = "S: Deserialize<'de>, B: Deserialize<'de>, L: Deserialize<'de>")
+)]
 struct ApplicationPropertyWire<S, B, L> {
     id: String,
     object: S,
@@ -290,27 +295,29 @@ fn wire_records<'a>(
                 "FreeCAD application property digest",
             )?;
             ctx.charge_retained(64, "FreeCAD application property digest")?;
-            property_records.push(ApplicationPropertyWire::<&str, &[u8], &[Option<LinkTarget>]> {
-                id: crate::native::native_child_id_charged(
-                    ctx,
-                    "application-property",
-                    object.id(),
-                    &property.name,
-                )?,
-                object: object.id(),
-                property: &property.id,
-                type_name: &property.type_name,
-                family: property.family,
-                order: property.order,
-                links: property.links(),
-                byte_start: property.xml.start(),
-                byte_end: property.xml.end(),
-                byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
-                sha256: cadmpeg_ir::hash::sha256_hex(data),
-                data,
-                payloads,
-                inert,
-            });
+            property_records.push(
+                ApplicationPropertyWire::<&str, &[u8], &[Option<LinkTarget>]> {
+                    id: crate::native::native_child_id_charged(
+                        ctx,
+                        "application-property",
+                        object.id(),
+                        &property.name,
+                    )?,
+                    object: object.id(),
+                    property: &property.id,
+                    type_name: &property.type_name,
+                    family: property.family,
+                    order: property.order,
+                    links: property.links(),
+                    byte_start: property.xml.start(),
+                    byte_end: property.xml.end(),
+                    byte_len: cadmpeg_core::decode::u64_from_index(data.len()),
+                    sha256: cadmpeg_ir::hash::sha256_hex(data),
+                    data,
+                    payloads,
+                    inert,
+                },
+            );
         }
         drop(property_iter);
         drop(owned.storage);
