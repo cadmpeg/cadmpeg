@@ -969,6 +969,40 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
 }
 
 #[test]
+fn feature_result_face_prefix_validation_is_free() {
+    let (tables, rows) = one_result_surface();
+    let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(rows);
+    let topology = crate::test_support::assert_work_boundaries(
+        &["creo feature result face local IDs", "creo feature result topology ID"],
+        |ctx| {
+            let result = feature_result_topology(ctx, &tables, &rows, &[], 17);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+                assert_ne!(resource.operation, "validate nonblank text");
+            }
+            result
+        },
+    ).expect("one generated face");
+    assert_eq!(topology.faces()[0].as_str(), "surface#201");
+}
+
+#[test]
+fn feature_result_edge_prefix_validation_is_free() {
+    let curves = one_result_edge();
+    let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
+    let topology = crate::test_support::assert_work_boundaries(
+        &["creo feature result edge local IDs", "creo feature result topology ID"],
+        |ctx| {
+            let result = feature_result_topology(ctx, &[], &rows, &curves, 17);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+                assert_ne!(resource.operation, "validate nonblank text");
+            }
+            result
+        },
+    ).expect("one generated edge");
+    assert_eq!(topology.edges()[0].as_str(), "curve#77");
+}
+
+#[test]
 fn feature_result_identities_preserve_bounded_validation() {
     let (tables, rows) = one_result_surface();
     let topology = crate::test_support::assert_work_boundaries(&[], |ctx| {
