@@ -16,7 +16,7 @@ use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal};
-use crate::application::validators::validate_ir;
+use crate::application::validators::{has_errors, validate_ir};
 use crate::loader;
 
 /// Input path and decode options for one conversion.
@@ -353,17 +353,27 @@ pub(crate) fn prepare(
     let validation_arena = DecodeArena::new();
     let (validation_ctx, _) =
         DecodeContext::from_root_bytes(&[], &validation_arena, &source.options.policy)?;
-    let validation = validate_ir(
-        &validation_ctx,
-        inputs,
-        &loaded.ir,
-        loaded.fidelity(),
-        loaded
-            .decode_report()
-            .map_or_else(Vec::new, |report| report.losses.clone()),
-    )?;
-    validation_ctx.finish_session()?;
-    if !validation.is_ok() && !policy.allow_errors {
+    let validation_result = (|| {
+        let losses = match loaded.decode_report() {
+            Some(report) => validation_ctx.try_collect_retained_with(
+                &report.losses,
+                "validation loss copy",
+                |loss| loss.try_clone_for_decode(&validation_ctx, "validation loss copy"),
+            )?,
+            None => Vec::new(),
+        };
+        let validation = validate_ir(
+            &validation_ctx,
+            inputs,
+            &loaded.ir,
+            loaded.fidelity(),
+            losses,
+        )?;
+        let invalid = has_errors(&validation_ctx, &validation)?;
+        Ok::<_, cadmpeg_core::CodecError>((validation, invalid))
+    })();
+    let (validation, invalid) = validation_ctx.finish(validation_result)?;
+    if invalid && !policy.allow_errors {
         return Err(ConversionRefusal::CheckFailed {
             operation: super::refusal::CheckOperation::Export,
             decode_report: loaded.into_decode_report(),

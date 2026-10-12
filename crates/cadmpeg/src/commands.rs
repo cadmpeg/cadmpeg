@@ -34,7 +34,7 @@ use crate::application::transcoder::{
     self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
     SourceRequest, TargetSelection,
 };
-use crate::application::validators::validate_ir;
+use crate::application::validators::{has_errors, validate_ir};
 use crate::loader;
 use crate::DecodeArgs;
 
@@ -391,17 +391,27 @@ pub(crate) fn check_cmd(
     let validation_arena = DecodeArena::new();
     let (validation_ctx, _) =
         DecodeContext::from_root_bytes(&[], &validation_arena, &args.options().policy)?;
-    let report = validate_ir(
-        &validation_ctx,
-        inputs,
-        &loaded.ir,
-        loaded.fidelity(),
-        loaded
-            .decode_report()
-            .map_or_else(Vec::new, |report| report.losses.clone()),
-    )?;
-    validation_ctx.finish_session()?;
-    if !report.is_ok() {
+    let validation_result = (|| {
+        let losses = match loaded.decode_report() {
+            Some(report) => validation_ctx.try_collect_retained_with(
+                &report.losses,
+                "validation loss copy",
+                |loss| loss.try_clone_for_decode(&validation_ctx, "validation loss copy"),
+            )?,
+            None => Vec::new(),
+        };
+        let report = validate_ir(
+            &validation_ctx,
+            inputs,
+            &loaded.ir,
+            loaded.fidelity(),
+            losses,
+        )?;
+        let invalid = has_errors(&validation_ctx, &report)?;
+        Ok::<_, cadmpeg_core::CodecError>((report, invalid))
+    })();
+    let (report, invalid) = validation_ctx.finish(validation_result)?;
+    if invalid {
         let refusal = ConversionRefusal::CheckFailed {
             operation: crate::application::refusal::CheckOperation::Check,
             decode_report: loaded.into_decode_report(),
