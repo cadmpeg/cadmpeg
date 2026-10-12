@@ -333,6 +333,17 @@ pub(crate) enum StepLossCode {
     EdgeStartVertexMissing,
     /// An edge was omitted because its end vertex is missing.
     EdgeEndVertexMissing,
+    /// An edge vertex lies off its own carrier by more than the document
+    /// tolerance, and the edge's parameter range was derived anyway.
+    ///
+    /// The conic inversion takes the parameter from the IN-PLANE components of
+    /// the vertex alone, so the axial and radial offsets cannot change the
+    /// answer: the parameter is exact for any vertex off the axis. Refusing it
+    /// on the total 3D distance rejects a correct parameter for a defect no
+    /// parameter can repair, and costs the whole body downstream. The offset is
+    /// reported here instead, with its measured value, because the cost is
+    /// continuous and a threshold cannot express it.
+    EdgeVertexOffCarrier,
 }
 
 impl StepLossCode {
@@ -491,6 +502,7 @@ impl StepLossCode {
         Self::EdgeRecordMissing,
         Self::EdgeStartVertexMissing,
         Self::EdgeEndVertexMissing,
+        Self::EdgeVertexOffCarrier,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -669,6 +681,7 @@ impl StepLossCode {
             Self::EdgeRecordMissing => "topology.edge-record-missing",
             Self::EdgeStartVertexMissing => "topology.edge-start-vertex-missing",
             Self::EdgeEndVertexMissing => "topology.edge-end-vertex-missing",
+            Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
         }
     }
 
@@ -848,9 +861,9 @@ impl StepLossCode {
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata => LossTaxonomy::PcurveOmitted,
-            Self::FaceMultipleOuterBounds | Self::ShellDisconnectedFaces => {
-                LossTaxonomy::SourceTopologyInvalid
-            }
+            Self::FaceMultipleOuterBounds
+            | Self::ShellDisconnectedFaces
+            | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
@@ -1071,6 +1084,7 @@ mod tests {
                 "topology.edge-record-missing",
                 "topology.edge-start-vertex-missing",
                 "topology.edge-end-vertex-missing",
+                "geometry.edge-vertex-off-carrier",
             ]
         );
     }
