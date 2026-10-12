@@ -1509,6 +1509,13 @@ struct ByteAccounting {
     unclassified: usize,
 }
 
+/// Classify every input byte as structural, typed, opaque, or unclassified.
+///
+/// The scratch buffer is one [`ByteClass`] per INPUT BYTE, so its length is a byte count and not
+/// a count of decoded collection items, and it must not be billed to `max_collection_items`:
+/// that would make a ceiling documented as "admitted items across decoded collections" a function
+/// of input size. It is charged as work plus a materialization reservation, with no item charge;
+/// `the_byte_class_scratch_buffer_is_not_charged_as_collection_items` holds it.
 fn byte_accounting(
     input: &[u8],
     exchange: &Exchange,
