@@ -305,6 +305,7 @@ mod tests {
     fn header(width: RefWidth, save_format_version: Option<u32>) -> BinaryHeader {
         BinaryHeader {
             width,
+            record_stream_start: None,
             metadata: KernelHeader {
                 save_format_version,
                 entity_count: None,
