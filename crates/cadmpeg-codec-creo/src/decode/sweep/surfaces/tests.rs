@@ -661,15 +661,24 @@ fn absent_placed_curve_references_are_free_at_zero_budget() {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
     let transform = crate::placement::FeatureSectionTransform::new(
-        5, Some(5), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
-    ).expect("section frame");
+        5,
+        Some(5),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("section frame");
     let sketch = SketchId::mint("creo:model:sketch#5").expect("sketch identity");
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(0.0, 0.0), end: Point2::new(1.0, 0.0),
-    }).expect("line");
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .expect("line");
     let point = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(0.0, 0.0),
-    }).expect("point");
+    })
+    .expect("point");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -678,12 +687,14 @@ fn absent_placed_curve_references_are_free_at_zero_budget() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     for (placement, geometry) in [(None, &line), (Some(&transform), &point)] {
-        assert_eq!(super::placed_sketch_curve_ref(&ctx, placement, &sketch, 3, geometry)
-            .expect("fixed absent reference"), None);
+        assert_eq!(
+            super::placed_sketch_curve_ref(&ctx, placement, &sketch, 3, geometry)
+                .expect("fixed absent reference"),
+            None
+        );
     }
     assert_eq!(ctx.resource_refusal(), None);
 }
-
 
 #[test]
 fn short_revolution_axis_is_free_at_zero_budget() {
@@ -692,14 +703,20 @@ fn short_revolution_axis_is_free_at_zero_budget() {
     use cadmpeg_ir::math::{Point3, Vector3};
     let curve = NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
-        1, vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)], None, false,
-    ).expect("structural admission").expect("finite directrix");
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("structural admission")
+    .expect("finite directrix");
     // FeatureDirection3 admits finite positive squared norm. The codec's
     // normalization requires length greater than its near-zero threshold.
     let axis = RevolutionAxis {
         origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("origin"),
-        direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 5.0e-13)).expect("finite nonzero norm"),
+        direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 5.0e-13))
+            .expect("finite nonzero norm"),
         reference: None,
     };
     let arena = DecodeArena::new();
@@ -710,8 +727,14 @@ fn short_revolution_axis_is_free_at_zero_budget() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    assert!(super::revolved_nurbs_surface(&ctx, &curve, &axis, &"short axis", &mut refusal)
-        .expect("fixed absent surface").is_none());
-    assert!(refusal.take_records_checked().expect("no diagnostic").is_empty());
+    assert!(
+        super::revolved_nurbs_surface(&ctx, &curve, &axis, &"short axis", &mut refusal)
+            .expect("fixed absent surface")
+            .is_none()
+    );
+    assert!(refusal
+        .take_records_checked()
+        .expect("no diagnostic")
+        .is_empty());
     assert_eq!(ctx.resource_refusal(), None);
 }
