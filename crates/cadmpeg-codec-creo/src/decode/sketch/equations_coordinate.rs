@@ -1256,7 +1256,6 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         else {
             break;
         };
-        ctx.charge_work(1, "creo unsigned coordinate components")?;
         let mut distance_indices = BTreeSet::new();
         let mut equation_indices = BTreeSet::new();
         for &variable in ctx.admit_iter(&component, "creo unsigned component memberships")? {
@@ -1740,7 +1739,6 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         else {
             break;
         };
-        ctx.charge_work(1, "creo section coordinate components")?;
         let mut columns = Vec::new();
         component_storage.with_storage(|| {
             ctx.reserve_vec(

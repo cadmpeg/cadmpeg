@@ -384,7 +384,6 @@ pub(in crate::decode) fn saved_section_line_geometry(
                     if let Some(next) = next {
                         if let Some(candidate_id) = previous.checked_add(1) {
                             if candidate_id.checked_add(1) == Some(next) {
-                                let mut matching_line = false;
                                 let outcome = visit_semantic_saved_section_entities::<()>(
                                     ctx,
                                     definition,
@@ -393,13 +392,12 @@ pub(in crate::decode) fn saved_section_line_geometry(
                                             return Ok(ControlFlow::Continue(()));
                                         };
                                         if line.entity_id == candidate_id {
-                                            matching_line = true;
                                             return Ok(ControlFlow::Break(()));
                                         }
                                         Ok(ControlFlow::Continue(()))
                                     },
                                 )?;
-                                if matching_line && matches!(outcome, ControlFlow::Break(())) {
+                                if matches!(outcome, ControlFlow::Break(())) {
                                     internal_id = Some(candidate_id);
                                 }
                             }
