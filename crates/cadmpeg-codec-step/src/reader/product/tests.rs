@@ -1502,3 +1502,5 @@ fn typed_omitted_descent_refuses_work_limit() {
 mod fallback_index;
 
 mod storage_lifetimes;
+
+mod shared_graph_limits;
