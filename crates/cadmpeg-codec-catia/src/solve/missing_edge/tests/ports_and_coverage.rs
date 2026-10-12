@@ -1289,6 +1289,60 @@ fn mesh_coverage_reuses_one_buffer_for_independent_cycles() {
 }
 
 #[test]
+fn gap_search_releases_saved_placements_after_each_walk() {
+    use crate::solve::missing_edge::{
+        standard_mesh_missing_edge_assignment_domains, StandardMeshBoundaryContext,
+    };
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let bytes = one_gap_topology_stream();
+    let context = crate::test_support::with_service_context(|ctx| {
+        StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
+            .expect("context allocation")
+            .expect("quad boundary context")
+    });
+    let expected = crate::test_support::with_service_context(|ctx| {
+        standard_mesh_missing_edge_assignment_domains(ctx, &context, None, false, false)
+            .expect("service allocation")
+            .expect("complete gap assignments")
+    });
+    let mut limit = 0;
+    let mut saved_refused = false;
+    loop {
+        let result = crate::test_support::with_materialized_limit(limit, |ctx| {
+            standard_mesh_missing_edge_assignment_domains(ctx, &context, None, false, false)
+        });
+        match result {
+            Err(CodecError::ResourceLimit(refusal)) => {
+                assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+                saved_refused |= refusal.operation == "catia_gap_saved_placements";
+                limit = refusal.used + refusal.additional;
+                assert!(limit <= 4096, "small gap search has bounded scratch");
+            }
+            Ok(Some(actual)) => {
+                assert_eq!(actual, expected);
+                break;
+            }
+            other => panic!("expected complete gap assignments: {other:?}"),
+        }
+    }
+    assert!(
+        saved_refused,
+        "saved placements use the temporary-byte budget"
+    );
+    crate::test_support::with_materialized_limit(limit, |ctx| {
+        for _ in 0..32 {
+            assert_eq!(
+                standard_mesh_missing_edge_assignment_domains(ctx, &context, None, false, false)
+                    .expect("released search scratch"),
+                Some(expected.clone())
+            );
+        }
+    });
+}
+
+#[test]
 fn endpoint_pruning_with_known_domains_does_not_build_all_point_pairs() {
     let bytes = standard_quad_topology_stream();
     let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];

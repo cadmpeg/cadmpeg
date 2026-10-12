@@ -905,12 +905,28 @@ five-reference edge payload. The header-value regression covers width
 transitions and the native values 2,232 and 62,701, with every other node field
 unchanged.
 
-An independent byte join verifies 31,420 typed edge frames in 32 of the 76
-checked CATParts. Their 51 logical sources use 105 header values from 1 through
-62,701, with widths 1/2/3 in 31,317/83/20 records. All five reference lanes and
-the complete terminal match the typed native data. Every source repeats header
-values; 29 sources have decreasing values in their sequence. The eyebolt and
+Independent byte joins verify 32,712 typed edge frames in 33 of the 77
+CLI-checked CATParts. Their 53 logical sources use 105 header values from 1
+through 62,701, with widths 1/2/3 in 32,606/84/22 records. All five reference
+forms and the complete terminal match the typed native data. The first
+31,420-record population has repeated header values in every source and
+decreasing values in physical-offset order in 29 sources. The eyebolt and
 spring four-edge cycles both use `[2,1,1,1]`, with degree two at every endpoint.
+
+## Gap-search temporary storage
+
+Saved placement copies belong to one recursive gap-search step. The solver
+admits them against the live temporary-byte budget and releases that admission
+after restoring the placement sequence. The regression checks temporary-byte
+refusal, exact assignment equality, and 32 repeated searches under one limit.
+
+This correction lets nist_ftc_10_asme1_ct5315_rb decode under its unchanged
+2,207,176,216-byte retained ceiling. Its previous attempt exhausted that
+ceiling; 396,932,880 bytes of cumulative charges were saved-placement copies.
+The corrected model has 310 faces, 923 edges, and 3,599 native entity records.
+The CLI check reports zero errors and zero warnings. Its 1,292 consolidated
+edges complete the header census above. This is a structural validation result;
+the decode's fidelity report retains its declared losses.
 
 ## Four-reference consolidated edge frames
 

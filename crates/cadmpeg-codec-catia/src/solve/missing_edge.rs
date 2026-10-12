@@ -2680,10 +2680,14 @@ fn standard_mesh_missing_edge_assignment_domains(
                         } else {
                             None
                         };
-                        let saved = self.ctx.copy_slice(
-                            &placed[gap_placed_start..],
-                            "catia_gap_saved_placements",
-                        )?;
+                        let mut saved_storage =
+                            self.ctx.reserve_scoped(0, "catia_gap_saved_placements")?;
+                        let saved = saved_storage.with_storage(|| {
+                            self.ctx.copy_slice(
+                                &placed[gap_placed_start..],
+                                "catia_gap_saved_placements",
+                            )
+                        })?;
                         if offset < target {
                             let slack = target - offset;
                             let Some(flexible) = placed.get_mut(gap_placed_start) else {
