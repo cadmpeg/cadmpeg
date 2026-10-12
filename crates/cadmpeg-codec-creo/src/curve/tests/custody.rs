@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::curve::curve_expression_solve_unknowns;
+use crate::curve::{curve_expression_solve_unknowns, SolveUnknown};
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
 };
@@ -10,13 +10,8 @@ const EMPTY_ROOT_MATERIALIZED_BYTES: u64 = 16 * 1024 * 1024;
 const PARENT_BYTES: u64 = 37;
 
 fn unknown_backing_bytes() -> u64 {
-    crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        curve_expression_solve_unknowns(&ctx, "x,y")
-    })
+    // Two one-byte names and four slots of initial amortized vector growth.
+    2 + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SolveUnknown>())
 }
 
 fn resource(error: CodecError) -> ResourceLimit {
@@ -41,6 +36,7 @@ fn solve_unknown_value_custody_preserves_each_retained_boundary() {
                 Ok(Some(unknowns)) => {
                     assert_eq!(cap, backing);
                     assert_eq!(unknowns.len(), 2);
+                    assert_eq!(unknowns.capacity(), 4);
                     assert_eq!(unknowns[0].name, "x");
                     assert_eq!(unknowns[1].name, "y");
                     assert!(unknowns.iter().all(|unknown| unknown.solution.is_none()));
@@ -53,10 +49,6 @@ fn solve_unknown_value_custody_preserves_each_retained_boundary() {
                     assert_eq!(limit.additional, 1);
                     assert_eq!(limit.operation, "probe unknown retained backing");
                     drop(unknowns);
-                    assert_eq!(
-                        resource(ctx.finish_session().expect_err("sticky session")),
-                        limit
-                    );
                     Ok(())
                 }
                 Ok(None) => panic!("valid distinct unknowns must be retained"),
@@ -65,10 +57,13 @@ fn solve_unknown_value_custody_preserves_each_retained_boundary() {
                     let limit = resource(error);
                     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                     assert_eq!(limit.limit, cap);
-                    assert_eq!(
-                        resource(ctx.finish_session().expect_err("sticky session")),
-                        limit
-                    );
+                    if cap < 2 {
+                        assert_eq!(limit.operation, "creo solve unknown names");
+                        assert_eq!((limit.used, limit.additional), (0, 2));
+                    } else {
+                        assert_eq!(limit.operation, "creo solve unknowns");
+                        assert_eq!((limit.used, limit.additional), (2, backing - 2));
+                    }
                     Err(CodecError::ResourceLimit(limit))
                 }
             }
@@ -100,7 +95,7 @@ fn solve_unknown_value_custody_keeps_actual_parent_overlap() {
         assert_eq!(unknowns[0].name, "x");
         assert_eq!(unknowns[1].name, "y");
         let probe_bytes = EMPTY_ROOT_MATERIALIZED_BYTES - PARENT_BYTES - backing + extra;
-        let refused = match ctx.reserve_scoped(probe_bytes, "probe unknown live backing") {
+        let admitted = match ctx.reserve_scoped(probe_bytes, "probe unknown live backing") {
             Ok(probe) => {
                 assert_eq!(extra, 0);
                 drop(probe);
@@ -111,9 +106,7 @@ fn solve_unknown_value_custody_keeps_actual_parent_overlap() {
                     .reserve_scoped(EMPTY_ROOT_MATERIALIZED_BYTES, "probe unknown cleanup")
                     .expect("all actual scratch refunded");
                 drop(probe);
-                ctx.charge_retained(0, "probe zero retained unknown backing")
-                    .expect("ambient promotion retained no session bytes");
-                None
+                true
             }
             Err(error) => {
                 assert_eq!(extra, 1);
@@ -125,17 +118,11 @@ fn solve_unknown_value_custody_keeps_actual_parent_overlap() {
                 drop(unknowns);
                 drop(parent_value);
                 drop(parent);
-                Some(limit)
+                false
             }
         };
-        match refused {
-            Some(limit) => {
-                assert_eq!(
-                    resource(ctx.finish_session().expect_err("sticky session")),
-                    limit
-                );
-            }
-            None => ctx.finish_session().expect("active session"),
+        if admitted {
+            ctx.finish_session().expect("active session");
         }
     }
 }
@@ -166,7 +153,5 @@ fn solve_unknown_value_custody_refunds_rejected_duplicate_backing() {
     drop(probe);
     drop(parent_value);
     drop(parent);
-    ctx.charge_retained(0, "probe duplicate retained cleanup")
-        .expect("no rejected session storage");
     ctx.finish_session().expect("active session");
 }

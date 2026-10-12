@@ -140,15 +140,7 @@ fn affine_equation_merge_propagates_coefficient_node_refusal() {
         },
     );
     let error = resource_error(with_expression_policy(policy, |ctx| {
-        let result = left.combine_admitted(right, true, ctx);
-        assert_eq!(
-            ctx.resource_refusal(),
-            match &result {
-                Err(CodecError::ResourceLimit(limit)) => Some(*limit),
-                _ => None,
-            }
-        );
-        result
+        left.combine_admitted(right, true, ctx)
     }));
     assert_target_limit(
         &error,

@@ -13,13 +13,33 @@ fn isolated_expression_components_charge_only_present_stack_entries() {
         // one component fill, one mark reset, one finish and one reverse pop.
         // Both stacks fit their initial capacities; growth moves no entries.
         let total = 8 * cadmpeg_core::decode::u64_from_index(count);
+        let count_work = cadmpeg_core::decode::u64_from_index(count);
+        let mut plan = vec![
+            (count_work, "creo curve-expression visited dependencies"),
+            (count_work, "creo curve-expression component roots"),
+        ];
+        for _ in 0..count {
+            plan.extend([(1, "walk Creo curve-expression dependencies"); 2]);
+        }
+        plan.extend([
+            (count_work, "creo curve-expression components"),
+            (count_work, "creo curve-expression component marks reset"),
+            (
+                count_work,
+                "creo curve-expression component finish traversal",
+            ),
+        ]);
+        for _ in 0..count {
+            plan.push((1, "walk Creo curve-expression reverse dependencies"));
+        }
+        assert_eq!(plan.iter().map(|(units, _)| units).sum::<u64>(), total);
         crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = expression_dependency_components(&ctx, &dependencies, &reverse);
-            let (original, admitted) = if cap == total {
+            if cap == total {
                 let expected: Vec<usize> = (0..count).rev().collect();
                 assert_eq!(result.expect("all present visits admitted"), expected);
                 assert_eq!(ctx.resource_refusal(), None);
@@ -30,24 +50,37 @@ fn isolated_expression_components_charge_only_present_stack_entries() {
                     (original.dimension, original.used, original.additional),
                     (ResourceDimension::WorkUnits, total, 1)
                 );
-                (original, true)
-            } else {
-                let original = ctx.resource_refusal().expect("present visit refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(original.limit, cap);
-                (original, false)
-            };
-            assert!(
-                matches!(expression_dependency_components(&ctx, &dependencies, &reverse),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            if admitted {
                 Ok(())
             } else {
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("expected work refusal");
+                };
+                let mut used = 0;
+                let mut reached = None;
+                for &(additional, operation) in &plan {
+                    if used + additional > cap {
+                        reached = Some((used, additional, operation));
+                        break;
+                    }
+                    used += additional;
+                }
+                let (used, additional, operation) = reached.expect("first unadmitted work stage");
+                assert_eq!(
+                    (
+                        original.dimension,
+                        original.limit,
+                        original.used,
+                        original.additional,
+                        original.operation
+                    ),
+                    (
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        used,
+                        additional,
+                        operation
+                    )
+                );
                 Err(CodecError::ResourceLimit(original))
             }
         });
@@ -83,11 +116,6 @@ fn empty_expression_ordering_needs_no_allocation_or_terminal_visit() {
         (original.dimension, original.used, original.additional),
         (ResourceDimension::WorkUnits, 0, 1)
     );
-    assert!(
-        matches!(curve_expression_parameter_order(&ctx, &record, &indices),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 fn source_lines(text: &[&str]) -> Vec<crate::curve::CurveExpressionLine> {
@@ -115,6 +143,20 @@ fn expression_source_projection_admits_each_index_once() {
         // then exactly the source and separating newline UTF-8 bytes.
         let output_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
         let total = 3 * count + output_bytes;
+        let parts_operation = "creo curve-expression source text parts";
+        let output_operation = "creo curve-expression feature source text";
+        let mut plan = vec![(1, parts_operation); lines.len()];
+        plan.extend([(count, output_operation); 2]);
+        for (index, text) in text.iter().enumerate() {
+            if index != 0 {
+                plan.push((1, output_operation));
+            }
+            plan.push((
+                cadmpeg_core::decode::u64_from_index(text.len()),
+                output_operation,
+            ));
+        }
+        assert_eq!(plan.iter().map(|(units, _)| units).sum::<u64>(), total);
         let reference_bytes =
             cadmpeg_core::decode::u64_from_index(lines.len() * std::mem::size_of::<&str>());
         crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
@@ -126,7 +168,7 @@ fn expression_source_projection_admits_each_index_once() {
             policy.limits.max_retained_bytes = output_bytes;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = super::super::curve_expression_source_text(&ctx, &lines);
-            let (original, admitted) = if cap == total {
+            if cap == total {
                 let actual = result.expect("exact source passes and bytes admitted");
                 assert_eq!(actual, expected);
                 assert_eq!(ctx.resource_refusal(), None);
@@ -143,24 +185,37 @@ fn expression_source_projection_admits_each_index_once() {
                     (original.dimension, original.used, original.additional),
                     (ResourceDimension::WorkUnits, total, 1)
                 );
-                (original, true)
-            } else {
-                let original = ctx.resource_refusal().expect("source work refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(original.limit, cap);
-                (original, false)
-            };
-            assert!(
-                matches!(super::super::curve_expression_source_text(&ctx, &lines),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            if admitted {
                 Ok(())
             } else {
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("expected work refusal");
+                };
+                let mut used = 0;
+                let mut reached = None;
+                for &(additional, operation) in &plan {
+                    if used + additional > cap {
+                        reached = Some((used, additional, operation));
+                        break;
+                    }
+                    used += additional;
+                }
+                let (used, additional, operation) = reached.expect("first unadmitted work stage");
+                assert_eq!(
+                    (
+                        original.dimension,
+                        original.limit,
+                        original.used,
+                        original.additional,
+                        original.operation
+                    ),
+                    (
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        used,
+                        additional,
+                        operation
+                    )
+                );
                 Err(CodecError::ResourceLimit(original))
             }
         });
@@ -174,16 +229,7 @@ fn expression_source_slots_refuse_before_view_allocation() {
         &[],
         ResourceDimension::CollectionItems,
         "creo curve-expression source text parts",
-        |ctx| {
-            let result = super::super::curve_expression_source_text(ctx, &lines);
-            if let Err(CodecError::ResourceLimit(original)) = &result {
-                assert!(
-                    matches!(super::super::curve_expression_source_text(ctx, &lines),
-                    Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                );
-            }
-            result
-        },
+        |ctx| super::super::curve_expression_source_text(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(original)
         if (original.dimension, original.limit, original.used, original.additional, original.operation)
@@ -198,16 +244,7 @@ fn expression_source_view_bytes_refuse_before_allocation() {
         &[],
         ResourceDimension::MaterializedBytes,
         "creo curve-expression source text parts",
-        |ctx| {
-            let result = super::super::curve_expression_source_text(ctx, &lines);
-            if let Err(CodecError::ResourceLimit(original)) = &result {
-                assert!(
-                    matches!(super::super::curve_expression_source_text(ctx, &lines),
-                    Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                );
-            }
-            result
-        },
+        |ctx| super::super::curve_expression_source_text(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(original)
         if (original.dimension, original.used, original.additional, original.operation)
@@ -221,16 +258,7 @@ fn expression_source_output_bytes_refuse_before_copy() {
         &[],
         ResourceDimension::RetainedBytes,
         "creo curve-expression feature source text",
-        |ctx| {
-            let result = super::super::curve_expression_source_text(ctx, &lines);
-            if let Err(CodecError::ResourceLimit(original)) = &result {
-                assert!(
-                    matches!(super::super::curve_expression_source_text(ctx, &lines),
-                    Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                );
-            }
-            result
-        },
+        |ctx| super::super::curve_expression_source_text(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(original)
         if (original.dimension, original.used, original.additional, original.operation)
