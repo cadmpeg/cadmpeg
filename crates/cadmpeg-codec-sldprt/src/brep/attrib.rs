@@ -12,23 +12,33 @@
 //! it. The `LAST_BODY_MODIFYING_FEATURE_ID` family binds a body to the last
 //! modeling-history ordinal that wrote it. Deltas streams carry no attribute
 //! dictionary, so a deltas body yields no bindings.
+//!
+//! One pass over a stream body reads the definitions. When a definition names
+//! a family whose payloads the decoder reads, one more pass reads the integer
+//! lists and the instances of those families together.
 
-use cadmpeg_core::decode::{DecodeContext, View};
-use std::collections::HashMap;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use std::collections::BTreeMap;
 
 use crate::layout::attribute_instance_00_51 as attr_inst;
 
 /// Attribute family binding a face to its producing feature.
-const ATOM_ID: &str = "ATOM_ID_2001";
+const ATOM_ID: &[u8] = b"ATOM_ID_2001";
 
 /// Attribute family carrying a body's last modeling-history ordinal.
-const LAST_BODY_MODIFIER: &str = "LAST_BODY_MODIFYING_FEATURE_ID";
+const LAST_BODY_MODIFIER: &[u8] = b"LAST_BODY_MODIFYING_FEATURE_ID";
+
+/// Attribute family whose inline `REAL_VALUES` child carries face color.
+const FACE_COLOR: &[u8] = b"SDL/TYSA_COLOUR";
 
 /// Record tags that terminate an instance record's trailing reference run.
 const NODE_TAGS: [u8; 6] = [0x4f, 0x50, 0x51, 0x52, 0x53, 0x54];
 
 /// Widths of an `ATOM_ID_2001` payload list.
 const ATOM_WIDTHS: std::ops::RangeInclusive<usize> = 5..=7;
+
+/// Largest integer list width any supported family reads.
+const MAX_LIST_WIDTH: usize = 7;
 
 /// Payload position of the producing feature's native source id.
 const ATOM_FEATURE: usize = 1;
@@ -40,11 +50,42 @@ const ATOM_GUARD: usize = 3;
 const ATOM_LOCAL: usize = 4;
 
 /// One face's producing-feature identity.
-#[derive(Debug, Clone)]
-pub(super) struct RawFaceAtom {
+#[derive(Debug)]
+pub(super) struct RawFaceAtom<'ctx> {
     /// Attribute id of the face bridge record owning the attribute.
     pub(super) face_attr: u16,
-    pub(super) identity: Option<super::PersistentFaceIdentity>,
+    pub(super) identity: Option<RawFaceIdentity<'ctx>>,
+}
+
+/// A raw identity whose copied path fields remain charged until output copying.
+#[derive(Debug)]
+pub(super) struct RawFaceIdentity<'ctx> {
+    value: super::PersistentFaceIdentity,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl RawFaceIdentity<'_> {
+    pub(super) fn copy_to_retained(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<super::PersistentFaceIdentity, cadmpeg_core::CodecError> {
+        Ok(super::PersistentFaceIdentity {
+            feature_source_id: self.value.feature_source_id,
+            local_id: self.value.local_id,
+            trailing_fields: ctx.copy_slice(
+                &self.value.trailing_fields,
+                "retain Parasolid face identity fields",
+            )?,
+        })
+    }
+}
+
+impl std::ops::Deref for RawFaceIdentity<'_> {
+    type Target = super::PersistentFaceIdentity;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
 }
 
 /// A persistent identity bound to an emitted face.
@@ -65,6 +106,84 @@ pub(crate) struct BodyModifier {
     pub(crate) target: Option<String>,
 }
 
+/// The attribute families the decoder interprets, by declared name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Family {
+    /// `ATOM_ID_2001`.
+    FaceAtom,
+    /// `LAST_BODY_MODIFYING_FEATURE_ID`.
+    BodyModifier,
+    /// `SDL/TYSA_COLOUR`.
+    FaceColor,
+    /// Any other printable name.
+    Other,
+}
+
+impl Family {
+    /// Classify a declared name. Slice equality compares lengths first, so the
+    /// work is bounded by the longest known name.
+    fn of(name: &[u8]) -> Self {
+        match name {
+            ATOM_ID => Self::FaceAtom,
+            LAST_BODY_MODIFIER => Self::BodyModifier,
+            FACE_COLOR => Self::FaceColor,
+            _ => Self::Other,
+        }
+    }
+
+    /// Whether this family's instances carry payloads the decoder reads.
+    fn has_bindings(self) -> bool {
+        matches!(self, Self::FaceAtom | Self::BodyModifier)
+    }
+}
+
+/// Stream-local attribute definitions keyed by definition node id. A node
+/// declared with names of different families maps to `None`. The table is
+/// decode scratch held under its own scoped reservation.
+pub(super) struct Dictionary<'ctx> {
+    families: BTreeMap<u16, Option<Family>>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+/// What the name records declare for one definition node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Declaration {
+    /// No name record declares the node.
+    Undeclared,
+    /// Name records of different families declare the node.
+    Conflicting,
+    /// Every name record that declares the node names this family.
+    Family(Family),
+}
+
+impl Dictionary<'_> {
+    /// The declaration of a definition node.
+    pub(super) fn family(
+        &self,
+        ctx: &DecodeContext<'_>,
+        node: u16,
+    ) -> Result<Declaration, cadmpeg_core::CodecError> {
+        Ok(
+            match ctx.get_btree_map(
+                &self.families,
+                &node,
+                "look up Parasolid attribute definitions",
+            )? {
+                None => Declaration::Undeclared,
+                Some(None) => Declaration::Conflicting,
+                Some(Some(family)) => Declaration::Family(*family),
+            },
+        )
+    }
+}
+
+/// Producing-feature identities and body modifiers carried by one stream body.
+#[derive(Debug, Default)]
+pub(super) struct Bindings<'ctx> {
+    pub(super) face_atoms: Vec<RawFaceAtom<'ctx>>,
+    pub(super) body_modifiers: Vec<BodyModifier>,
+}
+
 /// Start of a record body: the tag, then an optional `0xff` marker.
 fn record_body(buf: &[u8], off: usize, tag: u8) -> Option<usize> {
     if buf.get(off) != Some(&0) || buf.get(off + 1) != Some(&tag) {
@@ -79,34 +198,56 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
     buf.get(at) == Some(&0) && buf.get(at + 1).is_some_and(|tag| NODE_TAGS.contains(tag))
 }
 
-/// Stream-local attribute definitions with unique names or withheld conflicts.
-type DefinitionTable = HashMap<u16, Option<String>>;
-
-fn charge_scan(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let count = u64::try_from(buf.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(count, operation)
+/// The printable-ASCII run measured last: every byte in `start..end` is an
+/// ASCII graphic, and `end` is the buffer length or a byte that is not.
+#[derive(Default)]
+struct GraphicRun {
+    measured: Option<(usize, usize)>,
 }
 
-/// Collect valid `KEY/ATTRIB_DEF` pairings, retaining conflicts as `None`.
-fn definition_candidates(
-    ctx: &DecodeContext<'_>,
+impl GraphicRun {
+    /// End of the printable-ASCII run that starts at `at`. The definition scan
+    /// asks at non-decreasing positions, so a measured run answers every later
+    /// position inside it and each byte is measured at most once.
+    fn end(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        buf: &[u8],
+        at: usize,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        if let Some((start, end)) = self.measured {
+            if start <= at && at <= end {
+                return Ok(end);
+            }
+        }
+        let rest = buf.get(at..).unwrap_or_default();
+        let run = ctx
+            .position_by(
+                rest,
+                |byte| Ok(!byte.is_ascii_graphic()),
+                "measure Parasolid attribute names",
+            )?
+            .unwrap_or(rest.len());
+        let end = at + run;
+        self.measured = Some((at, end));
+        Ok(end)
+    }
+}
+
+/// Read the stream-local attribute definitions: each printable name record
+/// immediately followed by its definition record.
+pub(super) fn dictionary<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     buf: &[u8],
-) -> Result<HashMap<u16, Option<Vec<u8>>>, cadmpeg_core::CodecError> {
-    let mut found = HashMap::<u16, Option<Vec<u8>>>::new();
-    charge_scan(ctx, buf, "scan Parasolid attribute definitions")?;
-    for off in 0..buf.len() {
+) -> Result<Dictionary<'ctx>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "hold Parasolid attribute definitions")?;
+    let mut families = BTreeMap::<u16, Option<Family>>::new();
+    let mut names = GraphicRun::default();
+    for off in ctx.admit_iter(0..buf.len(), "scan Parasolid attribute definitions")? {
         let Some(p) = record_body(buf, off, 0x4f) else {
             continue;
         };
-        let Some(len) = View::u32_be_at(buf, p) else {
-            continue;
-        };
-        let Some(node) = View::u16_be_at(buf, p + 4) else {
+        let (Some(len), Some(node)) = (View::u32_be_at(buf, p), View::u16_be_at(buf, p + 4)) else {
             continue;
         };
         if node <= 1 {
@@ -125,14 +266,8 @@ fn definition_candidates(
         let Some(end) = data.checked_add(len) else {
             continue;
         };
-        let Some(text) = buf.get(data..end) else {
-            continue;
-        };
-        if text.is_empty()
-            || text
-                .iter()
-                .any(|byte| !byte.is_ascii() || !byte.is_ascii_graphic())
-        {
+        // The name is a nonempty printable run that ends where the next record opens.
+        if end == data || names.end(ctx, buf, data)? != end {
             continue;
         }
         let Some(p) = record_body(buf, end, 0x50) else {
@@ -141,309 +276,223 @@ fn definition_candidates(
         let Some(definition) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
-        let family = ctx.copy_retained(text, "copy Parasolid attribute family")?;
-        ctx.admit_hash_map_entry(
-            &mut found,
-            &definition,
-            "collect Parasolid attribute definitions",
-        )?;
-        match found.entry(definition) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(family));
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
-                    .as_ref()
-                    .is_some_and(|previous| previous != &family)
-                {
-                    *entry.get_mut() = None;
+        let Some(name) = buf.get(data..end) else {
+            continue;
+        };
+        let family = Family::of(name);
+        storage
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut families,
+                    definition,
+                    "collect Parasolid attribute definitions",
+                )
+            })?
+            .and_modify(|existing| {
+                if *existing != Some(family) {
+                    *existing = None;
                 }
-            }
-        }
-    }
-    Ok(found)
-}
-
-/// Resolve the stream-local attribute-definition table.
-pub(super) fn definition_table(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-) -> Result<DefinitionTable, cadmpeg_core::CodecError> {
-    let candidates = definition_candidates(ctx, buf)?;
-    let mut resolved = HashMap::new();
-    ctx.reserve_map(
-        &mut resolved,
-        candidates.len(),
-        "resolve Parasolid attribute definitions",
-    )?;
-    for (node, family) in candidates {
-        resolved.insert(
-            node,
-            family.and_then(|family| String::from_utf8(family).ok()),
-        );
-    }
-    Ok(resolved)
-}
-
-/// Map definition-record node ids to the two supported native attribute
-/// families whose payload consumers are implemented here.
-fn definitions(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-) -> Result<HashMap<u16, &'static str>, cadmpeg_core::CodecError> {
-    let definitions = definition_table(ctx, buf)?;
-    let admitted = definitions.values().filter(|name| name.is_some()).count();
-    let mut supported = HashMap::new();
-    ctx.reserve_map(
-        &mut supported,
-        admitted,
-        "collect Parasolid supported definitions",
-    )?;
-    for (node, family) in definitions {
-        let Some(family) = family else {
-            continue;
-        };
-        let family = match family.as_str() {
-            ATOM_ID => ATOM_ID,
-            LAST_BODY_MODIFIER => LAST_BODY_MODIFIER,
-            _ => continue,
-        };
-        supported.insert(node, family);
-    }
-    Ok(supported)
-}
-
-/// Read integer payload lists keyed by their node id.
-fn integer_lists(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-) -> Result<HashMap<u16, Vec<u32>>, cadmpeg_core::CodecError> {
-    let mut found = HashMap::<u16, Option<Vec<u32>>>::new();
-    charge_scan(ctx, buf, "scan Parasolid attribute value lists")?;
-    for off in 0..buf.len() {
-        let Some(p) = record_body(buf, off, 0x52) else {
-            continue;
-        };
-        let Some(count) = View::u32_be_at(buf, p) else {
-            continue;
-        };
-        let Some(node) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
-            continue;
-        };
-        let Some(data) = p.checked_add(6) else {
-            continue;
-        };
-        let Some(count) = cadmpeg_core::decode::bounded_len(
-            u64::from(count),
-            4,
-            buf.len().checked_sub(data).map_or(0, |len| len),
-        ) else {
-            continue;
-        };
-        if count != 1 && !ATOM_WIDTHS.contains(&count) {
-            continue;
-        }
-        let mut values = Vec::new();
-        ctx.reserve_vec(&mut values, count, "decode Parasolid attribute values")?;
-        for index in 0..count {
-            let Some(value) = index
-                .checked_mul(4)
-                .and_then(|delta| data.checked_add(delta))
-                .and_then(|at| View::u32_be_at(buf, at))
-            else {
-                values.clear();
-                break;
-            };
-            values.push(value);
-        }
-        if values.len() == count {
-            ctx.admit_hash_map_entry(&mut found, &node, "collect Parasolid attribute value lists")?;
-            match found.entry(node) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(values));
-                }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    if entry
-                        .get()
-                        .as_ref()
-                        .is_some_and(|previous| *previous != values)
-                    {
-                        *entry.get_mut() = None;
-                    }
-                }
-            }
-        }
-    }
-    let mut retained = HashMap::new();
-    ctx.reserve_map(
-        &mut retained,
-        found.len(),
-        "retain Parasolid attribute value lists",
-    )?;
-    for (node, values) in found {
-        if let Some(values) = values {
-            retained.insert(node, values);
-        }
-    }
-    Ok(retained)
-}
-
-/// Return one distinct integer-list payload referenced by an instance.
-fn referenced_payload<'a, F>(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-    from: usize,
-    lists: &'a HashMap<u16, Vec<u32>>,
-    accepts: F,
-) -> Result<Option<&'a [u32]>, cadmpeg_core::CodecError>
-where
-    F: Fn(&[u32]) -> bool,
-{
-    let mut found: Option<&[u32]> = None;
-    let mut at = from;
-    while at + 2 <= buf.len() && !opens_record(buf, at) {
-        ctx.charge_work(1, "scan Parasolid attribute references")?;
-        let Some(node) = View::u16_be_at(buf, at) else {
-            return Ok(None);
-        };
-        if let Some(values) = lists.get(&node) {
-            if accepts(values) {
-                match found {
-                    Some(previous) if previous != values.as_slice() => return Ok(None),
-                    _ => found = Some(values),
-                }
-            }
-        }
-        at += 2;
-    }
-    Ok(found)
-}
-
-/// The face-identity payload an instance references, when exactly one distinct
-/// payload qualifies.
-struct AtomPayload<'a> {
-    values: &'a [u32; 5],
-    trailing_fields: &'a [u32],
-}
-
-fn atom_payload<'a>(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-    from: usize,
-    lists: &'a HashMap<u16, Vec<u32>>,
-) -> Result<Option<AtomPayload<'a>>, cadmpeg_core::CodecError> {
-    Ok(referenced_payload(ctx, buf, from, lists, |values| {
-        ATOM_WIDTHS.contains(&values.len()) && values.get(ATOM_GUARD) == Some(&0)
-    })?
-    .and_then(|values| values.split_first_chunk::<5>())
-    .map(|(values, trailing_fields)| AtomPayload {
-        values,
-        trailing_fields,
-    }))
-}
-
-/// Decode every `ATOM_ID_2001` binding carried by one stream body.
-pub(super) fn scan(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-) -> Result<Vec<RawFaceAtom>, cadmpeg_core::CodecError> {
-    let definitions = definitions(ctx, buf)?;
-    if !definitions.values().any(|name| *name == ATOM_ID) {
-        return Ok(Vec::new());
-    }
-    let lists = integer_lists(ctx, buf)?;
-    let mut found = HashMap::<u16, Option<RawFaceAtom>>::new();
-    charge_scan(ctx, buf, "scan Parasolid face atoms")?;
-    for off in 0..buf.len() {
-        let Some(p) = record_body(buf, off, 0x51) else {
-            continue;
-        };
-        if View::u16_be_at(buf, p + attr_inst::ZERO_SELECTOR) != Some(0) {
-            continue;
-        }
-        let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
-            continue;
-        };
-        if definitions.get(&definition).copied() != Some(ATOM_ID) {
-            continue;
-        }
-        let Some(face_attr) = View::u16_be_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID) else {
-            continue;
-        };
-        if face_attr <= 1 {
-            continue;
-        }
-        let Some(AtomPayload {
-            values,
-            trailing_fields,
-        }) = atom_payload(ctx, buf, p + attr_inst::LEN, &lists)?
-        else {
-            continue;
-        };
-        let identity = if let Ok(feature_source_id) =
-            super::feature_source::FeatureSourceId::try_from(values[ATOM_FEATURE])
-        {
-            let mut copied_fields = Vec::new();
-            ctx.reserve_vec(
-                &mut copied_fields,
-                trailing_fields.len(),
-                "copy Parasolid face identity fields",
-            )?;
-            copied_fields.extend_from_slice(trailing_fields);
-            Some(super::PersistentFaceIdentity {
-                feature_source_id,
-                local_id: values[ATOM_LOCAL],
-                trailing_fields: copied_fields,
             })
-        } else {
-            None
-        };
-        let atom = RawFaceAtom {
-            face_attr,
-            identity,
-        };
-        ctx.admit_hash_map_entry(&mut found, &face_attr, "collect Parasolid face atoms")?;
-        match found.entry(face_attr) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(atom));
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry
-                    .get()
-                    .as_ref()
-                    .is_some_and(|previous| previous.identity != atom.identity)
-                {
-                    *entry.get_mut() = None;
-                }
-            }
-        }
+            .or_insert(Some(family));
     }
-    let mut out = Vec::new();
-    ctx.reserve_vec(&mut out, found.len(), "retain Parasolid face atoms")?;
-    out.extend(found.into_values().flatten());
-    ctx.stable_sort_by(
-        &mut out,
-        |value| &value.face_attr,
-        Ord::cmp,
-        "sort Parasolid face atoms",
-    )?;
-    Ok(out)
+    Ok(Dictionary {
+        families,
+        _storage: storage,
+    })
 }
 
-/// Decode every body-level last-modifier binding carried by one stream body.
-pub(super) fn scan_body_modifiers(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-) -> Result<Vec<BodyModifier>, cadmpeg_core::CodecError> {
-    let definitions = definitions(ctx, buf)?;
-    if !definitions.values().any(|name| *name == LAST_BODY_MODIFIER) {
-        return Ok(Vec::new());
+/// One integer payload list. Supported families read at most
+/// [`MAX_LIST_WIDTH`] values, so a list is held inline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IntegerList {
+    values: [u32; MAX_LIST_WIDTH],
+    len: usize,
+}
+
+impl IntegerList {
+    fn as_slice(&self) -> &[u32] {
+        self.values.get(..self.len).unwrap_or_default()
     }
-    let lists = integer_lists(ctx, buf)?;
-    let mut found = HashMap::<u16, Option<BodyModifier>>::new();
-    charge_scan(ctx, buf, "scan Parasolid body modifiers")?;
-    for off in 0..buf.len() {
+}
+
+/// Read a `00 52` list body: node id and values, when its width is one a
+/// supported family reads.
+fn integer_list(buf: &[u8], p: usize) -> Option<(u16, IntegerList)> {
+    let count = View::u32_be_at(buf, p)?;
+    let node = View::u16_be_at(buf, p + 4).filter(|node| *node > 1)?;
+    let data = p.checked_add(6)?;
+    let count = cadmpeg_core::decode::bounded_len(
+        u64::from(count),
+        4,
+        buf.len().checked_sub(data).map_or(0, |len| len),
+    )?;
+    if count != 1 && !ATOM_WIDTHS.contains(&count) {
+        return None;
+    }
+    let mut list = IntegerList {
+        values: [0; MAX_LIST_WIDTH],
+        len: count,
+    };
+    for (index, slot) in list.values.iter_mut().take(count).enumerate() {
+        *slot = View::u32_be_at(buf, data.checked_add(index.checked_mul(4)?)?)?;
+    }
+    Some((node, list))
+}
+
+/// An attribute instance of a family with bindings, waiting for the integer
+/// lists of the whole body before its references resolve.
+struct Instance {
+    family: Family,
+    owner: u16,
+    references: usize,
+}
+
+/// Integer lists keyed by node id; a node carrying different lists maps to `None`.
+type IntegerLists = BTreeMap<u16, Option<IntegerList>>;
+
+/// Resolution of all accepted payloads in a trailing reference run.
+#[derive(Clone, Copy)]
+enum PayloadResolution<'a> {
+    Absent,
+    Unique(&'a [u32]),
+    Conflicting,
+}
+
+/// Shared suffixes are indexed by byte offset and payload family.
+struct PayloadRuns<'a, 'ctx> {
+    resolved: BTreeMap<(usize, bool), PayloadResolution<'a>>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'a> PayloadRuns<'a, '_> {
+    fn resolve(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        buf: &[u8],
+        from: usize,
+        lists: &'a IntegerLists,
+        atom: bool,
+    ) -> Result<Option<&'a [u32]>, cadmpeg_core::CodecError> {
+        const INDEX: &str = "index Parasolid attribute reference tails";
+        let mut path_storage = ctx.reserve_scoped(0, INDEX)?;
+        let mut path = Vec::new();
+        let mut at = from;
+        let mut first_value: Option<(&[u32], usize)> = None;
+        let mut resolution = loop {
+            if let Some(&resolved) = ctx.get_btree_map(&self.resolved, &(at, atom), INDEX)? {
+                break resolved;
+            }
+            if at + 2 > buf.len() || opens_record(buf, at) {
+                break PayloadResolution::Absent;
+            }
+            ctx.charge_work(1, "scan Parasolid attribute references")?;
+            let Some(node) = View::u16_be_at(buf, at) else {
+                break PayloadResolution::Conflicting;
+            };
+            let values =
+                match ctx.get_btree_map(lists, &node, "look up Parasolid attribute value lists")? {
+                    Some(Some(list)) => {
+                        let values = list.as_slice();
+                        let accepted = if atom {
+                            ATOM_WIDTHS.contains(&values.len())
+                                && values.get(ATOM_GUARD) == Some(&0)
+                        } else {
+                            values.len() == 1 && values[0] > 0
+                        };
+                        accepted.then_some(values)
+                    }
+                    _ => None,
+                };
+            if let Some(values) = values {
+                if let Some((previous, first)) = first_value {
+                    if previous != values {
+                        // Every prefix through the first accepted list contains
+                        // both distinct lists. Later suffixes are not resolved.
+                        for &(prefix, _) in ctx.admit_iter(&path[..=first], INDEX)? {
+                            self.storage.with_storage(|| {
+                                ctx.insert_btree_map(
+                                    &mut self.resolved,
+                                    (prefix, atom),
+                                    PayloadResolution::Conflicting,
+                                    INDEX,
+                                )
+                            })?;
+                        }
+                        return Ok(None);
+                    }
+                } else {
+                    first_value = Some((values, path.len()));
+                }
+            }
+            ctx.push_scoped_vec(&mut path_storage, &mut path, (at, values), INDEX)?;
+            at += 2;
+        };
+        for (at, values) in ctx.admit_iter(path, INDEX)?.rev() {
+            if let Some(values) = values {
+                resolution = match resolution {
+                    PayloadResolution::Absent => PayloadResolution::Unique(values),
+                    PayloadResolution::Unique(previous) if previous == values => resolution,
+                    _ => PayloadResolution::Conflicting,
+                };
+            }
+            self.storage.with_storage(|| {
+                ctx.insert_btree_map(&mut self.resolved, (at, atom), resolution, INDEX)
+            })?;
+        }
+        Ok(match resolution {
+            PayloadResolution::Unique(values) => Some(values),
+            _ => None,
+        })
+    }
+}
+
+/// A face-identity payload: the producing feature, the feature-local face id
+/// and the optional trailing fields, or `None` for an absent feature source.
+type AtomIdentity<'a> = Option<(super::feature_source::FeatureSourceId, u32, &'a [u32])>;
+
+fn atom_identity(values: &[u32]) -> Option<AtomIdentity<'_>> {
+    let (head, trailing_fields) = values.split_first_chunk::<5>()?;
+    Some(
+        super::feature_source::FeatureSourceId::try_from(head[ATOM_FEATURE])
+            .ok()
+            .map(|source| (source, head[ATOM_LOCAL], trailing_fields)),
+    )
+}
+
+/// Decode the `ATOM_ID_2001` face bindings and the body last-modifier
+/// bindings carried by one stream body.
+pub(super) fn bindings<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    buf: &[u8],
+    dictionary: &Dictionary<'_>,
+) -> Result<Bindings<'ctx>, cadmpeg_core::CodecError> {
+    if !ctx.any_by(
+        dictionary.families.values(),
+        |family| Ok(family.is_some_and(Family::has_bindings)),
+        "find Parasolid attribute families with bindings",
+    )? {
+        return Ok(Bindings::default());
+    }
+    let mut storage = ctx.reserve_scoped(0, "hold Parasolid attribute payloads")?;
+    let mut lists = IntegerLists::new();
+    let mut instances = Vec::<Instance>::new();
+    for off in ctx.admit_iter(0..buf.len(), "scan Parasolid attribute payloads")? {
+        if let Some(p) = record_body(buf, off, 0x52) {
+            let Some((node, list)) = integer_list(buf, p) else {
+                continue;
+            };
+            storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(&mut lists, node, "collect Parasolid attribute value lists")
+                })?
+                .and_modify(|existing| {
+                    if *existing != Some(list) {
+                        *existing = None;
+                    }
+                })
+                .or_insert(Some(list));
+            continue;
+        }
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
         };
@@ -453,70 +502,137 @@ pub(super) fn scan_body_modifiers(
         let Some(definition) = View::u16_be_at(buf, p + attr_inst::DEFINITION_NODE_ID) else {
             continue;
         };
-        if definitions.get(&definition).copied() != Some(LAST_BODY_MODIFIER) {
+        let Declaration::Family(family) = dictionary.family(ctx, definition)? else {
+            continue;
+        };
+        if !family.has_bindings() {
             continue;
         }
-        let Some(body_attr) =
+        let Some(owner) =
             View::u16_be_at(buf, p + attr_inst::OWNER_ATTRIBUTE_ID).filter(|attr| *attr > 1)
         else {
             continue;
         };
-        let Some(values) = referenced_payload(ctx, buf, p + attr_inst::LEN, &lists, |values| {
-            values.len() == 1 && values[0] > 0
-        })?
-        else {
-            ctx.admit_hash_map_entry(&mut found, &body_attr, "collect Parasolid body modifiers")?;
-            found.insert(body_attr, None);
-            continue;
-        };
-        let modifier = BodyModifier {
-            body_attr,
-            history_ordinal: values[0],
-            target: None,
-        };
-        match found.get_mut(&body_attr) {
-            Some(slot)
-                if slot.as_ref().is_some_and(|previous| {
-                    previous.history_ordinal != modifier.history_ordinal
-                }) =>
-            {
-                *slot = None;
-            }
-            Some(None) => {}
-            Some(Some(_)) => {}
-            None => {
-                ctx.admit_hash_map_entry(
-                    &mut found,
-                    &body_attr,
-                    "collect Parasolid body modifiers",
-                )?;
-                found.insert(body_attr, Some(modifier));
-            }
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut instances,
+            Instance {
+                family,
+                owner,
+                references: p + attr_inst::LEN,
+            },
+            "collect Parasolid attribute instances",
+        )?;
+    }
+
+    let mut runs = PayloadRuns {
+        resolved: BTreeMap::new(),
+        storage: ctx.reserve_scoped(0, "hold Parasolid attribute reference tails")?,
+    };
+    let mut atoms = BTreeMap::<u16, Option<AtomIdentity<'_>>>::new();
+    let mut modifiers = BTreeMap::<u16, Option<u32>>::new();
+    for instance in ctx.admit_iter(&instances, "resolve Parasolid attribute instances")? {
+        if instance.family == Family::FaceAtom {
+            let Some(identity) = runs
+                .resolve(ctx, buf, instance.references, &lists, true)?
+                .and_then(atom_identity)
+            else {
+                continue;
+            };
+            storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(&mut atoms, instance.owner, "collect Parasolid face atoms")
+                })?
+                .and_modify(|existing| {
+                    if *existing != Some(identity) {
+                        *existing = None;
+                    }
+                })
+                .or_insert(Some(identity));
+        } else {
+            let ordinal = runs
+                .resolve(ctx, buf, instance.references, &lists, false)?
+                .and_then(<[u32]>::first)
+                .copied();
+            storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut modifiers,
+                        instance.owner,
+                        "collect Parasolid body modifiers",
+                    )
+                })?
+                .and_modify(|existing| {
+                    if *existing != ordinal {
+                        *existing = None;
+                    }
+                })
+                .or_insert(ordinal);
         }
     }
-    let mut out = Vec::new();
-    ctx.reserve_vec(&mut out, found.len(), "retain Parasolid body modifiers")?;
-    out.extend(found.into_values().flatten());
-    ctx.stable_sort_by(
-        &mut out,
-        |value| &value.body_attr,
-        Ord::cmp,
-        "sort Parasolid body modifiers",
-    )?;
-    Ok(out)
+
+    // Both maps order their bindings by owner attribute.
+    let mut face_atoms = Vec::new();
+    for (face_attr, identity) in ctx.admit_iter(atoms, "retain Parasolid face atoms")? {
+        let Some(identity) = identity else {
+            continue;
+        };
+        let identity = match identity {
+            Some((feature_source_id, local_id, trailing_fields)) => {
+                let (trailing_fields, storage) = ctx
+                    .with_scoped_storage("hold Parasolid face identity fields", || {
+                        ctx.copy_slice(trailing_fields, "copy Parasolid face identity fields")
+                    })?;
+                Some(RawFaceIdentity {
+                    value: super::PersistentFaceIdentity {
+                        feature_source_id,
+                        local_id,
+                        trailing_fields,
+                    },
+                    _storage: storage,
+                })
+            }
+            None => None,
+        };
+        ctx.push_vec(
+            &mut face_atoms,
+            RawFaceAtom {
+                face_attr,
+                identity,
+            },
+            "retain Parasolid face atoms",
+        )?;
+    }
+    let mut body_modifiers = Vec::new();
+    for (body_attr, ordinal) in ctx.admit_iter(modifiers, "retain Parasolid body modifiers")? {
+        let Some(history_ordinal) = ordinal else {
+            continue;
+        };
+        ctx.push_vec(
+            &mut body_modifiers,
+            BodyModifier {
+                body_attr,
+                history_ordinal,
+                target: None,
+            },
+            "retain Parasolid body modifiers",
+        )?;
+    }
+    Ok(Bindings {
+        face_atoms,
+        body_modifiers,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        definition_table, definitions, integer_lists, scan, scan_body_modifiers, ATOM_ID,
-        LAST_BODY_MODIFIER,
+        bindings, dictionary, integer_list, Bindings, Declaration, Family, GraphicRun, ATOM_ID,
+        FACE_COLOR, LAST_BODY_MODIFIER,
     };
-    use cadmpeg_core::decode::{
-        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    fn append_definition(out: &mut Vec<u8>, family: &str, name_node: u16, definition: u16) {
+    fn append_definition(out: &mut Vec<u8>, family: &[u8], name_node: u16, definition: u16) {
         out.extend([0x00, 0x4f]);
         out.extend(
             u32::try_from(family.len())
@@ -524,7 +640,7 @@ mod tests {
                 .to_be_bytes(),
         );
         out.extend(name_node.to_be_bytes());
-        out.extend(family.as_bytes());
+        out.extend(family);
         out.extend([0x00, 0x50]);
         out.extend(2_u32.to_be_bytes());
         out.extend(definition.to_be_bytes());
@@ -559,8 +675,19 @@ mod tests {
         out
     }
 
-    /// Serialize one body-modifier family, one scalar list, and one instance.
+    /// Serialize one body-modifier family, scalar lists, and one instance.
     fn body_modifier_stream(payloads: &[&[u32]], body_attr: u16) -> Vec<u8> {
+        body_modifier_stream_with_nodes(payloads, body_attr, 300, 1)
+    }
+
+    /// As [`body_modifier_stream`], with list node ids `first + index * step`.
+    fn body_modifier_stream_with_nodes(
+        payloads: &[&[u32]],
+        body_attr: u16,
+        first: u16,
+        step: u16,
+    ) -> Vec<u8> {
+        let node = |index: usize| first + u16::try_from(index).expect("index fits u16") * step;
         let mut out = Vec::new();
         append_definition(&mut out, LAST_BODY_MODIFIER, 15, 16);
         for (index, payload) in payloads.iter().enumerate() {
@@ -570,7 +697,7 @@ mod tests {
                     .expect("payload length fits u32")
                     .to_be_bytes(),
             );
-            out.extend((300 + u16::try_from(index).expect("index fits u16")).to_be_bytes());
+            out.extend(node(index).to_be_bytes());
             for value in *payload {
                 out.extend(value.to_be_bytes());
             }
@@ -583,215 +710,294 @@ mod tests {
         out.extend(16_u16.to_be_bytes());
         out.extend(body_attr.to_be_bytes());
         for index in 0..payloads.len() {
-            out.extend((300 + u16::try_from(index).expect("index fits u16")).to_be_bytes());
+            out.extend(node(index).to_be_bytes());
         }
         out
     }
 
-    #[test]
-    fn parasolid_attribute_values_refuse_collection_limit_before_allocation() {
-        let bytes = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = integer_lists(&ctx, &bytes).expect_err("five values exceed four items");
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "decode Parasolid attribute values"));
+    fn scan<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Bindings<'ctx>, cadmpeg_core::CodecError> {
+        let dictionary = dictionary(ctx, bytes)?;
+        bindings(ctx, bytes, &dictionary)
+    }
 
+    #[derive(Debug)]
+    struct BindingSnapshot {
+        face_atoms: Vec<FaceAtomSnapshot>,
+        body_modifiers: Vec<super::BodyModifier>,
+    }
+
+    #[derive(Debug)]
+    struct FaceAtomSnapshot {
+        face_attr: u16,
+        identity: Option<super::super::PersistentFaceIdentity>,
+    }
+
+    fn scan_service(bytes: &[u8]) -> BindingSnapshot {
         let arena = DecodeArena::new();
         let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        assert_eq!(
-            integer_lists(&ctx, &bytes)
-                .expect("service scan")
-                .get(&300)
-                .map(Vec::len),
-            Some(5)
-        );
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let bindings = scan(&ctx, bytes).expect("attribute scan");
+        let face_atoms = bindings
+            .face_atoms
+            .iter()
+            .map(|atom| FaceAtomSnapshot {
+                face_attr: atom.face_attr,
+                identity: atom.identity.as_ref().map(|identity| {
+                    super::super::PersistentFaceIdentity {
+                        feature_source_id: identity.feature_source_id,
+                        local_id: identity.local_id,
+                        trailing_fields: identity.trailing_fields.clone(),
+                    }
+                }),
+            })
+            .collect();
+        BindingSnapshot {
+            face_atoms,
+            body_modifiers: bindings.body_modifiers,
+        }
     }
 
-    #[test]
-    fn parasolid_attribute_family_refuses_retained_limit_before_copy() {
-        let mut bytes = Vec::new();
-        append_definition(&mut bytes, ATOM_ID, 15, 16);
+    fn declared(bytes: &[u8], node: u16) -> Declaration {
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64_from_index(ATOM_ID.len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = definition_table(&ctx, &bytes).expect_err("family copy exceeds retained limit");
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "copy Parasolid attribute family"));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let dictionary = dictionary(&ctx, bytes).expect("definitions");
+        dictionary.family(&ctx, node).expect("definition lookup")
     }
 
-    #[test]
-    fn parasolid_face_attribute_scan_refuses_work_limit() {
-        let bytes = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan(&ctx, &bytes).expect_err("attribute scan work exceeds its limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Parasolid attribute definitions"
-        ));
-    }
-
-    #[test]
-    fn parasolid_body_modifier_scan_refuses_work_limit() {
-        let bytes = body_modifier_stream(&[&[2]], 333);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_body_modifiers(&ctx, &bytes)
-            .expect_err("body modifier scan work exceeds its limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Parasolid attribute definitions"
-        ));
-    }
-
-    macro_rules! attribute_collection_boundary {
-        ($name:ident, $bytes:expr, $route:ident, $limit:expr, $operation:literal) => {
-            #[test]
-            fn $name() {
-                let bytes = $bytes;
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = $limit;
-                let (ctx, _) =
-                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                let error = $route(&ctx, &bytes)
-                    .expect_err("attribute collection exceeds the limit");
-                assert!(matches!(error,
-                    cadmpeg_core::CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::CollectionItems
-                            && limit.operation == $operation), "{error:?}");
+    fn refusal(dimension: ResourceDimension, operation: &'static str, bytes: &[u8]) {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => unreachable!("attribute scans charge no other dimension"),
             }
-        };
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = scan(&ctx, bytes);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result.map(drop)
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
-    macro_rules! definition_boundary {
-        ($name:ident, $route:ident, $limit:expr, $operation:literal) => {
-            attribute_collection_boundary!(
-                $name,
-                {
-                    let mut bytes = Vec::new();
-                    append_definition(&mut bytes, ATOM_ID, 15, 16);
-                    bytes
-                },
-                $route,
-                $limit,
-                $operation
-            );
-        };
-    }
-
-    definition_boundary!(
-        parasolid_attribute_definitions_refuse_before_insertion,
-        definition_table,
-        0,
-        "collect Parasolid attribute definitions"
-    );
-    definition_boundary!(
-        parasolid_attribute_definition_table_refuses_before_resolution,
-        definition_table,
-        1,
-        "resolve Parasolid attribute definitions"
-    );
-    definition_boundary!(
-        parasolid_supported_definitions_refuse_before_collection,
-        definitions,
-        2,
-        "collect Parasolid supported definitions"
-    );
     #[test]
-    fn parasolid_supported_definitions_fit_without_named_map_budget() {
-        let mut bytes = Vec::new();
-        append_definition(&mut bytes, ATOM_ID, 15, 16);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    fn attribute_reference_tails_reuse_shared_suffixes() {
+        use super::{IntegerList, PayloadRuns};
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let lists = std::collections::BTreeMap::from([
+            (
+                300,
+                Some(IntegerList {
+                    values: [9, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
+            (
+                301,
+                Some(IntegerList {
+                    values: [8, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
+        ]);
+        let bytes = [1, 45, 1, 44, 1, 44];
+        let mut runs = PayloadRuns {
+            resolved: std::collections::BTreeMap::default(),
+            storage: ctx.reserve_scoped(0, "test tails").unwrap(),
+        };
+        assert!(runs
+            .resolve(&ctx, &bytes, 0, &lists, false)
+            .unwrap()
+            .is_none());
         assert_eq!(
-            definitions(&ctx, &bytes)
-                .expect("definition fits three charged items")
-                .get(&16),
-            Some(&ATOM_ID)
+            runs.resolve(&ctx, &bytes, 2, &lists, false).unwrap(),
+            Some(&[9][..])
+        );
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan Parasolid attribute references",
+            None,
+        );
+        assert_eq!(
+            runs.resolve(&ctx, &bytes, 2, &lists, false).unwrap(),
+            Some(&[9][..])
+        );
+        assert_eq!(
+            runs.resolve(&ctx, &bytes, 4, &lists, false).unwrap(),
+            Some(&[9][..])
         );
     }
-    attribute_collection_boundary!(
-        parasolid_attribute_value_lists_refuse_before_insertion,
-        stream(&[74, 75, 1_390_698_820, 0, 3], 333),
-        integer_lists,
-        5,
-        "collect Parasolid attribute value lists"
-    );
-    attribute_collection_boundary!(
-        parasolid_attribute_value_lists_refuse_before_retention,
-        stream(&[74, 75, 1_390_698_820, 0, 3], 333),
-        integer_lists,
-        6,
-        "retain Parasolid attribute value lists"
-    );
-    attribute_collection_boundary!(
-        parasolid_face_identity_fields_refuse_before_copy,
-        stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333),
-        scan,
-        12,
-        "copy Parasolid face identity fields"
-    );
-    attribute_collection_boundary!(
-        parasolid_face_atoms_refuse_before_insertion,
-        stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333),
-        scan,
-        14,
-        "collect Parasolid face atoms"
-    );
-    attribute_collection_boundary!(
-        parasolid_face_atoms_refuse_before_retention,
-        stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333),
-        scan,
-        15,
-        "retain Parasolid face atoms"
-    );
-    attribute_collection_boundary!(
-        parasolid_body_modifiers_refuse_before_insertion,
-        body_modifier_stream(&[&[2]], 333),
-        scan_body_modifiers,
-        6,
-        "collect Parasolid body modifiers"
-    );
-    attribute_collection_boundary!(
-        parasolid_body_modifiers_refuse_before_retention,
-        body_modifier_stream(&[&[2]], 333),
-        scan_body_modifiers,
-        7,
-        "retain Parasolid body modifiers"
-    );
+
+    #[test]
+    fn attribute_conflict_does_not_resolve_unrequested_tail() {
+        use super::{IntegerList, PayloadRuns};
+        let lists = std::collections::BTreeMap::from([
+            (
+                300,
+                Some(IntegerList {
+                    values: [9, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
+            (
+                301,
+                Some(IntegerList {
+                    values: [8, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
+        ]);
+        let mut bytes = vec![1, 44, 1, 45];
+        for _ in 0..4096 {
+            bytes.extend([1, 44]);
+        }
+        let work = |bytes: &[u8]| {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "test completed attribute conflict",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let mut runs = PayloadRuns {
+                        resolved: std::collections::BTreeMap::new(),
+                        storage: ctx.reserve_scoped(0, "test tails")?,
+                    };
+                    assert!(runs.resolve(&ctx, bytes, 0, &lists, false)?.is_none());
+                    assert!(runs.resolved.contains_key(&(0, false)));
+                    assert!(!runs.resolved.contains_key(&(2, false)));
+                    assert!(!runs.resolved.contains_key(&(4, false)));
+                    ctx.charge_work(1, "test completed attribute conflict")
+                },
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("completed conflict work refusal");
+            };
+            limit
+        };
+        assert_eq!(work(&bytes), work(&bytes[..4]));
+    }
+
+    #[test]
+    fn attribute_scans_refuse_work_before_each_pass() {
+        let bytes = stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333);
+        for operation in [
+            "scan Parasolid attribute definitions",
+            "measure Parasolid attribute names",
+            "find Parasolid attribute families with bindings",
+            "scan Parasolid attribute payloads",
+            "look up Parasolid attribute definitions",
+            "resolve Parasolid attribute instances",
+            "scan Parasolid attribute references",
+            "look up Parasolid attribute value lists",
+            "retain Parasolid face atoms",
+            "copy Parasolid face identity fields",
+        ] {
+            refusal(ResourceDimension::WorkUnits, operation, &bytes);
+        }
+        let bytes = body_modifier_stream(&[&[2]], 333);
+        refusal(
+            ResourceDimension::WorkUnits,
+            "retain Parasolid body modifiers",
+            &bytes,
+        );
+    }
+
+    #[test]
+    fn attribute_collections_refuse_before_growth() {
+        let bytes = stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333);
+        for operation in [
+            "collect Parasolid attribute definitions",
+            "collect Parasolid attribute value lists",
+            "collect Parasolid attribute instances",
+            "collect Parasolid face atoms",
+            "copy Parasolid face identity fields",
+            "retain Parasolid face atoms",
+        ] {
+            refusal(ResourceDimension::CollectionItems, operation, &bytes);
+        }
+        let bytes = body_modifier_stream(&[&[2]], 333);
+        for operation in [
+            "collect Parasolid body modifiers",
+            "retain Parasolid body modifiers",
+        ] {
+            refusal(ResourceDimension::CollectionItems, operation, &bytes);
+        }
+    }
+
+    #[test]
+    fn attribute_scratch_tables_are_scoped() {
+        let bytes = stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333);
+        refusal(
+            ResourceDimension::MaterializedBytes,
+            "collect Parasolid attribute definitions",
+            &bytes,
+        );
+        refusal(
+            ResourceDimension::MaterializedBytes,
+            "collect Parasolid attribute value lists",
+            &bytes,
+        );
+        refusal(
+            ResourceDimension::RetainedBytes,
+            "retain Parasolid face atoms",
+            &bytes,
+        );
+    }
+
+    #[test]
+    fn family_names_are_classified_without_retained_copies() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 15, 16);
+        append_definition(&mut bytes, FACE_COLOR, 17, 18);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let dictionary = dictionary(&ctx, &bytes).expect("definitions without retained bytes");
+        assert_eq!(
+            dictionary.family(&ctx, 16).expect("lookup"),
+            Declaration::Family(Family::FaceAtom)
+        );
+        assert_eq!(
+            dictionary.family(&ctx, 18).expect("lookup"),
+            Declaration::Family(Family::FaceColor)
+        );
+        assert_eq!(
+            dictionary.family(&ctx, 19).expect("lookup"),
+            Declaration::Undeclared
+        );
+    }
+
+    #[test]
+    fn graphic_runs_answer_later_positions_inside_a_measured_run() {
+        let bytes = b"\0ABC\0DE";
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+        let mut runs = GraphicRun::default();
+        let ends = [0, 1, 2, 3, 4, 5, 6, 7, 9].map(|at| runs.end(&ctx, bytes, at).expect("run"));
+        assert_eq!(ends, [0, 4, 4, 4, 4, 7, 7, 7, 9]);
+    }
 
     #[test]
     fn atom_source_sentinels_have_no_identity() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         for source in [0, u32::MAX] {
-            let atoms = scan(&ctx, &stream(&[74, source, 1_390_698_820, 0, 3], 333))
-                .expect("attribute scan");
+            let atoms = scan_service(&stream(&[74, source, 1_390_698_820, 0, 3], 333)).face_atoms;
             assert_eq!(atoms.len(), 1);
             assert_eq!(atoms[0].face_attr, 333);
             assert!(atoms[0].identity.is_none());
@@ -800,211 +1006,122 @@ mod tests {
 
     #[test]
     fn instance_binds_face_to_producing_feature() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let atoms =
-            scan(&ctx, &stream(&[74, 75, 1_390_698_820, 0, 3], 333)).expect("attribute scan");
+        let atoms = scan_service(&stream(&[74, 75, 1_390_698_820, 0, 3], 333)).face_atoms;
         assert_eq!(atoms.len(), 1);
         assert_eq!(atoms[0].face_attr, 333);
-        assert_eq!(
-            atoms[0]
-                .identity
-                .as_ref()
-                .unwrap()
-                .feature_source_id
-                .value(),
-            75
-        );
-        assert_eq!(atoms[0].identity.as_ref().unwrap().local_id, 3);
+        let identity = atoms[0].identity.as_ref().expect("identity");
+        assert_eq!(identity.feature_source_id.value(), 75);
+        assert_eq!(identity.local_id, 3);
+        assert!(identity.trailing_fields.is_empty());
     }
 
     #[test]
     fn instance_preserves_optional_persistent_tail() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let atoms = scan(&ctx, &stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333))
-            .expect("attribute scan");
+        let atoms = scan_service(&stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333)).face_atoms;
         assert_eq!(atoms.len(), 1);
         assert_eq!(
-            atoms[0].identity.as_ref().unwrap().trailing_fields,
+            atoms[0]
+                .identity
+                .as_ref()
+                .expect("identity")
+                .trailing_fields,
             vec![10, 8]
         );
     }
 
     #[test]
     fn payload_with_a_nonzero_guard_position_is_not_a_face_identity() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        assert!(scan(&ctx, &stream(&[74, 75, 1_390_698_820, 9, 3], 333))
-            .expect("attribute scan")
+        assert!(scan_service(&stream(&[74, 75, 1_390_698_820, 9, 3], 333))
+            .face_atoms
             .is_empty());
     }
 
     #[test]
     fn stream_without_the_family_declaration_yields_nothing() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body[8] = b'X';
-        assert!(scan(&ctx, &body).expect("attribute scan").is_empty());
+        let found = scan_service(&body);
+        assert!(found.face_atoms.is_empty());
+        assert!(found.body_modifiers.is_empty());
+    }
+
+    #[test]
+    fn a_name_must_be_printable_up_to_the_definition_record() {
+        let mut body = Vec::new();
+        append_definition(&mut body, b"ATOM_ID\x012001", 15, 16);
+        assert_eq!(declared(&body, 16), Declaration::Undeclared);
     }
 
     #[test]
     fn conflicting_definition_identity_is_withheld() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut body = Vec::new();
         append_definition(&mut body, ATOM_ID, 15, 16);
         append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
-        assert!(!definitions(&ctx, &body)
-            .expect("definitions")
-            .contains_key(&16));
-        let table = definition_table(&ctx, &body).expect("definition table");
-        assert!(table.contains_key(&16));
-        assert!(table.get(&16).is_some_and(Option::is_none));
+        assert_eq!(declared(&body, 16), Declaration::Conflicting);
     }
 
     #[test]
-    fn definition_table_retains_unsupported_families() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
+    fn unsupported_families_are_declared_as_other() {
         let mut body = Vec::new();
-        append_definition(&mut body, "SDL/TYSA_COLOUR", 15, 16);
-
-        assert_eq!(
-            definition_table(&ctx, &body)
-                .expect("definition table")
-                .get(&16)
-                .and_then(Option::as_deref),
-            Some("SDL/TYSA_COLOUR")
-        );
-        assert!(!definitions(&ctx, &body)
-            .expect("definitions")
-            .contains_key(&16));
+        append_definition(&mut body, b"OTHER_FAMILY", 15, 16);
+        assert_eq!(declared(&body, 16), Declaration::Family(Family::Other));
     }
 
     #[test]
     fn unsupported_and_truncated_integer_lists_are_not_candidates() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut body = Vec::new();
-        body.extend([0x00, 0x52]);
         body.extend(2_u32.to_be_bytes());
         body.extend(300_u16.to_be_bytes());
         body.extend(1_u32.to_be_bytes());
         body.extend(2_u32.to_be_bytes());
-        body.extend([0x00, 0x52]);
+        assert!(integer_list(&body, 0).is_none());
+
+        let mut body = Vec::new();
         body.extend(5_u32.to_be_bytes());
         body.extend(301_u16.to_be_bytes());
         body.extend(1_u32.to_be_bytes());
-        assert!(integer_lists(&ctx, &body)
-            .expect("integer lists")
-            .is_empty());
+        assert!(integer_list(&body, 0).is_none());
+
+        let mut body = Vec::new();
+        body.extend(1_u32.to_be_bytes());
+        body.extend(302_u16.to_be_bytes());
+        body.extend(9_u32.to_be_bytes());
+        let (node, list) = integer_list(&body, 0).expect("scalar list");
+        assert_eq!((node, list.as_slice()), (302, [9].as_slice()));
     }
 
     #[test]
     fn conflicting_integer_list_identity_is_withheld() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let mut body = Vec::new();
-        for value in [2_u32, 3] {
-            body.extend([0x00, 0x52]);
-            body.extend(1_u32.to_be_bytes());
-            body.extend(300_u16.to_be_bytes());
-            body.extend(value.to_be_bytes());
-        }
-        assert!(!integer_lists(&ctx, &body)
-            .expect("integer lists")
-            .contains_key(&300));
+        let modifiers = scan_service(&body_modifier_stream_with_nodes(&[&[2], &[3]], 333, 300, 0))
+            .body_modifiers;
+        assert!(modifiers.is_empty());
     }
 
     #[test]
     fn conflicting_face_identity_is_withheld() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body.extend(stream_with_list_node(
             &[74, 76, 1_390_698_820, 0, 4],
             333,
             310,
         ));
-        assert!(scan(&ctx, &body).expect("attribute scan").is_empty());
+        assert!(scan_service(&body).face_atoms.is_empty());
     }
 
     #[test]
     fn conflicting_persistent_tail_is_withheld() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3, 10], 333);
         body.extend(stream_with_list_node(
             &[74, 75, 1_390_698_820, 0, 3, 11],
             333,
             310,
         ));
-        assert!(scan(&ctx, &body).expect("attribute scan").is_empty());
+        assert!(scan_service(&body).face_atoms.is_empty());
     }
 
     #[test]
     fn body_modifier_binds_one_history_ordinal() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        let modifiers =
-            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[2]], 333)).expect("modifier scan");
+        let modifiers = scan_service(&body_modifier_stream(&[&[2]], 333)).body_modifiers;
         assert_eq!(modifiers.len(), 1);
         assert_eq!(modifiers[0].body_attr, 333);
         assert_eq!(modifiers[0].history_ordinal, 2);
@@ -1012,27 +1129,14 @@ mod tests {
 
     #[test]
     fn body_modifier_rejects_non_scalar_and_conflicting_payloads() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
-        assert!(
-            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[0]], 333))
-                .expect("modifier scan")
-                .is_empty()
-        );
-        assert!(
-            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[2, 3]], 333))
-                .expect("modifier scan")
-                .is_empty()
-        );
-        assert!(
-            scan_body_modifiers(&ctx, &body_modifier_stream(&[&[2], &[3]], 333))
-                .expect("modifier scan")
-                .is_empty()
-        );
+        assert!(scan_service(&body_modifier_stream(&[&[0]], 333))
+            .body_modifiers
+            .is_empty());
+        assert!(scan_service(&body_modifier_stream(&[&[2, 3]], 333))
+            .body_modifiers
+            .is_empty());
+        assert!(scan_service(&body_modifier_stream(&[&[2], &[3]], 333))
+            .body_modifiers
+            .is_empty());
     }
 }

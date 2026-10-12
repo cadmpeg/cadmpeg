@@ -3,7 +3,7 @@
 
 use super::discriminators::OperationStateCounterKind;
 use super::state_index::StateIndexToken;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,45 +126,38 @@ impl StateCounterMap {
         base_offset: usize,
     ) -> Result<Option<Self>, CodecError> {
         const MAX_COUNTER_TAIL_BYTES: usize = 64;
-        ctx.charge_work(
-            u64_from_index(bytes.len()),
-            "scan NX operation-state counter map",
-        )?;
         let mut best: Option<(usize, usize, usize)> = None;
         let mut run_start = 0;
         let mut run_end = 0;
         let mut run_len = 0;
-        for at in bytes
-            .len()
-            .checked_sub(2)
-            .into_iter()
-            .flat_map(|last| 0..last)
-        {
-            if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
-                continue;
-            }
-            let Some(row) = StateCounter::read(bytes, at, base_offset) else {
-                continue;
-            };
-            let Some(row_end) = at.checked_add(row.byte_len()) else {
-                return Ok(None);
-            };
-            if at == run_end {
-                run_end = row_end;
-                run_len += 1;
-            } else {
-                run_start = at;
-                run_end = row_end;
-                run_len = 1;
-            }
-            if run_len >= 2
-                && bytes
-                    .len()
-                    .checked_sub(run_end)
-                    .is_some_and(|tail| tail <= MAX_COUNTER_TAIL_BYTES)
-                && best.is_none_or(|(_, _, current_len)| run_len > current_len)
-            {
-                best = Some((run_start, run_end, run_len));
+        if let Some(range_end) = bytes.len().checked_sub(2) {
+            for at in ctx.admit_iter(&(0..range_end), "scan NX operation-state counter map")? {
+                if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
+                    continue;
+                }
+                let Some(row) = StateCounter::read(bytes, at, base_offset) else {
+                    continue;
+                };
+                let Some(row_end) = at.checked_add(row.byte_len()) else {
+                    return Ok(None);
+                };
+                if at == run_end {
+                    run_end = row_end;
+                    run_len += 1;
+                } else {
+                    run_start = at;
+                    run_end = row_end;
+                    run_len = 1;
+                }
+                if run_len >= 2
+                    && bytes
+                        .len()
+                        .checked_sub(run_end)
+                        .is_some_and(|tail| tail <= MAX_COUNTER_TAIL_BYTES)
+                    && best.is_none_or(|(_, _, current_len)| run_len > current_len)
+                {
+                    best = Some((run_start, run_end, run_len));
+                }
             }
         }
         let Some((start, end, row_count)) = best else {
@@ -186,6 +179,7 @@ impl StateCounterMap {
             return Ok(None);
         };
         while cursor < end {
+            ctx.charge_work(1, "NX operation-state counter row reconstruction")?;
             let Some(row) = StateCounter::read(bytes, cursor, base_offset) else {
                 return Ok(None);
             };

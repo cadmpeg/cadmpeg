@@ -2,7 +2,7 @@
 //! One membership algorithm with decode and standard allocation policies.
 
 use std::collections::{HashSet, TryReserveError};
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
@@ -12,6 +12,7 @@ pub(super) trait Admission: Sized {
     type Error;
     fn index<T: Eq + Hash>(&self, count: usize) -> Result<Index<'_, T, Self>, Self::Error>;
     fn work(&self, count: usize) -> Result<(), Self::Error>;
+    fn resource_refusal(&self) -> Option<Self::Error>;
 }
 
 pub(super) struct StandardAdmission;
@@ -29,6 +30,9 @@ impl Admission for StandardAdmission {
     }
     fn work(&self, _count: usize) -> Result<(), Self::Error> {
         Ok(())
+    }
+    fn resource_refusal(&self) -> Option<Self::Error> {
+        None
     }
 }
 
@@ -51,6 +55,9 @@ impl Admission for DecodeAdmission<'_, '_> {
         self.ctx
             .charge_work_limit(u64_from_index(count), self.operation)
     }
+    fn resource_refusal(&self) -> Option<Self::Error> {
+        self.ctx.resource_refusal()
+    }
 }
 
 /// Borrowed keys drop before their uniqueness-index reservation.
@@ -62,44 +69,64 @@ pub(super) struct Index<'scope, T, S: Admission> {
 
 impl<T: Eq + Hash, S: Admission> Index<'_, T, S> {
     pub(super) fn insert(&mut self, value: T) -> Result<bool, S::Error> {
-        self.admission.work(0)?;
+        // The member is hashed once here, with the set's own keys, and the
+        // set rehashes only the finished hash.
+        let mut state = self.values.hasher().build_hasher();
+        let mut hasher = MemberHasher {
+            state: &mut state,
+            admission: self.admission,
+            written: 0,
+        };
+        value.hash(&mut hasher);
+        let hashed = hasher.written;
+        let hash = hasher.finish();
+        if let Some(limit) = self.admission.resource_refusal() {
+            return Err(limit);
+        }
         let inserted = self.values.insert(MemberKey {
             value,
             admission: self.admission,
+            hashed,
+            hash,
         });
-        // Callback refusal fuses the policy; no insertion result escapes before this check.
-        self.admission.work(0)?;
+        // Report a refusal raised by a comparison callback during insertion.
+        if let Some(limit) = self.admission.resource_refusal() {
+            return Err(limit);
+        }
         Ok(inserted)
     }
 }
 
+/// A member, the bytes its hash wrote and the finished hash. Comparing two
+/// members reads no more than the bytes both of them hashed.
 struct MemberKey<'scope, T, S> {
     value: T,
     admission: &'scope S,
+    hashed: usize,
+    hash: u64,
 }
 
 impl<T: PartialEq, S: Admission> PartialEq for MemberKey<'_, T, S> {
     fn eq(&self, other: &Self) -> bool {
-        self.admission.work(1).is_ok() && self.value == other.value
+        self.admission.work(self.hashed).is_ok()
+            && self.admission.work(other.hashed).is_ok()
+            && self.value == other.value
     }
 }
 impl<T: Eq, S: Admission> Eq for MemberKey<'_, T, S> {}
 
-impl<T: Hash, S: Admission> Hash for MemberKey<'_, T, S> {
+impl<T, S> Hash for MemberKey<'_, T, S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if self.admission.work(1).is_err() {
-            return;
-        }
-        self.value.hash(&mut MemberHasher {
-            state,
-            admission: self.admission,
-        });
+        state.write_u64(self.hash);
     }
 }
 
+/// Hashes a member, admitting each chunk before it is hashed and counting the
+/// bytes written.
 struct MemberHasher<'scope, H, S> {
     state: &'scope mut H,
     admission: &'scope S,
+    written: usize,
 }
 
 impl<H: Hasher, S: Admission> Hasher for MemberHasher<'_, H, S> {
@@ -112,6 +139,11 @@ impl<H: Hasher, S: Admission> Hasher for MemberHasher<'_, H, S> {
     fn write(&mut self, bytes: &[u8]) {
         if self.admission.work(bytes.len()).is_err() {
             return;
+        }
+        // Every written byte was admitted first, so the count stays within
+        // the work counter.
+        if let Some(written) = self.written.checked_add(bytes.len()) {
+            self.written = written;
         }
         self.state.write(bytes);
     }
@@ -173,7 +205,6 @@ pub(super) fn insert<T: PartialEq, S: AppendAdmission<T>>(
     values: &mut Vec<T>,
     value: T,
 ) -> Result<bool, S::Error> {
-    admission.work(0)?;
     for member in values.iter() {
         admission.work(1)?;
         if admission.equal(member, &value)? {

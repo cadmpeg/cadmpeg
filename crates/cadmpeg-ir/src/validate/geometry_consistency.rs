@@ -54,30 +54,25 @@ fn worse_mismatch(first: f64, second: f64) -> f64 {
 
 /// The coincidence allowance combines the document-wide uncertainty with any
 /// stored edge, vertex, face, or carrier tolerances.
-fn allowance(
-    ctx: &DecodeContext<'_>,
+/// The stored tolerances are a fixed set of one to five per check.
+fn allowance<const N: usize>(
     document_tolerance: crate::scalar::PositiveLength,
-    tolerances: &[Option<f64>],
-) -> Result<f64, CodecError> {
-    let mut value = COINCIDENCE_TOLERANCE.max(document_tolerance.get());
-    for tolerance in ctx.admit_iter(tolerances, "geometric tolerance allowance")? {
-        let Some(tolerance) = tolerance else {
-            continue;
-        };
-        value = f64::max(value, *tolerance);
-    }
-    Ok(value)
+    tolerances: [Option<f64>; N],
+) -> f64 {
+    tolerances.into_iter().flatten().fold(
+        COINCIDENCE_TOLERANCE.max(document_tolerance.get()),
+        f64::max,
+    )
 }
 
 /// Two independently evaluated procedural carriers can each consume the
 /// baseline coincidence allowance. The solved cache's explicit fit tolerance
 /// widens that allowance when it is larger.
 fn procedural_support_allowance(
-    ctx: &DecodeContext<'_>,
     document_tolerance: crate::scalar::PositiveLength,
     cache_fit_tolerance: Option<f64>,
-) -> Result<f64, CodecError> {
-    Ok(COINCIDENCE_TOLERANCE + allowance(ctx, document_tolerance, &[cache_fit_tolerance])?)
+) -> f64 {
+    COINCIDENCE_TOLERANCE + allowance(document_tolerance, [cache_fit_tolerance])
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve
@@ -169,12 +164,11 @@ pub(super) fn check_procedural_support_consistency(
                 continue;
             };
             let bound = procedural_support_allowance(
-                ctx,
                 ir.tolerances.linear,
                 procedural
                     .cache_fit_tolerance()
                     .map(crate::geometry::FitTolerance::get),
-            )?;
+            );
             let Some(base) = curves.get(ctx, base.as_str())? else {
                 continue;
             };
@@ -275,12 +269,11 @@ pub(super) fn check_procedural_support_consistency(
             continue;
         };
         let bound = procedural_support_allowance(
-            ctx,
             ir.tolerances.linear,
             procedural
                 .cache_fit_tolerance()
                 .map(crate::geometry::FitTolerance::get),
-        )?;
+        );
         check_support_sides(
             ctx,
             (&context, third),
@@ -480,9 +473,8 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let bound = allowance(
-            ctx,
             ir.tolerances.linear,
-            &[
+            [
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,
                 *end_tol,
@@ -492,7 +484,7 @@ pub(super) fn check_edge_endpoint_consistency(
                     .flatten()
                     .map(crate::geometry::FitTolerance::get),
             ],
-        )?;
+        );
         let mismatch = worse_mismatch(
             Point3::distance(at_start, *start),
             Point3::distance(at_end, *end),
@@ -546,9 +538,8 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let bound = allowance(
-            ctx,
             ir.tolerances.linear,
-            &[
+            [
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,
                 *end_tol,
@@ -558,7 +549,7 @@ pub(super) fn check_edge_endpoint_consistency(
                     .flatten()
                     .map(crate::geometry::FitTolerance::get),
             ],
-        )?;
+        );
         let mismatch = worse_mismatch(
             Point3::distance(at_start, *start),
             Point3::distance(at_end, *end),
@@ -697,9 +688,8 @@ pub(super) fn check_pcurve_surface_consistency(
             None => None,
         };
         let bound = allowance(
-            ctx,
             ir.tolerances.linear,
-            &[
+            [
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,
                 *end_tol,
@@ -709,21 +699,20 @@ pub(super) fn check_pcurve_surface_consistency(
                     .map(crate::geometry::FitTolerance::get),
                 last.fit_tolerance().map(crate::geometry::FitTolerance::get),
             ],
-        )?;
+        );
         // Recovering an occurrence interval is a topological operation. A
         // carrier fit tolerance may qualify the final image, but must not let
         // inverse recovery move an explicitly ranged occurrence onto a
         // different, merely nearby part of the carrier.
         let recovery_bound = allowance(
-            ctx,
             ir.tolerances.linear,
-            &[
+            [
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,
                 *end_tol,
                 face.tolerance.map(crate::scalar::PositiveReal::get),
             ],
-        )?;
+        );
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval
         // even though its carrier still reaches the edge vertices on another
         // interval. Keep the declared interval as a candidate, but also solve

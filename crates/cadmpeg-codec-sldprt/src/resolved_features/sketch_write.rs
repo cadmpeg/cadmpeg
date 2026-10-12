@@ -1,6 +1,7 @@
 //! Sketch record patching in native streams.
 
 use super::SKETCH_POINT_TOLERANCE;
+use crate::brep::patch::{CompactCurveFamily, CompactCurvePatch};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -112,7 +113,7 @@ pub(super) fn sketch_brep(
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
     for (profile_index, profile) in profiles.iter().enumerate() {
-        let endpoints = profile
+        let generated = profile
             .iter()
             .map(|entity_use| {
                 let entity = entities.get(&entity_use.entity).ok_or_else(|| {
@@ -123,16 +124,21 @@ pub(super) fn sketch_brep(
                     ))
                 })?;
                 let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
-                Ok(if entity_use.reversed {
-                    (generated.end, generated.start)
-                } else {
-                    (generated.start, generated.end)
-                })
+                Ok((entity, generated))
             })
             .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
-        if endpoints.iter().enumerate().any(|(index, (_, end))| {
-            let (next_start, _) = endpoints[(index + 1) % endpoints.len()];
-            !same_sketch_point(*end, next_start)
+        let endpoint = |index: usize| {
+            let curve = &generated[index].1;
+            if profile[index].reversed {
+                (curve.end, curve.start)
+            } else {
+                (curve.start, curve.end)
+            }
+        };
+        if (0..generated.len()).any(|index| {
+            let (_, end) = endpoint(index);
+            let (next_start, _) = endpoint((index + 1) % generated.len());
+            !same_sketch_point(end, next_start)
         }) {
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                 "source-less SLDPRT sketch profile {profile_index} is not a closed endpoint chain"
@@ -147,15 +153,9 @@ pub(super) fn sketch_brep(
         );
         face_loops.push(loop_id.clone());
         let mut ring: Option<cadmpeg_ir::topology::LoopRing> = None;
-        for (use_index, entity_use) in profile.iter().enumerate() {
-            let entity = entities.get(&entity_use.entity).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "sketch {} references missing entity {}",
-                    sketch.id.as_str(),
-                    entity_use.entity.as_str()
-                ))
-            })?;
-            let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
+        for (use_index, (entity_use, (entity, generated))) in
+            profile.iter().zip(generated).enumerate()
+        {
             let start_vertex = sketch_vertex(
                 &mut ir,
                 &mut vertex_by_position,
@@ -504,9 +504,15 @@ fn generated_sketch_curve(
                     "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
                 ));
             }
-            let control_points = curve.control_points();
-            let start = control_points[0];
-            let end = control_points[control_points.len() - 1];
+            let poles = curve.pole_rows();
+            let count = poles.count();
+            let Some((start, end)) = count.checked_sub(1).and_then(|last| {
+                poles.point_at(0).zip(poles.point_at(last))
+            }) else {
+                return Err(cadmpeg_core::CodecError::NotImplemented(
+                    "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
+                ));
+            };
             let knots = curve.knots();
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.lift(lift).map_err(|error| {
@@ -516,7 +522,7 @@ fn generated_sketch_curve(
                 })?)),
                 start: start.get(),
                 end: end.get(),
-                param_range: [knots[cadmpeg_core::decode::index_from_u32(curve.degree())], knots[control_points.len()]],
+                param_range: [knots[cadmpeg_core::decode::index_from_u32(curve.degree())], knots[count]],
             })
         }
         SketchGeometryDefinition::Point { .. }
@@ -745,11 +751,9 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
             Some([point(start.get()), point(end.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            Some([
-                control_points[0].get(),
-                control_points[control_points.len() - 1].get(),
-            ])
+            let poles = curve.pole_rows();
+            let last = poles.count().checked_sub(1)?;
+            Some([poles.point_at(0)?.get(), poles.point_at(last)?.get()])
         }
         _ => None,
     }
@@ -893,11 +897,10 @@ fn patch_direct_curve_body(
         PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(ctx, body, request, ellipse),
         PatchCurve::Nurbs(curve) => return patch_direct_nurbs(ctx, body, request, curve),
     };
-    let frame = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
-            *circle_curve.frame()
-        }
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
+    let patch = CompactCurvePatch::new(ctx, body, request.carrier_attr)?;
+    let frame = match patch.family() {
+        Some(CompactCurveFamily::Circle(frame)) => frame,
+        Some(CompactCurveFamily::Ellipse(_)) => {
             return Err(cadmpeg_core::CodecError::Malformed(
                 "SLDPRT sketch carrier family changed".into(),
             ));
@@ -919,7 +922,7 @@ fn patch_direct_curve_body(
         cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, radius),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
+    if !patch.apply(&values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch circle carrier cannot be patched".into(),
         ));
@@ -1055,7 +1058,7 @@ fn patch_direct_nurbs(
                 "SLDPRT sketch NURBS lift is invalid: {error}"
             ))
         })?;
-    if !crate::brep::patch_nurbs_by_attr(ctx, body, request.carrier_attr, &curve)? {
+    if !crate::brep::patch::patch_nurbs_by_attr(ctx, body, request.carrier_attr, &curve)? {
         return Err(cadmpeg_core::CodecError::NotImplemented(
             "SLDPRT sketch NURBS edit changes native storage shape".into(),
         ));
@@ -1069,11 +1072,10 @@ fn patch_direct_ellipse(
     request: &CurvePatch,
     ellipse: &PatchEllipse,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let axis = match crate::brep::curve_by_attr(ctx, body, request.carrier_attr)? {
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
-            *ellipse_curve.frame().axis()
-        }
-        Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
+    let patch = CompactCurvePatch::new(ctx, body, request.carrier_attr)?;
+    let axis = match patch.family() {
+        Some(CompactCurveFamily::Ellipse(axis)) => axis,
+        Some(CompactCurveFamily::Circle(_)) => {
             return Err(cadmpeg_core::CodecError::Malformed(
                 "SLDPRT sketch carrier family changed".into(),
             ));
@@ -1118,7 +1120,7 @@ fn patch_direct_ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
-    if !crate::brep::patch_compact_values(ctx, body, request.carrier_attr, &values)? {
+    if !patch.apply(&values)? {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT sketch ellipse carrier cannot be patched".into(),
         ));
@@ -1164,3 +1166,6 @@ fn polar(radius: f64, angle: f64) -> Point2 {
 fn offset_point(origin: Point2, delta: Point2) -> Point2 {
     Point2::new(origin.u + delta.u, origin.v + delta.v)
 }
+
+#[cfg(test)]
+mod tests;

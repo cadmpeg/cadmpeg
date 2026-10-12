@@ -122,28 +122,37 @@ fn accounted_draft_retained_transfer_refusal_leaves_model_and_annotations_unchan
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let identity = "test:model:point#new";
-    let mut draft = point_draft(identity).with_accounting();
-    draft
-        .exactness(
-            &cadmpeg_test_support::service_decode_context(),
-            identity,
-            Exactness::Derived,
-        )
-        .unwrap();
-    let mut base = CadIr::empty();
-    let mut annotations = Annotations::default();
-    let before = (base.clone(), annotations.clone());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // The destination point arena can be admitted; the annotation transfer cannot.
-    policy.limits.max_retained_bytes =
-        u64::try_from(4 * std::mem::size_of::<crate::topology::Point>()).unwrap();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = draft.commit(&mut base, &mut annotations, &ctx).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-        && limit.operation == "draft annotation transaction"));
-    assert_eq!((base, annotations), before);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "draft annotation transaction",
+        |cap| {
+            let mut draft = point_draft(identity).with_accounting();
+            draft
+                .exactness(
+                    &cadmpeg_test_support::service_decode_context(),
+                    identity,
+                    Exactness::Derived,
+                )
+                .unwrap();
+            let mut base = CadIr::empty();
+            let mut annotations = Annotations::default();
+            let before = (base.clone(), annotations.clone());
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = draft.commit(&mut base, &mut annotations, &ctx);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(limit.operation, "draft annotation transaction");
+                assert_eq!((base, annotations), before);
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
+            }
+            result
+        },
+    );
 }
 
 #[test]
@@ -210,26 +219,35 @@ fn draft_exactness_retention_preserves_earlier_entries_on_predicate_refusal() {
         )
         .unwrap();
     let before = draft.accounting.exactness.clone();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut calls = 0;
-    let Err(CodecError::ResourceLimit(limit)) = draft.retain_exactness(&ctx, |id| {
-        calls += 1;
-        if id == second {
-            ctx.charge_work(1, "exactness predicate refusal")?;
-        }
-        Ok(false)
-    }) else {
-        panic!("second predicate must refuse");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "exactness predicate refusal");
-    assert_eq!(calls, 2);
-    assert_eq!(draft.accounting.exactness, before);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "exactness predicate refusal",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut calls = 0;
+            let mut candidate = point_draft(first).with_accounting();
+            candidate.accounting.exactness = before.clone();
+            let result = candidate.retain_exactness(&ctx, |id| {
+                calls += 1;
+                if id == second {
+                    ctx.charge_work(1, "exactness predicate refusal")?;
+                }
+                Ok(false)
+            });
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "exactness predicate refusal");
+                assert_eq!(calls, 2);
+                assert_eq!(candidate.accounting.exactness, before);
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                );
+            }
+            result
+        },
     );
 
     let arena = DecodeArena::new();
@@ -247,4 +265,41 @@ fn draft_exactness_retention_preserves_earlier_entries_on_predicate_refusal() {
         .unwrap();
     drop(storage);
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn session_identity_transfer_refusal_preserves_model_and_annotations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let identity = "test:model:point#transfer";
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "committed identity transfer moves",
+        |cap| {
+            let mut draft = point_draft(identity).with_accounting();
+            draft
+                .exactness(
+                    &cadmpeg_test_support::service_decode_context(),
+                    identity,
+                    Exactness::Derived,
+                )
+                .unwrap();
+            let mut annotations = Annotations::default();
+            let before = (CadIr::empty(), annotations.clone());
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut session = crate::draft::CommitSession::new(CadIr::empty(), &ctx, None)?;
+            let result = session.commit(draft, &mut annotations);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!((session.document().clone(), annotations), before);
+                drop(session);
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                );
+            }
+            result
+        },
+    );
 }

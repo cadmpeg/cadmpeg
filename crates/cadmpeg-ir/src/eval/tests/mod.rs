@@ -81,6 +81,7 @@ mod helix;
 mod law_sweep;
 mod overflowing_arms;
 mod overflowing_curve_arms;
+mod pcurve_acceleration;
 mod pcurves;
 mod procedural_curves;
 mod ruled_sum;
@@ -1953,3 +1954,5 @@ mod isocurves;
 mod admission_derivatives;
 
 mod differentials;
+
+mod admission_scans;

@@ -224,7 +224,7 @@ fn project_column_rows<R, F, T>(
     project: impl Fn(usize, u32, u32, F, String, (String, u32)) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
-    let sections = container.indexed_om_sections(ctx)?;
+    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
     for (section_ordinal, (entry, section)) in ctx
         .admit_iter(&sections, "NX column row input sections")?
         .enumerate()
