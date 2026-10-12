@@ -476,29 +476,21 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
                 [0.0, 1.0],
                 [0.0, 2.0],
             ]),
-            directrix: B5ExtrusionDirectrix::Intersection {
+            directrix: B5ExtrusionDirectrix::SurfaceCurve {
                 object_id: 80,
-                supports: [
-                    (
-                        90,
-                        91,
-                        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-                    ),
-                    (
-                        100,
-                        101,
-                        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-                    ),
-                ],
+                support: (
+                    90,
+                    91,
+                    crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+                ),
                 parameter_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
-                cache_fit_tolerance: crate::test_support::test_b5::positive(1.0e-6),
             },
         },
     )]);
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &supported, &extrusions, &BTreeMap::new(),),
-        HashSet::from([10, 20, 30, 31, 40, 50, 90, 100])
+        HashSet::from([10, 20, 30, 31, 40, 50, 90])
     );
 }
 

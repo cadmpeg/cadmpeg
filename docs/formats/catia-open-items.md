@@ -218,17 +218,17 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Question.** Which source-local curve representations do scalar class-`0x25` allocation operands reference, and what do the separate multi-operand productions encode?
 
-**Known.** `catia.md` §6.3 "A B-family scalar class-`25` parameter map" defines the complete affine and sampled maps, allocation addressing forms, sites, and fit tolerance. B-family class `25` and A8 class `25` have separate headers and payloads. Two-operand scalar maps retain exact sample pairing and source positions. The A8 directrix is defined independently in §6.7; its sampled cache remains SN-09.
+**Known.** `catia.md` §6.3 "A B-family scalar class-`25` parameter map" defines the complete affine and sampled maps, allocation addressing forms, sites, and fit tolerance. B-family class `25` and A8 class `25` have separate headers and payloads. Two-operand scalar maps retain exact sample pairing and source positions. The separate A8 sampled parameter map is defined in §6.7.
 
 **Need.** Bind scalar operands through an independently resolved local owner before applying a map to a carrier. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
 
-### SN-09. `a8 03 25` sampled-cache coding
+### SN-09. A8 parameter-map interpolation and additional operand productions
 
-**Question.** How does the sampled-cache lane of an `a8 03 25` extrusion directrix encode its samples?
+**Question.** Which interpolation rule does `81 15` select between stored parameter pairs, and what do A8 class-`25` payloads beginning `84` encode?
 
-**Known.** Its references, solved parameter interval, and fit tolerance are defined.
+**Known.** `catia.md` §6.7 defines the complete `82` two-operand sampled map, positional count, separate paired arrays, either co-curve orientation, nonnegative fit tolerance, active reference interval, and direct or class-`24` wrapper operands. A curve can be evaluated through its first pcurve and support without interpolating the map. The pair table contains no Cartesian poles.
 
-**Need.** We must know the coding to reconstruct and write the cached curve.
+**Need.** Resolve the interpolation selector before mapping arbitrary stations into the co-curve gauge. Parse the `84` operand production independently before admitting it as a two-operand map.
 
 ### SN-11. Standard 3D spline cache
 

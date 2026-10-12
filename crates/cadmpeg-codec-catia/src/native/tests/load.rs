@@ -1279,7 +1279,7 @@ fn native_store_paths_cover_every_declared_arena() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::CATIA_FAMILIES.len(), 46);
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 47);
     assert_eq!(
         catalogue_names,
         crate::native::CATIA_ARENA_NAMES

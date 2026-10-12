@@ -438,6 +438,113 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
     }
 }
 
+/// Lift in the pcurve's parameter gauge, as required by an extrusion directrix.
+pub(super) fn parameterized_lift(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    if matches!(surface, B5Surface::Plane { .. }) {
+        return lifted_curve_geometry(ctx, pcurve, surface);
+    }
+    let Some(knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
+        return Ok(None);
+    };
+    if let B5Surface::Nurbs(surface) = surface {
+        // Only a clamped polynomial line states an affine coordinate map.
+        if pcurve.degree != 1
+            || pcurve.weights.is_some()
+            || pcurve.control_points.len() != 2
+            || knots.len() != 4
+            || knots[0] != knots[1]
+            || knots[2] != knots[3]
+        {
+            return Ok(None);
+        }
+        let variable = if constant_coordinate(&pcurve.control_points, 0).is_some() {
+            1
+        } else if constant_coordinate(&pcurve.control_points, 1).is_some() {
+            0
+        } else {
+            return Ok(None);
+        };
+        let q0 = pcurve.control_points[0][variable];
+        let q1 = pcurve.control_points[1][variable];
+        let scale = (knots[2].get() - knots[0].get()) / (q1 - q0);
+        if !scale.is_finite() || scale == 0.0 {
+            return Ok(None);
+        }
+        let Some(mut curve) = nurbs_isocurve(ctx, pcurve, surface)? else {
+            return Ok(None);
+        };
+        if scale < 0.0 {
+            curve.reverse_parameterization(ctx)?;
+        }
+        let mapped = ctx.collect_vec(
+            curve.knots().iter().map(|knot| {
+                let coordinate = if scale < 0.0 { -*knot } else { *knot };
+                knots[0].get() + (coordinate - q0) * scale
+            }),
+            "catia_b5_parameterized_isocurve_knots",
+        )?;
+        if curve
+            .edit_knots(ctx, |knots| knots.copy_from_slice(&mapped))?
+            .is_err()
+        {
+            return Ok(None);
+        }
+        return Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            curve,
+        ))));
+    }
+    let B5Surface::Cylinder {
+        origin,
+        frame,
+        radius,
+        angular_scale,
+        ..
+    } = surface
+    else {
+        return Ok(None);
+    };
+    if constant_coordinate(&pcurve.control_points, 0).is_none() {
+        return Ok(None);
+    }
+    let points = ctx.collect_vec(
+        pcurve.control_points.iter().map(|uv| {
+            point3(cylinder_point(
+                coordinates(*origin),
+                components(frame.reference()),
+                components(frame.axis()),
+                radius.get(),
+                angular_scale.get(),
+                uv.get(),
+            ))
+        }),
+        "catia_b5_parameterized_cylinder_points",
+    )?;
+    let knots = ctx.collect_vec(
+        knots.into_iter().map(FiniteReal::get),
+        "catia_b5_parameterized_cylinder_knots",
+    )?;
+    let weights = pcurve
+        .weights
+        .as_ref()
+        .map(|weights| {
+            ctx.collect_vec(
+                weights.iter().copied().map(PositiveReal::get),
+                "catia_b5_parameterized_cylinder_weights",
+            )
+        })
+        .transpose()?;
+    Ok(
+        NurbsCurve::from_lanes(ctx, pcurve.degree, knots, points, weights, false)?
+            .ok()
+            .map(SolvedCurveGeometry::Nurbs)
+            .map(CurveGeometry::Solved),
+    )
+}
+
 pub(super) fn lifted_curve_geometry(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
@@ -938,3 +1045,6 @@ pub(super) fn emit_pcurves(
     }
     Ok(pcurve_uses)
 }
+
+#[cfg(test)]
+mod tests;

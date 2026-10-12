@@ -880,9 +880,9 @@ Its first control can differ from `0d`, and its remaining controls can differ fr
 - `b5 03 2e` (freeform surface alias): the complete payload is either one reference token or cardinality `81` followed by one reference token, naming an `a8 03 34` freeform surface. The alias and target identify the same surface carrier and parameter chart.
 - `b5 03 38` (surface-chart alias): the complete payload is `81 surface_ref 05 05 09`. The alias and target identify the same surface carrier and parameter chart.
 - `b5 03 2c` (extrusion surface): payload `81 directrix_ref <direction:3f64le> <u0:f64le> <u1:f64le> <u_scale:f64le> <u_origin:f64le> <tail0:f64le> <tail1:f64le> <control0:u8> <control1:u8>`. `direction` is unit length, `u0<u1`, `u_scale=1`, and `u_origin=0`. The controls are `05 05`, `05 11`, `05 15`, `05 19`, `01 09`, `01 15`, or `control0` is `01` or `05` and `control1` is `29`. For every direct chart, `[tail0,tail1]` is an increasing V interval and the native chart is `directrix(V) + U·direction`; the V interval lies inside the directrix's solved parameter range. Endpoint containment admits binary64 roundoff up to `64·ε·max(1, |directrix bounds|, |V bounds|)`. A class-`24` directrix backed by an `a8 03 21` jet may instead use a translated parameter origin when its interval span and the class-`2c` V span agree with the class-`21` positive tail span within `64·ε·max(1, |span values|)`. Controls `05 11` select a four-to-one affine chart: the class-`24` interval contains exactly four consecutive knot spans, every span and the class-`2c` V interval equal the positive tail span within that tolerance, and directrix station is `t0 + 4·(V-v0)`. Controls `05 15` and `05 19` select the terminal span of a direct class-`20` pcurve having exactly five and six knot spans respectively. The pcurve's native range equals its first and last knots, the terminal knot span and class-`2c` V span agree within that tolerance, and directrix station is `k[n−1] + V−v0`. Controls `01 09` and `01 15` store two decreasing finite auxiliary scalars instead of V bounds. They select a class-`14` planar-offset directrix whose result interval is the extrusion V interval. The extrusion exists only when at least one class-`30` kind-`21` construction names it and every such construction agrees: its source extrusion and the class-`14` source directrix identity agree, the signed distances and plane-normal directions agree, and the class-`30` bound pairs equal the class-`14` result interval and stored class-`2c` U interval. The class-`14` source interval maps affinely onto its result interval. Affine reparameterization changes knots or line origin and direction without changing the geometric locus.
-- `a8 03 25` (extrusion directrix): payload `82 support_wrapper_ref pcurve1_ref <sampled-cache> <t0:f64le> <t1:f64le> <fit_tolerance:f64le> 01`. The parameter interval is increasing and the cache tolerance is positive. `support_wrapper_ref` names a class-`24` record with payload `81 pcurve0_ref 81 01 <t0:f64le> <t1:f64le> <zero:f64le> 01`. The two pcurves and their distinct native ranges define an exact two-surface intersection on their referenced supports; `[t0,t1]` is the solved-curve range. The sampled cache remains approximate and does not replace that construction.
+- `a8 03 25` (sampled parameter map): payload `82 reference_ref co_curve_ref 81 15 <reference_lower:f64le> <reference_upper:f64le> <fit_tolerance:f64le> <co_lower:f64le> <co_upper:f64le> <count:positional> <reference_parameters:f64le>{count} <co_parameters:f64le>{count} <active_reference_lower:f64le> <active_reference_upper:f64le> <repeated_fit:f64le> 01`. Each operand names a direct pcurve or a class-`24` surface-curve wrapper. A wrapper is dereferenced once. The first operand supplies the reference parameter gauge; the second supplies the paired co-curve gauge.
 - `b5 03 24` (surface-curve directrix): payload `81 pcurve_ref 81 01 <t0:f64le> <t1:f64le> <zero:f64le> 01`. The interval is increasing, `zero=0`, and lies inside the referenced pcurve's knot domain. The directrix is the pcurve lifted through its support surface over that interval.
-- `b5 03 14` (planar offset directrix): payload `81 source_ref <source_t0:f64le> <source_t1:f64le> 05 <distance:f64le> <direction:3f64le> <result_t0:f64le> <result_t1:f64le>`. Both intervals are increasing, `distance` is finite and nonzero, and `direction` is a unit plane normal defining the positive offset side. `source_ref` names a class-`24` surface curve or class-`25` intersection directrix whose support interval equals the source interval. The result is the constant-distance planar offset of the source curve, with the source interval mapped affinely onto the result interval.
+- `b5 03 14` (planar offset directrix): payload `81 source_ref <source_t0:f64le> <source_t1:f64le> 05 <distance:f64le> <direction:3f64le> <result_t0:f64le> <result_t1:f64le>`. Both intervals are increasing, `distance` is finite and nonzero, and `direction` is a unit plane normal defining the positive offset side. `source_ref` names a class-`24` surface curve or class-`25` sampled-map directrix whose support interval equals the source interval. The result is the constant-distance planar offset of the source curve, with the source interval mapped affinely onto the result interval.
 - `b5 03 30` (offset surface): payload `82 result_carrier_ref source_surface_ref <distance:f64le> <carrier_kind:u8> <u0:f64le> <u1:f64le> <v0:f64le> <v1:f64le>`. The bounds are strictly increasing. `carrier_kind` is `15` for a plane result carrier, `05` for a cylinder, `09` for a sphere, `0d` for a torus, `11` for a cone, `19` for an `a8 03 32` rolling-ball result carrier, `21` for a class-`2c` extrusion result carrier, and `01` for a class-`31` result cache. Plane, cylinder, sphere, and torus result and source carriers require the same family and geometry agreeing with the stored distance magnitude: parallel planes have that normal separation; cylinders are coaxial with that radius difference; spheres are concentric with that radius difference; and tori are concentric and coaxial with equal major radii and that minor-radius difference. A class-`21` result uses parallel source and result extrusions; its class-`14` result directrix names the source directrix, repeats the signed surface distance and extrusion direction, and maps its source and result intervals exactly to the corresponding extrusion charts. The first reference supplies the result geometry and parameter chart; the second reference and signed distance define the exact offset construction.
 - A class-`30` carrier kind `0x11` selects a canonical cone offset. Source and result have the same oriented radial frame, axis, and radial-plane angle `a`. Define `R(θ)=cos(θ)X+sin(θ)Y`, `T(θ)=−sin(θ)X+cos(θ)Y`, `G(θ)=sin(a)A+cos(a)R(θ)`, and `N(θ)=normalize(T(θ)×G(θ))`. For stored signed distance `d`, one azimuth-independent generator translation `λ` satisfies `(O_result+r_result R)−(O_source+r_source R)=λG+dN`. Thus `P_result(θ,L)=P_source(θ,L+λ)+dN` in local generator coordinates. The result parameter shift minus the source parameter shift equals `λ`. Class-`30` V bounds `[v0,v1]` use the external chart and correspond to result-carrier local bounds `[v0−result_shift,v1−result_shift]`. The result reference supplies the result's geometry and local chart.
 - `b5 03 31` (offset result cache): payload `81 cached_source_ref <distance:f64le> <u0:f64le> <v0:f64le> <u1:f64le> <v1:f64le>`. Its source resolves to the same surface as the enclosing class-`30` source alias. Its distance and bounds equal the class-`30` values, with the bounds interleaved instead of grouped.
@@ -921,6 +921,45 @@ objects 4425557, 4469071, and 4527226 all reference
 `29`, respectively. Keep their object identities distinct.
 
 For `b5 03 0e`, the 73-byte payload is `80 point:3f64le direction:3f64le one:f64le parameter_range:2f64le`. The direction is unit length, the fixed scalar is exactly `1`, and the parameter interval is strictly increasing. The chart is `P(U)=point+U·direction`.
+
+The A8 sampled-map scalar header begins after `82 reference_ref co_curve_ref 81 15`:
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0` | `f64le` | sampled reference lower parameter |
+| `+8` | `f64le` | sampled reference upper parameter |
+| `+16` | `f64le` | sampled map fit tolerance |
+| `+24` | `f64le` | sampled co-curve lower parameter |
+| `+32` | `f64le` | sampled co-curve upper parameter |
+
+References and the sample count use positional integers: `80..ff` encode
+`lead-80`; `08 lo`, `10 mid`, `18 lo mid`, `20 page`, `28 lo page`,
+`30 mid page`, and `38 lo mid page` place the following bytes in the low,
+middle, and high positions of a 24-bit integer. The payload length is
+`68 + width(reference_ref) + width(co_curve_ref) + width(count) + 16·count`.
+All scalars are finite. Both domains increase strictly. Fit tolerance is
+nonnegative; its repeated tail word has the same binary64 bits.
+
+The arrays are two consecutive blocks, paired by index. Reference parameters
+increase strictly. Co-curve parameters either increase strictly or decrease
+strictly. Each parameter lies within its corresponding domain, allowing
+`max(fit_tolerance, 64·ε·max(1, |stored scalars|))` for binary64 roundoff.
+Sample extrema do not define the domains. The active reference interval
+increases strictly and lies inside the stored reference domain. The tail
+begins immediately after both arrays:
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0` | `f64le` | sampled map active reference lower |
+| `+8` | `f64le` | sampled map active reference upper |
+| `+16` | `f64le` | sampled map repeated fit tolerance |
+| `+24` | `u8` | sampled map terminal `01` |
+
+Each pair associates parameters on two representations of the same
+model-space curve. The entries are parameter values, not Cartesian poles.
+An extrusion uses the first representation lifted through its support over
+the active reference interval. The map alone does not establish a unique
+intersection of the two support surfaces.
 
 For `b5 03 0f`, the 113-byte payload is `80 center:3f64le direction_x:3f64le direction_y:3f64le radius:f64le parameter_range:2f64le one:f64le chart_origin:f64le`. The directions are orthogonal unit vectors, the radius is positive, and `one=1`. Dividing the active parameter interval and `chart_origin` by the radius produces a strictly increasing angular interval inside a centered full-turn domain beginning at `chart_origin/radius`; the active interval spans at most `2π`. The arc-length chart is `P(U)=center+radius·(cos(U/radius)·direction_x+sin(U/radius)·direction_y)`.
 

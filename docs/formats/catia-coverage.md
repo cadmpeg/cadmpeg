@@ -1065,3 +1065,69 @@ accuracy. All 72 earlier golden files, including their frozen inputs, remain
 byte-identical. Regression tests cover every bounded sample count from 2
 through 12 and reject a count exceeding the B-family payload capacity,
 contradictory map data, nonmonotone arrays, wrong frame flags, and A8 frames.
+
+
+A8 class-`0x25` verification scans all 79 physical CATIA files through
+`cadmpeg inspect`. Of 1,733 signatures, 1,728 complete `82` sampled maps occur
+in nine files. Four length-closed oil-tank records begin `84`; an Apartman
+signature declares a frame extending beyond the file. The complete maps have
+12 through 232 pairs: 1,026 co-curve arrays decrease and 702 increase. All
+reference arrays increase. Thirty-seven maps have zero fit tolerance, and 66
+have active reference intervals strictly inside their leading domains.
+Sample extrema differ bit-for-bit from domain endpoints in 1,360 maps; nine
+endpoint differences exceed fit tolerance plus roundoff. Interval endpoints
+therefore remain distinct from sample extrema.
+
+All 1,728 maps and their 3,445 distinct file-local operand identities have
+unique physical frames in their descriptor sources. Twenty wrapper operands dereference once
+and close in the same source. The first operand is a wrapper in 19 maps and
+the second in one; direct operands include lines, circles, sphere pcurves, and
+UV jets. Operand-role verification fully parses lines and wrappers; other
+families are identified by their complete frame class and support prefix.
+
+Every complete map also passes the production codec in a constructed standard
+container. Its payload, object identity, paired arrays, domains, fit tolerance,
+and active interval match the independent byte parse exactly. The resulting
+document passes checking with no errors or warnings and has no neutral
+geometry. The native `sampled_parameter_maps` arena retains exact source
+positions and payloads. Its wire loader rejects data contradicting the payload.
+The golden fixture adds zero fit, a 232-pair positional count, a proper active
+subrange, and the Arduino witness. Earlier decode snapshots change only by
+adding the empty arena; all earlier fixture bytes remain exact.
+
+Arduino object 756464 at byte offset 19,668,336 pairs direct line pcurve 756466
+with wrapper 756467 and its quadratic pcurve 756468. The two cylinder supports
+have identical geometry and distinct angular chart domains. All 17 parameter
+pairs lift to the same model-space points; the maximum separation is
+`6.280369834735101e-16` mm, below the binary64 roundoff bound
+`4.97379900441478e-14` mm. These supports do not establish a unique intersection
+construction. An admitted extrusion uses the first representation's exact
+lift over the active reference range. Both operands must resolve before this
+admission. Offset sources use that active range, including a strict subrange
+of the underlying pcurve domain. Between-sample interpolation remains open.
+
+
+Six sampled-map extrusion directrices in `v6-engine-air.CATPart` and five in
+`v6-engine-filter-assembly.CATPart` use parameterized first-pcurve lifts. Each
+lift passes 33 independent tensor-basis evaluations over its active reference
+interval, for 363 evaluations. The maximum model-space separation is
+`6.112319729142702e-14` mm. Surface isocurves map their knots to
+the pcurve parameter, including decreasing surface-coordinate maps. Cylinder
+lifts preserve the pcurve's origin and scale. The admission path supports plane
+lifts, affine NURBS isocurves, and constant-angular cylinder pcurves; other
+charts remain unadmitted. Sampled maps do not inherit class-24 jet-origin or
+four-span chart translations.
+
+The eleven old intersection procedures are removed. Their first support
+carriers retain exact geometry. Second-operand planes 323806 in the air file
+and 356098 in the filter assembly have no remaining model use and are omitted;
+later surface identities and their references change accordingly. Independent
+comparison verifies all other model arenas and all retained source arenas
+exactly.
+
+Whole-file verification covers all 79 CATPart files and checks 78 decoded
+models. Their 1,728 sampled maps match independently inspected payloads,
+typed values, object identities, and physical and logical source positions.
+Only the two files above change model geometry. `apartman.CATPart` retains
+the baseline refusal at the 512-face ordered-constraint work limit; its 62
+complete maps are verified separately in the bounded production fixture.

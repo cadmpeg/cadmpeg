@@ -962,7 +962,7 @@ fn parse_spanning_consolidated_record(
     })
 }
 
-fn parse_consolidated_record(
+pub(crate) fn parse_consolidated_record(
     data: &[u8],
     pos: usize,
     source_end: usize,

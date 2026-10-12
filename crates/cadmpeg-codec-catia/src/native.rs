@@ -31,6 +31,9 @@ use class5b5c::CatiaConsolidatedClass5b5cRecord;
 
 pub(crate) mod edge_definition;
 
+mod parameter_map;
+use parameter_map::CatiaSampledParameterMap;
+
 mod domain_relation;
 use domain_relation::CatiaConsolidatedDomainRelation;
 
@@ -7990,6 +7993,10 @@ define_catia_arenas! {
         /// Exact JPEG previews extracted from summary-information records.
         pub(crate) stored;
     },
+    sampled_parameter_maps: CatiaSampledParameterMap {
+        /// Complete source-local A8 sampled parameter correspondences.
+        pub(crate) stored;
+    },
     reference_signature_cohorts: CatiaReferenceSignatureCohort {
         /// Source-ordered descriptor cohorts grouped by exact reference pair.
         pub(crate) stored;
@@ -9620,12 +9627,19 @@ impl CatiaNative {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test record source fits the service profile");
-        let consolidated_records =
-            crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
-        Self::decode_with_records(
+        let sources: Vec<_> = ranges
+            .iter()
+            .map(|range| {
+                vec![
+                    crate::wire::records::SourceExtent::within(bytes, range.start, range.end)
+                        .expect("bounded test source"),
+                ]
+            })
+            .collect();
+        Self::decode_with_record_sources(
             &ctx,
             bytes,
-            &consolidated_records,
+            &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("test native records fit the service profile")
@@ -9643,7 +9657,10 @@ impl CatiaNative {
             bytes,
             sources.iter().map(|source| source.iter()),
         )?;
-        Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)
+        let mut native = Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)?;
+        native.sampled_parameter_maps =
+            parameter_map::derive(ctx, bytes, sources, &consolidated_records)?;
+        Ok(native)
     }
 
     fn decode_with_records(
@@ -10049,6 +10066,7 @@ impl CatiaNative {
             consolidated_vertex_identities(ctx, &consolidated_edge_nodes)?;
         let e5_curve_supports = e5_curve_support::derive(ctx, bytes)?;
         Ok(Self {
+            sampled_parameter_maps: Vec::new(),
             alias_rows,
             inline_fields,
             storage_property_members,

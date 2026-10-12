@@ -459,7 +459,7 @@ pub(in crate::families) struct B5OffsetSurface {
     pub(super) parameter_bounds: [IncreasingParameterInterval; 2],
 }
 
-/// A `b5 03 2c` extrusion construction with a two-support directrix.
+/// A `b5 03 2c` extrusion construction with an exact directrix.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct B5ExtrusionSurface {
     /// This construction's result surface id.
@@ -475,20 +475,9 @@ pub(in crate::families) struct B5ExtrusionSurface {
 /// Exact directrix construction selected by a `b5 03 2c` extrusion.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum B5ExtrusionDirectrix {
-    /// Two-support intersection carried by an `a8 03 25` record.
-    Intersection {
-        /// Persistent directrix object id.
-        object_id: u32,
-        /// Ordered `(surface, pcurve, pcurve range)` support sides.
-        supports: [(u32, u32, [FiniteReal; 2]); 2],
-        /// Increasing solved-curve parameter range.
-        parameter_range: IncreasingParameterInterval,
-        /// Positive fit tolerance of the serialized sampled cache.
-        cache_fit_tolerance: PositiveReal,
-    },
-    /// One-support curve carried by a `b5 03 24` wrapper.
+    /// One-support lift selected by a surface-curve wrapper or sampled map.
     SurfaceCurve {
-        /// Persistent wrapper object id.
+        /// Persistent directrix object id.
         object_id: u32,
         /// `(surface, pcurve, pcurve range)` support side.
         support: (u32, u32, [FiniteReal; 2]),
@@ -515,18 +504,13 @@ pub(super) enum B5ExtrusionDirectrix {
 impl B5ExtrusionDirectrix {
     pub(super) fn object_id(&self) -> u32 {
         match self {
-            Self::Intersection { object_id, .. }
-            | Self::SurfaceCurve { object_id, .. }
-            | Self::Offset { object_id, .. } => *object_id,
+            Self::SurfaceCurve { object_id, .. } | Self::Offset { object_id, .. } => *object_id,
         }
     }
 
     fn parameter_range(&self) -> IncreasingParameterInterval {
         match self {
-            Self::Intersection {
-                parameter_range, ..
-            }
-            | Self::SurfaceCurve {
+            Self::SurfaceCurve {
                 parameter_range, ..
             }
             | Self::Offset {
@@ -535,7 +519,7 @@ impl B5ExtrusionDirectrix {
         }
     }
 
-    fn reorigin_parameter_range(&mut self, range: IncreasingParameterInterval) -> bool {
+    fn reorigin_parameter_range(&mut self, range: IncreasingParameterInterval) {
         match self {
             Self::SurfaceCurve {
                 parameter_range, ..
@@ -544,15 +528,12 @@ impl B5ExtrusionDirectrix {
                 parameter_range, ..
             } => {
                 *parameter_range = range;
-                true
             }
-            Self::Intersection { .. } => false,
         }
     }
 
     pub(super) fn supports(&self) -> &[(u32, u32, [FiniteReal; 2])] {
         match self {
-            Self::Intersection { supports, .. } => supports,
             Self::SurfaceCurve { support, .. } => std::slice::from_ref(support),
             Self::Offset { source, .. } => source.supports(),
         }
@@ -4192,13 +4173,11 @@ fn extrusion_offset_construction_agrees(
         return carrier.parameter_bounds == [v_bounds, u_bounds];
     };
     offset_source.object_id() == source.directrix.object_id()
-        && offset_source.supports().first().is_some_and(|support| {
-            source_parameter_range
-                .endpoints()
-                .into_iter()
-                .zip(support.2)
-                .all(|(left, right)| left.to_bits() == right.get().to_bits())
-        })
+        && source_parameter_range
+            .endpoints()
+            .into_iter()
+            .zip(offset_source.parameter_range().endpoints())
+            .all(|(left, right)| left.to_bits() == right.to_bits())
         && curve_distance.get().to_bits() == distance.get().to_bits()
         && *direction == source.direction
         && carrier.parameter_bounds[0]
@@ -4466,6 +4445,13 @@ fn parse_extrusion_surface_with_context(
         )
     });
     let translated_chart = carrier.controls == [0x05, 0x11];
+    if records
+        .get(&carrier.directrix_id)
+        .is_some_and(|record| record.family == 0xa8 && record.class == 0x25)
+        && (translated_chart || !directrix_contains_active)
+    {
+        return Ok(None);
+    }
     if translated_chart {
         if translated_directrix_span_count(
             &directrix,
@@ -4477,9 +4463,7 @@ fn parse_extrusion_surface_with_context(
         {
             return Ok(None);
         }
-        if !directrix.reorigin_parameter_range(active_bounds) {
-            return Ok(None);
-        }
+        directrix.reorigin_parameter_range(active_bounds);
     } else if !directrix_contains_active {
         let source_range = directrix.parameter_range().endpoints();
         let active_span = active[1] - active[0];
@@ -4493,9 +4477,7 @@ fn parse_extrusion_surface_with_context(
         {
             return Ok(None);
         }
-        if !directrix.reorigin_parameter_range(active_bounds) {
-            return Ok(None);
-        }
+        directrix.reorigin_parameter_range(active_bounds);
     }
     Ok(Some(B5ExtrusionSurface {
         object_id: record.object_id,
@@ -4698,81 +4680,69 @@ fn parse_extrusion_directrix(
     if record.family == 0xb5 && record.class == 0x14 {
         return parse_offset_curve_directrix(ctx, record, records, object_stream_pcurves);
     }
-    let parsed = (|| -> Option<_> {
-        (record.family == 0xa8 && record.class == 0x25 && record.payload.first() == Some(&0x82))
-            .then_some(())?;
-        let mut position = 1;
-        let wrapper_id = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-        let second_pcurve = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-        let tail = record.payload.len().checked_sub(25)?;
-        (position < tail).then_some(())?;
-        let parameter_range = IncreasingParameterInterval::new(
-            read_f64_array::<2>(&record.payload, tail)?.map(FiniteReal::get),
-        )?;
-        let cache_fit_tolerance = PositiveReal::new(f64_le(&record.payload, tail + 16)?.get())?;
-        if record.payload.get(tail + 24) != Some(&0x01) {
-            return None;
-        }
-        let wrapper = records.get(&wrapper_id)?;
-        (wrapper.family == 0xb5 && wrapper.class == 0x24 && wrapper.payload.first() == Some(&0x81))
-            .then_some(())?;
-        let mut wrapper_position = 1;
-        let first_pcurve = wire::tokens::object_ref(&wrapper.payload, &mut wrapper_position, true)?;
-        if wrapper.payload.get(wrapper_position..wrapper_position + 2) != Some(&[0x81, 0x01]) {
-            return None;
-        }
-        wrapper_position += 2;
-        let wrapper_values =
-            read_f64_array::<3>(&wrapper.payload, wrapper_position)?.map(FiniteReal::get);
-        wrapper_position += 24;
-        if wrapper.payload.get(wrapper_position..) != Some(&[0x01])
-            || wrapper_values[2].to_bits() != 0.0f64.to_bits()
-            || wrapper_values[..2]
-                .iter()
-                .zip(parameter_range.endpoints())
-                .any(|(left, right)| left.to_bits() != right.to_bits())
-        {
-            return None;
-        }
-        let first = records.get(&first_pcurve)?;
-        let first_surface = pcurve_surface_reference(first)?;
-        let second = object_stream_pcurves.get(&second_pcurve)?;
-        Some((
-            first,
-            first_surface,
-            first_pcurve,
-            second_pcurve,
-            second.surface,
-            second.parameter_range,
-            parameter_range,
-            cache_fit_tolerance,
-        ))
-    })();
-    let Some((
-        first,
-        first_surface,
-        first_pcurve,
-        second_pcurve,
-        second_surface,
-        second_range,
-        parameter_range,
-        cache_fit_tolerance,
-    )) = parsed
+    if record.family != 0xa8 || record.class != 0x25 {
+        return Ok(None);
+    }
+    let (map, _temporary) = ctx.with_scoped_storage("catia_a8_map_directrix_workspace", || {
+        super::parameter_map::parse(ctx, &record.payload)
+    })?;
+    let Some(map) = map else {
+        return Ok(None);
+    };
+    let Some(first) = parameter_map_support(ctx, map.reference, records, object_stream_pcurves)?
     else {
         return Ok(None);
     };
-    let Some(first_range) = analytic_pcurve_range(ctx, first)? else {
+    // Both operands must resolve. Either side may name a surface-curve wrapper.
+    let Some(_second) = parameter_map_support(ctx, map.co_curve, records, object_stream_pcurves)?
+    else {
         return Ok(None);
     };
-    Ok(Some(B5ExtrusionDirectrix::Intersection {
+    if !map
+        .active_reference_range
+        .endpoints()
+        .into_iter()
+        .all(|value| {
+            cadmpeg_ir::math::parameter_in_domain(
+                value,
+                first.2.map(FiniteReal::get),
+                64.0 * f64::EPSILON,
+            )
+        })
+    {
+        return Ok(None);
+    }
+    Ok(Some(B5ExtrusionDirectrix::SurfaceCurve {
         object_id: record.object_id,
-        supports: [
-            (first_surface, first_pcurve, first_range),
-            (second_surface, second_pcurve, second_range),
-        ],
-        parameter_range,
-        cache_fit_tolerance,
+        support: first,
+        parameter_range: map.active_reference_range,
     }))
+}
+
+fn parameter_map_support(
+    ctx: &DecodeContext<'_>,
+    object_id: u32,
+    records: &HashMap<u32, &B5Record>,
+    object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
+) -> Result<Option<(u32, u32, [FiniteReal; 2])>, CodecError> {
+    if let Some(pcurve) = object_stream_pcurves.get(&object_id) {
+        return Ok(Some((pcurve.surface, object_id, pcurve.parameter_range)));
+    }
+    let Some(record) = records.get(&object_id) else {
+        return Ok(None);
+    };
+    if record.family == 0xb5 && record.class == 0x24 {
+        return Ok(
+            match parse_surface_curve_directrix(ctx, record, records, object_stream_pcurves)? {
+                Some(B5ExtrusionDirectrix::SurfaceCurve { support, .. }) => Some(support),
+                _ => None,
+            },
+        );
+    }
+    let Some(surface) = pcurve_surface_reference(record) else {
+        return Ok(None);
+    };
+    Ok(analytic_pcurve_range(ctx, record)?.map(|range| (surface, object_id, range)))
 }
 
 fn parse_surface_curve_directrix(
@@ -4885,13 +4855,13 @@ fn parse_offset_curve_directrix(
     else {
         return Ok(None);
     };
-    if !source.supports().iter().any(|support| {
-        support
-            .2
-            .into_iter()
-            .zip(source_parameter_range.endpoints())
-            .all(|(left, right)| left.get().to_bits() == right.to_bits())
-    }) {
+    if !source
+        .parameter_range()
+        .endpoints()
+        .into_iter()
+        .zip(source_parameter_range.endpoints())
+        .all(|(left, right)| left.to_bits() == right.to_bits())
+    {
         return Ok(None);
     }
     ctx.charge_collection_items(1, "catia_b5_offset_directrix_box")?;
@@ -6259,6 +6229,9 @@ fn record_from_frame(
     bytes: &[u8],
     frame: &ObjectFrame,
 ) -> Result<Option<B5Record>, CodecError> {
+    if frame.family == 0xa8 && frame.class == 0x25 && bytes.get(frame.start + 1) != Some(&0x03) {
+        return Ok(None);
+    }
     let Some(payload) = frame_payload(bytes, frame) else {
         return Ok(None);
     };
@@ -7042,7 +7015,10 @@ fn is_opaque_surface_class(class: u8) -> bool {
     matches!(class, 0x2c | 0x2e | 0x30 | 0x37 | 0x38 | 0x3b)
 }
 
-fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
+pub(in crate::families) fn object_frame(
+    bytes: &[u8],
+    start: usize,
+) -> Option<(usize, u8, u8, u32)> {
     if !matches!(bytes.get(start + 1), Some(0x03 | 0x13 | 0x83)) {
         return None;
     }

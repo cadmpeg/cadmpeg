@@ -896,6 +896,35 @@ Unstated regions:
 
 - `0..24` (24 B): The class25_target_domain table defines the target interval and signed accuracy at these offsets.
 
+## `a8_sampled_map_domains`
+
+Spec §6.7 · layout: byte offsets · size: 40 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/parameter_map.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `reference_lower` | `f64` | little | spec | \| `+0` \| `f64le` \| sampled reference lower parameter \| |
+| 8 | 8 | `reference_upper` | `f64` | little | spec | \| `+8` \| `f64le` \| sampled reference upper parameter \| |
+| 16 | 8 | `fit_tolerance` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled map fit tolerance \| |
+| 24 | 8 | `co_lower` | `f64` | little | spec | \| `+24` \| `f64le` \| sampled co-curve lower parameter \| |
+| 32 | 8 | `co_upper` | `f64` | little | spec | \| `+32` \| `f64le` \| sampled co-curve upper parameter \| |
+
+## `a8_sampled_map_tail`
+
+Spec §6.7 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/parameter_map.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `active_reference_lower` | `f64` | little | spec | \| `+0` \| `f64le` \| sampled map active reference lower \| |
+| 8 | 8 | `active_reference_upper` | `f64` | little | spec | \| `+8` \| `f64le` \| sampled map active reference upper \| |
+| 16 | 8 | `repeated_fit` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled map repeated fit tolerance \| |
+| 24 | 1 | `terminal` | `u8` | little | spec | \| `+24` \| `u8` \| sampled map terminal `01` \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

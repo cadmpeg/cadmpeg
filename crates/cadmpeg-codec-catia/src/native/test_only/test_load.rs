@@ -63,11 +63,11 @@ impl CatiaNative {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test source fits the service profile");
-        let consolidated_records = crate::wire::records::consolidated_records(bytes);
-        Self::decode_with_records(
+        let sources = [vec![crate::wire::records::SourceExtent::whole(bytes)]];
+        Self::decode_with_record_sources(
             &ctx,
             bytes,
-            &consolidated_records,
+            &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("test native records fit the service profile")
@@ -718,7 +718,19 @@ impl CatiaNative {
                 ));
             }
         }
+        let mut sampled_parameter_maps: Vec<
+            crate::native::parameter_map::CatiaSampledParameterMap,
+        > = namespace.arena_as("sampled_parameter_maps")?;
+        sampled_parameter_maps.sort_by_key(|map| (map.source_index, map.source_offset));
+        for (index, map) in sampled_parameter_maps.iter().enumerate() {
+            if map.id != format!("catia:a8:sampled-parameter-map#{index:00}") {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                    "invalid sampled parameter map identity".to_owned(),
+                ));
+            }
+        }
         Ok(Self {
+            sampled_parameter_maps,
             alias_rows,
             inline_fields,
             storage_property_members,

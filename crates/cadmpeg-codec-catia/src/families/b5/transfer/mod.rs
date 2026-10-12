@@ -1088,13 +1088,6 @@ pub(in crate::families) struct ResolvedExtrusionSupport {
 /// Exact neutral construction of one extrusion directrix.
 #[derive(Clone, PartialEq)]
 pub(in crate::families) enum ResolvedExtrusionDirectrix {
-    /// Intersection of two support surfaces.
-    Intersection {
-        /// Ordered exact support sides.
-        supports: Box<[ResolvedExtrusionSupport; 2]>,
-        /// Positive fit tolerance of the retained sampled cache.
-        cache_fit_tolerance: PositiveReal,
-    },
     /// One pcurve lifted through its exact support surface.
     SurfaceCurve {
         /// Exact support side.
@@ -1119,7 +1112,7 @@ pub(in crate::families) enum ResolvedExtrusionDirectrix {
     },
 }
 
-/// Exact two-support directrix and extrusion chart resolved from B5 objects.
+/// Exact directrix and extrusion chart resolved from object-stream records.
 #[derive(Clone, PartialEq)]
 pub(in crate::families) struct ResolvedExtrusionSurface {
     /// Persistent extrusion-surface identity.
@@ -1138,14 +1131,11 @@ pub(in crate::families) struct ResolvedExtrusionSurface {
 
 impl ResolvedExtrusionSurface {
     pub(in crate::families) fn supports(&self) -> impl Iterator<Item = &ResolvedExtrusionSupport> {
-        let (first, second) = match &self.directrix {
-            ResolvedExtrusionDirectrix::Intersection { supports, .. } => {
-                (Some(&supports[0]), Some(&supports[1]))
-            }
+        let support = match &self.directrix {
             ResolvedExtrusionDirectrix::SurfaceCurve { support, .. }
-            | ResolvedExtrusionDirectrix::Offset { support, .. } => (Some(support), None),
+            | ResolvedExtrusionDirectrix::Offset { support, .. } => support,
         };
-        first.into_iter().chain(second)
+        std::iter::once(support)
     }
 }
 
@@ -1176,22 +1166,6 @@ pub(in crate::families) fn copy_resolved_extrusion_surface(
     value: &ResolvedExtrusionSurface,
 ) -> Result<ResolvedExtrusionSurface, cadmpeg_core::CodecError> {
     let directrix = match &value.directrix {
-        ResolvedExtrusionDirectrix::Intersection {
-            supports,
-            cache_fit_tolerance,
-        } => {
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<[ResolvedExtrusionSupport; 2]>()),
-                "catia_b5_extrusion_support_pair_copy",
-            )?;
-            ResolvedExtrusionDirectrix::Intersection {
-                supports: Box::new([
-                    copy_resolved_extrusion_support(ctx, &supports[0])?,
-                    copy_resolved_extrusion_support(ctx, &supports[1])?,
-                ]),
-                cache_fit_tolerance: *cache_fit_tolerance,
-            }
-        }
         ResolvedExtrusionDirectrix::SurfaceCurve { support, curve } => {
             ResolvedExtrusionDirectrix::SurfaceCurve {
                 support: copy_resolved_extrusion_support(ctx, support)?,
@@ -1339,7 +1313,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Err(error) => return Some(Err(error)),
                 };
                 let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
-                let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
+                let curve = match pcurves::parameterized_lift(ctx, pcurve, source_surface) {
                     Ok(curve) => curve,
                     Err(error) => return Some(Err(error)),
                 };
@@ -1354,35 +1328,6 @@ pub(in crate::families) fn resolved_extrusion_surface(
             .transpose()
         };
         let directrix = match &extrusion.directrix {
-            B5ExtrusionDirectrix::Intersection {
-                supports,
-                cache_fit_tolerance,
-                ..
-            } => {
-                let [left, right] = supports.map(&mut resolve_support);
-                let left = match left {
-                    Ok(Some(value)) => value,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let right = match right {
-                    Ok(Some(value)) => value,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let supports = [left, right];
-                (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
-                if let Err(error) = ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<[ResolvedExtrusionSupport; 2]>()),
-                    "catia_b5_extrusion_intersection_support_box",
-                ) {
-                    return Some(Err(error));
-                }
-                ResolvedExtrusionDirectrix::Intersection {
-                    supports: Box::new(supports),
-                    cache_fit_tolerance: *cache_fit_tolerance,
-                }
-            }
             B5ExtrusionDirectrix::SurfaceCurve { support, .. } => {
                 let support = match resolve_support(*support) {
                     Ok(Some(value)) => value,

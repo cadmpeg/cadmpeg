@@ -1419,84 +1419,6 @@ fn emit_standard_extrusion_definition(
     let parameter_range = extrusion.directrix_parameter_range;
     let direction = extrusion.direction;
     match extrusion.directrix {
-        crate::families::b5::transfer::ResolvedExtrusionDirectrix::Intersection {
-            supports,
-            cache_fit_tolerance,
-        } => {
-            let [first, second] = *supports;
-            let mut build_side = |side: crate::families::b5::transfer::ResolvedExtrusionSupport| {
-                Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                    surface: Some(standard_extrusion_support_id(
-                        ctx,
-                        annotations,
-                        surfaces,
-                        procedural_supports,
-                        side.surface_object_id,
-                        side.surface,
-                        admission,
-                    )?),
-                    pcurve: Some(SupportPcurve::new(
-                        side.pcurve,
-                        (side.pcurve_parameter_range
-                            != extrusion.directrix_parameter_range.endpoints())
-                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                        .flatten(),
-                    )),
-                })
-            };
-            let sides = [build_side(first)?, build_side(second)?];
-            annotate(
-                ctx,
-                annotations,
-                &directrix_id,
-                "object_stream_a8_03_25",
-                0,
-                "two_support_directrix",
-                Exactness::Unknown,
-            )?;
-            admission.reserve_entity(&mut ir.model.curves, "catia_extrusion_directrix_curves")?;
-            ir.model.curves.push(Curve {
-                parameter_range: None,
-                id: directrix_id.try_clone_for_decode(ctx, "catia_extrusion_directrix_curve_id")?,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
-            });
-            let procedure_id = ProceduralCurveId::compose(
-                &cadmpeg_ir::identity_namespace!(
-                    "catia",
-                    "standard",
-                    "extrusion-directrix-procedure"
-                ),
-                extrusion.directrix_object_id,
-            );
-            annotate(
-                ctx,
-                annotations,
-                &procedure_id,
-                "object_stream_a8_03_25",
-                0,
-                "two_surface_pcurve_intersection",
-                Exactness::ByteExact,
-            )?;
-            admission.charge()?;
-            let owner =
-                directrix_id.try_clone_for_decode(ctx, "catia_extrusion_directrix_owner_id")?;
-
-            let procedure = ProceduralCurve::new(
-                procedure_id,
-                ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext::over_interval(
-                        sides,
-                        extrusion.directrix_parameter_range,
-                    ),
-                    discontinuity_flag: false,
-                    cache: Some(cadmpeg_ir::geometry::LegacyCache::new(
-                        cadmpeg_ir::scalar::NonNegativeReal::from(cache_fit_tolerance).into(),
-                    )),
-                },
-            );
-            let _attached = ir.model.add_procedural_curve(ctx, &owner, procedure)?;
-        }
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::SurfaceCurve {
             curve, ..
         } => {
@@ -1504,7 +1426,7 @@ fn emit_standard_extrusion_definition(
                 ctx,
                 annotations,
                 &directrix_id,
-                "object_stream_b5_03_24",
+                "object_stream_surface_curve",
                 0,
                 "support_pcurve_lift",
                 Exactness::Derived,
@@ -1536,7 +1458,7 @@ fn emit_standard_extrusion_definition(
                 ctx,
                 annotations,
                 &source_id,
-                "object_stream_b5_03_24",
+                "object_stream_surface_curve",
                 0,
                 "support_pcurve_lift",
                 Exactness::Derived,

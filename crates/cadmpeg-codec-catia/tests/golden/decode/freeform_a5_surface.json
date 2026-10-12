@@ -133,6 +133,7 @@
         "object_graphs": [],
         "preview_images": [],
         "reference_signature_cohorts": [],
+        "sampled_parameter_maps": [],
         "schema_configuration_row_chains": [],
         "storage_property_members": [],
         "unknowns": [
