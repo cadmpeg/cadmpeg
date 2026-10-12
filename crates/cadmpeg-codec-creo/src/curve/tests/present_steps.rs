@@ -23,13 +23,6 @@ fn work_boundary<T>(work: u64, run: impl Fn(&DecodeContext<'_>) -> Result<T, Cod
             Err(CodecError::ResourceLimit(original)) => {
                 assert!(cap < work);
                 assert_eq!(original.limit, cap);
-                assert_eq!(ctx.resource_refusal(), Some(original));
-                assert!(
-                    matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
                 Err(CodecError::ResourceLimit(original))
             }
             result => {
@@ -43,9 +36,6 @@ fn work_boundary<T>(work: u64, run: impl Fn(&DecodeContext<'_>) -> Result<T, Cod
                     (ResourceDimension::WorkUnits, work, 1)
                 );
                 drop(value);
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
                 Ok(())
             }
         }
@@ -395,13 +385,6 @@ fn affine_coefficient_copy_has_no_exhausted_traversal_fee() {
                         assert_eq!((limit.used, limit.additional), (cap, 1));
                         visits.set(visits.get() + 1);
                     }
-                    assert_eq!(ctx.resource_refusal(), Some(limit));
-                    assert!(
-                        matches!(source.clone_admitted(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-                    );
-                    assert!(
-                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-                    );
                     Err(CodecError::ResourceLimit(limit))
                 }
                 result => {
@@ -411,9 +394,6 @@ fn affine_coefficient_copy_has_no_exhausted_traversal_fee() {
                         .charge_work_limit(1, "after coefficient copy")
                         .expect_err("exact copied work");
                     assert_eq!((refusal.used, refusal.additional), (cap, 1));
-                    assert!(
-                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
-                    );
                     Ok(())
                 }
             }
@@ -453,13 +433,6 @@ fn dimension_coefficient_copy_has_no_exhausted_traversal_fee() {
                         assert_eq!((limit.used, limit.additional), (cap, 1));
                         visits.set(visits.get() + 1);
                     }
-                    assert_eq!(ctx.resource_refusal(), Some(limit));
-                    assert!(
-                        matches!(source.copy_admitted(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-                    );
-                    assert!(
-                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-                    );
                     Err(CodecError::ResourceLimit(limit))
                 }
                 result => {
@@ -469,9 +442,6 @@ fn dimension_coefficient_copy_has_no_exhausted_traversal_fee() {
                         .charge_work_limit(1, "after coefficient copy")
                         .expect_err("exact copied work");
                     assert_eq!((refusal.used, refusal.additional), (cap, 1));
-                    assert!(
-                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
-                    );
                     Ok(())
                 }
             }

@@ -196,3 +196,28 @@ fn relation_stack_operators_refuse_work_after_source_admission() {
         crate::curve::quantity_value(7.0, crate::curve::RelationDimension::default())
     );
 }
+
+#[test]
+fn duplicate_curve_index_probes_add_no_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let rows = [7u32, 7];
+    // First growth admits four key/value buckets, four control bytes,
+    // sixteen trailing control bytes and fifteen alignment bytes.
+    let growth = 4 * std::mem::size_of::<(u32, Option<&u32>)>() + 4 + 16 + 15;
+    // Two row visits and two four-byte charges for the one new integer key.
+    // The second row marks the entry ambiguous through a free fixed-key probe.
+    let work = 2 + 2 * 4 + cadmpeg_core::decode::u64_from_index(growth);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let index = crate::curve::unique_curve_index(&ctx, &rows, |row| *row, "test curve index")
+        .expect("fixed duplicate probe is free");
+    assert_eq!(index.len(), 1);
+    assert_eq!(index.get(&7), Some(&None));
+    let refusal = ctx
+        .charge_work_limit(1, "after duplicate curve index")
+        .expect_err("exact work admitted");
+    assert_eq!((refusal.used, refusal.additional), (work, 1));
+}

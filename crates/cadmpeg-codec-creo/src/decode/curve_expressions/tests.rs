@@ -611,6 +611,7 @@ fn assert_transfer_boundary(
         match dimension {
             ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
             ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("identity storage dimension"),
         }
         run(policy)
@@ -619,6 +620,7 @@ fn assert_transfer_boundary(
     match dimension {
         ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
         ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
         _ => panic!("identity storage dimension"),
     }
     assert!(
@@ -662,6 +664,10 @@ fn curve_expression_helix_identities_refuse_retained_limit_at_each_copy() {
     let record = crate::curve::expression_records(payload)
         .pop()
         .expect("complete curve expression");
+    let entity_label_offset = b"\xe0\x00".len();
+    assert_eq!(record.offset, entity_label_offset);
+    assert_eq!(record.entity_id, 7);
+    let expected_curve_id = format!("creo:depdb:curve_expression_curve#7-{entity_label_offset}");
     let dimensions = std::collections::BTreeMap::new();
     for operation in [
         "creo curve-expression procedural identity",
@@ -673,6 +679,38 @@ fn curve_expression_helix_identities_refuse_retained_limit_at_each_copy() {
             operation,
         );
     }
+    assert_transfer_boundary(
+        |policy| transfer_record_with_limits(payload, record.clone(), &dimensions, policy),
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo curve-expression curve identity",
+    );
+    // Transfer scratch reaches a larger peak before this scoped identity.
+    // Isolate its allocation with the same record key and namespace.
+    let error = crate::test_support::last_refusal_at(
+        payload,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "creo curve-expression curve identity",
+        |ctx| {
+            crate::identity::compose_scoped::<cadmpeg_ir::ids::CurveId>(
+                ctx,
+                &crate::identity::DEPDB_CURVE_EXPRESSION_CURVE,
+                format_args!("{}-{}", record.entity_id, record.offset),
+                "creo curve-expression curve identity",
+            )
+            .map(|(id, storage)| {
+                assert_eq!(id.as_str(), expected_curve_id);
+                drop(id);
+                drop(storage);
+            })
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+        && limit.used == 0
+        && limit.additional == cadmpeg_core::decode::u64_from_index(expected_curve_id.len())
+        && limit.operation == "creo curve-expression curve identity")
+    );
 }
 
 fn dependency_keys_with_limits(

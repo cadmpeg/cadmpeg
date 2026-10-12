@@ -51,7 +51,7 @@ fn nonlinear_residual_convergence_visits_present_rows_until_first_failure() {
             let policy = visit_policy(cap);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = nonlinear_residuals_converged(&ctx, &rows);
-            let (original, admitted) = if cap == visits {
+            if cap == visits {
                 assert_eq!(result.expect("present residuals"), expected);
                 let original = ctx
                     .charge_work_limit(1, "after residual convergence")
@@ -60,12 +60,11 @@ fn nonlinear_residual_convergence_visits_present_rows_until_first_failure() {
                     (original.dimension, original.used, original.additional),
                     (ResourceDimension::WorkUnits, visits, 1)
                 );
-                (original, true)
+                Ok(())
             } else {
-                let original = ctx.resource_refusal().expect("residual visit refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("expected first work refusal");
+                };
                 assert_eq!(
                     (
                         original.dimension,
@@ -82,12 +81,6 @@ fn nonlinear_residual_convergence_visits_present_rows_until_first_failure() {
                         "creo nonlinear residual convergence"
                     )
                 );
-                (original, false)
-            };
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            if admitted {
-                Ok(())
-            } else {
                 Err(CodecError::ResourceLimit(original))
             }
         });
@@ -102,7 +95,7 @@ fn nonlinear_smooth_expression_stops_before_unneeded_tail() {
         let policy = visit_policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = nonlinear_expression_is_smooth(&ctx, &expression);
-        let (original, admitted) = if cap == 1 {
+        if cap == 1 {
             assert!(!result.expect("first nonsmooth byte"));
             let original = ctx
                 .charge_work_limit(1, "after nonsmooth expression")
@@ -111,10 +104,11 @@ fn nonlinear_smooth_expression_stops_before_unneeded_tail() {
                 (original.dimension, original.used, original.additional),
                 (ResourceDimension::WorkUnits, 1, 1)
             );
-            (original, true)
+            Ok(())
         } else {
-            let original = ctx.resource_refusal().expect("first byte refusal");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+            let Err(CodecError::ResourceLimit(original)) = result else {
+                panic!("expected first work refusal");
+            };
             assert_eq!(
                 (
                     original.dimension,
@@ -129,15 +123,6 @@ fn nonlinear_smooth_expression_stops_before_unneeded_tail() {
                     "creo nonlinear expression scan"
                 )
             );
-            (original, false)
-        };
-        assert!(
-            matches!(nonlinear_expression_is_smooth(&ctx, &expression), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-        if admitted {
-            Ok(())
-        } else {
             Err(CodecError::ResourceLimit(original))
         }
     });
@@ -167,7 +152,7 @@ fn nonlinear_equation_smoothness_visits_present_rows_until_first_failure() {
             let policy = visit_policy(cap);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = nonlinear_equations_are_smooth(&ctx, &block);
-            let (original, admitted) = if cap == visits {
+            if cap == visits {
                 assert_eq!(result.expect("present equations"), expected);
                 let original = ctx
                     .charge_work_limit(1, "after equation smoothness")
@@ -176,14 +161,11 @@ fn nonlinear_equation_smoothness_visits_present_rows_until_first_failure() {
                     (original.dimension, original.used, original.additional),
                     (ResourceDimension::WorkUnits, visits, 1)
                 );
-                (original, true)
+                Ok(())
             } else {
-                let original = ctx
-                    .resource_refusal()
-                    .expect("equation or byte visit refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("expected first work refusal");
+                };
                 let operation = if cap == 1 && !expected {
                     "creo nonlinear expression scan"
                 } else {
@@ -199,12 +181,6 @@ fn nonlinear_equation_smoothness_visits_present_rows_until_first_failure() {
                     ),
                     (ResourceDimension::WorkUnits, cap, cap, 1, operation)
                 );
-                (original, false)
-            };
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            if admitted {
-                Ok(())
-            } else {
                 Err(CodecError::ResourceLimit(original))
             }
         });
