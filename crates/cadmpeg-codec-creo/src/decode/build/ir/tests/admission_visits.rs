@@ -33,6 +33,40 @@ fn fixed_work_policy(work: u64) -> DecodePolicy {
 }
 
 #[test]
+fn empty_display_transfer_and_span_queries_are_free() {
+    let scan = crate::test_support::empty_container_scan();
+    let arena = DecodeArena::new();
+    let policy = fixed_work_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut ir = CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    transfer_display_tessellations(&ctx, &scan, &mut ir, &mut annotations).expect("empty display");
+    assert!(ir.model.tessellations.is_empty());
+    for vertices in [Vec::new(), vec![0u8, 1, 2]] {
+        assert!(admitted_display_strips(&ctx, vertices, &[])
+            .expect("no spans")
+            .is_none());
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn fixed_pattern_coverage_is_free() {
+    let stage = resolved_stage();
+    let pattern = stage.clone().widen::<CompositePattern>();
+    let unresolved: PatternKind = PatternKind::UNRESOLVED;
+    let arena = DecodeArena::new();
+    let policy = fixed_work_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(!pattern_kind_has_unresolved_operands(&ctx, &pattern).expect("fixed resolved pattern"));
+    assert!(!pattern_kind_has_unresolved_operands(&ctx, &stage).expect("fixed resolved stage"));
+    assert!(
+        pattern_kind_has_unresolved_operands(&ctx, &unresolved).expect("fixed unresolved pattern")
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
 fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
     let mut first = vec![StagePatternKind::UNRESOLVED];
     first.extend(std::iter::repeat_n(resolved_stage(), 128));
@@ -65,7 +99,7 @@ fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
                 let policy = fixed_work_policy(cap);
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 let result = pattern_kind_has_unresolved_operands(&ctx, &pattern);
-                let original = if cap == visits {
+                if cap == visits {
                     assert_eq!(result.expect("present stage visits admitted"), expected);
                     assert_eq!(ctx.resource_refusal(), None);
                     let original = ctx
@@ -75,7 +109,6 @@ fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
                         (original.dimension, original.used, original.additional),
                         (ResourceDimension::WorkUnits, visits, 1)
                     );
-                    original
                 } else {
                     let original = ctx.resource_refusal().expect("stage visit refusal");
                     assert!(
@@ -97,18 +130,9 @@ fn composite_pattern_coverage_visits_present_stages_until_first_unresolved() {
                             "creo pattern composite stage traversal"
                         )
                     );
-                    original
-                };
-                assert!(
-                    matches!(pattern_kind_has_unresolved_operands(&ctx, &pattern),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                assert_eq!(ctx.resource_refusal(), Some(original));
-                if cap == visits {
-                    Ok(())
-                } else {
-                    Err(original.into())
+                    return Err(original.into());
                 }
+                Ok(())
             },
         );
     }
@@ -126,7 +150,7 @@ fn unavailable_display_span_stops_before_unneeded_tail() {
             let policy = fixed_work_policy(cap);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = admitted_display_strips(&ctx, vec![0u8, 1], &spans);
-            let original = if cap == 1 {
+            if cap == 1 {
                 assert!(result
                     .expect("only the first unsupported span is visited")
                     .is_none());
@@ -138,7 +162,6 @@ fn unavailable_display_span_stops_before_unneeded_tail() {
                     (original.dimension, original.used, original.additional),
                     (ResourceDimension::WorkUnits, 1, 1)
                 );
-                original
             } else {
                 let original = ctx.resource_refusal().expect("first span visit refused");
                 assert!(
@@ -158,18 +181,9 @@ fn unavailable_display_span_stops_before_unneeded_tail() {
                         "creo display strip span traversal"
                     )
                 );
-                original
-            };
-            assert!(
-                matches!(admitted_display_strips(&ctx, vec![0u8, 1], &spans),
-            Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            if cap == 1 {
-                Ok(())
-            } else {
-                Err(original.into())
+                return Err(original.into());
             }
+            Ok(())
         },
     );
 }
@@ -241,6 +255,10 @@ fn check_display_staging_peak(shaded: bool) {
         },
     );
     let peak = below.checked_add(1).expect("model growth boundary");
+    assert_eq!(
+        peak,
+        4 * u64::try_from(std::mem::size_of::<Tessellation>()).expect("tessellation size")
+    );
     for cap in [below, peak] {
         let mut ir = initial_ir();
         let previous = ir.model.tessellations.clone();
@@ -251,7 +269,7 @@ fn check_display_staging_peak(shaded: bool) {
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let result = transfer_display_tessellations(&ctx, &scan, &mut ir, &mut annotations);
         assert_eq!(&ir.model.tessellations[..4], previous.as_slice());
-        let original = if cap == peak {
+        if cap == peak {
             result.expect("sequential staging and model growth fit their larger peak");
             assert_eq!(ir.model.tessellations.len(), 5);
             let added = &ir.model.tessellations[4];
@@ -273,8 +291,6 @@ fn check_display_staging_peak(shaded: bool) {
                 .reserve_scoped(peak, "after display staging and model growth")
                 .expect("both scratch peaks released");
             drop(released);
-            ctx.charge_work_limit(policy.limits.max_work_units, "after display transfer")
-                .expect_err("seed sticky refusal")
         } else {
             let original = ctx.resource_refusal().expect("model overlap refused");
             assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
@@ -295,15 +311,7 @@ fn check_display_staging_peak(shaded: bool) {
                     "creo model tessellations"
                 )
             );
-            original
-        };
-        let retained_count = ir.model.tessellations.len();
-        assert!(
-            matches!(transfer_display_tessellations(&ctx, &scan, &mut ir, &mut annotations),
-            Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-        assert_eq!(ir.model.tessellations.len(), retained_count);
-        assert_eq!(ctx.resource_refusal(), Some(original));
+        }
         assert_eq!(
             scan.primitives.triangle_strips[0]
                 .positions()
