@@ -219,6 +219,20 @@ Unstated regions:
 
 - `8..76` (68 B): Parameter payload `[cx cy cz ax ay major minor]` as BE f32, plus the LE-f32 witness point at marker-relative +31; §5.8 states the slot order but no per-slot offsets.
 
+## `standard_spline_support_row_u8`
+
+Spec §5.5 · layout: byte offsets · size: 9 B
+
+Both face references use the one-byte production. Widened face references change the row length; this fixed layout applies only to the one-byte form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | marker `60` at `+0` |
+| 1 | 3 | `allocation_tag` | `u24` | little | spec | allocation tag at `+1` through `+3` |
+| 4 | 3 | `discriminator` | `bytes[3]` | little | spec | discriminator `00 00 00` at `+4` through `+6` |
+| 7 | 1 | `face_ref_0` | `u8` | little | spec | the references occupy `+7` and `+8` |
+| 8 | 1 | `face_ref_1` | `u8` | little | spec | the references occupy `+7` and `+8` |
+
 ## `a_family_frame`
 
 Spec §6 · layout: byte offsets · size: 7 B

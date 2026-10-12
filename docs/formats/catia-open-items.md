@@ -230,14 +230,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Resolve the interpolation selector before mapping arbitrary stations into the co-curve gauge. Parse the `84` operand production independently before admitting it as a two-operand map.
 
-### SN-11. Standard 3D spline cache
-
-**Question.** How does the separate standard 3D spline cache encode its poles and knots?
-
-**Known.** `catia.md` §6.3 "A complete consolidated edge run is" defines exact two-surface constructions from class-`0x20` pcurve jets, their supports, and their shared parameter interval. A sphere-plane standard spline with a secant plane and endpoints on the exact section is a full-circle carrier, an oblique cylinder-plane standard spline is a full-ellipse carrier, and a perpendicular-cylinder standard spline with radii equal within tolerance is the full ellipse branch selected by its endpoints; none has an edge interval or pcurve unless a branch witness or native parameter incidence exists. The separate 3D cache remains an opaque carrier.
-
-**Need.** We must know the cache program to read a spline when the exact construction is unavailable and to write the cache.
-
 ### SN-12. Consolidated persistent-tag namespace
 
 **Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` circle and embedded type-`3` cylinder bindings?

@@ -1136,3 +1136,28 @@ Standard-decoder midpoint arithmetic retains finite results for finite
 endpoints whose sum overflows. Behavioral regressions bind a quintic limit
 curve on positive and negative domains of magnitude `1e308` and retain both
 antipodal circle seams at an origin coordinate of `1e308` mm.
+
+The CTC05 standard spline row at physical offset 1,316,188 closes in nine
+bytes before the next row. Its associated native run closes in 742 bytes:
+two class-20 UV pcurves, one class-25 affine parameter map, two class-06
+incidences, and one class-5e edge. The map's nine binary64 values exhaust its
+payload and contain no Cartesian pole or knot lane. Edge 174 retains unknown
+curve 343064 with source identity `cgm-edge-support:083306`. The checked model contains 403 standard curves, and Native retains 68
+consolidated pcurves.
+
+| Standard curve kind | Records |
+| --- | ---: |
+| Line | 181 |
+| Circle | 188 |
+| Ellipse | 8 |
+| NURBS | 8 |
+| Unknown | 18 |
+
+The sibling STEP file supplies one endpoint match among 514 edges at a
+`2e-3` mm gate, with maximum endpoint residual `6.105607469691817e-6` mm.
+Its cubic eight-pole curve is an export oracle. None of its eight binary64
+XYZ triples occurs in the CATPart. Only its first and last binary32 triples
+occur, once each, both inside `05 08 01` vertex rows. Searches for nine known
+class-16 signatures across all 79 CATPart files find 17 raw hits in four
+files and none in CTC05. Those raw counts bound known signatures; the closed
+standard row and native frames establish the absence of an inline cache.

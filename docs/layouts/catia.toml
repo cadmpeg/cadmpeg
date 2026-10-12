@@ -551,6 +551,51 @@ offset = 8
 size = 68
 note = "Parameter payload `[cx cy cz ax ay major minor]` as BE f32, plus the LE-f32 witness point at marker-relative +31; §5.8 states the slot order but no per-slot offsets."
 
+# --- §5.5 Standard spline support row with one-byte face references --------
+
+[[record]]
+name = "standard_spline_support_row_u8"
+kind = "byte"
+section = "5.5"
+anchor = "the complete row is nine bytes"
+size = 9
+note = "Both face references use the one-byte production. Widened face references change the row length; this fixed layout applies only to the one-byte form."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "marker `60` at `+0`"
+
+[[record.field]]
+name = "allocation_tag"
+offset = 1
+type = "u24"
+source = "spec"
+anchor = "allocation tag at `+1` through `+3`"
+
+[[record.field]]
+name = "discriminator"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "discriminator `00 00 00` at `+4` through `+6`"
+
+[[record.field]]
+name = "face_ref_0"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "the references occupy `+7` and `+8`"
+
+[[record.field]]
+name = "face_ref_1"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "the references occupy `+7` and `+8`"
+
 # --- §6 Consolidated record framing -----------------------------------------
 
 [[record]]
