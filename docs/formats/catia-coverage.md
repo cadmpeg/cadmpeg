@@ -1416,3 +1416,8 @@ Counted class-`0x60` records retain their complete source frame and every
 allocation-reference value and form. Consolidated cylinders share one parser,
 native arena, and support-binding representation. Their compact header operands
 are retained without assigning ownership from an adjacent reference list.
+
+Counted class-`0x61` rosters retain complete frames, logical source coordinates,
+reference addressing forms, roster controls, optional zero prefixes, and
+occurrence-aligned member bits. Wire loading checks these fields against the
+retained bytes. Final topology requires independently resolved member identities.

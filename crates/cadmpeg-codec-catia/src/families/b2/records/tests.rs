@@ -13,9 +13,9 @@ use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
     b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
     b2_class5b5c_stream, b2_class60_reference_stream, b2_cone_stream, b2_construction_use_stream,
-    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
+    b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
     b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_implicit_axis_cylinder_stream,
-    b2_line_profile_stream, b2_long_61_stream, b2_offset_support_stream, b2_owner_chart_stream,
+    b2_line_profile_stream, b2_offset_support_stream, b2_owner_chart_stream,
     b2_owner_chart_stream_with_extended_bridge, b2_owner_packet_stream, b2_parameter_point_stream,
     b2_pcurve_stream, b2_plane_carrier_stream, b2_range_origin_cylinder_stream,
     b2_reference_list_stream, b2_resolved_revolution_stream, b2_revolution_stream,
@@ -760,94 +760,6 @@ fn owner_chart_indexes_and_rows_refuse_collection_limits() {
     ] {
         assert!(refused.contains(operation), "{operation} did not refuse");
     }
-}
-
-#[test]
-fn b2_counted_61_parser_separates_references_from_tail() {
-    let records = crate::families::b2::records::b2_counted_61(&b2_counted_61_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].header_token, 5);
-    assert_eq!(records[0].references, [1300, 1294, 30, 74]);
-    assert_eq!(records[0].tail, [0x41, 0x03]);
-}
-
-#[test]
-fn b2_counted61_references_tail_and_record_refuse_limits() {
-    let bytes = b2_counted_61_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    for (limit, operation) in [
-        (3, "catia_b2_counted61_references"),
-        (4, "catia_b2_counted61_tail"),
-        (6, "catia_b2_counted61_records"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    let limited = crate::test_support::with_retained_limit(15, |ctx| {
-        crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b2_counted61_references")
-    );
-    let limited = crate::test_support::with_retained_limit(16, |ctx| {
-        crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b2_counted61_tail")
-    );
-}
-
-#[test]
-fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
-    let records = crate::families::b2::records::b2_long_61(&b2_long_61_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(
-        records[0].prefix,
-        [0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]
-    );
-    assert_eq!(records[0].members, [0x064a, 0x0650, 0x0656]);
-    assert_eq!(
-        records[0].references,
-        [0x0100, 0x0103, 0x0106, 0x0109, 0x010c]
-    );
-    assert_eq!(records[0].scalar, finite(42.5));
-
-    let mut short = vec![0xb2, 0x03, 0x61, 27, 0x05];
-    short.extend_from_slice(&[0; 27]);
-    short[13] = 0x06;
-    assert!(crate::families::b2::records::b2_long_61(&short).is_empty());
-}
-
-#[test]
-fn b2_long61_members_and_record_refuse_limits() {
-    let bytes = b2_long_61_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    for (limit, operation) in [
-        (2, "catia_b2_long61_members"),
-        (3, "catia_b2_long61_records"),
-    ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
-    }
-    let limited = crate::test_support::with_retained_limit(5, |ctx| {
-        crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
-    });
-    assert!(
-        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b2_long61_members")
-    );
 }
 
 #[test]

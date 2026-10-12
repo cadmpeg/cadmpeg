@@ -25,10 +25,10 @@ use crate::test_support::test_b2::{
     b2_class60_reference_stream, b2_cone_stream, b2_counted_61_stream, b2_cylinder_stream,
     b2_edge_node_stream, b2_fixed_owner_boundary_cycle_stream,
     b2_fixed_owner_boundary_face_node_cycle_stream, b2_implicit_axis_cylinder_stream,
-    b2_line_profile_stream, b2_long_61_stream, b2_owner_chart_stream, b2_parameter_point_stream,
-    b2_pcurve_stream, b2_plane_carrier_stream, b2_range_origin_cylinder_stream,
-    b2_reference_list_stream, b2_resolved_revolution_stream, b2_sphere_stream, b2_torus_stream,
-    b2_width_coded_owner_with_allocation_stream,
+    b2_line_profile_stream, b2_owner_chart_stream, b2_parameter_point_stream, b2_pcurve_stream,
+    b2_plane_carrier_stream, b2_range_origin_cylinder_stream, b2_reference_list_stream,
+    b2_resolved_revolution_stream, b2_sphere_stream, b2_torus_stream,
+    b2_width_coded_owner_with_allocation_stream, class61_false_long_stream,
 };
 use crate::test_support::test_bytes::{be32, le_f64};
 use crate::test_support::test_container::{
@@ -111,54 +111,48 @@ fn native_namespace_retains_counted_class60_references() {
 }
 
 #[test]
-fn native_namespace_retains_consolidated_class61_records() {
+fn native_namespace_retains_counted_class61_members_and_refuses_false_long_fixture() {
     let mut stream = b2_counted_61_stream();
-    stream.extend_from_slice(&b2_long_61_stream());
+    stream.extend_from_slice(&class61_false_long_stream());
     let native = crate::native::CatiaNative::decode(&stream);
-    let [counted, long] = native.consolidated_class61_records.as_slice() else {
-        panic!("two consolidated class-0x61 records")
+    let [counted] = native.consolidated_class61_records.as_slice() else {
+        panic!("one complete counted roster; the manufactured long fixture does not close")
     };
-    let crate::native::CatiaConsolidatedClass61Payload::Counted { references, tail } =
-        &counted.payload
-    else {
-        panic!("counted class-0x61 record")
-    };
-    assert_eq!(references, &[1300, 1294, 30, 74]);
-    assert_eq!(tail, &[0x41, 0x03]);
-    let crate::native::CatiaConsolidatedClass61Payload::Long {
-        prefix,
-        members,
-        references,
-        scalar,
-    } = &long.payload
-    else {
-        panic!("long class-0x61 record")
-    };
-    assert_eq!(prefix, &[0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]);
-    assert_eq!(members, &[0x064a, 0x0650, 0x0656]);
-    assert_eq!(references, &[0x0100, 0x0103, 0x0106, 0x0109, 0x010c]);
-    assert_eq!(*scalar, crate::test_support::test_b5::finite(42.5));
-
+    assert_eq!(
+        counted
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [1300, 1294, 30, 74]
+    );
+    assert_eq!(
+        &counted.frame.payload[counted.frame.payload.len() - 2..],
+        &[0x41, 0x03]
+    );
+    assert_eq!(counted.roster_control, 1);
+    assert_eq!(
+        counted
+            .members
+            .iter()
+            .map(|member| member.orientation_bit)
+            .collect::<Vec<_>>(),
+        [false, false, true, false]
+    );
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
-        .expect("store CATIA class-0x61 records");
+        .expect("store CATIA counted roster");
     assert_eq!(
-        crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x61 records"),
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA counted roster"),
         native
     );
-
     let mut invalid = native;
-    let crate::native::CatiaConsolidatedClass61Payload::Long { members, .. } =
-        &mut invalid.consolidated_class61_records[1].payload
-    else {
-        panic!("long class-0x61 record")
-    };
-    members.swap(0, 1);
+    invalid.consolidated_class61_records[0].members[0].orientation_bit = true;
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
-        .expect("store invalid CATIA class-0x61 record for load validation");
+        .expect("store invalid occurrence bit for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 

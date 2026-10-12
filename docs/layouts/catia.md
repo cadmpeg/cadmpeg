@@ -1019,6 +1019,17 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| reference count prefix `80+n` \| |
 
+## `consolidated_class61_count_prefix`
+
+Spec §6.4 · layout: byte offsets · size: 1 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/native/class61.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| nonzero reference count prefix `80+n` \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

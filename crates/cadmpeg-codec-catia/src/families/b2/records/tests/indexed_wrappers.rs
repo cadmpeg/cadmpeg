@@ -2,10 +2,10 @@ use crate::families::b2::records::tests::b2_nurbs_curve_stream;
 use crate::families::b2::records::tests::b2_spatial_circle_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream, b2_class5b5c_stream,
-    b2_cone_stream, b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream,
-    b2_face_node_5f_stream, b2_line_profile_stream, b2_long_61_stream, b2_owner_packet_stream,
-    b2_parameter_point_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_sphere_stream, b2_torus_stream, b2_width_coded_owner_packet_stream,
+    b2_cone_stream, b2_construction_use_stream, b2_cylinder_stream, b2_face_node_5f_stream,
+    b2_line_profile_stream, b2_owner_packet_stream, b2_parameter_point_stream,
+    b2_reference_list_stream, b2_resolved_revolution_stream, b2_sphere_stream, b2_torus_stream,
+    b2_width_coded_owner_packet_stream,
 };
 
 #[test]
@@ -121,40 +121,6 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
         crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
             .map(|record| record.pos)
             .collect(),
-    );
-
-    let bytes = b2_counted_61_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    compare(
-        "counted class 61",
-        crate::families::b2::records::b2_counted_61(&bytes)
-            .into_iter()
-            .map(|record| record.pos)
-            .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
-                .expect("service decode")
-        })
-        .into_iter()
-        .map(|record| record.pos)
-        .collect(),
-    );
-
-    let bytes = b2_long_61_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    compare(
-        "long class 61",
-        crate::families::b2::records::b2_long_61(&bytes)
-            .into_iter()
-            .map(|record| record.pos)
-            .collect(),
-        crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
-                .expect("service decode")
-        })
-        .into_iter()
-        .map(|record| record.pos)
-        .collect(),
     );
 
     let bytes = b2_class5b5c_stream();

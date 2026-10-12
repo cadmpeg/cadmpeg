@@ -389,7 +389,7 @@ pub(crate) fn b2_counted_61_stream() -> Vec<u8> {
     ]
 }
 
-pub(crate) fn b2_long_61_stream() -> Vec<u8> {
+pub(crate) fn class61_false_long_stream() -> Vec<u8> {
     let mut payload = vec![0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb, 0x06];
     for member in [0x064a_u16, 0x0650, 0x0656] {
         payload.extend_from_slice(&member.to_le_bytes());

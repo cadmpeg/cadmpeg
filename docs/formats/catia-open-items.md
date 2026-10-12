@@ -276,21 +276,15 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Note.** Independent standard-versus-STEP topology verifies all 134 eyebolt faces uniquely by joint adjacency refinement. The spring graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
 
-### SN-23. Counted class-`0x61` fields
+### SN-23. Class-`0x61` roster controls and member identities
 
-**Question.** What does each counted reference and tail field of a `b2`, `b3`, or `b4 03 61` record represent?
+**Question.** Which owning contexts select roster controls `3` and `8`, and how do source-local member references select final topology outside independently closed domains?
 
-**Known.** The decoder retains the structurally typed count, references, and tail.
+**Known.** `catia.md` §6.4 "Member bits retain serialized occurrence order" defines the reference forms, packed control, occurrence bits, and closure. Source-closed class-`65`/`60`/`61` chains with a one-child class-`60` owner use control `1`. A one-child allocation list does not by itself identify the owning domain. Controls `3` and `8` are separate roster selectors without an assigned domain, location, or body-kind meaning.
 
-**Need.** We must know the roles to bind the record to topology and geometry.
+**Need.** Resolve the owning domain and every member in its allocation namespace before binding final topology. Verify the bit's orientation context relative to both the domain and the member carrier. Establish a separate selector oracle for controls `3` and `8`.
 
-### SN-24. Long-form class-`0x61` fields
-
-**Question.** What do the prefix, monotone members, five persistent references, and scalar of a long-form class-`0x61` record represent?
-
-**Known.** The decoder retains each field in source order.
-
-**Need.** We must know the roles to interpret and write the long form.
+**Conflict.** A source-local 53-member roster and the current 700-face shell have different cardinalities. Descending numeric reference order agrees with six independent face-orientation sequences, but numeric order alone does not supply an allocation-to-standard identity relation.
 
 ### SN-25. Class-`0x5f` owner role
 

@@ -1,7 +1,7 @@
 //! B2/B3/B4-family consolidated record vocabulary.
 //!
 //! Decodes analytic circle, cylinder, cone, and revolution charts, offset and
-//! construction-use supports, class-`0x5e`/`0x61`/`0x62` owner and link records,
+//! construction-use supports, class-`0x5e`/`0x62` owner and link records,
 //! parameter-space packets, consolidated plane carriers, and consolidated UV
 //! pcurves.
 
@@ -390,36 +390,6 @@ pub(crate) enum B2OwnerIdentityEncoding {
     Allocation(AllocationReferenceEncoding),
     /// Raw one-byte weak identity in the width-coded alternating dialect.
     RawU8,
-}
-
-/// Count-prefixed class-`0x61` reference record.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct B2Counted61 {
-    /// Record byte offset.
-    pub(crate) pos: usize,
-    /// Width-coded header token.
-    pub(crate) header_token: u32,
-    /// Compact values selected by the leading `0x80+n` count.
-    pub(crate) references: Vec<u32>,
-    /// Remaining class-specific bytes, including the terminal `0x03`.
-    pub(crate) tail: Vec<u8>,
-}
-
-/// Long-form class-`0x61` record with a monotone u16 member lane.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct B2Long61 {
-    /// Record byte offset.
-    pub(crate) pos: usize,
-    /// Width-coded header token.
-    pub(crate) header_token: u32,
-    /// Eight opaque bytes preceding the `0x06` list marker.
-    pub(crate) prefix: [u8; 8],
-    /// Strictly increasing little-endian u16 values.
-    pub(crate) members: Vec<u16>,
-    /// Five `0x0a <u16le>` persistent identities after delimiter `0xfe`.
-    pub(crate) references: [u16; 5],
-    /// Finite scalar preceding the terminal byte.
-    pub(crate) scalar: FiniteReal,
 }
 
 /// Structurally complete consolidated class-`0x5b` or class-`0x5c` record.
@@ -1422,172 +1392,6 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
         bound[1] = view.f32_le()?;
     }
     CatiaOwnerNumericTail::new(header, lower, upper, bounds)
-}
-
-/// Decode the count-prefixed class-`0x61` payload family. Long class-`0x61`
-/// records without a leading count belong to a separate grammar and are not
-/// returned.
-#[must_use]
-#[cfg(test)]
-fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
-    let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_counted_61_from_records(ctx, data, &records).expect("service decode")
-    })
-}
-
-pub(crate) fn b2_counted_61_from_records(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Counted61>, CodecError> {
-    let mut output = Vec::new();
-    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
-        let Some(count) = data
-            .get(frame.payload)
-            .and_then(|byte| byte.checked_sub(0x80))
-        else {
-            continue;
-        };
-        let count = usize::from(count);
-        if count == 0 {
-            continue;
-        }
-        let Some(payload_len) = frame.end.checked_sub(frame.payload + 1) else {
-            continue;
-        };
-        if count > payload_len {
-            continue;
-        }
-        let mut at = frame.payload + 1;
-        let mut parsed = [0u32; 127];
-        let mut valid = true;
-        for slot in &mut parsed[..count] {
-            let Some(value) = compact_int(data, &mut at) else {
-                valid = false;
-                break;
-            };
-            *slot = value;
-        }
-        if !valid {
-            continue;
-        }
-        let Some(tail) = data.get(at..frame.end) else {
-            continue;
-        };
-        if tail.is_empty() || tail.last() != Some(&0x03) {
-            continue;
-        }
-        let references = ctx.copy_slice(&parsed[..count], "catia_b2_counted61_references")?;
-        let tail = ctx.copy_slice(tail, "catia_b2_counted61_tail")?;
-        ctx.push_vec(
-            &mut output,
-            B2Counted61 {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                references,
-                tail,
-            },
-            "catia_b2_counted61_records",
-        )?;
-    }
-    Ok(output)
-}
-
-/// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
-/// monotone member-list boundary without searching for delimiter bytes.
-#[must_use]
-#[cfg(test)]
-fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
-    let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_long_61_from_records(ctx, data, &records).expect("service decode")
-    })
-}
-
-pub(crate) fn b2_long_61_from_records(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Long61>, CodecError> {
-    let mut output = Vec::new();
-    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
-        let Some(payload_len) = frame.end.checked_sub(frame.payload) else {
-            continue;
-        };
-        let Some(delimiter) = frame.end.checked_sub(25) else {
-            continue;
-        };
-        if payload_len < 36
-            || data.get(frame.payload + 8) != Some(&0x06)
-            || data.get(delimiter) != Some(&0xfe)
-            || (delimiter - (frame.payload + 9)) % 2 != 0
-            || data.get(frame.end - 1) != Some(&0x03)
-        {
-            continue;
-        }
-        let Some(prefix) = data
-            .get(frame.payload..frame.payload + 8)
-            .and_then(|bytes| bytes.try_into().ok())
-        else {
-            continue;
-        };
-        let Some(member_bytes) = data.get(frame.payload + 9..delimiter) else {
-            continue;
-        };
-        let mut members_view = View::over_retained(member_bytes);
-        let mut members = Vec::new();
-        while !members_view.is_empty() {
-            let Some(member) = members_view.u16_le() else {
-                break;
-            };
-            ctx.charge_retained(2, "catia_b2_long61_members")?;
-            ctx.push_vec(&mut members, member, "catia_b2_long61_members")?;
-        }
-        if !members_view.is_empty()
-            || members.is_empty()
-            || members.windows(2).any(|pair| pair[0] >= pair[1])
-        {
-            continue;
-        }
-        let mut at = delimiter + 1;
-        let mut references = [0u16; 5];
-        let mut valid = true;
-        for reference in &mut references {
-            if data.get(at) != Some(&0x0a) {
-                valid = false;
-                break;
-            }
-            let Some(value) = View::u16_le_at(data, at + 1) else {
-                valid = false;
-                break;
-            };
-            *reference = value;
-            at += 3;
-        }
-        if !valid {
-            continue;
-        }
-        let Some(scalar) = f64_le(data, at) else {
-            continue;
-        };
-        if at + 9 != frame.end {
-            continue;
-        }
-        ctx.push_vec(
-            &mut output,
-            B2Long61 {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                prefix,
-                members,
-                references,
-                scalar,
-            },
-            "catia_b2_long61_records",
-        )?;
-    }
-    Ok(output)
 }
 
 /// Decode complete B-family class-`0x5b` and class-`0x5c` control records.

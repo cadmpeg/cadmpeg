@@ -1,14 +1,14 @@
 use crate::native::chamfer::{CatiaConsolidatedChamfer, CatiaObjectChamfer};
+use crate::native::class61::CatiaConsolidatedClass61Record;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::test_consolidated::{
     validate_consolidated_chamfers, validate_consolidated_circles,
-    validate_consolidated_class5b5c_records, validate_consolidated_class61_records,
-    validate_consolidated_cones, validate_consolidated_cylinders,
-    validate_consolidated_line_profiles, validate_consolidated_parameter_points,
-    validate_consolidated_pcurves, validate_consolidated_plane_carriers,
-    validate_consolidated_reference_lists, validate_consolidated_revolutions,
-    validate_consolidated_spheres, validate_consolidated_tori,
+    validate_consolidated_class5b5c_records, validate_consolidated_cones,
+    validate_consolidated_cylinders, validate_consolidated_line_profiles,
+    validate_consolidated_parameter_points, validate_consolidated_pcurves,
+    validate_consolidated_plane_carriers, validate_consolidated_reference_lists,
+    validate_consolidated_revolutions, validate_consolidated_spheres, validate_consolidated_tori,
 };
 use super::test_legacy::{valid_entity_record_shape, validate_legacy_entity_runs};
 use super::test_links::{
@@ -36,15 +36,14 @@ use crate::native::{
     entity_suffix_value, entity_value_schema_selections, object_production, payload_references,
     range_interval, reference_signature, semantic_entity_indices, store_projection,
     terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
-    CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
-    CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
-    CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
-    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList,
-    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
-    CatiaConsolidatedVertexIdentity, CatiaDesignObject, CatiaEntityReferenceIndex,
-    CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
-    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
-    CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
+    CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedCone,
+    CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun, CatiaConsolidatedLineProfile,
+    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
+    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution,
+    CatiaConsolidatedSphere, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
+    CatiaDesignObject, CatiaEntityReferenceIndex, CatiaExternalReference, CatiaFinjplSegment,
+    CatiaLegacyEntityRun, CatiaNative, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord,
+    CatiaPreviewImage, CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
     CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
     CatiaZeroEntityRecord, CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
@@ -561,8 +560,9 @@ impl CatiaNative {
         validate_consolidated_circles(&consolidated_circles)?;
         let mut consolidated_class61_records: Vec<CatiaConsolidatedClass61Record> =
             namespace.arena_as("consolidated_class61_records")?;
-        consolidated_class61_records.sort_by_key(|record| record.byte_offset);
-        validate_consolidated_class61_records(&consolidated_class61_records)?;
+        consolidated_class61_records
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        crate::native::class61::validate(&consolidated_class61_records)?;
         let mut consolidated_class5b5c_records: Vec<CatiaConsolidatedClass5b5cRecord> =
             namespace.arena_as("consolidated_class5b5c_records")?;
         consolidated_class5b5c_records

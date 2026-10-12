@@ -1,43 +1,16 @@
 use crate::native::chamfer::{CatiaConsolidatedChamfer, CatiaObjectChamfer};
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::{
-    CatiaConsolidatedCircle, CatiaConsolidatedClass61Payload, CatiaConsolidatedClass61Record,
-    CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedCylinderPayload,
-    CatiaConsolidatedLineProfile, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
-    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedPlaneCarrierPayload,
-    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
-    CatiaConsolidatedTorus,
+    CatiaConsolidatedCircle, CatiaConsolidatedCone, CatiaConsolidatedCylinder,
+    CatiaConsolidatedCylinderPayload, CatiaConsolidatedLineProfile,
+    CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
+    CatiaConsolidatedPlaneCarrierPayload, CatiaConsolidatedReferenceList,
+    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
 };
 use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 use std::mem::size_of;
-
-pub(super) fn validate_consolidated_class61_records(
-    records: &[CatiaConsolidatedClass61Record],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    for (index, record) in records.iter().enumerate() {
-        let expected_id = format!("catia:consolidated:class61-record#{index}");
-        let valid_payload = match &record.payload {
-            CatiaConsolidatedClass61Payload::Counted { references, tail } => {
-                !references.is_empty() && !tail.is_empty() && tail.last() == Some(&0x03)
-            }
-            CatiaConsolidatedClass61Payload::Long { members, .. } => {
-                !members.is_empty() && members.windows(2).all(|pair| pair[0] < pair[1])
-            }
-        };
-        if record.id != expected_id
-            || !valid_payload
-            || index > 0 && records[index - 1].byte_offset >= record.byte_offset
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "consolidated class-0x61 record `{}` is structurally invalid",
-                record.id
-            )));
-        }
-    }
-    Ok(())
-}
 
 pub(super) fn validate_consolidated_class5b5c_records(
     records: &[CatiaConsolidatedClass5b5cRecord],

@@ -28,6 +28,7 @@ use projection::{
 
 pub(crate) mod class5b5c;
 mod class60;
+pub(crate) mod class61;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
 use class60::CatiaConsolidatedClass60Record;
 
@@ -1233,43 +1234,6 @@ pub(crate) struct CatiaConsolidatedRevolution {
     profile_circle: Option<String>,
     /// Positive scale from revolution angle to stored angular parameter.
     angular_scale: cadmpeg_ir::scalar::PositiveReal,
-}
-
-/// One structurally complete consolidated class-`0x61` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaConsolidatedClass61Record {
-    /// Stable native-record identity.
-    id: String,
-    /// Byte offset of the framed record.
-    byte_offset: u64,
-    /// Width-coded header token.
-    header_token: u32,
-    /// Counted or long-form record payload.
-    payload: CatiaConsolidatedClass61Payload,
-}
-
-/// Structurally decoded payload of a consolidated class-`0x61` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum CatiaConsolidatedClass61Payload {
-    /// Count-selected compact reference lane followed by a class-specific tail.
-    Counted {
-        /// Compact identities in serialization order.
-        references: Vec<u32>,
-        /// Complete nonempty tail, including terminal byte `0x03`.
-        tail: NativeBytes<Vec<u8>>,
-    },
-    /// Long form with a monotone member lane and five persistent references.
-    Long {
-        /// Complete eight-byte prefix preceding the member-list marker.
-        prefix: NativeBytes<[u8; 8]>,
-        /// Strictly increasing allocation members.
-        members: Vec<u16>,
-        /// Five persistent identities following the list delimiter.
-        references: [u16; 5],
-        /// Finite class-specific scalar preceding the terminal byte.
-        scalar: FiniteReal,
-    },
 }
 
 /// One complete consolidated historical edge run referencing two retained
@@ -7779,7 +7743,7 @@ define_catia_arenas! {
         /// Exact consolidated arc-length circle supports.
         pub(crate) stored;
     },
-    consolidated_class61_records: CatiaConsolidatedClass61Record {
+    consolidated_class61_records: class61::CatiaConsolidatedClass61Record {
         /// Complete consolidated class-`0x61` records.
         pub(crate) stored;
     },
@@ -8276,64 +8240,6 @@ pub(crate) fn legacy_evaluated_value_name<'a>(
     names.next().is_none().then_some(name)
 }
 
-fn consolidated_class61_records(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Result<Vec<CatiaConsolidatedClass61Record>, CodecError> {
-    let mut class61_records = Vec::new();
-    for record in crate::families::b2::records::b2_counted_61_from_records(ctx, bytes, records)? {
-        ctx.push_vec(
-            &mut class61_records,
-            (
-                record.pos,
-                record.header_token,
-                CatiaConsolidatedClass61Payload::Counted {
-                    references: record.references,
-                    tail: record.tail.into(),
-                },
-            ),
-            "catia_native_class61_order",
-        )?;
-    }
-    for record in crate::families::b2::records::b2_long_61_from_records(ctx, bytes, records)? {
-        ctx.push_vec(
-            &mut class61_records,
-            (
-                record.pos,
-                record.header_token,
-                CatiaConsolidatedClass61Payload::Long {
-                    prefix: record.prefix.into(),
-                    members: record.members,
-                    references: record.references,
-                    scalar: record.scalar,
-                },
-            ),
-            "catia_native_class61_order",
-        )?;
-    }
-    ctx.stable_sort_by(
-        &mut class61_records,
-        |(left, _, _), (right, _, _)| left.cmp(right),
-        |_| 0,
-        "catia_native_class61_sort",
-    )?;
-    let mut output = Vec::new();
-    for (index, (pos, header_token, payload)) in class61_records.into_iter().enumerate() {
-        let value = CatiaConsolidatedClass61Record {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:class61-record#{index:00}"),
-                "catia_native_class61_id",
-            )?,
-            byte_offset: u64_from_index(pos),
-            header_token,
-            payload,
-        };
-        ctx.push_vec(&mut output, value, "catia_native_class61_records")?;
-    }
-    Ok(output)
-}
-
 fn consolidated_class5b5c_records(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -8368,31 +8274,8 @@ fn consolidated_class5b5c_records(
 
 #[cfg(test)]
 mod consolidated_class_record_limit_tests {
-    use super::{consolidated_class5b5c_records, consolidated_class61_records};
+    use super::consolidated_class5b5c_records;
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn native_class61_order_output_and_id_refuse_limits() {
-        let mut bytes = crate::test_support::test_b2::b2_counted_61_stream();
-        bytes.extend_from_slice(&crate::test_support::test_b2::b2_long_61_stream());
-        let records = crate::wire::records::consolidated_records(&bytes);
-        for (limit, operation) in [
-            (7, "catia_native_class61_order"),
-            (13, "catia_native_class61_records"),
-        ] {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                consolidated_class61_records(ctx, &bytes, &records)
-            });
-            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-                if error.operation == operation));
-        }
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_native_class61_id", |ctx| {
-                consolidated_class61_records(ctx, &bytes, &records)
-            });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_class61_id"));
-    }
 
     #[test]
     fn native_class5b5c_output_and_id_refuse_limits() {
@@ -9677,8 +9560,7 @@ impl CatiaNative {
                 .transpose()?;
         }
         let consolidated_circles = consolidated_circles(ctx, bytes, consolidated_records)?;
-        let consolidated_class61_records =
-            consolidated_class61_records(ctx, bytes, consolidated_records)?;
+        let consolidated_class61_records = class61::records(ctx, bytes, consolidated_records)?;
         let consolidated_class5b5c_records =
             consolidated_class5b5c_records(ctx, bytes, consolidated_records)?;
         let consolidated_parameter_points =
