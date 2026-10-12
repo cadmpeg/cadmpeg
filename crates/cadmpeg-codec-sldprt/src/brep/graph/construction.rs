@@ -327,78 +327,69 @@ impl<'source, 'ctx> ProceduralSupportIndexes<'source, 'ctx> {
             }
         }
     }
-    /// A losing blend still publishes hidden supports. Selection is unnecessary
-    /// when every possible support and its offset chain already has an owner.
-    pub(super) fn blend_needs_support_emission(
+    /// Hidden supports have already published their complete offset chains.
+    /// Analytic supports can also reuse the surface of an emitted face.
+    pub(super) fn support_is_published(
         &mut self,
         ctx: &DecodeContext<'_>,
-        blend: &crate::brep::blend::BlendCarrier,
+        attr: u16,
         carriers: CarrierView<'_, '_>,
         hidden: &BTreeSet<u16>,
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        for support in blend.supports {
-            match support {
-                crate::brep::blend::BlendSupportRef::Surface(attr) => {
-                    if self.support_needs_emission(ctx, attr, carriers, hidden)? {
-                        return Ok(true);
-                    }
-                }
-                crate::brep::blend::BlendSupportRef::Pair(attr) => {
-                    if let Some(pair) = carriers.blend_support_pair(ctx, attr)? {
-                        for attr in pair.supports {
-                            if self.support_needs_emission(ctx, attr, carriers, hidden)? {
-                                return Ok(true);
-                            }
-                        }
-                    }
-                }
-            }
+        if ctx.contains_btree_set(hidden, &attr, "test published Parasolid blend supports")? {
+            return Ok(true);
         }
-        Ok(false)
+        if carriers.surface(ctx, attr)?.is_none() {
+            return Ok(false);
+        }
+        ctx.contains_key_btree_map(
+            self.emitted(ctx)?,
+            &attr,
+            "lookup Parasolid emitted_face_surface_by_carrier",
+        )
     }
 
-    fn support_needs_emission(
+    /// Inspect the selected supports with the acyclicity traversal. No separate
+    /// offset-chain scan is needed to decide whether a losing blend publishes.
+    pub(super) fn blend_supports_need_emission(
         &mut self,
         ctx: &DecodeContext<'_>,
-        mut attr: u16,
+        supports: [u16; 2],
         carriers: CarrierView<'_, '_>,
         hidden: &BTreeSet<u16>,
-    ) -> Result<bool, cadmpeg_core::CodecError> {
-        // The fast cursor detects an offset cycle without allocating a walk
-        // set. An analytic carrier ends the chain before an overlapping offset.
-        let mut fast = Some(attr);
-        loop {
-            if !ctx.contains_key_btree_map(
-                self.emitted(ctx)?,
-                &attr,
-                "lookup Parasolid emitted_face_surface_by_carrier",
-            )? && !ctx.contains_btree_set(
-                hidden,
-                &attr,
-                "test emitted Parasolid support surfaces",
-            )? {
-                return Ok(true);
+    ) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+        let mut needs_emission = false;
+        for attr in supports {
+            if self.support_is_published(ctx, attr, carriers, hidden)? {
+                continue;
             }
-            if carriers.surface(ctx, attr)?.is_some() {
-                return Ok(false);
-            }
-            let Some(offset) = carriers.offset(ctx, attr)? else {
-                return Ok(false);
-            };
-            attr = offset.support;
-            for _ in 0..2 {
-                if let Some(next) = fast {
-                    fast = if carriers.surface(ctx, next)?.is_some() {
-                        None
-                    } else {
-                        carriers.offset(ctx, next)?.map(|offset| offset.support)
-                    };
+            let mut visit = |attr| -> Result<(), cadmpeg_core::CodecError> {
+                if needs_emission {
+                    return Ok(());
                 }
-            }
-            if fast == Some(attr) {
-                return Ok(false);
+                if !ctx.contains_key_btree_map(
+                    self.emitted(ctx)?,
+                    &attr,
+                    "lookup Parasolid emitted_face_surface_by_carrier",
+                )? && !ctx.contains_btree_set(
+                    hidden,
+                    &attr,
+                    "test emitted Parasolid support surfaces",
+                )? {
+                    needs_emission = true;
+                }
+                Ok(())
+            };
+            let (acyclic, storage) = ctx
+                .with_scoped_storage("hold Parasolid surface support walk", || {
+                    support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new(), &mut visit)
+                })?;
+            drop(storage);
+            if !acyclic {
+                return Ok(None);
             }
         }
+        Ok(Some(needs_emission))
     }
 }
 
@@ -477,7 +468,7 @@ pub(super) fn support_is_acyclic(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let (acyclic, storage) = ctx
         .with_scoped_storage("hold Parasolid surface support walk", || {
-            support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new())
+            support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new(), &mut |_| Ok(()))
         })?;
     drop(storage);
     Ok(acyclic)
@@ -488,16 +479,18 @@ fn support_is_acyclic_with(
     attr: u16,
     carriers: CarrierView<'_, '_>,
     resolving: &mut BTreeSet<u16>,
+    visit: &mut impl FnMut(u16) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("check Parasolid surface support")?;
     ctx.charge_work(1, "check Parasolid surface support")?;
     if !ctx.insert_btree_set(resolving, attr, "track Parasolid surface support")? {
         return Ok(false);
     }
+    visit(attr)?;
     let acyclic = if carriers.surface(ctx, attr)?.is_some() {
         Ok(true)
     } else if let Some(offset) = carriers.offset(ctx, attr)? {
-        support_is_acyclic_with(ctx, offset.support, carriers, resolving)
+        support_is_acyclic_with(ctx, offset.support, carriers, resolving, visit)
     } else {
         Ok(true)
     };

@@ -356,3 +356,49 @@ fn extended_isocurve_comparison_releases_every_clamped_curve() {
     }
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn missing_start_inverse_skips_end_inverse_search() {
+    use crate::brep::graph::inverse::{nurbs_parameter_at_point, InverseResolution};
+    use crate::brep::graph::nurbs_pcurves::nurbs_edge_parameter_range;
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+    let curve = crate::brep::graph::test_support::test_nurbs_curve(
+        1,
+        vec![0., 0., 1., 2., 3., 3.],
+        (0..4)
+            .map(|index| Point3::new(f64::from(index), 0., 0.))
+            .collect(),
+        None,
+    );
+    let start = Point3::new(0., 1., 0.);
+    let end = Point3::new(3., 0., 0.);
+    let boundary =
+        crate::test_support::work_refusal_at("test completed first endpoint inverse", |ctx| {
+            assert!(matches!(
+                nurbs_parameter_at_point(ctx, &curve, start)?,
+                InverseResolution::NoMatch
+            ));
+            ctx.charge_work(1, "test completed first endpoint inverse")
+        });
+    let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else {
+        panic!("completed first inverse boundary");
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = boundary.used;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let edge = Edge {
+        id: EdgeId::mint("test:model:edge#inverse").unwrap(),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: VertexId::mint("test:model:vertex#start").unwrap(),
+        end: VertexId::mint("test:model:vertex#end").unwrap(),
+        tolerance: None,
+    };
+    assert_eq!(
+        nurbs_edge_parameter_range(&ctx, &edge, &curve, || Ok(Some([start, end]))).unwrap(),
+        None
+    );
+    ctx.finish_session().unwrap();
+}
