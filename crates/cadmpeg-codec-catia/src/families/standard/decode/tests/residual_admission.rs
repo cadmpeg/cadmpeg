@@ -862,6 +862,74 @@ fn standard_population_selection_collection_propagates_slot_refusal() {
     );
 }
 
+#[test]
+fn standard_population_merge_propagates_visit_refusal() {
+    let bytes = two_source_closed_tetrahedron_populations();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, &bytes).expect("source-closed populations")
+    });
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::families::standard::decode::try_decode_standard(
+            ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    };
+    crate::test_support::with_service_context(|ctx| {
+        let output = decode(ctx)
+            .expect("service profile admits merge")
+            .expect("both source-closed populations decode");
+        assert_eq!(output.ir.model.surfaces.len(), 8);
+        assert!(output.ir.model.surfaces.iter().any(|surface| {
+            surface
+                .id
+                .as_str()
+                .starts_with("catia:standard:population-1/")
+        }));
+    });
+    let error =
+        crate::test_support::with_work_refusal("catia_standard_population_output_merge", |ctx| {
+            decode(ctx).map(|_| ())
+        })
+        .expect_err("merge visit refuses before advancing");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_standard_population_output_merge"
+            && limit.additional == 1));
+}
+
+#[test]
+fn standard_population_outputs_use_temporary_backing() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+
+    let bytes = two_source_closed_tetrahedron_populations();
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, &bytes).expect("source-closed populations")
+    });
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "catia_standard_population_outputs",
+        None,
+    );
+    crate::test_support::with_retained_limit(u64::MAX, |ctx| {
+        let output = crate::families::standard::decode::try_decode_standard(
+            ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("outer population backing does not charge retained bytes")
+        .expect("both source-closed populations decode");
+        assert_eq!(output.ir.model.surfaces.len(), 8);
+        let CodecError::ResourceLimit(limit) = ctx
+            .reserve_scoped(u64::MAX, "population temporary storage measurement")
+            .expect_err("measurement exceeds materialized limit")
+        else {
+            panic!("materialized refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.used, 0, "all population scratch backing is released");
+    });
+}
+
 fn two_source_closed_tetrahedron_populations() -> Vec<u8> {
     let original = crate::test_support::test_container::tetrahedron_topology_catpart();
     let (spine, surface_records, support_rows) = crate::test_support::with_service_context(|ctx| {
