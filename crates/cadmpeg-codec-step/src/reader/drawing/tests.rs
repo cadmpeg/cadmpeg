@@ -14,6 +14,7 @@ use crate::StepCodec;
 
 mod collection_limits;
 mod original_context;
+mod path_work;
 mod prefix_admission;
 mod shared_joins;
 mod sheet_storage;
@@ -565,7 +566,7 @@ fn wrapper_resolution_reuses_queries_across_target_uses() {
         let cache = super::WrapperCache::new(ctx).expect("cache");
         for _ in 0..128 {
             let resolved = cache
-                .resolve(1, &identities, &exchange)
+                .resolve(1, &identities, &exchange, true)
                 .expect("shared wrapper query")
                 .expect("singleton");
             let super::WrapperTargetResolution::Singleton(identity) = resolved else {
@@ -599,7 +600,7 @@ fn distinct_wrapper_roots_reuse_the_shared_tail() {
         let cache = super::WrapperCache::new(ctx).expect("cache");
         for id in 1..=64 {
             let Some(super::WrapperTargetResolution::Singleton(identity)) = cache
-                .resolve(id, &identities, &exchange)
+                .resolve(id, &identities, &exchange, true)
                 .expect("shared tail")
             else {
                 panic!("singleton target");
@@ -657,13 +658,13 @@ fn wrapper_target_mutation_invalidates_completed_ancestors() {
         let cache = super::WrapperCache::new(ctx).expect("cache");
         let mut identities = std::collections::BTreeMap::new();
         assert!(cache
-            .resolve(1, &identities, &exchange)
+            .resolve(1, &identities, &exchange, true)
             .expect("empty wrapper")
             .is_none());
         identities.insert(4, std::collections::BTreeSet::from([String::from("first")]));
         cache.invalidate(4).expect("first mutation");
         let Some(super::WrapperTargetResolution::Singleton(target)) = cache
-            .resolve(1, &identities, &exchange)
+            .resolve(1, &identities, &exchange, true)
             .expect("singleton wrapper")
         else {
             panic!("singleton");
@@ -675,7 +676,7 @@ fn wrapper_target_mutation_invalidates_completed_ancestors() {
         );
         cache.invalidate(5).expect("second mutation");
         let Some(super::WrapperTargetResolution::Ambiguous((targets, _storage))) = cache
-            .resolve(1, &identities, &exchange)
+            .resolve(1, &identities, &exchange, true)
             .expect("ambiguous wrapper")
         else {
             panic!("ambiguity");
@@ -701,12 +702,12 @@ fn wrapper_descendant_summaries_preserve_cycle_rejection() {
         )]);
         for id in [1, 5, 1, 5] {
             assert!(cache
-                .resolve(id, &identities, &exchange)
+                .resolve(id, &identities, &exchange, true)
                 .expect("cycle wrapper")
                 .is_none());
         }
         let Some(super::WrapperTargetResolution::Singleton(target)) = cache
-            .resolve(6, &identities, &exchange)
+            .resolve(6, &identities, &exchange, true)
             .expect("acyclic sibling")
         else {
             panic!("singleton");
@@ -776,7 +777,7 @@ fn wrapper_cycle_stops_before_unvisited_sibling_graph() {
         )]);
         for _ in 0..2 {
             assert!(cache
-                .resolve(1, &identities, &exchange)
+                .resolve(1, &identities, &exchange, true)
                 .expect("cycle exits before siblings")
                 .is_none());
         }
@@ -807,7 +808,7 @@ fn native_target_insertion_breaks_a_cached_wrapper_cycle() {
         .expect("cycle probe insertion");
         assert_eq!(identities.keys().copied().collect::<Vec<_>>(), [1]);
         let Some(super::WrapperTargetResolution::Singleton(target)) = cache
-            .resolve(2, &identities, &exchange)
+            .resolve(2, &identities, &exchange, true)
             .expect("cycle is cut by direct target")
         else {
             panic!("singleton after insertion");

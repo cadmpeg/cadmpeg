@@ -34,7 +34,7 @@ fn style_target_claim_refuses_before_visiting_a_target() {
             &exchange,
             (&mut claims, &mut claim_storage),
             (&mut active, &mut active_storage),
-            (0, 128),
+            (0, 128, None),
             &mut |_| {
                 visited += 1;
                 Ok(())
@@ -194,6 +194,7 @@ fn empty_color_frame_visits_no_terminal_step() {
         id: 1,
         depth: 0,
         loss_start: 0,
+        had_completion: false,
         partials: partials.iter(),
         partial_operation: "test empty color partials",
         transparency: None,
@@ -261,7 +262,7 @@ fn style_target_active_tree_stays_admitted_until_dropped() {
             &exchange,
             (&mut claims, &mut claim_storage),
             (&mut active, &mut active_storage),
-            (0, 128),
+            (0, 128, None),
             &mut |_| panic!("empty set"),
             ctx,
         )
