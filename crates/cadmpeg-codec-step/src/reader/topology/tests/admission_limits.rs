@@ -859,9 +859,11 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
     let mut associations =
         super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx)
             .expect("empty associations");
+    let mut selections = super::super::PcurveSelections::new(&ctx).expect("empty selections");
     let mut state = super::super::BuildState {
         face_cache: &mut face_cache,
         associations: &mut associations,
+        selections: &mut selections,
         failure: None,
         selection_index: None,
     };
