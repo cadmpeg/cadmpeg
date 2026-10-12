@@ -173,7 +173,9 @@ fn knit_generated_face_retains_one_native_reference() {
     let scan = one_knit_scan();
     let native = "creo:allfeatur:surface_merge_quilts#416:103";
     // Only the native text and generated member survive the evidence scope.
-    let retained_bytes = native.len() + "creo:model:feature#97".len() + "surface#98".len()
+    let retained_bytes = native.len()
+        + "creo:model:feature#97".len()
+        + "surface#98".len()
         + 4 * std::mem::size_of::<cadmpeg_ir::features::GeneratedFaceRef>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -183,9 +185,15 @@ fn knit_generated_face_retains_one_native_reference() {
         .expect("one retained native reference admits the generated knit face");
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::KnitSurface {
-            faces: cadmpeg_ir::features::FaceSelection::Generated { faces, native: reference }, ..
-        }
-    ) = definition else {
+            faces:
+                cadmpeg_ir::features::FaceSelection::Generated {
+                    faces,
+                    native: reference,
+                },
+            ..
+        },
+    ) = definition
+    else {
         panic!("generated knit face");
     };
     assert_eq!(reference.as_str(), native);
@@ -973,7 +981,10 @@ fn feature_result_face_prefix_validation_is_free() {
     let (tables, rows) = one_result_surface();
     let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(rows);
     let topology = crate::test_support::assert_work_boundaries(
-        &["creo feature result face local IDs", "creo feature result topology ID"],
+        &[
+            "creo feature result face local IDs",
+            "creo feature result topology ID",
+        ],
         |ctx| {
             let result = feature_result_topology(ctx, &tables, &rows, &[], 17);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
@@ -981,7 +992,8 @@ fn feature_result_face_prefix_validation_is_free() {
             }
             result
         },
-    ).expect("one generated face");
+    )
+    .expect("one generated face");
     assert_eq!(topology.faces()[0].as_str(), "surface#201");
 }
 
@@ -990,7 +1002,10 @@ fn feature_result_edge_prefix_validation_is_free() {
     let curves = one_result_edge();
     let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
     let topology = crate::test_support::assert_work_boundaries(
-        &["creo feature result edge local IDs", "creo feature result topology ID"],
+        &[
+            "creo feature result edge local IDs",
+            "creo feature result topology ID",
+        ],
         |ctx| {
             let result = feature_result_topology(ctx, &[], &rows, &curves, 17);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
@@ -998,7 +1013,8 @@ fn feature_result_edge_prefix_validation_is_free() {
             }
             result
         },
-    ).expect("one generated edge");
+    )
+    .expect("one generated edge");
     assert_eq!(topology.edges()[0].as_str(), "curve#77");
 }
 

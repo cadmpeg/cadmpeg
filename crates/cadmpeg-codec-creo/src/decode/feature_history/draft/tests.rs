@@ -124,22 +124,36 @@ fn hole_generated_face_retains_one_native_reference() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = thicken_scan();
     let result_surface_ids = std::collections::BTreeMap::from([(3, vec![11])]);
-    let available_features = std::collections::BTreeSet::from([
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#3")
-            .expect("identity grammar"),
-    ]);
+    let available_features =
+        std::collections::BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+            "creo:model:feature#3",
+        )
+        .expect("identity grammar")]);
     let native = "creo:visibgeom:surface#11";
     // One generated member uses the core vector's four-slot initial capacity.
-    let retained_bytes = native.len() + "creo:model:feature#3".len() + "surface#11".len()
+    let retained_bytes = native.len()
+        + "creo:model:feature#3".len()
+        + "surface#11".len()
         + 4 * std::mem::size_of::<cadmpeg_ir::features::GeneratedFaceRef>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(retained_bytes).expect("fixture byte bound");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let selection = hole_face_selection(
-        &ctx, &scan, &CadIr::empty(), 9, 11, &result_surface_ids, &available_features,
-    ).expect("one retained native reference admits the generated hole face");
-    let cadmpeg_ir::features::FaceSelection::Generated { faces, native: reference } = selection else {
+        &ctx,
+        &scan,
+        &CadIr::empty(),
+        9,
+        11,
+        &result_surface_ids,
+        &available_features,
+    )
+    .expect("one retained native reference admits the generated hole face");
+    let cadmpeg_ir::features::FaceSelection::Generated {
+        faces,
+        native: reference,
+    } = selection
+    else {
         panic!("generated hole face");
     };
     assert_eq!(reference.as_str(), native);
@@ -301,7 +315,9 @@ fn thicken_generated_face_retains_one_native_reference() {
     let scan = thicken_scan();
     let native = "creo:allfeatur:thicken_source_surfaces#17:11";
     // Only the native text and generated member survive the evidence scope.
-    let retained_bytes = native.len() + "creo:model:feature#3".len() + "surface#11".len()
+    let retained_bytes = native.len()
+        + "creo:model:feature#3".len()
+        + "surface#11".len()
         + 4 * std::mem::size_of::<cadmpeg_ir::features::GeneratedFaceRef>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -310,8 +326,14 @@ fn thicken_generated_face_retains_one_native_reference() {
     let definition = thicken_feature_definition(&ctx, &scan, &CadIr::empty(), 17)
         .expect("one retained native reference admits the generated thicken face");
     let IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
-        faces: cadmpeg_ir::features::FaceSelection::Generated { faces, native: reference }, ..
-    }) = definition else {
+        faces:
+            cadmpeg_ir::features::FaceSelection::Generated {
+                faces,
+                native: reference,
+            },
+        ..
+    }) = definition
+    else {
         panic!("generated thicken face");
     };
     assert_eq!(reference.as_str(), native);
@@ -554,20 +576,17 @@ fn hole_face_copy_refuses_at_work_boundary() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.faces.push(resolved_hole_face());
-    let selection = crate::test_support::assert_work_boundaries(
-        &["creo hole face IDs"],
-        |ctx| {
-            hole_face_selection(
-                ctx,
-                &scan,
-                &ir,
-                9,
-                11,
-                &std::collections::BTreeMap::new(),
-                &std::collections::BTreeSet::new(),
-            )
-        },
-    );
+    let selection = crate::test_support::assert_work_boundaries(&["creo hole face IDs"], |ctx| {
+        hole_face_selection(
+            ctx,
+            &scan,
+            &ir,
+            9,
+            11,
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeSet::new(),
+        )
+    });
     assert!(matches!(
         selection,
         cadmpeg_ir::features::FaceSelection::Resolved { faces, native }

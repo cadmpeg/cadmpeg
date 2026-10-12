@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{admitted_hole_placements, class_942_boundary_surface_entity_graph, numbered_feature_name_has_family, thicken_feature_definition};
+use super::super::{
+    admitted_hole_placements, class_942_boundary_surface_entity_graph,
+    numbered_feature_name_has_family, thicken_feature_definition,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -30,7 +33,7 @@ fn numbered_feature_fast_recovery_keeps_zero_work() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(!numbered_feature_name_has_family(&ctx, name, "Extrude")
             .expect("fixed prefix and absent ordinal are free"));
-        }
+    }
 }
 
 #[test]
@@ -178,53 +181,70 @@ fn rejected_section_sketch_identity_uses_only_live_scratch() {
         body_offset: 0,
         offset: 0,
     });
-    scan.features.definitions.push(crate::feature::definitions::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(7),
-            owner_feature_id: Some(2),
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: Some(crate::feature::definitions::FeatureSection3d {
-            sketch_plane_entity_id: None,
-            sketch_plane_flip: None,
-            reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
-            reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
-            dimension_ids: Vec::new(),
-            offset: 20,
-        }),
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 10,
-    });
+    scan.features
+        .definitions
+        .push(crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: Some(2),
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(crate::feature::definitions::FeatureSection3d {
+                sketch_plane_entity_id: None,
+                sketch_plane_flip: None,
+                reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
+                reference_plane_datum_geometry_id: None,
+                orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
+                dimension_ids: Vec::new(),
+                offset: 20,
+            }),
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 10,
+        });
     scan.features.section_transforms.push(
         crate::placement::FeatureSectionTransform::new(
-            7, Some(2), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 20,
-        ).expect("valid section frame"),
+            7,
+            Some(2),
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            20,
+        )
+        .expect("valid section frame"),
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index("creo:model:sketch#7".len());
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:model:sketch#7".len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     for _ in 0..3 {
         let definition = super::super::schema_feature_definition(
-            &ctx, &scan, &cadmpeg_ir::document::CadIr::empty(),
+            &ctx,
+            &scan,
+            &cadmpeg_ir::document::CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            2, Some(crate::feature::schema::SchemaClass::Section), "Section",
-        ).expect("missing model sketch retains no lookup identity");
-        assert!(matches!(definition, cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            }
-        )));
+            2,
+            Some(crate::feature::schema::SchemaClass::Section),
+            "Section",
+        )
+        .expect("missing model sketch retains no lookup identity");
+        assert!(matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }
+            )
+        ));
     }
 }

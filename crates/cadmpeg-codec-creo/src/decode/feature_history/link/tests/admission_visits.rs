@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{generated_profile_entry_is_admissible, generated_profile_table_shape, generated_surface_id_for_feature, insert_ordered_family_surface_binding, ordered_analytic_surface_id_for_feature, section_entity_is_generated_profile, surface_kind_for_geometry, unique_model_feature_index, SurfaceBindingSource};
+use super::super::{
+    generated_profile_entry_is_admissible, generated_profile_table_shape,
+    generated_surface_id_for_feature, insert_ordered_family_surface_binding,
+    ordered_analytic_surface_id_for_feature, section_entity_is_generated_profile,
+    surface_kind_for_geometry, unique_model_feature_index, SurfaceBindingSource,
+};
+use crate::feature::entity::{FeatureEntityTable, FeatureEntityTableEntry};
 use crate::surface::SurfaceKind;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::BTreeMap;
-use crate::feature::entity::{FeatureEntityTable, FeatureEntityTableEntry};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
