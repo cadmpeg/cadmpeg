@@ -962,8 +962,14 @@ fn terminal_profile_curve_resolves_point_identity_endpoints() {
     second = second.with_test_identity(Some(15), second.local_id());
 
     assert_eq!(
-        legacy_terminal_profile_indexed_endpoints(&payload, &curve, &[&curve, &first, &second])
-            .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
+        legacy_terminal_profile_indexed_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &[&curve, &first, &second]
+        )
+        .unwrap()
+        .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
         Some(["first", "second"])
     );
 }

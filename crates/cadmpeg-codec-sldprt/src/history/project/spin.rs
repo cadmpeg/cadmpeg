@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rib, loft, sweep, and revolve projection.
 
-use super::copy_projected_feature_text;
+use super::{
+    copy_projected_feature_text, either_parameter, parameter_literal, property_literal,
+    property_value,
+};
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, PartialRevolveConstruction,
@@ -15,34 +18,20 @@ use std::collections::HashMap;
 
 use crate::history::classify::{feature_input_class, loft_op};
 use crate::history::literals::{
-    parse_angle_rad, parse_bool, parse_boolean_op, parse_point3_mm, parse_positive_angle_rad,
-    parse_positive_length_mm, parse_valid_direction,
+    admit_literal, parse_angle_rad, parse_bool, parse_boolean_op, parse_point3_mm,
+    parse_positive_angle_rad, parse_positive_length_mm, parse_valid_direction,
 };
 
 pub(super) fn project_rib(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
-    let profile = feature
-        .properties
-        .get("Profile")
-        .map(|profile| {
-            copy_projected_feature_text(
-                ctx,
-                native_by_source
-                    .get(profile.as_str())
-                    .copied()
-                    .unwrap_or(profile.as_str()),
-            )
-            .map(PlanarProfileRef::native)
-        })
+    let profile = property_value(ctx, feature, "Profile")?
+        .map(|profile| native_ref(ctx, native_by_source, profile).map(PlanarProfileRef::native))
         .transpose()?;
-    let direction = feature
-        .properties
-        .get("Direction")
-        .and_then(|value| parse_valid_direction(value));
-    let draft = match feature.parameters.get("Draft") {
+    let direction = property_literal(ctx, feature, "Direction")?.and_then(parse_valid_direction);
+    let draft = match parameter_literal(ctx, feature, "Draft")? {
         Some(value) => parse_angle_rad(value)
             .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok())
             .map_or(RibDraft::Unresolved, RibDraft::Angle),
@@ -52,15 +41,10 @@ pub(super) fn project_rib(
         construction: RibConstruction {
             profile,
             direction,
-            thickness: feature
-                .parameters
-                .get("Thickness")
-                .or_else(|| feature.parameters.get("D1"))
-                .and_then(|value| parse_positive_length_mm(value)),
-            side: feature
-                .properties
-                .get("BothSides")
-                .and_then(|value| parse_bool(value))
+            thickness: either_parameter(ctx, feature, "Thickness", "D1")?
+                .and_then(parse_positive_length_mm),
+            side: property_value(ctx, feature, "BothSides")?
+                .and_then(parse_bool)
                 .map(|both_sides| {
                     if both_sides {
                         RibSide::Centered
@@ -70,29 +54,38 @@ pub(super) fn project_rib(
                 }),
             draft,
         },
-        op: feature
-            .properties
-            .get("Operation")
-            .and_then(|value| parse_boolean_op(value))
+        op: property_value(ctx, feature, "Operation")?
+            .and_then(parse_boolean_op)
             .unwrap_or(BooleanOp::Unresolved),
     }))
+}
+
+/// A copy of the native record a source names, or of the source text itself.
+fn native_ref(
+    ctx: &DecodeContext<'_>,
+    native_by_source: &HashMap<&str, &str>,
+    source: &str,
+) -> Result<String, CodecError> {
+    copy_projected_feature_text(
+        ctx,
+        ctx.get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
+            .copied()
+            .unwrap_or(source),
+    )
 }
 
 pub(super) fn project_loft(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(closed) = feature
-        .properties
-        .get("Closed")
-        .map_or(Some(false), |closed| parse_bool(closed))
+    let Some(closed) = property_value(ctx, feature, "Closed")?.map_or(Some(false), parse_bool)
     else {
         return Ok(None);
     };
     let sections = project_native_refs(
         ctx,
-        feature.properties.get("Profiles").map(String::as_str),
+        property_value(ctx, feature, "Profiles")?,
         native_by_source,
         |profile| {
             cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(
@@ -102,17 +95,15 @@ pub(super) fn project_loft(
     )?;
     let guides = project_native_refs(
         ctx,
-        feature.properties.get("Guides").map(String::as_str),
+        property_value(ctx, feature, "Guides")?,
         native_by_source,
         PathRef::Native,
     )?;
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
         guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
-        op: feature
-            .properties
-            .get("Operation")
-            .and_then(|operation| parse_boolean_op(operation))
+        op: property_value(ctx, feature, "Operation")?
+            .and_then(parse_boolean_op)
             .or_else(|| {
                 matches!(
                     feature.input_class.as_deref().map(native_object_class),
@@ -137,27 +128,36 @@ pub(super) fn project_loft(
 fn project_native_refs<T>(
     ctx: &DecodeContext<'_>,
     value: Option<&str>,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
     mut wrap: impl FnMut(String) -> T,
 ) -> Result<Vec<T>, CodecError> {
+    const OPERATION: &str = "project SLDPRT loft references";
     let mut references = Vec::new();
     let Some(value) = value else {
         return Ok(references);
     };
-    ctx.charge_work(
-        u64_from_index(value.len()),
-        "project SLDPRT loft references",
-    )?;
-    for source in value
-        .split(',')
-        .map(str::trim)
-        .filter(|source| !source.is_empty())
-    {
-        ctx.reserve_vec(&mut references, 1, "project SLDPRT loft references")?;
-        let reference = native_by_source.get(source).copied().unwrap_or(source);
-        let reference =
-            ctx.format_retained(format_args!("{reference}"), "retain SLDPRT loft reference")?;
-        references.push(wrap(reference));
+    let mut characters = value.char_indices();
+    let mut start = 0;
+    let mut finished = false;
+    while !finished {
+        let delimiter = ctx.find_map(
+            &mut characters,
+            |(offset, character)| Ok((character == ',').then_some(offset)),
+            OPERATION,
+        )?;
+        let end = delimiter.unwrap_or(value.len());
+        finished = delimiter.is_none();
+        let source = ctx.trim_text(&value[start..end], OPERATION)?;
+        start = end + usize::from(!finished);
+        if source.is_empty() {
+            continue;
+        }
+        let reference = ctx
+            .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
+            .copied()
+            .unwrap_or(source);
+        let reference = ctx.copy_retained_text(reference, "retain SLDPRT loft reference")?;
+        ctx.push_vec(&mut references, wrap(reference), OPERATION)?;
     }
     Ok(references)
 }
@@ -165,27 +165,8 @@ fn project_native_refs<T>(
 pub(super) fn project_sweep(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let native_ref = |source: &String| {
-        copy_projected_feature_text(
-            ctx,
-            native_by_source
-                .get(source.as_str())
-                .copied()
-                .unwrap_or(source.as_str()),
-        )
-    };
-    let profile = feature
-        .properties
-        .get("Profile")
-        .map(|source| native_ref(source).map(PlanarProfileRef::native))
-        .transpose()?;
-    let path = feature
-        .properties
-        .get("Path")
-        .map(|source| native_ref(source).map(PathRef::Native))
-        .transpose()?;
     let mode = if feature_input_class(feature, NativeClassKind::SweepReferenceSurface)
         || feature.xml_tag == "Surface-Sweep"
         || feature.kind == "Surface-Sweep"
@@ -194,35 +175,39 @@ pub(super) fn project_sweep(
     } else if feature_input_class(feature, NativeClassKind::Sweep)
         || feature_input_class(feature, NativeClassKind::SweepCut)
     {
-        sweep_mode(feature_sweep_operation(feature))
-    } else if let Some(op) = feature
-        .properties
-        .get("Operation")
-        .and_then(|value| parse_boolean_op(value))
-    {
+        sweep_mode(feature_sweep_operation(ctx, feature)?)
+    } else if let Some(op) = property_value(ctx, feature, "Operation")?.and_then(parse_boolean_op) {
         sweep_mode(op)
     } else {
         SweepMode::Unresolved {}
     };
-    let Some((twist, scale)) = (|| {
-        let twist = match feature.parameters.get("Twist") {
-            Some(value) => Some(parse_angle_rad(value)?),
-            None => None,
-        };
-        let scale = match feature.parameters.get("Scale") {
-            Some(value) => Some(
-                value
-                    .trim()
-                    .parse::<f64>()
-                    .ok()
-                    .and_then(cadmpeg_ir::scalar::PositiveReal::new)?,
-            ),
-            None => None,
-        };
-        Some((twist, scale))
-    })() else {
-        return Ok(None);
+    let twist = match parameter_literal(ctx, feature, "Twist")? {
+        Some(value) => match parse_angle_rad(value) {
+            Some(twist) => Some(twist),
+            None => return Ok(None),
+        },
+        None => None,
     };
+    let scale = match ctx.get_btree_map(&feature.parameters, "Scale", super::FEATURE_LITERAL)? {
+        Some(value) => match ctx
+            .parse_text::<f64>(
+                ctx.trim_text(value, super::FEATURE_LITERAL)?,
+                super::FEATURE_LITERAL,
+            )?
+            .ok()
+            .and_then(cadmpeg_ir::scalar::PositiveReal::new)
+        {
+            Some(scale) => Some(scale),
+            None => return Ok(None),
+        },
+        None => None,
+    };
+    let profile = property_value(ctx, feature, "Profile")?
+        .map(|source| native_ref(ctx, native_by_source, source).map(PlanarProfileRef::native))
+        .transpose()?;
+    let path = property_value(ctx, feature, "Path")?
+        .map(|source| native_ref(ctx, native_by_source, source).map(PathRef::Native))
+        .transpose()?;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::sheet_sections(
@@ -269,11 +254,12 @@ fn sweep_mode(op: BooleanOp) -> SweepMode {
     }
 }
 
-fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
-    feature
-        .properties
-        .get("Operation")
-        .and_then(|value| parse_boolean_op(value))
+fn feature_sweep_operation(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<BooleanOp, CodecError> {
+    Ok(property_value(ctx, feature, "Operation")?
+        .and_then(parse_boolean_op)
         .or_else(|| {
             matches!(
                 feature.input_class.as_deref().map(native_object_class),
@@ -287,91 +273,97 @@ fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
                 .eq_ignore_ascii_case("Cut-Sweep")
                 .then_some(BooleanOp::Cut)
         })
-        .unwrap_or(BooleanOp::Unresolved)
+        .unwrap_or(BooleanOp::Unresolved))
 }
 
 pub(super) fn project_revolve(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
-    ctx.charge_work(
-        u64_from_index(feature.content.len()),
-        "scan SLDPRT revolve dimension order",
-    )?;
-    if feature
-        .properties
-        .get("EndCondition")
-        .is_some_and(|condition| condition == "TwoSided")
-    {
-        ctx.charge_work(
-            u64_from_index(feature.content.len()),
-            "scan SLDPRT revolve dimension order",
-        )?;
-    }
-    let ordered_angle = |ordinal| {
-        feature
-            .content
-            .iter()
-            .filter_map(|content| match content {
-                FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
-                FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-            })
-            .filter_map(|value| parse_positive_angle_rad(value))
-            .nth(ordinal)
+    let mut content = feature.content.iter();
+    let mut ordered = [None; 2];
+    let mut found = 0;
+    let mut exhausted = false;
+    let mut ordered_angle =
+        |ordinal: usize| -> Result<Option<cadmpeg_ir::scalar::PositiveAngle>, CodecError> {
+            const OPERATION: &str = "scan SLDPRT project_revolve values";
+            while found <= ordinal && !exhausted {
+                let angle = ctx.find_map(
+                    content.by_ref(),
+                    |content| {
+                        let FeatureContent::Dimension(name) = content else {
+                            return Ok(None);
+                        };
+                        let Some(value) = ctx.get_btree_map(
+                            &feature.parameters,
+                            name.as_str(),
+                            "look up SLDPRT ordered key",
+                        )?
+                        else {
+                            return Ok(None);
+                        };
+                        admit_literal(ctx, value, OPERATION)?;
+                        Ok(parse_positive_angle_rad(value))
+                    },
+                    OPERATION,
+                )?;
+                match angle {
+                    Some(angle) => {
+                        ordered[found] = Some(angle);
+                        found += 1;
+                    }
+                    None => exhausted = true,
+                }
+            }
+            Ok(ordered[ordinal])
+        };
+    let mut angle = |name, ordinal| -> Result<_, CodecError> {
+        let positional = match name {
+            "Angle" => "D1",
+            _ => "D2",
+        };
+        let value =
+            either_parameter(ctx, feature, name, positional)?.and_then(parse_positive_angle_rad);
+        match value {
+            Some(value) => Ok(Some(value)),
+            None => ordered_angle(ordinal),
+        }
     };
-    let angle = |name, ordinal| {
-        feature
-            .parameters
-            .get(name)
-            .or_else(|| match name {
-                "Angle" => feature.parameters.get("D1"),
-                "Angle2" => feature.parameters.get("D2"),
-                _ => None,
-            })
-            .and_then(|value| parse_positive_angle_rad(value))
-            .or_else(|| ordered_angle(ordinal))
-    };
-    let extent = match feature.properties.get("EndCondition").map(String::as_str) {
-        None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {
+    let extent = match property_value(ctx, feature, "EndCondition")? {
+        None | Some("OneSided") => angle("Angle", 0)?.map(|angle| RevolveExtent::OneSided {
             termination: AngularTermination::Angle { angle },
         }),
-        Some("Symmetric") => angle("Angle", 0).map(|angle| RevolveExtent::Symmetric {
+        Some("Symmetric") => angle("Angle", 0)?.map(|angle| RevolveExtent::Symmetric {
             termination: AngularTermination::Angle { angle },
         }),
-        Some("TwoSided") => angle("Angle", 0)
-            .zip(angle("Angle2", 1))
+        Some("TwoSided") => angle("Angle", 0)?
+            .zip(angle("Angle2", 1)?)
             .map(|(first, second)| RevolveExtent::TwoSided {
                 first: AngularTermination::Angle { angle: first },
                 second: AngularTermination::Angle { angle: second },
             }),
         Some(_) => None,
     };
-    let profile = feature
-        .properties
-        .get("Profile")
-        .and_then(|source| native_by_source.get(source.as_str()))
-        .map(|id| copy_projected_feature_text(ctx, id).map(PlanarProfileRef::native))
-        .transpose()?;
-    let axis = feature
-        .properties
-        .get("AxisOrigin")
-        .and_then(|value| parse_point3_mm(value))
-        .zip(
-            feature
-                .properties
-                .get("AxisDirection")
-                .and_then(|value| parse_valid_direction(value)),
-        )
+    let profile = match property_value(ctx, feature, "Profile")? {
+        Some(source) => ctx
+            .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
+            .map(|id| copy_projected_feature_text(ctx, id).map(PlanarProfileRef::native))
+            .transpose()?,
+        None => None,
+    };
+    let axis_origin = property_literal(ctx, feature, "AxisOrigin")?.and_then(parse_point3_mm);
+    let axis_direction =
+        property_literal(ctx, feature, "AxisDirection")?.and_then(parse_valid_direction);
+    let axis = axis_origin
+        .zip(axis_direction)
         .map(|(origin, direction)| RevolutionAxis {
             origin,
             direction,
             reference: None,
         });
-    let op = feature
-        .properties
-        .get("Operation")
-        .and_then(|value| parse_boolean_op(value))
+    let op = property_value(ctx, feature, "Operation")?
+        .and_then(parse_boolean_op)
         .or_else(|| {
             (feature.input_class.as_deref() == Some("moRevCut_c")).then_some(BooleanOp::Cut)
         })

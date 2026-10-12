@@ -15,6 +15,7 @@ use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::schema::structural::{project, Projection};
 use serde::Serialize;
 use serde_value::Value;
+use std::collections::BTreeMap;
 
 pub(super) mod ordered;
 
@@ -539,7 +540,7 @@ impl Brep {
             collect_owned_ids(ctx, &projected, &mut owned)?;
             let prefix =
                 ctx.format_retained(format_args!("{format}:"), "retain F3D BREP scheme prefix")?;
-            let mut replacements = Vec::new();
+            let mut replacements = BTreeMap::new();
             for id in ctx.admit_iter(owned, "walk F3D BREP replacements")? {
                 let source = id.as_str();
                 let suffix = ctx
@@ -549,31 +550,25 @@ impl Brep {
                     format_args!("{format}:brep/{namespace}/{suffix}"),
                     "retain F3D qualified BREP ID",
                 )?;
-                ctx.push_vec(
+                drop(ctx.insert_btree_map(
                     &mut replacements,
-                    (id, replacement),
+                    id,
+                    replacement,
                     "index F3D BREP replacements",
-                )?;
+                )?);
             }
             Ok::<_, CodecError>(replacements)
         })?;
         let mut map =
             IdentityMap::new(ctx, "rewrite F3D qualified BREP fields", |source: &str| {
-                let replacement = position(ctx, &replacements.0, source, |row| row.0.as_str())?
-                    .ok()
-                    .map(|index| &replacements.0[index].1);
-
+                let replacement =
+                    ctx.get_btree_map(&replacements.0, source, "find F3D BREP replacement")?;
                 ctx.copy_retained_text(
                     replacement.map_or(source, String::as_str),
                     "copy F3D BREP remapped ID",
                 )
             })?
-            .with_text_replacements(
-                replacements
-                    .0
-                    .iter()
-                    .map(|(source, target)| (source, target)),
-            )?;
+            .with_text_replacements(&replacements.0)?;
         let source = std::mem::take(self);
         let rewritten = source.rewrite_identities(ctx, &mut map);
         map.finish(ctx)?;

@@ -9,7 +9,7 @@ use crate::records::{
 use crate::resolved_features::selections::{
     cosmetic_thread_component_references, cosmetic_thread_cylinder_marker_reference,
     cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
-    cosmetic_thread_diameter_child_tail, COMPACT_EDGE_VECTOR_MARKER,
+    COMPACT_EDGE_VECTOR_MARKER,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -248,6 +248,23 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("test context");
+    crate::test_support::work_refusal_at(
+        "deduplicate SLDPRT cosmetic thread cylinder markers",
+        |ctx| {
+            cosmetic_thread_cylinder_marker_reference(
+                ctx,
+                &feature,
+                &lane,
+                0,
+                lane.native_payload.len(),
+                &HashSet::from([0x802f]),
+                &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+                    ctx, &lane,
+                )
+                .unwrap(),
+            )
+        },
+    );
     assert_eq!(
         cosmetic_thread_cylinder_marker_reference(
             &ctx,
@@ -256,6 +273,10 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
             0,
             lane.native_payload.len(),
             &HashSet::from([0x802f]),
+            &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+                &ctx, &lane
+            )
+            .unwrap()
         )
         .expect("charged cylinder marker scan"),
         vec![crate::resolved_features::selections::CylinderMarkerReference(marker, None)]
@@ -344,8 +365,31 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         sketch_entities: Vec::new(),
     };
     assert_eq!(
-        cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
+        crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+            &references_ctx,
+            &lane
+        )
+        .unwrap()
+        .tail(&references_ctx, &feature)
+        .unwrap(),
         Some(158..400)
+    );
+    crate::test_support::work_refusal_at(
+        "deduplicate SLDPRT cosmetic thread cylinder offsets",
+        |ctx| {
+            cosmetic_thread_cylinder_references(
+                ctx,
+                &feature,
+                &lane,
+                20,
+                100,
+                &HashSet::from([0x802f]),
+                &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+                    ctx, &lane,
+                )
+                .unwrap(),
+            )
+        },
     );
     let references = cosmetic_thread_cylinder_references(
         &references_ctx,
@@ -354,6 +398,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         20,
         100,
         &HashSet::from([0x802f]),
+        &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+            &references_ctx,
+            &lane,
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -384,6 +433,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         20,
         100,
         &HashSet::from([0x802f]),
+        &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+            &references_ctx,
+            &lane
+        )
+        .unwrap()
     )
     .unwrap()
     .is_empty());
@@ -559,6 +613,10 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
             .collect::<Vec<_>>(),
         [Some(3), Some(4), Some(4), Some(4)]
     );
+    crate::test_support::work_refusal_at(
+        "compare SLDPRT cosmetic edge reference class name",
+        |ctx| cosmetic_thread_component_references(ctx, &lane, 0, lane.native_payload.len()),
+    );
 }
 
 #[test]
@@ -629,4 +687,45 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
             .collect::<Vec<_>>(),
         [Some(3), Some(4), Some(4), Some(4)]
     );
+}
+
+#[test]
+fn cosmetic_cylinder_scan_visits_overlapping_and_touching_ranges_once() {
+    let mut payload = [0; 32];
+    for offset in [3, 18, 28] {
+        payload[offset..offset + 2].copy_from_slice(&0x802f_u16.to_le_bytes());
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let tokens = HashSet::from([0x802f]);
+    for (object, tail, expected) in [
+        (0..20, Some(10..30), vec![3, 18, 28]),
+        (0..18, Some(18..30), vec![3, 18, 28]),
+        (22..30, Some(0..20), vec![28, 3, 18]),
+        (5..5, Some(10..30), vec![18, 28]),
+        (0..20, None, vec![3, 18]),
+    ] {
+        let (offsets, _storage) = super::super::cosmetic_thread_cylinder_offsets(
+            &ctx,
+            &payload,
+            object,
+            tail,
+            &tokens,
+            Some,
+            "scan synthetic cosmetic cylinders",
+        )
+        .unwrap();
+        assert_eq!(offsets, expected);
+    }
+    crate::test_support::work_refusal_at("scan synthetic cosmetic cylinders", |ctx| {
+        super::super::cosmetic_thread_cylinder_offsets(
+            ctx,
+            &payload,
+            0..20,
+            Some(10..30),
+            &tokens,
+            Some,
+            "scan synthetic cosmetic cylinders",
+        )
+        .map(|(offsets, _storage)| offsets)
+    });
 }

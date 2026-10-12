@@ -25,8 +25,8 @@ use cadmpeg_ir::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    content_header, inventor_id, reference_list, type_id_string, u32_list, Cursor,
-    PmDcContentHeader, PmDcReferenceList, PmDcU32List,
+    content_header, inventor_id, reference_list, u32_list, Cursor, PmDcContentHeader,
+    PmDcReferenceList, PmDcU32List,
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -261,26 +261,19 @@ impl Serialize for ClassId {
 }
 
 impl ClassId {
-    fn from_text(ctx: &DecodeContext<'_>, value: &str) -> Result<Self, CodecError> {
-        let valid = value.len() == 32
-            && ctx
-                .admit_iter(value.as_bytes(), "validate Inventor feature class identity")?
-                .all(|digit| digit.is_ascii_digit() || (b'a'..=b'f').contains(digit));
-        if !valid {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                "class_id must contain 32 lowercase hexadecimal digits",
-                "retain Inventor invalid feature class identity",
-            )?));
+    fn from_text(value: &str) -> Result<Self, CodecError> {
+        let invalid =
+            || CodecError::malformed("class_id must contain 32 lowercase hexadecimal digits");
+        if value.len() != 32 {
+            return Err(invalid());
         }
+        // One pass over the 32 digits validates and decodes them.
         let mut bytes = [0; 16];
-        for (index, digit) in ctx
-            .admit_iter(value.as_bytes(), "decode Inventor feature class identity")?
-            .enumerate()
-        {
-            let nibble = if digit.is_ascii_digit() {
-                *digit - b'0'
-            } else {
-                *digit - b'a' + 10
+        for (index, digit) in value.as_bytes().iter().enumerate() {
+            let nibble = match digit {
+                b'0'..=b'9' => *digit - b'0',
+                b'a'..=b'f' => *digit - b'a' + 10,
+                _ => return Err(invalid()),
             };
             if index % 2 == 0 {
                 bytes[index / 2] = nibble << 4;
@@ -297,7 +290,7 @@ impl ClassId {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<String, CodecError> {
-        type_id_string(ctx, self.0, operation)
+        crate::pmdc::type_id_string(ctx, self.0, operation)
     }
 }
 
@@ -350,19 +343,38 @@ impl PmDcFeatureLabelPayloadWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<PmDcFeatureLabelPayload, CodecError> {
-        let name = ctx.validate_nonblank_text(self.name, "validate Inventor feature label name")?;
+        let class_id = ClassId::from_text(&self.class_id)?;
+        PmDcFeatureLabelPayload::new(
+            ctx,
+            self.save_version_major,
+            self.header,
+            self.index,
+            self.participants,
+            self.name,
+            class_id,
+        )
+    }
+}
+
+impl PmDcFeatureLabelPayload {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        save_version_major: u8,
+        header: PmDcLinkedHeader,
+        index: u32,
+        participants: PmDcReferenceList,
+        name: String,
+        class_id: ClassId,
+    ) -> Result<Self, CodecError> {
+        let name = ctx.validate_nonblank_text(name, "validate Inventor feature label name")?;
         let Ok(name) = NonBlankString::try_from(name) else {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                "name must not be empty",
-                "retain Inventor invalid feature label name",
-            )?));
+            return Err(CodecError::malformed("name must not be empty"));
         };
-        let class_id = ClassId::from_text(ctx, &self.class_id)?;
-        Ok(PmDcFeatureLabelPayload {
-            save_version_major: self.save_version_major,
-            header: self.header,
-            index: self.index,
-            participants: self.participants,
+        Ok(Self {
+            save_version_major,
+            header,
+            index,
+            participants,
             name,
             class_id,
         })
@@ -435,7 +447,8 @@ pub(crate) fn inventory(
         entity_style_links: Vec::new(),
         issues: Vec::new(),
     };
-    for segment in ctx.admit_iter(&document.segments, "visit Inventor feature items")? {
+    let mut segments = document.segments.iter();
+    while let Some(segment) = ctx.next_charged(&mut segments, "visit Inventor feature items")? {
         if !ctx.equal(
             &segment.kind,
             &SegmentKind::PmDc,
@@ -455,7 +468,8 @@ pub(crate) fn inventory(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
-        for record in ctx.admit_iter(&table.records, "visit Inventor feature items")? {
+        let mut records = table.records.iter();
+        while let Some(record) = ctx.next_charged(&mut records, "visit Inventor feature items")? {
             let parsed = match record.type_id {
                 FEATURE_TYPE => parse_feature(ctx, record.payload, version).and_then(|feature| {
                     push_record(
@@ -615,14 +629,12 @@ fn parse_pattern_feature(
                 )?;
             }
             if version > 20 {
-                ctx.charge_collection_items(6, "admit Inventor pattern feature extension values")?;
-                ctx.reserve_capacity(
-                    &mut extension_values,
-                    6,
-                    "admit Inventor pattern feature extension values",
-                )?;
                 for _ in 0..6 {
-                    extension_values.push(cursor.u32("pattern-feature extension value")?);
+                    ctx.push_vec(
+                        &mut extension_values,
+                        cursor.u32("pattern-feature extension value")?,
+                        "admit Inventor pattern feature extension values",
+                    )?;
                 }
             }
             for _ in 0..2 {
@@ -1046,26 +1058,10 @@ fn parse_label(
     let index = cursor.u32("feature label index")?;
     let participants = reference_list(ctx, &mut cursor, 2, "feature-label participants")?;
     let name = cursor.utf16(ctx, "feature label")?;
-    let class_id_bytes = cursor.take_array("feature-label class id")?;
-    let mut class_id_storage =
-        ctx.reserve_scoped(0, "materialize Inventor feature label class id")?;
-    let class_id = class_id_storage.with_storage(|| {
-        type_id_string(
-            ctx,
-            class_id_bytes,
-            "retain Inventor feature label class id",
-        )
-    })?;
+    // The class id stays in its sixteen bytes: decode never renders it.
+    let class_id = ClassId(cursor.take_array("feature-label class id")?);
     cursor.finish("feature label")?;
-    PmDcFeatureLabelPayloadWire {
-        save_version_major: version,
-        header,
-        index,
-        participants,
-        name,
-        class_id,
-    }
-    .into_record(ctx)
+    PmDcFeatureLabelPayload::new(ctx, version, header, index, participants, name, class_id)
 }
 
 const EXTRUSION_CLASS_ID: ClassId = ClassId([
@@ -1149,22 +1145,45 @@ pub(crate) fn project(
         .len()
         .checked_add(inventory.pattern_features.len())
         .ok_or_else(|| ctx.refuse_codec_limit("Inventor feature count", u64::MAX, u64::MAX))?;
-    let (feature_tokens, _feature_tokens_storage) =
-        ctx.with_scoped_storage("index Inventor feature token", || {
-            let mut feature_tokens = HashSet::new();
-            for token in ctx
-                .admit_iter(&inventory.features, "index Inventor feature token")?
-                .map(|feature| feature.identity.segment_token.as_str())
-                .chain(
-                    ctx.admit_iter(&inventory.pattern_features, "index Inventor feature token")?
-                        .map(|feature| feature.identity.segment_token.as_str()),
-                )
-            {
-                ctx.insert_hash_set(&mut feature_tokens, token, "index Inventor feature token")?;
-            }
-            Ok::<_, CodecError>(feature_tokens)
-        })?;
-    if feature_tokens.len() > 1 {
+    let Some((first, feature_tail)) = inventory
+        .features
+        .split_first()
+        .filter(|_| !inventory.labels.is_empty())
+    else {
+        return Ok(FeatureProjection {
+            features: Vec::new(),
+            result_topologies: Vec::new(),
+            unresolved_features: total,
+            unresolved_states: 0,
+        });
+    };
+    let token = first.identity.segment_token.as_str();
+    let pattern_tail = inventory.pattern_features.as_slice();
+    let multiple_tokens = (!feature_tail.is_empty()
+        && ctx.any_by(
+            feature_tail,
+            |feature| {
+                Ok(!ctx.equal(
+                    token,
+                    feature.identity.segment_token.as_str(),
+                    "check Inventor feature tokens",
+                )?)
+            },
+            "check Inventor feature tokens",
+        )?)
+        || (!pattern_tail.is_empty()
+            && ctx.any_by(
+                pattern_tail,
+                |feature| {
+                    Ok(!ctx.equal(
+                        token,
+                        feature.identity.segment_token.as_str(),
+                        "check Inventor feature tokens",
+                    )?)
+                },
+                "check Inventor feature tokens",
+            )?);
+    if multiple_tokens {
         return Ok(FeatureProjection {
             features: Vec::new(),
             result_topologies: Vec::new(),
@@ -1173,7 +1192,7 @@ pub(crate) fn project(
         });
     }
 
-    let (unique_properties, _properties_storage) = ctx.unique_index(
+    let (unique_properties, properties_storage) = ctx.unique_index(
         inventory.properties.iter().map(|record| {
             (
                 {
@@ -1187,7 +1206,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature properties",
     )?;
-    let (unique_parameters, _parameters_storage) = ctx.unique_index(
+    let (unique_parameters, parameters_storage) = ctx.unique_index(
         design.parameters.iter().map(|record| {
             (
                 {
@@ -1201,7 +1220,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature parameters",
     )?;
-    let (unique_sketches, _sketches_storage) = ctx.unique_index(
+    let (unique_sketches, sketches_storage) = ctx.unique_index(
         sketch.sketches.iter().map(|record| {
             (
                 {
@@ -1215,7 +1234,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature sketches",
     )?;
-    let (unique_directions, _directions_storage) = ctx.unique_index(
+    let (unique_directions, directions_storage) = ctx.unique_index(
         sketch.directions.iter().map(|record| {
             (
                 {
@@ -1229,7 +1248,7 @@ pub(crate) fn project(
         }),
         "index Inventor feature directions",
     )?;
-    let (unique_transforms, _transforms_storage) = ctx.unique_index(
+    let (unique_transforms, transforms_storage) = ctx.unique_index(
         sketch.transforms.iter().map(|record| {
             (
                 {
@@ -1243,20 +1262,35 @@ pub(crate) fn project(
         }),
         "index Inventor feature transforms",
     )?;
-    let (parameter_values, _parameter_values_storage) =
+    let (parameter_values, parameter_values_storage) =
         ctx.with_scoped_storage("index Inventor feature parameter values", || {
-            ctx.collect_hash_map(
-                ctx.admit_iter(parameters, "index Inventor feature parameter values")?
-                    .filter_map(|parameter| {
-                        Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
-                    }),
-                "index Inventor feature parameter values",
-            )
+            let mut values = HashMap::new();
+            let mut source = parameters.iter();
+            while let Some(parameter) =
+                ctx.next_charged(&mut source, "index Inventor feature parameter values")?
+            {
+                let Some(native) = parameter.native_ref.as_deref() else {
+                    continue;
+                };
+                let Some(value) = parameter.value.as_ref() else {
+                    continue;
+                };
+                ctx.insert_hash_map(
+                    &mut values,
+                    native,
+                    value,
+                    "index Inventor feature parameter values",
+                )?;
+            }
+            Ok::<_, CodecError>(values)
         })?;
-    let (sketch_ids, _sketch_ids_storage) =
+    let (sketch_ids, sketch_ids_storage) =
         ctx.with_scoped_storage("index Inventor feature sketch ids", || {
             let mut ids = HashMap::new();
-            for sketch in ctx.admit_iter(sketches, "visit Inventor feature items")? {
+            let mut source = sketches.iter();
+            while let Some(sketch) =
+                ctx.next_charged(&mut source, "visit Inventor feature items")?
+            {
                 if let Some(native) = sketch.native_ref.as_deref() {
                     ctx.insert_hash_map(
                         &mut ids,
@@ -1268,13 +1302,13 @@ pub(crate) fn project(
             }
             Ok::<_, CodecError>(ids)
         })?;
-    let (entity_style_links, _entity_style_links_storage) =
+    let (entity_style_links, entity_style_links_storage) =
         ctx.with_scoped_storage("index Inventor entity style links", || {
             let mut links = HashSet::new();
-            for record in ctx.admit_iter(
-                &inventory.entity_style_links,
-                "visit Inventor feature items",
-            )? {
+            let mut source = inventory.entity_style_links.iter();
+            while let Some(record) =
+                ctx.next_charged(&mut source, "visit Inventor feature items")?
+            {
                 ctx.insert_hash_set(
                     &mut links,
                     (
@@ -1299,7 +1333,7 @@ pub(crate) fn project(
     // The label owner is a one-based reference. Keying on the optional record
     // ordinal keeps the null reference out of the ordinal space, so a label
     // with no owner never claims the feature at ordinal 0.
-    let (labels, _labels_storage) = ctx.unique_index(
+    let (labels, labels_storage) = ctx.unique_index(
         inventory.labels.iter().map(|label| {
             (
                 {
@@ -1315,7 +1349,8 @@ pub(crate) fn project(
     )?;
     let mut projected = Vec::new();
     let mut projected_storage = ctx.reserve_scoped(0, "collect Inventor feature items")?;
-    for feature in ctx.admit_iter(&inventory.features, "visit Inventor feature items")? {
+    let mut source = inventory.features.iter();
+    while let Some(feature) = ctx.next_charged(&mut source, "visit Inventor feature items")? {
         let Some(label) = ctx
             .get_hash_map(
                 &labels,
@@ -1345,10 +1380,29 @@ pub(crate) fn project(
             })?;
         }
     }
-    let (ordinal_counts, _ordinal_counts_storage) =
+    // The feature loop is the last reader of both indexes. Release their maps
+    // and reservations before ordinal counting. Keep projected_storage live
+    // while the projected vector is counted, sorted, and consumed by unzip_vec.
+    drop((
+        index,
+        labels,
+        properties_storage,
+        parameters_storage,
+        sketches_storage,
+        directions_storage,
+        transforms_storage,
+        parameter_values_storage,
+        sketch_ids_storage,
+        entity_style_links_storage,
+        labels_storage,
+    ));
+    let (ordinal_counts, ordinal_counts_storage) =
         ctx.with_scoped_storage("count Inventor feature ordinals", || {
             let mut counts = BTreeMap::<u64, usize>::new();
-            for (feature, _) in ctx.admit_iter(&projected, "count Inventor feature ordinals")? {
+            let mut source = projected.iter();
+            while let Some((feature, _)) =
+                ctx.next_charged(&mut source, "count Inventor feature ordinals")?
+            {
                 if let Some(count) = ctx.get_mut_btree_map(
                     &mut counts,
                     &feature.ordinal,
@@ -1366,7 +1420,7 @@ pub(crate) fn project(
             }
             Ok::<_, CodecError>(counts)
         })?;
-    let (duplicate_ordinals, _duplicate_ordinals_storage) =
+    let (duplicate_ordinals, duplicate_ordinals_storage) =
         ctx.with_scoped_storage("collect duplicate Inventor feature ordinals", || {
             ctx.collect_hash_set(
                 ctx.admit_iter(
@@ -1377,6 +1431,7 @@ pub(crate) fn project(
                 "collect duplicate Inventor feature ordinals",
             )
         })?;
+    drop((ordinal_counts, ordinal_counts_storage));
     ctx.retain_vec(
         &mut projected,
         |(feature, _)| {
@@ -1388,6 +1443,7 @@ pub(crate) fn project(
         },
         "remove duplicate Inventor feature ordinals",
     )?;
+    drop((duplicate_ordinals, duplicate_ordinals_storage));
     ctx.sort_unstable_by(
         &mut projected,
         |value| &value.0.ordinal,
@@ -1448,32 +1504,33 @@ fn project_extrusion(
     if source.properties.references().get(23)? != source.properties.references().get(1)? {
         return None;
     }
-    for (position, selection) in
-        option_result_value!(ctx.admit_iter(boundary.references(), "visit Inventor feature items"))
-            .enumerate()
+    // Selections must be distinct; one set of the indices seen so far
+    // answers each selection instead of a scan of the ones before it.
+    let mut seen_storage =
+        option_result_value!(ctx.reserve_scoped(0, "check distinct Inventor extrusion selections"));
+    let mut seen = std::collections::HashSet::new();
+    let mut references = boundary.references().iter();
+    while let Some(reference) =
+        option_result_value!(ctx.next_charged(&mut references, "visit Inventor feature items"))
     {
-        let mut duplicate = false;
-        for prior in option_result_value!(ctx.admit_iter(
-            &boundary.references()[..position],
-            "check distinct Inventor extrusion selections",
-        )) {
-            if option_result_value!(ctx.equal(
-                &prior.index(),
-                &selection.index(),
-                "compare Inventor extrusion selection references",
-            )) {
-                duplicate = true;
-                break;
-            }
-        }
-        if duplicate {
+        let first = seen_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut seen,
+                reference.index(),
+                "check distinct Inventor extrusion selections",
+            )
+        });
+        if !option_result_value!(first) {
             return None;
         }
     }
+    drop(seen);
+    drop(seen_storage);
     let mut selections = Vec::new();
-    for reference in
-        option_result_value!(ctx.admit_iter(boundary.references(), "visit Inventor feature items"))
-    {
+    let mut references = boundary.references().iter();
+    while let Some(reference) = option_result_value!(
+        ctx.next_charged(&mut references, "resolve Inventor extrusion selections")
+    ) {
         let property = option_result_value!(resolve_property(
             ctx,
             source.identity.segment_token.as_str(),
@@ -1510,14 +1567,16 @@ fn project_extrusion(
         "resolve Inventor feature sketch",
     ))
     .and_then(Option::as_ref)?;
-    let (sketch_native_id, sketch_native_id_storage) = option_result_value!(ctx
-        .with_scoped_storage("resolve Inventor extrusion sketch native id", || sketch
-            .id(ctx),));
+    let mut sketch_native_id_storage =
+        option_result_value!(ctx.reserve_scoped(0, "resolve Inventor extrusion sketch native id"));
+    let sketch_native_id =
+        option_result_value!(sketch_native_id_storage.with_storage(|| sketch.id(ctx)));
     let sketch_id = option_result_value!(ctx.get_hash_map(
         &index.sketch_ids,
         sketch_native_id.as_str(),
         "access Inventor feature records",
     ))?;
+    drop(sketch_native_id);
     drop(sketch_native_id_storage);
     let sketch_id = match sketch_id.try_clone_for_decode(ctx, "retain Inventor extrusion sketch id")
     {
@@ -1567,9 +1626,10 @@ fn project_extrusion(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "extrude") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, "extrude") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     let profile = match PlanarProfileRef::sketch_selection(sketch_id, selections, ctx) {
         Ok(Ok(profile)) => profile,
         Ok(Err(_)) => return None,
@@ -1585,7 +1645,7 @@ fn project_extrusion(
         suppressed: None,
         dependencies: DistinctMembers::default(),
         source_properties,
-        source_tag: Some("extrude".into()),
+        source_tag: Some(source_tag),
         source_text: None,
         source_content: FeatureContent::default(),
 
@@ -1613,27 +1673,12 @@ fn project_extrusion(
 
 fn admit_projected_feature(
     ctx: &DecodeContext<'_>,
-    source: &PmDcFeature,
-    label: &PmDcFeatureLabel,
     tag: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "project Inventor feature")?;
+) -> Result<String, CodecError> {
     ctx.charge_entities(1, "project Inventor feature")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(label.name.as_str().len()),
-        "retain Inventor projected feature name",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(tag.len()),
-        "retain Inventor projected feature tag",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(source.id_len().ok_or_else(|| {
-            CodecError::Malformed("Inventor identifier length exceeds address space".into())
-        })?),
-        "retain Inventor projected feature native id",
-    )?;
-    Ok(())
+    let mut value = ctx.retained_string(tag.len(), "retain Inventor projected feature tag")?;
+    value.push_str(tag);
+    Ok(value)
 }
 
 fn project_fillet(
@@ -1662,8 +1707,9 @@ fn project_fillet(
         index
     ))?;
     let mut groups = Vec::new();
-    for reference in
-        option_result_value!(ctx.admit_iter(sets.references(), "visit Inventor feature items"))
+    let mut references = sets.references().iter();
+    while let Some(reference) =
+        option_result_value!(ctx.next_charged(&mut references, "visit Inventor feature items"))
     {
         let set = option_result_value!(resolve_property(
             ctx,
@@ -1755,9 +1801,10 @@ fn project_fillet(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "fillet") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, "fillet") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     Some(Ok((
         Feature {
             id: feature_id,
@@ -1769,7 +1816,7 @@ fn project_fillet(
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties,
-            source_tag: Some("fillet".into()),
+            source_tag: Some(source_tag),
             source_text: None,
             source_content: FeatureContent::default(),
 
@@ -1829,12 +1876,10 @@ fn project_chamfer(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "chamfer") {
-        return Some(Err(error));
-    }
-    if let Err(error) = ctx.charge_collection_items(1, "collect Inventor chamfer group") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, "chamfer") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     let groups = cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
         edges: EdgeSelection::Native(option_result_value!(edges.id(ctx))),
         spec: ChamferSpec::Distance { distance },
@@ -1850,7 +1895,7 @@ fn project_chamfer(
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties,
-            source_tag: Some("chamfer".into()),
+            source_tag: Some(source_tag),
             source_text: None,
             source_content: FeatureContent::default(),
 
@@ -1970,12 +2015,10 @@ fn project_hole(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    if let Err(error) = admit_projected_feature(ctx, source, label, "hole") {
-        return Some(Err(error));
-    }
-    if let Err(error) = ctx.charge_collection_items(1, "project Inventor hole placement") {
-        return Some(Err(error));
-    }
+    let source_tag = match admit_projected_feature(ctx, "hole") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     Some(Ok((
         Feature {
             id: feature_id,
@@ -1987,7 +2030,7 @@ fn project_hole(
             suppressed: None,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
-            source_tag: Some("hole".into()),
+            source_tag: Some(source_tag),
             source_text: None,
             source_content: FeatureContent::default(),
 
@@ -2032,8 +2075,9 @@ fn feature_result(
         return None;
     };
     let mut bodies = Vec::new();
-    for reference in
-        option_result_value!(ctx.admit_iter(items.references(), "visit Inventor feature items"))
+    let mut references = items.references().iter();
+    while let Some(reference) =
+        option_result_value!(ctx.next_charged(&mut references, "visit Inventor feature items"))
     {
         let body = option_result_value!(resolve_property(
             ctx,
@@ -2144,9 +2188,6 @@ fn feature_result(
             "generated Inventor feature result identity is invalid",
         )));
     };
-    if let Err(error) = ctx.charge_collection_items(1, "project Inventor feature result topology") {
-        return Some(Err(error));
-    }
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature result topology") {
         return Some(Err(error));
     }
@@ -2171,16 +2212,16 @@ fn closed_edge_items(
     if items.references().is_empty() {
         return Ok(false);
     }
-    for reference in ctx.admit_iter(items.references(), "check Inventor closed edge items")? {
-        let Some(property) = resolve_property(ctx, token, reference.index(), index)? else {
-            return Ok(false);
-        };
-        if !matches!(&property.kind, PmDcFeaturePropertyKind::EdgeItem { index_references, .. } if !index_references.values().is_empty())
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    ctx.all_by(
+        items.references(),
+        |reference| {
+            let Some(property) = resolve_property(ctx, token, reference.index(), index)? else {
+                return Ok(false);
+            };
+            Ok(matches!(&property.kind, PmDcFeaturePropertyKind::EdgeItem { index_references, .. } if !index_references.values().is_empty()))
+        },
+        "check Inventor closed edge items",
+    )
 }
 
 fn slot_property<'a>(
@@ -2392,16 +2433,18 @@ fn boolean_properties(
     index: &ProjectionIndex<'_>,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
     let mut properties = BTreeMap::new();
-    for slot in ctx.admit_iter(slots, "visit Inventor feature items")? {
+    // Callers pass fixed property-slot lists.
+    for slot in slots {
         if let Some(value) = boolean(ctx, source, *slot, index)? {
-            ctx.charge_retained(
-                if value { 4 } else { 5 },
-                "retain Inventor feature property value",
-            )?;
+            let key = cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?;
+            let value_text = if value { "true" } else { "false" };
+            let mut value =
+                ctx.retained_string(value_text.len(), "retain Inventor feature property value")?;
+            value.push_str(value_text);
             ctx.insert_btree_map(
                 &mut properties,
-                cadmpeg_core::nonblank_literal!(ctx, "property_{slot}_boolean")?,
-                value.to_string(),
+                key,
+                value,
                 "project Inventor feature boolean property",
             )?;
         }
@@ -2446,1839 +2489,4 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        inventory, parse_boolean, parse_boundary_patch, parse_chamfer, parse_edge_item,
-        parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
-        parse_label, parse_part_operation, parse_pattern_feature, parse_placement,
-        parse_profile_selection, parse_rdx_variable, parse_surface_body, parse_terminator,
-        project_chamfer, project_extrusion, project_fillet, project_hole, ClassId,
-        PmDcEntityStyleLink, PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily,
-        PmDcFeatureLabel, PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload,
-        PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
-        PmDcFeatureReferenceFamily, PmDcLinkedHeader, PmDcPatternFamily, ProjectionIndex,
-        BOOLEAN_TYPE, CHAMFER_CLASS_ID, END_OF_FEATURES_TYPE, ENTITY_STYLE_LINK_TYPE,
-        EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE, FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID,
-        MIRROR_FEATURE_TYPE, RECTANGULAR_PATTERN_FEATURE_TYPE,
-    };
-    use crate::container::InventorContainer;
-    use crate::pmdc::{PmDcContentHeader, PmDcReferenceList, PmDcU32List};
-    use crate::record_identity::Located;
-    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::{
-        edge_treatments::{ChamferSpec, RadiusSpec},
-        holes::{HoleKind, HolePlacement},
-        BooleanOp, DesignParameter, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureDefinition, FeatureOperation, FeatureResultTopology, LinearTermination,
-    };
-    use cadmpeg_ir::features::{ParameterId, ParameterValue};
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::scalar::{Angle, Length};
-    use cadmpeg_ir::sketches::Sketch;
-    use cadmpeg_ir::sketches::{SketchId, SketchPlacement};
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn feature_projection_refuses_collection_limit_before_token_index() {
-        let inventory = super::FeatureInventory {
-            features: vec![test_feature(0, 0, &[])],
-            pattern_features: Vec::new(),
-            terminators: Vec::new(),
-            properties: Vec::new(),
-            labels: Vec::new(),
-            entity_style_links: Vec::new(),
-            issues: Vec::new(),
-        };
-        let design = crate::design::DesignInventory {
-            parameters: Vec::new(),
-            expressions: Vec::new(),
-            units: Vec::new(),
-            issues: Vec::new(),
-        };
-        let sketch = crate::sketch::SketchInventory {
-            sketches: Vec::new(),
-            entities: Vec::new(),
-            transforms: Vec::new(),
-            directions: Vec::new(),
-            constraints: Vec::new(),
-            issues: Vec::new(),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::project(&ctx, &inventory, &design, &sketch, &[], &[]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor feature token"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert_eq!(
-            super::project(&ctx, &inventory, &design, &sketch, &[], &[])
-                .expect("feature projection")
-                .unresolved_features,
-            1
-        );
-    }
-
-    #[test]
-    fn feature_result_refuses_entity_limit_before_creation() {
-        let source = test_feature(0, 1, &[(0, 1)]);
-        let properties = [
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[3]),
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) },
-            ),
-        ];
-        let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::feature_result(&ctx, &source, 0, &index),
-            Some(Err(CodecError::ResourceLimit(limit)))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "project Inventor feature result topology"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(matches!(
-            super::feature_result(&ctx, &source, 0, &index),
-            Some(Ok(_))
-        ));
-    }
-
-    #[test]
-    fn duplicate_feature_result_members_skip_without_entity_charge() {
-        let source = test_feature(0, 1, &[(0, 1)]);
-        let properties = [
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[3, 3]),
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) },
-            ),
-        ];
-        let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
-    }
-
-    #[test]
-    fn feature_result_refuses_collection_limit_before_distinct_precheck() {
-        let source = test_feature(0, 1, &[(0, 1)]);
-        let properties = [
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[3, 3]),
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) },
-            ),
-        ];
-        let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::feature_result(&ctx, &source, 0, &index),
-            Some(Err(CodecError::ResourceLimit(limit)))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "precheck distinct Inventor feature result bodies"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
-    }
-
-    #[test]
-    fn feature_projection_refuses_entity_limit_before_creation() {
-        let source = test_feature(0, 0, &[]);
-        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::admit_projected_feature(&ctx, &source, &label, "extrude"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "project Inventor feature"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(super::admit_projected_feature(&ctx, &source, &label, "extrude").is_ok());
-    }
-
-    fn inventory_with_record(
-        type_id: [u8; 16],
-        payload: &[u8],
-        policy: DecodePolicy,
-    ) -> Result<super::FeatureInventory, CodecError> {
-        let bytes = primary_envelope_fixture();
-        let payload = payload.to_vec();
-        let arena = DecodeArena::new();
-        let (setup_ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("envelope view");
-        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
-        let segment = &mut container.rse.segments[0];
-        segment.kind = SegmentKind::PmDc;
-        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-            panic!("framed bulk fixture");
-        };
-        let RecordFrameState::Framed(table) = &mut bulk.records else {
-            panic!("framed record fixture");
-        };
-        table.records[0].type_id = type_id;
-        table.records[0].payload = View::over_retained(&payload);
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        inventory(&ctx, &container.rse)
-    }
-
-    #[test]
-    fn feature_terminator_refuses_collection_limit_before_push() {
-        let mut payload = content(0);
-        payload.extend_from_slice(&0u32.to_le_bytes());
-        assert_eq!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &payload, DecodePolicy::service())
-                .expect("terminator is admitted")
-                .terminators
-                .len(),
-            1
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc feature terminator record"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn feature_terminator_refuses_retained_limit_before_identity_copy() {
-        let mut payload = content(0);
-        payload.extend_from_slice(&0u32.to_le_bytes());
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 31;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record type id"
-                    && limit.used == 0
-        ));
-        policy.limits.max_retained_bytes = 32;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record segment token"
-                    && limit.used == 32
-        ));
-    }
-
-    #[test]
-    fn feature_parse_issue_refuses_collection_limit_before_push() {
-        assert_eq!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
-                .expect("truncated terminator becomes an issue")
-                .issues
-                .len(),
-            1
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc feature issue"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn feature_parse_issue_refuses_entity_limit_before_push() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Inventor PmDc feature issue"
-        ));
-        assert_eq!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
-                .expect("service issue")
-                .issues
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn feature_parse_issue_copies_refuse_retained_limits_before_creation() {
-        let admitted = inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
-            .expect("truncated terminator becomes an issue");
-        let issue = &admitted.issues[0];
-        let detail_len = issue.detail.len();
-        let segment_token_len = issue.segment_token.as_str().len();
-        // Construction retains the 32-byte type id, token, then detail.
-        for (limit_bytes, operation, used) in [
-            (32 - 1, "retain Inventor PmDc feature issue type id", 0),
-            (
-                32 + segment_token_len - 1,
-                "retain Inventor PmDc feature issue segment token",
-                32,
-            ),
-            (
-                32 + segment_token_len + detail_len - 1,
-                "retain Inventor PmDc feature issue detail",
-                32 + segment_token_len,
-            ),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
-            assert!(matches!(
-                inventory_with_record(END_OF_FEATURES_TYPE, &[], policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
-            ));
-        }
-    }
-
-    fn segment() -> cadmpeg_ir::ids::IdentityKey {
-        cadmpeg_ir::identity_key!("generated")
-    }
-
-    fn references(values: &[u32]) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&2u16.to_le_bytes());
-        bytes.extend_from_slice(&0x3000u16.to_le_bytes());
-        bytes.extend_from_slice(
-            &(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes(),
-        );
-        if !values.is_empty() {
-            bytes.extend_from_slice(
-                &(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes(),
-            );
-            bytes.extend_from_slice(&0u32.to_le_bytes());
-        }
-        for value in values {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes
-    }
-
-    fn utf16(value: &str) -> Vec<u8> {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        let mut bytes = (u32::try_from(units.len()).expect("fixture value fits u32"))
-            .to_le_bytes()
-            .to_vec();
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-        bytes
-    }
-
-    fn reference(index: u32) -> crate::pmdc::PmDcReference {
-        crate::pmdc::PmDcReference::new(index, index != 0)
-            .expect("test reference index fits 31 bits")
-    }
-
-    fn reference_list(values: &[u32]) -> PmDcReferenceList {
-        PmDcReferenceList::new(
-            2,
-            (!values.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
-                u32::try_from(values.len()).expect("fixture value fits u32"),
-                0,
-            ])),
-            values.iter().copied().map(reference).collect(),
-        )
-        .expect("test list metadata matches length")
-    }
-
-    fn test_header() -> PmDcContentHeader {
-        PmDcContentHeader {
-            header_value: 0,
-            header_id: 0,
-            next: reference(0),
-            flags: 0,
-            context: reference(0),
-            source_index: 0,
-        }
-    }
-
-    fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
-        Located::new(
-            PmDcFeaturePropertyPayload {
-                save_version_major: 16,
-                header: test_header(),
-                kind,
-            },
-            crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
-                .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            ordinal,
-        )
-    }
-
-    fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
-        let mut references = vec![reference(0); slot_count];
-        for (slot, record_ordinal) in slots {
-            references[*slot] = reference(record_ordinal + 1);
-        }
-        Located::new(
-            PmDcFeaturePayload {
-                save_version_major: 16,
-                header: test_header(),
-                state: 69,
-                outline_value: 0,
-                properties: PmDcReferenceList::new(
-                    2,
-                    (!references.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
-                        u32::try_from(slot_count).expect("fixture value fits u32"),
-                        0,
-                    ])),
-                    references,
-                )
-                .expect("test list metadata matches length"),
-                value: 0,
-            },
-            test_type_id(FEATURE_TYPE),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            ordinal,
-        )
-    }
-
-    fn test_type_id(value: [u8; 16]) -> crate::record_identity::RecordTypeId {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        crate::record_identity::RecordTypeId::from_bytes(
-            &ctx,
-            value,
-            "retain Inventor PmDc test record type id",
-        )
-        .expect("service fixture type id")
-    }
-
-    fn decode_label(value: serde_json::Value) -> Result<PmDcFeatureLabel, String> {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let wire = serde_json::from_value::<
-            crate::record_identity::LocatedWire<PmDcFeatureLabelPayloadWire>,
-        >(value)
-        .map_err(|error| error.to_string())?;
-        crate::record_identity::LocatedWire {
-            id: wire.id,
-            type_id: wire.type_id,
-            segment_token: wire.segment_token,
-            record_ordinal: wire.record_ordinal,
-            value: wire
-                .value
-                .into_record(&ctx)
-                .map_err(|error| error.to_string())?,
-        }
-        .into_record(&ctx)
-        .map_err(|error| error.to_string())
-    }
-
-    #[test]
-    fn located_label_admission_rejects_empty_name_and_wrong_class_width() {
-        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
-        let valid = serde_json::to_value(&label).expect("valid label fixture");
-        let admitted = decode_label(valid.clone()).expect("valid label fixture");
-        assert_eq!(
-            serde_json::to_value(admitted).expect("valid label fixture"),
-            valid
-        );
-        for (field, value) in [
-            ("name", String::new()),
-            ("class_id", "a".repeat(31)),
-            ("class_id", "a".repeat(33)),
-        ] {
-            let mut wire = valid.clone();
-            wire[field] = serde_json::json!(value);
-            assert!(decode_label(wire)
-                .expect_err("invalid label")
-                .contains(field));
-        }
-        let mut wire = valid;
-        wire["class_id"] = serde_json::json!("z".repeat(32));
-        assert!(decode_label(wire).is_err());
-    }
-
-    fn test_label(
-        owner_ordinal: u32,
-        index: u32,
-        class_id: ClassId,
-        participants: &[u32],
-    ) -> PmDcFeatureLabel {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let payload = PmDcFeatureLabelPayloadWire::<String> {
-            save_version_major: 16,
-            header: PmDcLinkedHeader {
-                header_value: 0,
-                header_id: 0,
-                values: [0; 2],
-                owner: reference(owner_ordinal + 1),
-                parent: reference(0),
-                next: reference(0),
-            },
-            index,
-            participants: reference_list(participants),
-            name: format!("Feature {index}"),
-            class_id: class_id
-                .into_text(&ctx, "retain Inventor feature label fixture class id")
-                .expect("service fixture class id"),
-        }
-        .into_record(&ctx)
-        .expect("valid label fixture");
-        Located::new(
-            payload,
-            test_type_id(FEATURE_LABEL_TYPE),
-            segment()
-                .try_clone_for_decode(&ctx, "Inventor located fixture token")
-                .expect("service fixture token"),
-            owner_ordinal + 1000,
-        )
-    }
-
-    fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
-        Located::new(
-            crate::design::PmDcParameterPayload {
-                save_version_major: 16,
-                header: crate::pmdc::PmDcContentHeader {
-                    header_value: 0,
-                    header_id: 0,
-                    next: reference(0),
-                    flags: 0,
-                    context: reference(0),
-                    source_index: ordinal,
-                },
-                name: format!("p{ordinal}"),
-                name_value: 0,
-                unit: reference(0),
-                formula: reference(0),
-                nominal_value: cadmpeg_ir::scalar::FiniteReal::ZERO,
-                model_value: cadmpeg_ir::scalar::FiniteReal::ZERO,
-                tolerance: 0,
-                terminal_value: 0,
-            },
-            crate::record_identity::RecordTypeId::try_from(
-                "264d8790d011f8d10008cabc0663dc09".to_owned(),
-            )
-            .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            ordinal,
-        )
-    }
-
-    fn neutral_parameter(
-        raw: &crate::design::PmDcParameter,
-        value: ParameterValue,
-    ) -> DesignParameter {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        DesignParameter {
-            id: ParameterId::mint(format!(
-                "inventor:design:parameter#{}",
-                raw.identity.record_ordinal
-            ))
-            .expect("identity grammar"),
-            owner: None,
-            ordinal: raw.identity.record_ordinal,
-            name: raw.name.clone(),
-            expression: String::new(),
-            display: None,
-            value: Some(value),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: Some(raw.id(&ctx).expect("service fixture record identity")),
-        }
-    }
-
-    // The fixture builder keeps each independently indexed record family explicit.
-    #[allow(clippy::too_many_arguments)]
-    fn test_projection_index<'a>(
-        properties: &'a [PmDcFeatureProperty],
-        parameters: &'a [crate::design::PmDcParameter],
-        neutral_parameters: &'a [DesignParameter],
-        sketches: &'a [crate::sketch::PmDcSketch],
-        neutral_sketches: &'a [Sketch],
-        directions: &'a [crate::sketch::PmDcDirection],
-        transforms: &'a [crate::sketch::PmDcTransform],
-        entity_style_links: &'a [PmDcEntityStyleLink],
-    ) -> ProjectionIndex<'a> {
-        ProjectionIndex {
-            properties: properties
-                .iter()
-                .map(|record| {
-                    (
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        ),
-                        Some(record),
-                    )
-                })
-                .collect(),
-            parameters: parameters
-                .iter()
-                .map(|record| {
-                    (
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        ),
-                        Some(record),
-                    )
-                })
-                .collect(),
-            parameter_values: neutral_parameters
-                .iter()
-                .filter_map(|parameter| {
-                    Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
-                })
-                .collect(),
-            sketches: sketches
-                .iter()
-                .map(|record| {
-                    (
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        ),
-                        Some(record),
-                    )
-                })
-                .collect(),
-            sketch_ids: neutral_sketches
-                .iter()
-                .filter_map(|sketch| {
-                    sketch
-                        .native_ref
-                        .as_deref()
-                        .map(|native| (native, &sketch.id))
-                })
-                .collect(),
-            directions: directions
-                .iter()
-                .map(|record| {
-                    (
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        ),
-                        Some(record),
-                    )
-                })
-                .collect(),
-            transforms: transforms
-                .iter()
-                .map(|record| {
-                    (
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        ),
-                        Some(record),
-                    )
-                })
-                .collect(),
-            entity_style_links: entity_style_links
-                .iter()
-                .map(|record| {
-                    (
-                        record.identity.segment_token.as_str(),
-                        record.identity.record_ordinal,
-                    )
-                })
-                .collect(),
-        }
-    }
-
-    #[test]
-    fn parses_generated_feature_and_terminator() {
-        let mut feature = content(7);
-        feature.extend_from_slice(&(-1i32).to_le_bytes());
-        feature.extend_from_slice(&42u32.to_le_bytes());
-        feature.extend_from_slice(&2u16.to_le_bytes());
-        feature.extend_from_slice(&0x3000u16.to_le_bytes());
-        feature.extend_from_slice(&2u32.to_le_bytes());
-        feature.extend_from_slice(&[0; 8]);
-        feature.extend_from_slice(&0x8000_0004u32.to_le_bytes());
-        feature.extend_from_slice(&5u32.to_le_bytes());
-        feature.extend_from_slice(&9u32.to_le_bytes());
-        let parsed = parse(&feature, |ctx, source| {
-            parse_feature(ctx, source, 16).expect("feature")
-        });
-        assert_eq!(parsed.state, -1);
-        assert_eq!(parsed.outline_value, 42);
-        assert_eq!(parsed.properties.references().len(), 2);
-        assert!(parsed.properties.references()[0].qualified());
-        assert_eq!(parsed.value, 9);
-
-        let mut terminator = content(8);
-        terminator.extend_from_slice(&(-1i32).to_le_bytes());
-        let parsed = parse(&terminator, |_, source| {
-            parse_terminator(source, 16).expect("terminator")
-        });
-        assert_eq!(parsed.state, -1);
-    }
-
-    fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
-        let mut bytes = content(21);
-        bytes.extend_from_slice(&69u32.to_le_bytes());
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&references(&[]));
-        bytes.extend_from_slice(&7u32.to_le_bytes());
-        bytes.extend_from_slice(&references(&[0x8000_0010, 0x8000_0011]));
-        for index in 0..6 {
-            bytes.extend_from_slice(&(0x8000_0020u32 + index).to_le_bytes());
-        }
-        bytes.push(1);
-        match family {
-            PmDcPatternFamily::Rectangular => {
-                let remaining = if version > 20 { 26 } else { 20 };
-                for index in 0..remaining {
-                    bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
-                }
-            }
-            PmDcPatternFamily::Mirror => {
-                for index in 0..5 {
-                    bytes.extend_from_slice(&(0x8000_0040u32 + index).to_le_bytes());
-                }
-                if version > 20 {
-                    for index in 0..6 {
-                        bytes.extend_from_slice(&(0x100u32 + index).to_le_bytes());
-                    }
-                }
-                for index in 0..2 {
-                    bytes.extend_from_slice(&(0x8000_0050u32 + index).to_le_bytes());
-                }
-            }
-        }
-        bytes
-    }
-
-    fn feature_label_bytes() -> Vec<u8> {
-        let mut label = Vec::new();
-        label.extend_from_slice(&0u32.to_le_bytes());
-        label.extend_from_slice(&18u16.to_le_bytes());
-        label.extend_from_slice(&[0; 20]);
-        label.extend_from_slice(&0u32.to_le_bytes());
-        label.extend(references(&[]));
-        label.extend(utf16("a"));
-        label.extend_from_slice(&[0xab; 16]);
-        label
-    }
-
-    #[test]
-    fn feature_label_class_id_refuses_materialized_limit_before_hex_copy() {
-        let bytes = feature_label_bytes();
-        let arena = DecodeArena::new();
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("label view");
-        assert_eq!(
-            parse_label(&ctx, source, 22)
-                .expect("label is admitted")
-                .name
-                .as_str(),
-            "a"
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 31;
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("label view");
-        assert!(matches!(
-            parse_label(&ctx, source, 22),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "retain Inventor feature label class id"
-                    && limit.used == 0
-                    && limit.additional == 32
-        ));
-    }
-
-    #[test]
-    fn feature_record_forms_refuse_collection_limit_before_push() {
-        let mut feature = content(0);
-        feature.extend_from_slice(&[0; 8]);
-        feature.extend(references(&[]));
-        feature.extend_from_slice(&0u32.to_le_bytes());
-        let mut property = content(0);
-        property.extend(utf16("a"));
-        property.extend_from_slice(&0u32.to_le_bytes());
-        property.push(1);
-        let mut entity_link = Vec::new();
-        entity_link.extend_from_slice(&0u32.to_le_bytes());
-        entity_link.extend_from_slice(&16u16.to_le_bytes());
-        entity_link.extend_from_slice(&[0; 32]);
-        let cases = [
-            (
-                FEATURE_TYPE,
-                feature,
-                0,
-                "admit Inventor PmDc feature record",
-            ),
-            (
-                RECTANGULAR_PATTERN_FEATURE_TYPE,
-                pattern_feature_bytes(16, PmDcPatternFamily::Rectangular),
-                28,
-                "admit Inventor PmDc pattern feature record",
-            ),
-            (
-                MIRROR_FEATURE_TYPE,
-                pattern_feature_bytes(16, PmDcPatternFamily::Mirror),
-                15,
-                "admit Inventor PmDc pattern feature record",
-            ),
-            (
-                FEATURE_LABEL_TYPE,
-                feature_label_bytes(),
-                0,
-                "admit Inventor PmDc feature label record",
-            ),
-            (
-                ENTITY_STYLE_LINK_TYPE,
-                entity_link,
-                0,
-                "admit Inventor PmDc entity style link record",
-            ),
-            (
-                BOOLEAN_TYPE,
-                property,
-                0,
-                "admit Inventor PmDc feature property record",
-            ),
-        ];
-        for (type_id, payload, parser_items, operation) in cases {
-            let admitted = inventory_with_record(type_id, &payload, DecodePolicy::service())
-                .expect("feature record is admitted");
-            assert_eq!(
-                admitted.features.len()
-                    + admitted.pattern_features.len()
-                    + admitted.labels.len()
-                    + admitted.entity_style_links.len()
-                    + admitted.properties.len(),
-                1,
-                "{operation}"
-            );
-            assert!(admitted.issues.is_empty());
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = parser_items;
-            assert!(matches!(
-                inventory_with_record(type_id, &payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-                        && limit.used == parser_items
-            ));
-        }
-    }
-
-    #[test]
-    fn parses_generated_pattern_feature_branches() {
-        for (version, family, slots, extensions) in [
-            (16, PmDcPatternFamily::Rectangular, 26, 0),
-            (21, PmDcPatternFamily::Rectangular, 32, 0),
-            (16, PmDcPatternFamily::Mirror, 13, 0),
-            (21, PmDcPatternFamily::Mirror, 13, 6),
-        ] {
-            let bytes = pattern_feature_bytes(version, family);
-            let parsed = parse(&bytes, |ctx, source| {
-                parse_pattern_feature(ctx, source, version, family).expect("pattern feature")
-            });
-            assert_eq!(parsed.family, family);
-            assert_eq!(parsed.participants.references().len(), 2);
-            assert_eq!(parsed.property_slots.len(), slots);
-            assert_eq!(parsed.extension_values.len(), extensions);
-        }
-    }
-
-    #[test]
-    fn pattern_feature_property_slots_refuse_collection_limit_before_allocation() {
-        for (version, family, slots, extension_slots) in [
-            (16, PmDcPatternFamily::Rectangular, 26, 0),
-            (21, PmDcPatternFamily::Rectangular, 32, 0),
-            (16, PmDcPatternFamily::Mirror, 13, 0),
-            (21, PmDcPatternFamily::Mirror, 13, 6),
-        ] {
-            let bytes = pattern_feature_bytes(version, family);
-            let mut policy = DecodePolicy::service();
-            let collection_limit = 2 + slots + extension_slots - 1;
-            // Two participants, property slots, and extension slots precede the final property push.
-            policy.limits.max_collection_items = collection_limit;
-            let arena = DecodeArena::new();
-            let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("pattern feature view");
-            assert!(matches!(
-                parse_pattern_feature(&ctx, source, version, family),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "admit Inventor pattern feature property slots"
-                        && limit.used == collection_limit
-            ));
-        }
-    }
-
-    #[test]
-    fn pattern_feature_extension_values_refuse_collection_limit_before_allocation() {
-        let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
-        let mut policy = DecodePolicy::service();
-        // Two participants and eleven property slots precede the six-slot extension admission.
-        policy.limits.max_collection_items = 2 + 11 + 6 - 1;
-        let arena = DecodeArena::new();
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("pattern feature view");
-        assert!(matches!(
-            parse_pattern_feature(&ctx, source, 21, PmDcPatternFamily::Mirror),
-            Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor pattern feature extension values"
-                    && limit.used == 13
-        ));
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("pattern feature view");
-        assert_eq!(
-            parse_pattern_feature(&ctx, source, 21, PmDcPatternFamily::Mirror)
-                .expect("pattern feature is admitted")
-                .extension_values
-                .len(),
-            6
-        );
-    }
-
-    #[test]
-    fn projects_generated_fillet_and_chamfer() {
-        let raw_radius = raw_parameter(20);
-        let neutral_radius = neutral_parameter(
-            &raw_radius,
-            ParameterValue::Length(Length::new(2.5).expect("finite length fixture")),
-        );
-        let fillet_properties = vec![
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Fillet,
-                    type_value: 2,
-                    value: 0,
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::FilletEdgeSets,
-                    items: reference_list(&[4]),
-                },
-            ),
-            test_property(
-                3,
-                PmDcFeaturePropertyKind::FilletEdgeSet {
-                    edges: reference(5),
-                    radius: reference(21),
-                    selection: reference(6),
-                    continuity: reference(7),
-                },
-            ),
-            test_property(
-                4,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::EdgeCollection,
-                    items: reference_list(&[8]),
-                },
-            ),
-            test_property(
-                5,
-                PmDcFeaturePropertyKind::WideEnumeration {
-                    type_value: 4,
-                    value: 0,
-                },
-            ),
-            test_property(
-                6,
-                PmDcFeaturePropertyKind::Boolean {
-                    name: String::new(),
-                    name_value: 0,
-                    value: false,
-                },
-            ),
-            test_property(
-                7,
-                PmDcFeaturePropertyKind::EdgeItem {
-                    index_references: PmDcU32List::new(
-                        2,
-                        Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
-                        vec![42],
-                    )
-                    .expect("test list metadata matches length"),
-                    index_reference_value: 0,
-                    value: 0,
-                },
-            ),
-            test_property(
-                8,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[10]),
-                },
-            ),
-            test_property(
-                9,
-                PmDcFeaturePropertyKind::SurfaceBody {
-                    body: reference(30),
-                },
-            ),
-        ];
-        let fillet = test_feature(100, 16, &[(0, 2), (11, 1), (15, 8)]);
-        let label = test_label(100, 7, FILLET_CLASS_ID, &[]);
-        let index = test_projection_index(
-            &fillet_properties,
-            std::slice::from_ref(&raw_radius),
-            std::slice::from_ref(&neutral_radius),
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-        );
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("projection context");
-        let (projected, result) = project_fillet(&ctx, &fillet, &label, &index)
-            .expect("fillet candidate")
-            .expect("fillet projection");
-        assert!(matches!(
-            projected.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-                if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
-        ));
-        assert_eq!(
-            result
-                .bodies()
-                .iter()
-                .map(|id| id.as_str().to_owned())
-                .collect::<Vec<_>>(),
-            vec![fillet_properties[8]
-                .id(&ctx)
-                .expect("service fixture record identity")]
-        );
-
-        let raw_distance = raw_parameter(40);
-        let neutral_distance = neutral_parameter(
-            &raw_distance,
-            ParameterValue::Length(Length::new(1.25).expect("finite length fixture")),
-        );
-        let chamfer_properties = vec![
-            test_property(
-                31,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::EdgeCollection,
-                    items: reference_list(&[34]),
-                },
-            ),
-            test_property(
-                32,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Chamfer,
-                    type_value: 2,
-                    value: 0,
-                },
-            ),
-            test_property(
-                33,
-                PmDcFeaturePropertyKind::EdgeItem {
-                    index_references: PmDcU32List::new(
-                        2,
-                        Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
-                        vec![17],
-                    )
-                    .expect("test list metadata matches length"),
-                    index_reference_value: -1,
-                    value: 0,
-                },
-            ),
-            test_property(
-                34,
-                PmDcFeaturePropertyKind::Boolean {
-                    name: String::new(),
-                    name_value: 0,
-                    value: true,
-                },
-            ),
-            test_property(
-                35,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[37]),
-                },
-            ),
-            test_property(
-                36,
-                PmDcFeaturePropertyKind::SurfaceBody {
-                    body: reference(30),
-                },
-            ),
-        ];
-        let chamfer = test_feature(101, 12, &[(0, 31), (2, 40), (4, 32), (5, 34), (11, 35)]);
-        let label = test_label(101, 8, CHAMFER_CLASS_ID, &[]);
-        let index = test_projection_index(
-            &chamfer_properties,
-            std::slice::from_ref(&raw_distance),
-            std::slice::from_ref(&neutral_distance),
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-        );
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("projection context");
-        let (projected, _) = project_chamfer(&ctx, &chamfer, &label, &index)
-            .expect("chamfer candidate")
-            .expect("chamfer projection");
-        assert!(matches!(
-            projected.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Chamfer {
-                groups,
-                flip_direction: true
-            }) if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
-        ));
-    }
-
-    fn generated_extrusion(
-        selections: &[u32],
-        policy: DecodePolicy,
-    ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-        let raw_length = raw_parameter(70);
-        let raw_taper = raw_parameter(71);
-        let neutral_parameters = vec![
-            neutral_parameter(
-                &raw_length,
-                ParameterValue::Length(Length::new(12.0).expect("finite length fixture")),
-            ),
-            neutral_parameter(
-                &raw_taper,
-                ParameterValue::Angle(Angle::new(0.1).expect("finite angle fixture")),
-            ),
-        ];
-        let raw_sketch = Located::new(
-            crate::sketch::PmDcSketchPayload {
-                save_version_major: 16,
-                header: test_header(),
-                state: 0,
-                count_value: 0,
-                entities: PmDcReferenceList::new(8, None, Vec::new()).expect("empty entity list"),
-                transform: reference(0),
-                direction: reference(0),
-                values: [0; 2],
-                auxiliary: None,
-            },
-            crate::record_identity::RecordTypeId::try_from(
-                "114d8790d011f8d10008cabc0663dc09".to_owned(),
-            )
-            .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            50,
-        );
-        let neutral_sketch = Sketch {
-            id: SketchId::mint(format!("inventor:design:sketch#{}-50", segment()))
-                .expect("valid test fixture"),
-            name: None,
-            configuration: None,
-            visible: None,
-            placement: SketchPlacement::try_resolved(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("valid test fixture"),
-            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-            native_ref: Some(
-                raw_sketch
-                    .id(&cadmpeg_test_support::service_decode_context())
-                    .expect("service fixture record identity"),
-            ),
-        };
-        let direction = Located::new(
-            crate::sketch::PmDcDirectionPayload {
-                save_version_major: 16,
-                header: test_header(),
-                entity_flags: 0,
-                parameter: cadmpeg_ir::scalar::FiniteReal::ZERO,
-                extension: None,
-                direction: [
-                    cadmpeg_ir::scalar::FiniteReal::ZERO,
-                    cadmpeg_ir::scalar::FiniteReal::ZERO,
-                    cadmpeg_ir::scalar::FiniteReal::ONE,
-                ],
-            },
-            crate::record_identity::RecordTypeId::try_from(
-                "40df52ced011d0d20008ccbc0663dc09".to_owned(),
-            )
-            .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            60,
-        );
-        let entity_link = Located::new(
-            PmDcEntityStyleLinkPayload {
-                save_version_major: 16,
-                header: PmDcLinkedHeader {
-                    header_value: 0,
-                    header_id: 0,
-                    values: [0; 2],
-                    owner: reference(0),
-                    parent: reference(0),
-                    next: reference(0),
-                },
-                value: 0,
-                associative_id: 1,
-                entity_type: 1,
-            },
-            test_type_id(ENTITY_STYLE_LINK_TYPE),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            51,
-        );
-        let properties = vec![
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::PartOperation,
-                    type_value: 5,
-                    value: 1,
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::BoundaryPatch,
-                    items: reference_list(selections),
-                },
-            ),
-            test_property(
-                3,
-                PmDcFeaturePropertyKind::ProfileSelection {
-                    entity_link: reference(52),
-                    value: 0,
-                },
-            ),
-            test_property(
-                4,
-                PmDcFeaturePropertyKind::Boolean {
-                    name: String::new(),
-                    name_value: 0,
-                    value: true,
-                },
-            ),
-            test_property(
-                5,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Extent,
-                    type_value: 11,
-                    value: 1,
-                },
-            ),
-            test_property(
-                6,
-                PmDcFeaturePropertyKind::Boolean {
-                    name: String::new(),
-                    name_value: 0,
-                    value: false,
-                },
-            ),
-            test_property(
-                7,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[9]),
-                },
-            ),
-            test_property(
-                8,
-                PmDcFeaturePropertyKind::SurfaceBody {
-                    body: reference(30),
-                },
-            ),
-        ];
-        let feature = test_feature(
-            100,
-            27,
-            &[
-                (0, 1),
-                (1, 2),
-                (2, 60),
-                (3, 4),
-                (4, 70),
-                (5, 71),
-                (6, 5),
-                (7, 6),
-                (23, 2),
-                (26, 7),
-            ],
-        );
-        let label = test_label(100, 5, EXTRUSION_CLASS_ID, &[51]);
-        let raw_parameters = vec![raw_length, raw_taper];
-        let index = test_projection_index(
-            &properties,
-            &raw_parameters,
-            &neutral_parameters,
-            std::slice::from_ref(&raw_sketch),
-            std::slice::from_ref(&neutral_sketch),
-            std::slice::from_ref(&direction),
-            &[],
-            std::slice::from_ref(&entity_link),
-        );
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        project_extrusion(&ctx, &feature, &label, &index)
-    }
-
-    #[test]
-    fn duplicate_extrusion_selections_skip_before_feature_entity_charge() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        assert!(generated_extrusion(&[4, 4], policy).is_none());
-    }
-
-    #[test]
-    fn projects_generated_extrusion() {
-        let (projected, _) = generated_extrusion(&[4], DecodePolicy::service())
-            .expect("extrusion candidate")
-            .expect("extrusion projection");
-        assert!(matches!(
-            projected.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                direction: ExtrudeDirection::Explicit {
-                    vector: geometry_1,
-                    ..
-                },
-                extent: ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: actual_length
-                        },
-                        draft: Some(actual_draft),
-                        ..
-                    }
-                },
-                op: BooleanOp::NewBody,
-                ..
-            }) if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
-        ));
-    }
-
-    #[test]
-    fn projects_generated_hole() {
-        let raw_parameters = (70..76).map(raw_parameter).collect::<Vec<_>>();
-        let neutral_parameters = [
-            ParameterValue::Length(Length::new(5.0).expect("finite length fixture")),
-            ParameterValue::Length(Length::new(20.0).expect("finite length fixture")),
-            ParameterValue::Length(Length::new(9.0).expect("finite length fixture")),
-            ParameterValue::Length(Length::new(3.0).expect("finite length fixture")),
-            ParameterValue::Angle(Angle::new(1.5).expect("finite angle fixture")),
-            ParameterValue::Angle(Angle::new(2.0).expect("finite angle fixture")),
-        ]
-        .into_iter()
-        .zip(&raw_parameters)
-        .map(|(value, raw)| neutral_parameter(raw, value))
-        .collect::<Vec<_>>();
-        let transform = Located::new(
-            crate::sketch::PmDcTransformPayload {
-                save_version_major: 16,
-                header: test_header(),
-                prefix_present: false,
-                matrix: crate::compact_matrix::CompactMatrix::try_from_rows(
-                    &cadmpeg_test_support::service_decode_context(),
-                    0,
-                    0,
-                    [
-                        [1.0, 0.0, 0.0, 1.0],
-                        [0.0, 1.0, 0.0, 2.0],
-                        [0.0, 0.0, 1.0, 3.0],
-                        [0.0, 0.0, 0.0, 1.0],
-                    ],
-                )
-                .expect("finite explicit matrix fixture"),
-            },
-            crate::record_identity::RecordTypeId::try_from(
-                "184d8790d011f8d10008cabc0663dc09".to_owned(),
-            )
-            .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            60,
-        );
-        let direction = Located::new(
-            crate::sketch::PmDcDirectionPayload {
-                save_version_major: 16,
-                header: test_header(),
-                entity_flags: 0,
-                parameter: cadmpeg_ir::scalar::FiniteReal::ZERO,
-                extension: None,
-                direction: [
-                    cadmpeg_ir::scalar::FiniteReal::ZERO,
-                    cadmpeg_ir::scalar::FiniteReal::ZERO,
-                    cadmpeg_ir::scalar::FiniteReal::ONE.negated(),
-                ],
-            },
-            crate::record_identity::RecordTypeId::try_from(
-                "40df52ced011d0d20008ccbc0663dc09".to_owned(),
-            )
-            .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            61,
-        );
-        let properties = vec![
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Hole,
-                    type_value: 3,
-                    value: 2,
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Extent,
-                    type_value: 11,
-                    value: 5,
-                },
-            ),
-            test_property(
-                3,
-                PmDcFeaturePropertyKind::Boolean {
-                    name: String::new(),
-                    name_value: 0,
-                    value: false,
-                },
-            ),
-            test_property(
-                4,
-                PmDcFeaturePropertyKind::Placement {
-                    transform: reference(61),
-                    point: reference(90),
-                    value: reference(91),
-                },
-            ),
-            test_property(
-                5,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[7]),
-                },
-            ),
-            test_property(
-                6,
-                PmDcFeaturePropertyKind::SurfaceBody {
-                    body: reference(30),
-                },
-            ),
-        ];
-        let feature = test_feature(
-            100,
-            25,
-            &[
-                (0, 1),
-                (1, 70),
-                (2, 71),
-                (3, 72),
-                (4, 73),
-                (5, 74),
-                (6, 75),
-                (8, 60),
-                (9, 2),
-                (16, 61),
-                (17, 3),
-                (21, 4),
-                (24, 5),
-            ],
-        );
-        let label = test_label(100, 9, HOLE_CLASS_ID, &[]);
-        let index = test_projection_index(
-            &properties,
-            &raw_parameters,
-            &neutral_parameters,
-            &[],
-            &[],
-            std::slice::from_ref(&direction),
-            std::slice::from_ref(&transform),
-            &[],
-        );
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("projection context");
-        let (projected, _) = project_hole(&ctx, &feature, &label, &index)
-            .expect("hole candidate")
-            .expect("hole projection");
-        assert!(matches!(
-            projected.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
-                placements,
-                shape,
-
-                extent: Some(LinearTermination::ThroughAll {}),
-                ..
-            }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
-                    kind: HoleKind::CounterboreDrilled {
-                        diameter: actual_diameter,
-                        depth: actual_depth,
-                        drill_point_angle: actual_drill_point_angle
-                    },
-                    ..
-                }, Some(actual_diameter_2),) if (matches!(
-                placements.as_deref(),
-                Some([HolePlacement::Directed {
-                    position: geometry_1,
-                    direction: geometry_2
-                }])
-             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
-    }
-
-    #[test]
-    fn parses_generated_feature_properties_and_label() {
-        let mut enumeration = content(10);
-        enumeration.extend_from_slice(&5i16.to_le_bytes());
-        enumeration.extend_from_slice(&3u16.to_le_bytes());
-        let parsed = parse(&enumeration, |ctx, source| {
-            parse_part_operation(ctx, source, 16).expect("enumeration")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcFeaturePropertyKind::Enumeration {
-                family: PmDcFeatureEnumFamily::PartOperation,
-                type_value: 5,
-                value: 3
-            }
-        ));
-
-        let mut chamfer = content(10);
-        chamfer.extend_from_slice(&2i16.to_le_bytes());
-        chamfer.extend_from_slice(&0u16.to_le_bytes());
-        chamfer.extend_from_slice(&0u32.to_le_bytes());
-        let parsed = parse(&chamfer, |ctx, source| {
-            parse_chamfer(ctx, source, 16).expect("chamfer enumeration")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcFeaturePropertyKind::Enumeration {
-                family: PmDcFeatureEnumFamily::Chamfer,
-                type_value: 2,
-                value: 0
-            }
-        ));
-
-        let mut fillet_selection = content(10);
-        fillet_selection.extend_from_slice(&4u32.to_le_bytes());
-        fillet_selection.extend_from_slice(&0u32.to_le_bytes());
-        let parsed = parse(&fillet_selection, |ctx, source| {
-            parse_fillet_edge_selection(ctx, source, 16).expect("fillet edge selection")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcFeaturePropertyKind::WideEnumeration {
-                type_value: 4,
-                value: 0
-            }
-        ));
-
-        let mut boolean = content(11);
-        boolean.extend_from_slice(&utf16("solid"));
-        boolean.extend_from_slice(&7u32.to_le_bytes());
-        boolean.push(1);
-        let parsed = parse(&boolean, |ctx, source| {
-            parse_boolean(ctx, source, 16).expect("Boolean")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcFeaturePropertyKind::Boolean { value: true, .. }
-        ));
-
-        let mut collection = content(12);
-        collection.extend_from_slice(&references(&[0x8000_0004, 0x8000_0005]));
-        let parsed = parse(&collection, |ctx, source| {
-            parse_boundary_patch(ctx, source, 16).expect("boundary patch")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcFeaturePropertyKind::References { items, .. }
-                if items.references().len() == 2
-        ));
-
-        let mut rdx = content(13);
-        rdx.extend_from_slice(&utf16("RDxVar1"));
-        rdx.extend_from_slice(&0u32.to_le_bytes());
-        rdx.extend_from_slice(&2u32.to_le_bytes());
-        rdx.extend_from_slice(&3u32.to_le_bytes());
-        parse(&rdx, |ctx, source| {
-            parse_rdx_variable(ctx, source, 16).expect("RDx variable")
-        });
-
-        let mut surface = content(14);
-        surface.extend_from_slice(&0x8000_0006u32.to_le_bytes());
-        parse(&surface, |ctx, source| {
-            parse_surface_body(ctx, source, 16).expect("surface body")
-        });
-
-        let mut selection = content(15);
-        selection.extend_from_slice(&0x8000_0007u32.to_le_bytes());
-        selection.push(0);
-        parse(&selection, |ctx, source| {
-            parse_profile_selection(ctx, source, 16).expect("profile selection")
-        });
-
-        let mut entity_link = Vec::new();
-        entity_link.extend_from_slice(&0u32.to_le_bytes());
-        entity_link.extend_from_slice(&16u16.to_le_bytes());
-        entity_link.extend_from_slice(&0u32.to_le_bytes());
-        entity_link.extend_from_slice(&0u32.to_le_bytes());
-        entity_link.extend_from_slice(&0x8000_0008u32.to_le_bytes());
-        entity_link.extend_from_slice(&0u32.to_le_bytes());
-        entity_link.extend_from_slice(&0x8000_0009u32.to_le_bytes());
-        entity_link.extend_from_slice(&1u32.to_le_bytes());
-        entity_link.extend_from_slice(&2u32.to_le_bytes());
-        entity_link.extend_from_slice(&3u32.to_le_bytes());
-        let parsed = parse(&entity_link, |_, source| {
-            parse_entity_style_link(source, 16).expect("entity-style link")
-        });
-        assert_eq!(parsed.header.owner.index(), 8);
-        assert_eq!(parsed.header.next.index(), 9);
-        assert_eq!(parsed.associative_id, 2);
-
-        let mut placement = content(17);
-        placement.extend_from_slice(&0x8000_0009u32.to_le_bytes());
-        placement.extend_from_slice(&0x8000_000au32.to_le_bytes());
-        placement.extend_from_slice(&0x8000_000bu32.to_le_bytes());
-        parse(&placement, |ctx, source| {
-            parse_placement(ctx, source, 16).expect("placement")
-        });
-
-        let mut fillet_set = content(18);
-        fillet_set.extend_from_slice(&0x8000_0010u32.to_le_bytes());
-        fillet_set.extend_from_slice(&0x8000_0011u32.to_le_bytes());
-        fillet_set.extend_from_slice(&0x8000_0012u32.to_le_bytes());
-        fillet_set.extend_from_slice(&0x8000_0013u32.to_le_bytes());
-        let parsed = parse(&fillet_set, |ctx, source| {
-            parse_fillet_edge_set(ctx, source, 16).expect("fillet edge set")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } if radius.index() == 17
-        ));
-
-        let mut edge_item = content(18);
-        edge_item.extend_from_slice(&2u16.to_le_bytes());
-        edge_item.extend_from_slice(&0x3000u16.to_le_bytes());
-        edge_item.extend_from_slice(&1u32.to_le_bytes());
-        edge_item.extend_from_slice(&[1u32.to_le_bytes(), 0u32.to_le_bytes()].concat());
-        edge_item.extend_from_slice(&42u32.to_le_bytes());
-        edge_item.extend_from_slice(&0i32.to_le_bytes());
-        edge_item.extend_from_slice(&7u32.to_le_bytes());
-        let parsed = parse(&edge_item, |ctx, source| {
-            parse_edge_item(ctx, source, 16).expect("edge item")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcFeaturePropertyKind::EdgeItem {
-                index_reference_value: 0,
-                value: 7,
-                ..
-            }
-        ));
-
-        let mut label = Vec::new();
-        label.extend_from_slice(&0u32.to_le_bytes());
-        label.extend_from_slice(&18u16.to_le_bytes());
-        label.extend_from_slice(&0u32.to_le_bytes());
-        label.extend_from_slice(&0u32.to_le_bytes());
-        label.extend_from_slice(&0x8000_000du32.to_le_bytes());
-        label.extend_from_slice(&0u32.to_le_bytes());
-        label.extend_from_slice(&0u32.to_le_bytes());
-        label.extend_from_slice(&4u32.to_le_bytes());
-        label.extend_from_slice(&references(&[0x8000_0013]));
-        label.extend_from_slice(&utf16("Extrude1"));
-        label.extend_from_slice(&[0xabu8; 16]);
-        let parsed = parse(&label, |ctx, source| {
-            parse_label(ctx, source, 16).expect("label")
-        });
-        assert_eq!(parsed.name.as_str(), "Extrude1");
-        assert_eq!(parsed.participants.references().len(), 1);
-        assert_eq!(parsed.class_id, ClassId([0xab; 16]));
-    }
-
-    #[test]
-    fn class_id_admits_only_the_canonical_lowercase_spelling() {
-        let lower = "ab".repeat(16);
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let class_id = ClassId::from_text(&ctx, &lower).expect("lowercase class id");
-        assert_eq!(
-            class_id
-                .into_text(&ctx, "retain Inventor class id test text")
-                .expect("service class id text"),
-            lower
-        );
-        let upper = "AB".repeat(16);
-        assert!(ClassId::from_text(&ctx, &upper).is_err());
-    }
-
-    #[test]
-    fn class_id_native_writer_streams_the_existing_hex_bytes() {
-        #[derive(serde::Serialize)]
-        struct Record<'a> {
-            id: &'static str,
-            value: &'a ClassId,
-        }
-        let class_id = ClassId([0xab; 16]);
-        let owned = class_id
-            .into_text(
-                &cadmpeg_test_support::service_decode_context(),
-                "retain Inventor class id native writer test text",
-            )
-            .expect("service class id text");
-        assert_eq!(
-            serde_json::to_vec(&class_id).expect("borrowed class id"),
-            serde_json::to_vec(&owned).expect("owned class id")
-        );
-        let record = Record {
-            id: "inventor:pmdc:class-id#1",
-            value: &class_id,
-        };
-        cadmpeg_test_support::native_serialization::assert_native_limit(
-            &record,
-            serde_json::json!({"id": record.id, "value": owned}),
-        );
-    }
-
-    #[test]
-    fn feature_label_native_writer_refuses_retained_limit_before_clone() {
-        #[derive(serde::Serialize)]
-        struct Record<'a> {
-            id: &'static str,
-            value: &'a PmDcFeatureLabelPayload,
-        }
-        let reference =
-            crate::pmdc::PmDcReference::new(1, false).expect("test reference index fits 31 bits");
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let label = PmDcFeatureLabelPayloadWire::<String> {
-            save_version_major: 16,
-            header: PmDcLinkedHeader {
-                header_value: 0,
-                header_id: 18,
-                values: [0, 0],
-                owner: reference,
-                parent: reference,
-                next: reference,
-            },
-            index: 3,
-            participants: crate::pmdc::PmDcReferenceList::new(
-                8,
-                Some(crate::pmdc::PmDcListMetadata::U16([1, 2])),
-                vec![reference],
-            )
-            .expect("paired participants"),
-            name: "Extrude1".to_owned(),
-            class_id: "ab".repeat(16),
-        }
-        .into_record(&ctx)
-        .expect("feature label");
-        let owned = label
-            .clone()
-            .into_wire(&ctx)
-            .expect("contextful owned feature-label wire");
-        assert_eq!(
-            serde_json::to_vec(&label).expect("borrowed feature label"),
-            serde_json::to_vec(&owned).expect("owned feature label")
-        );
-        let record = Record {
-            id: "inventor:pmdc:feature-label#1",
-            value: &label,
-        };
-        crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
-        cadmpeg_test_support::native_serialization::assert_native_limit(
-            &record,
-            serde_json::json!({"id": record.id, "value": owned}),
-        );
-        crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
-    }
-}
+mod tests;

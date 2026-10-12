@@ -12,6 +12,17 @@ use cadmpeg_ir::ContainerSummary;
 use crate::framing::node_kind::NodeKind;
 use crate::{container, decode, deltas, native, parasolid, topology};
 
+const TOPOLOGY_KINDS: [(NodeKind, &str); 8] = [
+    (NodeKind::Body, "body"),
+    (NodeKind::Shell, "shell"),
+    (NodeKind::Face, "face"),
+    (NodeKind::Loop, "loop"),
+    (NodeKind::Edge, "edge"),
+    (NodeKind::Fin, "fin"),
+    (NodeKind::Vertex, "vertex"),
+    (NodeKind::Region, "region"),
+];
+
 /// Build the container summary: one entry per catalogued directory stream, plus
 /// one per embedded Parasolid stream, and the shared container notes.
 pub(super) fn summarize(
@@ -25,11 +36,20 @@ pub(super) fn summarize(
         .checked_add(scan.streams.len())
         .ok_or_else(|| ctx.refuse_codec_limit("nx summary entries", 0, u64::MAX))?;
     let mut entries = ctx.collection_vec(entry_count, "nx summary entries")?;
-    let semantic_streams = (scan.count(ctx, parasolid::StreamKind::Partition)? != 0)
-        .then(|| native::substrate::topology_streams(ctx, scan))
-        .transpose()?;
+    let (semantic_streams, _semantic_storage) =
+        ctx.with_scoped_storage("NX inspection semantic scratch", || {
+            if ctx.any_by(
+                &scan.streams,
+                |stream| Ok(stream.kind() == parasolid::StreamKind::Partition),
+                "find NX inspection partition",
+            )? {
+                Ok(Some(native::substrate::topology_streams(ctx, scan)?))
+            } else {
+                Ok::<_, CodecError>(None)
+            }
+        })?;
 
-    for entry in &scan.container.entries {
+    for entry in ctx.admit_iter(&scan.container.entries, "NX summary directory traversal")? {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -74,7 +94,10 @@ pub(super) fn summarize(
 
     let mut storage_notes_storage = ctx.reserve_scoped(0, "nx temporary storage notes")?;
     let mut storage_notes: Vec<String> = Vec::new();
-    for (si, stream) in scan.streams.iter().enumerate() {
+    for (si, stream) in ctx
+        .admit_iter(&scan.streams, "NX summary stream traversal")?
+        .enumerate()
+    {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -103,26 +126,21 @@ pub(super) fn summarize(
             )?;
         }
         if stream.kind().is_parasolid() {
-            let graph = topology::Graph::parse(ctx, &stream.inflated)?;
-            for (kind, name) in [
-                (NodeKind::Body, "body"),
-                (NodeKind::Shell, "shell"),
-                (NodeKind::Face, "face"),
-                (NodeKind::Loop, "loop"),
-                (NodeKind::Edge, "edge"),
-                (NodeKind::Fin, "fin"),
-                (NodeKind::Vertex, "vertex"),
-                (NodeKind::Region, "region"),
-            ] {
+            let raw_counts = {
+                let (graph, _storage) = ctx
+                    .with_scoped_storage("NX inspection raw graph scratch", || {
+                        topology::Graph::parse(ctx, &stream.inflated)
+                    })?;
+                TOPOLOGY_KINDS.map(|(kind, _)| graph.of_kind(kind).len())
+            };
+            for ((_, name), count) in TOPOLOGY_KINDS.into_iter().zip(raw_counts) {
                 insert_summary_attribute(
                     ctx,
                     &mut attributes,
                     "records.",
                     name,
                     false,
-                    SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                        graph.kind_count(kind),
-                    )),
+                    SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
                 )?;
             }
             if stream.kind() == parasolid::StreamKind::Partition {
@@ -131,30 +149,36 @@ pub(super) fn summarize(
                         "NX partition has no topology byte views",
                     ));
                 };
-                let graph = topology::Graph::parse(ctx, &semantic_streams[si])?;
-                for (kind, name) in [
-                    (NodeKind::Body, "body"),
-                    (NodeKind::Shell, "shell"),
-                    (NodeKind::Face, "face"),
-                    (NodeKind::Loop, "loop"),
-                    (NodeKind::Edge, "edge"),
-                    (NodeKind::Fin, "fin"),
-                    (NodeKind::Vertex, "vertex"),
-                    (NodeKind::Region, "region"),
-                ] {
+                let live_counts =
+                    if std::ptr::eq(stream.inflated.as_slice(), semantic_streams[si].as_ref())
+                        || ctx.equal_bytes(
+                            &stream.inflated,
+                            &semantic_streams[si],
+                            "compare NX live topology bytes",
+                        )?
+                    {
+                        raw_counts
+                    } else {
+                        let (graph, _storage) = ctx
+                            .with_scoped_storage("NX inspection live graph scratch", || {
+                                topology::Graph::parse(ctx, &semantic_streams[si])
+                            })?;
+                        TOPOLOGY_KINDS.map(|(kind, _)| graph.of_kind(kind).len())
+                    };
+                for ((_, name), count) in TOPOLOGY_KINDS.into_iter().zip(live_counts) {
                     insert_summary_attribute(
                         ctx,
                         &mut attributes,
                         "records.live.",
                         name,
                         false,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(
-                            graph.kind_count(kind),
-                        )),
+                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
                     )?;
                 }
             } else if stream.kind() == parasolid::StreamKind::Deltas {
-                let census = deltas::census::walk(ctx, &stream.inflated)?;
+                let mut graph_storage = ctx.reserve_scoped(0, "NX inspection delta scratch")?;
+                let census =
+                    graph_storage.with_storage(|| deltas::census::walk(ctx, &stream.inflated))?;
                 if census.transmit_header.is_some() {
                     insert_summary_attribute(
                         ctx,
@@ -249,25 +273,41 @@ pub(super) fn summarize(
                         )),
                     )?;
                 }
-                for (family, count) in census.full_counts(ctx)? {
-                    insert_summary_attribute(
-                        ctx,
-                        &mut attributes,
-                        "records.delta.full.",
-                        family,
-                        true,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
-                    )?;
+                {
+                    let (counts, _storage) = ctx
+                        .with_scoped_storage("NX inspection full count scratch", || {
+                            census.full_counts(ctx)
+                        })?;
+                    for (&family, &count) in
+                        ctx.admit_iter(&counts, "NX summary full record counts")?
+                    {
+                        insert_summary_attribute(
+                            ctx,
+                            &mut attributes,
+                            "records.delta.full.",
+                            family,
+                            true,
+                            SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
+                        )?;
+                    }
                 }
-                for (family, count) in census.tombstone_counts(ctx)? {
-                    insert_summary_attribute(
-                        ctx,
-                        &mut attributes,
-                        "records.delta.tombstone.",
-                        family,
-                        true,
-                        SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
-                    )?;
+                {
+                    let (counts, _storage) = ctx
+                        .with_scoped_storage("NX inspection tombstone count scratch", || {
+                            census.tombstone_counts(ctx)
+                        })?;
+                    for (&family, &count) in
+                        ctx.admit_iter(&counts, "NX summary tombstone counts")?
+                    {
+                        insert_summary_attribute(
+                            ctx,
+                            &mut attributes,
+                            "records.delta.tombstone.",
+                            family,
+                            true,
+                            SummaryValue::Number(cadmpeg_core::decode::u64_from_index(count)),
+                        )?;
+                    }
                 }
             }
         }
@@ -311,12 +351,7 @@ pub(super) fn summarize(
     }
 
     let (classification, mut notes) = crate::scan_notes::summarize(ctx, scan)?;
-    ctx.reserve_vec(
-        &mut notes,
-        storage_notes.len(),
-        "nx combined inspection notes",
-    )?;
-    notes.extend(storage_notes);
+    ctx.extend_vec(&mut notes, storage_notes, "nx combined inspection notes")?;
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
     Ok(ContainerSummary::classified(
@@ -361,18 +396,24 @@ fn insert_summary_attribute(
 
     let mut key = String::new();
     ctx.try_reserve_retained_text(&mut key, key_len, "nx summary attribute text")?;
-    key.push_str(prefix);
+    ctx.append_retained(&mut key, prefix, "NX admitted text append")?;
     if lowercase_suffix {
-        for character in suffix.chars() {
-            key.push(character.to_ascii_lowercase());
+        for character in ctx.admit_iter(suffix, "NX summary attribute suffix traversal")? {
+            ctx.push_retained_char(
+                &mut key,
+                character.to_ascii_lowercase(),
+                "NX summary suffix character",
+            )?;
         }
     } else {
-        key.push_str(suffix);
+        ctx.append_retained(&mut key, suffix, "NX admitted text append")?;
     }
     let mut rendered = String::new();
     ctx.try_reserve_retained_text(&mut rendered, value_len, "nx summary attribute text")?;
     match value {
-        SummaryValue::Text(text) => rendered.push_str(text),
+        SummaryValue::Text(text) => {
+            ctx.append_retained(&mut rendered, text, "NX admitted text append")?;
+        }
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")
             .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?,
     }
@@ -382,6 +423,53 @@ fn insert_summary_attribute(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn summary_suffix_character_refusal_precedes_attribute_insertion() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        for (suffix, expected, character_bytes) in [("AB", "prefix:ab", 1), ("ÅB", "prefix:Åb", 2)]
+        {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                ResourceDimension::WorkUnits,
+                "NX summary suffix character",
+                |ctx| {
+                    let mut attributes = std::collections::BTreeMap::new();
+                    let result = super::insert_summary_attribute(
+                        ctx,
+                        &mut attributes,
+                        "prefix:",
+                        suffix,
+                        true,
+                        super::SummaryValue::Text("text"),
+                    );
+                    if result.is_err() {
+                        assert!(attributes.is_empty());
+                    }
+                    result
+                },
+            );
+            // Character copying counts its encoded UTF-8 bytes.
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "NX summary suffix character"
+                    && limit.additional == character_bytes));
+            crate::test_support::with_decode_context(|ctx| {
+                let mut attributes = std::collections::BTreeMap::new();
+                super::insert_summary_attribute(
+                    ctx,
+                    &mut attributes,
+                    "prefix:",
+                    suffix,
+                    true,
+                    super::SummaryValue::Text("text"),
+                )
+                .unwrap();
+                assert_eq!(attributes.get(expected).map(String::as_str), Some("text"));
+            });
+        }
+    }
+
     #[test]
     fn inspection_partition_search_refuses_unadmitted_stream_work() {
         let file = crate::test_support::test_prt::single_part_prt();
@@ -397,17 +485,14 @@ mod tests {
                 body: crate::parasolid::StreamBody::Preview,
             }],
         };
-        crate::test_support::with_decode_context_over(
+        let error = crate::test_support::resource_refusal_at(
             &[],
-            |policy| policy.limits.max_work_units = 0,
-            |ctx| {
-                let error = super::summarize(ctx, &scan).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && limit.operation == "count NX streams")
-                );
-            },
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "find NX inspection partition",
+            |ctx| super::summarize(ctx, &scan),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "find NX inspection partition")
         );
     }
 }

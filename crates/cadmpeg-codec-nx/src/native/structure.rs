@@ -994,6 +994,8 @@ mod tests {
                 body: crate::container::DirEntryBody::File { offset: 0, len },
             }],
             fastload_table: None,
+            segment_index: None,
+            segment_wrappers: Vec::new(),
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         }

@@ -4126,9 +4126,9 @@ fn emit_carrier_curve(
                             "ASM compound curve components",
                         )?;
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(
-                            cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                                parameters, components, None,
-                            )?,
+                            cadmpeg_ir::geometry::CompoundCurveConstruction::try_new_for_decode(
+                                ctx, parameters, components, None,
+                            )??,
                         )
                     }
                     ProceduralCurveConstruction::Exact => {

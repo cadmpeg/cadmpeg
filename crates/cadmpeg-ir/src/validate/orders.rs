@@ -1,46 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scoped uniqueness of numeric presentation orders.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use std::collections::BTreeSet;
+
+use cadmpeg_core::decode::cost::DecodeCost;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 pub(super) struct Orders<'ctx, 'arena, T = u32> {
-    values: Vec<T>,
+    values: BTreeSet<T>,
     ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
 
-impl<'ctx, 'arena, T: Ord + Copy> Orders<'ctx, 'arena, T> {
+impl<'ctx, 'arena, T: Ord + DecodeCost> Orders<'ctx, 'arena, T> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
-            values: Vec::new(),
+            values: BTreeSet::new(),
             ctx,
             storage: ctx.reserve_scoped(0, "validation order storage")?,
         })
     }
 
+    /// Admit `order`, reporting `false` when it is already present.
     pub(super) fn insert(&mut self, order: T) -> Result<bool, CodecError> {
-        let mut low = 0;
-        let mut high = self.values.len();
-        while low < high {
-            self.ctx.charge_work(1, "compare validation order")?;
-            let middle = low + (high - low) / 2;
-            match self.values[middle].cmp(&order) {
-                std::cmp::Ordering::Less => low = middle + 1,
-                std::cmp::Ordering::Greater => high = middle,
-                std::cmp::Ordering::Equal => return Ok(false),
-            }
-        }
-        self.ctx.charge_work(
-            u64_from_index(self.values.len() - low),
-            "move validation orders",
-        )?;
-        self.storage.with_storage(|| {
-            self.ctx
-                .reserve_vec(&mut self.values, 1, "validation order slots")
-        })?;
-        self.values.insert(low, order);
-        Ok(true)
+        self.ctx.insert_scoped_btree_set(
+            &mut self.storage,
+            &mut self.values,
+            order,
+            "compare validation order",
+            "validation order slots",
+        )
     }
 }
 
@@ -51,49 +41,31 @@ mod tests {
 
     #[test]
     fn validation_orders_preserve_growth_and_comparison_refusals() {
-        for (dimension, cap, operation) in [
+        for (dimension, operation) in [
             (
                 ResourceDimension::MaterializedBytes,
-                0,
                 "validation order slots",
             ),
-            (
-                ResourceDimension::CollectionItems,
-                0,
-                "validation order slots",
-            ),
-            (ResourceDimension::WorkUnits, 0, "compare validation order"),
-            (ResourceDimension::WorkUnits, 1, "move validation orders"),
+            (ResourceDimension::CollectionItems, "validation order slots"),
+            // An empty set needs no comparison, so the node storage refuses.
+            (ResourceDimension::WorkUnits, "validation order slots"),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
                 _ => unreachable!(),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut orders = super::Orders::<u32>::new(&ctx).unwrap();
-            let result = if dimension == ResourceDimension::WorkUnits {
-                assert!(orders.insert(10).unwrap());
-                orders.insert(5)
-            } else {
-                orders.insert(10)
-            };
-            let Err(CodecError::ResourceLimit(limit)) = result else {
+            let Err(CodecError::ResourceLimit(limit)) = orders.insert(10) else {
                 panic!("order operation must refuse");
             };
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, operation);
-            assert_eq!(
-                orders.values,
-                if dimension == ResourceDimension::WorkUnits {
-                    vec![10]
-                } else {
-                    Vec::new()
-                }
-            );
+            assert!(orders.values.is_empty());
             drop(orders);
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -116,7 +88,7 @@ mod tests {
             for order in [7, 3, 10] {
                 assert!(!orders.insert(order).unwrap());
             }
-            assert_eq!(orders.values, [3, 7, 10]);
+            assert!(orders.values.iter().copied().eq([3, 7, 10]));
         }
         drop(ctx.reserve_scoped(4096, "order scope released").unwrap());
         ctx.finish_session().unwrap();
@@ -128,7 +100,7 @@ mod tests {
         assert!(orders.insert(u64::MAX).unwrap());
         assert!(orders.insert(0u64).unwrap());
         assert!(!orders.insert(u64::MAX).unwrap());
-        assert_eq!(orders.values, [0, u64::MAX]);
+        assert!(orders.values.iter().copied().eq([0, u64::MAX]));
         drop(orders);
         ctx.finish_session().unwrap();
     }

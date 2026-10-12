@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{
-    blend, intersection, offset, parse_carrier, spline, subset, sweep, Carrier, CurveCarrier,
-    SurfaceCarrier,
-};
+#[cfg(test)]
+use super::{blend, offset, sweep, Carrier, SurfaceCarrier};
+use super::{intersection, CurveCarrier};
+#[cfg(test)]
 use cadmpeg_core::decode::DecodeContext;
+#[cfg(test)]
 use cadmpeg_ir::report::loss::LossNote;
-use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+#[cfg(test)]
+use std::collections::{BTreeMap, BTreeSet};
+
+pub(in crate::brep) mod publication;
+pub(in crate::brep) mod scan;
+pub(in crate::brep) mod stream;
+pub(in crate::brep) mod view;
 
 /// An exact carrier or a derived intersection carrier.
 pub(super) enum IndexedCurve {
@@ -24,23 +30,25 @@ impl IndexedCurve {
     }
 }
 
+#[cfg(test)]
 #[derive(Default)]
 pub(super) struct CarrierIndex {
-    curves: HashMap<u16, IndexedCurve>,
-    surfaces: HashMap<u16, SurfaceCarrier>,
+    curves: BTreeMap<u16, IndexedCurve>,
+    surfaces: BTreeMap<u16, SurfaceCarrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
-    sweeps: HashMap<u16, sweep::SweepCarrier>,
+    sweeps: BTreeMap<u16, sweep::SweepCarrier>,
     /// Constant-radius rolling-ball constructions, resolved at face binding.
-    blends: HashMap<u16, blend::BlendCarrier>,
+    blends: BTreeMap<u16, blend::BlendCarrier>,
     /// Exact offset-surface constructions, resolved recursively at face binding.
-    offsets: HashMap<u16, offset::OffsetCarrier>,
+    offsets: BTreeMap<u16, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
-    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
+    blend_support_pairs: BTreeMap<u16, blend::SupportPairCarrier>,
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
+#[cfg(test)]
 impl CarrierIndex {
     pub(super) fn insert(
         &mut self,
@@ -49,215 +57,130 @@ impl CarrierIndex {
     ) -> Result<(), cadmpeg_core::CodecError> {
         match carrier {
             Carrier::Curve(carrier) => {
-                ctx.admit_hash_map_entry(
+                ctx.insert_btree_map(
                     &mut self.curves,
-                    &carrier.attr,
+                    carrier.attr,
+                    IndexedCurve::Exact(carrier),
                     "index SLDPRT curve carriers",
                 )?;
-                self.curves
-                    .insert(carrier.attr, IndexedCurve::Exact(carrier));
             }
             Carrier::Surface(carrier) => {
-                ctx.admit_hash_map_entry(
+                ctx.insert_btree_map(
                     &mut self.surfaces,
-                    &carrier.attr,
+                    carrier.attr,
+                    carrier,
                     "index SLDPRT surface carriers",
                 )?;
-                self.surfaces.insert(carrier.attr, carrier);
             }
         }
         Ok(())
     }
 
-    pub(super) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
-        self.curves.get(&attr)
+    pub(super) fn curve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&IndexedCurve>, cadmpeg_core::CodecError> {
+        ctx.get_btree_map(&self.curves, &attr, "lookup SLDPRT curve carrier")
     }
 
     pub(super) fn curve_attrs(
         &self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<HashSet<u16>, cadmpeg_core::CodecError> {
-        let mut attrs = HashSet::new();
-        ctx.reserve_set(
-            &mut attrs,
-            self.curves.len(),
+    ) -> Result<BTreeSet<u16>, cadmpeg_core::CodecError> {
+        ctx.collect_btree_set(
+            self.curves.keys().copied(),
             "collect SLDPRT curve attributes",
-        )?;
-        attrs.extend(self.curves.keys().copied());
-        Ok(attrs)
+        )
     }
 
-    pub(super) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
-        self.surfaces.get(&attr)
+    pub(super) fn surface(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&SurfaceCarrier>, cadmpeg_core::CodecError> {
+        ctx.get_btree_map(&self.surfaces, &attr, "lookup SLDPRT surface carrier")
     }
 
     /// Swept/spun surface construction carried by one attribute.
-    pub(super) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
-        self.sweeps.get(&attr)
+    pub(super) fn sweep(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&sweep::SweepCarrier>, cadmpeg_core::CodecError> {
+        ctx.get_btree_map(&self.sweeps, &attr, "lookup SLDPRT sweep carrier")
     }
 
     /// Constant-radius rolling-ball construction carried by `attr`.
-    pub(super) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
-        self.blends.get(&attr)
+    pub(super) fn blend(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&blend::BlendCarrier>, cadmpeg_core::CodecError> {
+        ctx.get_btree_map(&self.blends, &attr, "lookup SLDPRT blend carrier")
     }
 
     /// Exact offset-surface construction carried by `attr`.
-    pub(super) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
-        self.offsets.get(&attr)
+    pub(super) fn offset(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&offset::OffsetCarrier>, cadmpeg_core::CodecError> {
+        ctx.get_btree_map(&self.offsets, &attr, "lookup SLDPRT offset carrier")
     }
 
     /// Zero-offset surface pair carried by `attr`.
-    pub(super) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
-        self.blend_support_pairs.get(&attr)
-    }
-
-    fn insert_intersection(
-        &mut self,
+    pub(super) fn blend_support_pair(
+        &self,
         ctx: &DecodeContext<'_>,
-        intersection: intersection::IntersectionCarrier,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.admit_hash_map_entry(
-            &mut self.curves,
-            &intersection.carrier.attr,
-            "index SLDPRT intersection carriers",
-        )?;
-        self.curves
-            .entry(intersection.carrier.attr)
-            .or_insert(IndexedCurve::Derived(intersection));
-        Ok(())
-    }
-
-    #[cfg(test)]
-    fn insert_blend_support_pair(&mut self, attr: u16, carrier: blend::SupportPairCarrier) {
-        self.blend_support_pairs.insert(attr, carrier);
-    }
-
-    pub(super) fn merge_missing(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        other: Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        merge_missing_map(
-            ctx,
-            &mut self.curves,
-            other.curves,
-            "merge SLDPRT curve carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.surfaces,
-            other.surfaces,
-            "merge SLDPRT surface carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.sweeps,
-            other.sweeps,
-            "merge SLDPRT sweep carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.blends,
-            other.blends,
-            "merge SLDPRT blend carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.offsets,
-            other.offsets,
-            "merge SLDPRT offset carriers",
-        )?;
-        merge_missing_map(
-            ctx,
-            &mut self.blend_support_pairs,
-            other.blend_support_pairs,
-            "merge SLDPRT blend support pairs",
-        )?;
-        ctx.reserve_capacity(
-            &mut self.lane_refusals,
-            other.lane_refusals.len(),
-            "merge SLDPRT lane refusals",
-        )?;
-        self.lane_refusals.extend(other.lane_refusals);
-        Ok(())
+        attr: u16,
+    ) -> Result<Option<&blend::SupportPairCarrier>, cadmpeg_core::CodecError> {
+        ctx.get_btree_map(
+            &self.blend_support_pairs,
+            &attr,
+            "lookup SLDPRT blend_support_pair carrier",
+        )
     }
 }
 
-fn merge_missing_map<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
-    ctx: &DecodeContext<'_>,
-    target: &mut HashMap<K, V>,
-    source: HashMap<K, V>,
-    operation: &'static str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    for (key, value) in source {
-        if !target.contains_key(&key) {
-            ctx.insert_hash_map(target, key, value, operation)?;
-        }
-    }
-    Ok(())
-}
-
-/// Scan the whole stream body for compact analytic carriers, keyed by attribute
-/// id. A later occurrence in one stream replaces an earlier occurrence at the
-/// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
-/// the partition carrier remains authoritative and a deltas carrier fills only
-/// an absent identity.
+/// Retained fixture adapter over the production stream scanner.
+#[cfg(test)]
 pub(super) fn scan_carriers(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(body.len()),
-        "scan SLDPRT analytic carriers",
-    )?;
-    let mut out = CarrierIndex::default();
-    let mut i = 0usize;
-    while i + 2 <= body.len() {
-        if body[i] == 0x00 {
-            if let Some(count) = body
-                .get(i + 1)
-                .copied()
-                .and_then(super::analytic_value_count)
-            {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(
-                        (count * 8 + super::DELTAS_MARKER_OFFSET + 3) * 3,
-                    ),
-                    "probe SLDPRT analytic carrier",
-                )?;
-            }
-            if let Some(c) = parse_carrier(body, i) {
-                out.insert(ctx, c)?;
-            }
-        }
-        i += 1;
-    }
-    let mut lane_refusals = Vec::new();
-    for carrier in spline::scan_curve_carriers(ctx, body, &mut lane_refusals)?.into_values() {
-        out.insert(ctx, Carrier::Curve(carrier))?;
-    }
-    for carrier in spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?.into_values() {
-        out.insert(ctx, Carrier::Surface(carrier))?;
-    }
-    for carrier in subset::scan(ctx, body, &out)? {
-        out.insert(ctx, Carrier::Curve(carrier))?;
-    }
-    out.sweeps = sweep::scan_sweep_carriers(ctx, body)?;
-    let blend::BlendCarriers { blends, pairs } = blend::scan(ctx, body)?;
-    out.blends = blends;
-    out.blend_support_pairs = pairs;
-    out.offsets = offset::scan(ctx, body)?;
-    for intersection in
-        intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?.into_values()
-    {
-        out.insert_intersection(ctx, intersection)?;
-    }
-    out.lane_refusals = lane_refusals;
-    Ok(out)
+    scan::scan_stream_carriers(ctx, body)?.into_retained(ctx)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn carrier_lookup_admits_key_work() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let index = super::scan_carriers(&ctx, &blend_body()).expect("carrier scan");
+        crate::test_support::work_refusal_at("lookup SLDPRT blend carrier", |ctx| {
+            index.blend(ctx, 9)
+        });
+        assert!(index.blend(&ctx, 9).unwrap().is_some());
+    }
+
+    #[test]
+    fn empty_carrier_indexes_do_not_charge_key_comparisons() {
+        let index = CarrierIndex::default();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(index.curve(&ctx, 7).unwrap().is_none());
+        assert!(index.surface(&ctx, 7).unwrap().is_none());
+        assert!(index.sweep(&ctx, 7).unwrap().is_none());
+        assert!(index.blend(&ctx, 7).unwrap().is_none());
+        assert!(index.offset(&ctx, 7).unwrap().is_none());
+        assert!(index.blend_support_pair(&ctx, 7).unwrap().is_none());
+        ctx.finish_session().unwrap();
+    }
+
     #[test]
     fn analytic_carrier_scan_admits_work_before_empty_pass() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -306,63 +229,29 @@ mod tests {
         operation: &str,
     ) -> cadmpeg_core::decode::ResourceLimit {
         let bytes = blend_body();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = 0;
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match dimension {
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap;
+                }
+                _ => panic!("carrier test selects a collection or work limit"),
             }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = 0;
-            }
-            _ => panic!("carrier test selects a collection or work limit"),
-        }
-        for _ in 0..1024 {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                     .expect("test carrier bytes fit the root limit");
-            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                super::scan_carriers(&ctx, &bytes)
-            else {
-                panic!("expected a carrier resource refusal");
-            };
-            assert_eq!(limit.dimension, dimension);
-            if limit.operation == operation {
-                let just_below = limit.used + limit.additional - 1;
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = just_below;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = just_below;
-                    }
-                    _ => panic!("carrier test selects a collection or work limit"),
-                }
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                        .expect("test carrier bytes fit the root limit");
-                let Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) =
-                    super::scan_carriers(&ctx, &bytes)
-                else {
-                    panic!("one unit below the carrier request must refuse");
-                };
-                assert_eq!(repeated.dimension, dimension);
-                assert_eq!(repeated.operation, operation);
-                return limit;
-            }
-            let next = limit.used + limit.additional;
-            match dimension {
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = next;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = next;
-                }
-                _ => panic!("carrier test selects a collection or work limit"),
-            }
-        }
-        panic!("carrier charge was not reached");
+            super::scan_carriers(&ctx, &bytes)
+        });
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("carrier resource refusal");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, operation);
+        limit
     }
 
     #[test]
@@ -385,16 +274,6 @@ mod tests {
 
     #[test]
     fn merge_retains_zero_offset_blend_support_pairs() {
-        let mut base = CarrierIndex::default();
-        let mut delta = CarrierIndex::default();
-        delta.insert_blend_support_pair(
-            9,
-            blend::SupportPairCarrier {
-                supports: [11, 12],
-                intersection: 13,
-            },
-        );
-
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &[],
@@ -402,11 +281,32 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test merge fits service policy");
+        let mut base = super::stream::StreamCarrierIndex::empty(&ctx).unwrap();
+        let mut delta = super::stream::StreamCarrierIndex::empty(&ctx).unwrap();
+        delta
+            .blend_support_pairs
+            .replace(
+                &ctx,
+                9,
+                blend::SupportPairCarrier {
+                    supports: [11, 12],
+                    intersection: 13,
+                },
+                "test blend support pair",
+            )
+            .unwrap();
         base.merge_missing(&ctx, delta)
             .expect("test merge fits service policy");
 
-        let pair = base.blend_support_pair(9).expect("support pair");
+        let view = super::view::CarrierView::Stream(&base);
+        let pair = view
+            .blend_support_pair(&ctx, 9)
+            .expect("support lookup")
+            .expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);
     }
 }
+
+#[cfg(test)]
+mod composition_tests;

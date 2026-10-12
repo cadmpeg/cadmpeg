@@ -16,7 +16,7 @@ use super::{offset_store_control_counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{FaceLoopError, FaceLoopFailure, Graph, Node};
+use crate::topology::{BodyShapeShellVisitor, FaceLoopError, FaceLoopFailure, Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::dialect::DialectLayers;
@@ -108,22 +108,23 @@ pub(super) fn emit_topology(
 
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut storage = ctx.reserve_scoped(0, "nx topology emission scratch")?;
-    let body_shells = storage.with_storage(|| {
-        ctx.collect_vec(graph.body_shape_shells(ctx)?, "nx topology body shells")
-    })?;
+    let mut body_shells = Vec::new();
     let mut valid_face_xmts = BTreeSet::new();
-    for &shell in ctx.admit_iter(&body_shells, "nx valid topology faces")? {
-        let (faces, _faces_storage) = ctx.with_scoped_storage("nx topology shell faces", || {
-            graph.shell_face_xmts(ctx, shell)
-        })?;
-        if let Some(faces) = faces {
-            for &face in ctx.admit_iter(&faces, "nx valid topology faces")? {
-                storage.with_storage(|| {
-                    ctx.insert_btree_set(&mut valid_face_xmts, face, "nx valid topology faces")
-                })?;
-            }
+    let mut visit_shell = |shell, _, faces: &[u32]| {
+        ctx.charge_work(1, "nx topology body shells")?;
+        storage
+            .with_storage(|| ctx.push_vec(&mut body_shells, shell, "nx topology body shells"))?;
+        ctx.charge_work(1, "nx valid topology faces")?;
+        for &face in ctx.admit_iter(faces, "nx valid topology faces")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut valid_face_xmts, face, "nx valid topology faces")
+            })?;
         }
-    }
+        Ok(std::ops::ControlFlow::Continue(()))
+    };
+    let _shell_visit =
+        graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
+    ctx.charge_work(1, "nx topology body shells")?;
     let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
     let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
     for &face_xmt in ctx.admit_iter(&valid_face_xmts, "nx face loop ring index")? {
@@ -185,15 +186,21 @@ pub(super) fn emit_topology(
     let mut valid_edge_xmts = BTreeSet::new();
     let mut valid_vertex_xmts = BTreeSet::new();
     for &xmt in ctx.admit_iter(&valid_fin_xmts, "nx valid edge and vertex nodes")? {
-        let fields = graph.get(NodeKind::Fin, xmt).and_then(Node::fin_fields);
+        let fields = graph
+            .get(ctx, NodeKind::Fin, xmt)?
+            .and_then(Node::fin_fields);
         if let Some(edge) = fields.and_then(|fields| fields.edge.map(u32::from)) {
             storage.with_storage(|| {
                 ctx.insert_btree_set(&mut valid_edge_xmts, edge, "nx valid edge nodes")
             })?;
         }
-        let partner_vertex = fields
+        let partner = match fields
             .filter(|fields| fields.other.is_some_and(|target| u32::from(target) > 1))
-            .and_then(|fields| graph.get_target(NodeKind::Fin, fields.other))
+        {
+            Some(fields) => graph.get_target(ctx, NodeKind::Fin, fields.other)?,
+            None => None,
+        };
+        let partner_vertex = partner
             .and_then(Node::fin_fields)
             .and_then(|fields| fields.vertex.map(u32::from));
         for vertex in [
@@ -235,7 +242,7 @@ pub(super) fn emit_topology(
     for (&body_xmt, &shell_pos) in ctx.admit_iter(&body_shell_positions, "nx emitted bodies")? {
         let id: BodyId =
             scope.id_charged(ctx, &cadmpeg_ir::identity_component!("body"), body_xmt)?;
-        if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
+        if let Some(node) = graph.get(ctx, NodeKind::Body, body_xmt)? {
             annotate_node(ctx, annotations, id.as_str(), source_stream, node, "BODY")?;
         } else {
             annotations.note(
@@ -331,7 +338,7 @@ pub(super) fn emit_topology(
                         &cadmpeg_ir::identity_component!("region"),
                         region_xmt,
                     )?;
-                    if let Some(region_node) = graph.get(NodeKind::Region, region_xmt) {
+                    if let Some(region_node) = graph.get(ctx, NodeKind::Region, region_xmt)? {
                         annotate_node(
                             ctx,
                             annotations,
@@ -573,7 +580,7 @@ pub(super) fn emit_topology(
         let Some(fields) = node.edge_fields() else {
             continue;
         };
-        let Some(fin) = graph.get_target(NodeKind::Fin, fields.fin) else {
+        let Some(fin) = graph.get_target(ctx, NodeKind::Fin, fields.fin)? else {
             continue;
         };
         let Some(fin_fields) = fin.fin_fields() else {
@@ -723,7 +730,7 @@ pub(super) fn emit_topology(
             .filter(|target| u32::from(*target) > 1)
             .or(fin_fields.forward);
         let Some(end_fields) = graph
-            .get_target(NodeKind::Fin, end_fin)
+            .get_target(ctx, NodeKind::Fin, end_fin)?
             .and_then(Node::fin_fields)
         else {
             continue;
@@ -894,7 +901,7 @@ pub(super) fn emit_topology(
     let mut loops: BTreeMap<u32, LoopId> = BTreeMap::new();
     let mut loop_specs: BTreeMap<u32, (LoopId, FaceId)> = BTreeMap::new();
     for (&loop_xmt, &ring) in ctx.admit_iter(&valid_loop_rings, "nx emitted loop index")? {
-        let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
+        let Some(node) = graph.get(ctx, NodeKind::Loop, loop_xmt)? else {
             continue;
         };
         let Some(fields) = node.loop_fields() else {
@@ -914,7 +921,7 @@ pub(super) fn emit_topology(
         let ring_resolves = ctx.all_by(
             ring,
             |fin_xmt| match graph
-                .get(NodeKind::Fin, *fin_xmt)
+                .get(ctx, NodeKind::Fin, *fin_xmt)?
                 .and_then(Node::fin_fields)
                 .and_then(|fields| fields.edge)
             {
@@ -953,7 +960,7 @@ pub(super) fn emit_topology(
     let mut fin_ids = BTreeMap::new();
     for &xmt in ctx.admit_iter(&valid_fin_xmts, "nx fin identity index")? {
         let Some(loop_xmt) = graph
-            .get(NodeKind::Fin, xmt)
+            .get(ctx, NodeKind::Fin, xmt)?
             .and_then(Node::fin_fields)
             .and_then(|fields| fields.loop_xmt)
         else {
@@ -1091,7 +1098,10 @@ pub(super) fn emit_topology(
             if ctx.contains_btree_set(&valid_pcurve_fins, &fin_xmt, "nx valid pcurve fins")? {
                 continue;
             }
-            let Some(fields) = graph.get(NodeKind::Fin, fin_xmt).and_then(Node::fin_fields) else {
+            let Some(fields) = graph
+                .get(ctx, NodeKind::Fin, fin_xmt)?
+                .and_then(Node::fin_fields)
+            else {
                 continue;
             };
             let Some(edge) = (match fields.edge {
@@ -1141,7 +1151,7 @@ pub(super) fn emit_topology(
     };
     let mut serialized_branch_pcurves = BTreeSet::new();
     for (&fin_xmt, id) in ctx.admit_iter(&fin_ids, "nx emitted coedges")? {
-        let Some(node) = graph.get(NodeKind::Fin, fin_xmt) else {
+        let Some(node) = graph.get(ctx, NodeKind::Fin, fin_xmt)? else {
             continue;
         };
         let Some(fields) = node.fin_fields() else {
@@ -1619,10 +1629,14 @@ fn fin_support<'s>(
     surfaces: &'s BTreeMap<u32, SurfaceId>,
     fields: crate::topology::FinFields,
 ) -> Result<Option<&'s SurfaceId>, CodecError> {
-    let surface = graph
-        .get_target(NodeKind::Loop, fields.loop_xmt)
-        .and_then(Node::loop_fields)
-        .and_then(|loop_| graph.get_target(NodeKind::Face, loop_.face))
+    let loop_fields = graph
+        .get_target(ctx, NodeKind::Loop, fields.loop_xmt)?
+        .and_then(Node::loop_fields);
+    let face = match loop_fields {
+        Some(loop_) => graph.get_target(ctx, NodeKind::Face, loop_.face)?,
+        None => None,
+    };
+    let surface = face
         .and_then(Node::face_fields)
         .and_then(|face| face.surface);
     match surface {
@@ -1637,7 +1651,10 @@ fn fin_pcurve_candidate<'inputs>(
     lookups: &FinCarrierLookups<'inputs>,
     fin_xmt: u32,
 ) -> Result<Option<FinPcurveCandidate<'inputs>>, CodecError> {
-    let Some(fields) = graph.get(NodeKind::Fin, fin_xmt).and_then(Node::fin_fields) else {
+    let Some(fields) = graph
+        .get(ctx, NodeKind::Fin, fin_xmt)?
+        .and_then(Node::fin_fields)
+    else {
         return Ok(None);
     };
     let Some(edge) = (match fields.edge {
@@ -2389,7 +2406,8 @@ pub(super) fn source_meta(
         "plain_streams",
         scan.count(ctx, StreamKind::Plain)?,
     )?;
-    let external_reference_paths = scan.container.external_reference_paths(ctx)?;
+    let (external_reference_paths, _external_reference_paths_storage) =
+        scan.container.external_reference_paths(ctx)?;
     for (index, path) in ctx
         .admit_iter(
             &external_reference_paths,
@@ -2640,6 +2658,8 @@ mod tests {
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,
+                segment_index: None,
+                segment_wrappers: Vec::new(),
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
             },

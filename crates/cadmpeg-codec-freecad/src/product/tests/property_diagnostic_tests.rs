@@ -231,6 +231,31 @@ refusal!(
     |ctx, item| copy_on_change_property(ctx, &[&item])
 );
 
+#[test]
+fn copy_on_change_policy_parse_is_admitted() {
+    let item = property(
+        "LinkCopyOnChange",
+        "App::PropertyEnumeration",
+        &["Integer"],
+        &[("value", "00000000000000000000000000000001")],
+        &[],
+        0,
+    );
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD copy-on-change policy parse",
+        |ctx| copy_on_change_property(ctx, &[&item]),
+    );
+    crate::test_support::with_service_context(&[], |ctx| {
+        let policy = copy_on_change_property(ctx, &[&item])
+            .expect("admitted policy")
+            .expect("policy is present");
+        assert_eq!(policy.index(), 1);
+        assert_eq!(policy.as_str(), "00000000000000000000000000000001");
+    });
+}
+
 refusal!(
     missing_scale_refuses_before_diagnostic,
     "fcstd product missing scale",

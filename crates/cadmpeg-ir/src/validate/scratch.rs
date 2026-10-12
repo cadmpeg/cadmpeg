@@ -26,8 +26,8 @@ impl<'ctx, T> Scratch<'ctx, T> {
         mut project: impl FnMut(U) -> Result<Option<T>, CodecError>,
     ) -> Result<Self, CodecError> {
         let mut result = Self::new(ctx)?;
-        for value in values {
-            ctx.charge_work(1, "validation filter scan")?;
+        let mut values = values.into_iter();
+        while let Some(value) = ctx.next_charged(&mut values, "validation filter scan")? {
             if let Some(value) = project(value)? {
                 result.push(value)?;
             }

@@ -6,10 +6,11 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 pub(crate) mod target;
+mod tessellation;
 
 use crate::native::SldprtNative;
-use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
-use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::convert::truncate_f64_to_u8;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
@@ -25,7 +26,7 @@ use cadmpeg_ir::Annotations;
 use crate::SourceRecord;
 
 use crate::container::MARKER;
-use crate::history::write::xml::valid_xml_name;
+use crate::history::feature_graph::validate_feature_graph;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
@@ -85,8 +86,12 @@ pub(crate) fn write_semantic_with_records(
         .as_ref()
         .map(|(ctx, root)| crate::container::scan(ctx, *root))
         .transpose()?;
-    let retained_partition =
-        retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+    let retained_partition = retained_partition(
+        &digest_ctx,
+        &normalized,
+        source_scan.as_ref(),
+        native.as_ref(),
+    )?;
     let feature_name_changes =
         crate::history::write::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -156,10 +161,7 @@ pub(crate) fn write_semantic_with_records(
             parasolid_stream(&body, schema)?,
         )]
     };
-    let generated_partition_sections = partition_sections
-        .iter()
-        .map(|(section, _)| section.clone())
-        .collect::<HashSet<_>>();
+    let partition_section_count = partition_sections.len();
     let mut sections = partition_sections;
     let materials = materials_payload(&digest_ctx, ir)?;
     let (objects, units) = metadata_payloads(&digest_ctx, ir, length_scale)?;
@@ -218,7 +220,7 @@ pub(crate) fn write_semantic_with_records(
     if !ir.model.tessellations.is_empty() {
         sections.push((
             "Contents/DisplayLists".into(),
-            tessellation_payload(ir, length_scale)?,
+            tessellation::tessellation_payload(&digest_ctx, ir, length_scale)?,
         ));
     }
     for (index, history) in native
@@ -250,16 +252,23 @@ pub(crate) fn write_semantic_with_records(
             resolved_feature_payload(lane, histories, &feature_input_renames)?,
         ));
     }
+    let generated_partition_sections = sections[..partition_section_count]
+        .iter()
+        .map(|(section, _)| section.as_str())
+        .collect::<HashSet<_>>();
     let opaque = opaque_blocks(
+        &digest_ctx,
         ir,
         retained_records,
         annotations,
         &generated_partition_sections,
         retain_native_brep,
     )?;
+    drop(generated_partition_sections);
     let document_envelope = crate::container::first_solidworks_envelope(
+        &digest_ctx,
         opaque.iter().map(|(_, payload)| payload.as_slice()),
-    );
+    )?;
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
@@ -373,7 +382,7 @@ pub(crate) fn configurations_without_synthesized_snapshot(
         source
             .attributes
             .get("sldprt_configuration_snapshot_synthesized")
-            .cloned()
+            .map(String::as_str)
     }) else {
         return configurations;
     };
@@ -508,6 +517,7 @@ fn retained_cache_cells(
 /// synthesized rather than decoded, or decoded by a binary that named the
 /// attribute differently — has no partition to replay and is written out in full.
 fn retained_partition(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
@@ -524,32 +534,48 @@ fn retained_partition(
     let Some(scan) = source_scan else {
         return Ok(None);
     };
-    let Some(site) = crate::container::select_active_parasolid_site(scan) else {
+    let Some(site) = crate::container::select_active_parasolid_site(ctx, scan)? else {
         return Ok(None);
     };
     let original_section = site.name();
     let section = native
-        .and_then(|native| remapped_partition_section(ir, native, &original_section))
+        .map(|native| remapped_partition_section(ctx, ir, native, &original_section))
+        .transpose()?
+        .flatten()
         .unwrap_or(original_section);
     Ok(Some((section, site.section.payload().to_vec())))
 }
 
-fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) -> Option<String> {
-    let old_index = crate::container::configuration_index(section)?;
-    let native_id = native
+fn remapped_partition_section(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    native: &SldprtNative,
+    section: &str,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let Some(old_index) = crate::container::configuration_index(ctx, section)? else {
+        return Ok(None);
+    };
+    let Some(configuration) = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.configurations)
-        .find(|configuration| configuration.source_index == u32::try_from(old_index).ok())?
-        .id
-        .as_str();
-    let new_index = ir
+        .find(|configuration| configuration.source_index == u32::try_from(old_index).ok())
+    else {
+        return Ok(None);
+    };
+    let native_id = configuration.id.as_str();
+    let Some(configuration) = ir
         .model
         .configurations
         .iter()
-        .find(|configuration| configuration.native_ref.as_deref() == Some(native_id))?
-        .source_index?;
-    Some(format!("Contents/Config-{new_index}-Partition"))
+        .find(|configuration| configuration.native_ref.as_deref() == Some(native_id))
+    else {
+        return Ok(None);
+    };
+    let Some(new_index) = configuration.source_index else {
+        return Ok(None);
+    };
+    Ok(Some(format!("Contents/Config-{new_index}-Partition")))
 }
 
 fn outer_header(records: &[SourceRecord<'_>]) -> [u8; 8] {
@@ -568,12 +594,12 @@ fn section_type_ids(
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
 ) -> Result<Vec<u32>, CodecError> {
-    let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
+    let mut source_ids: HashMap<&str, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
             if let Some(section) = block.section.name() {
                 source_ids
-                    .entry(section.to_owned())
+                    .entry(section)
                     .or_default()
                     .push_back(block.type_id);
             }
@@ -584,7 +610,7 @@ fn section_type_ids(
         .enumerate()
         .map(|(index, (section, _))| {
             source_ids
-                .get_mut(section)
+                .get_mut(section.as_str())
                 .and_then(VecDeque::pop_front)
                 .map_or_else(
                     || {
@@ -748,14 +774,7 @@ fn configuration_partitions(
         .model
         .configurations
         .iter()
-        .flat_map(|configuration| {
-            configuration
-                .bodies
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .cloned()
-        })
+        .flat_map(|configuration| configuration.bodies.as_deref().unwrap_or_default().iter())
         .collect::<HashSet<_>>();
     if let Some(body) = ir
         .model
@@ -824,10 +843,10 @@ pub(super) fn reserve_configuration_index(
 }
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
-    let selected = selected.iter().cloned().collect::<HashSet<_>>();
+    let selected = selected.iter().collect::<HashSet<_>>();
     if let Some(id) = selected
         .iter()
-        .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
+        .find(|id| !ir.model.bodies.iter().any(|body| &body.id == **id))
     {
         return Err(CodecError::malformed(format_args!(
             "configuration references missing body {}",
@@ -843,7 +862,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .bodies
         .iter()
-        .flat_map(|body| body.regions.iter().cloned())
+        .flat_map(|body| body.regions.iter())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -853,7 +872,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .regions
         .iter()
-        .flat_map(|region| region.shells.iter().cloned())
+        .flat_map(|region| region.shells.iter())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -863,21 +882,21 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.faces().iter().cloned())
+        .flat_map(|shell| shell.faces().iter())
         .collect::<HashSet<_>>();
     subset.model.faces.retain(|face| faces.contains(&face.id));
     let loops = subset
         .model
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().cloned())
+        .flat_map(|face| face.loops.iter())
         .collect::<HashSet<_>>();
     subset.model.loops.retain(|loop_| loops.contains(&loop_.id));
     let coedges = subset
         .model
         .loops
         .iter()
-        .flat_map(|loop_| loop_.coedges().iter().cloned())
+        .flat_map(|loop_| loop_.coedges().iter())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -887,20 +906,20 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .coedges
         .iter()
-        .map(|coedge| coedge.edge.clone())
+        .map(|coedge| &coedge.edge)
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        edges.extend(shell.wire_edges().iter().cloned());
+        edges.extend(shell.wire_edges().iter());
     }
     subset.model.edges.retain(|edge| edges.contains(&edge.id));
     let mut vertices = subset
         .model
         .edges
         .iter()
-        .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
+        .flat_map(|edge| [&edge.start, &edge.end])
         .collect::<HashSet<_>>();
     for shell in &subset.model.shells {
-        vertices.extend(shell.free_vertices().iter().cloned());
+        vertices.extend(shell.free_vertices().iter());
     }
     subset
         .model
@@ -910,7 +929,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .iter()
-        .map(|vertex| vertex.point.clone())
+        .map(|vertex| &vertex.point)
         .collect::<HashSet<_>>();
     subset
         .model
@@ -920,7 +939,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .faces
         .iter()
-        .map(|face| face.surface.clone())
+        .map(|face| &face.surface)
         .collect::<HashSet<_>>();
     subset
         .model
@@ -930,7 +949,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve().cloned())
+        .filter_map(|edge| edge.curve())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -940,12 +959,15 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .coedges
         .iter()
-        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.clone()))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| &use_.pcurve))
         .collect::<HashSet<_>>();
     subset
         .model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
+    drop((
+        regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves,
+    ));
     let ordering_arena = cadmpeg_core::decode::DecodeArena::new();
     let (ordering_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -957,10 +979,11 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
 }
 
 fn opaque_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-    generated_partitions: &HashSet<String>,
+    generated_partitions: &HashSet<&str>,
     retain_native_brep: bool,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let native = ir
@@ -980,13 +1003,19 @@ fn opaque_blocks(
             if generated_partitions.contains(section) {
                 return None;
             }
-            if lower.ends_with("-partition")
-                && native
+            if lower.ends_with("-partition") {
+                let remapped = match native
                     .as_ref()
-                    .and_then(|native| remapped_partition_section(ir, native, section))
-                    .is_some_and(|remapped| generated_partitions.contains(&remapped))
-            {
-                return None;
+                    .map(|native| remapped_partition_section(ctx, ir, native, section))
+                    .transpose()
+                {
+                    Ok(remapped) => remapped.flatten(),
+                    Err(error) => return Some(Err(error)),
+                };
+                if remapped.is_some_and(|remapped| generated_partitions.contains(remapped.as_str()))
+                {
+                    return None;
+                }
             }
             if lower.contains("deltas") && !retain_native_brep {
                 return None;
@@ -1022,7 +1051,7 @@ fn opaque_blocks(
                     Err(error) => return Some(Err(error)),
                 }
             }
-            seen.insert((section.to_string(), record.sha256.clone()))
+            seen.insert((section, record.sha256.as_str()))
                 .then_some(Ok((section.to_string(), payload)))
         })
         .collect()
@@ -1048,7 +1077,7 @@ fn retained_swobjects_sections(
     sections
         .into_iter()
         .filter_map(|(section, record)| {
-            seen.insert((section, record.sha256.clone()))
+            seen.insert((section, record.sha256.as_str()))
                 .then_some((section, record))
         })
         .map(|(section, record)| {
@@ -1082,10 +1111,7 @@ fn patch_retained_swobjects_metadata(
                         attribute.id
                     ))
                 })?;
-            Ok((
-                (provenance.stream().to_owned(), Reverse(provenance.offset)),
-                attribute,
-            ))
+            Ok(((provenance.stream(), Reverse(provenance.offset)), attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     ctx.stable_sort_by(
@@ -1352,9 +1378,10 @@ fn resolved_feature_payload(
         std::slice::from_mut(&mut expected_lane),
     )?;
     if !crate::resolved_features::scalars::scalar_indices_match(
+        &ctx,
         &lane.scalars,
         &expected_lane.scalars,
-    ) {
+    )? {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited named scalars",
             lane.id
@@ -1690,7 +1717,10 @@ fn metadata_attributes<'ir>(
     ir: &'ir CadIr,
 ) -> Result<Vec<&'ir cadmpeg_ir::attributes::SourceAttribute>, CodecError> {
     let mut positioned = Vec::new();
-    for attribute in &ir.model.attributes {
+    for attribute in ctx.admit_iter(
+        &ir.model.attributes,
+        "scan SLDPRT metadata_attributes values",
+    )? {
         let work = cadmpeg_core::decode::u64_from_index(attribute.id.as_str().len())
             .checked_mul(2)
             .and_then(|bytes| bytes.checked_add(8))
@@ -1947,74 +1977,6 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     Ok(out.into_bytes())
 }
 
-pub(crate) fn validate_feature_graph(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    features: &[crate::records::Feature],
-) -> Result<(), CodecError> {
-    if features
-        .iter()
-        .any(|feature| !valid_xml_name(&feature.xml_tag))
-    {
-        return Err(CodecError::Malformed(
-            "invalid feature XML element name".into(),
-        ));
-    }
-    let mut by_id = HashMap::new();
-    for feature in features {
-        ctx.charge_work(1, "validate SLDPRT feature graph")?;
-        if let Some(id) = feature.source_id {
-            ctx.insert_hash_map(&mut by_id, id, feature, "index SLDPRT feature graph")?;
-        }
-    }
-    if by_id.len()
-        != features
-            .iter()
-            .filter(|feature| feature.source_id.is_some())
-            .count()
-    {
-        return Err(CodecError::Malformed("duplicate feature source id".into()));
-    }
-    let mut by_record = HashMap::new();
-    for feature in features {
-        ctx.insert_hash_map(
-            &mut by_record,
-            feature.id.as_str(),
-            feature,
-            "index SLDPRT feature graph",
-        )?;
-    }
-    if by_record.len() != features.len() {
-        return Err(CodecError::Malformed("duplicate feature record id".into()));
-    }
-    for feature in features {
-        let mut seen = HashSet::new();
-        let mut parent = feature.parent_source_id();
-        while let Some(id) = parent {
-            ctx.charge_work(1, "walk SLDPRT feature graph")?;
-            if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
-                return Err(CodecError::Malformed("feature parent cycle".into()));
-            }
-            let node = by_id
-                .get(&id)
-                .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
-            parent = node.parent_source_id();
-        }
-        let mut seen = HashSet::new();
-        let mut parent = feature.tree_parent_record_id();
-        while let Some(id) = parent {
-            ctx.charge_work(1, "walk SLDPRT feature graph")?;
-            if !ctx.insert_hash_set(&mut seen, id, "index SLDPRT feature graph parents")? {
-                return Err(CodecError::Malformed("feature tree cycle".into()));
-            }
-            let node = by_record.get(id).ok_or_else(|| {
-                CodecError::Malformed("feature references missing tree parent".into())
-            })?;
-            parent = node.tree_parent_record_id();
-        }
-    }
-    Ok(())
-}
-
 fn write_feature_xml(
     out: &mut String,
     feature: &crate::records::Feature,
@@ -2129,277 +2091,12 @@ fn xml_text(out: &mut String, value: &str) {
     }
 }
 
-fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
-    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
-    let meshes = ir
-        .model
-        .tessellations
-        .iter()
-        .map(sequential_tessellation)
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut out = b"uoTempBodyTessData_c".to_vec();
-    out.extend_from_slice(&[0; 8]);
-    out.extend_from_slice(b"uoTempFaceTessData_c");
-    let (triangle_count, strip_count) = match meshes.first() {
-        Some(mesh) => (
-            u32::try_from(mesh.triangle_count()).map_err(|_| {
-                CodecError::NotImplemented("tessellation triangle count overflow".into())
-            })?,
-            u32::try_from(mesh.strip_lengths().len()).map_err(|_| {
-                CodecError::NotImplemented("tessellation strip count overflow".into())
-            })?,
-        ),
-        None => (0, 0),
-    };
-    out.extend_from_slice(&triangle_count.to_le_bytes());
-    out.extend_from_slice(&strip_count.to_le_bytes());
-    for mesh in &meshes {
-        let strips = mesh
-            .strip_lengths()
-            .iter()
-            .flat_map(|run| run.to_le_bytes())
-            .collect::<Vec<_>>();
-        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips)?;
-        let mut positions = Vec::with_capacity(mesh.vertex_count() * 12);
-        for point in mesh.vertices() {
-            for value in [point.x, point.y, point.z] {
-                positions.extend_from_slice(
-                    &tessellation_f32(value * length_scale, "position")?.to_le_bytes(),
-                );
-            }
-        }
-        descriptor(&mut out, 12, 100, 2, mesh.vertex_count(), &positions)?;
-        let mut normals = Vec::with_capacity(mesh.vertex_normals().len() * 12);
-        for normal in mesh.vertex_normals() {
-            for value in [normal.x, normal.y, normal.z] {
-                normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
-            }
-        }
-        descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals)?;
-        // `has_core_tessellation_channels` matches at least three channels, so
-        // the remainder after the core three is the complete auxiliary run.
-        // The display-list table carries exactly three auxiliary channels; the
-        // consistency check below refuses any other number rather than
-        // truncating the run the mesh states.
-        let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
-        let auxiliary = &mesh.channels()[auxiliary_start..];
-        let strip_lengths = mesh
-            .strip_lengths()
-            .iter()
-            .map(|run| usize::try_from(*run))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
-        if !auxiliary.is_empty()
-            && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
-        {
-            return Err(CodecError::InvalidInput(
-                "tessellation channels: the SLDPRT display-list table carries exactly three \
-                 auxiliary channels after the strip, position and normal channels"
-                    .into(),
-            ));
-        }
-        for channel in auxiliary {
-            descriptor(
-                &mut out,
-                channel.item_size(),
-                channel.kind(),
-                channel.flags(),
-                index_from_u32(channel.count()),
-                channel.data(),
-            )?;
-        }
-        let list_c = mesh
-            .strip_lengths()
-            .iter()
-            .map(|run| {
-                run.checked_mul(2)
-                    .and_then(|value| value.checked_sub(2))
-                    .ok_or_else(|| {
-                        CodecError::NotImplemented(
-                            "tessellation strip is too short or too large".into(),
-                        )
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let append: [AuxiliaryWriter; 3] = [
-            |out, _| descriptor(out, 4, 8, 2, 0, &[]),
-            |out, list_c| {
-                let data = list_c
-                    .iter()
-                    .flat_map(|value| value.to_le_bytes())
-                    .collect::<Vec<_>>();
-                descriptor(out, 4, 8, 2, list_c.len(), &data)
-            },
-            |out, _| descriptor(out, 1, 8, 2, 0, &[]),
-        ];
-        // The run is empty or the exact three the table carries, so the
-        // synthesized defaults fill in only for a mesh that states none.
-        for append in append.iter().skip(auxiliary.len()) {
-            append(&mut out, &list_c)?;
-        }
-    }
-    Ok(out)
-}
-
-fn has_core_tessellation_channels(
-    channels: &[cadmpeg_ir::tessellation::TessellationChannel],
-) -> bool {
-    matches!(channels, [strips, positions, normals, ..]
-        if (strips.item_size(), strips.kind()) == (4, 8)
-            && (positions.item_size(), positions.kind()) == (12, 100)
-            && (normals.item_size(), normals.kind()) == (12, 100))
-}
-
-fn sequential_tessellation(
-    mesh: &cadmpeg_ir::tessellation::Tessellation,
-) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
-    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation triangle groups and texture assignments are not writable"
-                .into(),
-        ));
-    }
-    if !mesh.feature_edges().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation feature edges are not writable".into(),
-        ));
-    }
-    if matches!(
-        mesh.mesh(),
-        cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
-            | cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }
-    ) {
-        return Ok(mesh.clone());
-    }
-    let source_vertices = mesh.vertices();
-    let source_normals = mesh.vertex_normals();
-    let corner_normals = mesh.per_corner_normals();
-    let triangles = mesh.triangles();
-    let indices = triangles
-        .iter()
-        .flat_map(|triangle| triangle.iter().copied())
-        .map(|index| {
-            usize::try_from(index)
-                .map_err(|_| CodecError::Malformed("tessellation index is out of bounds".into()))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let positions = indices
-        .iter()
-        .map(|index| source_vertices[*index])
-        .collect::<Vec<_>>();
-    let normals = if corner_normals.is_empty() {
-        if source_normals.is_empty() {
-            Vec::new()
-        } else {
-            indices
-                .iter()
-                .map(|index| source_normals[*index])
-                .collect::<Vec<_>>()
-        }
-    } else {
-        corner_normals
-    };
-    let mut channels = Vec::new();
-    for channel in mesh.channels() {
-        if usize::try_from(channel.count()).ok() != Some(source_vertices.len()) {
-            channels.push(channel.clone());
-            continue;
-        }
-        let item_size = usize::try_from(channel.item_size())
-            .map_err(|_| CodecError::Malformed("tessellation channel item size overflow".into()))?;
-        let data = indices
-            .iter()
-            .flat_map(|index| {
-                let start = index * item_size;
-                channel.data()[start..start + item_size].iter().copied()
-            })
-            .collect();
-        channels.push(
-            cadmpeg_ir::tessellation::TessellationChannel::new(
-                channel.addressing().clone(),
-                channel.item_size(),
-                channel.kind(),
-                channel.flags(),
-                data,
-            )
-            .map_err(|err| CodecError::Malformed(err.to_string()))?,
-        );
-    }
-    // One triangle per strip: the SLDPRT display list states strips, so a
-    // triangle list is written as three-vertex runs.
-    let rows = if normals.is_empty() {
-        strip_rows(&positions)?.map_or(
-            cadmpeg_ir::tessellation::TessellationMesh::List {
-                vertices: Vec::new(),
-                triangles: Vec::new(),
-            },
-            |strips| cadmpeg_ir::tessellation::TessellationMesh::Strips { strips },
-        )
-    } else {
-        let shaded = positions
-            .into_iter()
-            .zip(normals)
-            .map(|(position, normal)| cadmpeg_ir::tessellation::ShadedVertex { position, normal })
-            .collect::<Vec<_>>();
-        strip_rows(&shaded)?.map_or(
-            cadmpeg_ir::tessellation::TessellationMesh::List {
-                vertices: Vec::new(),
-                triangles: Vec::new(),
-            },
-            |strips| cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { strips },
-        )
-    };
-    mesh.clone()
-        .with_mesh(rows, channels)
-        .map_err(|err| CodecError::Malformed(err.to_string()))
-}
-
-/// Cut a corner-expanded vertex run into one three-vertex strip per triangle.
-fn strip_rows<V: Clone>(
-    vertices: &[V],
-) -> Result<Option<cadmpeg_ir::tessellation::Strips<V>>, CodecError> {
-    let mut strips = Vec::with_capacity(vertices.len() / 3);
-    for corners in vertices.chunks(3) {
-        strips.push(
-            cadmpeg_ir::tessellation::Strip::new(corners.to_vec()).ok_or_else(|| {
-                CodecError::Malformed("tessellation triangle spans fewer than three corners".into())
-            })?,
-        );
-    }
-    Ok(cadmpeg_ir::tessellation::Strips::new(strips))
-}
-
-fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
-    f32_from_f64(value).ok_or_else(|| {
-        CodecError::malformed(format_args!("SLDPRT tessellation {role} exceeds f32 range"))
-    })
-}
-
-fn descriptor(
-    out: &mut Vec<u8>,
-    item_size: u32,
-    kind: u32,
-    flags: u32,
-    count: usize,
-    data: &[u8],
-) -> Result<(), CodecError> {
-    let count = u32::try_from(count).map_err(|_| {
-        CodecError::NotImplemented("SLDPRT display-list channel count exceeds u32".into())
-    })?;
-    out.extend_from_slice(&item_size.to_le_bytes());
-    out.extend_from_slice(&kind.to_le_bytes());
-    out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&count.to_le_bytes());
-    out.extend_from_slice(data);
-    Ok(())
-}
-
 fn body_material<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir CadIr,
 ) -> Result<Option<(&'ir str, Color)>, CodecError> {
     let mut appearances = HashMap::new();
-    for appearance in &ir.model.appearances {
+    for appearance in ctx.admit_iter(&ir.model.appearances, "scan SLDPRT body_material values")? {
         let work = cadmpeg_core::decode::u64_from_index(appearances.len())
             .checked_add(2)
             .and_then(|count| {
@@ -2426,25 +2123,15 @@ fn body_material<'ir>(
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
-        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
-            .checked_add(2)
-            .and_then(|count| {
-                count.checked_mul(
-                    cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
-                        .checked_add(1)?,
-                )
-            })
+        let appearance = ctx
+            .get_hash_map(
+                &(appearances),
+                &binding.appearance,
+                "look up SLDPRT hash key",
+            )?
             .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "find SLDPRT body material appearance",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
+                CodecError::Malformed("body binding references missing appearance".into())
             })?;
-        ctx.charge_work(work, "find SLDPRT body material appearance")?;
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("body binding references missing appearance".into())
-        })?;
         let color = appearance.base_color.ok_or_else(|| {
             CodecError::NotImplemented("SLDPRT body appearance has no base color".into())
         })?;
@@ -2605,56 +2292,56 @@ pub(crate) fn brep_body(
                 .as_str()
                 .starts_with("sldprt:brep:curve#sphere-seam-face:")
         })
-        .map(|curve| curve.id.clone())
+        .map(|curve| &curve.id)
         .collect::<HashSet<_>>();
     let surfaces = ir
         .model
         .surfaces
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let curves = ir
         .model
         .curves
         .iter()
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let points = ir
         .model
         .points
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertices = ir
         .model
         .vertices
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let edges = ir
         .model
         .edges
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let coedges = ir
         .model
         .coedges
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
         .model
         .loops
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let faces = ir
         .model
         .faces
         .iter()
-        .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
+        .map(|item| Ok((&item.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut out = Vec::new();
     for surface in &ir.model.surfaces {
@@ -2697,14 +2384,14 @@ pub(crate) fn brep_body(
         .model
         .faces
         .iter()
-        .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
+        .map(|face| Ok((&face.id, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let face_colors = face_colors(ir)?;
     let mut colored_faces = face_colors.keys().collect::<Vec<_>>();
     colored_faces.sort();
     let color_attrs = colored_faces
         .into_iter()
-        .map(|face| Ok((face.clone(), take_attr(&mut next)?)))
+        .map(|face| Ok((*face, take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let face_color_definition = if color_attrs.is_empty() {
         None
@@ -2862,7 +2549,7 @@ pub(crate) fn brep_body(
         &mut out,
     )?;
     let mut colored_faces = face_colors.into_iter().collect::<Vec<_>>();
-    colored_faces.sort_by(|(left, _), (right, _)| left.cmp(right));
+    colored_faces.sort_by_key(|(left, _)| *left);
     for (face, color) in colored_faces {
         entity53(&mut out, color_attrs[&face], color);
     }
@@ -2873,10 +2560,10 @@ pub(crate) fn brep_body(
 /// hierarchy writers share.
 #[derive(Clone, Copy)]
 struct HierarchyIdentities<'a> {
-    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    faces: &'a HashMap<&'a cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &'a HashMap<&'a cadmpeg_ir::ids::SurfaceId, u16>,
+    face_owners: &'a HashMap<&'a cadmpeg_ir::ids::FaceId, u16>,
+    color_attrs: &'a HashMap<&'a cadmpeg_ir::ids::FaceId, u16>,
     face_color_definition: Option<(u16, u16)>,
     schema_32001: bool,
 }
@@ -2899,13 +2586,13 @@ fn write_body_hierarchy(
         .model
         .shells
         .iter()
-        .map(|shell| (shell.id.clone(), shell))
+        .map(|shell| (&shell.id, shell))
         .collect::<HashMap<_, _>>();
     let regions = ir
         .model
         .regions
         .iter()
-        .map(|region| (region.id.clone(), region))
+        .map(|region| (&region.id, region))
         .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
     for body in &ir.model.bodies {
@@ -2934,7 +2621,7 @@ fn write_body_hierarchy(
                             "shell references missing face".into(),
                         ));
                     }
-                    if !assigned.insert(face.clone()) {
+                    if !assigned.insert(face) {
                         return Err(CodecError::Malformed(
                             "face belongs to multiple bodies".into(),
                         ));
@@ -3020,8 +2707,8 @@ fn write_body_hierarchy(
 /// without a second identity map.
 fn write_typed_body_hierarchy(
     ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
+    faces: &HashMap<&cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, u16>,
     next: &mut u16,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
@@ -3029,25 +2716,25 @@ fn write_typed_body_hierarchy(
         .model
         .bodies
         .iter()
-        .map(|body| Ok((body.id.clone(), take_attr(next)?)))
+        .map(|body| Ok((&body.id, take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let region_attrs = ir
         .model
         .regions
         .iter()
-        .map(|region| Ok((region.id.clone(), take_attr(next)?)))
+        .map(|region| Ok((&region.id, take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let shell_attrs = ir
         .model
         .shells
         .iter()
-        .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
+        .map(|shell| Ok((&shell.id, take_attr(next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut face_shells = HashMap::new();
     for shell in &ir.model.shells {
         let shell_attr = shell_attrs[&shell.id];
         for face in shell.faces() {
-            if face_shells.insert(face.clone(), shell_attr).is_some() {
+            if face_shells.insert(face, shell_attr).is_some() {
                 return Err(CodecError::Malformed(
                     "face belongs to multiple typed shells".into(),
                 ));
@@ -3262,7 +2949,7 @@ fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
     Ok(refs)
 }
 
-fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
+fn face_colors(ir: &CadIr) -> Result<HashMap<&cadmpeg_ir::ids::FaceId, Color>, CodecError> {
     let appearances = ir
         .model
         .appearances
@@ -3273,7 +2960,7 @@ fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, Co
         .model
         .faces
         .iter()
-        .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
+        .filter_map(|face| face.color.map(|color| (&face.id, color)))
         .collect::<HashMap<_, _>>();
     for binding in &ir.model.appearance_bindings {
         let AppearanceTarget::Face(face) = &binding.target else {
@@ -3285,10 +2972,7 @@ fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, Co
         let color = appearance.base_color.ok_or_else(|| {
             CodecError::NotImplemented("SLDPRT face appearance has no base color".into())
         })?;
-        if colors
-            .insert(face.clone(), color)
-            .is_some_and(|old| old != color)
-        {
+        if colors.insert(face, color).is_some_and(|old| old != color) {
             return Err(CodecError::Malformed(
                 "face has conflicting appearance colors".into(),
             ));
@@ -3533,7 +3217,7 @@ fn write_nurbs_curve(
             nurbs.degree()
         ))
     })?;
-    let control_count = u32::try_from(nurbs.control_points().len()).map_err(|_| {
+    let control_count = u32::try_from(nurbs.pole_count()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
         ))
@@ -3546,7 +3230,14 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if nurbs.weights().is_some() { 4 } else { 3 });
+    be16(
+        out,
+        if matches!(nurbs.pole_rows(), NurbsPoles3::Rational { .. }) {
+            4
+        } else {
+            3
+        },
+    );
     be32(out, 2);
     out.push(0);
     be32(out, 0);
@@ -3613,7 +3304,8 @@ fn write_nurbs_surface(
     let u_unique = unique_knots(nurbs.u_knots(), entity)?;
     let v_unique = unique_knots(nurbs.v_knots(), entity)?;
     let poles = homogeneous_grid_poles(nurbs.pole_grid(), length_scale)?;
-    let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
+    let rational = matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. });
+    let dimension = if rational { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u distinct knot count exceeds the native u32 field"
@@ -3647,7 +3339,7 @@ fn write_nurbs_surface(
     out.extend_from_slice(&[1, 1]);
     be32(out, u_knot_count);
     be32(out, v_knot_count);
-    out.push(u8::from(nurbs.weights().is_some()));
+    out.push(u8::from(rational));
     out.extend_from_slice(&[0, 0]);
     out.push(0x0c);
     be16(out, dimension);
@@ -4292,27 +3984,6 @@ mod nurbs_write_tests {
                 if message.contains("test:curve#high-multiplicity")
                     && message.contains("knot multiplicity")
         ));
-    }
-}
-
-#[cfg(test)]
-mod conversion_correction_tests {
-    use super::tessellation_f32;
-
-    #[test]
-    fn tessellation_f32_refuses_a_value_above_f32_max_that_the_cast_rounded_down() {
-        // A value a hair above `f32::MAX` rounded to `f32::MAX` under `as`; the
-        // sum with `1.0` would not do, since `1.0` is below the spacing of
-        // `f64` at that magnitude.
-        let just_above = f64::from(f32::MAX) * (1.0 + 1e-10);
-        assert!(just_above > f64::from(f32::MAX));
-        assert!(tessellation_f32(just_above, "position").is_err());
-        assert_eq!(
-            tessellation_f32(f64::from(f32::MAX), "position").expect("exact maximum"),
-            f32::MAX
-        );
-        assert!(tessellation_f32(f64::NAN, "position").is_err());
-        assert!(tessellation_f32(f64::INFINITY, "position").is_err());
     }
 }
 
