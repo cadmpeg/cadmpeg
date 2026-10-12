@@ -105,14 +105,14 @@ impl RecordStreamStart {
 
 /// The record-stream boundary the family's header grammar finds, if any.
 pub(crate) fn record_stream_start(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    _bytes: &[u8],
     family: Family,
     header: &BinaryHeader,
 ) -> Result<Option<RecordStreamStart>, cadmpeg_core::CodecError> {
     let start = match family {
-        Family::Asm => asm_header::record_stream_start_with_header(ctx, bytes, header)?,
-        Family::Acis => acis_header::record_stream_start_with_header(ctx, bytes, header)?,
+        Family::Asm => asm_header::record_stream_start_with_header(header),
+        Family::Acis => acis_header::record_stream_start_with_header(header),
     };
     Ok(start.map(RecordStreamStart))
 }

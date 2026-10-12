@@ -97,7 +97,7 @@ pub(crate) fn decode_kernel_carrier(
     let bytes = carrier.bytes.window();
     let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
-            asm_header::record_stream_start_with_header(ctx, bytes, header)?.ok_or_else(|| {
+            asm_header::record_stream_start_with_header(header).ok_or_else(|| {
                 CodecError::Malformed("Inventor ASM carrier has no record stream".into())
             })?,
             asm_header::solved_record_limit_with_header(ctx, bytes, header)?,
@@ -108,9 +108,9 @@ pub(crate) fn decode_kernel_carrier(
             // source.kernel-dialect-unverified mark (`dialect::kernel_layer`), never
             // whether the records are read.
             (
-                acis_header::record_stream_start_with_header(ctx, bytes, header)?.ok_or_else(
-                    || CodecError::Malformed("Inventor ACIS carrier has no record stream".into()),
-                )?,
+                acis_header::record_stream_start_with_header(header).ok_or_else(|| {
+                    CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
+                })?,
                 acis_header::solved_record_limit_with_header(ctx, bytes, header)?,
             )
         }
@@ -418,6 +418,7 @@ mod tests {
     fn header_copy_fixture() -> BinaryHeader {
         BinaryHeader {
             width: RefWidth::Eight,
+            record_stream_start: Some(47 + 6 + 17 + 27),
             metadata: KernelHeader {
                 save_format_version: Some(700),
                 entity_count: Some(12),
@@ -558,8 +559,8 @@ mod tests {
         };
         assert_eq!(work_refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(work_refusal.limit, 17);
-        assert!(work_refusal.used > 0);
-        assert!(work_refusal.used <= 17);
+        // An empty carrier reads no header strings and walks no topology.
+        assert_eq!(work_refusal.used, 0);
         assert!(matches!(
             ctx.finish_session(),
             Err(CodecError::ResourceLimit(limit)) if limit == work_refusal
@@ -611,7 +612,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_work_decode_refuses_empty_asm_reachable_face_probe() {
+    fn empty_asm_carrier_decodes_without_work() {
         let header = header_copy_fixture();
         let original_header = header.clone();
         let bytes = empty_asm_carrier_for_header(&header);
@@ -632,36 +633,21 @@ mod tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("zero-work context");
-        let Err(refusal) = decode_kernel_carrier(&ctx, &carrier, &header) else {
-            panic!("empty ASM reachability still probes the iterator end");
-        };
-        let CodecError::ResourceLimit(refusal) = refusal else {
-            panic!("zero work must refuse the first charged ASM operation");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(refusal.operation, "ASM reachable face walk");
-        assert_eq!(refusal.used, 0);
-        assert_eq!(refusal.additional, 1);
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(CodecError::ResourceLimit(limit)) if limit == refusal
-        ));
-        assert_eq!(header, original_header);
-
-        let (service, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("service context");
-        let decoded = decode_kernel_carrier(&service, &carrier, &header)
-            .expect("empty ASM carrier decodes under the service work budget");
+        let decoded = decode_kernel_carrier(&ctx, &carrier, &header)
+            .expect("an empty ASM carrier needs no work");
         assert!(decoded.bodies.is_empty());
+        drop(decoded);
+        ctx.finish_session().expect("no refusal was recorded");
         assert_eq!(header, original_header);
     }
 
     #[test]
-    fn zero_work_refusal_preserves_absent_and_empty_kernel_header_strings() {
+    fn absent_and_empty_kernel_header_strings_decode_without_work() {
         let mut header = header_copy_fixture();
         header.metadata.product_family = None;
         header.metadata.product_version = Some(String::new());
         header.metadata.save_date = None;
+        header.record_stream_start = Some(47 + 6 + 27);
         let original_header = header.clone();
         let bytes = empty_asm_carrier_for_header(&header);
         let arena = DecodeArena::new();
@@ -682,20 +668,11 @@ mod tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("zero-retained-and-work context");
-        let work_refusal = decode_kernel_carrier(&ctx, &carrier, &header)
-            .err()
-            .expect("zero work refuses the empty ASM reachability probe");
-        let CodecError::ResourceLimit(work_refusal) = work_refusal else {
-            panic!("zero work must refuse the first charged ASM operation");
-        };
-        assert_eq!(work_refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(work_refusal.operation, "ASM reachable face walk");
-        assert_eq!(work_refusal.used, 0);
-        assert_eq!(work_refusal.additional, 1);
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(CodecError::ResourceLimit(limit)) if limit == work_refusal
-        ));
+        let decoded = decode_kernel_carrier(&ctx, &carrier, &header)
+            .expect("absent and empty header strings need no work or retained bytes");
+        assert!(decoded.bodies.is_empty());
+        drop(decoded);
+        ctx.finish_session().expect("no refusal was recorded");
         assert_eq!(header.metadata, original_header.metadata);
 
         let mut retained_policy = DecodePolicy::service();

@@ -51,6 +51,7 @@ fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std
 fn header(save_format_version: Option<u32>) -> BinaryHeader {
     BinaryHeader {
         width: cadmpeg_asm::kernel_header::RefWidth::Four,
+        record_stream_start: None,
         metadata: KernelHeader {
             save_format_version,
             entity_count: None,
