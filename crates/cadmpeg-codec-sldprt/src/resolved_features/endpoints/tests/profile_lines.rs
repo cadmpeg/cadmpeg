@@ -1049,7 +1049,7 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
                 &roster_ctx,
                 &payload,
                 &curve,
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -1058,7 +1058,7 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
