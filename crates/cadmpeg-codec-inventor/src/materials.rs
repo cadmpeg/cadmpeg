@@ -280,7 +280,7 @@ fn appearance_id(
         format_args!("inventor:protein:appearance#{instance_ordinal}-{record_ordinal}"),
     )
     .map_err(|_| CodecError::malformed("cannot format Inventor appearance id"))?;
-    AppearanceId::mint(id_text)
+    AppearanceId::mint_for_decode(ctx, id_text, "validate Inventor appearance id")?
         .map_err(|_| CodecError::malformed("Inventor appearance id is invalid"))
 }
 
@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_appearance_identity_admits_exact_storage_without_work() {
+    fn bounded_appearance_identity_admits_exact_storage_and_grammar_work() {
         for (instance, record, expected) in [
             (0, 0, "inventor:protein:appearance#0-0"),
             (9, 10, "inventor:protein:appearance#9-10"),
@@ -381,7 +381,9 @@ mod tests {
             for exact in [false, true] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = 0;
+                // Owned text moves. The IR visits each ASCII scalar once.
+                policy.limits.max_work_units =
+                    cadmpeg_core::decode::u64_from_index(expected.len());
                 policy.limits.max_materialized_bytes = 0;
                 policy.limits.max_retained_bytes =
                     cadmpeg_core::decode::u64_from_index(expected.len()) - u64::from(!exact);
@@ -390,8 +392,25 @@ mod tests {
                 let result = appearance_id(&ctx, instance, record);
                 if exact {
                     assert_eq!(result.expect("exact identity storage").as_str(), expected);
-                    ctx.finish_session()
-                        .expect("bounded identity needs no work");
+                    assert!(matches!(ctx.charge_work(1, "probe appearance grammar work"),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                            if limit.dimension == ResourceDimension::WorkUnits
+                                && limit.used == cadmpeg_core::decode::u64_from_index(expected.len())
+                                && limit.additional == 1));
+
+                    policy.limits.max_work_units -= 1;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("short appearance grammar context");
+                    let error = appearance_id(&ctx, instance, record)
+                        .expect_err("last identity scalar exceeds work allowance");
+                    assert!(matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::WorkUnits
+                            && limit.operation == "validate Inventor appearance id"
+                            && limit.used == policy.limits.max_work_units
+                            && limit.additional == 1));
+                    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(original) if original == &limit)));
+
                 } else {
                     let error = result.expect_err("identity storage refuses before formatting");
                     assert!(
