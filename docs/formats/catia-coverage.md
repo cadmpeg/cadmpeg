@@ -878,3 +878,22 @@ Source-extent reconstruction closes the spray-bottle frame at offset 809,757.
 All sites satisfy equal ball radii and the opening-angle equation within
 `1e-9`; the largest relative radius residual is `1.40e-12`, and the largest
 angle residual is `7.72e-12` radians.
+
+## A5 rolling-ball tail admission
+
+Admission requires a complete tail after the three geometric jet blocks.
+The parser checks exact branch lengths, finite lanes, current and maximal
+limit containment, both reference-scalar copies, controls, and map terminals
+before it retains site data. Arbitrary frame-bounded continuation bytes no
+longer qualify as a complete rolling-ball carrier.
+
+The byte check resolves 183 source tails: 170 absent scalar jets and 13 explicit
+scalar jets. All 5,265 quintic samples stay inside their endpoint value range
+and retain the stored decreasing direction. Source parameter domains and six
+records with exact source knots support the parameter interpretation. All four
+NIST maps fit all four candidate source-curve domains, so no target is assigned
+from that relation. Raw tail controls retain their source polarity.
+
+The frozen `standard_a5_rolling_ball` input lacks a tail and remains a rejection
+witness. `standard_a5_rolling_ball_complete_tail` adds the complete 79-byte
+production. CATIA has 23 frozen inputs and 69 golden files. The golden-file floor is 69.

@@ -467,6 +467,18 @@ pub(crate) fn a5_freeform_curve_stream_with_count(count: u32) -> Vec<u8> {
             }
         }
     }
+    let upper = f64::from(count.saturating_sub(1));
+    for value in [0.0, upper, 0.0, 2.0, 2.0] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload.push(0x03);
+    for value in [0.0, 2.0] {
+        payload.extend_from_slice(&le_f64(value));
+    }
+    payload.extend_from_slice(&[0x05, 0, 0, 0, 0, 0]);
+    for value in [0.0, upper] {
+        payload.extend_from_slice(&le_f64(value));
+    }
     let mut record = vec![0xa5, 0x03, 0x32];
     record.extend_from_slice(
         &(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes(),

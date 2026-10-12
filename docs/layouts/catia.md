@@ -223,7 +223,7 @@ Unstated regions:
 
 Spec §6 · layout: byte offsets · size: 7 B
 
-Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The header token is a small repeating type code, not a per-record object id.
+Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The canonical header token is retained independently of the class-specific payload; it does not supply a per-record object id.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -744,6 +744,31 @@ Parsed by:
 | 161 | 8 | `parameter_shift` | `f64` | little | spec | \| `+161` \| `f64le` \| parameter-map shift \| |
 | 169 | 16 | `angular_domain` | `f64[2]` | little | spec | \| `+169` \| `2f64le` \| full-turn angular domain \| |
 
+## `rolling_ball_tail_prefix`
+
+Spec §6.2 · layout: byte offsets · size: 57 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 40 | `parameters` | `f64[5]` | little | spec | \| `+0` \| `f64le[5]` \| current U limits, current V limits, reference scalar \| |
+| 40 | 1 | `control` | `u8` | little | spec | \| `+40` \| `u8` \| retained control `03` or `05` \| |
+| 41 | 16 | `maximal_v` | `f64[2]` | little | spec | \| `+41` \| `f64le[2]` \| maximal V limits \| |
+
+## `rolling_ball_tail_unmapped_suffix`
+
+Spec §6.2 · layout: byte offsets · size: 22 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `branch` | `bytes[6]` | little | spec | \| `+0` \| `bytes[6]` \| absent scalar jet: `05 00 00 00 00 00` \| · value `[5, 0, 0, 0, 0, 0]` |
+| 6 | 16 | `maximal_u` | `f64[2]` | little | spec | \| `+6` \| `f64le[2]` \| maximal U limits \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
@@ -752,4 +777,4 @@ Parsed by:
 | Trim records and the standard spine (§5.2, §5.3) | §5.3 | Every count in a trim packet is a variable-width `count()` atom and the spine tables are count-driven, so no field sits at a fixed offset. The stride-8 FBB row and the 15-byte vertex record are the exceptions and are tabled. |
 | Analytic payload slots of `b2 03 19/28/29/2a/2b` (§5.9-§5.14) | §5.9 | These records state a total payload length and an ordered f64 slot list, but no per-slot byte offsets, and the leading compact record id has variable width in the circle case. They are slot layouts rather than byte layouts. |
 | `7C09` inline object records and `7C0A` atom payloads (§7.3) | §7.3 | Reference tokens are one or two bytes depending on value, and the head forms vary in arity, so every later field position depends on preceding values. |
-| Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2) | §6.1 | Knot counts and pole grids drive every later position. The tail starts at a count-dependent offset. The fixed 141-byte surface tail has a separate relative layout; the 59-byte `a8 03 32` jet tail starts after the variable jet grid. |
+| Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2) | §6.1 | Knot counts and pole grids drive every later position. The tail starts at a count-dependent offset. The fixed 141-byte surface tail and the A-family rolling-ball tail prefix and absent-jet suffix have separate relative layouts; the 59-byte `a8 03 32` jet tail starts after the variable jet grid. |

@@ -20,120 +20,6 @@
       "curves": [
         {
           "geometry": {
-            "degree": 5,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
-            }
-          },
-          "id": "catia:rolling-ball:limit#16:0"
-        },
-        {
-          "geometry": {
-            "degree": 5,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 2.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 2.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 2.0,
-                  "z": 0.0
-                }
-              ]
-            }
-          },
-          "id": "catia:rolling-ball:limit#16:1"
-        },
-        {
-          "geometry": {
             "axis": {
               "x": 0.0,
               "y": 0.0,
@@ -197,134 +83,7 @@
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
-      "procedural_surfaces": [
-        {
-          "definition": {
-            "degree": 5,
-            "kind": "rolling_ball_jet",
-            "stations": [
-              {
-                "knot": 0.0,
-                "multiplicity": 6,
-                "site": {
-                  "angle": 1.5707963267948966,
-                  "center": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "first_derivative": {
-                    "angle": 0.0,
-                    "center": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "first_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "second_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    }
-                  },
-                  "first_limit": {
-                    "x": 1.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "second_derivative": {
-                    "angle": 0.0,
-                    "center": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "first_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "second_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    }
-                  },
-                  "second_limit": {
-                    "x": 0.0,
-                    "y": 1.0,
-                    "z": 0.0
-                  }
-                }
-              },
-              {
-                "knot": 1.0,
-                "multiplicity": 6,
-                "site": {
-                  "angle": 1.5707963267948966,
-                  "center": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "first_derivative": {
-                    "angle": 0.0,
-                    "center": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "first_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "second_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    }
-                  },
-                  "first_limit": {
-                    "x": 2.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  "second_derivative": {
-                    "angle": 0.0,
-                    "center": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "first_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "second_limit": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    }
-                  },
-                  "second_limit": {
-                    "x": 0.0,
-                    "y": 2.0,
-                    "z": 0.0
-                  }
-                }
-              }
-            ]
-          },
-          "id": "catia:rolling-ball:construction#0",
-          "surface": "catia:rolling-ball:surf#2"
-        }
-      ],
+      "procedural_surfaces": [],
       "product_definitions": [],
       "regions": [
         {
@@ -364,13 +123,6 @@
       "spreadsheets": [],
       "subds": [],
       "surfaces": [
-        {
-          "geometry": {
-            "construction": "catia:rolling-ball:construction#0",
-            "kind": "procedural"
-          },
-          "id": "catia:rolling-ball:surf#2"
-        },
         {
           "geometry": {
             "axis": {
@@ -470,10 +222,7 @@
             "links": [
               "catia:standard:surf#0",
               "catia:standard:surf#1",
-              "catia:rolling-ball:surf#2",
-              "catia:standard:circle#0",
-              "catia:rolling-ball:limit#16:0",
-              "catia:rolling-ball:limit#16:1"
+              "catia:standard:circle#0"
             ]
           }
         ],
@@ -736,7 +485,7 @@
       "decoded_schema_selected_schema_entity_suffix_value_count": 0,
       "decoded_schema_selected_separator_entity_suffix_value_count": 0,
       "decoded_separator_entity_suffix_value_count": 0,
-      "decoded_standard_limit_curve_count": 2,
+      "decoded_standard_limit_curve_count": 0,
       "decoded_storage_record_link_count": 0,
       "decoded_structurally_owned_definition_chain_evaluation_count": 0,
       "decoded_structurally_owned_definition_chain_value_count": 0,
@@ -989,18 +738,6 @@
           },
           "scope": "entity"
         },
-        "catia:rolling-ball:limit#16:0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "catia:rolling-ball:limit#16:1": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "catia:rolling-ball:surf#2": {
-          "entity": "unknown",
-          "scope": "entity"
-        },
         "catia:standard:body#unbound-points": {
           "entity": "inferred",
           "scope": "entity"
@@ -1047,26 +784,6 @@
           "offset": 0,
           "stream": "catia:MainDataStream+SurfacicReps",
           "tag": "catia:standard-nested"
-        },
-        "catia:rolling-ball:construction#0": {
-          "offset": 16,
-          "stream": "catia:consolidated_a5_03_32",
-          "tag": "header_token:00000005"
-        },
-        "catia:rolling-ball:limit#16:0": {
-          "offset": 16,
-          "stream": "catia:consolidated_a5_03_32",
-          "tag": "limit_1"
-        },
-        "catia:rolling-ball:limit#16:1": {
-          "offset": 16,
-          "stream": "catia:consolidated_a5_03_32",
-          "tag": "limit_2"
-        },
-        "catia:rolling-ball:surf#2": {
-          "offset": 16,
-          "stream": "catia:consolidated_a5_03_32_cache",
-          "tag": "header_token:00000005"
         },
         "catia:standard:body#unbound-points": {
           "offset": 0,

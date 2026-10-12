@@ -537,6 +537,46 @@ The 6-byte `b2 03 2e 01 05 05` record following an `a5 03 34` core is a standalo
 
 Frames an explicit rolling-ball surface jet. The width-1 frame header token is one canonical compact integer, encoded as `4n+1` for `0 ≤ n ≤ 63`; it is not a fixed enumeration. The header value does not select the construction kind, site count, degree, or numeric-continuation length. Retain its raw canonical value independently of the class-specific payload. The payload header is (`K`, degree 5, K-repeat, array marker), followed by K distinct knots and three K×80-byte blocks carrying values, first derivatives, and second derivatives. The array marker is either the one-byte `0x0c` form or `0x08` followed by one canonical `4n+1` compact value. Each aligned row has ten f64 channels: Limit1 `[0:3]`, Limit2 `[3:6]`, Center `[6:9]`, θ `[9]`, satisfying `|Center−Limit1|=|Center−Limit2|` and `θ = 2·arcsin(|Limit2−Limit1|/(2·|Limit1−Center|))`. Every scalar channel is reconstructed fit-free by the stored per-span quintic Hermite jet. The surface is `P(t,φ) = Center(t) + Rot(Limit1(t)−Center(t), normalize((Limit1(t)−Center(t))×(Limit2(t)−Center(t))), φ·θ(t))`. The complete aligned jet transfers as a procedural carrier with multiplicity six at every piece boundary; no NURBS fitting or constant-radius reduction is permitted. Per-site radius classifies constant versus variable-radius instances. A part with freeform edges can carry zero `a5 03 32` records.
 
+The rolling-ball tail starts after the knot lane and the three jet blocks. If
+`R` is the frame offset, `W` is its header-token width, `H` is the encoded
+`K,degree,K` prefix length, and `M` is the array-marker width, the tail starts at
+`R + 7 + W + H + M + 248*K`. Use the encoded prefix length when a compact
+integer occupies more than one byte. The 57-byte tail prefix is:
+
+| Offset | Encoding | Field |
+| --- | --- | --- |
+| `+0` | `f64le[5]` | current U limits, current V limits, reference scalar |
+| `+40` | `u8` | retained control `03` or `05` |
+| `+41` | `f64le[2]` | maximal V limits |
+
+Every scalar is finite. Current U and V limits are ordered. The reference
+scalar is positive and bit-identical to the current V upper limit. Maximal V
+contains current V. The reference scalar does not replace a station's ball
+radius.
+
+The 79-byte form has this 22-byte suffix after the prefix:
+
+| Suffix offset | Encoding | Field |
+| --- | --- | --- |
+| `+0` | `bytes[6]` | absent scalar jet: `05 00 00 00 00 00` |
+| `+6` | `f64le[2]` | maximal U limits |
+
+The 87-byte form adds one `f64le` copy of the reference scalar. The absent-jet
+branch supplies no parameter map.
+
+The explicit scalar-jet form is `87 + 24*K` bytes. After the prefix it stores
+`01 01`, then three finite `f64le[K]` lanes in value, first-derivative, and
+second-derivative order. The derivatives use the rolling-ball U parameter.
+The lanes define a scalar quintic Hermite jet on the same knots as the surface
+jet. A `u32le` terminal in `{0,1}` follows the lanes, then maximal U limits and
+one bit-identical reference-scalar copy. The tail carries no curve identity.
+
+Maximal U is ordered, contains current U, and lies inside the knot domain.
+Current and maximal U limits are separate from the knot extremes. Each tail
+production exhausts its declared logical frame. Retain the control, scalar
+jet, terminal, and both limit pairs in the source record independently of the
+transferred geometric jet.
+
 ### 6.3 Consolidated class-`0x20` pcurve-on-surface (`CATPSpline`)
 
 A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is an absolute persistent CGM object tag. The `mode/offset` byte encodes the leading-extrapolation count `q = (mode−1)/4`.

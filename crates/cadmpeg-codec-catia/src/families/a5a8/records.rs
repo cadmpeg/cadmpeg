@@ -1331,6 +1331,12 @@ fn parse_a5_curve(
             previous_knot = Some(knot);
             at += 8;
         }
+        let tail_start = at.checked_add(block_bytes.checked_mul(3)?)?;
+        a5_rolling_ball_tail(
+            data.get(tail_start..end)?,
+            count,
+            [f64_le(data, knot_start)?.get(), previous_knot?],
+        )?;
         Some((count, knot_start, at, block_bytes))
     })() else {
         return Ok(None);
@@ -1363,6 +1369,71 @@ fn parse_a5_curve(
         header_token,
         sites,
     }))
+}
+
+/// Validate the complete consolidated rolling-ball tail before retaining sites.
+/// Scalar jets and the raw control remain in the source record; neither supplies
+/// a source-curve identity or a neutral orientation.
+fn a5_rolling_ball_tail(data: &[u8], count: usize, knot_range: [f64; 2]) -> Option<()> {
+    use crate::layout::{
+        rolling_ball_tail_prefix as prefix, rolling_ball_tail_unmapped_suffix as suffix,
+    };
+
+    let no_map_length = prefix::LEN + suffix::LEN;
+    let repeated_length = no_map_length + 8;
+    let current = read_f64_array::<5>(data, prefix::PARAMETERS)?.map(FiniteReal::get);
+    let maximal_v = read_f64_array::<2>(data, prefix::MAXIMAL_V)?.map(FiniteReal::get);
+    if !matches!(data.get(prefix::CONTROL), Some(0x03 | 0x05))
+        || current[0] >= current[1]
+        || current[2] >= current[3]
+        || current[4] <= 0.0
+        || current[3].to_bits() != current[4].to_bits()
+        || maximal_v[0] > current[2]
+        || maximal_v[1] < current[3]
+    {
+        return None;
+    }
+    let mut at = match data.len() {
+        length if length == no_map_length || length == repeated_length => {
+            if data.get(prefix::LEN + suffix::BRANCH..prefix::LEN + suffix::MAXIMAL_U)
+                != Some(&suffix::BRANCH_VALUE)
+            {
+                return None;
+            }
+            prefix::LEN + suffix::MAXIMAL_U
+        }
+        length if length == repeated_length.checked_add(count.checked_mul(24)?)? => {
+            if data.get(prefix::LEN..prefix::LEN + 2) != Some(&[0x01, 0x01]) {
+                return None;
+            }
+            let mut at = prefix::LEN + 2;
+            for _ in 0..count.checked_mul(3)? {
+                f64_le(data, at)?;
+                at += 8;
+            }
+            if View::u32_le_at(data, at)? > 1 {
+                return None;
+            }
+            at + 4
+        }
+        _ => return None,
+    };
+    let maximal_u = read_f64_array::<2>(data, at)?.map(FiniteReal::get);
+    at += 16;
+    if maximal_u[0] < knot_range[0]
+        || maximal_u[0] > current[0]
+        || maximal_u[1] < current[1]
+        || maximal_u[1] > knot_range[1]
+    {
+        return None;
+    }
+    if data.len() != no_map_length {
+        if f64_le(data, at)?.get().to_bits() != current[4].to_bits() {
+            return None;
+        }
+        at += 8;
+    }
+    (at == data.len()).then_some(())
 }
 
 fn rolling_ball_site(values: [FiniteReal; 10]) -> Option<RollingBallSite> {

@@ -559,7 +559,7 @@ kind = "byte"
 section = "6"
 anchor = "A-family (u32 length):  byte0 = 0xA4 + W  (a5/a6/a7 for W=1/2/3), flag 0x03/0x13/0x83"
 size = 7
-note = "Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The header token is a small repeating type code, not a per-record object id."
+note = "Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The canonical header token is retained independently of the class-specific payload; it does not supply a per-record object id."
 
 [[record.field]]
 name = "family"
@@ -1427,7 +1427,7 @@ anchor = "Its ordinary references use `80..d0 → byte−80`"
 
 [[not_applicable]]
 area = "Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2)"
-reason = "Knot counts and pole grids drive every later position. The tail starts at a count-dependent offset. The fixed 141-byte surface tail has a separate relative layout; the 59-byte `a8 03 32` jet tail starts after the variable jet grid."
+reason = "Knot counts and pole grids drive every later position. The tail starts at a count-dependent offset. The fixed 141-byte surface tail and the A-family rolling-ball tail prefix and absent-jet suffix have separate relative layouts; the 59-byte `a8 03 32` jet tail starts after the variable jet grid."
 section = "6.1"
 anchor = "### 6.1 `a5 03 34` freeform surface (consolidated class)"
 
@@ -2106,3 +2106,55 @@ offset = 169
 type = "f64[2]"
 source = "spec"
 anchor = "| `+169` | `2f64le` | full-turn angular domain |"
+
+[[record]]
+name = "rolling_ball_tail_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.2"
+anchor = "The 57-byte tail prefix is:"
+size = 57
+
+[[record.field]]
+name = "parameters"
+offset = 0
+type = "f64[5]"
+source = "spec"
+anchor = "| `+0` | `f64le[5]` | current U limits, current V limits, reference scalar |"
+
+[[record.field]]
+name = "control"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "| `+40` | `u8` | retained control `03` or `05` |"
+
+[[record.field]]
+name = "maximal_v"
+offset = 41
+type = "f64[2]"
+source = "spec"
+anchor = "| `+41` | `f64le[2]` | maximal V limits |"
+
+[[record]]
+name = "rolling_ball_tail_unmapped_suffix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.2"
+anchor = "The 79-byte form has this 22-byte suffix after the prefix:"
+size = 22
+
+[[record.field]]
+name = "branch"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "| `+0` | `bytes[6]` | absent scalar jet: `05 00 00 00 00 00` |"
+value = [5, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "maximal_u"
+offset = 6
+type = "f64[2]"
+source = "spec"
+anchor = "| `+6` | `f64le[2]` | maximal U limits |"

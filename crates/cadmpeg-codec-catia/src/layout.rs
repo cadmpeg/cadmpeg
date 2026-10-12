@@ -183,7 +183,7 @@ pub(crate) mod analytic_surface_torus {
 /// Spec §6. Record length 7 B.
 ///
 /// ```text
-/// Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The header token is a small repeating type code, not a per-record object id.
+/// Header only; the width-`W` header token occupies +7..+7+W and the payload starts at +7+W. `next = +7+W+payload_len`. The canonical header token is retained independently of the class-specific payload; it does not supply a per-record object id.
 /// ```
 pub(crate) mod a_family_frame {
     /// Record length in bytes. Spec §6.
@@ -482,4 +482,32 @@ pub(crate) mod b5_cone_payload {
     pub(crate) const PARAMETER_SHIFT: usize = 161;
     /// Offset of `angular_domain` (`f64[2]`, little-endian). Spec §6.7.
     pub(crate) const ANGULAR_DOMAIN: usize = 169;
+}
+
+/// Byte offsets for the `rolling_ball_tail_prefix` record.
+///
+/// Spec §6.2. Record length 57 B.
+pub(crate) mod rolling_ball_tail_prefix {
+    /// Record length in bytes. Spec §6.2.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `parameters` (`f64[5]`, little-endian). Spec §6.2.
+    pub(crate) const PARAMETERS: usize = 0;
+    /// Offset of `control` (`u8`). Spec §6.2.
+    pub(crate) const CONTROL: usize = 40;
+    /// Offset of `maximal_v` (`f64[2]`, little-endian). Spec §6.2.
+    pub(crate) const MAXIMAL_V: usize = 41;
+}
+
+/// Byte offsets for the `rolling_ball_tail_unmapped_suffix` record.
+///
+/// Spec §6.2. Record length 22 B.
+pub(crate) mod rolling_ball_tail_unmapped_suffix {
+    /// Record length in bytes. Spec §6.2.
+    pub(crate) const LEN: usize = 22;
+    /// Offset of `branch` (`bytes[6]`). Spec §6.2.
+    pub(crate) const BRANCH: usize = 0;
+    /// Stated value of `branch` (`bytes[6]`). Spec §6.2.
+    pub(crate) const BRANCH_VALUE: [u8; 6] = [0x05, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `maximal_u` (`f64[2]`, little-endian). Spec §6.2.
+    pub(crate) const MAXIMAL_U: usize = 6;
 }

@@ -1479,21 +1479,119 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
 }
 
 #[test]
-fn a5_curve_parser_accepts_frame_bounded_continuation() {
+fn a5_curve_parser_rejects_untyped_continuation() {
     let mut bytes = a5_freeform_curve_stream();
     bytes.extend(std::iter::repeat_n(0, 4097));
     let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [curve] = parsed_a5_freeform_curves(&bytes)
-        .try_into()
-        .expect("one rolling-ball jet");
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| curve.knots(ctx))
-            .expect("service resource budget"),
-        [0.0, 1.0]
-    );
-    assert_eq!(curve.sites[1].site.radius(), 2.0);
+    assert!(parsed_a5_freeform_curves(&bytes).is_empty());
+}
+
+#[test]
+fn a5_rolling_ball_tails_close_all_three_productions() {
+    let original = a5_freeform_curve_stream();
+    let tail_start = original.len() - 79;
+    let mut no_map = original[tail_start..].to_vec();
+    no_map[..8].copy_from_slice(&le_f64(0.25));
+    no_map[8..16].copy_from_slice(&le_f64(0.75));
+    let mut repeated = no_map.clone();
+    repeated.extend_from_slice(&le_f64(2.0));
+    let mut mapped = no_map[..57].to_vec();
+    mapped.extend_from_slice(&[0x01, 0x01]);
+    for value in [0.0, 1.0, 1.0, 1.0, 0.0, 0.0] {
+        mapped.extend_from_slice(&le_f64(value));
+    }
+    mapped.extend_from_slice(&1u32.to_le_bytes());
+    mapped.extend_from_slice(&no_map[63..]);
+    mapped.extend_from_slice(&le_f64(2.0));
+    assert_eq!(mapped.len(), 135);
+    let mut mapped_zero_terminal = mapped.clone();
+    mapped_zero_terminal[107..111].copy_from_slice(&0u32.to_le_bytes());
+    let expected = parsed_a5_freeform_curves(&original).remove(0);
+    for tail in [no_map, repeated, mapped, mapped_zero_terminal] {
+        for width in 1..=3 {
+            for marker in [vec![0x0c], vec![0x08, 0x05]] {
+                let mut payload = original[8..11].to_vec();
+                payload.extend_from_slice(&marker);
+                payload.extend_from_slice(&original[12..tail_start]);
+                payload.extend_from_slice(&tail);
+                let mut bytes = vec![0xa4 + width, 0x03, 0x32];
+                bytes.extend_from_slice(
+                    &u32::try_from(payload.len())
+                        .expect("test length")
+                        .to_le_bytes(),
+                );
+                bytes.extend(std::iter::repeat_n(0x05, usize::from(width)));
+                bytes.extend_from_slice(&payload);
+                let [jet] = parsed_a5_freeform_curves(&bytes)
+                    .try_into()
+                    .expect("complete rolling-ball tail");
+                assert_eq!(jet.sites, expected.sites);
+            }
+        }
+    }
+}
+
+#[test]
+fn a5_rolling_ball_tail_refuses_truncation_and_invalid_lanes() {
+    let original = a5_freeform_curve_stream();
+    let tail_start = original.len() - 79;
+    for length in 0..79 {
+        let mut bytes = original[..tail_start + length].to_vec();
+        let payload_len = u32::try_from(bytes.len() - 8).expect("test length");
+        bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+        assert!(parsed_a5_freeform_curves(&bytes).is_empty());
+    }
+    for (offset, value) in [
+        (0, -1.0),
+        (8, 2.0),
+        (16, 2.0),
+        (24, 3.0),
+        (32, 0.0),
+        (41, 1.0),
+        (49, 1.0),
+        (63, 0.5),
+        (71, 0.5),
+    ] {
+        let mut bytes = original.clone();
+        bytes[tail_start + offset..tail_start + offset + 8].copy_from_slice(&le_f64(value));
+        assert!(parsed_a5_freeform_curves(&bytes).is_empty());
+    }
+    for offset in [0, 8, 16, 24, 32, 41, 49, 63, 71] {
+        let mut bytes = original.clone();
+        bytes[tail_start + offset..tail_start + offset + 8].copy_from_slice(&le_f64(f64::NAN));
+        assert!(parsed_a5_freeform_curves(&bytes).is_empty());
+    }
+    for offset in [40, 57, 58, 59, 60, 61, 62] {
+        let mut bytes = original.clone();
+        bytes[tail_start + offset] = 0x02;
+        assert!(parsed_a5_freeform_curves(&bytes).is_empty());
+    }
+}
+
+#[test]
+fn a5_rolling_ball_scalar_tail_refuses_invalid_jet_and_terminal() {
+    let original = a5_freeform_curve_stream();
+    let tail_start = original.len() - 79;
+    let mut bytes = original[..tail_start + 57].to_vec();
+    bytes.extend_from_slice(&[0x01, 0x01]);
+    for value in [0.0, 1.0, 1.0, 1.0, 0.0, 0.0] {
+        bytes.extend_from_slice(&le_f64(value));
+    }
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&original[tail_start + 63..]);
+    bytes.extend_from_slice(&le_f64(2.0));
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test length");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert_eq!(parsed_a5_freeform_curves(&bytes).len(), 1);
+    for offset in (59..107).step_by(8).chain(std::iter::once(127)) {
+        let mut invalid = bytes.clone();
+        invalid[tail_start + offset..tail_start + offset + 8].copy_from_slice(&le_f64(f64::NAN));
+        assert!(parsed_a5_freeform_curves(&invalid).is_empty());
+    }
+    bytes[tail_start + 107..tail_start + 111].copy_from_slice(&2u32.to_le_bytes());
+    assert!(parsed_a5_freeform_curves(&bytes).is_empty());
 }
 
 #[test]
