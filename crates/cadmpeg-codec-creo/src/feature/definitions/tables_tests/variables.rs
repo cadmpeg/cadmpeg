@@ -274,3 +274,75 @@ fn variable_coordinate_7e_and_c6_are_the_f3_dict_sign_pair() {
         )
     );
 }
+
+#[test]
+fn positional_variable_rows_require_every_stored_field() {
+    let header = b"\xf8\x01\xf7\x77\xfb\xe2\xf7\x78";
+    let row = b"\x01\x80\x80\x0f\x0f\x01\0\x80\x81";
+    let mut payload = header.to_vec();
+    payload.extend_from_slice(row);
+    payload.extend_from_slice(&[0xf1, 0xf7, 119, 0xe2]);
+    let definition_end = payload.len();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    for end in header.len()..definition_end {
+        let table =
+            positional_variable_table(&payload, 0, end, 119, &scalar::ScalarCache::default())
+                .expect("declared header");
+        assert!(table.rows.is_empty(), "incomplete row at {end}");
+        assert!(!table.is_complete());
+    }
+    let table = positional_variable_table(
+        &payload,
+        0,
+        definition_end,
+        119,
+        &scalar::ScalarCache::default(),
+    )
+    .expect("complete table");
+    assert!(table.is_complete());
+    assert_eq!(table.rows.len(), 1);
+    assert_eq!(table.rows[0].key, 128);
+    assert_eq!(table.rows[0].value, ScalarLane::Value(0.0));
+    assert_eq!(table.rows[0].guess, ScalarLane::Value(0.0));
+    assert_eq!(
+        (
+            table.rows[0].known,
+            table.rows[0].homogeneity,
+            table.rows[0].uvar_id
+        ),
+        (Some(1), Some(0), Some(129))
+    );
+}
+
+#[test]
+fn named_variable_replay_requires_every_solver_state_field() {
+    let prototype = b"var_arr\0\xf8\x02\xf7\x77\xfb\xe2\
+        \xe0\x01type\0\x01\xe0\x01key\0\x07\xe0\x01value\0\x0f\
+        \xe0\x01guess\0\x0f\xe0\x01known\0\x01\
+        \xe0\x01homogeneity\0\0\xe0\x01uvar_id\0\x09\xf1\xf7\x77\xe2";
+    for states in [&[1][..], &[1, 0][..], &[1, 0, 0x80][..]] {
+        let mut payload = prototype.to_vec();
+        payload.extend_from_slice(&[2, 7, 0x0f, 0x0f]);
+        payload.extend_from_slice(states);
+        payload.push(0xe2);
+        let table = variable_table(&payload, 0, payload.len(), &scalar::ScalarCache::default())
+            .expect("named table");
+        assert_eq!(table.rows.len(), 1);
+        assert_eq!(table.rows[0].key, 7);
+        assert!(!table.is_complete());
+    }
+    let mut payload = prototype.to_vec();
+    payload.extend_from_slice(&[2, 7, 0x0f, 0x0f, 1, 0, 10, 0xe2]);
+    let table = variable_table(&payload, 0, payload.len(), &scalar::ScalarCache::default())
+        .expect("complete named table");
+    assert!(table.is_complete());
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(
+        (
+            table.rows[1].known,
+            table.rows[1].homogeneity,
+            table.rows[1].uvar_id
+        ),
+        (Some(1), Some(0), Some(10))
+    );
+}

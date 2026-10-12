@@ -220,6 +220,74 @@ fn decodes_var_arr_positional_dict_lattice() {
     );
 }
 
+#[test]
+fn variable_scalar_lookahead_stays_inside_its_window() {
+    let payload = [0x18, 0xe0];
+    let cache = scalar::ScalarCache::default();
+    assert_eq!(
+        decode_variable_scalar(&payload, 0, 0, &cache),
+        (ScalarLane::Undefined, 0)
+    );
+    assert_eq!(
+        decode_variable_scalar(&payload, 0, 1, &cache),
+        (ScalarLane::Undefined, 1)
+    );
+    assert_eq!(
+        decode_variable_scalar(&payload, 0, 2, &cache),
+        (ScalarLane::Value(0.0), 1)
+    );
+}
+
+#[test]
+fn coordinate_scalar_lookahead_stays_inside_its_window() {
+    let payload = [0x18, 0xe0];
+    let cache = scalar::ScalarCache::default();
+    assert_eq!(
+        decode_section_coordinate_scalar(&payload, 0, 0, &cache),
+        (ScalarLane::Undefined, 0)
+    );
+    assert_eq!(
+        decode_section_coordinate_scalar(&payload, 0, 1, &cache),
+        (ScalarLane::Undefined, 1)
+    );
+    assert_eq!(
+        decode_section_coordinate_scalar(&payload, 0, 2, &cache),
+        (ScalarLane::Value(0.0), 1)
+    );
+}
+
+#[test]
+fn parameter_scalar_lookahead_stays_inside_its_window() {
+    let payload = [0x18, 0xe0];
+    let cache = scalar::ScalarCache::default();
+    assert_eq!(
+        crate::feature::definitions::decode_parameter_scalar(&payload, 0, 1, &cache),
+        None
+    );
+    assert_eq!(
+        crate::feature::definitions::decode_parameter_scalar(&payload, 0, 2, &cache),
+        Some((0.0, 1))
+    );
+}
+
+#[test]
+fn variable_guess_requires_a_complete_in_window_suffix() {
+    let payload = [0x18, 1, 2, 0x81, 0, 0xe0];
+    let cache = scalar::ScalarCache::default();
+    for source in [&payload[..], &payload[..4]] {
+        let guess = crate::decode::with_test_decode_ctx(|ctx| {
+            crate::feature::definitions::decode_variable_guess(ctx, source, 0, 4, &cache)
+        })
+        .expect("bounded guess");
+        assert_eq!(guess, (ScalarLane::Undefined, 1));
+    }
+    let guess = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::feature::definitions::decode_variable_guess(ctx, &payload, 0, 5, &cache)
+    })
+    .expect("complete suffix");
+    assert_eq!(guess, (ScalarLane::Value(0.0), 1));
+}
+
 fn decode_variable_scalar(
     payload: &[u8],
     offset: usize,

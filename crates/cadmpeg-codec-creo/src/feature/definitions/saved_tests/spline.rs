@@ -156,3 +156,17 @@ fn decodes_saved_spline_chord_parameter_lane() {
     }
     assert_eq!(cursor, body.len());
 }
+
+#[test]
+fn saved_spline_count_header_stops_at_its_end() {
+    let mut payload = b"\xe0\x00save_entity_ptr(spline)\0\xe0\x02i_pnts\0\xf9".to_vec();
+    let end = payload.len();
+    payload.extend_from_slice(&[1, 3, 0x0f, 0x0f, 0x0f]);
+    let entities = saved_spline_entities(&payload, 0, end, &scalar::ScalarCache::default());
+    let [FeatureSavedEntity::Spline(spline)] = entities.as_slice() else {
+        panic!("saved spline header");
+    };
+    assert_eq!(spline.declared_point_count, None);
+    assert!(spline.interpolation_points.is_empty());
+    assert!(spline.interpolation_points_body.is_empty());
+}
