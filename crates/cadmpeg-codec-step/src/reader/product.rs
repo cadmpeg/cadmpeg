@@ -475,6 +475,11 @@ pub(super) fn decode<'ctx>(
                     "STEP decode text",
                 )?));
             }
+            ctx.admit_entities(
+                u64_from_index(ir.model.entity_count()) + 1,
+                admitted_ir_entities,
+                "step_product_definition",
+            )?;
             ctx.reserve_vec(
                 &mut ir.model.product_definitions,
                 1,
@@ -686,6 +691,11 @@ pub(super) fn decode<'ctx>(
                 u64_from_index(ir.model.occurrences.len()) + 1,
             ));
         }
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()) + 1,
+            admitted_ir_entities,
+            "step_assembly_occurrence",
+        )?;
         ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_root_occurrence_items")?;
         ir.model.occurrences.push(Occurrence {
             id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
@@ -703,11 +713,6 @@ pub(super) fn decode<'ctx>(
             link: None,
             native_ref: None,
         });
-        ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
-            admitted_ir_entities,
-            "step_assembly_occurrence",
-        )?;
         root_ordinal = root_ordinal
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
@@ -977,6 +982,11 @@ pub(super) fn decode<'ctx>(
                     }
                     Transform::identity()
                 };
+                ctx.admit_entities(
+                    u64_from_index(ir.model.entity_count()) + 1,
+                    admitted_ir_entities,
+                    "step_assembly_occurrence",
+                )?;
                 ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_child_occurrence_items")?;
                 ir.model.occurrences.push(Occurrence {
                     id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
@@ -1006,11 +1016,6 @@ pub(super) fn decode<'ctx>(
                         "step_product_native_reference",
                     )?),
                 });
-                ctx.admit_entities(
-                    u64_from_index(ir.model.entity_count()),
-                    admitted_ir_entities,
-                    "step_assembly_occurrence",
-                )?;
                 ordinal = ordinal.checked_add(1).ok_or_else(|| {
                     CodecError::malformed("STEP child occurrence ordinal exceeds u32")
                 })?;
