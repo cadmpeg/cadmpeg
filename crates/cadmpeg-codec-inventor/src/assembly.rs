@@ -955,15 +955,16 @@ mod tests {
             &[assembly_occurrence(7)],
             &[assembly_placement(7)],
         )
-        .err()
-        .expect("identity grammar refuses before occurrence creation");
+        .expect_err("identity grammar refuses before occurrence creation");
         drop(probe);
         assert!(matches!(&error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "validate projected Inventor occurrence id"
                 && limit.additional == 1));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+        );
     }
 
     #[test]

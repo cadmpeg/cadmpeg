@@ -1203,12 +1203,8 @@ fn decode_container<'a>(
                 format_args!("inventor:kernel:carrier#{key}"),
                 "retain Inventor unknown carrier id",
             )?;
-            let id = UnknownId::mint_for_decode(
-                ctx,
-                id,
-                "validate Inventor retained carrier id",
-            )?
-            .map_err(CodecError::malformed)?;
+            let id = UnknownId::mint_for_decode(ctx, id, "validate Inventor retained carrier id")?
+                .map_err(CodecError::malformed)?;
             let mut links_storage = ctx.reserve_scoped(0, "collect Inventor carrier link")?;
             let mut links = Vec::new();
             links_storage.with_storage(|| {
