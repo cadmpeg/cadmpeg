@@ -1203,3 +1203,43 @@ underlying surface tag with `GetSurface()->GetPersistentTag()`.
 [Geometry objects](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/GeoObjects.htm)
 and [geometry creation](https://www.maruf.ca/files/caadoc/CAAGobUseCases/CAAGobCreation.htm)
 establish the API namespace. The serialized factory relation remains in SN-12.
+
+Independent logical-stream reconstruction covers all 79 CATPart files and
+validates the complete standard population relation:
+
+| Raw population result | Count |
+| --- | ---: |
+| Primary nested directories | 76 |
+| Maximal FBB runs | 83 |
+| Complete trim/edge/vertex FBB layouts | 77 |
+| Surface-record candidates | 29,651 |
+| Source-closed surface/support populations | 75 |
+| Admitted positional pairs | 75 in 71 files |
+| Paired bounds-containment failures | 0 |
+| Unmatched complete FBB layouts | 2 |
+| Unmatched surface/support populations | 0 |
+
+The unmatched layouts belong to `steering-wheel-connector.CATPart` and
+`steering-wheel.CATPart`. Each has 50 faces, 128 edges, and 80 vertices.
+Their complete logical streams contain two and eleven isolated surface-record
+candidates, respectively, with no source-closed surface/support population.
+The connector and wheel share identical 400-byte FBB face rows and a
+1,203-byte vertex table. Their trim chains differ in 22 bytes and edge tables
+in nine bytes. The connector's maximal E5 walk has 1,137 frames; the wheel
+has two maximal walks of 1,217 frames. The E5 route supplies their geometry.
+
+Fresh native and sibling STEP decodes of the connector, middle horn, outer
+ring, complete wheel, and lower Carter produce ten checked documents. Unique
+body matches have bijective vertex matches, identical physical-edge endpoint
+multisets, and identical per-face loop endpoint multisets at a `0.002` mm
+coordinate gate. The four steering specimens contain eight bodies, 226 faces,
+232 loops, 1,128 coedges, 564 edges, and 352 vertices, with maximum vertex
+residual `7.75264730289162e-6` mm. Their curve and surface family counts agree.
+
+The lower Carter's three standard populations have face/edge/vertex counts
+`245/601/350`, `9/18/12`, and `9/18/12`. The latter two share identical FBB
+face-row bytes and lie on opposite sides of Y=0. Source-order pairing has no
+bounds-containment failures; swapping those two populations causes two.
+Each population selects one sibling STEP body with matching topology. This
+comparison permits exporter refitting and surface deduplication; it checks
+coordinates and incidence independently of carrier-family counts.
