@@ -30,7 +30,7 @@ use super::super::feature_history::named::{
     retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
-    copy_body_id, decoded_feature_reference_name, feature_output_bodies, feature_parameters,
+    decoded_feature_reference_name, feature_output_bodies, feature_parameters,
     feature_reference_name, feature_source_properties, insert_feature_source_property,
     schema_operation_kind, SchemaClassList,
 };
@@ -640,7 +640,7 @@ pub(super) fn emit_model_features(
                 existing.evaluation.outputs(),
                 "creo existing feature output traversal",
             )? {
-                let copy = copy_body_id(ctx, body)?;
+                let copy = body.try_clone_for_decode(ctx, "creo feature output body IDs")?;
                 ctx.push_vec(&mut combined_outputs, copy, "creo combined feature outputs")?;
             }
             for (index, output) in ctx
