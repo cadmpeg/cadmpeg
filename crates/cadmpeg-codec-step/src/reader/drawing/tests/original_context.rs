@@ -19,17 +19,24 @@ fn cache_refusal(cached: bool) {
     let exchange = exchange();
     let identities = BTreeMap::new();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-        .expect("empty root");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("empty root");
     let cache = WrapperCache::new(&ctx).expect("original cache context");
     if cached {
-        assert!(cache.resolve(1, &identities, &exchange).expect("initial query").is_none());
+        assert!(cache
+            .resolve(1, &identities, &exchange, true)
+            .expect("initial query")
+            .is_none());
     }
     let prior_entries = usize::from(cached);
     assert_eq!(cache.values.borrow().len(), prior_entries);
-    let CodecError::ResourceLimit(original) = ctx.charge_work(u64::MAX, "test original wrapper refusal")
-        .expect_err("original context refuses") else { panic!("resource refusal"); };
-    assert!(matches!(cache.resolve(1, &identities, &exchange),
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(u64::MAX, "test original wrapper refusal")
+        .expect_err("original context refuses")
+    else {
+        panic!("resource refusal");
+    };
+    assert!(matches!(cache.resolve(1, &identities, &exchange, true),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
     assert_eq!(cache.values.borrow().len(), prior_entries);
     assert_eq!(ctx.resource_refusal(), Some(original));
@@ -65,8 +72,12 @@ fn drawing_target_context_preserves_original_session_refusal() {
         external_documents: &documents,
         wrappers: WrapperCache::new(&ctx).expect("original target context"),
     };
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "test original drawing target refusal")
-        .expect_err("original context refuses") else { panic!("resource refusal"); };
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "test original drawing target refusal")
+        .expect_err("original context refuses")
+    else {
+        panic!("resource refusal");
+    };
     assert!(matches!(target_context.resolve(1),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
     assert!(target_context.wrappers.values.borrow().is_empty());
@@ -93,11 +104,18 @@ fn drawing_sheet_usage_preserves_original_session_refusal() {
         external_documents: &documents,
         wrappers: WrapperCache::new(&ctx).expect("original target context"),
     };
-    let report_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "test drawing report").expect("report scope"));
+    let report_storage = std::cell::RefCell::new(
+        ctx.reserve_scoped(0, "test drawing report")
+            .expect("report scope"),
+    );
     let mut drawings = BTreeMap::new();
     let mut losses = Vec::new();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "test original sheet usage refusal")
-        .expect_err("original context refuses") else { panic!("resource refusal"); };
+    let CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "test original sheet usage refusal")
+        .expect_err("original context refuses")
+    else {
+        panic!("resource refusal");
+    };
     assert!(matches!(super::super::add_sheet_revision_usages(
         &exchange, &mut drawings, &target_context, (&mut losses, &report_storage)),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
