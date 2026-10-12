@@ -470,6 +470,8 @@ pub(super) fn project<'ctx>(
     let mut losses = Vec::new();
     let mut wire_slots_storage = ctx.reserve_scoped(0, "iges offsets wire slots")?;
     let mut wire_edges = Vec::new();
+    let mut pending_storage = ctx.reserve_scoped(0, "iges pending procedural curves")?;
+    let mut pending_curves = Vec::new();
 
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
@@ -1475,7 +1477,9 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let curve_id = identity_storage.with_storage(|| {
+        let mut attachment_identity_storage =
+            ctx.reserve_scoped(0, "iges offset attachment identity")?;
+        let curve_id = attachment_identity_storage.with_storage(|| {
             crate::ids::curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
         })?;
         let start_point = crate::ids::point_admitted(
@@ -1657,10 +1661,16 @@ pub(super) fn project<'ctx>(
         });
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        let _attached = ir.model.add_procedural_curve(ctx, &curve_id, procedural)?;
+        pending_storage.absorb(&mut attachment_identity_storage)?;
+        ctx.push_scoped_vec(
+            &mut pending_storage,
+            &mut pending_curves,
+            (curve_id, procedural),
+            "iges pending procedural curves",
+        )?;
+        drop(attachment_identity_storage);
         drop(offset_source_id);
         drop(source_id);
-        drop(curve_id);
         drop(identity_storage);
         ctx.reserve_scoped_vec(
             &mut wire_slots_storage,
@@ -1677,6 +1687,11 @@ pub(super) fn project<'ctx>(
             "iges offsets decoded sequences",
         )?;
     }
+
+    if !pending_curves.is_empty() {
+        let _attached = ir.model.add_procedural_curves(ctx, pending_curves)?;
+    }
+    drop(pending_storage);
 
     Ok(WireProjectionOutcome {
         decoded,
