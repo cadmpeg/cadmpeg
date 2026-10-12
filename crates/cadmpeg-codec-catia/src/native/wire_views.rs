@@ -11,8 +11,7 @@ use super::owner_chart::CatiaOwnerChartRelation;
 use super::{
     slice_is_empty, CatiaCircleLayout, CatiaConsolidatedCircle, CatiaConsolidatedCylinder,
     CatiaConsolidatedCylinderPayload, CatiaConsolidatedCylinderPayloadWire,
-    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
-    CatiaConsolidatedParameterPointPayload, CatiaConsolidatedPlaneCarrier,
+    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint, CatiaConsolidatedPlaneCarrier,
     CatiaConsolidatedPlaneCarrierPayload, CatiaFaceNodeRelation, CatiaOwnerBoundaryCycle,
     CatiaOwnerIdentityEncoding, CatiaOwnerIdentityTarget, CatiaOwnerNumericTail,
     CatiaOwnerPacketPayload, CatiaOwnerReferenceEncoding, ConsolidatedFrameFlag,
@@ -201,7 +200,7 @@ struct CatiaConsolidatedParameterPointWireRef<'a> {
     layout: u8,
     prefix: u8,
     control: u8,
-    payload: &'a CatiaConsolidatedParameterPointPayload,
+    payload: &'a crate::families::b2::records::B2ParameterPointPayload,
 }
 
 impl Serialize for CatiaConsolidatedParameterPoint {

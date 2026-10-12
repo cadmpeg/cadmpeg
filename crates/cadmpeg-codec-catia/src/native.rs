@@ -69,6 +69,7 @@ use owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
+use crate::families::b2::records::B2ParameterPointPayload;
 use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
@@ -924,45 +925,6 @@ impl TryFrom<CatiaConsolidatedEmbeddedCylinderWire> for CatiaConsolidatedEmbedde
     }
 }
 
-/// Layout-specific scalar lane of a consolidated `B:18` parameter-space record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum CatiaConsolidatedParameterPointPayload {
-    /// One retained scalar after two zero tuple fields are elided.
-    Scalar {
-        /// Stored scalar.
-        value: FiniteReal,
-    },
-    /// Two surface-chart coordinates.
-    Uv {
-        /// Surface-chart coordinates.
-        uv: FiniteVector<2>,
-    },
-    /// Host-chain station followed by two surface-chart coordinates.
-    StationUv {
-        /// Host-chain station.
-        station: FiniteReal,
-        /// Surface-chart coordinates.
-        uv: FiniteVector<2>,
-    },
-    /// Unsplit five-scalar lane.
-    FiveScalars {
-        /// Stored finite scalars.
-        values: FiniteVector<5>,
-    },
-}
-
-impl CatiaConsolidatedParameterPointPayload {
-    const fn layout(&self) -> u8 {
-        match self {
-            Self::Scalar { .. } => 0x0a,
-            Self::Uv { .. } => 0x12,
-            Self::StationUv { .. } => 0x1a,
-            Self::FiveScalars { .. } => 0x2a,
-        }
-    }
-}
-
 /// One complete consolidated `B:18` parameter-space record.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "CatiaConsolidatedParameterPointWire")]
@@ -978,7 +940,7 @@ pub(crate) struct CatiaConsolidatedParameterPoint {
     /// Second byte of the two-byte class-specific prefix.
     control: u8,
     /// Layout-specific finite scalar lane.
-    payload: CatiaConsolidatedParameterPointPayload,
+    payload: B2ParameterPointPayload,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -989,7 +951,7 @@ struct CatiaConsolidatedParameterPointWire {
     layout: u8,
     prefix: u8,
     control: u8,
-    payload: CatiaConsolidatedParameterPointPayload,
+    payload: B2ParameterPointPayload,
 }
 
 #[cfg(test)]
@@ -9014,24 +8976,10 @@ fn consolidated_parameter_points(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedParameterPoint>, CodecError> {
-    use crate::families::b2::records::B2ParameterPointPayload;
-
     let mut points = Vec::new();
     for (index, point) in
         crate::families::b2::records::b2_parameter_points_from_records(bytes, records).enumerate()
     {
-        let payload = match point.payload {
-            B2ParameterPointPayload::Scalar { value } => {
-                CatiaConsolidatedParameterPointPayload::Scalar { value }
-            }
-            B2ParameterPointPayload::Uv { uv } => CatiaConsolidatedParameterPointPayload::Uv { uv },
-            B2ParameterPointPayload::StationUv { station, uv } => {
-                CatiaConsolidatedParameterPointPayload::StationUv { station, uv }
-            }
-            B2ParameterPointPayload::FiveScalars { values } => {
-                CatiaConsolidatedParameterPointPayload::FiveScalars { values }
-            }
-        };
         let value = CatiaConsolidatedParameterPoint {
             id: ctx.format_retained(
                 format_args!("catia:consolidated:parameter-point#{index:00}"),
@@ -9041,7 +8989,7 @@ fn consolidated_parameter_points(
             byte_len: u64_from_index(point.end - point.pos),
             prefix: point.prefix,
             control: point.control,
-            payload,
+            payload: point.payload,
         };
         ctx.push_vec(&mut points, value, "catia_native_parameter_points")?;
     }

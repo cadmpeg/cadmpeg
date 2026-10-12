@@ -207,12 +207,12 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     assert_eq!(uv.control, 0x12);
     assert!(matches!(
         &uv.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
+        crate::families::b2::records::B2ParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
     ));
     assert_eq!(station_uv.payload.layout(), 0x1a);
     assert!(matches!(
         &station_uv.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::StationUv {
+        crate::families::b2::records::B2ParameterPointPayload::StationUv {
             station,
             uv,
         } if station.get() == 11.0 && *uv == [4.0, 5.0]
@@ -220,7 +220,7 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     assert_eq!(five_scalars.payload.layout(), 0x2a);
     assert!(matches!(
         &five_scalars.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::FiveScalars { values }
+        crate::families::b2::records::B2ParameterPointPayload::FiveScalars { values }
             if *values == [1.0, 2.0, 3.0, 4.0, 5.0]
     ));
 

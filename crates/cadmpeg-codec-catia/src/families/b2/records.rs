@@ -19,6 +19,7 @@ use cadmpeg_ir::scalar::{
 };
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::mem::size_of;
 
@@ -111,7 +112,8 @@ impl B2ParameterPointPrefix {
 }
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum B2ParameterPointPayload {
     /// One retained scalar after two zero tuple fields are elided (`L=0x0a`).
     Scalar {
@@ -137,9 +139,8 @@ pub(crate) enum B2ParameterPointPayload {
     },
 }
 
-#[cfg(test)]
 impl B2ParameterPointPayload {
-    pub(super) const fn layout(&self) -> u8 {
+    pub(crate) const fn layout(&self) -> u8 {
         match self {
             Self::Scalar { .. } => 0x0a,
             Self::Uv { .. } => 0x12,
