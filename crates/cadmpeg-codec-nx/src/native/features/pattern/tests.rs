@@ -29,10 +29,9 @@ fn pattern_construction_route_refusal(
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("pattern construction container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("pattern construction container");
     let references = crate::test_support::with_decode_context(|ctx| {
         super::feature_pattern_references(
             ctx,
@@ -121,10 +120,9 @@ fn pattern_reference_route_refusal(
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("pattern reference container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("pattern reference container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::pattern::feature_pattern_references(
             ctx,
@@ -200,10 +198,9 @@ fn pattern_output_lane_refusal<T>(
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("pattern output lane container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("pattern output lane container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
         route(
             ctx,
@@ -322,10 +319,9 @@ fn pattern_content_refusal(
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("pattern construction container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("pattern construction container");
     let payload = crate::test_support::with_decode_context(|ctx| {
         let blocks = crate::native::features::offset_data_block_bytes(ctx, &container)?;
         let id = blocks
@@ -334,7 +330,7 @@ fn pattern_content_refusal(
             .cloned()
             .expect("synthetic pattern block");
         let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
-            FeaturePayloadContent::from_source(ctx, [id], &blocks)?.expect("pattern source block");
+            FeaturePayloadContent::from_source(ctx, [id], blocks)?.expect("pattern source block");
         Ok::<FeatureConstructionPayload, cadmpeg_core::CodecError>(FeatureConstructionPayload {
             id: "pattern-payload".to_string(),
             operation_label: "pattern-operation".to_string(),

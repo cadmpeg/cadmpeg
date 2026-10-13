@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::{Container, DirEntry, DirEntryBody, Region};
 
-pub(super) fn one_document() -> Container<'static> {
+pub(super) fn one_document_bytes() -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(&9u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
@@ -28,6 +28,10 @@ pub(super) fn one_document() -> Container<'static> {
     data.extend_from_slice(&24u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_be_bytes());
     data.extend_from_slice(&[0; 24]);
+    data
+}
+
+pub(super) fn one_document(data: &[u8]) -> Container<'_> {
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     Container {
         data: data.into(),
@@ -52,7 +56,8 @@ pub(super) fn one_document() -> Container<'static> {
 fn refused_at(
     adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> (ResourceDimension, String) {
-    let container = one_document();
+    let container_bytes_1 = one_document_bytes();
+    let container = one_document(&container_bytes_1);
 
     crate::test_support::with_decode_context(|index_ctx| {
         let indices = super::display_jt_indices(index_ctx, &container).unwrap();
@@ -215,7 +220,8 @@ fn display_jt_document_storage_refuses_before_vector_reservation() {
 
 #[test]
 fn display_jt_document_work_refuses_before_toc_scan() {
-    let container = one_document();
+    let container_bytes_2 = one_document_bytes();
+    let container = one_document(&container_bytes_2);
     crate::test_support::with_decode_context(|index_ctx| {
         let indices = super::display_jt_indices(index_ctx, &container).unwrap();
         crate::test_support::resource_refusal_at(
@@ -243,7 +249,8 @@ fn display_jt_document_count_refuses_before_vector_reservation() {
 
 #[test]
 fn display_jt_document_service_profile_keeps_toc_entry() {
-    let container = one_document();
+    let container_bytes_3 = one_document_bytes();
+    let container = one_document(&container_bytes_3);
 
     crate::test_support::with_decode_context(|index_ctx| {
         let indices = super::display_jt_indices(index_ctx, &container).unwrap();

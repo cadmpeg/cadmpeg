@@ -1104,7 +1104,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         {
             continue;
         }
-        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+        let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
             ctx,
             graph
                 .iter()
@@ -1123,7 +1123,10 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+        })?
+        else {
             continue;
         };
         let Some(operation_key) = operation_key(
@@ -1134,6 +1137,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:pattern-construction-payload#{operation_key}"),
             "NX pattern construction payload identity",
@@ -1179,16 +1183,16 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX pattern string parser rows")?;
+        let values =
+            value_storage.with_storage(|| crate::om::string_values(ctx, joined.bytes(), 0))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::string_values(ctx, joined.bytes(), 0)?,
-                "visit NX pattern payload strings",
-            )?
+            .admit_iter(values, "visit NX pattern payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -1198,9 +1202,9 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX pattern string ordinal", 0, 1))?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let value = ctx
-                .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
-            let value = PrintableString::new(value).map_err(cadmpeg_core::CodecError::malformed)?;
+            let value = value
+                .value
+                .try_into_owned_for_decode(ctx, "NX pattern construction string value")?;
             let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX pattern construction string label",
@@ -1235,7 +1239,7 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1445,3 +1449,6 @@ mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
+
+#[cfg(test)]
+mod text_storage_tests;
