@@ -99,7 +99,13 @@ pub(super) fn transfer_and_record_scanned_geometry<'ctx>(
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
-) -> Result<(BrepTransferDiagnostics, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+) -> Result<
+    (
+        BrepTransferDiagnostics,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let cross_section_plane_count =
         transfer_cross_section_planes(ctx, scan, ir, annotations, source_carriers)?;
     let first_instance_prototype_surface_count = transfer_first_instance_prototype_surfaces(

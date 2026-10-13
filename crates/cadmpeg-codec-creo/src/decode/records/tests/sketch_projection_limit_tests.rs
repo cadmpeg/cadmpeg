@@ -237,8 +237,7 @@ fn sketch_variable_body_refuses_materialized_limit() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let records_parts =
-        sketch_records(&ctx, &scan).expect("service profile admits one variable");
+    let records_parts = sketch_records(&ctx, &scan).expect("service profile admits one variable");
     let _storage = records_parts.1;
     let records = records_parts.0;
     let value = serde_json::to_value(&records[0]).expect("record serializes");

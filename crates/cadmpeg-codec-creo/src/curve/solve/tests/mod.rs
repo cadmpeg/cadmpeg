@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod admission;
+mod admission_visits;
 mod dimensions;
 mod matrix;
-mod admission_visits;

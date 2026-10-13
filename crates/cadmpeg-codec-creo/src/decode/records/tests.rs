@@ -677,8 +677,7 @@ fn overlapping_feature_candidates_do_not_expose_short_headers() {
         .expect("root input is admitted");
     scan.features.rows = crate::feature::rows::rows(&ctx, &payload, &BTreeSet::from([1, 2]), 0)
         .expect("feature rows are admitted");
-    let records_parts =
-        feature_row_records(&ctx, &scan).expect("feature row records are admitted");
+    let records_parts = feature_row_records(&ctx, &scan).expect("feature row records are admitted");
     let _records_storage = records_parts.1;
     let records = records_parts.0;
     assert_eq!(records.len(), 1);
@@ -696,8 +695,8 @@ mod feature_definition_projection_limit_tests;
 mod feature_entity_table_record_tests;
 mod feature_projection_limit_tests;
 mod pcurve_endpoint_projection_limit_tests;
-mod sketch_projection_limit_tests;
 mod sketch_point_storage;
+mod sketch_projection_limit_tests;
 mod surface_parameter_projection_limit_tests;
 mod surface_projection_limit_tests;
 mod topology_projection_limit_tests;

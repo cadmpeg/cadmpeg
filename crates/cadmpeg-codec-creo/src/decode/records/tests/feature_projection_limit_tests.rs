@@ -197,8 +197,7 @@ fn borrowed_feature_projection_preserves_json() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let geometry_parts =
-        feature_geometry_table_records(&ctx, &scan).expect("record is admitted");
+    let geometry_parts = feature_geometry_table_records(&ctx, &scan).expect("record is admitted");
     let _geometry_storage = geometry_parts.1;
     let geometry = geometry_parts.0;
     let history_parts =

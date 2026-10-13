@@ -428,10 +428,12 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
         for (_, pair) in ctx.admit_iter(&generated_by_source, "creo drilled paired source count")? {
             match [pair.first, pair.second] {
                 [None, None] => rowless += 1,
-                [Some(crate::surface::SurfaceKind::Cone), Some(crate::surface::SurfaceKind::Cone)] => {
+                [Some(crate::surface::SurfaceKind::Cone), Some(crate::surface::SurfaceKind::Cone)] =>
+                {
                     cones += 1;
                 }
-                [Some(crate::surface::SurfaceKind::Cylinder), Some(crate::surface::SurfaceKind::Cylinder)] => {
+                [Some(crate::surface::SurfaceKind::Cylinder), Some(crate::surface::SurfaceKind::Cylinder)] =>
+                {
                     cylinders += 1;
                 }
                 _ => {}
@@ -629,7 +631,10 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
     let feature_id = table.feature_id;
     let mut cylinder_id_storage = ctx.reserve_scoped(0, "creo drilled cylinder source scratch")?;
     let mut cylinder_ids = BTreeSet::new();
-    for entry in ctx.admit_iter(table.entries.as_slice(), "creo drilled cylinder source scan")? {
+    for entry in ctx.admit_iter(
+        table.entries.as_slice(),
+        "creo drilled cylinder source scan",
+    )? {
         let surface_id = entry.entity_id;
         if !ctx.contains_btree_set(
             table.unique_surface_ids(),

@@ -139,7 +139,10 @@ impl<'ctx> SurfaceBindings<'ctx> {
             if table.table_class_id != 100 {
                 continue;
             }
-            for entry in ctx.admit_iter(table.entries.as_slice(), "creo entity surface binding entries")? {
+            for entry in ctx.admit_iter(
+                table.entries.as_slice(),
+                "creo entity surface binding entries",
+            )? {
                 let rows = storage
                     .with_storage(|| {
                         ctx.entry_hash_map(

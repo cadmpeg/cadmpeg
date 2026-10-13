@@ -19,9 +19,9 @@ use crate::psb;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-mod resource_limits;
-mod admission_visits;
 mod admission_eof;
+mod admission_visits;
+mod resource_limits;
 
 const SINGLE_ROW: &[u8] = &[40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
 

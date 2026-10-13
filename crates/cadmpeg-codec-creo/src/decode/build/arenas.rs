@@ -139,7 +139,8 @@ pub(super) fn emit_geometry_arenas(
     brep_diagnostics: &BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
     {
-        let surface_rows_owned_storage = surface_row_records(ctx, scan, &scan.surfaces.rows, "visibgeom")?;
+        let surface_rows_owned_storage =
+            surface_row_records(ctx, scan, &scan.surfaces.rows, "visibgeom")?;
         let _records_storage = surface_rows_owned_storage.1;
         let surface_rows = surface_rows_owned_storage.0;
         emit_uniform(
@@ -158,7 +159,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let nonvisible_surface_rows_owned_storage = surface_row_records(ctx, scan, &scan.surfaces.nonvisible_rows, "novisgeom")?;
+        let nonvisible_surface_rows_owned_storage =
+            surface_row_records(ctx, scan, &scan.surfaces.nonvisible_rows, "novisgeom")?;
         let _records_storage = nonvisible_surface_rows_owned_storage.1;
         let nonvisible_surface_rows = nonvisible_surface_rows_owned_storage.0;
         emit_uniform(
@@ -178,11 +180,11 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let cross_section_surface_rows_owned_storage = surface_row_records(
-                ctx,
-                scan,
-                &scan.surfaces.cross_section_rows,
-                "cross_section_geometry",
-            )?;
+            ctx,
+            scan,
+            &scan.surfaces.cross_section_rows,
+            "cross_section_geometry",
+        )?;
         let _records_storage = cross_section_surface_rows_owned_storage.1;
         let cross_section_surface_rows = cross_section_surface_rows_owned_storage.0;
         emit_uniform(
@@ -201,7 +203,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let surface_contours_owned_storage = surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom")?;
+        let surface_contours_owned_storage =
+            surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom")?;
         let _records_storage = surface_contours_owned_storage.1;
         let surface_contours = surface_contours_owned_storage.0;
         emit_uniform(
@@ -220,7 +223,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let nonvisible_surface_contours_owned_storage = surface_contour_records(ctx, scan, &scan.surfaces.nonvisible_contours, "novisgeom")?;
+        let nonvisible_surface_contours_owned_storage =
+            surface_contour_records(ctx, scan, &scan.surfaces.nonvisible_contours, "novisgeom")?;
         let _records_storage = nonvisible_surface_contours_owned_storage.1;
         let nonvisible_surface_contours = nonvisible_surface_contours_owned_storage.0;
         emit_uniform(
@@ -240,11 +244,11 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let cross_section_surface_contours_owned_storage = surface_contour_records(
-                ctx,
-                scan,
-                &scan.surfaces.cross_section_contours,
-                "cross_section_geometry",
-            )?;
+            ctx,
+            scan,
+            &scan.surfaces.cross_section_contours,
+            "cross_section_geometry",
+        )?;
         let _records_storage = cross_section_surface_contours_owned_storage.1;
         let cross_section_surface_contours = cross_section_surface_contours_owned_storage.0;
         emit_uniform(
@@ -263,7 +267,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let surface_prototypes_owned_storage = surface_prototype_records(ctx, scan, &scan.surfaces.prototype_records, "visibgeom")?;
+        let surface_prototypes_owned_storage =
+            surface_prototype_records(ctx, scan, &scan.surfaces.prototype_records, "visibgeom")?;
         let _records_storage = surface_prototypes_owned_storage.1;
         let surface_prototypes = surface_prototypes_owned_storage.0;
         emit_uniform(
@@ -283,11 +288,11 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let nonvisible_surface_prototypes_owned_storage = surface_prototype_records(
-                ctx,
-                scan,
-                &scan.surfaces.nonvisible_prototype_records,
-                "novisgeom",
-            )?;
+            ctx,
+            scan,
+            &scan.surfaces.nonvisible_prototype_records,
+            "novisgeom",
+        )?;
         let _records_storage = nonvisible_surface_prototypes_owned_storage.1;
         let nonvisible_surface_prototypes = nonvisible_surface_prototypes_owned_storage.0;
         emit_uniform(
@@ -306,7 +311,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let tabulated_cylinder_curve_replays_owned_storage = tabulated_cylinder_curve_replay_records(ctx, scan)?;
+        let tabulated_cylinder_curve_replays_owned_storage =
+            tabulated_cylinder_curve_replay_records(ctx, scan)?;
         let _records_storage = tabulated_cylinder_curve_replays_owned_storage.1;
         let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replays_owned_storage.0;
         emit_uniform(
@@ -325,7 +331,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let curve_parameters_owned_storage = curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom")?;
+        let curve_parameters_owned_storage =
+            curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom")?;
         let _records_storage = curve_parameters_owned_storage.1;
         let curve_parameters = curve_parameters_owned_storage.0;
         emit_uniform(
@@ -344,7 +351,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let nonvisible_curve_parameters_owned_storage = curve_parameter_records(ctx, scan, &scan.curves.nonvisible_parameters, "novisgeom")?;
+        let nonvisible_curve_parameters_owned_storage =
+            curve_parameter_records(ctx, scan, &scan.curves.nonvisible_parameters, "novisgeom")?;
         let _records_storage = nonvisible_curve_parameters_owned_storage.1;
         let nonvisible_curve_parameters = nonvisible_curve_parameters_owned_storage.0;
         emit_uniform(
@@ -416,7 +424,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let curve_prototypes_owned_storage = curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype")?;
+        let curve_prototypes_owned_storage =
+            curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype")?;
         let _records_storage = curve_prototypes_owned_storage.1;
         let curve_prototypes = curve_prototypes_owned_storage.0;
         emit_uniform(
@@ -436,11 +445,11 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let nonvisible_curve_prototypes_owned_storage = curve_prototype_records(
-                ctx,
-                scan,
-                &scan.curves.nonvisible_prototypes,
-                "creo:novisgeom:curve_prototype",
-            )?;
+            ctx,
+            scan,
+            &scan.curves.nonvisible_prototypes,
+            "creo:novisgeom:curve_prototype",
+        )?;
         let _records_storage = nonvisible_curve_prototypes_owned_storage.1;
         let nonvisible_curve_prototypes = nonvisible_curve_prototypes_owned_storage.0;
         emit_uniform(
@@ -460,11 +469,11 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let cross_section_curve_prototypes_owned_storage = curve_prototype_records(
-                ctx,
-                scan,
-                &scan.curves.cross_section_prototypes,
-                "creo:cross_section_geometry:curve_prototype",
-            )?;
+            ctx,
+            scan,
+            &scan.curves.cross_section_prototypes,
+            "creo:cross_section_geometry:curve_prototype",
+        )?;
         let _records_storage = cross_section_curve_prototypes_owned_storage.1;
         let cross_section_curve_prototypes = cross_section_curve_prototypes_owned_storage.0;
         emit_uniform(
@@ -483,7 +492,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let curve_topology_rows_owned_storage = curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom")?;
+        let curve_topology_rows_owned_storage =
+            curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom")?;
         let _records_storage = curve_topology_rows_owned_storage.1;
         let curve_topology_rows = curve_topology_rows_owned_storage.0;
         emit_uniform(
@@ -503,11 +513,11 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let nonvisible_curve_topology_rows_owned_storage = curve_topology_row_records(
-                ctx,
-                scan,
-                &scan.curves.nonvisible_topology_rows,
-                "novisgeom",
-            )?;
+            ctx,
+            scan,
+            &scan.curves.nonvisible_topology_rows,
+            "novisgeom",
+        )?;
         let _records_storage = nonvisible_curve_topology_rows_owned_storage.1;
         let nonvisible_curve_topology_rows = nonvisible_curve_topology_rows_owned_storage.0;
         emit_uniform(
@@ -606,7 +616,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let half_edge_vertex_incidence_owned_storage = half_edge_vertex_incidence_records(ctx, scan)?;
+        let half_edge_vertex_incidence_owned_storage =
+            half_edge_vertex_incidence_records(ctx, scan)?;
         let _records_storage = half_edge_vertex_incidence_owned_storage.1;
         let half_edge_vertex_incidence = half_edge_vertex_incidence_owned_storage.0;
         store_arena(
@@ -635,12 +646,12 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let surface_parameters_owned_storage = surface_parameter_records(
-                ctx,
-                scan,
-                &scan.surfaces.rows,
-                &scan.surfaces.parameters,
-                "visibgeom",
-            )?;
+            ctx,
+            scan,
+            &scan.surfaces.rows,
+            &scan.surfaces.parameters,
+            "visibgeom",
+        )?;
         let _records_storage = surface_parameters_owned_storage.1;
         let surface_parameters = surface_parameters_owned_storage.0;
         emit_uniform(
@@ -660,12 +671,12 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let nonvisible_surface_parameters_owned_storage = surface_parameter_records(
-                ctx,
-                scan,
-                &scan.surfaces.nonvisible_rows,
-                &scan.surfaces.nonvisible_parameters,
-                "novisgeom",
-            )?;
+            ctx,
+            scan,
+            &scan.surfaces.nonvisible_rows,
+            &scan.surfaces.nonvisible_parameters,
+            "novisgeom",
+        )?;
         let _records_storage = nonvisible_surface_parameters_owned_storage.1;
         let nonvisible_surface_parameters = nonvisible_surface_parameters_owned_storage.0;
         emit_uniform(
@@ -685,12 +696,12 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let cross_section_surface_parameters_owned_storage = surface_parameter_records(
-                ctx,
-                scan,
-                &scan.surfaces.cross_section_rows,
-                &scan.surfaces.cross_section_parameters,
-                "cross_section_geometry",
-            )?;
+            ctx,
+            scan,
+            &scan.surfaces.cross_section_rows,
+            &scan.surfaces.cross_section_parameters,
+            "cross_section_geometry",
+        )?;
         let _records_storage = cross_section_surface_parameters_owned_storage.1;
         let cross_section_surface_parameters = cross_section_surface_parameters_owned_storage.0;
         emit_uniform(
@@ -710,22 +721,22 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let plane_local_systems_owned_storage = plane_local_system_records(
-                ctx,
-                scan,
-                &scan.planes.local_systems,
-                "creo:surface:plane_local_system",
-            )?;
+            ctx,
+            scan,
+            &scan.planes.local_systems,
+            "creo:surface:plane_local_system",
+        )?;
         let _records_storage = plane_local_systems_owned_storage.1;
         let plane_local_systems = plane_local_systems_owned_storage.0;
         store_arena(ctx, ir, CreoArena::PlaneLocalSystems, &plane_local_systems)?;
     }
     {
         let cross_section_plane_local_systems_owned_storage = plane_local_system_records(
-                ctx,
-                scan,
-                &scan.planes.cross_section_local_systems,
-                "creo:cross_section_geometry:plane_local_system",
-            )?;
+            ctx,
+            scan,
+            &scan.planes.cross_section_local_systems,
+            "creo:cross_section_geometry:plane_local_system",
+        )?;
         let _records_storage = cross_section_plane_local_systems_owned_storage.1;
         let cross_section_plane_local_systems = cross_section_plane_local_systems_owned_storage.0;
         store_arena(
@@ -737,22 +748,22 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let plane_envelopes_owned_storage = plane_envelope_records(
-                ctx,
-                scan,
-                &scan.planes.envelopes,
-                "creo:surface:plane_envelope",
-            )?;
+            ctx,
+            scan,
+            &scan.planes.envelopes,
+            "creo:surface:plane_envelope",
+        )?;
         let _records_storage = plane_envelopes_owned_storage.1;
         let plane_envelopes = plane_envelopes_owned_storage.0;
         store_arena(ctx, ir, CreoArena::PlaneEnvelopes, &plane_envelopes)?;
     }
     {
         let cross_section_plane_envelopes_owned_storage = plane_envelope_records(
-                ctx,
-                scan,
-                &scan.planes.cross_section_envelopes,
-                "creo:cross_section_geometry:plane_envelope",
-            )?;
+            ctx,
+            scan,
+            &scan.planes.cross_section_envelopes,
+            "creo:cross_section_geometry:plane_envelope",
+        )?;
         let _records_storage = cross_section_plane_envelopes_owned_storage.1;
         let cross_section_plane_envelopes = cross_section_plane_envelopes_owned_storage.0;
         store_arena(
@@ -764,22 +775,22 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let outline_planes_owned_storage = outline_plane_records(
-                ctx,
-                scan,
-                &scan.planes.outlines,
-                "creo:surface:outline_plane",
-            )?;
+            ctx,
+            scan,
+            &scan.planes.outlines,
+            "creo:surface:outline_plane",
+        )?;
         let _records_storage = outline_planes_owned_storage.1;
         let outline_planes = outline_planes_owned_storage.0;
         store_arena(ctx, ir, CreoArena::OutlinePlanes, &outline_planes)?;
     }
     {
         let positional_frame_planes_owned_storage = outline_plane_records(
-                ctx,
-                scan,
-                &scan.planes.positional_frames,
-                "creo:surface:positional_frame_plane",
-            )?;
+            ctx,
+            scan,
+            &scan.planes.positional_frames,
+            "creo:surface:positional_frame_plane",
+        )?;
         let _records_storage = positional_frame_planes_owned_storage.1;
         let positional_frame_planes = positional_frame_planes_owned_storage.0;
         store_arena(
@@ -791,11 +802,11 @@ pub(super) fn emit_geometry_arenas(
     }
     {
         let cross_section_outline_planes_owned_storage = outline_plane_records(
-                ctx,
-                scan,
-                &scan.planes.cross_section_outlines,
-                "creo:cross_section_geometry:outline_plane",
-            )?;
+            ctx,
+            scan,
+            &scan.planes.cross_section_outlines,
+            "creo:cross_section_geometry:outline_plane",
+        )?;
         let _records_storage = cross_section_outline_planes_owned_storage.1;
         let cross_section_outline_planes = cross_section_outline_planes_owned_storage.0;
         store_arena(
@@ -818,7 +829,8 @@ pub(super) fn emit_geometry_arenas(
         store_arena(ctx, ir, CreoArena::DatumCylinders, &datum_cylinders)?;
     }
     {
-        let feature_section_transforms_owned_storage = feature_section_transform_records(ctx, scan)?;
+        let feature_section_transforms_owned_storage =
+            feature_section_transform_records(ctx, scan)?;
         let _records_storage = feature_section_transforms_owned_storage.1;
         let feature_section_transforms = feature_section_transforms_owned_storage.0;
         store_arena(
@@ -829,7 +841,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let feature_placement_instructions_owned_storage = feature_placement_instruction_records(ctx, scan)?;
+        let feature_placement_instructions_owned_storage =
+            feature_placement_instruction_records(ctx, scan)?;
         let _records_storage = feature_placement_instructions_owned_storage.1;
         let feature_placement_instructions = feature_placement_instructions_owned_storage.0;
         store_arena(
@@ -991,7 +1004,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let feature_loop_history_entries_owned_storage = feature_loop_history_entry_records(ctx, scan)?;
+        let feature_loop_history_entries_owned_storage =
+            feature_loop_history_entry_records(ctx, scan)?;
         let _records_storage = feature_loop_history_entries_owned_storage.1;
         let feature_loop_history_entries = feature_loop_history_entries_owned_storage.0;
         emit_uniform(
@@ -1029,7 +1043,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let feature_replay_affected_ids_owned_storage = feature_replay_affected_id_records(ctx, scan)?;
+        let feature_replay_affected_ids_owned_storage =
+            feature_replay_affected_id_records(ctx, scan)?;
         let _records_storage = feature_replay_affected_ids_owned_storage.1;
         let feature_replay_affected_ids = feature_replay_affected_ids_owned_storage.0;
         emit_uniform(
@@ -1048,7 +1063,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let surface_merge_replay_affected_ids_owned_storage = surface_merge_replay_affected_id_records(ctx, scan)?;
+        let surface_merge_replay_affected_ids_owned_storage =
+            surface_merge_replay_affected_id_records(ctx, scan)?;
         let _records_storage = surface_merge_replay_affected_ids_owned_storage.1;
         let surface_merge_replay_affected_ids = surface_merge_replay_affected_ids_owned_storage.0;
         emit_uniform(
@@ -1067,7 +1083,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let feature_loop_restore_directions_owned_storage = feature_loop_restore_direction_records(ctx, scan)?;
+        let feature_loop_restore_directions_owned_storage =
+            feature_loop_restore_direction_records(ctx, scan)?;
         let _records_storage = feature_loop_restore_directions_owned_storage.1;
         let feature_loop_restore_directions = feature_loop_restore_directions_owned_storage.0;
         emit_uniform(
@@ -1086,7 +1103,8 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     {
-        let feature_revolution_extents_owned_storage = feature_revolution_extent_records(ctx, scan)?;
+        let feature_revolution_extents_owned_storage =
+            feature_revolution_extent_records(ctx, scan)?;
         let _records_storage = feature_revolution_extents_owned_storage.1;
         let feature_revolution_extents = feature_revolution_extents_owned_storage.0;
         emit_uniform(
