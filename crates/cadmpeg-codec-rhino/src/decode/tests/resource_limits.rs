@@ -12,29 +12,36 @@ use super::{
 
 #[test]
 fn opaque_source_staging_uses_scoped_backing() {
-    use cadmpeg_core::decode::ResourceDimension;
     use crate::test_support::test_dump::{long_chunk, minimal_document, table};
+    use cadmpeg_core::decode::ResourceDimension;
 
     const SCRATCH_BYTES: u64 = 1024 * 1024;
     let archive = ArchiveVersion::V5;
     let record = long_chunk(archive, 0x1234, &[0x5a; 32]);
     for count in [1, 64] {
         let records = vec![record.clone(); count];
-        let bytes = minimal_document("50", &[
-            table(archive, 0x1000_0014, &records),
-            table(archive, 0x1000_0015, &[]),
-            table(archive, 0x1000_0013, &[]),
-        ]);
+        let bytes = minimal_document(
+            "50",
+            &[
+                table(archive, 0x1000_0014, &records),
+                table(archive, 0x1000_0015, &[]),
+                table(archive, 0x1000_0013, &[]),
+            ],
+        );
         let scan = crate::container::scan_owned(bytes).expect("opaque source fixture");
         assert_eq!(scan.opaque_records.len(), count);
 
         let error = with_transaction_limits(&scan, u64::MAX, None, Some(0), |expand| {
-            DecodeContext::new(&scan, expand).err().expect("opaque vector needs scratch storage")
+            DecodeContext::new(&scan, expand)
+                .err()
+                .expect("opaque vector needs scratch storage")
         });
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "Rhino opaque source records"
-                && limit.used == 0));
+                && limit.used == 0)
+        );
 
         let retained = cadmpeg_core::decode::u64_from_index(record.len() * count);
         with_transaction_limits(&scan, u64::MAX, Some(retained), None, |expand| {
@@ -42,7 +49,10 @@ fn opaque_source_staging_uses_scoped_backing() {
                 .expect("only surviving record bytes consume retained space");
             assert_eq!(transaction.opaque_records.len(), count);
             for (retained, source) in transaction.opaque_records.iter().zip(&scan.opaque_records) {
-                assert_eq!(retained.data(), Some(&scan.data[source.record.range.clone()]));
+                assert_eq!(
+                    retained.data(),
+                    Some(&scan.data[source.record.range.clone()])
+                );
             }
         });
 
@@ -51,10 +61,17 @@ fn opaque_source_staging_uses_scoped_backing() {
             let retained = decoded.source_fidelity.retained_records();
             assert_eq!(retained.len(), count);
             for (retained, source) in retained.values().zip(&scan.opaque_records) {
-                assert_eq!(retained.data(), Some(&scan.data[source.record.range.clone()]));
+                assert_eq!(
+                    retained.data(),
+                    Some(&scan.data[source.record.range.clone()])
+                );
             }
-            drop(expand.ctx().reserve_scoped(SCRATCH_BYTES, "opaque source backing released")
-                .expect("consumed staging backing no longer uses scratch space"));
+            drop(
+                expand
+                    .ctx()
+                    .reserve_scoped(SCRATCH_BYTES, "opaque source backing released")
+                    .expect("consumed staging backing no longer uses scratch space"),
+            );
         });
     }
 }
