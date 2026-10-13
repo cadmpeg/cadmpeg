@@ -1232,3 +1232,7 @@ cadmpeg_core::named_optional_field!(deserialize_v_lower, f64, "v_lower");
 mod charged_curves;
 mod nesting_bound;
 mod support_mapping;
+
+pub(super) mod budget;
+
+mod decode_cost;

@@ -11,8 +11,8 @@ mod presentation_admission;
 mod property_admission;
 
 use super::{
-    built_in_property_name, known_property_set_fmtid, normalize_property_name, preview_bytes,
-    push_hex, MetadataProjection,
+    built_in_property_name, known_property_name, known_property_set_fmtid, preview_bytes,
+    retained_hex, KnownPropertyName, MetadataProjection, PropertyName,
 };
 use crate::loss::InventorLossCode;
 use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
@@ -31,6 +31,51 @@ fn validation_findings(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check:
 }
 
 #[test]
+fn decode_scopes_parsed_container_storage() {
+    let bytes = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("container setup context");
+    let container =
+        crate::container::InventorContainer::open(&setup, root).expect("parsed container");
+    let (output, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("output context");
+    let expected = super::decode_container(&output, &container).expect("output projection");
+    let cadmpeg_core::CodecError::ResourceLimit(output_limit) = output
+        .charge_retained(u64::MAX, "measure decoded output storage")
+        .expect_err("the measurement exceeds the retained allowance")
+    else {
+        panic!("retained output measurement must be a resource refusal");
+    };
+    assert_eq!(output_limit.dimension, ResourceDimension::RetainedBytes);
+    assert!(output_limit.used > 0);
+
+    let mut policy = DecodePolicy::service();
+    // Let R be the output-only retained cost. The route must fit R, rather
+    // than R plus parsed-container storage C. Temporary C is released on return.
+    policy.limits.max_retained_bytes = output_limit.used;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("exact output context");
+    let actual = super::decode(&ctx, root).expect("only output storage is retained");
+    assert_eq!(actual, expected);
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse parsed container storage",
+        )
+        .expect("all temporary storage is released"),
+    );
+    assert!(
+        matches!(ctx.charge_retained(1, "probe decoded output storage"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == output_limit.used
+                && limit.additional == 1)
+    );
+}
+
+#[test]
 fn built_in_properties_are_selected_by_embedded_set_identity() {
     assert_eq!(
         built_in_property_name("Design Tracking Properties", 5),
@@ -45,24 +90,30 @@ fn built_in_properties_are_selected_by_embedded_set_identity() {
 }
 
 #[test]
-fn property_name_normalization_admits_scans_and_retained_output() {
+fn property_names_classify_by_lowercased_alphanumeric_characters() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    assert_eq!(
-        normalize_property_name(&ctx, "Part Number 42").expect("normalized name"),
-        "partnumber42"
-    );
-    assert_eq!(
-        normalize_property_name(&ctx, "Étage #1").expect("normalized Unicode name"),
-        "étage1"
-    );
+    for (name, expected) in [
+        ("Part Number", Some(KnownPropertyName::PartNumber)),
+        ("Preview-Image", Some(KnownPropertyName::PreviewImage)),
+        ("DOCUMENT_TYPE", Some(KnownPropertyName::DocumentType)),
+        ("Part Number 42", None),
+        ("Étage #1", None),
+        ("", None),
+    ] {
+        assert_eq!(
+            known_property_name(&ctx, name).expect("classified name"),
+            expected,
+            "{name}"
+        );
+    }
 
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        normalize_property_name(&ctx, "Name"),
+        known_property_name(&ctx, "Name"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "normalize Inventor property name"
@@ -70,24 +121,75 @@ fn property_name_normalization_admits_scans_and_retained_output() {
 }
 
 #[test]
-fn hexadecimal_digit_append_refuses_before_mutation() {
+fn property_name_classification_charges_only_the_characters_it_reads() {
+    // "previewimage" fills the twelve-byte buffer; the thirteenth character
+    // cannot fit, so classification stops after thirteen charged steps and
+    // never reads the remaining characters.
+    let name = format!("previewimage{}", "x".repeat(10_000));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(
+        known_property_name(&ctx, &name).expect("bounded walk"),
+        None
+    );
+
+    policy.limits.max_work_units = 12;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        known_property_name(&ctx, &name),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "normalize Inventor property name"
+    ));
+}
+
+#[test]
+fn fixed_width_hexadecimal_conversion_admits_storage_without_work() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let mut text = String::new();
-    assert!(matches!(
-        push_hex(&ctx, &mut text, 0xaf),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "format Inventor byte as hexadecimal"
-    ));
-    assert!(text.is_empty());
+    assert_eq!(
+        retained_hex(&ctx, &[0xaf], "retain Inventor test hexadecimal output")
+            .expect("fixed hexadecimal conversion needs no input work"),
+        "af"
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+    assert!(ctx.finish_session().is_ok());
 
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    push_hex(&ctx, &mut text, 0xaf).expect("admitted hexadecimal digits");
-    assert_eq!(text, "af");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+        retained_hex(&ctx, &[0xaf], "retain Inventor test hexadecimal output")
+            .expect_err("one retained byte is below the two-byte output")
+    else {
+        panic!("hex output storage must refuse before writing");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(refusal.operation, "retain Inventor test hexadecimal output");
+    assert_eq!(refusal.limit, 1);
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 2);
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == refusal
+    ));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
+    assert_eq!(
+        retained_hex(&ctx, &[0xaf], "retain Inventor test hexadecimal output")
+            .expect("exact retained cap admits output without materialized storage"),
+        "af"
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]
@@ -97,14 +199,21 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
         .expect("service context");
     let mut projection = MetadataProjection::default();
     projection
-        .consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first")
+        .consider(
+            &ctx,
+            &[0; 16],
+            5,
+            Some(PropertyName::classify(&ctx, "Part Number").expect("name")),
+            Some("P-1"),
+            "first",
+        )
         .expect("first property");
     projection
         .consider(
             &ctx,
             &[0; 16],
             5,
-            Some("Part Number"),
+            Some(PropertyName::classify(&ctx, "Part Number").expect("name")),
             Some("P-2"),
             "second",
         )
@@ -114,7 +223,7 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
             &ctx,
             &[0; 16],
             29,
-            Some("Description"),
+            Some(PropertyName::classify(&ctx, "Description").expect("name")),
             Some("Bracket"),
             "desc",
         )
@@ -128,43 +237,22 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
 }
 
 #[test]
-fn metadata_projection_refuses_scoped_and_retained_limits_before_normalized_name_and_value() {
+fn metadata_projection_refuses_retained_limit_before_value_copy() {
     let arena = DecodeArena::new();
-    // The 10-byte normalized key is scoped; the 3-byte P-1 value is retained.
-    for (dimension, cap, operation) in [
-        (
-            ResourceDimension::MaterializedBytes,
-            "partnumber".len() - 1,
-            "retain Inventor normalized property name",
-        ),
-        (
-            ResourceDimension::RetainedBytes,
-            "P-1".len() - 1,
-            "retain Inventor metadata value",
-        ),
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes =
-                    u64::try_from(cap).expect("normalized name length fits");
-            }
-            ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes =
-                    u64::try_from(cap).expect("metadata value length fits");
-            }
-            _ => panic!("test resource dimension"),
-        }
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-        let mut projection = MetadataProjection::default();
-        assert!(matches!(
-            projection.consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension
-                    && limit.operation == operation
-        ));
-    }
+    // The name is classified without storage; the 3-byte P-1 value is retained.
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("P-1".len() - 1).expect("metadata value length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut projection = MetadataProjection::default();
+    assert!(matches!(
+        projection.consider(&ctx, &[0; 16], 5, Some(PropertyName::classify(&ctx, "Part Number").expect("name")), Some("P-1"), "first"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor metadata value"
+                && limit.used == 0
+    ));
+    assert!(projection.part_number.is_none());
 }
 
 #[test]
@@ -175,7 +263,7 @@ fn metadata_bom_property_refuses_collection_limit_before_insert() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut projection = MetadataProjection::default();
     assert!(matches!(
-        projection.consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom"),
+        projection.consider(&ctx, &[0; 16], 99, Some(PropertyName::classify(&ctx, "Custom").expect("name")), Some("value"), "custom"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor BOM property"
@@ -184,7 +272,14 @@ fn metadata_bom_property_refuses_collection_limit_before_insert() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     projection
-        .consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom")
+        .consider(
+            &ctx,
+            &[0; 16],
+            99,
+            Some(PropertyName::classify(&ctx, "Custom").expect("name")),
+            Some("value"),
+            "custom",
+        )
         .expect("admitted property");
     assert_eq!(
         projection.bom_properties.get("Custom").map(String::as_str),
@@ -238,7 +333,7 @@ fn inventor_clipboard_preview_requires_matching_png_dimensions() {
         data: root,
     };
     assert_eq!(
-        preview_bytes(&value).map(|(_, media)| media),
+        preview_bytes(&value).map(|(_, media)| media.as_str()),
         Some("image/png")
     );
 

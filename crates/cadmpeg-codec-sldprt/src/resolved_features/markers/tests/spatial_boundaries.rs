@@ -1,6 +1,10 @@
 //! Boundary tests for compact, wide, and indexed spatial point prefixes.
 
 use super::super::super::SKETCH_MARKER;
+use super::{
+    marker_spatial_coordinate_offset, marker_spatial_coordinates,
+    spatial_relation_marker_coordinates,
+};
 use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,
     current_indexed_spatial_xyz_point_prefix as indexed_xyz_spatial,
@@ -8,9 +12,6 @@ use crate::layout::{
     current_indexed_spatial_xyz_terminal_reference_prefix_short as indexed_xyz_terminal_short,
     wide_spatial_marker_coordinate_prefix as wide_spatial,
 };
-use crate::resolved_features::markers::marker_spatial_coordinate_offset;
-use crate::resolved_features::markers::marker_spatial_coordinates;
-use crate::resolved_features::markers::spatial_relation_marker_coordinates;
 use cadmpeg_ir::math::Point3;
 
 pub(super) fn current_indexed_xyz_spatial_point(

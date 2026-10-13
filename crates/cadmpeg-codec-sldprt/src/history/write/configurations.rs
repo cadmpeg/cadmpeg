@@ -18,7 +18,7 @@ use crate::history::hash::{
 };
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
-    global_parameter_owners, parameters_with_incoherent_evaluated_values,
+    global_parameter_owners, parameters_with_incoherent_evaluated_values, ParameterAliases,
 };
 use crate::history::project::project_configurations_charged;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -161,11 +161,18 @@ fn sync_configuration_design_state(
         &validation_arena,
         &DecodePolicy::service(),
     )?;
-    if parameters_with_incoherent_evaluated_values(
+    let _aliases_storage;
+    let aliases;
+    (aliases, _aliases_storage) = ParameterAliases::scoped(
         &validation_ctx,
         &ir.model.parameters,
         &feature_names,
         &global_owners,
+    )?;
+    if parameters_with_incoherent_evaluated_values(
+        &validation_ctx,
+        &ir.model.parameters,
+        &aliases,
         &ir.model.configurations,
     )? > 0
     {
@@ -500,26 +507,28 @@ pub(in crate::history) fn sync_neutral_configurations(
         })
         .collect::<std::collections::HashSet<_>>();
     let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
-    let deleted_ids = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.configurations)
-        .filter(|configuration| !desired_ids.contains(&configuration.id))
-        .map(|configuration| configuration.id.clone())
-        .collect::<HashSet<_>>();
-    native.feature_input_lanes.retain(|lane| {
-        let Some(index) = lane
-            .configuration
-            .as_deref()
-            .and_then(|configuration| configuration.parse::<u32>().ok())
-        else {
-            return true;
-        };
-        previous_slot_owners
-            .get(&index)
-            .and_then(Option::as_deref)
-            .is_none_or(|owner| !deleted_ids.contains(owner))
-    });
+    {
+        let deleted_ids = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.configurations)
+            .filter(|configuration| !desired_ids.contains(&configuration.id))
+            .map(|configuration| configuration.id.as_str())
+            .collect::<HashSet<_>>();
+        native.feature_input_lanes.retain(|lane| {
+            let Some(index) = lane
+                .configuration
+                .as_deref()
+                .and_then(|configuration| configuration.parse::<u32>().ok())
+            else {
+                return true;
+            };
+            previous_slot_owners
+                .get(&index)
+                .and_then(Option::as_deref)
+                .is_none_or(|owner| !deleted_ids.contains(owner))
+        });
+    }
     for history in &mut native.feature_histories {
         history
             .configurations
@@ -536,7 +545,7 @@ pub(in crate::history) fn sync_neutral_configurations(
             .flat_map(|history| &mut history.configurations)
             .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
         if let Some(existing) = existing {
-            let existing_id = existing.id.clone();
+            let existing_id = existing.id.as_str();
             let previous_slot = configuration_slot(&existing.properties, existing.ordinal);
             existing.ordinal = configuration.ordinal;
             existing.source_index = configuration.source_index;
@@ -548,7 +557,7 @@ pub(in crate::history) fn sync_neutral_configurations(
             if previous_slot != configuration_slot
                 && previous_slot_owners
                     .get(&previous_slot)
-                    .and_then(Clone::clone)
+                    .and_then(Option::as_deref)
                     == Some(existing_id)
             {
                 lane_configuration_remaps

@@ -275,35 +275,28 @@ fn native_boolean(
 
 #[test]
 fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
-    let mut write = native_body_write("write");
-    write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
-        write.frame.body_identity(),
-        write.frame.group_node(),
-        write.frame.endpoint_tag(),
-        crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(),
-        write.frame.offset(),
-    )
-    .unwrap();
-    let boolean = native_boolean(40, vec![41, 42]);
+    crate::test_support::with_decode_context(|ctx| {
+        let mut write = native_body_write("write");
+        write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
+            write.frame.body_identity(),
+            write.frame.group_node(),
+            write.frame.endpoint_tag(),
+            crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(),
+            write.frame.offset(),
+        )
+        .unwrap();
+        let boolean = native_boolean(40, vec![41, 42]);
 
-    assert!(body_writes_match_boolean_target(&[&write], None));
-    assert!(body_writes_match_boolean_target(&[], Some(&boolean)));
-    assert!(body_writes_match_boolean_target(&[&write], Some(&boolean)));
+        assert!(body_writes_match_boolean_target(ctx, &[&write], None).unwrap());
+        assert!(body_writes_match_boolean_target(ctx, &[], Some(&boolean)).unwrap());
+        assert!(body_writes_match_boolean_target(ctx, &[&write], Some(&boolean)).unwrap());
 
-    let wrong_target = native_boolean(43, vec![41, 42]);
-    assert!(!body_writes_match_boolean_target(
-        &[&write],
-        Some(&wrong_target)
-    ));
-    let target_is_tool = native_boolean(40, vec![40, 41]);
-    assert!(!body_writes_match_boolean_target(
-        &[&write],
-        Some(&target_is_tool)
-    ));
-    assert!(!body_writes_match_boolean_target(
-        &[&write, &write],
-        Some(&boolean)
-    ));
+        let wrong_target = native_boolean(43, vec![41, 42]);
+        assert!(!body_writes_match_boolean_target(ctx, &[&write], Some(&wrong_target)).unwrap());
+        let target_is_tool = native_boolean(40, vec![40, 41]);
+        assert!(!body_writes_match_boolean_target(ctx, &[&write], Some(&target_is_tool)).unwrap());
+        assert!(!body_writes_match_boolean_target(ctx, &[&write, &write], Some(&boolean)).unwrap());
+    });
 }
 
 #[test]
@@ -685,4 +678,76 @@ fn repeated_body_identity_builds_output_lineage() {
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].bodies(), results[1].bodies());
     assert_ne!(results[0].native_ref, results[1].native_ref);
+}
+
+#[test]
+fn incomplete_body_image_outputs_copy_no_retained_identities() {
+    let first = native_body_write("first");
+    let second = native_body_write("second");
+    let body = BodyId::mint("test:model:entity#body").unwrap();
+    for candidates in [
+        BTreeMap::from([("first", body.clone())]),
+        BTreeMap::from([("first", body.clone()), ("second", body.clone())]),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                assert!(complete_operation_body_image_outputs(
+                    ctx,
+                    &[&first, &second],
+                    &candidates
+                )
+                .unwrap()
+                .is_empty());
+            },
+        );
+    }
+}
+
+#[test]
+fn result_group_equality_refuses_at_production_member_comparison() {
+    let image = group_use(&["face-μ", "edge"]);
+    let group = direct_group_use(&["face-μ", "edge"]);
+    let members = [
+        group_member("face-μ", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
+    ];
+    crate::test_support::with_decode_context(|ctx| {
+        let result = operation_body_write_result_group_members(
+            ctx,
+            "write",
+            std::slice::from_ref(&image),
+            std::slice::from_ref(&group),
+            &members,
+        )
+        .unwrap();
+        assert_eq!(result.faces[0].as_str(), "nx:s4:face#40");
+        assert_eq!(result.edges[0].as_str(), "nx:s4:edge#41");
+        assert!(result.vertices.is_empty());
+    });
+    for operation in [
+        "NX result group member equality",
+        "NX result group member identity",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                operation_body_write_result_group_members(
+                    ctx,
+                    "write",
+                    std::slice::from_ref(&image),
+                    std::slice::from_ref(&group),
+                    &members,
+                )
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == operation)
+        );
+    }
 }

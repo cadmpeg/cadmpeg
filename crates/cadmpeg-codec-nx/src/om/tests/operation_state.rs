@@ -151,6 +151,40 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run_and_refuses_col
 }
 
 #[test]
+fn operation_state_group_prefix_stops_before_unvisited_suffix() {
+    let bytes = [0x01, 0x00, 0x00, 0x01, 0x00, 0x00];
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX selected state group path traversal",
+        |ctx| {
+            operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), usize::MAX - 1)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("selected group traversal must be admitted per candidate");
+    };
+    assert_eq!(limit.additional, 1);
+
+    let work_limit = limit.used + limit.additional;
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = work_limit,
+        |ctx| {
+            assert!(operation_state_group_table_before_counter_map(
+                ctx,
+                &bytes,
+                bytes.len(),
+                usize::MAX - 1,
+            )
+            .unwrap()
+            .is_none());
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
 fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     let bytes = [
         0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,
@@ -177,7 +211,11 @@ fn operation_state_journal_start_accepts_count_token_runs() {
     let mut bytes = prefix.to_vec();
     bytes.extend(group);
 
-    let start = operation_state_journal_start(&bytes, 0).expect("journal prefix");
+    let start = crate::test_support::with_decode_context(|ctx| {
+        operation_state_journal_start(ctx, &bytes, 0)
+    })
+    .unwrap()
+    .expect("journal prefix");
     assert_eq!(start, prefix.len());
     let groups = crate::test_support::with_decode_context(|ctx| {
         operation_state_journal_groups_before_boundary(ctx, &bytes, start, bytes.len(), 0)
@@ -313,5 +351,71 @@ fn audit_trail_rows_refuse_work_limit() {
     let error = audit_trail_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn state_group_path_reversal_refusal_propagates() {
+    let bytes = [0x01, 0x00, 0x00, 0x01, 0x00, 0x00];
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX operation-state group path reversal",
+        |ctx| operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX operation-state group path reversal" && limit.additional == 2 + 3 * 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))
+    );
+}
+
+#[test]
+fn state_group_materialization_releases_the_predecessor_index() {
+    use cadmpeg_core::decode::{u64_from_index, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = [0x01, 0x00, 0x00, 0x01, 0x00, 0x00];
+    // The two candidates use the initial four-slot allocation. Their chosen
+    // path has two exact slots. Two map entries need one admitted B-tree node:
+    // 11 (usize, three-usize GroupPath) lanes, 16 pointer-width metadata/child
+    // slots, and two alignment slots. The predecessor vector has two slots.
+    let candidates = 4 * std::mem::size_of::<(usize, usize)>();
+    let predecessors = 2 * std::mem::size_of::<Option<usize>>();
+    let index = 11 * 4 * std::mem::size_of::<usize>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<usize>();
+    let path = 2 * std::mem::size_of::<usize>();
+    let peak = u64_from_index(candidates + predecessors + index + path);
+    let groups = 2 * std::mem::size_of::<crate::om::roll_forward::OperationStateGroup>();
+    assert!(candidates + path + groups <= usize::try_from(peak).unwrap());
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = peak - 1,
+        |ctx| {
+            let error = operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), 0)
+                .expect_err("one byte below the live index/path peak must refuse");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("path storage must be admitted before allocation");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(limit.operation, "NX operation-state group path");
+            assert_eq!(
+                limit.used,
+                u64_from_index(candidates + predecessors + index)
+            );
+            assert_eq!(limit.additional, u64_from_index(path));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        },
+    );
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = peak,
+        |ctx| {
+            let table = operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), 0)
+                .expect("each lifetime phase fits the source-derived peak")
+                .expect("two adjacent empty groups are valid");
+            assert_eq!(table.groups().len(), 2);
+            assert_eq!((table.offset(), table.end_offset()), (0, bytes.len()));
+            assert!(ctx.resource_refusal().is_none());
+        },
     );
 }

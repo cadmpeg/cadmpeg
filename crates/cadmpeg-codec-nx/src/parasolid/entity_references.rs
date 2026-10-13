@@ -84,6 +84,7 @@ impl EntityReferences {
     pub(crate) fn values_mut(&mut self) -> &mut [u32] {
         &mut self.values
     }
+    #[cfg(test)]
     pub(crate) fn into_values(self) -> Vec<u32> {
         self.values
     }

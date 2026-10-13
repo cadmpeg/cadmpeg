@@ -376,7 +376,7 @@ fn zero_header_resabs_preserves_default_and_records_loss() {
 #[test]
 fn unknown_record_retention_preserves_its_resource_refusal() {
     use crate::test_support::with_context;
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let source = text_sphere_stream(1.0);
     let header = with_context(&source, &DecodePolicy::service(), |ctx| {
@@ -386,36 +386,50 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
             .as_kernel_header(ctx)
             .expect("kernel header")
     });
-    let mut brep = cadmpeg_asm::brep::AsmBrep::default();
-    brep.unknowns.push(cadmpeg_ir::UnknownRecord::retained(
+    let unknown = cadmpeg_ir::UnknownRecord::retained(
         cadmpeg_ir::ids::UnknownId::mint("sat:test:unknown#1").expect("unknown identity"),
         0,
         vec![1],
         vec!["sat:test:unknown#2".into()],
-    ));
+    );
     let (matched, kernel) = crate::dialect::layers(
         &cadmpeg_test_support::service_decode_context(),
         &crate::dialect::StreamEvidence::Text(None),
     )
     .unwrap();
-    let mut policy = DecodePolicy::service();
-    // One dialect layer, twelve native arenas, one geometry loss and two coverage nodes use sixteen slots.
-    policy.limits.max_collection_items = 16;
-    let error = with_context(&[], &policy, |ctx| {
-        super::build_result(
-            ctx,
-            Some(brep),
-            std::collections::BTreeMap::new(),
-            &header,
-            None,
-            matched,
-            kernel,
-        )
-    })
-    .expect_err("unknown link exceeds the remaining collection allowance");
+    // Moving the first link into the native value vector requires one slot.
+    // Probe that push after the result's earlier collection admissions.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "native unknown arena links",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("test input fits caller policy");
+            let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+            brep.unknowns.push(unknown.clone());
+            let result = super::build_result(
+                &ctx,
+                Some(brep),
+                std::collections::BTreeMap::new(),
+                &header,
+                None,
+                matched.clone(),
+                kernel.clone(),
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert!(matches!(ctx.finish_session(),
+                        Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            }
+            result
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "native unknown product links"));
+            && limit.operation == "native unknown arena links"
+            && limit.additional == 1));
 }
 
 #[test]

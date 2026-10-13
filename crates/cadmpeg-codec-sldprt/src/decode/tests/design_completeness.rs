@@ -1365,29 +1365,9 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     }));
 }
 
-/// Runs `append_design_losses` under a caller materialized limit and returns
-/// the resource refusal it must produce.
-fn design_loss_refusal(
-    arena: &cadmpeg_core::decode::DecodeArena,
-    ir: &CadIr,
-    materialized: u64,
-) -> cadmpeg_core::decode::ResourceLimit {
-    use cadmpeg_core::decode::{DecodeContext, DecodePolicy};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = materialized;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], arena, &policy).expect("empty root fits policy");
-    let mut report = super::empty_report(true);
-    match append_design_losses(&ctx, ir, &mut report) {
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
-        other => panic!("expected a resource refusal, got {other:?}"),
-    }
-}
-
 #[test]
 fn feature_name_index_refuses_caller_scoped_limit() {
-    use cadmpeg_core::decode::{DecodeArena, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
@@ -1408,52 +1388,43 @@ fn feature_name_index_refuses_caller_scoped_limit() {
         ),
         native_ref: None,
     });
-    let arena = DecodeArena::new();
-    let element = std::mem::size_of::<(FeatureId, String)>();
-    let id_len = u64::try_from(ir.model.features[0].id.as_str().len()).expect("id length fits");
-    // The first name entry grows the empty map to three entries, a four-bucket
-    // table of `(FeatureId, String)`: four elements, 15 bytes of group
-    // padding (alignment 16), four control bytes and a 16-byte trailer. That
-    // table is first held as a transient reservation, then kept as scoped
-    // storage (the retained growth is the same bytes, the old table being
-    // empty). The identity copy that follows is the next materialized charge.
-    let table = u64::try_from(4 * element + 15 + 4 + 16).expect("table size fits");
-    let operation = "index SLDPRT feature names";
-
-    // One byte under the table: the transient reservation is refused with
-    // nothing yet charged.
-    let limit = design_loss_refusal(&arena, &ir, table - 1);
-    assert_eq!(
-        (
-            limit.dimension,
-            limit.operation,
-            limit.used,
-            limit.additional
-        ),
-        (ResourceDimension::MaterializedBytes, operation, 0, table)
+    let limit = design_loss_probe(
+        &ir,
+        ResourceDimension::MaterializedBytes,
+        "index SLDPRT feature names",
     );
-    // Exactly the table: growth and its retained settlement fit, so the
-    // refusal moves to the identity copy, behind the table's bytes.
-    let limit = design_loss_refusal(&arena, &ir, table);
+    let table = u64::try_from(4 * std::mem::size_of::<(FeatureId, String)>() + 15 + 4 + 16)
+        .expect("table size fits");
+    assert_eq!(limit.additional, table);
+    // The borrowed feature-ID table, copied identity and copied name are live.
+    let feature_ids = 4 * std::mem::size_of::<&FeatureId>() + 15 + 4 + 16;
+    let identity = ir.model.features[0].id.as_str().len();
+    let name = ir.model.features[0].name.as_ref().unwrap().len();
     assert_eq!(
-        (
-            limit.dimension,
-            limit.operation,
-            limit.used,
-            limit.additional
-        ),
-        (
-            ResourceDimension::MaterializedBytes,
-            operation,
-            table,
-            id_len
-        )
+        limit.used,
+        u64::try_from(feature_ids + identity + name).unwrap()
+    );
+    let storage = design_loss_probe(
+        &ir,
+        ResourceDimension::MaterializedBytes,
+        "copy SLDPRT feature-name identity",
+    );
+    assert_eq!(storage.used, u64::try_from(feature_ids).unwrap());
+    assert_eq!(storage.additional, u64::try_from(identity).unwrap());
+    let limit = design_loss_probe(
+        &ir,
+        ResourceDimension::WorkUnits,
+        "copy SLDPRT feature-name identity",
+    );
+    assert_eq!(
+        limit.additional,
+        u64::try_from(ir.model.features[0].id.as_str().len()).unwrap()
     );
 }
 
 #[test]
 fn evaluated_feature_states_refuse_caller_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
@@ -1474,25 +1445,16 @@ fn evaluated_feature_states_refuse_caller_collection_limit() {
         ),
         native_ref: None,
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    let mut report = super::empty_report(true);
-    let error = append_design_losses(&ctx, &ir, &mut report)
-        .expect_err("the evaluated feature state consumes a third collection item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT feature states"
-    ));
+    design_loss_probe(
+        &ir,
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT feature states",
+    );
 }
 
 #[test]
 fn global_parameter_owner_refuses_caller_scoped_limit() {
-    use cadmpeg_core::decode::{DecodeArena, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
@@ -1513,47 +1475,25 @@ fn global_parameter_owner_refuses_caller_scoped_limit() {
         ),
         native_ref: None,
     });
-    let arena = DecodeArena::new();
-    let element = std::mem::size_of::<FeatureId>();
-    let id_len = u64::try_from(ir.model.features[0].id.as_str().len()).expect("id length fits");
-    // The first owner reserves the empty set to three entries, a four-bucket
-    // table of `FeatureId`: four elements, 15 bytes of group
-    // padding (alignment 16), four control bytes and a 16-byte trailer. That
-    // table is first held as a transient reservation, then kept as scoped
-    // storage (the retained growth is the same bytes, the old table being
-    // empty). The identity copy that follows is the next materialized charge.
-    let table = u64::try_from(4 * element + 15 + 4 + 16).expect("table size fits");
-    let operation = "index SLDPRT global parameter owners";
-
-    // One byte under the table: the transient reservation is refused with
-    // nothing yet charged.
-    let limit = design_loss_refusal(&arena, &ir, table - 1);
-    assert_eq!(
-        (
-            limit.dimension,
-            limit.operation,
-            limit.used,
-            limit.additional
-        ),
-        (ResourceDimension::MaterializedBytes, operation, 0, table)
+    let limit = design_loss_probe(
+        &ir,
+        ResourceDimension::MaterializedBytes,
+        "index SLDPRT global parameter owners",
     );
-    // Exactly the table: growth and its retained settlement fit, so the
-    // refusal moves to the identity copy, behind the table's bytes.
-    let limit = design_loss_refusal(&arena, &ir, table);
-    assert_eq!(
-        (
-            limit.dimension,
-            limit.operation,
-            limit.used,
-            limit.additional
-        ),
-        (
-            ResourceDimension::MaterializedBytes,
-            operation,
-            table,
-            id_len
-        )
+    let table =
+        u64::try_from(4 * std::mem::size_of::<FeatureId>() + 15 + 4 + 16).expect("table size fits");
+    assert_eq!(limit.additional, table);
+    // The borrowed feature-ID table and the copied owner identity are live.
+    let feature_ids = 4 * std::mem::size_of::<&FeatureId>() + 15 + 4 + 16;
+    let identity = ir.model.features[0].id.as_str().len();
+    assert_eq!(limit.used, u64::try_from(feature_ids + identity).unwrap());
+    let storage = design_loss_probe(
+        &ir,
+        ResourceDimension::MaterializedBytes,
+        "copy SLDPRT global parameter owner identity",
     );
+    assert_eq!(storage.used, u64::try_from(feature_ids).unwrap());
+    assert_eq!(storage.additional, u64::try_from(identity).unwrap());
 }
 
 #[test]
@@ -1612,4 +1552,34 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     assert!(report.losses.iter().any(|loss| {
         loss.message == "1 feature record(s) contain missing or repeated output body references."
     }));
+}
+
+/// Find a design-loss refusal boundary with the probe and replay it.
+fn design_loss_probe(
+    ir: &CadIr,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            _ => panic!("design loss dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut report = super::empty_report(true);
+        let result = append_design_losses(&ctx, ir, &mut report);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a resource refusal");
+    };
+    limit
 }

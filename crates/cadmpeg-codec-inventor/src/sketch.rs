@@ -30,6 +30,11 @@ use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
 const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 
+// One four-byte reference key and one eight-byte scalar.
+const MIN_SCALAR_MAP_ENTRY_BYTES: usize = 4 + 8;
+// One four-byte reference key and one four-byte reference value.
+const MIN_REFERENCE_MAP_ENTRY_BYTES: usize = 4 + 4;
+
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
 const POINT_TYPE: [u8; 16] = sketch_entity_id(0xce52_df35);
@@ -338,25 +343,21 @@ pub(crate) struct PmDcTransformPayloadWire {
 }
 
 impl PmDcTransformPayloadWire {
-    pub(crate) fn into_payload(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<PmDcTransformPayload, CodecError> {
+    pub(crate) fn into_payload(self) -> Result<PmDcTransformPayload, CodecError> {
         let prefix_present = match self.prefix {
             None => false,
             Some(TRANSFORM_PREFIX) => true,
             Some(_) => {
-                return Err(CodecError::Malformed(ctx.copy_retained_text(
+                return Err(CodecError::malformed(
                     "transform prefix must be 515 or null",
-                    "retain invalid Inventor PmDc transform prefix",
-                )?));
+                ));
             }
         };
         Ok(PmDcTransformPayload {
             save_version_major: self.save_version_major,
             header: self.header,
             prefix_present,
-            matrix: self.matrix.into_matrix(ctx)?,
+            matrix: self.matrix.into_matrix()?,
         })
     }
 }
@@ -394,7 +395,8 @@ pub(crate) fn inventory(
         constraints: Vec::new(),
         issues: Vec::new(),
     };
-    for segment in ctx.admit_iter(&document.segments, "visit Inventor sketch items")? {
+    let mut segment_steps = document.segments.iter();
+    while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor sketch items")? {
         if !ctx.equal(
             &segment.kind,
             &SegmentKind::PmDc,
@@ -414,7 +416,10 @@ pub(crate) fn inventory(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
-        for record in ctx.admit_iter(&table.records, "visit Inventor sketch items")? {
+        let mut record_steps = table.records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut record_steps, "visit Inventor sketch items")?
+        {
             let Some(tag) = SketchRecordTag::from_type_id(record.type_id) else {
                 continue;
             };
@@ -445,8 +450,8 @@ pub(crate) fn inventory(
                         )
                     })
                 }
-                SketchRecordTag::Transform => parse_transform(ctx, record.payload, version)
-                    .and_then(|value| {
+                SketchRecordTag::Transform => {
+                    parse_transform(record.payload, version).and_then(|value| {
                         push_record(
                             ctx,
                             &mut inventory.transforms,
@@ -456,9 +461,10 @@ pub(crate) fn inventory(
                             record.ordinal,
                             "admit Inventor PmDc transform record",
                         )
-                    }),
-                SketchRecordTag::Direction => parse_direction(ctx, record.payload, version)
-                    .and_then(|value| {
+                    })
+                }
+                SketchRecordTag::Direction => {
+                    parse_direction(record.payload, version).and_then(|value| {
                         push_record(
                             ctx,
                             &mut inventory.directions,
@@ -468,7 +474,8 @@ pub(crate) fn inventory(
                             record.ordinal,
                             "admit Inventor PmDc direction record",
                         )
-                    }),
+                    })
+                }
                 SketchRecordTag::Constraint(constraint) => {
                     parse_constraint(ctx, constraint, record.payload, version).and_then(|value| {
                         push_record(
@@ -651,64 +658,15 @@ fn parse_entity(
     })
 }
 
-fn point2(
-    ctx: &DecodeContext<'_>,
-    cursor: &mut Cursor<'_>,
-    field: &str,
-) -> Result<[FiniteReal; 2], CodecError> {
-    Ok([
-        {
-            let (field, _storage) = ctx.format_scoped(
-                format_args!("{field} u"),
-                "format Inventor sketch coordinate field",
-            )?;
-            cursor.f64(&field)?
-        },
-        {
-            let (field, _storage) = ctx.format_scoped(
-                format_args!("{field} v"),
-                "format Inventor sketch coordinate field",
-            )?;
-            cursor.f64(&field)?
-        },
-    ])
-}
-
-fn point3(
-    ctx: &DecodeContext<'_>,
-    cursor: &mut Cursor<'_>,
-    field: &str,
-) -> Result<[FiniteReal; 3], CodecError> {
-    Ok([
-        {
-            let (field, _storage) = ctx.format_scoped(
-                format_args!("{field} x"),
-                "format Inventor sketch coordinate field",
-            )?;
-            cursor.f64(&field)?
-        },
-        {
-            let (field, _storage) = ctx.format_scoped(
-                format_args!("{field} y"),
-                "format Inventor sketch coordinate field",
-            )?;
-            cursor.f64(&field)?
-        },
-        {
-            let (field, _storage) = ctx.format_scoped(
-                format_args!("{field} z"),
-                "format Inventor sketch coordinate field",
-            )?;
-            cursor.f64(&field)?
-        },
-    ])
+fn point2(cursor: &mut Cursor<'_>, fields: [&str; 2]) -> Result<[FiniteReal; 2], CodecError> {
+    Ok([cursor.f64(fields[0])?, cursor.f64(fields[1])?])
 }
 
 fn parse_point(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let position = point2(ctx, cursor, "sketch point")?;
+    let position = point2(cursor, ["sketch point u", "sketch point v"])?;
     let endpoint_of = reference_list(ctx, cursor, 2, "point endpoint-of list")?;
     let center_of = reference_list(ctx, cursor, 2, "point center-of list")?;
     let tail = if cursor.remaining() == 0 {
@@ -732,14 +690,9 @@ fn edge_prefix(
     cursor: &mut Cursor<'_>,
     fixed_tail: usize,
     field: &str,
+    names: [&str; 3],
 ) -> Result<(PmDcReferenceList, Vec<PmDcReferenceList>), CodecError> {
-    let points = {
-        let (name, _storage) = ctx.format_scoped(
-            format_args!("{field} point list"),
-            "format Inventor edge point field",
-        )?;
-        reference_list(ctx, cursor, 2, &name)?
-    };
+    let points = reference_list(ctx, cursor, 2, names[0])?;
     let mut auxiliary = Vec::new();
     let tail8 = fixed_tail
         .checked_add(8)
@@ -749,14 +702,8 @@ fn edge_prefix(
         .ok_or_else(|| CodecError::malformed("Inventor edge tail size overflow"))?;
     if cursor.remaining() >= tail8 && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
     {
-        {
-            let (name, _storage) = ctx.format_scoped(
-                format_args!("{field} auxiliary list 0"),
-                "format Inventor edge auxiliary field",
-            )?;
-            let list = reference_list(ctx, cursor, 2, &name)?;
-            ctx.push_vec(&mut auxiliary, list, "collect Inventor sketch items")?;
-        }
+        let list = reference_list(ctx, cursor, 2, names[1])?;
+        ctx.push_vec(&mut auxiliary, list, "collect Inventor sketch items")?;
     } else if cursor.remaining() >= tail16 {
         let gate = [
             cursor.u32("edge list gate 0")?,
@@ -767,25 +714,13 @@ fn edge_prefix(
                 "Inventor PmDc {field} list gate is {gate:?}"
             )));
         }
-        {
-            let (name, _storage) = ctx.format_scoped(
-                format_args!("{field} auxiliary list 0"),
-                "format Inventor edge auxiliary field",
-            )?;
-            let list = reference_list(ctx, cursor, 2, &name)?;
-            ctx.push_vec(&mut auxiliary, list, "collect Inventor sketch items")?;
-        }
+        let list = reference_list(ctx, cursor, 2, names[1])?;
+        ctx.push_vec(&mut auxiliary, list, "collect Inventor sketch items")?;
         if cursor.remaining() >= tail8
             && cursor.peek_u32("edge auxiliary-list marker")? == 0x3000_0002
         {
-            {
-                let (name, _storage) = ctx.format_scoped(
-                    format_args!("{field} auxiliary list 1"),
-                    "format Inventor edge auxiliary field",
-                )?;
-                let list = reference_list(ctx, cursor, 2, &name)?;
-                ctx.push_vec(&mut auxiliary, list, "collect Inventor sketch items")?;
-            }
+            let list = reference_list(ctx, cursor, 2, names[2])?;
+            ctx.push_vec(&mut auxiliary, list, "collect Inventor sketch items")?;
         }
     }
     if cursor.remaining() != fixed_tail {
@@ -801,9 +736,19 @@ fn parse_line(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 32, "line")?;
-    let origin = point2(ctx, cursor, "line origin")?;
-    let direction = point2(ctx, cursor, "line direction")?;
+    let (points, auxiliary) = edge_prefix(
+        ctx,
+        cursor,
+        32,
+        "line",
+        [
+            "line point list",
+            "line auxiliary list 0",
+            "line auxiliary list 1",
+        ],
+    )?;
+    let origin = point2(cursor, ["line origin u", "line origin v"])?;
+    let direction = point2(cursor, ["line direction u", "line direction v"])?;
     Ok(PmDcSketchEntityKind::Line {
         points,
         auxiliary,
@@ -816,7 +761,17 @@ fn parse_circle(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 13, "circle")?;
+    let (points, auxiliary) = edge_prefix(
+        ctx,
+        cursor,
+        13,
+        "circle",
+        [
+            "circle point list",
+            "circle auxiliary list 0",
+            "circle auxiliary list 1",
+        ],
+    )?;
     let center = cursor.reference("circle center reference")?;
     let radius = cursor.f64("circle radius")?;
     let state = cursor.u8("circle state")?;
@@ -836,9 +791,22 @@ fn parse_ellipse(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcSketchEntityKind, CodecError> {
-    let (points, auxiliary) = edge_prefix(ctx, cursor, 37, "ellipse")?;
+    let (points, auxiliary) = edge_prefix(
+        ctx,
+        cursor,
+        37,
+        "ellipse",
+        [
+            "ellipse point list",
+            "ellipse auxiliary list 0",
+            "ellipse auxiliary list 1",
+        ],
+    )?;
     let center = cursor.reference("ellipse center reference")?;
-    let major_direction = point2(ctx, cursor, "ellipse major direction")?;
+    let major_direction = point2(
+        cursor,
+        ["ellipse major direction u", "ellipse major direction v"],
+    )?;
     let major_radius = cursor.f64("ellipse major radius")?;
     let minor_radius = cursor.f64("ellipse minor radius")?;
     let state = cursor.u8("ellipse state")?;
@@ -859,11 +827,7 @@ fn parse_ellipse(
     })
 }
 
-fn parse_transform(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    version: u8,
-) -> Result<PmDcTransformPayload, CodecError> {
+fn parse_transform(source: View<'_>, version: u8) -> Result<PmDcTransformPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let prefix_present = cursor.peek_u32("transform prefix")? == TRANSFORM_PREFIX;
@@ -872,7 +836,7 @@ fn parse_transform(
     }
     let value_mask = cursor.u16("transform value mask")?;
     let zero_mask = cursor.u16("transform zero mask")?;
-    let matrix = CompactMatrix::try_new(ctx, value_mask, zero_mask, |_| {
+    let matrix = CompactMatrix::try_new(value_mask, zero_mask, |_| {
         cursor.f64("transform explicit value")
     })?;
     cursor.finish("transform")?;
@@ -884,11 +848,7 @@ fn parse_transform(
     })
 }
 
-fn parse_direction(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    version: u8,
-) -> Result<PmDcDirectionPayload, CodecError> {
+fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirectionPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let entity_flags = cursor.u32("direction entity flags")?;
@@ -902,7 +862,11 @@ fn parse_direction(
             )));
         }
     };
-    let direction = point3(ctx, &mut cursor, "direction vector")?;
+    let direction = [
+        cursor.f64("direction vector x")?,
+        cursor.f64("direction vector y")?,
+        cursor.f64("direction vector z")?,
+    ];
     cursor.finish("direction")?;
     Ok(PmDcDirectionPayload {
         save_version_major: version,
@@ -918,6 +882,7 @@ fn map_header(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
     field: &str,
+    min_entry_bytes: usize,
 ) -> Result<(usize, Option<[u32; 2]>), CodecError> {
     let marker = [
         cursor.u16("constraint map marker 0")?,
@@ -930,10 +895,6 @@ fn map_header(
     }
     let count = usize::try_from(cursor.u32("constraint map count")?)
         .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit Inventor sketch constraint map",
-    )?;
     let metadata = (count != 0)
         .then(|| {
             Ok::<_, CodecError>([
@@ -942,6 +903,21 @@ fn map_header(
             ])
         })
         .transpose()?;
+    if cadmpeg_core::decode::bounded_len(
+        cadmpeg_core::decode::u64_from_index(count),
+        min_entry_bytes,
+        cursor.remaining(),
+    )
+    .is_none()
+    {
+        return Err(CodecError::malformed(format_args!(
+            "Inventor PmDc {field} count exceeds remaining payload"
+        )));
+    }
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor sketch constraint map",
+    )?;
     Ok((count, metadata))
 }
 
@@ -949,21 +925,29 @@ fn reference_scalar_map(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferenceScalarMap, CodecError> {
-    let (count, metadata) = map_header(ctx, cursor, "constraint scalar map")?;
-    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "read Inventor sketch constraint scalar map",
+    let (count, metadata) = map_header(
+        ctx,
+        cursor,
+        "constraint scalar map",
+        MIN_SCALAR_MAP_ENTRY_BYTES,
     )?;
-    for index in 0..count {
-        let (field, _storage) = ctx.format_scoped(
-            format_args!("constraint scalar-map value {index}"),
-            "format Inventor constraint scalar-map field",
-        )?;
-        entries.push((
-            cursor.reference("constraint scalar-map key")?,
-            cursor.f64(&field)?,
-        ));
+    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
+    let mut entry_steps = 0..count;
+    while let Some(index) = ctx.next_charged(
+        &mut entry_steps,
+        "read Inventor sketch constraint scalar map",
+    )? {
+        let key = cursor.reference("constraint scalar-map key")?;
+        let bytes = cursor.take_array::<8>("constraint scalar-map value")?;
+        let value = View::f64_le_at(&bytes, 0).ok_or_else(|| {
+            CodecError::malformed("truncated Inventor PmDc constraint scalar-map value")
+        })?;
+        let value = FiniteReal::new(value).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "Inventor PmDc constraint scalar-map value {index} is not finite"
+            ))
+        })?;
+        entries.push((key, value));
     }
     PmDcReferenceScalarMap::new(metadata, entries).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc scalar map metadata disagrees with length".into())
@@ -974,13 +958,21 @@ fn reference_pair_map(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<PmDcReferencePairMap, CodecError> {
-    let (count, metadata) = map_header(ctx, cursor, "constraint reference map")?;
-    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "read Inventor sketch constraint reference map",
+    let (count, metadata) = map_header(
+        ctx,
+        cursor,
+        "constraint reference map",
+        MIN_REFERENCE_MAP_ENTRY_BYTES,
     )?;
-    for _ in 0..count {
+    let mut entries = ctx.vector_storage(count, "admit Inventor sketch constraint map")?;
+    let mut entry_steps = 0..count;
+    while ctx
+        .next_charged(
+            &mut entry_steps,
+            "read Inventor sketch constraint reference map",
+        )?
+        .is_some()
+    {
         entries.push((
             cursor.reference("constraint reference-map key")?,
             cursor.reference("constraint reference-map value")?,
@@ -1133,98 +1125,109 @@ pub(crate) fn project(
     inventory: &SketchInventory,
     parameters: &[DesignParameter],
 ) -> Result<SketchProjection, CodecError> {
-    let (raw_sketches, _raw_sketches_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.sketches, "visit Inventor sketches")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+    if inventory.sketches.is_empty() {
+        return Ok(SketchProjection {
+            sketches: Vec::new(),
+            entities: Vec::new(),
+            constraints: Vec::new(),
+            unresolved_sketches: 0,
+            unresolved_entities: inventory.entities.len(),
+            unresolved_constraints: inventory.constraints.len(),
+        });
+    }
+    let (raw_sketches, raw_sketches_storage) = ctx.unique_index(
+        inventory.sketches.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketches",
     )?;
-    let (raw_entities, _raw_entities_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.entities, "visit Inventor sketch entities")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+    let (raw_entities, raw_entities_storage) = ctx.unique_index(
+        inventory.entities.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch entities",
     )?;
-    let (transforms, _transforms_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.transforms, "visit Inventor sketch transforms")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+    let (transforms, transforms_storage) = ctx.unique_index(
+        inventory.transforms.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch transforms",
     )?;
-    let (directions, _directions_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.directions, "visit Inventor sketch directions")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+    let (directions, directions_storage) = ctx.unique_index(
+        inventory.directions.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch directions",
     )?;
-    let (raw_constraints, _raw_constraints_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.constraints, "visit Inventor sketch constraints")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+    let (raw_constraints, raw_constraints_storage) = ctx.unique_index(
+        inventory.constraints.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch constraints",
     )?;
-    let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
-    let mut parameter_index = HashMap::new();
-    for parameter in ctx.admit_iter(parameters, "visit Inventor sketch items")? {
-        if let Some(native) = &parameter.native_ref {
-            let id = parameter_index_storage.with_storage(|| {
-                parameter
-                    .id
-                    .try_clone_for_decode(ctx, "retain Inventor sketch parameter id")
-            })?;
-            let native = parameter_index_storage
-                .with_storage(|| ctx.copy_retained_text(native, "copy Inventor sketch.rs text"))?;
-            parameter_index_storage.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut parameter_index,
-                    native,
-                    id,
-                    "index Inventor sketch parameter",
+
+    // Which records each sketch lists, keyed by the sketch's identity and the
+    // listed one-based reference, so an entity or constraint finds its
+    // listing by lookup instead of scanning its sketch's list.
+    let mut sketch_listings_storage = ctx.reserve_scoped(0, "index Inventor sketch listings")?;
+    let mut sketch_listings = HashSet::new();
+    let mut sketch_steps = inventory.sketches.iter();
+    while let Some(sketch) =
+        ctx.next_charged(&mut sketch_steps, "index Inventor sketch listings")?
+    {
+        let mut reference_steps = sketch.entities.references().iter();
+        while let Some(reference) =
+            ctx.next_charged(&mut reference_steps, "index Inventor sketch listings")?
+        {
+            sketch_listings_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut sketch_listings,
+                    (
+                        sketch.identity.segment_token.as_str(),
+                        sketch.identity.record_ordinal,
+                        reference.index(),
+                    ),
+                    "index Inventor sketch listings",
                 )
             })?;
         }
@@ -1232,7 +1235,8 @@ pub(crate) fn project(
 
     let mut projected_entities = Vec::new();
     let mut unresolved_entities = 0usize;
-    for entity in ctx.admit_iter(&inventory.entities, "visit Inventor sketch items")? {
+    let mut entity_steps = inventory.entities.iter();
+    while let Some(entity) = ctx.next_charged(&mut entity_steps, "visit Inventor sketch items")? {
         let key = (
             entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
@@ -1260,21 +1264,18 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        let entity_reference_found = ctx
-            .admit_iter(
-                sketch.entities.references(),
+        let entity_reference_found = match entity.identity.record_ordinal.checked_add(1) {
+            Some(listed) => ctx.contains_hash_set(
+                &sketch_listings,
+                &(
+                    sketch.identity.segment_token.as_str(),
+                    sketch.identity.record_ordinal,
+                    listed,
+                ),
                 "find Inventor sketch entity reference",
-            )?
-            .find_map(|reference| {
-                entity
-                    .identity
-                    .record_ordinal
-                    .checked_add(1)
-                    .is_some_and(|next| reference.index() == next)
-                    .then_some(Ok::<bool, CodecError>(true))
-            })
-            .transpose()?
-            .unwrap_or(false);
+            )?,
+            None => false,
+        };
         if !entity_reference_found {
             unresolved_entities += 1;
             continue;
@@ -1313,7 +1314,8 @@ pub(crate) fn project(
     })?;
     let mut sketches = Vec::new();
     let mut unresolved_sketches = 0usize;
-    for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
+    let mut sketch_steps = inventory.sketches.iter();
+    while let Some(sketch) = ctx.next_charged(&mut sketch_steps, "visit Inventor sketch items")? {
         let key = (
             sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
@@ -1328,8 +1330,9 @@ pub(crate) fn project(
         }
         let (mut raw_referenced_entities, mut raw_referenced_storage) =
             ctx.temporary_vec(0, "collect Inventor raw sketch reference")?;
-        for reference in
-            ctx.admit_iter(sketch.entities.references(), "visit Inventor sketch items")?
+        let mut reference_steps = sketch.entities.references().iter();
+        while let Some(reference) =
+            ctx.next_charged(&mut reference_steps, "visit Inventor sketch items")?
         {
             let Some(ordinal) = reference.index().checked_sub(1) else {
                 continue;
@@ -1354,7 +1357,8 @@ pub(crate) fn project(
         }
         let (mut referenced_entities, mut referenced_storage) =
             ctx.temporary_vec(0, "collect Inventor projected sketch reference")?;
-        for raw in ctx.admit_iter(&raw_referenced_entities, "visit Inventor sketch items")? {
+        let mut raw_steps = raw_referenced_entities.iter();
+        while let Some(raw) = ctx.next_charged(&mut raw_steps, "visit Inventor sketch items")? {
             let (native, _native_reservation) = ctx.format_scoped(
                 format_args!(
                     "inventor:pmdc:sketch-entity#{}-{}",
@@ -1413,14 +1417,21 @@ pub(crate) fn project(
             "collect Inventor sketch items",
         )?;
     }
+    drop(raw_sketches);
+    drop(raw_sketches_storage);
+    drop(raw_entities);
+    drop(raw_entities_storage);
+    drop(transforms);
+    drop(transforms_storage);
+    drop(directions);
+    drop(directions_storage);
     drop(projected_by_native);
     drop(projected_by_native_storage);
     let mut projected_sketch_ids_storage =
         ctx.reserve_scoped(0, "collect projected Inventor sketch ids")?;
     let projected_sketch_ids = projected_sketch_ids_storage.with_storage(|| {
         ctx.collect_hash_set(
-            ctx.admit_iter(&sketches, "collect projected Inventor sketch ids")?
-                .map(|sketch| &sketch.id),
+            sketches.iter().map(|sketch| &sketch.id),
             "collect projected Inventor sketch ids",
         )
     })?;
@@ -1445,6 +1456,16 @@ pub(crate) fn project(
     )?;
     drop(projected_sketch_ids);
     drop(projected_sketch_ids_storage);
+    if sketches.is_empty() {
+        return Ok(SketchProjection {
+            sketches,
+            entities: projected_entities,
+            constraints: Vec::new(),
+            unresolved_sketches,
+            unresolved_entities,
+            unresolved_constraints: inventory.constraints.len(),
+        });
+    }
     let mut projected_by_native_storage =
         ctx.reserve_scoped(0, "reindex projected Inventor sketch entities")?;
     let projected_by_native = projected_by_native_storage.with_storage(|| {
@@ -1460,39 +1481,64 @@ pub(crate) fn project(
     let mut projected_entity_by_key_storage =
         ctx.reserve_scoped(0, "index projected Inventor sketch entity key")?;
     let mut projected_entity_by_key = BTreeMap::new();
-    for raw in ctx.admit_iter(&inventory.entities, "visit Inventor sketch items")? {
-        let (native_id, _native_reservation) = ctx.format_scoped(
-            format_args!(
-                "inventor:pmdc:sketch-entity#{}-{}",
-                raw.identity.segment_token, raw.identity.record_ordinal
-            ),
-            "resolve projected Inventor sketch native id",
-        )?;
-        if let Some(projected) = ctx.get_hash_map(
-            &projected_by_native,
-            native_id.as_str(),
-            "access Inventor sketch records",
-        )? {
-            projected_entity_by_key_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut projected_entity_by_key,
-                    (
-                        raw.identity.segment_token.as_str(),
-                        raw.identity.record_ordinal,
-                    ),
-                    *projected,
-                    "index projected Inventor sketch entity key",
-                )
-            })?;
+    if !projected_by_native.is_empty() {
+        let mut raw_steps = inventory.entities.iter();
+        while let Some(raw) = ctx.next_charged(&mut raw_steps, "visit Inventor sketch items")? {
+            let (native_id, _native_reservation) = ctx.format_scoped(
+                format_args!(
+                    "inventor:pmdc:sketch-entity#{}-{}",
+                    raw.identity.segment_token, raw.identity.record_ordinal
+                ),
+                "resolve projected Inventor sketch native id",
+            )?;
+            if let Some(projected) = ctx.get_hash_map(
+                &projected_by_native,
+                native_id.as_str(),
+                "access Inventor sketch records",
+            )? {
+                projected_entity_by_key_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut projected_entity_by_key,
+                        (
+                            raw.identity.segment_token.as_str(),
+                            raw.identity.record_ordinal,
+                        ),
+                        *projected,
+                        "index projected Inventor sketch entity key",
+                    )
+                })?;
+            }
         }
     }
     drop(projected_by_native);
     drop(projected_by_native_storage);
+    let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
+    let mut parameter_index = HashMap::new();
+    if !inventory.constraints.is_empty() {
+        let mut parameter_steps = parameters.iter();
+        while let Some(parameter) =
+            ctx.next_charged(&mut parameter_steps, "visit Inventor sketch items")?
+        {
+            if let Some(native) = &parameter.native_ref {
+                parameter_index_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut parameter_index,
+                        native.as_str(),
+                        &parameter.id,
+                        "index Inventor sketch parameter",
+                    )
+                })?;
+            }
+        }
+    }
     let mut constraints = Vec::new();
     let mut projected_constraint_keys_storage =
         ctx.reserve_scoped(0, "index projected Inventor sketch constraint")?;
     let mut projected_constraint_keys = HashSet::new();
-    for constraint in ctx.admit_iter(&inventory.constraints, "visit Inventor sketch items")? {
+    let mut constraint_steps = inventory.constraints.iter();
+    while let Some(constraint) =
+        ctx.next_charged(&mut constraint_steps, "visit Inventor sketch items")?
+    {
         if ctx
             .get_hash_map(
                 &raw_constraints,
@@ -1523,29 +1569,20 @@ pub(crate) fn project(
             }
         }
     }
+    drop(raw_constraints);
+    drop(raw_constraints_storage);
+    drop(parameter_index);
+    drop(parameter_index_storage);
     let mut unresolved_constraints = inventory
         .constraints
         .len()
         .checked_sub(constraints.len())
         .ok_or_else(|| CodecError::malformed("Inventor constraints exceed inventory"))?;
-    let mut projected_entity_keys_storage =
-        ctx.reserve_scoped(0, "index projected Inventor sketch entity closure keys")?;
-    let projected_entity_keys = projected_entity_keys_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(
-                &projected_entity_by_key,
-                "index projected Inventor sketch entity closure keys",
-            )?
-            .map(|(key, _)| *key),
-            "index projected Inventor sketch entity closure keys",
-        )
-    })?;
-    drop(projected_entity_by_key);
-    drop(projected_entity_by_key_storage);
     let mut raw_sketch_by_native_storage =
         ctx.reserve_scoped(0, "index Inventor raw sketch native refs")?;
     let mut raw_sketch_by_native = HashMap::new();
-    for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
+    let mut sketch_steps = inventory.sketches.iter();
+    while let Some(sketch) = ctx.next_charged(&mut sketch_steps, "visit Inventor sketch items")? {
         let native = raw_sketch_by_native_storage.with_storage(|| sketch.id(ctx))?;
         raw_sketch_by_native_storage.with_storage(|| {
             ctx.insert_hash_map(
@@ -1573,41 +1610,30 @@ pub(crate) fn project(
             };
             let mut seen_storage = ctx.reserve_scoped(0, "access Inventor sketch records")?;
             let mut seen = HashSet::new();
-            let closed = ctx
-                .admit_iter(raw.entities.references(), "access Inventor sketch records")?
-                .find_map(|reference| {
-                    let resolved = (|| -> Result<bool, CodecError> {
-                        let Some(ordinal) = reference.index().checked_sub(1) else {
-                            return Ok(false);
-                        };
-                        if !seen_storage.with_storage(|| {
-                            ctx.insert_hash_set(
-                                &mut seen,
-                                ordinal,
-                                "access Inventor sketch records",
-                            )
-                        })? {
-                            return Ok(false);
-                        }
-                        let key = (raw.identity.segment_token.as_str(), ordinal);
-                        Ok(ctx.contains_hash_set(
-                            &projected_entity_keys,
-                            &key,
-                            "access Inventor sketch records",
-                        )? || ctx.contains_hash_set(
-                            &projected_constraint_keys,
-                            &key,
-                            "access Inventor sketch records",
-                        )?)
-                    })();
-                    match resolved {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(false)),
-                        Err(error) => Some(Err(error)),
+            let closed = ctx.all_by(
+                raw.entities.references(),
+                |reference| {
+                    let Some(ordinal) = reference.index().checked_sub(1) else {
+                        return Ok(false);
+                    };
+                    if !seen_storage.with_storage(|| {
+                        ctx.insert_hash_set(&mut seen, ordinal, "access Inventor sketch records")
+                    })? {
+                        return Ok(false);
                     }
-                })
-                .transpose()?
-                .unwrap_or(true);
+                    let key = (raw.identity.segment_token.as_str(), ordinal);
+                    Ok(ctx.contains_key_btree_map(
+                        &projected_entity_by_key,
+                        &key,
+                        "access Inventor sketch records",
+                    )? || ctx.contains_hash_set(
+                        &projected_constraint_keys,
+                        &key,
+                        "access Inventor sketch records",
+                    )?)
+                },
+                "access Inventor sketch records",
+            )?;
             Ok(closed)
         },
         "retain closed Inventor sketches",
@@ -1619,16 +1645,17 @@ pub(crate) fn project(
         sketches.len(),
         "Inventor unresolved sketches",
     )?;
+    drop(projected_constraint_keys);
+    drop(projected_constraint_keys_storage);
     drop(raw_sketch_by_native);
     drop(raw_sketch_by_native_storage);
-    drop(projected_entity_keys);
-    drop(projected_entity_keys_storage);
+    drop(projected_entity_by_key);
+    drop(projected_entity_by_key_storage);
     let mut closed_sketch_ids_storage =
         ctx.reserve_scoped(0, "index closed Inventor sketch ids")?;
     let closed_sketch_ids = closed_sketch_ids_storage.with_storage(|| {
         ctx.collect_hash_set(
-            ctx.admit_iter(&sketches, "index closed Inventor sketch ids")?
-                .map(|sketch| &sketch.id),
+            sketches.iter().map(|sketch| &sketch.id),
             "index closed Inventor sketch ids",
         )
     })?;
@@ -1654,32 +1681,42 @@ pub(crate) fn project(
     let mut raw_sketch_by_id_storage =
         ctx.reserve_scoped(0, "index Inventor raw sketch projected ids")?;
     let mut raw_sketch_by_id = HashMap::new();
-    for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
-        let id = raw_sketch_by_id_storage.with_storage(|| sketch_id(ctx, sketch))?;
-        if let Some(id) = id {
-            raw_sketch_by_id_storage.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut raw_sketch_by_id,
-                    id,
-                    sketch,
-                    "index Inventor raw sketch projected ids",
-                )
-            })?;
+    if !sketches.is_empty() && !constraints.is_empty() {
+        let mut sketch_steps = inventory.sketches.iter();
+        while let Some(sketch) =
+            ctx.next_charged(&mut sketch_steps, "visit Inventor sketch items")?
+        {
+            let id = raw_sketch_by_id_storage.with_storage(|| sketch_id(ctx, sketch))?;
+            if let Some(id) = id {
+                raw_sketch_by_id_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut raw_sketch_by_id,
+                        id,
+                        sketch,
+                        "index Inventor raw sketch projected ids",
+                    )
+                })?;
+            }
         }
     }
     let mut raw_constraint_by_native_storage =
         ctx.reserve_scoped(0, "index Inventor raw constraint native refs")?;
     let mut raw_constraint_by_native = HashMap::new();
-    for constraint in ctx.admit_iter(&inventory.constraints, "visit Inventor sketch items")? {
-        let id = raw_constraint_by_native_storage.with_storage(|| constraint.id(ctx))?;
-        raw_constraint_by_native_storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut raw_constraint_by_native,
-                id,
-                constraint,
-                "index Inventor raw constraint native refs",
-            )
-        })?;
+    if !sketches.is_empty() && !constraints.is_empty() {
+        let mut constraint_steps = inventory.constraints.iter();
+        while let Some(constraint) =
+            ctx.next_charged(&mut constraint_steps, "visit Inventor sketch items")?
+        {
+            let id = raw_constraint_by_native_storage.with_storage(|| constraint.id(ctx))?;
+            raw_constraint_by_native_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut raw_constraint_by_native,
+                    id,
+                    constraint,
+                    "index Inventor raw constraint native refs",
+                )
+            })?;
+        }
     }
     let previous_constraint_count = constraints.len();
     ctx.retain_vec(
@@ -1713,21 +1750,18 @@ pub(crate) fn project(
             else {
                 return Ok(false);
             };
-            Ok(ctx
-                .admit_iter(
-                    sketch.entities.references(),
+            match raw_constraint.identity.record_ordinal.checked_add(1) {
+                Some(listed) => ctx.contains_hash_set(
+                    &sketch_listings,
+                    &(
+                        sketch.identity.segment_token.as_str(),
+                        sketch.identity.record_ordinal,
+                        listed,
+                    ),
                     "access Inventor sketch records",
-                )?
-                .find_map(|reference| {
-                    raw_constraint
-                        .identity
-                        .record_ordinal
-                        .checked_add(1)
-                        .is_some_and(|next| reference.index() == next)
-                        .then_some(Ok::<bool, CodecError>(true))
-                })
-                .transpose()?
-                .unwrap_or(false))
+                ),
+                None => Ok(false),
+            }
         },
         "retain closed Inventor constraints",
     )?;
@@ -1752,7 +1786,7 @@ fn project_constraint(
     ctx: &DecodeContext<'_>,
     constraint: &PmDcSketchConstraint,
     entities: &BTreeMap<(&str, u32), &SketchEntity>,
-    parameters: &HashMap<String, ParameterId>,
+    parameters: &HashMap<&str, &ParameterId>,
 ) -> Option<Result<SketchConstraint, CodecError>> {
     macro_rules! admit {
         ($result:expr) => {
@@ -1789,118 +1823,30 @@ fn project_constraint(
             )?
             .copied())
     };
-    let (definition, orientation, members) = match constraint.kind {
-        PmDcSketchConstraintKind::Coincident { first, second } => {
-            let members = [
+    let (members, parameter) = match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { first, second }
+        | PmDcSketchConstraintKind::Parallel { first, second, .. }
+        | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
+        | PmDcSketchConstraintKind::Tangent { first, second, .. }
+        | PmDcSketchConstraintKind::EqualRadius { first, second } => (
+            [
                 admitted_value!(resolve(first))?,
                 admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Coincident {
-                    entities: admitted_value!(ctx.try_collect_retained_with(
-                        members,
-                        "collect Inventor coincident constraint members",
-                        |entity| entity.id().try_clone_for_decode(
-                            ctx,
-                            "retain Inventor sketch constraint entity id"
-                        )
-                    )),
-                },
-                None,
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Parallel {
-            first,
-            second,
-            orientation,
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Parallel {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(orientation)),
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Perpendicular {
-            first,
-            second,
-            orientation,
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Perpendicular {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(orientation)),
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Tangent {
-            first,
-            second,
-            extension,
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Tangent {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                extension,
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::Horizontal { entity, state } => {
+            ],
+            None,
+        ),
+        PmDcSketchConstraintKind::Horizontal { entity, .. }
+        | PmDcSketchConstraintKind::Vertical { entity, .. } => {
             let member = admitted_value!(resolve(entity))?;
-            (
-                SketchConstraintDefinitionInput::Horizontal {
-                    entity: admitted_value!(member
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(state)),
-                [member, member],
-            )
-        }
-        PmDcSketchConstraintKind::Vertical { entity, state } => {
-            let member = admitted_value!(resolve(entity))?;
-            (
-                SketchConstraintDefinitionInput::Vertical {
-                    entity: admitted_value!(member
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                Some(u32::from(state)),
-                [member, member],
-            )
+            ([member, member], None)
         }
         PmDcSketchConstraintKind::HorizontalDistance {
+            first,
+            second,
+            parameter,
+            ..
+        }
+        | PmDcSketchConstraintKind::VerticalDistance {
             first,
             second,
             parameter,
@@ -1910,8 +1856,107 @@ fn project_constraint(
                 admitted_value!(resolve(first))?,
                 admitted_value!(resolve(second))?,
             ];
-            let parameter =
-                admitted_value!(resolve_parameter(ctx, constraint, parameter, parameters)?);
+            let parameter = Some(admitted_value!(resolve_parameter(
+                ctx, constraint, parameter, parameters
+            )?));
+            (members, parameter)
+        }
+        PmDcSketchConstraintKind::Radius { entity, .. }
+        | PmDcSketchConstraintKind::Diameter { entity, .. } => {
+            let member = admitted_value!(resolve(entity))?;
+            let parameter = Some(admitted_value!(resolve_parameter(
+                ctx,
+                constraint,
+                constraint.header.parameter,
+                parameters
+            )?));
+            ([member, member], parameter)
+        }
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => (
+            [
+                admitted_value!(resolve(entity))?,
+                admitted_value!(resolve(center))?,
+            ],
+            None,
+        ),
+    };
+    if !admitted_value!(ctx.equal(
+        &members[0].sketch,
+        &members[1].sketch,
+        "compare Inventor sketch constraint owners",
+    )) {
+        return None;
+    }
+    let parameter = match parameter {
+        Some(parameter) => Some(admitted_value!(
+            parameter.try_clone_for_decode(ctx, "retain Inventor sketch constraint parameter id")
+        )),
+        None => None,
+    };
+    let (definition, orientation) = match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { .. } => (
+            SketchConstraintDefinitionInput::Coincident {
+                entities: admitted_value!(ctx.try_collect_retained_with(
+                    members,
+                    "collect Inventor coincident constraint members",
+                    |entity| entity
+                        .id()
+                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")
+                )),
+            },
+            None,
+        ),
+        PmDcSketchConstraintKind::Parallel { orientation, .. } => (
+            SketchConstraintDefinitionInput::Parallel {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(orientation)),
+        ),
+        PmDcSketchConstraintKind::Perpendicular { orientation, .. } => (
+            SketchConstraintDefinitionInput::Perpendicular {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(orientation)),
+        ),
+        PmDcSketchConstraintKind::Tangent { extension, .. } => (
+            SketchConstraintDefinitionInput::Tangent {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            extension,
+        ),
+        PmDcSketchConstraintKind::Horizontal { state, .. } => (
+            SketchConstraintDefinitionInput::Horizontal {
+                entity: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(state)),
+        ),
+        PmDcSketchConstraintKind::Vertical { state, .. } => (
+            SketchConstraintDefinitionInput::Vertical {
+                entity: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            Some(u32::from(state)),
+        ),
+        PmDcSketchConstraintKind::HorizontalDistance { .. } => {
+            let parameter = parameter?;
             (
                 SketchConstraintDefinitionInput::HorizontalDistance {
                     first: SketchLocus::Entity(admitted_value!(members[0]
@@ -1923,21 +1968,10 @@ fn project_constraint(
                     parameter,
                 },
                 None,
-                members,
             )
         }
-        PmDcSketchConstraintKind::VerticalDistance {
-            first,
-            second,
-            parameter,
-            ..
-        } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            let parameter =
-                admitted_value!(resolve_parameter(ctx, constraint, parameter, parameters)?);
+        PmDcSketchConstraintKind::VerticalDistance { .. } => {
+            let parameter = parameter?;
             (
                 SketchConstraintDefinitionInput::VerticalDistance {
                     first: SketchLocus::Entity(admitted_value!(members[0]
@@ -1949,112 +1983,75 @@ fn project_constraint(
                     parameter,
                 },
                 None,
-                members,
             )
         }
-        PmDcSketchConstraintKind::Radius { entity, .. } => {
-            let member = admitted_value!(resolve(entity))?;
-            let parameter = admitted_value!(resolve_parameter(
-                ctx,
-                constraint,
-                constraint.header.parameter,
-                parameters
-            )?);
+        PmDcSketchConstraintKind::Radius { .. } => {
+            let parameter = parameter?;
             (
                 SketchConstraintDefinitionInput::Radius {
-                    entity: admitted_value!(member
+                    entity: admitted_value!(members[0]
                         .id()
                         .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                     parameter,
                 },
                 None,
-                [member, member],
             )
         }
-        PmDcSketchConstraintKind::Diameter { entity, .. } => {
-            let member = admitted_value!(resolve(entity))?;
-            let parameter = admitted_value!(resolve_parameter(
-                ctx,
-                constraint,
-                constraint.header.parameter,
-                parameters
-            )?);
+        PmDcSketchConstraintKind::Diameter { .. } => {
+            let parameter = parameter?;
             (
                 SketchConstraintDefinitionInput::Diameter {
-                    entity: admitted_value!(member
+                    entity: admitted_value!(members[0]
                         .id()
                         .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
                     parameter,
                 },
                 None,
-                [member, member],
             )
         }
-        PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-            let members = [
-                admitted_value!(resolve(entity))?,
-                admitted_value!(resolve(center))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_core::nonblank_literal!("circle_center_alignment"),
-                    native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
-                    native_flags: Some(u64::from(constraint.header.content.flags)),
-                    native_properties: std::collections::BTreeMap::new(),
-                    entities: admitted_value!(ctx.try_collect_retained_with(
-                        members,
-                        "collect Inventor circle center entities",
-                        |entity| entity.id().try_clone_for_decode(
-                            ctx,
-                            "retain Inventor sketch constraint entity id"
-                        )
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => (
+            SketchConstraintDefinitionInput::Native {
+                native_kind: cadmpeg_core::nonblank_literal!("circle_center_alignment"),
+                native_state: Some(u64::from(constraint.header.state.cast_unsigned())),
+                native_flags: Some(u64::from(constraint.header.content.flags)),
+                native_properties: std::collections::BTreeMap::new(),
+                entities: admitted_value!(ctx.try_collect_retained_with(
+                    members,
+                    "collect Inventor circle center entities",
+                    |entity| entity
+                        .id()
+                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")
+                )),
+                parameter: None,
+                operands: vec![
+                    admitted_value!(native_operand(
+                        ctx,
+                        constraint,
+                        cadmpeg_core::nonblank_literal!("entity"),
+                        entity,
                     )),
-                    parameter: None,
-                    operands: vec![
-                        admitted_value!(native_operand(
-                            ctx,
-                            constraint,
-                            cadmpeg_core::nonblank_literal!("entity"),
-                            entity,
-                        )),
-                        admitted_value!(native_operand(
-                            ctx,
-                            constraint,
-                            cadmpeg_core::nonblank_literal!("center"),
-                            center,
-                        )),
-                    ],
-                },
-                None,
-                members,
-            )
-        }
-        PmDcSketchConstraintKind::EqualRadius { first, second } => {
-            let members = [
-                admitted_value!(resolve(first))?,
-                admitted_value!(resolve(second))?,
-            ];
-            (
-                SketchConstraintDefinitionInput::Equal {
-                    first: admitted_value!(members[0]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                    second: admitted_value!(members[1]
-                        .id()
-                        .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
-                },
-                None,
-                members,
-            )
-        }
+                    admitted_value!(native_operand(
+                        ctx,
+                        constraint,
+                        cadmpeg_core::nonblank_literal!("center"),
+                        center,
+                    )),
+                ],
+            },
+            None,
+        ),
+        PmDcSketchConstraintKind::EqualRadius { .. } => (
+            SketchConstraintDefinitionInput::Equal {
+                first: admitted_value!(members[0]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+                second: admitted_value!(members[1]
+                    .id()
+                    .try_clone_for_decode(ctx, "retain Inventor sketch constraint entity id")),
+            },
+            None,
+        ),
     };
-    if !admitted_value!(ctx.equal(
-        &members[0].sketch,
-        &members[1].sketch,
-        "compare Inventor sketch constraint owners",
-    )) {
-        return None;
-    }
     admit!(ctx.charge_entities(1, "project Inventor sketch constraint"));
     let id = admitted_value!(ctx.format_retained(
         format_args!(
@@ -2100,12 +2097,12 @@ fn project_constraint(
     }))
 }
 
-fn resolve_parameter(
+fn resolve_parameter<'a>(
     ctx: &DecodeContext<'_>,
     constraint: &PmDcSketchConstraint,
     reference: PmDcReference,
-    parameters: &HashMap<String, ParameterId>,
-) -> Option<Result<ParameterId, CodecError>> {
+    parameters: &HashMap<&str, &'a ParameterId>,
+) -> Option<Result<&'a ParameterId, CodecError>> {
     let ordinal = reference.index().checked_sub(1)?;
     let (native, _storage) = match ctx.format_scoped(
         format_args!(
@@ -2125,7 +2122,7 @@ fn resolve_parameter(
         Ok(value) => value?,
         Err(error) => return Some(Err(error)),
     };
-    Some(parameter.try_clone_for_decode(ctx, "retain Inventor sketch constraint parameter id"))
+    Some(Ok(*parameter))
 }
 
 fn native_operand(
@@ -2375,7 +2372,10 @@ fn entity_endpoint_refs(
         return Ok(Vec::new());
     };
     let mut endpoint_refs = Vec::new();
-    for reference in ctx.admit_iter(points.references(), "visit Inventor sketch items")? {
+    let mut reference_steps = points.references().iter();
+    while let Some(reference) =
+        ctx.next_charged(&mut reference_steps, "visit Inventor sketch items")?
+    {
         let value = match reference.index().checked_sub(1) {
             Some(ordinal) => ctx
                 .get_hash_map(
@@ -2483,7 +2483,8 @@ fn build_profiles(
         ctx.reserve_scoped(0, "index Inventor profile source positions")?;
     let source_positions = source_positions_storage.with_storage(|| {
         ctx.collect_hash_map(
-            ctx.admit_iter(entities, "index Inventor profile source positions")?
+            entities
+                .iter()
                 .enumerate()
                 .map(|(index, entity)| (entity.id().as_str(), index)),
             "index Inventor profile source positions",
@@ -2491,16 +2492,18 @@ fn build_profiles(
     })?;
     let mut profiles = Vec::new();
     let mut profiles_storage = ctx.reserve_scoped(0, "collect Inventor sketch items")?;
-    for entity in ctx
-        .admit_iter(entities, "visit Inventor sketch entity items")?
-        .filter(|entity| !entity.construction)
-        .filter(|entity| {
-            matches!(
+    let mut entity_steps = entities.iter();
+    while let Some(entity) =
+        ctx.next_charged(&mut entity_steps, "visit Inventor sketch entity items")?
+    {
+        if entity.construction
+            || !matches!(
                 *entity.geometry.definition(),
                 SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Ellipse { .. }
             )
-        })
-    {
+        {
+            continue;
+        }
         let mut profile = Vec::new();
         ctx.push_vec(
             &mut profile,
@@ -2534,11 +2537,14 @@ fn build_profiles(
     })?;
     let mut adjacency_storage = ctx.reserve_scoped(0, "index Inventor profile endpoint")?;
     let mut adjacency = HashMap::<&str, Vec<usize>>::new();
-    for (index, line) in ctx
-        .admit_iter(&lines, "visit Inventor sketch items")?
-        .enumerate()
+    let mut line_steps = lines.iter().enumerate();
+    while let Some((index, line)) =
+        ctx.next_charged(&mut line_steps, "visit Inventor sketch items")?
     {
-        for endpoint in ctx.admit_iter(&line.endpoint_refs, "visit Inventor sketch items")? {
+        let mut endpoint_steps = line.endpoint_refs.iter();
+        while let Some(endpoint) =
+            ctx.next_charged(&mut endpoint_steps, "visit Inventor sketch items")?
+        {
             adjacency_storage.with_storage(|| {
                 ctx.push_hash_group(
                     &mut adjacency,
@@ -2552,44 +2558,43 @@ fn build_profiles(
     }
     let mut visited_storage = ctx.reserve_scoped(0, "visit Inventor profile line")?;
     let mut visited = HashSet::new();
-    for (start_index, _) in ctx
-        .admit_iter(&lines, "traverse Inventor profile lines")?
-        .enumerate()
+    let mut start_steps = lines.iter().enumerate();
+    while let Some((start_index, _)) =
+        ctx.next_charged(&mut start_steps, "traverse Inventor profile lines")?
     {
         if ctx.contains_hash_set(&visited, &start_index, "visit Inventor profile line")? {
             continue;
         }
-        let (component, _component_storage) = line_component(ctx, start_index, &lines, &adjacency)?;
-        let mut open_component = false;
-        for &index in ctx.admit_iter(&component, "visit Inventor line component")? {
-            let endpoint_has_wrong_degree = ctx
-                .admit_iter(
+        let (component, component_storage) = line_component(ctx, start_index, &lines, &adjacency)?;
+        let open_component = ctx.any_by(
+            &component,
+            |&index| {
+                ctx.any_by(
                     &lines[index].endpoint_refs,
+                    |point| {
+                        Ok(ctx
+                            .get_hash_map(
+                                &adjacency,
+                                point.as_str(),
+                                "access Inventor sketch records",
+                            )?
+                            .map_or(0, Vec::len)
+                            != 2)
+                    },
                     "check Inventor profile endpoint degree",
-                )?
-                .find_map(|point| {
-                    match ctx
-                        .get_hash_map(&adjacency, point.as_str(), "access Inventor sketch records")
-                        .map(|indices| indices.map_or(0, Vec::len) != 2)
-                    {
-                        Ok(true) => Some(Ok(true)),
-                        Ok(false) => None,
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(false);
-            if endpoint_has_wrong_degree {
-                open_component = true;
-                break;
-            }
-        }
-        if open_component {
+                )
+            },
+            "visit Inventor line component",
+        )?;
+        // Open components and closed components with fewer than three lines cannot form a profile.
+        if open_component || component.len() < 3 {
             for &index in ctx.admit_iter(&component, "visit Inventor line component")? {
                 visited_storage.with_storage(|| {
                     ctx.insert_hash_set(&mut visited, index, "visit Inventor profile line")
                 })?;
             }
+            drop(component);
+            drop(component_storage);
             continue;
         }
         let first = lines[start_index];
@@ -2621,10 +2626,11 @@ fn build_profiles(
                 ctx.clear_vec(&mut loop_uses, "discard open Inventor profile loop")?;
                 break;
             };
-            let Some(next) = ctx
-                .admit_iter(indices, "find next Inventor profile line")?
-                .copied()
-                .find(|index| *index != current)
+            let Some(&next) = ctx.find_by(
+                indices,
+                |index| Ok(**index != current),
+                "find next Inventor profile line",
+            )?
             else {
                 ctx.clear_vec(&mut loop_uses, "discard open Inventor profile loop")?;
                 break;
@@ -2666,8 +2672,10 @@ fn build_profiles(
                 ctx.insert_hash_set(&mut visited, index, "visit Inventor profile line")
             })?;
         }
+        drop(component);
+        drop(component_storage);
         if loop_uses.len() >= 3 && ctx.equal(point, start_point, "close Inventor profile loop")? {
-            loop_uses_storage.commit()?;
+            let loop_uses = loop_uses_storage.commit_value(loop_uses)?;
             profiles_storage.with_storage(|| {
                 ctx.push_vec(&mut profiles, loop_uses, "collect Inventor sketch items")
             })?;
@@ -2684,7 +2692,10 @@ fn build_profiles(
         ctx.try_collect_vec(
             profiles.into_iter().map(|profile| {
                 let mut first = None;
-                for entity in ctx.admit_iter(&profile, "locate Inventor profile source order")? {
+                let mut entity_steps = profile.iter();
+                while let Some(entity) =
+                    ctx.next_charged(&mut entity_steps, "locate Inventor profile source order")?
+                {
                     if let Some(&position) = ctx.get_hash_map(
                         &source_positions,
                         entity.entity.as_str(),
@@ -2698,6 +2709,8 @@ fn build_profiles(
             "order Inventor line profiles",
         )
     })?;
+    drop(source_positions);
+    drop(source_positions_storage);
     drop(profiles_storage);
     ctx.sort_unstable_by_key(
         &mut ordered,
@@ -2729,6 +2742,8 @@ fn line_component<'ctx>(
         .with_storage(|| ctx.push_vec(&mut pending, start, "queue Inventor profile line"))?;
     let mut component_storage = ctx.reserve_scoped(0, "collect Inventor profile component")?;
     let mut component = BTreeSet::new();
+    let mut endpoint_storage = ctx.reserve_scoped(0, "expand Inventor profile endpoint")?;
+    let mut expanded_endpoints = HashSet::new();
     while !pending.is_empty() {
         ctx.charge_work(1, "scan Inventor profile component")?;
         let Some(index) = pending.pop() else {
@@ -2739,11 +2754,24 @@ fn line_component<'ctx>(
         })? {
             continue;
         }
-        for point in ctx.admit_iter(&lines[index].endpoint_refs, "visit Inventor sketch items")? {
+        let mut point_steps = lines[index].endpoint_refs.iter();
+        while let Some(point) = ctx.next_charged(&mut point_steps, "visit Inventor sketch items")? {
+            if !endpoint_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut expanded_endpoints,
+                    point.as_str(),
+                    "expand Inventor profile endpoint",
+                )
+            })? {
+                continue;
+            }
             if let Some(neighbours) =
                 ctx.get_hash_map(adjacency, point.as_str(), "access Inventor sketch records")?
             {
-                for &neighbour in ctx.admit_iter(neighbours, "queue Inventor profile neighbours")? {
+                let mut neighbour_steps = neighbours.iter();
+                while let Some(&neighbour) =
+                    ctx.next_charged(&mut neighbour_steps, "queue Inventor profile neighbours")?
+                {
                     pending_storage.with_storage(|| {
                         ctx.push_vec(&mut pending, neighbour, "queue Inventor profile neighbours")
                     })?;
@@ -2836,1303 +2864,4 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
-        project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcTransformPayload,
-        PmDcTransformPayloadWire, SketchConstraintTag, SketchEntityTag, SketchInventory,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE,
-        TRANSFORM_TYPE,
-    };
-    use crate::container::InventorContainer;
-    use crate::pmdc::{PmDcReference, PmDcReferenceList};
-    use crate::record_identity::Located;
-    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-    use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::scalar::FiniteReal;
-    use cadmpeg_ir::sketches::SketchPlacement;
-
-    fn real(value: f64) -> FiniteReal {
-        FiniteReal::new(value).expect("finite test scalar")
-    }
-
-    fn fixture_record_type_id(value: [u8; 16]) -> crate::record_identity::RecordTypeId {
-        crate::record_identity::RecordTypeId::from_bytes(
-            &cadmpeg_test_support::service_decode_context(),
-            value,
-            "retain Inventor sketch fixture record type id",
-        )
-        .expect("service context admits fixture record type id")
-    }
-
-    #[test]
-    fn profile_builder_refuses_collection_limit_before_source_index() {
-        let entity = circle_profile_entity();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
-        assert!(matches!(
-            super::build_profiles(&ctx, &[&entity]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor profile source positions"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service profile context");
-        assert_eq!(
-            super::build_profiles(&ctx, &[&entity])
-                .expect("circle profile")
-                .len(),
-            1
-        );
-    }
-
-    fn circle_profile_entity() -> cadmpeg_ir::sketches::SketchEntity {
-        cadmpeg_ir::sketches::SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
-                .expect("entity id"),
-            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
-            cadmpeg_ir::sketches::SketchGeometry::try_from(
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
-                    center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                    radius: cadmpeg_ir::scalar::Length::new(1.0).expect("positive radius"),
-                },
-            )
-            .expect("circle geometry"),
-        )
-    }
-
-    #[test]
-    fn profile_builder_refuses_collection_limits_before_circular_profile_allocations() {
-        let entity = circle_profile_entity();
-        let arena = DecodeArena::new();
-        // The count includes the source-position index, circular use, and outer profile slot.
-        for (cap, operation) in [
-            (1, "project Inventor circular profile use"),
-            (2, "collect Inventor sketch items"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
-            assert!(matches!(
-                super::build_profiles(&ctx, &[&entity]),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-            ));
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service profile context");
-        assert_eq!(
-            super::build_profiles(&ctx, &[&entity])
-                .expect("circle profile")
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn line_component_refuses_collection_limit_before_queue_creation() {
-        let entity = cadmpeg_ir::sketches::SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2")
-                .expect("entity id"),
-            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
-            cadmpeg_ir::sketches::SketchGeometry::try_from(
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
-                    start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                    end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                },
-            )
-            .expect("line geometry"),
-        )
-        .with_endpoint_refs(vec!["point-a".into(), "point-b".into()]);
-        let adjacency = std::collections::HashMap::from([
-            ("point-a", vec![0_usize]),
-            ("point-b", vec![0_usize]),
-        ]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
-        assert!(matches!(
-            super::line_component(&ctx, 0, &[&entity], &adjacency),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "queue Inventor profile line"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service profile context");
-        let (component, _storage) =
-            super::line_component(&ctx, 0, &[&entity], &adjacency).expect("line component");
-        assert_eq!(component.len(), 1);
-    }
-
-    #[test]
-    fn sketch_projection_refuses_collection_limit_before_entity_index() {
-        let point = parse(&point_bytes(0, 1, [0.0, 0.0]), |ctx, source| {
-            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
-        });
-        let inventory = SketchInventory {
-            sketches: Vec::new(),
-            entities: vec![Located::new(
-                point,
-                fixture_record_type_id(POINT_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                0,
-            )],
-            transforms: Vec::new(),
-            directions: Vec::new(),
-            constraints: Vec::new(),
-            issues: Vec::new(),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            project(&ctx, &inventory, &[]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor sketch entities"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert_eq!(
-            project(&ctx, &inventory, &[])
-                .expect("sketch projection")
-                .unresolved_entities,
-            1
-        );
-    }
-
-    #[test]
-    fn sketch_projection_refuses_entity_limit_before_entity_creation() {
-        let mut sketch_bytes = content(0);
-        sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&1_u32.to_le_bytes());
-        sketch_bytes.extend(list(8, &[2]));
-        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&[0; 8]);
-        sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
-            parse_sketch(ctx, source, 22).expect("sketch record")
-        });
-        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |ctx, source| {
-            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
-        });
-        let inventory = SketchInventory {
-            sketches: vec![Located::new(
-                sketch,
-                fixture_record_type_id(SKETCH_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                0,
-            )],
-            entities: vec![Located::new(
-                point,
-                fixture_record_type_id(POINT_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                1,
-            )],
-            transforms: Vec::new(),
-            directions: Vec::new(),
-            constraints: Vec::new(),
-            issues: Vec::new(),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            project(&ctx, &inventory, &[]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "project Inventor sketch entity"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(project(&ctx, &inventory, &[]).is_ok());
-    }
-
-    #[test]
-    fn sketch_reference_cannot_name_the_maximum_record_ordinal() {
-        let mut sketch_bytes = content(0);
-        sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&1_u32.to_le_bytes());
-        sketch_bytes.extend(list(8, &[u32::MAX]));
-        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&[0; 8]);
-        sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
-            parse_sketch(ctx, source, 22).expect("sketch record")
-        });
-        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |ctx, source| {
-            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point record")
-        });
-        let inventory = SketchInventory {
-            sketches: vec![Located::new(
-                sketch,
-                fixture_record_type_id(SKETCH_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                0,
-            )],
-            entities: vec![Located::new(
-                point,
-                fixture_record_type_id(POINT_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                u32::MAX,
-            )],
-            transforms: Vec::new(),
-            directions: Vec::new(),
-            constraints: Vec::new(),
-            issues: Vec::new(),
-        };
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("projection context");
-        let projection = project(&ctx, &inventory, &[]).expect("sketch projection");
-        assert_eq!(projection.unresolved_entities, 1);
-    }
-
-    #[test]
-    fn sketch_projection_refuses_entity_limit_before_sketch_creation() {
-        let mut transform = parse(
-            &{
-                let mut bytes = content(0);
-                bytes.extend_from_slice(&0x8421_u16.to_le_bytes());
-                bytes.extend_from_slice(&0x7bde_u16.to_le_bytes());
-                bytes
-            },
-            |ctx, source| parse_transform(ctx, source, 22).expect("transform"),
-        );
-        transform.header.source_index = 0;
-        let direction = parse(
-            &{
-                let mut bytes = content(1);
-                bytes.extend_from_slice(&0_u32.to_le_bytes());
-                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
-                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
-                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
-                bytes.extend_from_slice(&1.0_f64.to_le_bytes());
-                bytes
-            },
-            |ctx, source| parse_direction(ctx, source, 22).expect("direction"),
-        );
-        let mut sketch_bytes = content(2);
-        sketch_bytes.extend_from_slice(&0_i32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
-        sketch_bytes.extend(list(8, &[]));
-        sketch_bytes.extend_from_slice(&1_u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&2_u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&[0; 8]);
-        sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
-            parse_sketch(ctx, source, 22).expect("sketch")
-        });
-        let inventory = SketchInventory {
-            sketches: vec![Located::new(
-                sketch,
-                fixture_record_type_id(SKETCH_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                2,
-            )],
-            entities: Vec::new(),
-            transforms: vec![Located::new(
-                transform,
-                fixture_record_type_id(TRANSFORM_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                0,
-            )],
-            directions: vec![Located::new(
-                direction,
-                fixture_record_type_id(DIRECTION_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
-                1,
-            )],
-            constraints: Vec::new(),
-            issues: Vec::new(),
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            project(&ctx, &inventory, &[]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "project Inventor sketch"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert_eq!(
-            project(&ctx, &inventory, &[])
-                .expect("service sketch projection")
-                .sketches
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn sketch_constraint_projection_refuses_retained_limit_before_entity_copy() {
-        let mut bytes = constraint_header(0, 0);
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.push(1);
-        let payload = parse(&bytes, |ctx, source| {
-            parse_constraint(ctx, SketchConstraintTag::Horizontal, source, 22)
-                .expect("horizontal constraint")
-        });
-        let constraint = Located::new(
-            payload,
-            fixture_record_type_id(HORIZONTAL_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            0,
-        );
-        let entity = cadmpeg_ir::sketches::SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
-                .expect("entity id"),
-            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
-            cadmpeg_ir::sketches::SketchGeometry::try_from(
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
-                    position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                },
-            )
-            .expect("point geometry"),
-        );
-        let entities = std::collections::BTreeMap::from([(("segment", 0), &entity)]);
-        let parameters = std::collections::HashMap::new();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()) - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
-            Some(Err(CodecError::ResourceLimit(limit)))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor sketch constraint entity id"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters)
-                .expect("horizontal constraint projects")
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn sketch_constraint_projection_refuses_entity_limit_before_creation() {
-        let mut bytes = constraint_header(0, 0);
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.push(1);
-        let payload = parse(&bytes, |ctx, source| {
-            parse_constraint(ctx, SketchConstraintTag::Horizontal, source, 22)
-                .expect("horizontal constraint")
-        });
-        let constraint = Located::new(
-            payload,
-            fixture_record_type_id(HORIZONTAL_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            0,
-        );
-        let entity = cadmpeg_ir::sketches::SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
-                .expect("entity id"),
-            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
-            cadmpeg_ir::sketches::SketchGeometry::try_from(
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
-                    position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                },
-            )
-            .expect("point geometry"),
-        );
-        let entities = std::collections::BTreeMap::from([(("segment", 0), &entity)]);
-        let parameters = std::collections::HashMap::new();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
-            Some(Err(CodecError::ResourceLimit(limit)))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "project Inventor sketch constraint"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
-            Some(Ok(_))
-        ));
-    }
-
-    fn inventory_with_record(
-        type_id: [u8; 16],
-        payload: &[u8],
-        policy: DecodePolicy,
-    ) -> Result<SketchInventory, CodecError> {
-        let bytes = primary_envelope_fixture();
-        let payload = payload.to_vec();
-        let arena = DecodeArena::new();
-        let (setup_ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("envelope view");
-        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
-        let segment = &mut container.rse.segments[0];
-        segment.kind = SegmentKind::PmDc;
-        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-            panic!("framed bulk fixture");
-        };
-        let RecordFrameState::Framed(table) = &mut bulk.records else {
-            panic!("framed record fixture");
-        };
-        table.records[0].type_id = type_id;
-        table.records[0].payload = View::over_retained(&payload);
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        inventory(&ctx, &container.rse)
-    }
-
-    #[test]
-    fn sketch_transform_record_refuses_collection_limit_before_push() {
-        let mut payload = content(0);
-        payload.extend_from_slice(&0x8421u16.to_le_bytes());
-        payload.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        assert_eq!(
-            inventory_with_record(TRANSFORM_TYPE, &payload, DecodePolicy::service())
-                .expect("transform is admitted")
-                .transforms
-                .len(),
-            1
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc transform record"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn sketch_transform_record_refuses_retained_limit_before_identity_copy() {
-        let mut payload = content(0);
-        payload.extend_from_slice(&0x8421u16.to_le_bytes());
-        payload.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 31;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record type id"
-                    && limit.used == 0
-        ));
-        policy.limits.max_retained_bytes = 32;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record segment token"
-                    && limit.used == 32
-        ));
-    }
-
-    #[test]
-    fn sketch_parse_issue_refuses_collection_limit_before_push() {
-        let admitted = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-            .expect("truncated transform becomes an issue");
-        assert_eq!(admitted.issues.len(), 1);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc sketch issue"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn sketch_parse_issue_refuses_entity_limit_before_push() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Inventor PmDc sketch issue"
-        ));
-        assert_eq!(
-            inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-                .expect("service issue")
-                .issues
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn sketch_parse_issue_copies_refuse_retained_limits_before_creation() {
-        let issue = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-            .expect("truncated transform becomes an issue")
-            .issues
-            .remove(0);
-        let detail_len = issue.detail.len();
-        let token_len = issue.segment_token.as_str().len();
-        let type_id_len = 32;
-        // Retained bytes count the owned type id, segment token, detail, and four issue slots.
-        for (limit_bytes, operation, used) in [
-            (
-                type_id_len - 1,
-                "retain Inventor PmDc sketch issue type id",
-                0,
-            ),
-            (
-                type_id_len + token_len - 1,
-                "retain Inventor PmDc sketch issue segment token",
-                type_id_len,
-            ),
-            (
-                type_id_len + token_len + detail_len - 1,
-                "retain Inventor PmDc sketch issue detail",
-                type_id_len + token_len,
-            ),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
-            assert!(matches!(
-                inventory_with_record(TRANSFORM_TYPE, &[], policy),
-                Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
-            ));
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            type_id_len
-                + token_len
-                + detail_len
-                + 4 * std::mem::size_of::<crate::record_issue::RecordIssue>(),
-        );
-        assert_eq!(
-            inventory_with_record(TRANSFORM_TYPE, &[], policy)
-                .expect("type id, token, and detail fit their retained allowance")
-                .issues
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn sketch_record_forms_refuse_collection_limit_before_push() {
-        let mut sketch = content(0);
-        sketch.extend_from_slice(&0u32.to_le_bytes());
-        sketch.extend_from_slice(&0u32.to_le_bytes());
-        sketch.extend(list(8, &[]));
-        sketch.extend_from_slice(&[0; 16]);
-        let mut direction = content(0);
-        direction.extend_from_slice(&[0; 36]);
-        let mut constraint = constraint_header(0, 0);
-        constraint.extend_from_slice(&0u32.to_le_bytes());
-        constraint.push(1);
-        for (type_id, payload, operation) in [
-            (SKETCH_TYPE, sketch, "admit Inventor PmDc sketch record"),
-            (
-                POINT_TYPE,
-                point_bytes(0, 0, [0.0, 0.0]),
-                "admit Inventor PmDc sketch entity record",
-            ),
-            (
-                DIRECTION_TYPE,
-                direction,
-                "admit Inventor PmDc direction record",
-            ),
-            (
-                HORIZONTAL_TYPE,
-                constraint,
-                "admit Inventor PmDc sketch constraint record",
-            ),
-        ] {
-            let admitted = inventory_with_record(type_id, &payload, DecodePolicy::service())
-                .expect("sketch record is admitted");
-            assert_eq!(
-                admitted.sketches.len()
-                    + admitted.entities.len()
-                    + admitted.transforms.len()
-                    + admitted.directions.len()
-                    + admitted.constraints.len(),
-                1
-            );
-            assert!(admitted.issues.is_empty());
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            assert!(matches!(
-                inventory_with_record(type_id, &payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-                        && limit.used == 0
-            ));
-        }
-    }
-
-    fn list(marker: u16, references: &[u32]) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&marker.to_le_bytes());
-        bytes.extend_from_slice(&0x3000u16.to_le_bytes());
-        bytes.extend_from_slice(
-            &(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes(),
-        );
-        if !references.is_empty() {
-            if marker == 8 {
-                bytes.extend_from_slice(&0u16.to_le_bytes());
-                bytes.extend_from_slice(&0u16.to_le_bytes());
-            } else {
-                bytes.extend_from_slice(&0u32.to_le_bytes());
-                bytes.extend_from_slice(&0u32.to_le_bytes());
-            }
-            for reference in references {
-                bytes.extend_from_slice(&reference.to_le_bytes());
-            }
-        }
-        bytes
-    }
-
-    fn entity_prefix(index: u32, sketch: u32, flags: u32) -> Vec<u8> {
-        let mut bytes = content(index);
-        bytes.extend_from_slice(&flags.to_le_bytes());
-        bytes.extend_from_slice(&sketch.to_le_bytes());
-        bytes
-    }
-
-    fn point_bytes(index: u32, sketch: u32, position: [f64; 2]) -> Vec<u8> {
-        let mut bytes = entity_prefix(index, sketch, 0);
-        for value in position {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes.extend(list(2, &[]));
-        bytes.extend(list(2, &[]));
-        bytes
-    }
-
-    fn line_bytes(index: u32, sketch: u32, points: [u32; 2]) -> Vec<u8> {
-        let mut bytes = entity_prefix(index, sketch, 0);
-        bytes.extend(list(2, &points));
-        bytes.extend(list(2, &[]));
-        bytes.extend_from_slice(&0.0f64.to_le_bytes());
-        bytes.extend_from_slice(&0.0f64.to_le_bytes());
-        bytes.extend_from_slice(&1.0f64.to_le_bytes());
-        bytes.extend_from_slice(&0.0f64.to_le_bytes());
-        bytes
-    }
-
-    fn constraint_header(index: u32, parameter: u32) -> Vec<u8> {
-        let mut bytes = content(index);
-        bytes.extend_from_slice(&(-1i32).to_le_bytes());
-        bytes.extend_from_slice(&0x8000_000cu32.to_le_bytes());
-        bytes.extend(list(6, &[]));
-        bytes.extend(list(6, &[]));
-        bytes.extend_from_slice(&parameter.to_le_bytes());
-        bytes
-    }
-
-    fn legacy_constraint_header(index: u32, parameter: u32) -> Vec<u8> {
-        let mut bytes = content(index);
-        bytes.extend_from_slice(&(-1i32).to_le_bytes());
-        bytes.extend_from_slice(&0x8000_000cu32.to_le_bytes());
-        bytes.extend_from_slice(&parameter.to_le_bytes());
-        bytes
-    }
-
-    #[test]
-    fn parses_generated_planar_geometry_branches() {
-        let point = point_bytes(1, 3, [1.25, -2.5]);
-        let parsed = parse(&point, |ctx, source| {
-            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcSketchEntityKind::Point {
-                position,
-                ..
-            } if position.map(FiniteReal::get) == [1.25, -2.5]
-        ));
-
-        let line = line_bytes(2, 3, [4, 5]);
-        let parsed = parse(&line, |ctx, source| {
-            parse_entity(ctx, SketchEntityTag::Line, source, 22).expect("line")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcSketchEntityKind::Line { ref points, .. }
-                if points.references().iter().map(|value| value.index()).collect::<Vec<_>>() == [4, 5]
-        ));
-
-        let mut circle = entity_prefix(3, 3, 0);
-        circle.extend(list(2, &[]));
-        circle.extend(list(2, &[]));
-        circle.extend_from_slice(&4u32.to_le_bytes());
-        circle.extend_from_slice(&2.5f64.to_le_bytes());
-        circle.push(1);
-        let parsed = parse(&circle, |ctx, source| {
-            parse_entity(ctx, SketchEntityTag::Circle, source, 22).expect("circle")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcSketchEntityKind::Circle { radius, .. } if radius.get() == 2.5
-        ));
-
-        let mut ellipse = entity_prefix(4, 3, 0);
-        ellipse.extend(list(2, &[]));
-        ellipse.extend(list(2, &[]));
-        ellipse.extend_from_slice(&4u32.to_le_bytes());
-        ellipse.extend_from_slice(&1.0f64.to_le_bytes());
-        ellipse.extend_from_slice(&0.0f64.to_le_bytes());
-        ellipse.extend_from_slice(&3.0f64.to_le_bytes());
-        ellipse.extend_from_slice(&2.0f64.to_le_bytes());
-        ellipse.push(0);
-        let parsed = parse(&ellipse, |ctx, source| {
-            parse_entity(ctx, SketchEntityTag::Ellipse, source, 22).expect("ellipse")
-        });
-        assert!(matches!(
-            parsed.kind,
-            PmDcSketchEntityKind::Ellipse {
-                major_radius,
-                minor_radius,
-                ..
-            } if major_radius.get() == 3.0 && minor_radius.get() == 2.0
-        ));
-    }
-
-    #[test]
-    fn parses_generated_constraint_branches() {
-        for (type_id, tail, expected) in [
-            (SketchConstraintTag::Coincident, vec![4, 5], "coincident"),
-            (SketchConstraintTag::Parallel, vec![4, 5, 0], "parallel"),
-            (
-                SketchConstraintTag::Perpendicular,
-                vec![4, 5, 0],
-                "perpendicular",
-            ),
-            (SketchConstraintTag::Tangent, vec![4, 5, 0], "tangent"),
-        ] {
-            let mut bytes = constraint_header(9, 0);
-            for (index, value) in tail.into_iter().enumerate() {
-                if index == 2 && matches!(expected, "parallel" | "perpendicular") {
-                    bytes.extend_from_slice(
-                        &(u16::try_from(value).expect("fixture value fits u16")).to_le_bytes(),
-                    );
-                } else {
-                    bytes.extend_from_slice(
-                        &(u32::try_from(value).expect("fixture value fits u32")).to_le_bytes(),
-                    );
-                }
-            }
-            let parsed = parse(&bytes, |ctx, source| {
-                parse_constraint(ctx, type_id, source, 22).expect(expected)
-            });
-            assert_eq!(
-                match parsed.kind {
-                    PmDcSketchConstraintKind::Coincident { .. } => "coincident",
-                    PmDcSketchConstraintKind::Parallel { .. } => "parallel",
-                    PmDcSketchConstraintKind::Perpendicular { .. } => "perpendicular",
-                    PmDcSketchConstraintKind::Tangent { .. } => "tangent",
-                    _ => "unexpected",
-                },
-                expected
-            );
-        }
-
-        for (type_id, expected) in [
-            (SketchConstraintTag::Horizontal, true),
-            (SketchConstraintTag::Vertical, false),
-        ] {
-            let mut bytes = constraint_header(10, 0);
-            bytes.extend_from_slice(&4u32.to_le_bytes());
-            bytes.push(1);
-            let parsed = parse(&bytes, |ctx, source| {
-                parse_constraint(ctx, type_id, source, 22).expect("axis constraint")
-            });
-            assert_eq!(
-                matches!(parsed.kind, PmDcSketchConstraintKind::Horizontal { .. }),
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn parses_generated_legacy_constraint_header_without_maps() {
-        let mut bytes = legacy_constraint_header(9, 0);
-        bytes.extend_from_slice(&4u32.to_le_bytes());
-        bytes.extend_from_slice(&5u32.to_le_bytes());
-        let parsed = parse(&bytes, |ctx, source| {
-            parse_constraint(ctx, SketchConstraintTag::Coincident, source, 16)
-                .expect("legacy coincident")
-        });
-        assert!(parsed.header.scalar_map.entries().is_empty());
-        assert!(parsed.header.reference_map.entries().is_empty());
-        assert!(matches!(
-            parsed.kind,
-            PmDcSketchConstraintKind::Coincident { first, second }
-                if first.index() == 4 && second.index() == 5
-        ));
-    }
-
-    #[test]
-    fn parses_generated_dimensional_constraint_branches() {
-        for type_id in [
-            SketchConstraintTag::HorizontalDistance,
-            SketchConstraintTag::VerticalDistance,
-        ] {
-            let mut bytes = constraint_header(11, 0);
-            bytes.extend_from_slice(&4u32.to_le_bytes());
-            bytes.extend_from_slice(&5u32.to_le_bytes());
-            bytes.extend_from_slice(&12u32.to_le_bytes());
-            bytes.extend_from_slice(&[0; 16]);
-            parse(&bytes, |ctx, source| {
-                parse_constraint(ctx, type_id, source, 22).expect("distance constraint")
-            });
-        }
-        let mut radius = constraint_header(12, 13);
-        radius.extend_from_slice(&0u32.to_le_bytes());
-        radius.extend_from_slice(&4u32.to_le_bytes());
-        radius.extend_from_slice(&[0; 16]);
-        parse(&radius, |ctx, source| {
-            parse_constraint(ctx, SketchConstraintTag::Radius, source, 22).expect("radius")
-        });
-
-        let mut diameter = constraint_header(13, 14);
-        diameter.extend_from_slice(&0u32.to_le_bytes());
-        diameter.extend_from_slice(&4u32.to_le_bytes());
-        diameter.extend_from_slice(&[0; 16]);
-        parse(&diameter, |ctx, source| {
-            parse_constraint(ctx, SketchConstraintTag::Diameter, source, 22).expect("diameter")
-        });
-
-        for type_id in [
-            SketchConstraintTag::CircleCenter,
-            SketchConstraintTag::EqualRadius,
-        ] {
-            let mut bytes = constraint_header(14, 0);
-            bytes.extend_from_slice(&4u32.to_le_bytes());
-            bytes.extend_from_slice(&5u32.to_le_bytes());
-            parse(&bytes, |ctx, source| {
-                parse_constraint(ctx, type_id, source, 22).expect("circle relation")
-            });
-        }
-    }
-
-    #[test]
-    fn projects_generated_closed_square_and_resolved_plane() {
-        let mut transform = parse(
-            &{
-                let mut bytes = content(0);
-                bytes.extend_from_slice(&0x8421u16.to_le_bytes());
-                bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
-                bytes
-            },
-            |ctx, source| parse_transform(ctx, source, 22).expect("transform"),
-        );
-        let direction = parse(
-            &{
-                let mut bytes = content(1);
-                bytes.extend_from_slice(&0u32.to_le_bytes());
-                bytes.extend_from_slice(&0.0f64.to_le_bytes());
-                bytes.extend_from_slice(&0.0f64.to_le_bytes());
-                bytes.extend_from_slice(&0.0f64.to_le_bytes());
-                bytes.extend_from_slice(&1.0f64.to_le_bytes());
-                bytes
-            },
-            |ctx, source| parse_direction(ctx, source, 22).expect("direction"),
-        );
-        let mut sketch_bytes = content(2);
-        sketch_bytes.extend_from_slice(&0i32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&8u32.to_le_bytes());
-        sketch_bytes.extend(list(8, &[4, 5, 6, 7, 8, 9, 10, 11]));
-        sketch_bytes.extend_from_slice(&1u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&2u32.to_le_bytes());
-        sketch_bytes.extend_from_slice(&[0; 8]);
-        sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
-            parse_sketch(ctx, source, 22).expect("sketch")
-        });
-        let points = [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]];
-        let mut entities = points
-            .into_iter()
-            .enumerate()
-            .map(|(index, position)| {
-                parse(
-                    &point_bytes(
-                        u32::try_from(index).expect("fixture value fits u32") + 3,
-                        3,
-                        position,
-                    ),
-                    |ctx, source| {
-                        parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-        for (index, endpoints) in [[4, 5], [5, 6], [6, 7], [7, 4]].into_iter().enumerate() {
-            let mut line = parse(
-                &line_bytes(
-                    u32::try_from(index).expect("fixture value fits u32") + 7,
-                    3,
-                    endpoints,
-                ),
-                |ctx, source| parse_entity(ctx, SketchEntityTag::Line, source, 22).expect("line"),
-            );
-            let start = points[cadmpeg_core::decode::index_from_u32(endpoints[0]) - 4];
-            let end = points[cadmpeg_core::decode::index_from_u32(endpoints[1]) - 4];
-            let PmDcSketchEntityKind::Line {
-                origin, direction, ..
-            } = &mut line.kind
-            else {
-                unreachable!("generated line")
-            };
-            *origin = start.map(real);
-            *direction = [real(end[0] - start[0]), real(end[1] - start[1])];
-            entities.push(line);
-        }
-        transform.header.source_index = 0;
-        let transform = Located::new(
-            transform,
-            fixture_record_type_id(TRANSFORM_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            0,
-        );
-        let direction = Located::new(
-            direction,
-            fixture_record_type_id(DIRECTION_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            1,
-        );
-        let located_sketch = Located::new(
-            sketch.clone(),
-            fixture_record_type_id(SKETCH_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            2,
-        );
-        let entities = entities
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| {
-                let type_id = if index < 4 { POINT_TYPE } else { LINE_TYPE };
-                Located::new(
-                    value,
-                    fixture_record_type_id(type_id),
-                    cadmpeg_ir::identity_key!("segment")
-                        .try_clone_for_decode(
-                            &cadmpeg_test_support::service_decode_context(),
-                            "Inventor located fixture token",
-                        )
-                        .expect("service fixture token"),
-                    u32::try_from(index).expect("fixture value fits u32") + 3,
-                )
-            })
-            .collect();
-        let mut inventory = SketchInventory {
-            sketches: vec![located_sketch],
-            entities,
-            transforms: vec![transform],
-            directions: vec![direction],
-            constraints: Vec::new(),
-            issues: Vec::new(),
-        };
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("projection context");
-        let projected = project(&ctx, &inventory, &[]).expect("sketch projection");
-        assert_eq!(projected.unresolved_sketches, 0);
-        assert_eq!(projected.unresolved_entities, 0);
-        assert_eq!(projected.sketches[0].profiles[0].len(), 4);
-        assert!(matches!(
-            projected.sketches[0].placement,
-            SketchPlacement::Resolved { .. }
-        ));
-
-        let mut mapped_constraint = content(11);
-        mapped_constraint.extend_from_slice(&(-1i32).to_le_bytes());
-        mapped_constraint.extend_from_slice(&0u32.to_le_bytes());
-        mapped_constraint.extend_from_slice(&6u16.to_le_bytes());
-        mapped_constraint.extend_from_slice(&0x3000u16.to_le_bytes());
-        mapped_constraint.extend_from_slice(&1u32.to_le_bytes());
-        mapped_constraint.extend_from_slice(&[0; 8]);
-        mapped_constraint.extend_from_slice(&4u32.to_le_bytes());
-        mapped_constraint.extend_from_slice(&0.5f64.to_le_bytes());
-        mapped_constraint.extend(list(6, &[]));
-        mapped_constraint.extend_from_slice(&0u32.to_le_bytes());
-        mapped_constraint.extend_from_slice(&4u32.to_le_bytes());
-        mapped_constraint.extend_from_slice(&5u32.to_le_bytes());
-        let mapped_constraint = parse(&mapped_constraint, |ctx, source| {
-            parse_constraint(ctx, SketchConstraintTag::Coincident, source, 22)
-                .expect("mapped coincident")
-        });
-        inventory.constraints.push(Located::new(
-            mapped_constraint,
-            fixture_record_type_id(COINCIDENT_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            11,
-        ));
-        let mut sketch = sketch;
-        let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
-        references.push(PmDcReference::new(12, false).expect("test reference index fits 31 bits"));
-        sketch.entities =
-            PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
-        inventory.sketches[0] = Located::new(
-            sketch,
-            fixture_record_type_id(SKETCH_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            2,
-        );
-        let incomplete = project(&ctx, &inventory, &[]).expect("incomplete sketch projection");
-        assert_eq!(incomplete.unresolved_sketches, 1);
-        assert_eq!(incomplete.unresolved_constraints, 1);
-        assert!(incomplete.sketches.is_empty());
-        assert!(incomplete.entities.is_empty());
-    }
-    #[test]
-    fn point_tail_wire_requires_both_fields() {
-        let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
-        let mut wire = serde_json::json!({
-            "form": "point", "position": [0.0, 0.0],
-            "endpoint_of": list.clone(), "center_of": list.clone(),
-            "state": null, "associations": null
-        });
-        let point: PmDcSketchEntityKind =
-            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
-        assert_eq!(
-            serde_json::to_value(point).expect("paired point fixture round-trips"),
-            wire
-        );
-        wire["state"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
-        wire["associations"] = list;
-        let point: PmDcSketchEntityKind =
-            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
-        assert_eq!(
-            serde_json::to_value(point).expect("paired point fixture round-trips"),
-            wire
-        );
-        wire["state"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire).is_err());
-    }
-    #[test]
-    fn transform_prefix_wire_is_constant_or_absent() {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let mut bytes = content(1);
-        bytes.extend_from_slice(&0x8421u16.to_le_bytes());
-        bytes.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        let transform = parse(&bytes, |ctx, source| {
-            parse_transform(ctx, source, 22).expect("constant-prefix transform fixture is valid")
-        });
-        let mut wire =
-            serde_json::to_value(transform).expect("constant-prefix transform fixture is valid");
-        for (prefix, present) in [
-            (serde_json::Value::Null, false),
-            (serde_json::json!(515), true),
-        ] {
-            wire["prefix"] = prefix;
-            let parsed: PmDcTransformPayload =
-                serde_json::from_value::<PmDcTransformPayloadWire>(wire.clone())
-                    .expect("constant-prefix transform fixture is valid")
-                    .into_payload(&ctx)
-                    .expect("constant-prefix transform fixture is valid");
-            assert_eq!(parsed.prefix_present, present);
-            assert_eq!(
-                serde_json::to_value(parsed).expect("constant-prefix transform fixture is valid"),
-                wire
-            );
-        }
-        wire["prefix"] = serde_json::json!(516);
-        assert!(
-            serde_json::from_value::<PmDcTransformPayloadWire>(wire.clone())
-                .expect("transform wire fixture is valid")
-                .into_payload(&ctx)
-                .is_err()
-        );
-        wire.as_object_mut()
-            .expect("constant-prefix transform fixture is valid")
-            .remove("prefix");
-        assert!(
-            !serde_json::from_value::<PmDcTransformPayloadWire>(wire)
-                .expect("constant-prefix transform fixture is valid")
-                .into_payload(&ctx)
-                .expect("constant-prefix transform fixture is valid")
-                .prefix_present
-        );
-    }
-    #[test]
-    fn large_collinear_sketch_carrier_matches() {
-        assert!(super::line_carrier_matches(
-            [0., 0.],
-            [1e200, 1e200],
-            [1e200, 1e200],
-            [2e200, 2e200]
-        ));
-        assert!(!super::line_carrier_matches(
-            [0., 0.],
-            [1e200, 0.],
-            [0., 0.],
-            [0., 1e200]
-        ));
-    }
-
-    #[test]
-    fn sketch_carrier_agreement_is_independent_of_scale() {
-        for scale in [f64::from_bits(1), 5e-11, 1.0, 1e200] {
-            assert!(super::line_carrier_matches(
-                [0.0, 0.0],
-                [scale, 0.0],
-                [scale, 0.0],
-                [2.0 * scale, 0.0],
-            ));
-            assert!(super::line_carrier_matches(
-                [0.0, 0.0],
-                [scale, 0.0],
-                [0.0, 0.0],
-                [scale, 0.0],
-            ));
-            assert!(!super::line_carrier_matches(
-                [0.0, 0.0],
-                [scale, 0.0],
-                [0.0, scale],
-                [scale, scale],
-            ));
-        }
-        for invalid in [0.0, f64::NAN, f64::INFINITY] {
-            assert!(!super::line_carrier_matches(
-                [0.0, 0.0],
-                [invalid, 0.0],
-                [0.0, 0.0],
-                [1.0, 0.0],
-            ));
-        }
-    }
-    #[test]
-    fn audit_regression_distant_parallel_segment_is_not_on_carrier() {
-        for origin in [[0., 0.], [1e12, 0.]] {
-            assert!(!super::line_carrier_matches(
-                origin,
-                [1., 0.],
-                [1e12, 1.],
-                [1e12 + 1., 1.]
-            ));
-            assert!(super::line_carrier_matches(
-                origin,
-                [1., 0.],
-                [1e12, 0.],
-                [1e12 + 1., 0.]
-            ));
-        }
-    }
-    #[test]
-    fn audit_regression_distant_oblique_point_keeps_stored_direction_ratio() {
-        assert!(super::line_carrier_matches(
-            [0., 0.],
-            [1., 12.],
-            [1e12, 12e12],
-            [1e12 + 1., 12e12 + 12.]
-        ));
-        assert!(!super::line_carrier_matches(
-            [0., 0.],
-            [1., 12.],
-            [1e12, 12e12 + 1.],
-            [1e12 + 1., 12e12 + 13.]
-        ));
-    }
-
-    mod serialization;
-}
+mod tests;

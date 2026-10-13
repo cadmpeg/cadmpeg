@@ -21,9 +21,11 @@ pub(crate) fn named_scalars_charged(
     parent: &str,
     names: &[FeatureInputName],
 ) -> Result<Vec<FeatureInputScalar>, CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx
+        .rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?
+        .map_or(parent, |(_, key)| key);
     let mut scalars = Vec::new();
-    for name in names {
+    for name in ctx.admit_iter(names, "collect SLDPRT named scalars")? {
         let Some(name_offset) = usize::try_from(name.offset).ok() else {
             continue;
         };
@@ -48,41 +50,32 @@ pub(crate) fn named_scalars_charged(
         let offset = u64::try_from(value_offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
         })?;
-        let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
+        let operands = scalar_operands_charged(ctx, payload, trailer_offset, lane_key)?;
         let id = ctx.format_retained(
             format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
             "retain SLDPRT scalar identity",
         )?;
-        let parent = copy_scalar_text(ctx, parent)?;
-        let name_id = copy_scalar_text(ctx, &name.id)?;
-        ctx.reserve_vec(&mut scalars, 1, "collect SLDPRT named scalars")?;
-        scalars.push(FeatureInputScalar {
-            id,
-            parent,
-            feature_ref: None,
-            ordinal,
-            offset,
-            object_id,
-            name: name_id,
-            value,
-            role: scalar_role(payload, trailer_offset),
-            operands,
-        });
+        let parent = ctx.copy_retained_text(parent, "retain SLDPRT scalar identity")?;
+        let name_id = ctx.copy_retained_text(&name.id, "retain SLDPRT scalar identity")?;
+        let role = scalar_role(payload, trailer_offset);
+        ctx.push_vec(
+            &mut scalars,
+            FeatureInputScalar {
+                id,
+                parent,
+                feature_ref: None,
+                ordinal,
+                offset,
+                object_id,
+                name: name_id,
+                value,
+                role,
+                operands,
+            },
+            "collect SLDPRT named scalars",
+        )?;
     }
     Ok(scalars)
-}
-
-fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(copy_work, "retain SLDPRT scalar identity")?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, text.len(), "retain SLDPRT scalar identity")?;
-    copy.push_str(text);
-    Ok(copy)
 }
 
 /// The scalar payload offset that follows the serialized object name at
@@ -100,10 +93,11 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
         return Some(value_offset);
     }
     let compact_value_offset = header_offset.checked_add(COMPACT_SCALAR_HEADER.len())?;
-    if payload.get(header_offset..compact_value_offset) == Some(COMPACT_SCALAR_HEADER)
-        && compact_scalar_layout(payload, compact_value_offset.checked_add(8)?)
-    {
-        return Some(compact_value_offset);
+    if payload.get(header_offset..compact_value_offset) == Some(COMPACT_SCALAR_HEADER) {
+        let trailer_offset = compact_value_offset.checked_add(8)?;
+        if compact_scalar_layout(payload, trailer_offset) {
+            return Some(compact_value_offset);
+        }
     }
     let value_only_offset = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
     let shifted_value_offset = value_only_offset.checked_add(4)?;
@@ -119,23 +113,57 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
         .then_some(value_only_offset)
 }
 
+/// Whether two scalar indexes agree, field by field, with values within four
+/// units in the last place.
 pub(crate) fn scalar_indices_match(
+    ctx: &DecodeContext<'_>,
     actual: &[FeatureInputScalar],
     expected: &[FeatureInputScalar],
-) -> bool {
-    actual.len() == expected.len()
-        && actual.iter().zip(expected).all(|(actual, expected)| {
-            actual.id == expected.id
-                && actual.parent == expected.parent
-                && actual.feature_ref == expected.feature_ref
-                && actual.ordinal == expected.ordinal
-                && actual.offset == expected.offset
-                && actual.object_id == expected.object_id
-                && actual.name == expected.name
-                && ulp_distance(actual.value.get(), expected.value.get()) <= 4
-                && actual.role == expected.role
-                && actual.operands == expected.operands
-        })
+) -> Result<bool, CodecError> {
+    Ok(actual.len() == expected.len()
+        && ctx.all_by(
+            actual.iter().zip(expected),
+            |(actual, expected)| scalar_matches(ctx, actual, expected),
+            SCALAR_MATCH,
+        )?)
+}
+
+const SCALAR_MATCH: &str = "compare SLDPRT scalar indices";
+
+fn scalar_matches(
+    ctx: &DecodeContext<'_>,
+    actual: &FeatureInputScalar,
+    expected: &FeatureInputScalar,
+) -> Result<bool, CodecError> {
+    Ok(actual.ordinal == expected.ordinal
+        && actual.offset == expected.offset
+        && actual.object_id == expected.object_id
+        && ulp_distance(actual.value.get(), expected.value.get()) <= 4
+        && actual.role == expected.role
+        && actual.operands.len() == expected.operands.len()
+        && ctx.equal(actual.id.as_str(), expected.id.as_str(), SCALAR_MATCH)?
+        && ctx.equal(
+            actual.parent.as_str(),
+            expected.parent.as_str(),
+            SCALAR_MATCH,
+        )?
+        && ctx.equal(&actual.feature_ref, &expected.feature_ref, SCALAR_MATCH)?
+        && ctx.equal(actual.name.as_str(), expected.name.as_str(), SCALAR_MATCH)?
+        && ctx.all_by(
+            actual.operands.iter().zip(&expected.operands),
+            |(actual, expected)| {
+                Ok(actual.offset == expected.offset
+                    && actual.kind == expected.kind
+                    && actual.entity_index == expected.entity_index
+                    && ctx.equal(
+                        actual.reference_ref.as_str(),
+                        expected.reference_ref.as_str(),
+                        SCALAR_MATCH,
+                    )?
+                    && ctx.equal(&actual.entity_ref, &expected.entity_ref, SCALAR_MATCH)?)
+            },
+            SCALAR_MATCH,
+        )?)
 }
 
 fn ulp_distance(left: f64, right: f64) -> u64 {
@@ -154,11 +182,14 @@ fn scalar_operands_charged(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     trailer_offset: usize,
-    parent: &str,
+    lane_key: &str,
 ) -> Result<Vec<FeatureInputOperand>, CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut operands = Vec::new();
-    for (offset, kind, entity_index) in operand_cells(payload, trailer_offset).into_iter().flatten()
+    for ScalarOperandCell {
+        offset,
+        kind,
+        entity_index,
+    } in operand_cells(payload, trailer_offset).into_iter().flatten()
     {
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
@@ -167,22 +198,28 @@ fn scalar_operands_charged(
             format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
             "retain SLDPRT scalar identity",
         )?;
-        ctx.reserve_vec(&mut operands, 1, "collect SLDPRT scalar operands")?;
-        operands.push(FeatureInputOperand {
-            offset: offset_u64,
-            reference_ref,
-            kind,
-            entity_index,
-            entity_ref: None,
-        });
+        ctx.push_vec(
+            &mut operands,
+            FeatureInputOperand {
+                offset: offset_u64,
+                reference_ref,
+                kind,
+                entity_index,
+                entity_ref: None,
+            },
+            "collect SLDPRT scalar operands",
+        )?;
     }
     Ok(operands)
 }
 
-fn operand_cells(
-    payload: &[u8],
-    trailer_offset: usize,
-) -> [Option<(usize, FeatureInputOperandKind, u16)>; 2] {
+struct ScalarOperandCell {
+    offset: usize,
+    kind: FeatureInputOperandKind,
+    entity_index: u16,
+}
+
+fn operand_cells(payload: &[u8], trailer_offset: usize) -> [Option<ScalarOperandCell>; 2] {
     let compact = compact_scalar_layout(payload, trailer_offset);
     let first = if compact || !legacy_scalar_layout(payload, trailer_offset) {
         35
@@ -201,11 +238,11 @@ fn operand_cells(
             if cell[4..8] != [0xff; 4] {
                 return None;
             }
-            return Some((
+            return Some(ScalarOperandCell {
                 offset,
-                operand_kind([cell[0], cell[1]])?,
-                View::u16_le_at(cell, 2)?,
-            ));
+                kind: operand_kind([cell[0], cell[1]])?,
+                entity_index: View::u16_le_at(cell, 2)?,
+            });
         }
         let cell = payload.get(offset..offset.checked_add(operand_cell::LEN)?)?;
         if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
@@ -213,14 +250,14 @@ fn operand_cells(
         {
             return None;
         }
-        Some((
+        Some(ScalarOperandCell {
             offset,
-            operand_kind([
+            kind: operand_kind([
                 cell[operand_cell::CLASS_TOKEN],
                 cell[operand_cell::CLASS_TOKEN + 1],
             ])?,
-            View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
-        ))
+            entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
+        })
     })
 }
 
@@ -232,6 +269,154 @@ pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
         bytes => Some(FeatureInputOperandKind::Native(
             View::u16_le_at(&bytes, 0)?.try_into().ok()?,
         )),
+    }
+}
+
+struct SourceNames<'lane, 'ctx> {
+    index: Option<std::collections::HashMap<u32, Option<&'lane FeatureInputName>>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+struct TextNames<'lane, 'ctx> {
+    index: std::collections::HashMap<&'lane str, Option<&'lane FeatureInputName>>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+/// The serialized object name of each history feature in one lane, indexed
+/// once so a feature's name is a keyed lookup rather than a scan of the lane.
+///
+/// A feature's name is the one lane name carrying its source object id; when
+/// no name carries that id, it is the one name whose text equals the feature
+/// name. A repeated id or text names no feature.
+pub(crate) struct ObjectNames<'lane, 'ctx> {
+    ctx: &'ctx DecodeContext<'ctx>,
+    lane: &'lane FeatureInputLane,
+    by_object: std::cell::RefCell<SourceNames<'lane, 'ctx>>,
+    by_value: std::cell::RefCell<Option<TextNames<'lane, 'ctx>>>,
+}
+
+impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
+    pub(crate) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        lane: &'lane FeatureInputLane,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            ctx,
+            lane,
+            by_object: std::cell::RefCell::new(SourceNames {
+                index: None,
+                storage: ctx.reserve_scoped(0, "index SLDPRT object names by id")?,
+            }),
+            by_value: std::cell::RefCell::new(None),
+        })
+    }
+
+    /// The lane name that serializes `feature`'s object.
+    pub(crate) fn of(
+        &self,
+        ctx: &DecodeContext<'_>,
+        feature: &crate::records::Feature,
+    ) -> Result<Option<&'lane FeatureInputName>, CodecError> {
+        Ok(match self.lookup(ctx, feature)? {
+            NameLookup::One(name) => Some(name),
+            NameLookup::Absent | NameLookup::Repeated => None,
+        })
+    }
+
+    /// The lane names that could serialize `feature`'s object: those with its
+    /// object id, or, when no name carries that id, those with its text.
+    pub(crate) fn lookup(
+        &self,
+        ctx: &DecodeContext<'_>,
+        feature: &crate::records::Feature,
+    ) -> Result<NameLookup<'lane>, CodecError> {
+        if let Some(source_id) = feature.source_value() {
+            let mut source_names = self.by_object.borrow_mut();
+            if source_names.index.is_none() {
+                const OPERATION: &str = "index SLDPRT object names by id";
+                let mut index_storage = self.ctx.reserve_scoped(0, OPERATION)?;
+                let mut index = std::collections::HashMap::new();
+                for name in self.ctx.admit_iter(&self.lane.names, OPERATION)? {
+                    let Some(source) = name.object_id.and_then(ObjectId::value) else {
+                        continue;
+                    };
+                    if let Some(previous) =
+                        self.ctx.get_mut_hash_map(&mut index, &source, OPERATION)?
+                    {
+                        *previous = None;
+                    } else {
+                        index_storage.with_storage(|| {
+                            self.ctx
+                                .insert_hash_map(&mut index, source, Some(name), OPERATION)
+                        })?;
+                    }
+                }
+                source_names.storage.absorb(&mut index_storage)?;
+                source_names.index = Some(index);
+            }
+            if let Some(index) = &source_names.index {
+                if let Some(name) =
+                    ctx.get_hash_map(index, &source_id, "find SLDPRT object name by id")?
+                {
+                    return Ok(NameLookup::from_unique(*name));
+                }
+            }
+        }
+        let mut text_names = self.by_value.borrow_mut();
+        let names = match &*text_names {
+            Some(names) => names,
+            None => {
+                let (index, storage) = self.ctx.unique_index(
+                    self.lane
+                        .names
+                        .iter()
+                        .map(|name| (name.value.as_str(), name)),
+                    "index SLDPRT object names by text",
+                )?;
+                text_names.insert(TextNames {
+                    index,
+                    _storage: storage,
+                })
+            }
+        };
+        Ok(
+            match ctx.get_hash_map(
+                &names.index,
+                feature.name.as_str(),
+                "find SLDPRT object name by text",
+            )? {
+                Some(name) => NameLookup::from_unique(*name),
+                None => NameLookup::Absent,
+            },
+        )
+    }
+}
+
+/// The object-name index of each lane, in lane order.
+pub(crate) fn lane_object_names<'lane, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    lanes: &'lane [FeatureInputLane],
+) -> Result<Vec<ObjectNames<'lane, 'ctx>>, CodecError> {
+    const OPERATION: &str = "index SLDPRT lane object names";
+    let mut indexes = Vec::new();
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let names = ObjectNames::new(ctx, lane)?;
+        storage.with_storage(|| ctx.push_vec(&mut indexes, names, OPERATION))?;
+    }
+    Ok(indexes)
+}
+
+/// How many lane names could serialize one feature's object.
+pub(crate) enum NameLookup<'lane> {
+    Absent,
+    One(&'lane FeatureInputName),
+    Repeated,
+}
+
+impl<'lane> NameLookup<'lane> {
+    fn from_unique(name: Option<&'lane FeatureInputName>) -> Self {
+        name.map_or(Self::Repeated, Self::One)
     }
 }
 

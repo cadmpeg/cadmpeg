@@ -3,8 +3,12 @@
 
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::iter_wire::IterWire;
+use cadmpeg_core::decode::cost::DecodeCost;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "StateWire")]
@@ -30,6 +34,24 @@ pub(crate) struct AttdefSlots {
     active_count: u32,
     slot_count: u32,
 }
+impl DecodeCost for AttdefState {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (u32::from(self.xmt), &self.slots).decode_cost(ctx, operation)
+    }
+}
+impl DecodeCost for AttdefSlots {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.references, self.active_count, self.slot_count).decode_cost(ctx, operation)
+    }
+}
 impl AttdefState {
     pub(super) fn new(
         xmt: u32,
@@ -41,6 +63,34 @@ impl AttdefState {
             xmt: NonNullXmt::try_from(xmt)?,
             slots: AttdefSlots::new(slot_count, active_count, references)?,
         })
+    }
+    pub(super) fn from_wire(
+        ctx: &DecodeContext<'_>,
+        xmt: u32,
+        slot_count: u32,
+        active_count: u32,
+        references: Vec<u32>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        let xmt = match NonNullXmt::try_from(xmt) {
+            Ok(xmt) => xmt,
+            Err(error) => return Ok(Err(error)),
+        };
+        let validation =
+            validate_slots(slot_count, active_count, &references, |values, invalid| {
+                ctx.any_by(
+                    values,
+                    |reference| Ok(invalid(reference)),
+                    "NX ATTDEF slot validation",
+                )
+            })?;
+        Ok(validation.map(|()| Self {
+            xmt,
+            slots: AttdefSlots {
+                references,
+                active_count,
+                slot_count,
+            },
+        }))
     }
     pub(super) fn xmt(&self) -> u32 {
         self.xmt.into()
@@ -61,24 +111,11 @@ impl AttdefState {
 
 impl AttdefSlots {
     fn new(slot_count: u32, active_count: u32, references: Vec<u32>) -> Result<Self, &'static str> {
-        if slot_count == 0 || u32::try_from(references.len()).ok() != Some(slot_count) {
-            return Err("slot_count: require a nonempty reference vector of the declared length");
-        }
-        if active_count > slot_count {
-            return Err("active_count: exceeds slot_count");
-        }
-        let active_len = cadmpeg_core::decode::index_from_u32(active_count);
-        if references[active_len..]
-            .iter()
-            .any(|reference| *reference != 1)
-        {
-            return Err("references: inactive slots must be null");
-        }
-        if references[..active_len]
-            .iter()
-            .any(|reference| NonNullXmt::try_from(*reference).is_err())
-        {
-            return Err("references: active slots must be non-null");
+        match validate_slots(slot_count, active_count, &references, |values, invalid| {
+            Ok::<_, Infallible>(values.iter().any(invalid))
+        }) {
+            Ok(validation) => validation?,
+            Err(never) => match never {},
         }
         Ok(Self {
             references,
@@ -113,6 +150,31 @@ impl AttdefSlots {
     pub(super) fn references(&self) -> impl Iterator<Item = u32> + Clone + '_ {
         self.references.iter().copied()
     }
+}
+fn validate_slots<E>(
+    slot_count: u32,
+    active_count: u32,
+    references: &[u32],
+    mut any_invalid: impl FnMut(&[u32], fn(&u32) -> bool) -> Result<bool, E>,
+) -> Result<Result<(), &'static str>, E> {
+    if slot_count == 0 || u32::try_from(references.len()).ok() != Some(slot_count) {
+        return Ok(Err(
+            "slot_count: require a nonempty reference vector of the declared length",
+        ));
+    }
+    if active_count > slot_count {
+        return Ok(Err("active_count: exceeds slot_count"));
+    }
+    let active_len = cadmpeg_core::decode::index_from_u32(active_count);
+    if any_invalid(&references[active_len..], |reference| *reference != 1)? {
+        return Ok(Err("references: inactive slots must be null"));
+    }
+    if any_invalid(&references[..active_len], |reference| {
+        NonNullXmt::try_from(*reference).is_err()
+    })? {
+        return Ok(Err("references: active slots must be non-null"));
+    }
+    Ok(Ok(()))
 }
 #[derive(Serialize, Deserialize)]
 struct StateWire {
@@ -197,5 +259,18 @@ mod tests {
             &record,
             serde_json::json!({"id":"nx:deltas:attdef#0","state":serde_json::from_str::<serde_json::Value>(json).unwrap()}),
         );
+    }
+    #[test]
+    fn attdef_slot_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX ATTDEF slot validation",
+            |ctx| AttdefState::from_wire(ctx, 2, 2, 1, vec![3, 1]),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX ATTDEF slot validation"));
     }
 }

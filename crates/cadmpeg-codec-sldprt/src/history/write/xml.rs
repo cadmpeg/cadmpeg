@@ -8,13 +8,14 @@ use cadmpeg_ir::features::{
 
 use crate::history::classify::extrude_op;
 
-pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
-    if let Some(tag) = feature
-        .source_tag
-        .as_ref()
-        .filter(|tag| valid_xml_name(tag))
-    {
-        return tag.clone();
+pub(super) fn feature_xml_tag(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &cadmpeg_ir::features::Feature,
+) -> Result<String, cadmpeg_core::CodecError> {
+    if let Some(tag) = feature.source_tag.as_ref() {
+        if valid_xml_name(ctx, tag)? {
+            return Ok(tag.clone());
+        }
     }
     let tag = match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::TreeNode { .. }) => "Feature",
@@ -136,7 +137,7 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
             "Extrusion"
         }
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
-            if valid_xml_name(kind.as_str()) =>
+            if valid_xml_name(ctx, kind.as_str())? =>
         {
             kind.as_str()
         }
@@ -158,14 +159,33 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         ) => "Feature",
         FeatureDefinition::Operation(_) => "Feature",
     };
-    tag.into()
+    Ok(tag.into())
 }
 
-pub(crate) fn valid_xml_name(name: &str) -> bool {
+pub(crate) fn valid_xml_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "scan SLDPRT XML name bytes";
     let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
-        && bytes
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+    let first = ctx.next_charged(&mut bytes, OPERATION)?;
+    Ok(first.is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
+        && ctx.all_by(bytes, |byte| {
+            Ok(byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+        }, OPERATION)?)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn xml_name_rejection_leaves_unvisited_suffix_unpaid() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let name = format!("-{}", "a".repeat(4096));
+        assert!(!super::valid_xml_name(&ctx, &name).unwrap());
+        assert!(ctx.resource_refusal().is_none());
+    }
 }

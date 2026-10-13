@@ -23,7 +23,8 @@ fn attach_one_attribute(configure: impl FnOnce(&mut DecodePolicy)) -> Result<Cad
             super::super::attach_part_attributes(
                 ctx,
                 &mut ir,
-                std::iter::once(("nx:part:attribute#0", "Title", "Value", 0)),
+                &[("nx:part:attribute#0", "Title", "Value", 0)],
+                |fields| *fields,
                 &mut annotations,
                 &stream,
             )?;
@@ -61,4 +62,16 @@ fn part_attribute_attachment_refuses_retained_limit() {
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
     );
+}
+
+#[test]
+fn part_attribute_identity_charges_only_extended_text() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "NX part attribute identity",
+        |cap| attach_one_attribute(|policy| policy.limits.max_retained_bytes = cap),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "NX part attribute identity"
+            && limit.additional == cadmpeg_core::decode::u64_from_index("nx:part:attribute#0:neutral".len())));
 }

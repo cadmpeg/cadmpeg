@@ -77,7 +77,9 @@ pub(crate) fn count_unresolved<C: Ord + cadmpeg_core::decode::cost::DecodeCost>(
     counts: &mut BTreeMap<C, NonZeroUsize>,
     cause: C,
 ) -> Result<(), CodecError> {
-    if let Some(count) = counts.get_mut(&cause) {
+    if let Some(count) =
+        ctx.get_mut_btree_map(counts, &cause, "count unresolved Inventor projection cause")?
+    {
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "count unresolved Inventor projection cause",
@@ -170,13 +172,19 @@ pub(crate) fn project_occurrences(
             .map(|record| (record.occurrence_id, record)),
         "index Inventor assembly placements",
     )?;
+    let mut emitted_ids_storage = ctx.reserve_scoped(0, "track Inventor emitted occurrence id")?;
     let mut emitted_ids = HashSet::new();
     let mut occurrences = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
 
-    for source in ctx.admit_iter(ufrx_occurrences, "visit Inventor assembly items")? {
-        let Some(reference) = references
-            .get(&source.file_reference_id)
+    let mut source_steps = ufrx_occurrences.iter();
+    while let Some(source) = ctx.next_charged(&mut source_steps, "visit Inventor assembly items")? {
+        let Some(reference) = ctx
+            .get_hash_map(
+                &references,
+                &source.file_reference_id,
+                "resolve Inventor external reference",
+            )?
             .and_then(Option::as_ref)
         else {
             count_unresolved(
@@ -186,8 +194,12 @@ pub(crate) fn project_occurrences(
             )?;
             continue;
         };
-        if occurrence_records
-            .get(&source.occurrence_id)
+        if ctx
+            .get_hash_map(
+                &occurrence_records,
+                &source.occurrence_id,
+                "resolve Inventor assembly occurrence",
+            )?
             .and_then(Option::as_ref)
             .is_none()
         {
@@ -198,7 +210,13 @@ pub(crate) fn project_occurrences(
             )?;
             continue;
         }
-        if emitted_ids.contains(&source.occurrence_id) {
+        if !emitted_ids_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut emitted_ids,
+                source.occurrence_id,
+                "track Inventor emitted occurrence id",
+            )
+        })? {
             count_unresolved(
                 ctx,
                 &mut unresolved_placements,
@@ -206,15 +224,13 @@ pub(crate) fn project_occurrences(
             )?;
             continue;
         }
-        ctx.insert_hash_set(
-            &mut emitted_ids,
-            source.occurrence_id,
-            "track Inventor emitted occurrence id",
-        )?;
-
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
-        let (transform, visible) = match placements
-            .get(&source.occurrence_id)
+        let (transform, visible) = match ctx
+            .get_hash_map(
+                &placements,
+                &source.occurrence_id,
+                "resolve Inventor assembly placement",
+            )?
             .and_then(Option::as_ref)
         {
             Some(placement) => {
@@ -248,28 +264,19 @@ pub(crate) fn project_occurrences(
         };
 
         ctx.charge_entities(1, "project Inventor occurrence")?;
-        let mut key_storage = ctx.reserve_scoped(0, "compose projected Inventor occurrence key")?;
-        let key = key_storage.with_storage(|| {
-            ctx.format_retained(
-                format_args!("{}", source.occurrence_id),
-                "compose projected Inventor occurrence key",
-            )
-        })?;
-        let id_text = ctx.format_retained(
-            format_args!("inventor:assembly:instance#{key}"),
+        // The prefix and at most ten decimal u32 digits have a fixed grammar.
+        let digits = usize::try_from(source.occurrence_id.max(1).ilog10())
+            .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?
+            + 1;
+        let mut id_text = ctx.retained_string(
+            "inventor:assembly:instance#".len() + digits,
             "retain projected Inventor occurrence id",
         )?;
-        let validation_work = id_text.len().checked_add(key.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "validate projected Inventor occurrence id",
-                u64::MAX,
-                u64::MAX,
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(validation_work),
-            "validate projected Inventor occurrence id",
-        )?;
+        std::fmt::write(
+            &mut id_text,
+            format_args!("inventor:assembly:instance#{}", source.occurrence_id),
+        )
+        .map_err(|_| CodecError::malformed("cannot format Inventor occurrence id"))?;
         let id = OccurrenceId::mint(id_text).map_err(CodecError::malformed)?;
         ctx.push_vec(
             &mut occurrences,
@@ -316,7 +323,10 @@ pub(crate) fn inventory<'a>(
     let mut occurrences = Vec::new();
     let mut placements = Vec::new();
     let mut issues = Vec::new();
-    for segment in ctx.admit_iter(&document.segments, "visit Inventor assembly items")? {
+    let mut segment_steps = document.segments.iter();
+    while let Some(segment) =
+        ctx.next_charged(&mut segment_steps, "visit Inventor assembly items")?
+    {
         let relevant = matches!(segment.kind, SegmentKind::AmDc | SegmentKind::AmGraphics);
         if !relevant {
             continue;
@@ -327,13 +337,12 @@ pub(crate) fn inventory<'a>(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
-        for record in ctx.admit_iter(&table.records, "visit Inventor assembly items")? {
-            let result = if ctx.equal(
-                &segment.kind,
-                &SegmentKind::AmDc,
-                "match Inventor assembly segment kind",
-            )? && record.type_id == OCCURRENCE_TYPE
-            {
+        let is_definition = matches!(segment.kind, SegmentKind::AmDc);
+        let mut record_steps = table.records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut record_steps, "visit Inventor assembly items")?
+        {
+            let result = if is_definition && record.type_id == OCCURRENCE_TYPE {
                 parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
                     occurrence.segment_token = ctx.copy_retained_text(
                         segment.pair.token.as_str(),
@@ -347,11 +356,8 @@ pub(crate) fn inventory<'a>(
                     )?;
                     Ok(())
                 })
-            } else if ctx.equal(
-                &segment.kind,
-                &SegmentKind::AmGraphics,
-                "match Inventor graphics segment kind",
-            )? && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
+            } else if !is_definition
+                && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
                 parse_placement(ctx, record.payload).and_then(|mut placement| {
                     placement.segment_token = ctx.copy_retained_text(
@@ -432,17 +438,33 @@ fn parse_occurrence<'a>(
         "occurrence related-list marker",
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
-    let mut related_references = ctx.vector_storage(
-        related_count,
-        "admit Inventor occurrence related references",
-    )?;
+    let mut related_references = Vec::new();
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
-        for _ in ctx.admit_iter(
-            &(0..related_count),
-            "visit Inventor occurrence related references",
-        )? {
+        // Each related reference is four bytes: a count the payload cannot
+        // hold is malformed before its storage or traversal is admitted.
+        if cursor
+            .source
+            .counted(cadmpeg_core::decode::u64_from_index(related_count), 4)
+            .is_none()
+        {
+            return Err(CodecError::malformed(
+                "Inventor occurrence related-list count exceeds remaining payload",
+            ));
+        }
+        related_references = ctx.vector_storage(
+            related_count,
+            "admit Inventor occurrence related references",
+        )?;
+        let mut reference_steps = 0..related_count;
+        while ctx
+            .next_charged(
+                &mut reference_steps,
+                "visit Inventor occurrence related references",
+            )?
+            .is_some()
+        {
             ctx.push_vec(
                 &mut related_references,
                 cursor.u32("occurrence related reference")?,
@@ -457,8 +479,9 @@ fn parse_occurrence<'a>(
         "occurrence identity mode",
     )?;
     let occurrence_id = cursor.u32("occurrence id")?;
-    let label = cursor.utf16(ctx, "occurrence record label", 256)?;
-    if label != "DCx" {
+    if let Some(label) =
+        cursor.utf16_label_mismatch(ctx, "occurrence record label", *b"D\0C\0x\0")?
+    {
         return Err(CodecError::malformed(format_args!(
             "Inventor occurrence record label is {label:?}, expected \"DCx\""
         )));
@@ -500,12 +523,13 @@ fn parse_placement<'a>(
     let owner_reference = cursor.u32("placement owner reference")?;
     let attribute_reference = cursor.u32("placement attribute reference")?;
     let state = cursor.u8("placement state")?;
-    let (transform_prefix, transform) = cursor.transform(ctx)?;
+    let (transform_prefix, transform) = cursor.transform()?;
     let branch = cursor.u8("placement branch")?;
     let graphics_state = cursor.u8("placement graphics state")?;
     let occurrence_id = cursor.u32("placement occurrence id")?;
-    let label = cursor.utf16(ctx, "placement record label", 256)?;
-    if label != "GRx" {
+    if let Some(label) =
+        cursor.utf16_label_mismatch(ctx, "placement record label", *b"G\0R\0x\0")?
+    {
         return Err(CodecError::malformed(format_args!(
             "Inventor placement record label is {label:?}, expected \"GRx\""
         )));
@@ -587,13 +611,20 @@ impl<'a> Cursor<'a> {
         Ok(value)
     }
 
-    fn utf16(
+    fn utf16_label_mismatch(
         &mut self,
         ctx: &DecodeContext<'_>,
         field: &'static str,
-        maximum: usize,
-    ) -> Result<String, CodecError> {
-        let count = self.count32(field, maximum)?;
+        expected: [u8; 6],
+    ) -> Result<Option<String>, CodecError> {
+        let count = self.count32(field, 256)?;
+        if count == 3 {
+            let mut candidate = self.source;
+            if candidate.array::<6>() == Some(expected) {
+                self.source = candidate;
+                return Ok(None);
+            }
+        }
         crate::reader::utf16_text(
             ctx,
             &mut self.source,
@@ -601,9 +632,10 @@ impl<'a> Cursor<'a> {
             field,
             "retain Inventor assembly string",
         )
+        .map(Some)
     }
 
-    fn transform(&mut self, ctx: &DecodeContext<'_>) -> Result<(bool, CompactMatrix), CodecError> {
+    fn transform(&mut self) -> Result<(bool, CompactMatrix), CodecError> {
         let mut peek = self.source;
         let prefixed = peek.u32_le() == Some(0x0000_0203);
         if prefixed {
@@ -613,7 +645,7 @@ impl<'a> Cursor<'a> {
         }
         let set = self.u16("placement transform set mask")?;
         let zero = self.u16("placement transform zero mask")?;
-        let matrix = CompactMatrix::try_new(ctx, set, zero, |index| {
+        let matrix = CompactMatrix::try_new(set, zero, |index| {
             let value = self.source.req_f64_le()?;
             cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
                 CodecError::malformed(format_args!("compact matrix[{index}] is not finite"))
@@ -670,17 +702,138 @@ mod tests {
             let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
                 .expect("test root fits input admission");
             let mut cursor = super::Cursor::new(root);
-            let result = cursor.utf16(&ctx, "label", 256);
+            let result = cursor.utf16_label_mismatch(&ctx, "label", *b"D\0C\0x\0");
             if retained == 2 {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
                 assert_eq!(cursor.source.position(), 4);
             } else {
-                assert_eq!(result.expect("three retained bytes fit exact text"), "ࠀ");
+                assert_eq!(
+                    result
+                        .expect("three retained bytes fit exact text")
+                        .expect("decoded label differs from DCx"),
+                    "ࠀ"
+                );
                 assert_eq!(cursor.source.position(), bytes.len());
                 assert!(ctx.charge_retained(1, "after assembly text").is_err());
             }
         }
+    }
+
+    #[test]
+    fn fixed_assembly_labels_need_no_text_storage_or_work() {
+        for (bytes, placement) in [
+            (occurrence_fixture(7, &[]), false),
+            (placement_fixture(7, false, 0x8421, 0x7bde, &[]), true),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("fixed-label record context");
+            if placement {
+                assert_eq!(
+                    parse_placement(&ctx, view)
+                        .expect("GRx placement")
+                        .occurrence_id,
+                    7
+                );
+            } else {
+                assert_eq!(
+                    parse_occurrence(&ctx, view)
+                        .expect("DCx occurrence")
+                        .occurrence_id,
+                    7
+                );
+            }
+            ctx.finish_session()
+                .expect("fixed label uses no variable work or storage");
+        }
+    }
+
+    #[test]
+    fn three_unit_label_mismatch_keeps_strict_text_admission() {
+        let mut bytes = Vec::new();
+        push_utf16(&mut bytes, "DCy");
+        for retained in [2, 3] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("label mismatch context");
+            let mut cursor = super::Cursor::new(view);
+            let result = cursor.utf16_label_mismatch(&ctx, "label", *b"D\0C\0x\0");
+            if retained == 2 {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.additional == 3));
+                assert_eq!(cursor.source.position(), 4);
+            } else {
+                assert_eq!(result.expect("three ASCII bytes fit"), Some("DCy".into()));
+                assert_eq!(cursor.source.position(), bytes.len());
+                ctx.finish_session()
+                    .expect("decoded mismatch is not a resource refusal");
+            }
+        }
+    }
+
+    #[test]
+    fn three_unit_label_fast_path_preserves_invalid_and_truncated_utf16() {
+        for bytes in [
+            vec![3, 0, 0, 0, 0, 0xd8, b'C', 0, b'x', 0],
+            vec![3, 0, 0, 0, b'D', 0, b'C', 0],
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("invalid label context");
+            let mut cursor = super::Cursor::new(view);
+            let result = cursor.utf16_label_mismatch(&ctx, "label", *b"D\0C\0x\0");
+            if bytes.len() == 10 {
+                assert!(matches!(result, Err(CodecError::Malformed(_))));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(CodecError::Truncated {
+                        operation: "label",
+                        ..
+                    })
+                ));
+            }
+            assert_eq!(cursor.source.position(), 4);
+            ctx.finish_session()
+                .expect("invalid label is not a resource refusal");
+        }
+    }
+
+    #[test]
+    fn unresolved_cause_lookup_refuses_before_increment() {
+        let mut counts = BTreeMap::from([(super::UnresolvedCause::Placement, NonZeroUsize::MIN)]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("cause lookup context");
+        let error = super::count_unresolved(&ctx, &mut counts, super::UnresolvedCause::Placement)
+            .expect_err("one-key lookup needs one enum comparison");
+        assert!(matches!(&error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "count unresolved Inventor projection cause"
+            && limit.used == 0
+            && limit.additional == cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<super::UnresolvedCause>()
+            )));
+        assert_eq!(
+            counts[&super::UnresolvedCause::Placement],
+            NonZeroUsize::MIN
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+        );
     }
 
     fn project_under_service(
@@ -746,6 +899,36 @@ mod tests {
             .len(),
             1
         );
+    }
+
+    #[test]
+    fn projected_occurrence_identity_format_has_a_fixed_work_bound() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("occurrence identity context");
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "retain projected Inventor occurrence id",
+            None,
+        );
+        let projection = super::project_occurrences(
+            &ctx,
+            &[ufrx_occurrence(4, u32::MAX, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(u32::MAX)],
+            &[assembly_placement(u32::MAX)],
+        )
+        .expect("fixed literal and ten decimal digits use no input-sized work");
+        assert_eq!(projection.occurrences.len(), 1);
+        assert_eq!(
+            projection.occurrences[0].id.as_str(),
+            "inventor:assembly:instance#4294967295"
+        );
+        drop(probe);
+        ctx.finish_session()
+            .expect("bounded identity format is not a refusal");
     }
 
     #[test]
@@ -940,13 +1123,15 @@ mod tests {
 
     #[test]
     fn assembly_record_tokens_refuse_retained_limit_before_copy() {
-        for (kind, type_id, payload, label, operation) in [
+        for (kind, type_id, payload, label, operation, record_operation, record_bytes) in [
             (
                 SegmentKind::AmDc,
                 OCCURRENCE_TYPE,
                 occurrence_fixture(7, &[]),
                 "DCx",
                 "retain Inventor assembly occurrence token",
+                "admit Inventor assembly occurrence record",
+                std::mem::size_of::<super::AssemblyOccurrence>(),
             ),
             (
                 SegmentKind::AmGraphics,
@@ -954,8 +1139,13 @@ mod tests {
                 placement_fixture(7, false, 0x8421, 0x7bde, &[]),
                 "GRx",
                 "retain Inventor assembly placement token",
+                "admit Inventor assembly placement record",
+                std::mem::size_of::<super::AssemblyPlacement<'_>>(),
             ),
         ] {
+            // Core amortized growth starts with four slots for 2..=1024-byte items.
+            assert!((2..=1024).contains(&record_bytes));
+            let record_storage_bytes = 4 * record_bytes;
             let admitted =
                 inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
                     .expect("assembly record is admitted");
@@ -964,11 +1154,21 @@ mod tests {
             policy.limits.max_retained_bytes =
                 cadmpeg_core::decode::u64_from_index(label.len() + token_len - 1);
             assert!(matches!(
+                inventory_with_record(kind.clone(), type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == record_operation
+                        && limit.used == cadmpeg_core::decode::u64_from_index(token_len)
+                        && limit.additional == cadmpeg_core::decode::u64_from_index(record_storage_bytes)
+            ));
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(token_len - 1);
+            assert!(matches!(
                 inventory_with_record(kind, type_id, &payload, policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                        && limit.used == cadmpeg_core::decode::u64_from_index(label.len())
+                        && limit.used == 0
                         && limit.additional == cadmpeg_core::decode::u64_from_index(token_len)
             ));
         }
@@ -1059,13 +1259,8 @@ mod tests {
         let mut rows = placement.transform.rows();
         rows[0][3] = 1.25;
         rows[1][3] = -2.0;
-        placement.transform = CompactMatrix::try_from_rows(
-            &cadmpeg_test_support::service_decode_context(),
-            0,
-            0,
-            rows,
-        )
-        .expect("finite explicit matrix fixture");
+        placement.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_under_service(&[ufrx], &[reference], &[occurrence], &[placement]);
 
@@ -1109,23 +1304,13 @@ mod tests {
         let mut first = assembly_placement(7);
         let mut rows = first.transform.rows();
         rows[0][3] = 1.0;
-        first.transform = CompactMatrix::try_from_rows(
-            &cadmpeg_test_support::service_decode_context(),
-            0,
-            0,
-            rows,
-        )
-        .expect("finite explicit matrix fixture");
+        first.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
         let mut second = assembly_placement(8);
         let mut rows = second.transform.rows();
         rows[0][3] = 2.0;
-        second.transform = CompactMatrix::try_from_rows(
-            &cadmpeg_test_support::service_decode_context(),
-            0,
-            0,
-            rows,
-        )
-        .expect("finite explicit matrix fixture");
+        second.transform =
+            CompactMatrix::try_from_rows(0, 0, rows).expect("finite explicit matrix fixture");
 
         let projection = project_under_service(&ufrx, &[reference], &occurrences, &[first, second]);
 
@@ -1326,7 +1511,8 @@ mod tests {
             suffix_len: 48,
             suffix_sha256: "0".repeat(64),
         }
-        .into_record(&cadmpeg_test_support::service_decode_context())
+        .into_record()
+        .map_err(|failure| failure.error)
         .expect("valid placement fixture")
     }
 

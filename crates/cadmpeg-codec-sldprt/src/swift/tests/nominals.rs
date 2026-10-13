@@ -369,8 +369,22 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
 
 #[test]
 fn diameter_equivalence_does_not_merge_distinct_sizes() {
-    assert_eq!(unique_diameter([10.0, 10.000_005].into_iter()), Some(10.0));
-    assert_eq!(unique_diameter([10.0, 10.000_02].into_iter()), None);
+    assert_eq!(
+        unique_diameter(
+            &cadmpeg_test_support::service_decode_context(),
+            [10.0, 10.000_005].into_iter()
+        )
+        .unwrap(),
+        Some(10.0)
+    );
+    assert_eq!(
+        unique_diameter(
+            &cadmpeg_test_support::service_decode_context(),
+            [10.0, 10.000_02].into_iter()
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -525,6 +539,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
 fn conflicting_rendered_units_do_not_resolve_a_nominal() {
     assert_eq!(
         rendered_nominal(
+            &cadmpeg_test_support::service_decode_context(),
             cadmpeg_ir::scalar::PositiveReal::new(5.0).unwrap(),
             1,
             RenderedDimensionKind::Diameter,
@@ -540,7 +555,8 @@ fn conflicting_rendered_units_do_not_resolve_a_nominal() {
                     decimal_places: 1,
                 },
             ],
-        ),
+        )
+        .unwrap(),
         None
     );
 }
@@ -1288,14 +1304,18 @@ fn swift_rendered_literals_refuse_collection_limit() {
 
 #[test]
 fn swift_rendered_utf16_preserves_surrogate_pairs_and_rejects_invalid_pairs() {
-    let mut text = String::new();
-    assert_eq!(
-        decode_rendered_utf16(&[0x3d, 0xd8, 0x00, 0xde], 0, 2, &mut text),
-        Some(())
-    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (text, storage) = decode_rendered_utf16(&ctx, &[0x3d, 0xd8, 0x00, 0xde], 0, 2)
+        .unwrap()
+        .expect("valid surrogate pair");
     assert_eq!(text, "😀");
-    text.clear();
-    assert_eq!(decode_rendered_utf16(&[0x00, 0xd8], 0, 1, &mut text), None);
+    drop((text, storage));
+    assert!(decode_rendered_utf16(&ctx, &[0x00, 0xd8], 0, 1)
+        .unwrap()
+        .is_none());
 }
 fn zero_nominal_angle_root() -> Entity {
     let mut angle = entity("GdtAngleBetween");
@@ -1349,4 +1369,147 @@ fn dimension_without_a_nominal_key_is_skipped() {
     assert!(!annotations
         .iter()
         .any(|annotation| annotation.id == pmi_id("A60").unwrap()));
+}
+
+#[test]
+fn rendered_utf16_character_refusal_preserves_the_resource_limit() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (output, storage) = decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1)
+        .unwrap()
+        .expect("valid UTF-16");
+    assert_eq!(output, "µ");
+    drop((output, storage));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "decode SWIFT rendered literal text",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = decode_rendered_utf16(&ctx, &[0xb5, 0], 0, 1);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result.map(|_| ())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("rendered character refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "decode SWIFT rendered literal text");
+    assert_eq!(limit.additional, 2);
+}
+
+#[test]
+fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use std::collections::BTreeMap;
+
+    let pattern = entity("GdtPattern");
+    let plane = plane_with_origin(0.0);
+    let low = cylinder_with_radius_and_depth(1.0, 1.0);
+    let high = cylinder_with_radius_and_depth(2.0, 2.0);
+    let features = BTreeMap::from([
+        ("FP", &pattern),
+        ("FDP", &plane),
+        ("low", &low),
+        ("high", &high),
+    ]);
+    for tail in [1, 128] {
+        let mut root = entity("GdtAnalysis");
+        for index in 0..2 + tail {
+            let mut candidate = entity("GdtCounterBore");
+            candidate.features.references = vec![
+                reference("FP", "GdtPattern"),
+                reference(if index == 0 { "low" } else { "high" }, "GdtCylinder"),
+            ];
+            root.annotations
+                .references
+                .push(reference(&format!("A{index}"), "GdtCounterBore"));
+            root.annotations.entities.push(candidate);
+        }
+        for operation in [
+            "scan SWIFT counterbore diameters",
+            "scan SWIFT counterbore depths",
+        ] {
+            let mut annotation = entity("GdtDiameter");
+            annotation
+                .features
+                .references
+                .push(reference("FP", "GdtPattern"));
+            if operation == "scan SWIFT counterbore depths" {
+                annotation = entity("GdtDepth");
+                annotation.features.references =
+                    vec![reference("FP", "GdtPattern"), reference("FDP", "GdtPlane")];
+            }
+            let query = |ctx: &DecodeContext<'_>, root: &Entity| {
+                let counterbores = crate::swift::Counterbores::new(ctx, root)?;
+                if operation == "scan SWIFT counterbore diameters" {
+                    crate::swift::hole_diameter_excluding_counterbore(
+                        ctx,
+                        &counterbores,
+                        &annotation,
+                        &features,
+                    )
+                } else {
+                    crate::swift::counterbore_depth_from_sibling(
+                        ctx,
+                        &counterbores,
+                        &annotation,
+                        &features,
+                    )
+                }
+            };
+            // A single diameter candidate reaches contributor removal, so check
+            // its measured value directly. Depth also checks the context join.
+            let fixture_ctx = cadmpeg_test_support::service_decode_context();
+            for (index, expected) in [(0, 1.0), (1, 2.0)] {
+                let candidate = root
+                    .annotations
+                    .entities
+                    .get(index)
+                    .expect("annotation fixture");
+                if operation == "scan SWIFT counterbore diameters" {
+                    assert_eq!(
+                        crate::swift::counterbore_from_direct_geometry(
+                            &fixture_ctx,
+                            candidate,
+                            &features
+                        )
+                        .unwrap()
+                        .map(crate::swift::PositiveReal::get),
+                        Some(expected * 2.0)
+                    );
+                } else {
+                    let mut single = root.clone();
+                    single.annotations.references = vec![root
+                        .annotations
+                        .references
+                        .get(index)
+                        .expect("reference fixture")
+                        .clone()];
+                    single.annotations.entities = vec![candidate.clone()];
+                    assert_eq!(
+                        query(&fixture_ctx, &single)
+                            .unwrap()
+                            .map(crate::swift::PositiveReal::get),
+                        Some(expected)
+                    );
+                }
+            }
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let _probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                operation,
+                Some(u64::try_from(root.annotations.entities.len()).unwrap()),
+            );
+            assert_eq!(query(&ctx, &root).unwrap(), None);
+            ctx.finish_session().unwrap();
+        }
+    }
 }
