@@ -1557,7 +1557,13 @@ pub(super) fn decode_graph(
                     (0, "synthetic_grouping", Exactness::Derived),
                     |(offset, tag)| (offset, tag, Exactness::ByteExact),
                 );
-                annotations.note(ctx, id, source_stream.handle()?, u64_from_index(offset), Some(tag))?;
+                annotations.note(
+                    ctx,
+                    id,
+                    source_stream.handle()?,
+                    u64_from_index(offset),
+                    Some(tag),
+                )?;
                 annotations.exactness(ctx, id, exactness)?;
                 Ok(())
             };

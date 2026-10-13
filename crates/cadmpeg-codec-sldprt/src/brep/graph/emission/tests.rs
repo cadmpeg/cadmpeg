@@ -804,9 +804,18 @@ fn empty_incidence_stage_skips_the_forward_coedge_index() {
     tables.insert_bridge(&setup, bridge).unwrap();
     assert_eq!(tables.coedges().len(), 3);
     for (dimension, operation) in [
-        (ResourceDimension::WorkUnits, "index Parasolid forward coedges"),
-        (ResourceDimension::WorkUnits, "copy Parasolid graph stream name"),
-        (ResourceDimension::CollectionItems, "allocate annotation stream handle"),
+        (
+            ResourceDimension::WorkUnits,
+            "index Parasolid forward coedges",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "copy Parasolid graph stream name",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "allocate annotation stream handle",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -815,11 +824,8 @@ fn empty_incidence_stage_skips_the_forward_coedge_index() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut facts = crate::brep::entity::FactsSource::empty(&ctx).unwrap();
         facts.entity_count = 7;
-        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            dimension,
-            operation,
-            None,
-        );
+        let probe =
+            cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(dimension, operation, None);
         let decoded = super::decode_graph(
             &ctx,
             crate::brep::index::view::CarrierView::Retained(&carriers),
@@ -861,7 +867,9 @@ fn annotation_stream_materializes_once_and_releases_unpublished_backing() {
         ctx: &ctx,
         stream: &name,
         value: None,
-        storage: ctx.reserve_scoped(0, "hold test annotation stream").unwrap(),
+        storage: ctx
+            .reserve_scoped(0, "hold test annotation stream")
+            .unwrap(),
     };
     source.handle().unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
