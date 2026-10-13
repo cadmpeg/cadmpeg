@@ -1623,7 +1623,7 @@ fn cfg_requires_test(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool>
 /// `None` when the impl is for another trait, is an inherent impl, or has no
 /// lifetime argument in the `Deserialize` trait path.
 fn deserialize_impl_target(implementation: &syn::ItemImpl) -> Option<String> {
-    let (_, path, _) = implementation.trait_.as_ref()?;
+    let (path, _) = implementation.trait_.as_ref()?;
     let deserialize = path.segments.last()?;
     if deserialize.ident != "Deserialize" {
         return None;
