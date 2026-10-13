@@ -73,7 +73,9 @@ fn decode_refuses(operation: &'static str) {
                 &topology,
                 &mut ir,
                 &std::collections::BTreeMap::new(),
-                &ctx, &mut admitted);
+                &ctx,
+                &mut admitted,
+            );
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal(), Some(*refusal));
                 if matches!(
