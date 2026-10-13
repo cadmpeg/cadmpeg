@@ -232,7 +232,12 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             continue;
         }
         let Some(content) = source_text_storage.with_storage(|| {
-            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+            FeaturePayloadContent::from_scoped_source_bounded::<8>(
+                ctx,
+                data_blocks,
+                blocks,
+                source_id_storage,
+            )
         })?
         else {
             continue;
@@ -2026,7 +2031,12 @@ pub(in crate::native) fn feature_block_construction_payloads(
             })?;
         }
         let Some(content) = source_text_storage.with_storage(|| {
-            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+            FeaturePayloadContent::from_scoped_source_bounded::<19>(
+                ctx,
+                data_blocks,
+                blocks,
+                reservation,
+            )
         })?
         else {
             continue;

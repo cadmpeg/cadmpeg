@@ -6366,7 +6366,12 @@ pub(super) fn feature_datum_plane_payloads(
             })?;
         }
         let Some(content) = source_text_storage.with_storage(|| {
-            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+            FeaturePayloadContent::from_scoped_source_bounded::<2>(
+                ctx,
+                data_blocks,
+                blocks,
+                reservation,
+            )
         })?
         else {
             continue;
