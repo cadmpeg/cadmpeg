@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::reference::{references, References};
 use super::{RecordExt, ValueExt};
-use cadmpeg_core::decode::{DecodeContext, DepthGuard, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -33,6 +33,7 @@ pub(super) fn decode<'ctx>(
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
     ctx: &'ctx DecodeContext<'_>,
+    admitted_ir_entities: &mut u64,
 ) -> Result<
     StageOutcome<(
         cadmpeg_core::decode::ScopedReservation<'ctx>,
@@ -341,6 +342,11 @@ pub(super) fn decode<'ctx>(
                 ctx,
             )?;
         }
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()) + 1,
+            admitted_ir_entities,
+            "step_presentation_layer_entity",
+        )?;
         ctx.push_vec(
             &mut ir.model.presentation_layers,
             PresentationLayer {
@@ -595,6 +601,11 @@ pub(super) fn decode<'ctx>(
         let appearance_id = match appearance_entry {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.admit_entities(
+                    u64_from_index(ir.model.entity_count()) + 1,
+                    admitted_ir_entities,
+                    "step_presentation_appearance_entity",
+                )?;
                 let key = if color.a() == 1.0 {
                     IdentityKey::from(color_id)
                 } else {
@@ -704,6 +715,11 @@ pub(super) fn decode<'ctx>(
                     )
                 })?;
                 emitted = true;
+                ctx.admit_entities(
+                    u64_from_index(ir.model.entity_count()) + 1,
+                    admitted_ir_entities,
+                    "step_presentation_binding_entity",
+                )?;
                 ctx.reserve_vec(
                     &mut ir.model.appearance_bindings,
                     1,

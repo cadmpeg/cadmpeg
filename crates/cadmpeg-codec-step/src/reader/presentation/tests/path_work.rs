@@ -262,7 +262,8 @@ fn diamond_styles_preserve_binding_count_and_warning_multiplicity() {
         let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, ctx)
             .expect("topology")
             .value;
-        let outcome = super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx)
+        let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+        let outcome = super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx, &mut admitted)
             .expect("diamond style");
         assert_eq!(ir.model.appearances.len(), 1);
         assert_eq!(ir.model.appearance_bindings.len(), 256);
@@ -290,7 +291,8 @@ fn diamond_styles_preserve_binding_count_and_warning_multiplicity() {
         let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, ctx)
             .expect("topology")
             .value;
-        let outcome = super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx)
+        let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+        let outcome = super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx, &mut admitted)
             .expect("shared exceptional style");
         assert_eq!(ir.model.appearances.len(), 1);
         assert_eq!(ir.model.appearance_bindings.len(), 2);
@@ -301,6 +303,97 @@ fn diamond_styles_preserve_binding_count_and_warning_multiplicity() {
             "SURFACE_STYLE_USAGE #17 has no valid surface_side; style omitted"
         );
     });
+}
+
+fn diamond_style_entities_refuse_before_publication(max_entities: u64) {
+    let exchange = diamond("GEOMETRIC_SET", 8, "#17=SOURCE_SURFACE();#18=SOURCE_SURFACE();#90=COLOUR_RGB('',1.,0.,0.);#91=STYLED_ITEM('',(#90),#1);");
+    let setup = cadmpeg_test_support::service_decode_context();
+    let mut ir = CadIr::empty();
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("carriers");
+    let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup)
+        .expect("topology")
+        .value;
+    assert_eq!(ir.model.entity_count(), 0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = max_entities;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut admitted = 0;
+    let result = super::super::decode(
+        &exchange,
+        &topology,
+        &mut ir,
+        &BTreeMap::new(),
+        &ctx,
+        &mut admitted,
+    );
+    let CodecError::ResourceLimit(original) = result.map(|_| ()).expect_err("next entity refuses") else {
+        panic!("entity refusal");
+    };
+    assert_eq!(original.dimension, ResourceDimension::Entities);
+    assert_eq!(original.operation, if max_entities == 0 {
+        "step_presentation_appearance_entity"
+    } else {
+        "step_presentation_binding_entity"
+    });
+    assert_eq!((original.used, original.additional), (max_entities, 1));
+    assert_eq!(admitted, max_entities);
+    assert_eq!(ir.model.appearances.len(), usize::from(max_entities > 0));
+    let expected_bindings = usize::try_from(max_entities).expect("small entity limit")
+        - usize::from(max_entities > 0);
+    assert_eq!(ir.model.appearance_bindings.len(), expected_bindings);
+    for (ordinal, binding) in ir.model.appearance_bindings.iter().enumerate() {
+        assert_eq!(binding.id.as_str(), format!("step:presentation:binding#91:{ordinal}-0"));
+        assert_eq!(binding.target, cadmpeg_ir::appearance::AppearanceTarget::Source {
+            source_id: format!("#{}", 17 + ordinal % 2),
+        });
+    }
+    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(found)) if found == original));
+}
+
+#[test]
+fn diamond_appearance_entity_refuses_before_publication() {
+    diamond_style_entities_refuse_before_publication(0);
+}
+
+#[test]
+fn diamond_binding_entities_refuse_before_unadmitted_publication() {
+    for limit in [1, 2, 64, 256] {
+        diamond_style_entities_refuse_before_publication(limit);
+    }
+}
+
+#[test]
+fn presentation_layer_entity_refuses_before_publication() {
+    let exchange = diamond("GEOMETRIC_SET", 0,
+        "#1=SOURCE_SURFACE();#2=PRESENTATION_LAYER_ASSIGNMENT('layer','',(#1));");
+    let setup = cadmpeg_test_support::service_decode_context();
+    let mut ir = CadIr::empty();
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("carriers");
+    let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup)
+        .expect("topology")
+        .value;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut admitted = 0;
+    let result = super::super::decode(
+        &exchange, &topology, &mut ir, &BTreeMap::new(), &ctx, &mut admitted,
+    );
+    let CodecError::ResourceLimit(original) = result.map(|_| ()).expect_err("layer entity refuses") else {
+        panic!("entity refusal");
+    };
+    assert_eq!(original.dimension, ResourceDimension::Entities);
+    assert_eq!(original.operation, "step_presentation_layer_entity");
+    assert_eq!((original.used, original.additional), (0, 1));
+    assert_eq!(admitted, 0);
+    assert!(ir.model.presentation_layers.is_empty());
+    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(found)) if found == original));
 }
 
 fn cutoff_history_refuses(operation: &str, references: [u64; 2]) {

@@ -1,6 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
+#[test]
+fn semantic_decode_charges_presentation_and_pmi_entities_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=COLOUR_RGB('',1.,0.,0.);#3=STYLED_ITEM('',(#2),#1);#4=PRESENTATION_LAYER_ASSIGNMENT('layer','',(#1));#5=DATUM('A');ENDSEC;END-ISO-10303-21;";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Five parsed records, one point, one annotation, one layer, one appearance and one binding.
+    policy.limits.max_entities = 10;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+    let decoded = crate::reader::decode(source, &ctx, crate::reader::Packaging::Bare)
+        .expect("each source and model entity is charged once");
+    assert_eq!(decoded.ir.model.entity_count(), 5);
+    assert_eq!(decoded.ir.model.points.len(), 1);
+    assert_eq!(decoded.ir.model.pmi.len(), 1);
+    assert_eq!(decoded.ir.model.presentation_layers.len(), 1);
+    assert_eq!(decoded.ir.model.appearances.len(), 1);
+    assert_eq!(decoded.ir.model.appearance_bindings.len(), 1);
+    ctx.finish_session().expect("no pending duplicate charge");
+}
+
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_ir::codec::write::target::TargetRequest;

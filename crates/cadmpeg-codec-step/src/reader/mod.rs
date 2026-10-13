@@ -498,6 +498,7 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         session.ctx,
+        &mut session.admitted_ir_entities,
     )?;
     session.charge_pending_ir_entities("step_presentation_decode")?;
     let mut presentation = presentation::decode(
@@ -506,6 +507,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &product.value.0.product_definition_ids_by_source,
         session.ctx,
+        &mut session.admitted_ir_entities,
     )?;
     session.charge_pending_ir_entities("step_validation_decode")?;
     let mut validation =

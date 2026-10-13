@@ -21,13 +21,13 @@ fn case_refuses(operation: &str) {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy).unwrap();
+            let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
             let result = super::super::decode(
                 &exchange,
                 &geometry.value,
                 &topology.value,
                 &mut ir.clone(),
-                &ctx,
-            )
+                &ctx, &mut admitted)
             .map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));

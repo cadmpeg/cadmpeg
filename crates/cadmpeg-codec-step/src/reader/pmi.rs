@@ -72,6 +72,7 @@ pub(super) fn decode<'ctx>(
     topology: &TopologyData,
     ir: &mut CadIr,
     ctx: &'ctx DecodeContext<'_>,
+    admitted_ir_entities: &mut u64,
 ) -> Result<
     (
         StageOutcome<(
@@ -174,8 +175,7 @@ pub(super) fn decode<'ctx>(
                 targets: targets([Ok(id)], ctx)?,
                 visible: None,
                 definition: PmiDefinition::Datum { identification },
-            },
-        )?;
+            }, admitted_ir_entities)?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
@@ -250,8 +250,7 @@ pub(super) fn decode<'ctx>(
                     identification,
                     basis: Vec::new(),
                 },
-            },
-        )?;
+            }, admitted_ir_entities)?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
@@ -364,8 +363,7 @@ pub(super) fn decode<'ctx>(
                 definition: PmiDefinition::DatumSystem {
                     references: datum_references,
                 },
-            },
-        )?;
+            }, admitted_ir_entities)?;
         reference_storage.commit()?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
@@ -497,8 +495,7 @@ pub(super) fn decode<'ctx>(
                 targets: aspect_targets,
                 visible: None,
                 definition: PmiDefinition::Dimension(definition),
-            },
-        )?;
+            }, admitted_ir_entities)?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
@@ -941,8 +938,7 @@ pub(super) fn decode<'ctx>(
                     datum_system,
                     modifiers: tolerance_modifiers(record, ctx)?,
                 },
-            },
-        )?;
+            }, admitted_ir_entities)?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
         let mut pmi_source = refs.as_slice().iter().copied();
@@ -1140,8 +1136,7 @@ pub(super) fn decode<'ctx>(
                     placement,
                     semantics,
                 },
-            },
-        )?;
+            }, admitted_ir_entities)?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
         claim_storage.with_storage(|| {

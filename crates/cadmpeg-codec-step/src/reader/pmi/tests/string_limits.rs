@@ -32,7 +32,8 @@ fn pmi_result(records: &str, dimension: ResourceDimension, limit: u64) -> Result
     let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
-    super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, &ctx)?;
+    let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, &ctx, &mut admitted)?;
     Ok(())
 }
 
@@ -432,7 +433,8 @@ fn pmi_only_result(
         _ => panic!("fit storage dimension"),
     }
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx).map(|_| ())
+        let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+        super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted).map(|_| ())
     })?;
     Ok(ir)
 }

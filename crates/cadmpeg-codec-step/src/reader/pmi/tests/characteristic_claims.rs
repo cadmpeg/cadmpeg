@@ -56,8 +56,7 @@ fn shared_characteristic_representation_claims_are_discovered_once() {
                         definition: PmiDefinition::Dimension(
                             PmiDimension::new(DimensionKind::Size, None, None).expect("dimension"),
                         ),
-                    },
-                )
+                    }, &mut 0)
                 .expect("characteristic annotation");
             Ok::<_, cadmpeg_core::CodecError>((fixture_ir, annotations))
         }).map(|(value, storage)| (storage, value)).expect("scoped annotation fixture");
