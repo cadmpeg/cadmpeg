@@ -4511,9 +4511,8 @@ fn project_edge_flange(
 /// Project a sheet-metal `Hem` scope onto its neutral operation.
 ///
 /// The owner layout distinguishes the rolled and teardrop forms from the
-/// shared gap-and-length layout. Fold direction is recovered from the signed
-/// placement of the inserted bend carriers against the preceding source face;
-/// an incomplete transition keeps it unresolved.
+/// shared gap-and-length layout. The native Flip control supplies fold direction;
+/// inserted coaxial bend carriers distinguish Flat from Open gap-and-length forms.
 fn project_hem(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
@@ -4660,13 +4659,13 @@ fn project_hem(
         )?,
         None => None,
     };
-    let semantics = edge_slot
-        .map(|edge_slot| crate::history::hem_geometry_semantics(ctx, scope, edge_slot, histories))
-        .transpose()?;
-    let form = match (
-        form,
-        semantics.and_then(|semantics| semantics.gap_length_form),
-    ) {
+    let gap_length_form = edge_slot
+        .map(|edge_slot| {
+            crate::history::hem_gap_length_form_for_scope(ctx, scope, edge_slot, histories)
+        })
+        .transpose()?
+        .flatten();
+    let form = match (form, gap_length_form) {
         (
             SheetMetalHemForm::GapLength { gap: _, length },
             Some(crate::history::HemGapLengthForm::Flat),
@@ -4677,13 +4676,16 @@ fn project_hem(
         ) => SheetMetalHemForm::Open { gap, length },
         (form, _) => form,
     };
-    let direction = semantics
-        .and_then(|semantics| semantics.direction)
-        .unwrap_or(SheetMetalHemDirection::Unresolved);
+    let direction = if operation.flipped {
+        SheetMetalHemDirection::Reverse
+    } else {
+        SheetMetalHemDirection::Forward
+    };
 
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalHem {
             edges,
+            bend_position: operation.bend_position,
             form,
             direction,
             bend_radius: or_none!(cadmpeg_ir::scalar::PositiveLength::new(

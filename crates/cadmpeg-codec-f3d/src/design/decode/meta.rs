@@ -83,21 +83,24 @@ fn paired_bulk_entry_name<'a>(
     Err(CodecError::Malformed(message))
 }
 
-/// Decode the type table of every Design `MetaStream` entry.
+/// Decode Design type tables and the flat-pattern table needed by settings.
 pub(crate) fn decode_types(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
-    {
-        let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
+    for entry in scan.entries.iter().filter(|entry| {
+        super::sheet_metal_settings::is_settings_stream(scan, entry, ContainerRole::Metastream)
+    }) {
+        let meta = scan.parsed_metastream(ctx, &entry.name)?;
+        if !scan.is_design_stream(entry, ContainerRole::Metastream)
+            && !super::sheet_metal_settings::has_supported_settings(&meta)
+        {
+            continue;
+        }
         for design_type in &meta.types {
             ctx.reserve_vec(&mut out, 1, "f3d design type table")?;
-            out.push(copy_design_type(ctx, design_type, &entry.entry.name)?);
+            out.push(copy_design_type(ctx, design_type, &entry.name)?);
         }
     }
     Ok(out)
@@ -823,16 +826,18 @@ pub(crate) fn decode_feature_timelines(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();
-    for meta_entry in scan
-        .entries
-        .iter()
-        .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
-    {
-        let meta = crate::metastream::parse(
-            ctx,
-            scan.entry_bytes(&meta_entry.entry.name)?,
-            &meta_entry.entry.name,
-        )?;
+    for entry in scan.entries.iter().filter(|entry| {
+        super::sheet_metal_settings::is_settings_stream(scan, entry, ContainerRole::Metastream)
+    }) {
+        let meta = crate::metastream::parse(ctx, scan.entry_bytes(&entry.name)?, &entry.name)?;
+        if !scan.is_design_stream(entry, ContainerRole::Metastream)
+            && !super::sheet_metal_settings::has_supported_settings(&meta)
+        {
+            continue;
+        }
+        let Some(prefix) = entry.name.strip_suffix("MetaStream.dat") else {
+            continue;
+        };
         let is_timeline_type = |design_type: &SegmentTypeData| {
             design_type
                 .type_guid
@@ -871,7 +876,7 @@ pub(crate) fn decode_feature_timelines(
                 "Design MetaStream record offsets are not strictly increasing".into(),
             ));
         }
-        let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
+        let bulk_name = paired_bulk_entry_name(ctx, scan, prefix)?;
         let bytes = scan.entry_bytes(bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {

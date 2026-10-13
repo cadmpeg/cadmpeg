@@ -4875,6 +4875,38 @@ Only type version 7 assigns normal reversal to primary-scope offset 31.
 | 31 | 1 | `normal_flip` | `u8` | little | spec | the byte at primary-scope offset `P + 31` reverses the whole created surface normal |
 | 32 | 4 | `following_word` | `u32` | little | spec | The following `u32le` at `P + 32` is `4` |
 
+## `hem_common_controls`
+
+Spec §3.1 · layout: byte offsets · size: 41 B
+
+Offsets are relative to C = 85 + S, shared by gap-and-length, rolled and teardrop Hem frames.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `bend_position` | `u32` | little | spec | code `3` selects Adjacent |
+| 30 | 4 | `compatibility_one` | `u32` | little | spec | The u32 at `C+30` is the compatibility value `1` |
+| 34 | 2 | `legacy_references` | `bytes[2]` | little | spec | `C+34` and `C+35` are null optional legacy references |
+| 36 | 4 | `compatibility_four` | `u32` | little | spec | the u32 at `C+36` is the compatibility value `4` |
+| 40 | 1 | `flip` | `u8` | little | spec | The Flip byte at `C+40` |
+
+Unstated regions:
+
+- `4..30` (26 B): Edge count and the edge-wrapper and settings references occupy these bytes.
+
+## `sheet_metal_settings_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 14 B
+
+Offsets are relative to the end of the variable-length primary indexed header. Versioned optional references follow this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 4 | `override_mask` | `u32` | little | spec | ten zero bytes and a u32 override mask |
+
+Unstated regions:
+
+- `0..10` (10 B): Ten zero bytes precede the override mask.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

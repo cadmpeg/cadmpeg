@@ -13,9 +13,10 @@ use super::{
     HelixConstructionStyle, HelixShape, InnerWireTaper, NoGeneratedSection, ParameterPmi,
     PmiDimensionSubtype, PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
     RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
-    SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalThicknessSide, ShellJoin, ShellMode,
-    SolidSweepOperation, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode,
-    SweepPathExtent, SweepTransformation, SweepTransition, ThickenSide, UnresolvedFamily, WrapMode,
+    SheetMetalHeightDatum, SheetMetalHemBendPosition, SheetMetalHemDirection,
+    SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation, SurfaceContinuity,
+    SurfaceExtension, SurfaceProjectionMode, SweepPathExtent, SweepTransformation, SweepTransition,
+    ThickenSide, UnresolvedFamily, WrapMode,
 };
 
 rewrite_scalar!(BinderCopyOnChange);
@@ -77,6 +78,7 @@ rewrite_scalar!(RuledSurfaceCorner);
 rewrite_scalar!(ScaleFactors);
 rewrite_scalar!(SheetMetalBendPosition);
 rewrite_scalar!(SheetMetalHeightDatum);
+rewrite_scalar!(SheetMetalHemBendPosition);
 rewrite_scalar!(SheetMetalHemDirection);
 rewrite_scalar!(SheetMetalThicknessSide);
 rewrite_scalar!(ShellJoin);

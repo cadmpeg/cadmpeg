@@ -304,7 +304,8 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 76);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 77);
+    assert!(catalogue_names.contains("design_sheet_metal_settings"));
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES

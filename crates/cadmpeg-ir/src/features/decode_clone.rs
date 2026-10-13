@@ -25,14 +25,15 @@ use super::{
     RuledSurfaceMode, ScaleCenter, ScaleFactors, SectionOperands, SelectionMembers,
     SelectionReference, SewBodySelection, SheetMetalBendPosition, SheetMetalFlangeEdgeWidths,
     SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
-    SheetMetalFlangeWidth, SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalHemForm,
-    SheetMetalThicknessSide, ShellJoin, ShellMode, SketchFeatureBinding, SketchPointSelection,
-    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
-    SolidSweepOperation, SplitFacePlanes, SplitFaceTool, SurfaceBoundary, SurfaceContinuity,
-    SurfaceExtension, SurfaceProjectionMode, SweepCircularRegion, SweepGuideRail, SweepOrientation,
-    SweepPathExtent, SweepSection, SweepShape, SweepTransformation, SweepTransition, ThickenSide,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    UnresolvedFamily, VertexSelection, WrapMode,
+    SheetMetalFlangeWidth, SheetMetalHeightDatum, SheetMetalHemBendPosition,
+    SheetMetalHemDirection, SheetMetalHemForm, SheetMetalThicknessSide, ShellJoin, ShellMode,
+    SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops,
+    SketchProfileRegion, SketchProfileRegions, SolidSweepOperation, SplitFacePlanes, SplitFaceTool,
+    SurfaceBoundary, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode,
+    SweepCircularRegion, SweepGuideRail, SweepOrientation, SweepPathExtent, SweepSection,
+    SweepShape, SweepTransformation, SweepTransition, ThickenSide, ThreePointSelection,
+    TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion, UnresolvedFamily,
+    VertexSelection, WrapMode,
 };
 
 clone_enum_for_decode!(AngularTermination; {
@@ -283,7 +284,7 @@ clone_enum_for_decode!(FeatureOperation; {
     Rib { construction, op },
     SheetMetalBaseFlange { profile, thickness, side },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
-    SheetMetalHem { edges, form, direction, bend_radius },
+    SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
     FullRoundFillet { groups },
     FaceBlend { operands, radius },
@@ -559,6 +560,7 @@ clone_enum_for_decode!(SheetMetalFlangeWidth; {
 
 clone_copy_for_decode!(SheetMetalHeightDatum);
 
+clone_copy_for_decode!(SheetMetalHemBendPosition);
 clone_copy_for_decode!(SheetMetalHemDirection);
 
 clone_enum_for_decode!(SheetMetalHemForm; {

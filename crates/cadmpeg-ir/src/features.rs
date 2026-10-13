@@ -3340,6 +3340,8 @@ pub enum FeatureOperation {
     SheetMetalHem {
         /// Edges the hem is grown from.
         edges: EdgeSelection,
+        /// Placement of the hem bend against its selected edge.
+        bend_position: SheetMetalHemBendPosition,
         /// Dimensional owner layout carried by the source hem.
         form: SheetMetalHemForm,
         /// Direction of the hem fold, when the source carries a proven value.
@@ -5985,6 +5987,18 @@ pub enum SheetMetalHemForm {
         /// Teardrop section radius.
         radius: PositiveLength,
     },
+}
+
+/// Placement of a sheet-metal hem bend against its selected edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum SheetMetalHemBendPosition {
+    /// The bend starts at the selected edge.
+    Adjacent,
+    /// The bend is tangent to the source sheet face.
+    Tangent,
 }
 
 /// Direction of a sheet-metal hem fold.

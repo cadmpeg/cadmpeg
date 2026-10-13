@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "7",
+    "ir_version": "8",
     "source": {
       "identity": {
         "classification": "classified",
@@ -314,6 +314,7 @@
         "design_parameter_scopes": [],
         "design_parameters": [],
         "design_record_headers": [],
+        "design_sheet_metal_settings": [],
         "design_sketch_placements": [],
         "design_surface_trim_operations": [],
         "design_types": [],

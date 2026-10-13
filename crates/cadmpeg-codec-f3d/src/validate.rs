@@ -9,6 +9,8 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
+mod sheet_metal_settings;
+
 use cadmpeg_core::convert::f64_from_index;
 
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_distance_layout;
@@ -878,6 +880,7 @@ fn validate_loaded(
     validate_configurations(&ctx, &mut findings)?;
     validate_feature_timelines(&ctx, &mut findings)?;
     validate_parameter_scopes(&ctx, &mut findings)?;
+    sheet_metal_settings::validate(&ctx, &mut findings)?;
     validate_extrude_selection_groups(&ctx, &mut findings)?;
     validate_construction_operand_groups(&ctx, &mut findings)?;
     validate_path_feature_operand_roles(&ctx, &mut findings)?;

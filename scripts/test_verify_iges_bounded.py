@@ -38,7 +38,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         executable.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         return executable
 
-    def test_accepts_v7_decode_refusal(self) -> None:
+    def test_accepts_v8_decode_refusal(self) -> None:
         refusal = {
             "stage": "decode",
             "code": "decode_failed",
@@ -46,7 +46,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         }
         self.write(
             {
-                "ir_version": "7",
+                "ir_version": "8",
                 "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
@@ -61,7 +61,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def test_rejects_success_report_as_refusal(self) -> None:
         self.write(
             {
-                "ir_version": "7",
+                "ir_version": "8",
                 "command": "dump",
                 "status": "ok",
                 "refusal": None,
@@ -74,23 +74,25 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.assertEqual(error, "decode refusal report status is not refused")
 
     def test_rejects_unsupported_refusal_version(self) -> None:
-        self.write(
-            {
-                "ir_version": "5",
-                "command": "dump",
-                "status": "refused",
-                "refusal": {
-                    "stage": "decode",
-                    "code": "decode_failed",
-                    "message": "old report",
-                },
-            }
-        )
+        for version in ("5", "7"):
+            with self.subTest(version=version):
+                self.write(
+                    {
+                        "ir_version": version,
+                        "command": "dump",
+                        "status": "refused",
+                        "refusal": {
+                            "stage": "decode",
+                            "code": "decode_failed",
+                            "message": "old report",
+                        },
+                    }
+                )
 
-        actual, error = MODULE.load_decode_refusal(self.path)
+                actual, error = MODULE.load_decode_refusal(self.path)
 
-        self.assertIsNone(actual)
-        self.assertEqual(error, 'decode refusal report does not use ir_version "7"')
+                self.assertIsNone(actual)
+                self.assertEqual(error, 'decode refusal report does not use ir_version "8"')
 
     def test_gate_rejects_unclassified_decode_exit(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"
@@ -121,7 +123,7 @@ import sys
 report = pathlib.Path(sys.argv[sys.argv.index('--report') + 1])
 assert sys.argv[1] == 'dump'
 report.write_text(json.dumps({
-    'ir_version': '7',
+    'ir_version': '8',
     'command': 'dump',
     'status': 'refused',
     'refusal': {

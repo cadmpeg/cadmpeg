@@ -1736,8 +1736,7 @@ fn bend_radius_requires_a_positive_finite_value() {
             "aggregate_operand_record_index": 9,
             "parameter_owners": {"kind": "gap_length", "gap_owner_record_index": 10, "length_owner_record_index": 11},
             "settings_record_index": 12, "bend_radius": radius, "bend_radius_offset": 100,
-            "form_code": 3, "direction_code": 1, "direction_reversal_byte": 0,
-            "reference_side_code": 4
+            "bend_position": "adjacent", "flipped": false
         });
         let operation: crate::records::feature::sheet_metal::DesignHemOperation =
             serde_json::from_value(wire.clone()).expect("valid radius");

@@ -4751,3 +4751,37 @@ pub(crate) mod derived_instance_relation_310_57 {
     /// Offset of `scope_record_index` (`u32`, little-endian). Spec §3.1.
     pub(crate) const SCOPE_RECORD_INDEX: usize = 47;
 }
+
+/// Byte offsets for the `hem_common_controls` record.
+///
+/// Spec §3.1. Record length 41 B.
+///
+/// ```text
+/// Offsets are relative to C = 85 + S, shared by gap-and-length, rolled and teardrop Hem frames.
+/// ```
+pub(crate) mod hem_common_controls {
+    /// Offset of `bend_position` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BEND_POSITION: usize = 0;
+    /// Offset of `compatibility_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPATIBILITY_ONE: usize = 30;
+    /// Offset of `legacy_references` (`bytes[2]`). Spec §3.1.
+    pub(crate) const LEGACY_REFERENCES: usize = 34;
+    /// Offset of `compatibility_four` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPATIBILITY_FOUR: usize = 36;
+    /// Offset of `flip` (`u8`). Spec §3.1.
+    pub(crate) const FLIP: usize = 40;
+}
+
+/// Byte offsets for the `sheet_metal_settings_prefix` record.
+///
+/// Spec §3.1. Record length 14 B.
+///
+/// ```text
+/// Offsets are relative to the end of the variable-length primary indexed header. Versioned optional references follow this prefix.
+/// ```
+pub(crate) mod sheet_metal_settings_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 14;
+    /// Offset of `override_mask` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OVERRIDE_MASK: usize = 10;
+}

@@ -1424,6 +1424,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         .unwrap()
     };
     let operation = |parameter_owners| DesignHemOperation {
+        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        flipped: false,
         edge_wrapper_record_index: 708,
         edge_group_record_index: 710_u32.try_into().unwrap(),
         aggregate_group_record_index: 717_u32.try_into().unwrap(),
@@ -1475,6 +1477,28 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             parameter(906, "HemLength", "mm", 10.0),
         ],
     );
+    let mut flipped_operation = operation(DesignHemParameterOwners::GapLength {
+        gap_owner_record_index: 901,
+        length_owner_record_index: 904,
+    });
+    flipped_operation.flipped = true;
+    let reversed = project(
+        900,
+        flipped_operation,
+        vec![owner(900, 901, 903), owner(900, 904, 906)],
+        vec![
+            parameter(903, "HemGap", "mm", 0.02),
+            parameter(906, "HemLength", "mm", 10.0),
+        ],
+    );
+    assert!(matches!(
+        reversed,
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
+            direction: SheetMetalHemDirection::Reverse,
+            bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+            ..
+        })
+    ));
     let rolled = project(
         910,
         operation(DesignHemParameterOwners::RadiusAngle {
@@ -1522,7 +1546,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             length: cadmpeg_ir::scalar::PositiveLength::new(100.0).unwrap(),
         }
     );
-    assert_eq!(direction, SheetMetalHemDirection::Unresolved);
+    assert_eq!(direction, SheetMetalHemDirection::Forward);
     assert_eq!(
         bend_radius,
         cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap()

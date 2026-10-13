@@ -1670,11 +1670,9 @@ fn decode_headers_for_indices(
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in scan.entries.iter().filter(|entry| {
+        super::sheet_metal_settings::is_settings_stream(scan, entry, ContainerRole::Bulkstream)
+    }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         decode_headers_for_indices_from_stream(ctx, &entry.name, &scope, bytes, wanted, &mut out)?;

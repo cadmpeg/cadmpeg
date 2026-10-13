@@ -17,6 +17,85 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
+#[test]
+fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
+    use crate::records::sheet_metal_settings::{PAIRED_GUID, SETTINGS_GUID};
+
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let meta_name = "FlatPatternAssetSubType/Design1/MetaStream.dat";
+    let bulk_name = "FlatPatternAssetSubType/Design1/BulkStream.dat";
+    for (version, expected_types) in [(2, 3), (1, 0)] {
+        let meta = design_metastream_with_records(
+            &[
+                (SETTINGS_GUID, "", version, "Fusion", &[50]),
+                (PAIRED_GUID, "", 0, "Fusion", &[]),
+                (
+                    super::FEATURE_TIMELINE_TYPE_GUID,
+                    super::FEATURE_TIMELINE_BASE_TYPE_GUID,
+                    2,
+                    "Fusion",
+                    &[35],
+                ),
+            ],
+            &[(50, 0), (35, 11)],
+        );
+        let mut bulk = Vec::new();
+        lp_ascii(&mut bulk, "256");
+        bulk.extend_from_slice(&50u32.to_le_bytes());
+        lp_ascii(&mut bulk, "258");
+        bulk.extend_from_slice(&35u64.to_le_bytes());
+        lp_ascii(&mut bulk, "Timeline");
+        bulk.extend_from_slice(&[0, 0, 1]);
+        bulk.extend_from_slice(&50u64.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0]);
+        bulk.extend_from_slice(&1u32.to_le_bytes());
+        bulk.push(1);
+        bulk.extend_from_slice(&50u64.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0]);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(meta_name, stored).unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.start_file(bulk_name, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let types = super::decode_types(&ctx, scan).unwrap();
+            assert_eq!(types.len(), expected_types);
+            let timelines = super::decode_feature_timelines(&ctx, scan).unwrap();
+            if version == 2 {
+                assert_eq!(timelines.len(), 1);
+                assert_eq!(timelines[0].record_index.get(), 35);
+                assert_eq!(timelines[0].context_record_index.get(), 50);
+                assert_eq!(timelines[0].frame().items()[0].value, 50);
+                assert_eq!(types[0].type_guid.as_str(), SETTINGS_GUID);
+                assert_eq!(types[1].type_guid.as_str(), PAIRED_GUID);
+                assert_eq!(
+                    types[0].entities.values().copied().collect::<Vec<_>>(),
+                    [50]
+                );
+                let headers = crate::design::decode::sketch::decode_related_record_headers(
+                    &ctx,
+                    scan,
+                    &[(crate::ids::native_scope(bulk_name), 50)],
+                )
+                .unwrap();
+                assert_eq!(headers.len(), 1);
+                assert_eq!(headers[0].record_index, 50);
+                assert_eq!(headers[0].byte_offset, 0);
+                assert_eq!(headers[0].class_tag.as_str(), "256");
+                assert_eq!(
+                    crate::ids::native_stream(&headers[0].id),
+                    Some(crate::ids::native_scope(bulk_name).as_str())
+                );
+            } else {
+                assert!(timelines.is_empty());
+            }
+        });
+    }
+}
+
 fn decode_component_naming_spaces(
     scan: &crate::container::ContainerScan<'_>,
 ) -> Result<Vec<crate::records::recipes::DesignComponentNamingSpace>, cadmpeg_core::CodecError> {

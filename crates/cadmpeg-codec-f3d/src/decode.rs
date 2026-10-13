@@ -4984,6 +4984,24 @@ fn extend_related_design_records(
         crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
     native.design_parameter_scopes =
         crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(ctx, scan, native)?;
+    native.design_sheet_metal_settings =
+        crate::design::decode::sheet_metal_settings::decode_settings(ctx, scan)?;
+    if !native.design_sheet_metal_settings.is_empty() {
+        let indices = collect_related_indices(
+            ctx,
+            native
+                .design_sheet_metal_settings
+                .iter()
+                .flat_map(|settings| {
+                    let stream = crate::ids::native_stream(settings.id())
+                        .unwrap_or(crate::ids::DEFAULT_STREAM);
+                    settings.record_references().filter_map(move |index| {
+                        u32::try_from(index).ok().map(|index| (stream, index))
+                    })
+                }),
+        )?;
+        append_related_record_headers(ctx, scan, native, &indices)?;
+    }
     native.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
             ctx,

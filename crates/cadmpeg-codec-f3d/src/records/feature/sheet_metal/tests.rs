@@ -76,8 +76,23 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         "aggregate_group_record_index":6, "aggregate_operand_record_index":9,
         "parameter_owners":{"kind":"gap_length", "gap_owner_record_index":10, "length_owner_record_index":11},
         "settings_record_index":12, "bend_radius":0.25, "bend_radius_offset":100,
-        "form_code":3, "direction_code":1, "direction_reversal_byte":0, "reference_side_code":4
+        "bend_position": "adjacent", "flipped": false
     });
+    let mut flipped = wire.clone();
+    flipped["flipped"] = true.into();
+    let reversed: DesignHemOperation = serde_json::from_value(flipped.clone()).unwrap();
+    assert!(reversed.flipped);
+    assert_eq!(serde_json::to_value(reversed).unwrap(), flipped);
+    for (field, value) in [
+        ("flipped", serde_json::json!(2)),
+        ("bend_position", serde_json::json!("unknown")),
+        ("bend_position", serde_json::json!("tangent")),
+        ("direction_reversal_byte", serde_json::json!(0)),
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = value;
+        assert!(serde_json::from_value::<DesignHemOperation>(invalid).is_err());
+    }
     let mut operation: DesignHemOperation = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(operation).unwrap(), wire);
     for (group, operand) in [
