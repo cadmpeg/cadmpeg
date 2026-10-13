@@ -27,10 +27,9 @@ fn configuration_property_key(
         .len()
         .checked_add(suffix.len())
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-
     let mut key = ctx.retained_string(len, operation)?;
-    key.push_str(prefix);
-    key.push_str(suffix);
+    ctx.append_retained(&mut key, prefix, operation)?;
+    ctx.append_retained(&mut key, suffix, operation)?;
     cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
         .ok_or_else(|| CodecError::malformed("configuration property key is blank"))
 }
@@ -43,10 +42,13 @@ fn configuration_scalar_text(
         ConfigurationScalar::String(text) => {
             ctx.copy_retained_text(text, "f3d configuration parameter value")
         }
-        ConfigurationScalar::Number(number) => {
-            ctx.format_retained(format_args!("{number}"), "f3d configuration scalar text")
-        }
-        _ => value.text_charged(ctx),
+        value => value.format_text(|arguments| {
+            let operation = match value {
+                ConfigurationScalar::Number(_) => "f3d configuration scalar text",
+                _ => "project F3D configuration scalar text",
+            };
+            ctx.format_retained(arguments, operation)
+        }),
     }
 }
 
@@ -79,7 +81,16 @@ impl<'de> Visitor<'de> for ConfigurationMemberOrderSeed<'_, '_> {
     {
         let mut names = Vec::new();
         let mut seen_configurations = false;
-        while let Some(field) = map.next_key_seed(json::ConfigurationFieldSeed)? {
+        loop {
+            self.ctx
+                .charge_work(1, "f3d configuration member order fields")
+                .map_err(|error| {
+                    *self.refusal = Some(error);
+                    serde::de::Error::custom("configuration variant resource limit")
+                })?;
+            let Some(field) = map.next_key_seed(json::ConfigurationFieldSeed)? else {
+                break;
+            };
             if field {
                 if seen_configurations {
                     return Err(serde::de::Error::duplicate_field("configurations"));
@@ -133,14 +144,31 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
                 serde::de::Error::custom("configuration variant resource limit")
             })?;
         let mut unique = HashSet::new();
-        while let Some(name) = map.next_key_seed(crate::design::json_value::TextSeed {
-            ctx: self.ctx,
-            refusal: &mut *self.refusal,
-            operation: "f3d configuration variant unique name",
-            entry: false,
-            expected: "a string",
-        })? {
-            if unique.contains(&name) {
+        loop {
+            self.ctx
+                .charge_work(1, "f3d configuration ordered variant names")
+                .map_err(|error| {
+                    *self.refusal = Some(error);
+                    serde::de::Error::custom("configuration variant resource limit")
+                })?;
+            let Some(name) = map.next_key_seed(crate::design::json_value::TextSeed {
+                ctx: self.ctx,
+                refusal: &mut *self.refusal,
+                operation: "f3d configuration variant unique name",
+                entry: false,
+                expected: "a string",
+            })?
+            else {
+                break;
+            };
+            if self
+                .ctx
+                .contains_hash_set(&unique, &name, "f3d configuration variant name lookup")
+                .map_err(|error| {
+                    *self.refusal = Some(error);
+                    serde::de::Error::custom("configuration variant resource limit")
+                })?
+            {
                 let message = self.ctx.format_retained(
                     format_args!("duplicate configuration variant {name:?}"),
                     "f3d duplicate configuration variant diagnostic",
@@ -155,31 +183,29 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
                     }
                 };
             }
-            {
-                let ctx = self.ctx;
-                let charge = (|| -> Result<String, CodecError> {
-                    let copy = unique_storage.with_storage(|| -> Result<String, CodecError> {
-                        let copy =
-                            ctx.copy_retained_text(&name, "f3d configuration variant unique name")?;
-                        ctx.reserve_set(&mut unique, 1, "f3d configuration variant name index")?;
-                        Ok(copy)
-                    })?;
-                    ctx.reserve_vec(&mut names, 1, "f3d configuration variant order")?;
-                    Ok(copy)
-                })();
-                let copy = match charge {
-                    Ok(copy) => copy,
-                    Err(error) => {
-                        *self.refusal = Some(error);
-                        return Err(serde::de::Error::custom(
-                            "configuration variant resource limit",
-                        ));
-                    }
-                };
-                unique.insert(copy);
-            }
+            unique_storage
+                .with_storage(|| -> Result<(), CodecError> {
+                    let copy = self
+                        .ctx
+                        .copy_retained_text(&name, "f3d configuration variant unique name")?;
+                    self.ctx.insert_hash_set(
+                        &mut unique,
+                        copy,
+                        "f3d configuration variant name index",
+                    )?;
+                    Ok(())
+                })
+                .map_err(|error| {
+                    *self.refusal = Some(error);
+                    serde::de::Error::custom("configuration variant resource limit")
+                })?;
+            self.ctx
+                .push_vec(&mut names, name, "f3d configuration variant order")
+                .map_err(|error| {
+                    *self.refusal = Some(error);
+                    serde::de::Error::custom("configuration variant resource limit")
+                })?;
             map.next_value::<IgnoredAny>()?;
-            names.push(name);
         }
         Ok(names)
     }
@@ -223,17 +249,20 @@ fn parse_configuration_variant_order(
 }
 
 /// Decode every JSON design-configuration table and rule entry.
+/// Archive entry names are unique; each entry yields at most one record.
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
     let mut configurations = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
+    let mut entries = scan.entries.iter();
+    while let Some(entry) =
+        ctx.next_charged(&mut entries, "scan F3D Design config asset entries")?
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        if !scan.is_design_asset_entry(ctx, entry, ContainerRole::DesignConfig)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
         let serde_json::Value::Object(payload) = payload else {
             return Err(CodecError::Malformed(ctx.format_retained(
@@ -260,21 +289,6 @@ pub(crate) fn decode_configurations(
             "f3d configuration record",
         )?;
     }
-    let mut names = HashSet::new();
-    for configuration in &configurations {
-        if names.contains(configuration.entry_name().as_str()) {
-            return Err(CodecError::Malformed(ctx.format_retained(
-                format_args!(
-                    "duplicate F3D configuration identity: {}",
-                    configuration.entry_name()
-                ),
-                "f3d configuration identity diagnostic",
-            )?));
-        }
-
-        ctx.reserve_set(&mut names, 1, "f3d configuration identity index")?;
-        names.insert(configuration.entry_name().as_str());
-    }
     Ok(configurations)
 }
 
@@ -288,23 +302,32 @@ pub(crate) fn project_configurations(
     use cadmpeg_ir::features::DesignConfiguration as NeutralConfiguration;
     use std::collections::BTreeMap;
 
-    if native
-        .iter()
-        .filter(|configuration| !configuration.variants().is_empty())
-        .count()
-        > 1
-    {
-        return Err(CodecError::NotImplemented(
-            "independent nonempty F3D configuration tables have no shared authored order".into(),
-        ));
+    let mut nonempty_table = false;
+    let mut tables = native.iter();
+    while let Some(table) = ctx.next_charged(&mut tables, "f3d configuration nonempty tables")? {
+        if !table.variants().is_empty() {
+            if nonempty_table {
+                return Err(CodecError::NotImplemented(
+                    "independent nonempty F3D configuration tables have no shared authored order"
+                        .into(),
+                ));
+            }
+            nonempty_table = true;
+        }
     }
 
     let mut projected = Vec::new();
-    for table in native {
+    // Variant names with their projected positions, for rule targets.
+    let mut names_storage = ctx.reserve_scoped(0, "f3d configuration variant names")?;
+    let mut variant_names = Vec::new();
+    for table in ctx.admit_iter(native, "f3d configuration tables")? {
         let active = table.active();
-        for (name, definition) in table.variants() {
+        for (name, definition) in ctx.admit_iter(table.variants(), "f3d configuration variants")? {
             let mut properties = BTreeMap::new();
-            for (parameter, value) in definition.parameters() {
+            for (parameter, value) in ctx.admit_iter(
+                definition.parameters(),
+                "f3d configuration variant parameters",
+            )? {
                 let key = configuration_property_key(
                     ctx,
                     "parameter:",
@@ -319,7 +342,10 @@ pub(crate) fn project_configurations(
                     "f3d configuration parameter property",
                 )?;
             }
-            for feature in definition.suppressed() {
+            for feature in ctx.admit_iter(
+                definition.suppressed(),
+                "f3d configuration variant suppressions",
+            )? {
                 let key = configuration_property_key(
                     ctx,
                     "suppressed:",
@@ -337,48 +363,72 @@ pub(crate) fn project_configurations(
                 .material()
                 .map(|material| ctx.copy_retained_text(material, "f3d configuration material"))
                 .transpose()?;
-            let ordinal = u32::try_from(projected.len()).map_err(|_| {
+            let position = projected.len();
+            let ordinal = u32::try_from(position).map_err(|_| {
                 CodecError::Malformed("F3D configuration ordinal exceeds u32".into())
             })?;
-            let name = ctx.copy_retained_text(name, "f3d configuration variant name")?;
-            {
-                ctx.reserve_vec(&mut projected, 1, "f3d projected configuration")?;
-            }
+            let active = match active {
+                Some(active) => {
+                    ctx.equal(active, name.as_str(), "f3d configuration active variant")?
+                }
+                None => false,
+            };
+            let variant_name = ctx.copy_retained_text(name, "f3d configuration variant name")?;
+            let id = neutral_configuration_id(ctx, table.entry_name(), &variant_name)?;
+            let native_ref = super::identity::configuration_entry_id(ctx, table.entry_name())?;
+            ctx.reserve_vec(&mut projected, 1, "f3d projected configuration")?;
             projected.push(NeutralConfiguration {
-                id: neutral_configuration_id(ctx, table.entry_name(), &name)?,
+                id,
                 ordinal,
-                active: active == Some(name.as_str()),
+                active,
                 source_index: None,
-                name: Some(name),
+                name: Some(variant_name),
                 material,
                 properties,
                 parameter_overrides: BTreeMap::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: None,
-                native_ref: Some(super::identity::configuration_entry_id(
-                    ctx,
-                    table.entry_name(),
-                )?),
+                native_ref: Some(native_ref),
             });
+            names_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut variant_names,
+                    (name.as_str(), position),
+                    "f3d configuration variant names",
+                )
+            })?;
         }
     }
-    for (rule, payload) in native.iter().filter_map(|rule| Some((rule, rule.rule()?))) {
+    // A rule activates its target only when exactly one variant carries the
+    // target name.
+    let _variants_by_name_storage;
+    let (variants_by_name, held_storage) = ctx.unique_index(
+        variant_names.iter().copied(),
+        "index F3D configuration variant names",
+    )?;
+    _variants_by_name_storage = held_storage;
+    for rule in ctx.admit_iter(native, "f3d configuration rules")? {
+        let Some(payload) = rule.rule() else {
+            continue;
+        };
         let Some(condition) = payload.get("when").and_then(serde_json::Value::as_str) else {
             continue;
         };
         let Some(target) = payload.get("activate").and_then(serde_json::Value::as_str) else {
             continue;
         };
-        let mut matches = projected
-            .iter_mut()
-            .filter(|configuration| configuration.name.as_deref() == Some(target));
-        let Some(configuration) = matches.next() else {
+        let Some(&Some(position)) = ctx.get_hash_map(
+            &variants_by_name,
+            target,
+            "find F3D configuration rule target",
+        )?
+        else {
             continue;
         };
-        if matches.next().is_some() {
+        let Some(configuration) = projected.get_mut(position) else {
             continue;
-        }
+        };
         let key = configuration_property_key(
             ctx,
             "activation_rule:",
@@ -410,62 +460,48 @@ pub(crate) fn bind_configuration_parameter_overrides(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &[cadmpeg_ir::features::DesignParameter],
 ) -> Result<(), CodecError> {
-    for configuration in configurations {
-        let mut refusal = None;
-        configuration.properties.retain(|key, expression| {
-            if refusal.is_some() {
-                return true;
-            }
-            let Some(name) = key.as_str().strip_prefix("parameter:") else {
-                return true;
-            };
-            let mut matches = parameters.iter().filter(|parameter| parameter.name == name);
-            let Some(parameter) = matches.next() else {
-                return true;
-            };
-            if matches.next().is_some() {
-                return true;
-            }
-            let id = {
-                match ctx
-                    .copy_retained(
-                        parameter.id.as_str().as_bytes(),
-                        "f3d configuration parameter override id",
-                    )
-                    .and_then(|bytes| {
-                        String::from_utf8(bytes).map_err(|_| {
-                            CodecError::malformed("validated configuration ID is not UTF-8")
-                        })
-                    })
-                    .and_then(|value| {
-                        cadmpeg_ir::features::ParameterId::try_from(value)
-                            .map_err(CodecError::malformed)
-                    }) {
-                    Ok(id) => id,
-                    Err(error) => {
-                        refusal = Some(error);
-                        return true;
-                    }
-                }
-            };
-            {
-                if let Err(error) = ctx.admit_btree_entry(
-                    &configuration.parameter_overrides,
-                    &id,
+    let _parameters_by_name_storage;
+    let (parameters_by_name, held_storage) = ctx.unique_index(
+        parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter)),
+        "index F3D configuration parameter names",
+    )?;
+    _parameters_by_name_storage = held_storage;
+    for configuration in ctx.admit_iter(configurations, "f3d configuration parameter targets")? {
+        let overrides = &mut configuration.parameter_overrides;
+        ctx.retain_btree_map(
+            &mut configuration.properties,
+            |key, expression| -> Result<bool, CodecError> {
+                let Some(name) = ctx.strip_prefix(
+                    key.as_str(),
+                    "parameter:",
+                    "f3d configuration parameter property prefix",
+                )?
+                else {
+                    return Ok(true);
+                };
+                let Some(Some(parameter)) = ctx.get_hash_map(
+                    &parameters_by_name,
+                    name,
+                    "find F3D configuration parameter",
+                )?
+                else {
+                    return Ok(true);
+                };
+                let id = parameter
+                    .id
+                    .try_clone_for_decode(ctx, "f3d configuration parameter override id")?;
+                ctx.insert_btree_map(
+                    overrides,
+                    id,
+                    std::mem::take(expression),
                     "f3d configuration parameter override",
-                ) {
-                    refusal = Some(error);
-                    return true;
-                }
-            }
-            configuration
-                .parameter_overrides
-                .insert(id, std::mem::take(expression));
-            false
-        });
-        if let Some(error) = refusal {
-            return Err(error);
-        }
+                )?;
+                Ok(false)
+            },
+            "f3d configuration parameter properties",
+        )?;
     }
     Ok(())
 }
@@ -477,117 +513,196 @@ pub(crate) fn bind_configuration_suppressed_features(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     features: &[cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
-    for configuration in configurations {
-        let mut refusal = None;
-        configuration.properties.retain(|key, _| {
-            if refusal.is_some() {
-                return true;
-            }
-            let Some(name) = key.as_str().strip_prefix("suppressed:") else {
-                return true;
-            };
-            let mut matches = features
-                .iter()
-                .filter(|feature| feature.name.as_deref() == Some(name));
-            let Some(feature) = matches.next() else {
-                return true;
-            };
-            if matches.next().is_some() {
-                return true;
-            }
-            let projected = (|| -> Result<_, CodecError> {
+    let _features_by_name_storage;
+    let (features_by_name, held_storage) = ctx.unique_index(
+        features
+            .iter()
+            .map(|feature| (feature.name.as_deref(), feature)),
+        "index F3D configuration feature names",
+    )?;
+    _features_by_name_storage = held_storage;
+    for configuration in ctx.admit_iter(configurations, "f3d configuration suppression targets")? {
+        let feature_states = &mut configuration.feature_states;
+        ctx.retain_btree_map(
+            &mut configuration.properties,
+            |key, _| -> Result<bool, CodecError> {
+                let Some(name) = ctx.strip_prefix(
+                    key.as_str(),
+                    "suppressed:",
+                    "f3d configuration suppressed property prefix",
+                )?
+                else {
+                    return Ok(true);
+                };
+                let Some(Some(feature)) = ctx.get_hash_map(
+                    &features_by_name,
+                    &Some(name),
+                    "find F3D configuration suppressed feature",
+                )?
+                else {
+                    return Ok(true);
+                };
                 let id = feature
                     .id
                     .try_clone_for_decode(ctx, "f3d configuration suppressed feature id")?;
-                {
-                    ctx.admit_btree_entry(
-                        &configuration.feature_states,
-                        &id,
-                        "f3d configuration suppressed feature state",
-                    )?;
-                }
                 let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-                for dependency in &feature.dependencies {
+                for dependency in ctx.admit_iter(
+                    feature.dependencies.as_slice(),
+                    "f3d configuration suppressed dependencies",
+                )? {
                     let copied = dependency
                         .try_clone_for_decode(ctx, "f3d configuration suppressed dependency id")?;
                     dependencies.insert(ctx, copied, "f3d configuration suppressed dependency")?;
                 }
-                Ok((
+                let state = cadmpeg_ir::features::ConfigurationFeatureState {
+                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
+                    dependencies,
+                    definition: feature
+                        .evaluation
+                        .definition()
+                        .try_clone_for_decode(ctx, "f3d configuration suppressed definition")?,
+                };
+                ctx.insert_btree_map(
+                    feature_states,
                     id,
-                    cadmpeg_ir::features::ConfigurationFeatureState {
-                        evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-                        dependencies,
-                        definition: feature
-                            .evaluation
-                            .definition()
-                            .try_clone_for_decode(ctx, "f3d configuration suppressed definition")?,
-                    },
-                ))
-            })();
-            let (id, state) = match projected {
-                Ok(projected) => projected,
-                Err(error) => {
-                    refusal = Some(error);
-                    return true;
-                }
-            };
-            configuration.feature_states.insert(id, state);
-            false
-        });
-        if let Some(error) = refusal {
-            return Err(error);
-        }
+                    state,
+                    "f3d configuration suppressed feature state",
+                )?;
+                Ok(false)
+            },
+            "f3d configuration suppressed properties",
+        )?;
     }
     Ok(())
 }
 
 pub(crate) fn unresolved_configuration_parameter_override_count(
+    ctx: &DecodeContext<'_>,
     projected: &[cadmpeg_ir::features::DesignConfiguration],
-) -> usize {
-    projected
-        .iter()
-        .flat_map(|configuration| configuration.properties.keys())
-        .filter(|key| key.as_str().starts_with("parameter:"))
-        .count()
+) -> Result<usize, CodecError> {
+    let mut count = 0usize;
+    for configuration in ctx.admit_iter(projected, "f3d unresolved configuration targets")? {
+        for (key, _) in ctx.admit_iter(
+            &configuration.properties,
+            "f3d unresolved configuration properties",
+        )? {
+            if ctx.starts_with(
+                key.as_str(),
+                "parameter:",
+                "f3d unresolved configuration property prefix",
+            )? {
+                count = count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "f3d unresolved configuration property count",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(count)
 }
 
 pub(crate) fn unresolved_configuration_suppressed_feature_count(
+    ctx: &DecodeContext<'_>,
     projected: &[cadmpeg_ir::features::DesignConfiguration],
-) -> usize {
-    projected
-        .iter()
-        .flat_map(|configuration| configuration.properties.keys())
-        .filter(|key| key.as_str().starts_with("suppressed:"))
-        .count()
+) -> Result<usize, CodecError> {
+    let mut count = 0usize;
+    for configuration in ctx.admit_iter(projected, "f3d unresolved configuration targets")? {
+        for (key, _) in ctx.admit_iter(
+            &configuration.properties,
+            "f3d unresolved configuration properties",
+        )? {
+            if ctx.starts_with(
+                key.as_str(),
+                "suppressed:",
+                "f3d unresolved configuration property prefix",
+            )? {
+                count = count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "f3d unresolved configuration property count",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
+            }
+        }
+    }
+    Ok(count)
 }
 
 pub(crate) fn unresolved_configuration_rule_count(
+    ctx: &DecodeContext<'_>,
     native: &[DesignConfiguration],
     projected: &[cadmpeg_ir::features::DesignConfiguration],
-) -> usize {
-    native
-        .iter()
-        .filter(|rule| rule.rule().is_some_and(|payload| !payload.is_empty()))
-        .filter(|rule| {
-            !projected.iter().any(|configuration| {
-                configuration.properties.keys().any(|key| {
-                    key.as_str().strip_prefix("activation_rule:") == Some(rule.entry_name())
-                })
-            })
-        })
-        .count()
+) -> Result<usize, CodecError> {
+    // Rule entries that some projected variant names as its activation rule.
+    let mut bound_storage = ctx.reserve_scoped(0, "f3d configuration bound rules")?;
+    let mut bound = std::collections::BTreeSet::new();
+    for configuration in ctx.admit_iter(projected, "f3d configuration rule targets")? {
+        for (key, _) in ctx.admit_iter(
+            &configuration.properties,
+            "f3d configuration activation properties",
+        )? {
+            if let Some(entry) = ctx.strip_prefix(
+                key.as_str(),
+                "activation_rule:",
+                "f3d configuration activation property prefix",
+            )? {
+                bound_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut bound, entry, "f3d configuration bound rules")
+                })?;
+            }
+        }
+    }
+    let mut count = 0usize;
+    for rule in ctx.admit_iter(native, "f3d unresolved configuration rules")? {
+        if rule.rule().is_none_or(serde_json::Map::is_empty) {
+            continue;
+        }
+        if !ctx.contains_btree_set(
+            &bound,
+            rule.entry_name().as_str(),
+            "f3d configuration rule entry",
+        )? {
+            count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "f3d unresolved configuration rule count",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
+        }
+    }
+    Ok(count)
 }
 
-pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguration]) -> usize {
-    native
-        .iter()
-        .map(DesignConfiguration::unknown_member_count)
-        .sum()
+pub(crate) fn unresolved_configuration_member_count(
+    ctx: &DecodeContext<'_>,
+    native: &[DesignConfiguration],
+) -> Result<usize, CodecError> {
+    ctx.fold(
+        native,
+        0usize,
+        |count, configuration| {
+            let member_count = configuration.unknown_member_count(ctx)?;
+            count.checked_add(member_count).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "count F3D unresolved configuration members",
+                    cadmpeg_core::decode::u64_from_index(count),
+                    cadmpeg_core::decode::u64_from_index(member_count),
+                )
+            })
+        },
+        "f3d unresolved configuration member scan",
+    )
 }
 
 #[cfg(test)]
 mod tests {
     mod definition_copy;
+    mod query_admission;
 
     use super::{
         bind_configuration_parameter_overrides, bind_configuration_suppressed_features,
@@ -603,6 +718,55 @@ mod tests {
         FeatureOperation, ParameterId,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn configuration_property_prefix_refusals_propagate() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        for (prefix, operation) in [
+            ("parameter:", "f3d configuration parameter property prefix"),
+            (
+                "suppressed:",
+                "f3d configuration suppressed property prefix",
+            ),
+        ] {
+            let table = crate::test_support::with_decode_context(|ctx| {
+                DesignConfiguration::try_new_charged(
+                    ctx,
+                    "table.dsgcfg".into(),
+                    DesignConfigurationKind::Table,
+                    vec!["wide".into()],
+                    serde_json::json!({"configurations": {"wide": {}}})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                )
+            })
+            .unwrap();
+            let mut projected = crate::test_support::with_decode_context(|ctx| {
+                project_configurations(ctx, &[table])
+            })
+            .unwrap();
+            projected[0]
+                .properties
+                .insert(format!("{prefix}width").try_into().unwrap(), "25 mm".into());
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let mut projected = projected.clone();
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    if prefix == "parameter:" {
+                        bind_configuration_parameter_overrides(&ctx, &mut projected, &[])
+                    } else {
+                        bind_configuration_suppressed_features(&ctx, &mut projected, &[])
+                    }
+                },
+            );
+        }
+    }
 
     #[test]
     fn configuration_variants_follow_serialized_member_order() {
@@ -707,7 +871,24 @@ mod tests {
             })
             .unwrap(),
         ];
-        assert_eq!(unresolved_configuration_member_count(&native), 3);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| {
+                unresolved_configuration_member_count(ctx, &native)
+            })
+            .unwrap(),
+            3
+        );
+        let variant_refusal = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D configuration variants for members",
+            0,
+            |ctx| unresolved_configuration_member_count(ctx, &native),
+        );
+        assert!(matches!(
+            variant_refusal,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "scan F3D configuration variants for members"
+        ));
     }
 
     #[test]
@@ -729,7 +910,10 @@ mod tests {
             let projected =
                 project_configurations(decode_ctx, &native).expect("empty rule projection");
             assert!(projected.is_empty());
-            assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
+            assert_eq!(
+                unresolved_configuration_rule_count(decode_ctx, &native, &projected).unwrap(),
+                1
+            );
         });
     }
 
@@ -771,7 +955,10 @@ mod tests {
                 projected[0].properties["activation_rule:rule.dsgcfgrule"],
                 "width > 20 mm"
             );
-            assert_eq!(unresolved_configuration_rule_count(&native, &projected), 0);
+            assert_eq!(
+                unresolved_configuration_rule_count(decode_ctx, &native, &projected).unwrap(),
+                0
+            );
 
             let ambiguous = [
                 table("first.dsgcfg", "wide"),
@@ -828,7 +1015,7 @@ mod tests {
             assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
             assert!(projected[0].properties.is_empty());
             assert_eq!(
-                unresolved_configuration_parameter_override_count(&projected),
+                unresolved_configuration_parameter_override_count(decode_ctx, &projected).unwrap(),
                 0
             );
 
@@ -863,7 +1050,7 @@ mod tests {
             .unwrap();
             assert!(ambiguous[0].parameter_overrides.is_empty());
             assert_eq!(
-                unresolved_configuration_parameter_override_count(&ambiguous),
+                unresolved_configuration_parameter_override_count(decode_ctx, &ambiguous).unwrap(),
                 1
             );
         });
@@ -920,7 +1107,7 @@ mod tests {
             );
             assert!(projected[0].properties.is_empty());
             assert_eq!(
-                unresolved_configuration_suppressed_feature_count(&projected),
+                unresolved_configuration_suppressed_feature_count(decode_ctx, &projected).unwrap(),
                 0
             );
 
@@ -955,7 +1142,7 @@ mod tests {
             .unwrap();
             assert!(ambiguous[0].suppressed_features().next().is_none());
             assert_eq!(
-                unresolved_configuration_suppressed_feature_count(&ambiguous),
+                unresolved_configuration_suppressed_feature_count(decode_ctx, &ambiguous).unwrap(),
                 1
             );
         });
@@ -1018,19 +1205,26 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
-        let (mut configurations, feature) = suppression_limit_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            bind_configuration_suppressed_features(&ctx, &mut configurations, &[feature]),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d configuration suppressed feature state"
-        ));
-        assert!(configurations[0].feature_states.is_empty());
+        let (configurations, feature) = suppression_limit_fixture();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "f3d configuration suppressed feature state",
+            |cap| {
+                let mut configurations = configurations.clone();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = bind_configuration_suppressed_features(
+                    &ctx,
+                    &mut configurations,
+                    std::slice::from_ref(&feature),
+                );
+                assert!(configurations[0].feature_states.is_empty() || result.is_ok());
+                result
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
 
     #[test]
@@ -1377,7 +1571,9 @@ mod tests {
             (0, "f3d configuration parameter property"),
             (1, "f3d configuration suppression property"),
             (2, "f3d projected configuration"),
-            (3, "f3d configuration activation rule property"),
+            (3, "f3d configuration variant names"),
+            (4, "index F3D configuration variant names"),
+            (5, "f3d configuration activation rule property"),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
@@ -1731,6 +1927,144 @@ mod tests {
             matches!(project_configurations(&ctx, std::slice::from_ref(&table)),
             Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::MaterializedBytes
                 && failure.operation == "f3d projected configuration")
+        );
+    }
+    #[test]
+    fn configuration_projection_binds_parameters_and_suppressions() {
+        let table = crate::test_support::with_decode_context(|ctx| {
+            DesignConfiguration::try_new_charged(
+                ctx,
+                "table.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["wide".into()],
+                serde_json::json!({"active":"wide", "configurations":{"wide":{
+                    "parameters":{"width":"25 mm", "enabled":true, "empty":null},
+                    "suppressed":["Fillet 1"], "material":"Steel"}}})
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+        })
+        .unwrap();
+        let rule = crate::test_support::with_decode_context(|ctx| {
+            DesignConfiguration::try_new_charged(
+                ctx,
+                "rule.dsgcfgrule".into(),
+                DesignConfigurationKind::Rule,
+                Vec::new(),
+                serde_json::json!({"when":"width > 20 mm", "activate":"wide"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        })
+        .unwrap();
+        let native = [table, rule];
+        let mut decoded =
+            crate::test_support::with_decode_context(|ctx| project_configurations(ctx, &native))
+                .unwrap();
+        assert!(!decoded.is_empty());
+        let (_, feature) = suppression_limit_fixture();
+        let features = [feature];
+        crate::test_support::with_decode_context(|ctx| {
+            bind_configuration_suppressed_features(ctx, &mut decoded, &features)
+        })
+        .unwrap();
+        assert!(!decoded[0].feature_states.is_empty());
+        let parameters = [NeutralParameter {
+            id: ParameterId::mint("f3d:model:parameter#width").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "width".into(),
+            expression: "10 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        }];
+        crate::test_support::with_decode_context(|ctx| {
+            bind_configuration_parameter_overrides(ctx, &mut decoded, &parameters)
+        })
+        .unwrap();
+        assert_eq!(decoded[0].parameter_overrides[&parameters[0].id], "25 mm");
+    }
+
+    #[test]
+    fn configuration_projection_work_refusals_propagate() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let table = crate::test_support::with_decode_context(|ctx| {
+            DesignConfiguration::try_new_charged(
+                ctx,
+                "table.dsgcfg".into(),
+                DesignConfigurationKind::Table,
+                vec!["wide".into()],
+                serde_json::json!({"active":"wide", "configurations":{"wide":{}}})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        })
+        .unwrap();
+        let rule = crate::test_support::with_decode_context(|ctx| {
+            DesignConfiguration::try_new_charged(
+                ctx,
+                "rule.dsgcfgrule".into(),
+                DesignConfigurationKind::Rule,
+                Vec::new(),
+                serde_json::json!({"when":"width > 20 mm", "activate":"wide"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        })
+        .unwrap();
+        let native = [table, rule];
+        for operation in [
+            "f3d configuration nonempty tables",
+            "f3d configuration tables",
+            "f3d configuration variants",
+            "f3d configuration active variant",
+            "f3d configuration rules",
+            "index F3D configuration variant names",
+            "find F3D configuration rule target",
+        ] {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    project_configurations(&ctx, &native)
+                },
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::WorkUnits && failure.operation == operation));
+        }
+    }
+
+    #[test]
+    fn configuration_order_slot_refusal_precedes_invalid_variant_value() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The unique-name set receives one slot before the output order vector requests a slot.
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = parse_configuration_variant_order(
+            &ctx,
+            "table.dsgcfg",
+            br#"{"configurations":{"Small":"#,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d configuration variant order")
         );
     }
 }

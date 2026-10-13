@@ -29,7 +29,7 @@ fn fixture() -> (
 
 fn assert_refusal(operation: &'static str, dimension: ResourceDimension) {
     let (scope, parameter) = fixture();
-    for limit in 0..128 {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
         let mut policy = DecodePolicy::default();
         match dimension {
             ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
@@ -38,18 +38,11 @@ fn assert_refusal(operation: &'static str, dimension: ResourceDimension) {
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match native_scope_definition(&ctx, &scope, &[(0, &parameter)]) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+
+        (native_scope_definition(&ctx, &scope, &[(0, &parameter)])).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]

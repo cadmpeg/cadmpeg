@@ -271,3 +271,106 @@ fn modern_body_appearance_is_not_a_face_assignment() {
     );
     assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
 }
+
+#[test]
+fn browser_repeated_appearance_keeps_first_without_second_token_copy() {
+    let node = "1b5e92d0-eade-40d5-ab4d-35af2eb411b4";
+    let visual = "674E6024-4294-4322-B572-A88F64F0DA77_Post2015_Post2015";
+    let mut bytes = vec![0u8; 8];
+    for _ in 0..2 {
+        for value in [
+            "e966e81d-2581-4d41-821d-839938974425",
+            node,
+            "DE897CF7-F483-4D31-A2D8-41671FE36D3D",
+            "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+            "PrismMaterial-018",
+            "ba2d3026-32c4-4584-b0e1-a738e387fa35",
+            visual,
+            "BA5EE55E-9982-449B-9D66-9F036540E140",
+            "Prism-090",
+        ] {
+            bytes.extend(lp_utf16_bytes(value).unwrap());
+        }
+    }
+    bytes.extend(lp_utf16_bytes(node).unwrap());
+    bytes.push(0);
+    bytes.extend([0x01, 0x01]);
+    bytes.extend(37_251u64.to_le_bytes());
+    crate::test_support::with_decode_context(|ctx| {
+        let storage;
+        let (out, held_storage) = ctx
+            .with_scoped_storage("test browser output", || {
+                super::super::browser_body_appearances(ctx, &bytes)
+            })
+            .unwrap();
+        storage = held_storage;
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, 37_251);
+        assert_eq!(&*out[0].1, visual);
+        drop(out);
+        drop(storage);
+    });
+    let boundary = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "collect F3D browser body appearances",
+        0,
+        |ctx| super::super::browser_body_appearances(ctx, &bytes),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else {
+        panic!("appearance output must refuse");
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = boundary.used.checked_add(boundary.additional).unwrap();
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let out = super::super::browser_body_appearances(ctx, &bytes).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, 37_251);
+        assert_eq!(&*out[0].1, visual);
+    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find duplicate F3D browser appearance",
+        1,
+        |ctx| super::super::browser_body_appearances(ctx, &bytes),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "find duplicate F3D browser appearance")
+    );
+}
+
+#[test]
+fn legacy_face_assignment_retains_no_display_name_or_grammar_copies() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let face_guid = "cd92d0f6-5b31-4bbf-84ae-4611f435537e";
+    let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
+    let display = "x".repeat(256);
+    let bytes = legacy_face_appearance_entry(
+        face_guid,
+        [0.25, 0.5, 0.75, 1.0],
+        visual_guid,
+        1,
+        Some(&display),
+        "PrismOpaque",
+    );
+    let strings =
+        crate::test_support::with_decode_context(|ctx| super::super::lp_utf16_strings(ctx, &bytes))
+            .unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(
+        4 * size_of::<crate::materials::FaceAppearanceAssignment>()
+            + face_guid.len()
+            + visual_guid.len(),
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let out = super::super::legacy_face_appearance_assignments(&ctx, &bytes, &strings).unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].face_guid, face_guid);
+    assert_eq!(&*out[0].visual_guid, visual_guid);
+    assert_eq!(
+        out[0].color,
+        Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).unwrap())
+    );
+    ctx.finish_session().unwrap();
+}

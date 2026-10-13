@@ -63,23 +63,23 @@ fn assert_planar_path_refusal(operation: &'static str, profile: bool) {
     let placements = [placement];
     let setup = planar_resolution(&operands, &placements, &curves, &sketches, &entities);
     let resolution = setup.path_resolution();
-    for limit in 0..32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if profile {
-            resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
-        } else {
-            resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected planar path refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no planar path refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if profile {
+                resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
+            } else {
+                resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
+            }
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 macro_rules! planar_path_refusal {
@@ -215,7 +215,7 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
 
 #[test]
 fn path_spatial_curve_index_refuses_collection_limit() {
-    assert_spatial_path_refusal("f3d entity path spatial curve index", false, false);
+    assert_spatial_path_refusal("f3d entity path curve identity", false, false);
 }
 
 #[test]

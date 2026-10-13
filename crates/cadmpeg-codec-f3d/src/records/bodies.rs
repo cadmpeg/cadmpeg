@@ -15,6 +15,20 @@ cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
 struct DesignBulkStreamPath(NonBlankString);
 
 impl DesignBulkStreamPath {
+    /// Admit the grammar scans of [`Self::try_new`]: the control-character
+    /// check, the segment split and the nonblank check each read the path once.
+    fn admit_grammar(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        text: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const GRAMMAR_PASSES: u64 = 3;
+        let extent = cadmpeg_core::decode::u64_from_index(text.len())
+            .checked_mul(GRAMMAR_PASSES)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("validate F3D BulkStream path", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(extent, "validate F3D BulkStream path")
+    }
     fn try_new<T: AsRef<str> + TryInto<NonBlankString>>(text: T) -> Result<Self, String> {
         let value = text.as_ref();
         let prefix = value
@@ -513,6 +527,9 @@ impl DesignBodyBinding {
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }
+    pub(crate) fn native_stream(&self) -> &str {
+        self.id.stream()
+    }
     pub(crate) fn stream(&self) -> &str {
         self.stream.as_str()
     }
@@ -598,6 +615,16 @@ impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<BodyVisibilityWire<T>> for
 }
 
 impl BodyVisibility {
+    /// Validate a decoded visibility record after admitting its identity and
+    /// stream path grammar.
+    pub(crate) fn try_new_charged<T: AsRef<str> + TryInto<NonBlankString>>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        wire: BodyVisibilityWire<T>,
+    ) -> Result<Result<Self, String>, cadmpeg_core::CodecError> {
+        NativeRecordId::admit_grammar(ctx, &wire.id)?;
+        DesignBulkStreamPath::admit_grammar(ctx, wire.stream.as_ref())?;
+        Ok(Self::try_from(wire))
+    }
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }

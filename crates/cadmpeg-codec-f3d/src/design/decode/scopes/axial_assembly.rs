@@ -28,6 +28,16 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// A joint-origin frame an assembly scope states for the joint-origin record
 /// it names, with the frame's transform offset and optional reference.
 type JointOriginCandidate = (u32, SketchPlacementMatrix, u64, Option<(u32, u64)>);
@@ -431,23 +441,26 @@ fn exact_assembly_axial_component_operand<'bytes>(
 /// The two axis references, with their offsets, of the axial construction
 /// carrier at `start` when the carrier repeats the transform of `frame`.
 fn axial_carrier_axes(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: &DesignAssemblyOperandFrame,
     start: usize,
-) -> Option<[(u32, u64); 2]> {
-    let construction_transform_at = start.checked_add(axial_carrier::OPERAND_TRANSFORM)?;
-    if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
-        return None;
+) -> Result<Option<[(u32, u64); 2]>, CodecError> {
+    let construction_transform_at = try_some!(start.checked_add(axial_carrier::OPERAND_TRANSFORM));
+    if try_some!(rigid_transform_at(bytes, construction_transform_at)) != frame.transform {
+        return Ok(None);
     }
-    let first = exact_same_segment_record_reference(
+    let first = try_some!(exact_same_segment_record_reference(
+        ctx,
         bytes,
-        start.checked_add(axial_carrier::FIRST_AXIS_RECORD_REFERENCE)?,
-    )?;
-    let second = exact_same_segment_record_reference(
+        try_some!(start.checked_add(axial_carrier::FIRST_AXIS_RECORD_REFERENCE)),
+    )?);
+    let second = try_some!(exact_same_segment_record_reference(
+        ctx,
         bytes,
-        start.checked_add(axial_carrier::SECOND_AXIS_RECORD_REFERENCE)?,
-    )?;
-    (first.0 != second.0).then_some([first, second])
+        try_some!(start.checked_add(axial_carrier::SECOND_AXIS_RECORD_REFERENCE)),
+    )?);
+    Ok((first.0 != second.0).then_some([first, second]))
 }
 
 /// Whether the scope references hold each `[axis, selector]` pair adjacently
@@ -502,7 +515,7 @@ fn exact_assembly_axial_component_operand_at<'bytes>(
     };
     let Some(
         [(first_axis_record_index, first_axis_offset), (second_axis_record_index, second_axis_offset)],
-    ) = axial_carrier_axes(bytes, frame, start)
+    ) = axial_carrier_axes(ctx, bytes, frame, start)?
     else {
         return Ok(None);
     };
@@ -560,7 +573,7 @@ fn exact_assembly_axial_component_operand_at<'bytes>(
     else {
         return Ok(None);
     };
-    if !first.selects_same_object(&second)
+    if !first.selects_same_object(ctx, &second)?
         || !ctx.eq_ignore_ascii_case(
             first.occurrence_role.as_str(),
             second.occurrence_role.as_str(),
@@ -620,58 +633,78 @@ struct AxialSelectorPrefix<'bytes> {
     asset_at: usize,
 }
 
-fn axial_selector_prefix(
-    bytes: &[u8],
+fn axial_selector_prefix<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     selector_at: usize,
     selector_paired_at: usize,
     selector_record_index: u32,
-) -> Option<AxialSelectorPrefix<'_>> {
-    let class_tag = exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
-    let paired_class_tag =
-        exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
+) -> Result<Option<AxialSelectorPrefix<'a>>, CodecError> {
+    let class_tag = try_some!(exact_indexed_header_at(
+        bytes,
+        selector_at,
+        selector_record_index
+    ));
+    let paired_class_tag = try_some!(exact_indexed_header_at(
+        bytes,
+        selector_paired_at,
+        selector_record_index
+    ));
     if !zeros_at::<{ axial_selector::NESTED_RECORD_REFERENCE - axial_selector::ZERO_RUN_11 }>(
         bytes,
-        selector_at.checked_add(axial_selector::ZERO_RUN_11)?,
+        try_some!(selector_at.checked_add(axial_selector::ZERO_RUN_11)),
     ) {
-        return None;
+        return Ok(None);
     }
-    let nested_at = selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE)?;
-    let (nested_record_index, _) = exact_same_segment_record_reference(bytes, nested_at)?;
-    if nested_record_index != selector_record_index.checked_add(3)?
-        || View::u32_le_at(bytes, nested_at.checked_add(11)?)? != 1
+    let nested_at = try_some!(selector_at.checked_add(axial_selector::NESTED_RECORD_REFERENCE));
+    let (nested_record_index, _) =
+        try_some!(exact_same_segment_record_reference(ctx, bytes, nested_at)?);
+    if nested_record_index != try_some!(selector_record_index.checked_add(3))
+        || try_some!(View::u32_le_at(bytes, try_some!(nested_at.checked_add(11)))) != 1
     {
-        return None;
+        return Ok(None);
     }
-    Some(AxialSelectorPrefix {
+    Ok(Some(AxialSelectorPrefix {
         class_tag,
         paired_class_tag,
         nested_record_index,
-        nested_record_index_offset: nested_at.checked_add(1)?,
-        asset_at: nested_at.checked_add(15)?,
-    })
+        nested_record_index_offset: try_some!(nested_at.checked_add(1)),
+        asset_at: try_some!(nested_at.checked_add(15)),
+    }))
 }
 
 /// The local occurrence reference that follows the selector context GUID
 /// ending at `context_end`, its offset, and the cursor after the count 1 that
 /// follows it.
-fn axial_selector_occurrence(bytes: &[u8], context_end: usize) -> Option<(u64, usize, usize)> {
-    if View::u32_le_at(bytes, context_end)? != 2
-        || View::u32_le_at(bytes, context_end.checked_add(4)?)? != 0
-        || View::u32_le_at(bytes, context_end.checked_add(8)?)? != 1
+fn axial_selector_occurrence(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    context_end: usize,
+) -> Result<Option<(u64, usize, usize)>, CodecError> {
+    if try_some!(View::u32_le_at(bytes, context_end)) != 2
+        || try_some!(View::u32_le_at(
+            bytes,
+            try_some!(context_end.checked_add(4))
+        )) != 0
+        || try_some!(View::u32_le_at(
+            bytes,
+            try_some!(context_end.checked_add(8))
+        )) != 1
     {
-        return None;
+        return Ok(None);
     }
-    let mut cursor = context_end.checked_add(12)?;
-    let occurrence_reference_offset = cursor.checked_add(1)?;
-    let (occurrence_reference, _) = take_reference(bytes, &mut cursor)?.local()?;
-    if View::u32_le_at(bytes, cursor)? != 1 {
-        return None;
+    let mut cursor = try_some!(context_end.checked_add(12));
+    let occurrence_reference_offset = try_some!(cursor.checked_add(1));
+    let (occurrence_reference, _) =
+        try_some!(try_some!(take_reference(ctx, bytes, &mut cursor)?).local());
+    if try_some!(View::u32_le_at(bytes, cursor)) != 1 {
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         occurrence_reference,
         occurrence_reference_offset,
-        cursor.checked_add(4)?,
-    ))
+        try_some!(cursor.checked_add(4)),
+    )))
 }
 
 fn exact_assembly_axial_selector(
@@ -697,11 +730,13 @@ fn exact_assembly_axial_selector(
         return Ok(None);
     };
     let Some(prefix) = axial_selector_prefix(
+        ctx,
         bytes,
         selector_at,
         selector_paired_at,
         selector_record_index,
-    ) else {
+    )?
+    else {
         return Ok(None);
     };
     let Some((selector_asset_id, selector_context_at)) =
@@ -715,7 +750,7 @@ fn exact_assembly_axial_selector(
         return Ok(None);
     };
     let Some((occurrence_reference, occurrence_reference_offset, mut cursor)) =
-        axial_selector_occurrence(bytes, after_selector_context_id)
+        axial_selector_occurrence(ctx, bytes, after_selector_context_id)?
     else {
         return Ok(None);
     };

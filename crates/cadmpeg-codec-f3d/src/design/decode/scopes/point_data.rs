@@ -15,6 +15,16 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// Type GUID of the point-data class a `WorkPoint` scope references. Every
 /// record of this class carries the `point3d` member sequence below.
 const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
@@ -92,35 +102,36 @@ fn point_data_level(
     let Some(cursor) = payload_prologue(bytes, start, end) else {
         return Ok(None);
     };
-    let Some(level) = (|| {
+    let Some(level) = (|| -> Result<Option<PointDataLevel>, CodecError> {
         let mut cursor = cursor;
         if version >= 2 {
-            cursor = cursor.checked_add(4)?;
+            cursor = try_some!(cursor.checked_add(4));
         }
-        cursor = cursor.checked_add(16)?;
+        cursor = try_some!(cursor.checked_add(16));
         if version >= 1 {
-            take_reference(body, &mut cursor)?;
+            try_some!(take_reference(ctx, body, &mut cursor)?);
         }
         let position_at = cursor;
-        let reference_type_at = position_at.checked_add(24)?;
-        let reference_type = View::u32_le_at(body, reference_type_at)?;
-        cursor = reference_type_at.checked_add(4)?;
+        let reference_type_at = try_some!(position_at.checked_add(24));
+        let reference_type = try_some!(View::u32_le_at(body, reference_type_at));
+        cursor = try_some!(reference_type_at.checked_add(4));
         if version >= 3 {
-            cursor = cursor.checked_add(24)?;
+            cursor = try_some!(cursor.checked_add(24));
         }
-        let input_count = usize::try_from(View::u32_le_at(body, cursor)?).ok()?;
-        let inputs_at = cursor.checked_add(4)?;
-        if input_count == 0 || input_count > end.checked_sub(inputs_at)? {
-            return None;
+        let input_count = try_some!(usize::try_from(try_some!(View::u32_le_at(body, cursor))).ok());
+        let inputs_at = try_some!(cursor.checked_add(4));
+        if input_count == 0 || input_count > try_some!(end.checked_sub(inputs_at)) {
+            return Ok(None);
         }
-        Some(PointDataLevel {
+        Ok(Some(PointDataLevel {
             position_at,
             reference_type,
             reference_type_at,
             inputs_at,
             input_count,
-        })
-    })() else {
+        }))
+    })()?
+    else {
         return Ok(None);
     };
     // The count is read from the frame, so each reference is admitted as the
@@ -128,7 +139,7 @@ fn point_data_level(
     let mut cursor = level.inputs_at;
     for _ in 0..level.input_count {
         ctx.charge_work(1, "scan F3D point-data inputs")?;
-        if input_reference(body, &mut cursor).is_none() {
+        if input_reference(ctx, body, &mut cursor)?.is_none() {
             return Ok(None);
         }
     }
@@ -136,15 +147,19 @@ fn point_data_level(
 }
 
 /// The marked input reference at `cursor`, advancing past it.
-fn input_reference(body: &[u8], cursor: &mut usize) -> Option<DesignWorkPointInput> {
-    let reference_offset = cursor.checked_add(1)?;
-    let reference = take_reference(body, cursor)?;
-    DesignWorkPointInput::try_new(
-        u32::try_from(reference.target()?).ok()?,
+fn input_reference(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cursor: &mut usize,
+) -> Result<Option<DesignWorkPointInput>, CodecError> {
+    let reference_offset = try_some!(cursor.checked_add(1));
+    let reference = try_some!(take_reference(ctx, body, cursor)?);
+    Ok(DesignWorkPointInput::try_new(
+        try_some!(u32::try_from(try_some!(reference.target())).ok()),
         u64_from_index(reference_offset),
         None,
     )
-    .ok()
+    .ok())
 }
 
 /// The one level that every version allowed for the record names. A stored
@@ -284,7 +299,7 @@ fn point_data_construction(
     let mut inputs = ctx.vector_storage(level.input_count, "f3d point-data inputs")?;
     let mut cursor = level.inputs_at;
     for _ in ctx.admit_iter(&(0..level.input_count), "scan F3D point-data inputs")? {
-        let Some(input) = input_reference(body, &mut cursor) else {
+        let Some(input) = input_reference(ctx, body, &mut cursor)? else {
             return Ok(None);
         };
         ctx.push_vec(&mut inputs, input, "f3d point-data inputs")?;

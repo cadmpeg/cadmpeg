@@ -44,8 +44,22 @@ pub(crate) struct DesignEntityId {
     suffix: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEntityId {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let text = cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.text, ctx, operation)?;
+        let suffix =
+            cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.suffix, ctx, operation)?;
+        text.checked_add(suffix)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+    }
+}
+
 impl TryFrom<String> for DesignEntityId {
-    type Error = String;
+    type Error = &'static str;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let (_, suffix) = value
@@ -89,6 +103,23 @@ impl DesignEntityId {
 pub(crate) struct Located<T, O = u64> {
     pub(crate) value: T,
     pub(crate) offset: O,
+}
+
+impl<T: cadmpeg_core::decode::cost::DecodeCost, O: cadmpeg_core::decode::cost::DecodeCost>
+    cadmpeg_core::decode::cost::DecodeCost for Located<T, O>
+{
+    const FIXED_BYTES: Option<u64> = match (T::FIXED_BYTES, O::FIXED_BYTES) {
+        (Some(value), Some(offset)) => value.checked_add(offset),
+        _ => None,
+    };
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.value, &self.offset).decode_cost(ctx, operation)
+    }
 }
 
 impl<T, O> Located<T, O> {
@@ -143,6 +174,14 @@ impl<T, O> ReferenceRun<T, O> {
         match &self.0 {
             ReferenceRunData::Located(rows) => Some(rows),
             ReferenceRunData::Unlocated(_) => None,
+        }
+    }
+
+    /// Borrows the backing values and located rows without traversing either storage form.
+    pub(crate) fn storage_slices(&self) -> (&[T], &[Located<T, O>]) {
+        match &self.0 {
+            ReferenceRunData::Unlocated(values) => (values.as_slice(), &[]),
+            ReferenceRunData::Located(rows) => (&[], rows.as_slice()),
         }
     }
 
@@ -449,6 +488,22 @@ impl NativeRecordId {
         let stream_end = stream.len();
         Ok(Self { text, stream_end })
     }
+    /// Admit the grammar scans of [`Self::try_f3d_new`] over `text`.
+    ///
+    /// The stream search, the stream, kind and key comparison, and the scope
+    /// check each read the id at most once.
+    pub(super) fn admit_grammar(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        text: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const GRAMMAR_PASSES: u64 = 3;
+        let extent = cadmpeg_core::decode::u64_from_index(text.len())
+            .checked_mul(GRAMMAR_PASSES)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("validate F3D native record ID", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(extent, "validate F3D native record ID")
+    }
     pub(super) fn try_f3d_new(
         text: String,
         kind: &str,
@@ -544,6 +599,29 @@ mod native_record_id_tests {
             NativeRecordId::try_new("f3d:Design%2Fmain:act-guid#43".into(), "act-guid", 42,)
                 .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod entity_id_tests {
+    use super::DesignEntityId;
+
+    #[test]
+    fn entity_id_rejections_borrow_static_messages() {
+        for (text, expected) in [
+            ("", "entity_id requires a decimal suffix"),
+            ("Sketch", "entity_id requires a decimal suffix"),
+            ("Sketch_", "entity_id requires a decimal u64 suffix"),
+            ("Sketch_-1", "entity_id requires a decimal u64 suffix"),
+            ("Sketch_++1", "entity_id requires a decimal u64 suffix"),
+            (
+                "Sketch_18446744073709551616",
+                "entity_id requires a decimal u64 suffix",
+            ),
+        ] {
+            let error: &'static str = DesignEntityId::try_from(text.to_owned()).unwrap_err();
+            assert_eq!(error, expected);
+        }
     }
 }
 

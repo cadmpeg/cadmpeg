@@ -1240,7 +1240,7 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
 }
 
 fn assert_expression_audit_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
     let parameter = |stream: &str, record_index, expression: &str, name: &str| {
@@ -1277,24 +1277,23 @@ fn assert_expression_audit_limit(operation: &'static str) {
         )
         .expect("test projection has a synthetic exact timeline")
     });
-    let mut found = false;
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            unresolved_parameter_expression_dependency_count(&ctx, &native, &projected),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems
-        ) {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no collection limit reached {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (unresolved_parameter_expression_dependency_count(&ctx, &native, &projected))
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

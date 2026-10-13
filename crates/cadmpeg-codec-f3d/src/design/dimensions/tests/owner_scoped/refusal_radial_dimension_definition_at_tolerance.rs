@@ -24,7 +24,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             &entity,
             "Radius Dimension-2",
             0.5,
-            radius_parameter.clone(),
+            (&radius_parameter, "f3d radial parameter id"),
         )
         .transpose()
         .map(|_| ())

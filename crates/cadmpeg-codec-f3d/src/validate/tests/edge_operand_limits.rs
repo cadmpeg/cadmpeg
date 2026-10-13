@@ -73,14 +73,7 @@ fn native(valid: bool) -> crate::native::F3dNative {
     native
 }
 
-fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
-    super::typed_reload_items::<crate::records::topology::edge_identity::DesignEdgeOperand>(
-        ir,
-        "design_edge_operands",
-    )
-}
-
-fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn edge_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     crate::test_support::with_decode_context(|service_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -97,22 +90,22 @@ fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpe
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = if valid {
-            reload_items(&ir) + after_reload_items
-        } else {
-            after_reload_items
-        };
+        policy.limits.max_collection_items = max_items;
         policy.limits.max_retained_bytes = max_retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_edge_operands(&decode, &ctx, &mut Vec::new()).unwrap_err()
+        super::super::validate_edge_operands(&ctx, &mut Vec::new()).unwrap_err()
     })
 }
 
 #[test]
 fn edge_operand_expected_index_refuses_collection_limit() {
-    let error = edge_error(true, 1, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D expected edge operands",
+        |cap| Err::<(), cadmpeg_core::CodecError>(edge_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D expected edge operands")
@@ -121,7 +114,11 @@ fn edge_operand_expected_index_refuses_collection_limit() {
 
 #[test]
 fn edge_operand_slot_refuses_collection_limit() {
-    let error = edge_error(true, 2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D edge operand slots",
+        |cap| Err::<(), cadmpeg_core::CodecError>(edge_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D edge operand slots")
@@ -130,7 +127,11 @@ fn edge_operand_slot_refuses_collection_limit() {
 
 #[test]
 fn edge_operand_record_refuses_collection_limit() {
-    let error = edge_error(true, 3, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D edge operand records",
+        |cap| Err::<(), cadmpeg_core::CodecError>(edge_error(true, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D edge operand records")
@@ -139,7 +140,11 @@ fn edge_operand_record_refuses_collection_limit() {
 
 #[test]
 fn edge_operand_invalid_finding_refuses_collection_limit() {
-    let error = edge_error(false, 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(edge_error(false, cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -148,9 +153,42 @@ fn edge_operand_invalid_finding_refuses_collection_limit() {
 
 #[test]
 fn edge_operand_invalid_entity_refuses_retained_limit() {
-    let error = edge_error(false, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(edge_error(false, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
     );
+}
+
+#[test]
+fn edge_operand_full_value_comparison_refuses_work_limit() {
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D expected edge operand",
+        0,
+        |decode| {
+            let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let native = native(true);
+            ir.native
+                .namespace_mut("f3d")
+                .set_arena(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "design_edge_operands",
+                    &native.design_edge_operands,
+                )
+                .unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, decode)?;
+            super::super::validate_edge_operands(&ctx, &mut Vec::new()).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D expected edge operand"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
 }

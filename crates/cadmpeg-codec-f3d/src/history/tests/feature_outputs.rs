@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::history::test_support::{active_body, base_feature, output_binding_inputs};
 fn empty_transition_history() -> crate::history_records::AsmHistory {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
@@ -39,21 +40,47 @@ fn feature_output_error(
     histories: &[crate::history_records::AsmHistory],
     bodies: &[cadmpeg_ir::topology::Body],
     max_items: u64,
-    max_retained: u64,
+    max_materialized_bytes: u64,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
+    policy.limits.max_retained_bytes = u64::MAX;
+    // Borrowed lookup tables keep their backing storage in live scratch reservations.
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_feature_outputs(&ctx, &mut [], &[], histories, bodies).unwrap_err()
+    let (mut feature, scope, fallback, _) = output_binding_inputs();
+    let histories = if histories.is_empty() {
+        std::slice::from_ref(&fallback)
+    } else {
+        histories
+    };
+    crate::history::bind_feature_outputs(
+        &ctx,
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        histories,
+        bodies,
+    )
+    .unwrap_err()
 }
 
 #[test]
 fn feature_output_history_nodes_refuse_collection_limit() {
-    let history = empty_transition_history();
-    let error = feature_output_error(&[history], &[], 0, u64::MAX);
+    let (_, _, history, _) = output_binding_inputs();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D feature output history nodes",
+        |cap| {
+            Err::<(), _>(feature_output_error(
+                std::slice::from_ref(&history),
+                &[],
+                cap,
+                u64::MAX,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D feature output history nodes")
@@ -62,74 +89,40 @@ fn feature_output_history_nodes_refuse_collection_limit() {
 
 #[test]
 fn feature_output_states_refuse_collection_limit() {
-    let history = empty_transition_history();
-    let error = feature_output_error(&[history], &[], 1, u64::MAX);
+    let operation = "index F3D feature output states";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let history = empty_transition_history();
+            Err::<(), _>(feature_output_error(&[history], &[], cap, u64::MAX))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D feature output states")
+        if limit.operation == operation)
     );
-}
-
-fn active_body() -> cadmpeg_ir::topology::Body {
-    let mut body = cadmpeg_ir::examples::unit_cube()
-        .unwrap()
-        .model
-        .bodies
-        .remove(0);
-    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
-    body
 }
 
 #[test]
 fn feature_output_active_body_refuses_collection_limit() {
     let body = active_body();
-    let error = feature_output_error(&[], &[body], 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D active feature output bodies",
+        |cap| {
+            Err::<(), _>(feature_output_error(
+                &[],
+                std::slice::from_ref(&body),
+                cap,
+                u64::MAX,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D active feature output bodies")
     );
-}
-
-#[test]
-fn feature_output_active_id_refuses_retained_limit() {
-    let body = active_body();
-    let error = feature_output_error(&[], &[body], u64::MAX, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D active body identity")
-    );
-}
-
-fn base_feature() -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
-    use cadmpeg_ir::ids::BodyId;
-    Feature {
-        id: FeatureId::mint("test:model:feature#feature").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("Base Feature".into()),
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: FeatureEvaluation::new(
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-                bodies: BodySelection::Native("native:scope".into()),
-            }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![
-                    BodyId::mint("test:model:body#2").unwrap(),
-                    BodyId::mint("test:model:body#1").unwrap(),
-                ],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-        ),
-        native_ref: Some("native:scope".into()),
-    }
 }
 
 fn base_feature_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
@@ -139,7 +132,7 @@ fn base_feature_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_base_feature_output_selection(&ctx, &mut base_feature()).unwrap_err()
+    crate::history::bind_base_feature_output_selection(&ctx, &mut base_feature()).unwrap_err()
 }
 
 #[test]
@@ -173,80 +166,6 @@ fn base_feature_native_selection_refuses_retained_limit() {
     );
 }
 
-fn output_binding_inputs() -> (
-    cadmpeg_ir::features::Feature,
-    crate::records::feature::scope::DesignParameterScope,
-    crate::history_records::AsmHistory,
-    cadmpeg_ir::topology::Body,
-) {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalRelation, AsmHistoricalTopology,
-        AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyCache,
-    };
-    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    let mut feature = base_feature();
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#1",
-        DesignFeatureKind::BaseFeature,
-        1,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.history_state_id = Some(1);
-            draft.previous_history_state_id = Some(0);
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    feature.native_ref = Some(scope.id.clone());
-    let mut current_topology = AsmHistoricalTopology::default();
-    current_topology.bodies.push(1);
-    current_topology.body_regions.push(AsmHistoricalRelation {
-        owner_ref: 1,
-        member_refs: Vec::new(),
-    });
-    let mut delta = AsmHistoricalTopologyDelta::default();
-    delta.bodies.inserted.push(1);
-    let state = |state_id, node_index, next_ref, topology, transition| AsmDeltaState {
-        id: format!("f3d:asm-delta-state#{state_id}"),
-        parent: "f3d:asm-history#1".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref,
-        node_index,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: AsmTopologyCache::Complete(topology),
-        transition,
-    };
-    let history = AsmHistory {
-        id: "f3d:asm-history#1".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                1,
-                1,
-                Some(0),
-                current_topology,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(0),
-                    records: AsmHistoricalEntityDelta::default(),
-                    topology: delta,
-                }),
-            ),
-            state(0, 0, None, AsmHistoricalTopology::default(), None),
-        ],
-    };
-    (feature, scope, history, active_body())
-}
-
 fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (mut feature, scope, history, body) = output_binding_inputs();
@@ -255,7 +174,7 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_feature_outputs(
+    crate::history::bind_feature_outputs(
         &ctx,
         std::slice::from_mut(&mut feature),
         &[scope],
@@ -267,10 +186,15 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
 
 #[test]
 fn feature_output_bodies_refuse_collection_limit() {
-    let error = bound_output_error(9, u64::MAX);
+    let operation = "collect F3D feature output bodies";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| Err::<(), _>(bound_output_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D feature output bodies")
+        if limit.operation == operation)
     );
 }
 
@@ -292,7 +216,7 @@ fn feature_output_binding_preserves_base_feature_selection() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     let (mut feature, scope, history, body) = output_binding_inputs();
     let ctx = cadmpeg_test_support::service_decode_context();
-    super::super::bind_feature_outputs(
+    crate::history::bind_feature_outputs(
         &ctx,
         std::slice::from_mut(&mut feature),
         &[scope],
@@ -309,34 +233,147 @@ fn feature_output_binding_preserves_base_feature_selection() {
 }
 
 #[test]
-fn changed_topology_members_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut delta = crate::history_records::AsmHistoricalTopologyDelta::default();
-    delta.bodies.inserted.push(1);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::changed_family_refs(&ctx, &delta, false).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D changed topology members")
+fn affected_history_body_scan_refuses_work() {
+    let operation = "scan F3D affected history bodies";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let (mut feature, scope, history, body) = output_binding_inputs();
+            crate::history::bind_feature_outputs(
+                ctx,
+                std::slice::from_mut(&mut feature),
+                &[scope],
+                &[history],
+                &[body],
+            )
+        },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
-fn affected_history_bodies_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let (_, _, history, _) = output_binding_inputs();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::affected_body_refs(&ctx, &history.states[0], Some(&history.states[1]))
-            .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D affected history bodies")
+fn feature_output_binding_uses_first_scope_with_repeated_id() {
+    let (mut feature, scope, history, body) = output_binding_inputs();
+    let other = crate::records::feature::scope::DesignParameterScope::empty(
+        &scope.id,
+        crate::records::feature::scope::DesignFeatureKind::Combine,
+        scope.record_index + 1,
     );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    crate::history::bind_feature_outputs(
+        &ctx,
+        std::slice::from_mut(&mut feature),
+        &[scope, other],
+        &[history],
+        std::slice::from_ref(&body),
+    )
+    .unwrap();
+    assert_eq!(feature.evaluation.outputs().as_slice(), &[body.id]);
+}
+
+#[test]
+fn empty_feature_outputs_skip_all_indexes() {
+    let (_, scope, history, body) = output_binding_inputs();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        crate::history::bind_feature_outputs(ctx, &mut [], &[scope], &[history], &[body])
+    })
+    .unwrap();
+}
+
+#[test]
+fn feature_outputs_without_native_reference_skip_all_indexes() {
+    let (mut feature, scope, history, body) = output_binding_inputs();
+    feature.native_ref = None;
+    let original = feature.clone();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        crate::history::bind_feature_outputs(
+            ctx,
+            std::slice::from_mut(&mut feature),
+            &[scope],
+            &[history],
+            &[body],
+        )
+    })
+    .unwrap();
+    assert_eq!(feature, original);
+}
+
+#[test]
+fn feature_outputs_with_empty_body_lane_skip_active_index() {
+    let (mut feature, scope, mut history, body) = output_binding_inputs();
+    history.states[0].topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        crate::history_records::AsmHistoricalTopology::default(),
+    );
+    history.states[0].transition.as_mut().unwrap().topology = Default::default();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D active bodies",
+            None,
+        );
+        crate::history::bind_feature_outputs(
+            ctx,
+            std::slice::from_mut(&mut feature),
+            &[scope],
+            &[history],
+            &[body],
+        )
+    })
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
+}
+
+#[test]
+fn feature_output_unadmitted_state_skips_node_index() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    for rejected in 0..3 {
+        let (mut feature, scope, mut history, body) = output_binding_inputs();
+        let original = feature.clone();
+        match rejected {
+            0 => history.states[0].state_id = 77,
+            1 => history.states.push(history.states[0].clone()),
+            _ => {
+                history.states[0]
+                    .transition
+                    .as_mut()
+                    .unwrap()
+                    .previous_state_id = None;
+            }
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "index F3D feature output history nodes",
+                None,
+            );
+            crate::history::bind_feature_outputs(
+                ctx,
+                std::slice::from_mut(&mut feature),
+                &[scope],
+                &[history],
+                &[body],
+            )
+            .unwrap();
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+        assert_eq!(feature, original);
+    }
 }

@@ -16,28 +16,22 @@ fn assert_rectangular_refusal(dimension: Limit, operation: &'static str) {
     let relation =
         rectangular_point_relation(3, 1.5, RectangularPatternDistanceForm::AdjacentSpacing);
     let parameters = rectangular_parameters(3, 1.5);
-    for limit in 0..512 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            Limit::Collection => policy.limits.max_collection_items = limit,
-            Limit::Retained => policy.limits.max_retained_bytes = limit,
-            Limit::Work => policy.limits.max_work_units = limit,
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_rectangular_pattern(
+    let dimension = match dimension {
+        Limit::Collection => cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Limit::Retained => cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Limit::Work => cadmpeg_core::decode::ResourceDimension::WorkUnits,
+    };
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        exact_rectangular_pattern(
             &relation,
             "native",
-            &parameters,
+            &mut crate::design::constraints::PatternParameters::new(ctx, &parameters),
             &[&seed, &second, &third],
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no refusal at {operation}");
+            ctx,
+        )
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]

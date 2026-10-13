@@ -473,9 +473,10 @@ mod tests {
     #[test]
     fn inspection_partition_search_refuses_unadmitted_stream_work() {
         let file = crate::test_support::test_prt::single_part_prt();
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .unwrap();
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .unwrap();
         let scan = crate::decode::Scan {
             container,
             streams: vec![crate::parasolid::Stream {

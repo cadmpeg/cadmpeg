@@ -9,6 +9,16 @@ use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 const ENTITY_SUFFIX: u64 = 201;
 
+fn tested_visibility_member(
+    bytes: &[u8],
+    member_at: usize,
+    entity_suffix: u64,
+) -> Option<crate::records::sketch_placement::DesignSketchVisibility> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        decode_sketch_visibility_member(ctx, bytes, member_at, entity_suffix).unwrap()
+    })
+}
+
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
@@ -42,28 +52,27 @@ fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
 
 #[test]
 fn sketch_visibility_member_decodes_both_boolean_values() {
-    let hidden =
-        decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX).expect("hidden member");
+    let hidden = tested_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX).expect("hidden member");
     assert_eq!(hidden.stream_ordinal.get(), 1);
     assert_eq!(hidden.stream_ordinal_offset(), 30);
     assert_eq!(hidden.visible_offset(), 35);
     assert!(!hidden.visible);
 
     let visible =
-        decode_sketch_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX).expect("visible member");
+        tested_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX).expect("visible member");
     assert_eq!(visible.stream_ordinal.get(), 513);
     assert!(visible.visible);
 }
 
 #[test]
 fn sketch_visibility_member_rejects_invalid_ordinal_or_owner() {
-    assert!(decode_sketch_visibility_member(&member(1, 2), 0, ENTITY_SUFFIX).is_none());
-    assert!(decode_sketch_visibility_member(&member(0, 1), 0, ENTITY_SUFFIX).is_none());
-    assert!(decode_sketch_visibility_member(&member(1, 1), 0, ENTITY_SUFFIX + 1).is_none());
+    assert!(tested_visibility_member(&member(1, 2), 0, ENTITY_SUFFIX).is_none());
+    assert!(tested_visibility_member(&member(0, 1), 0, ENTITY_SUFFIX).is_none());
+    assert!(tested_visibility_member(&member(1, 1), 0, ENTITY_SUFFIX + 1).is_none());
 
     let mut external_owner = member(1, 1);
     external_owner[28] = 1;
-    assert!(decode_sketch_visibility_member(&external_owner, 0, ENTITY_SUFFIX).is_none());
+    assert!(tested_visibility_member(&external_owner, 0, ENTITY_SUFFIX).is_none());
 }
 
 fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {

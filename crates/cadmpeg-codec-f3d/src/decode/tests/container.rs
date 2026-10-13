@@ -351,23 +351,24 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
 /// holding one declares no carrier at all.
 #[test]
 fn text_encoded_asm_members_classify_as_geometry_carriers() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     for name in [
         "Fusion[Active]/Breps.BlobParts/BREP0.sat",
         "Fusion[Active]/Breps.BlobParts/BREP1.SAT",
         "probe/body.smt",
     ] {
         assert_eq!(
-            crate::container::classify(name),
+            crate::container::classify(&ctx, name).unwrap(),
             ContainerRole::BrepText,
             "{name} must classify as a text-encoded BREP carrier"
         );
     }
     assert_eq!(
-        crate::container::classify("a/b.smb"),
+        crate::container::classify(&ctx, "a/b.smb").unwrap(),
         ContainerRole::BrepSmb
     );
     assert_eq!(
-        crate::container::classify("a/b.smbh"),
+        crate::container::classify(&ctx, "a/b.smbh").unwrap(),
         ContainerRole::BrepSmbh
     );
 }
@@ -480,7 +481,12 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
             .unwrap()
             .is_none());
         scan.breps.push(facts);
-        assert_eq!(crate::container::history_breps(&scan).count(), 0);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert!(crate::container::history_breps(&ctx, &scan)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .is_empty());
     }
 }
 

@@ -823,13 +823,19 @@ pub(in crate::native) fn feature_draft_construction_payloads(
             .checked_sub(1)
             .ok_or_else(|| ctx.refuse_codec_limit("count NX draft payload indices", 0, 1))?;
         let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
+        let mut source_text_storage =
+            ctx.reserve_scoped(0, "NX draft construction source block")?;
         let mut data_blocks = Vec::new();
         let mut rows = tokens.indices();
         for _ in ctx.admit_iter(&(0..index_extent), "copy NX draft payload indices")? {
             let Some(row) = rows.next() else {
                 return Err(ctx.refuse_codec_limit("copy NX draft payload indices", 0, 1));
             };
-            let block = ctx.copy_retained_text(row.target, "NX draft construction source block")?;
+            let block = ctx.copy_scoped_text(
+                row.target,
+                &mut source_text_storage,
+                "NX draft construction source block",
+            )?;
             ctx.push_scoped_vec(
                 &mut source_id_storage,
                 &mut data_blocks,
@@ -837,9 +843,13 @@ pub(in crate::native) fn feature_draft_construction_payloads(
                 "NX draft construction source blocks",
             )?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+        })?
+        else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = replace_operation_text(
             ctx,
             &lane.id,
@@ -916,7 +926,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         {
             continue;
         }
-        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+        let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
             ctx,
             graph
                 .iter()
@@ -934,12 +944,21 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         )? {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source_array(
+                ctx,
+                data_blocks,
+                blocks,
+                source_id_storage,
+            )
+        })?
+        else {
             continue;
         };
         let Some(key) = operation_key(ctx, &lane.id, "find NX draft graph operation key")? else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:draft-construction-graph-payload#{key}"),
             "NX draft graph payload identity",
@@ -975,7 +994,7 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1029,7 +1048,7 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1084,16 +1103,16 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX draft string parser rows")?;
+        let values =
+            value_storage.with_storage(|| crate::om::string_values(ctx, joined.bytes(), 0))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::string_values(ctx, joined.bytes(), 0)?,
-                "visit NX draft payload strings",
-            )?
+            .admit_iter(values, "visit NX draft payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -1106,10 +1125,9 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let graph_payload = ctx.copy_retained_text(&payload.id, "NX draft string graph")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX draft string ordinal", 0, 1))?;
-            let value = PrintableString::new(
-                ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            let value = value
+                .value
+                .try_into_owned_for_decode(ctx, "NX draft construction string")?;
             ctx.reserve_vec(&mut strings, 1, "NX draft construction graph strings")?;
             strings.push(FeatureDraftConstructionGraphString {
                 id,
@@ -1138,7 +1156,7 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1234,3 +1252,9 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
 cadmpeg_core::named_optional_field!(deserialize_data_blocks, Vec<String>, "data_blocks");
+
+#[cfg(test)]
+mod text_storage_tests;
+
+#[cfg(test)]
+mod payload_storage_tests;

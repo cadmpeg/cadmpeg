@@ -75,7 +75,10 @@ fn resolved_body_binding(
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire::<String> {
-            id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_body_binding_id(ctx, stream, asm_key_offset)
+                    .expect("test F3D native identity")
+            }),
             stream: stream.into(),
             pair_count: 1,
             pair_ordinal: 0,
@@ -197,8 +200,7 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     logical.extend_from_slice(&1_u32.to_le_bytes());
     lp_ascii(&mut logical, "");
 
-    let paged = crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical))
-        .expect("page catalog record");
+    let paged = super::page_logical(&logical).expect("page catalog record");
     let frames = crate::test_support::with_decode_context(|ctx| {
         cadmpeg_protein::framing::record_frames_admitted(ctx, &paged)
             .expect("frame catalog pages")
@@ -232,7 +234,11 @@ fn definition_catalog_schema_refuses_retained_limit() {
     );
 }
 
-fn catalog_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
+fn catalog_field_refusal(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+    skip: usize,
+) -> cadmpeg_core::CodecError {
     let mut record = RECORD_MARKER.to_vec();
     lp_ascii(&mut record, "S");
     record.push(0);
@@ -245,63 +251,90 @@ fn catalog_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
     record.extend_from_slice(&1u32.to_le_bytes());
     lp_ascii(&mut record, "E");
     record.extend_from_slice(&0u32.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_before;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::decode_definition_catalog_record(&ctx, &record)
-        .expect_err("catalog field must exceed retained budget")
+    crate::test_support::resource_refusal_at(dimension, operation, skip, |ctx| {
+        super::decode_definition_catalog_record(ctx, &record)
+    })
 }
 
 macro_rules! catalog_field_limit_test {
-    ($name:ident, $retained_before:literal) => {
+    ($name:ident, $dimension:ident, $operation:literal, $skip:literal) => {
         #[test]
         fn $name() {
-            let error = catalog_field_refusal($retained_before);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "retain F3D UTF-8 string"));
+            let error = catalog_field_refusal(cadmpeg_core::decode::ResourceDimension::$dimension, $operation, $skip);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == $operation));
         }
     };
 }
 
-catalog_field_limit_test!(definition_catalog_asset_refuses_retained_limit, 1);
-catalog_field_limit_test!(definition_catalog_base_refuses_retained_limit, 2);
-catalog_field_limit_test!(definition_catalog_category_refuses_retained_limit, 3);
-catalog_field_limit_test!(definition_catalog_group_refuses_retained_limit, 4);
-catalog_field_limit_test!(definition_catalog_subgroup_refuses_retained_limit, 5);
-catalog_field_limit_test!(definition_catalog_description_refuses_retained_limit, 6);
-catalog_field_limit_test!(definition_catalog_extension_refuses_retained_limit, 7);
+catalog_field_limit_test!(
+    definition_catalog_asset_refuses_retained_limit,
+    RetainedBytes,
+    "retain F3D UTF-8 string",
+    1
+);
+catalog_field_limit_test!(
+    definition_catalog_category_refuses_retained_limit,
+    RetainedBytes,
+    "retain F3D UTF-8 string",
+    2
+);
+catalog_field_limit_test!(
+    definition_catalog_base_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    2
+);
+catalog_field_limit_test!(
+    definition_catalog_group_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    4
+);
+catalog_field_limit_test!(
+    definition_catalog_subgroup_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    5
+);
+catalog_field_limit_test!(
+    definition_catalog_description_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    6
+);
+catalog_field_limit_test!(
+    definition_catalog_extension_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    7
+);
 
 #[test]
-fn fixed_material_schema_refuses_retained_limit() {
+fn fixed_material_schema_validates_utf8_with_work_refusal() {
     let mut record = RECORD_MARKER.to_vec();
     lp_ascii(&mut record, "GenericSchema");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    let error = super::decode_fixed_record(&ctx, &record)
-        .expect_err("fixed material schema must exceed retained budget");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "decode F3D UTF-8 string",
+        0,
+        |ctx| super::decode_fixed_record(ctx, &record),
+    );
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-8 string")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode F3D UTF-8 string")
     );
 }
 
-fn fixed_material_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
+fn fixed_material_field_refusal(skip: usize) -> cadmpeg_core::CodecError {
     let mut record = RECORD_MARKER.to_vec();
     for field in ["S", "G", "B", "L"] {
         lp_ascii(&mut record, field);
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_before;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::decode_fixed_record(&ctx, &record)
-        .expect_err("fixed material field must exceed retained budget")
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "decode F3D UTF-8 string",
+        skip,
+        |ctx| super::decode_fixed_record(ctx, &record),
+    )
 }
 
 macro_rules! fixed_material_field_limit_test {
@@ -310,14 +343,14 @@ macro_rules! fixed_material_field_limit_test {
         fn $name() {
             let error = fixed_material_field_refusal($retained_before);
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "retain F3D UTF-8 string"));
+                if limit.operation == "decode F3D UTF-8 string"));
         }
     };
 }
 
-fixed_material_field_limit_test!(fixed_material_guid_refuses_retained_limit, 1);
-fixed_material_field_limit_test!(fixed_material_base_refuses_retained_limit, 2);
-fixed_material_field_limit_test!(fixed_material_library_refuses_retained_limit, 3);
+fixed_material_field_limit_test!(fixed_material_guid_validates_utf8_with_work_refusal, 1);
+fixed_material_field_limit_test!(fixed_material_base_validates_utf8_with_work_refusal, 2);
+fixed_material_field_limit_test!(fixed_material_library_validates_utf8_with_work_refusal, 3);
 
 #[test]
 fn definition_catalog_version_one_omits_category() {
@@ -395,7 +428,7 @@ fn definition_catalog_uses_asset_and_schema_identity() {
     }
 
     crate::test_support::with_decode_context(|ctx| {
-        let mut definitions = std::collections::HashMap::new();
+        let mut definitions = std::collections::BTreeMap::new();
         merge_definition_catalog_record(
             ctx,
             &mut definitions,
@@ -416,20 +449,30 @@ fn definition_catalog_uses_asset_and_schema_identity() {
             definition("Prism-256", "Metal/Stainless"),
         )
         .unwrap();
-        let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
-        assert_eq!(definitions[&key].category, None);
+        assert_eq!(definitions["Prism-256"]["PrismMetalSchema"], None);
 
         let mut second_schema = definition("Prism-256", "Metal/Steel");
         second_schema.schema = "GenericSchema".into();
         merge_definition_catalog_record(ctx, &mut definitions, second_schema).unwrap();
-        assert_eq!(definitions.len(), 2);
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions["Prism-256"].len(), 2);
     });
 }
 
 #[test]
 fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
     let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
-    let Err(error) = super::unique_body_map_pair(&body_map, 100, "material assignment") else {
+    let Err(error) = crate::test_support::with_decode_context(|ctx| {
+        let _storage;
+        let (by_suffix, held_storage) = ctx.unique_index(
+            body_map
+                .iter()
+                .map(|binding| (binding.entity_suffix, binding)),
+            "index F3D body-map pairs by entity",
+        )?;
+        _storage = held_storage;
+        super::unique_body_map_pair(ctx, &by_suffix, 100, "material assignment").map(|_| ())
+    }) else {
         panic!("one Design entity must not select two map pairs")
     };
     assert!(error
@@ -450,7 +493,10 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let second_body =
         cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
     let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", second_body.as_str());
-    let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
+    let owner = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(ctx, stream, "material-assignment", 500)
+            .expect("test F3D native identity")
+    });
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
         id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second")
@@ -484,13 +530,17 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         visual_preset: None,
     };
     let projected = crate::test_support::with_decode_context(|ctx| {
+        let appearances = [appearance];
+        let index = super::AppearanceIndex::new(ctx, &appearances).unwrap();
+        let body_bindings = [first, second];
+        let pairs = super::BodyPairIndex::new(ctx, &body_bindings).unwrap();
         super::bind_bodies(
             ctx,
-            &[appearance],
+            (&appearances, &index),
             &[assignment],
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
-            &[first, second],
+            &pairs,
         )
         .expect("blob-qualified material binding")
     });
@@ -538,20 +588,22 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         visual_preset: None,
     };
 
-    assert!(
-        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
-            .expect("valid preset-less assignment")
-            .is_none()
-    );
+    assert!(super::writer_appearance_for_assignment(
+        std::slice::from_ref(&appearance),
+        &assignment
+    )
+    .expect("valid preset-less assignment")
+    .is_none());
 
     assignment.visual_guid =
         crate::records::references::DesignVisualToken::try_from(appearance_guid.to_owned())
             .unwrap();
-    assert!(
-        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
-            .expect("exact visual-token assignment")
-            .is_some()
-    );
+    assert!(super::writer_appearance_for_assignment(
+        std::slice::from_ref(&appearance),
+        &assignment
+    )
+    .expect("exact visual-token assignment")
+    .is_some());
 
     assignment.visual_guid = crate::records::references::DesignVisualToken::try_from(
         "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
@@ -562,11 +614,12 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         offset: 0,
     });
     appearance.name = Some("Prism-017".into());
-    assert!(
-        super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
-            .expect("present preset-name fallback")
-            .is_some()
-    );
+    assert!(super::writer_appearance_for_assignment(
+        std::slice::from_ref(&appearance),
+        &assignment
+    )
+    .expect("present preset-name fallback")
+    .is_some());
 }
 
 #[test]
@@ -591,26 +644,42 @@ fn complete_visual_token_selects_one_revision_record() {
         appearance("f3d:test:appearance#revised", revised_token),
     ];
 
-    let selected = super::appearance_for_visual_token(
-        &appearances,
-        &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
-        None,
-    )
+    let selected = crate::writer::primitives::with_writing_context(|ctx| {
+        appearance_for_visual_token(
+            ctx,
+            &appearances,
+            &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
+                .unwrap(),
+            None,
+        )
+    })
     .expect("unique complete visual token")
     .expect("revised appearance exists");
     assert_eq!(selected.id.as_str(), "f3d:test:appearance#revised");
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(appearance_for_visual_token(&ctx, &appearances,
+        &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(), None),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && failure.operation == "index F3D appearances"));
 
     let duplicates = [
         appearance("f3d:test:appearance#first", revised_token),
         appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
-        super::appearance_for_visual_token(
+        crate::writer::primitives::with_writing_context(|ctx| appearance_for_visual_token(
+            ctx,
             &duplicates,
             &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
                 .unwrap(),
             None
-        ),
+        )),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -636,28 +705,17 @@ fn visual_preset_fallback_requires_one_record() {
     ];
 
     assert!(matches!(
-        super::appearance_for_visual_token(
+        crate::writer::primitives::with_writing_context(|ctx| appearance_for_visual_token(
+            ctx,
             &appearances,
             &crate::records::references::DesignVisualToken::try_from(
                 "11111111-2222-3333-4444-555555555555".to_owned()
             )
             .unwrap(),
             Some("Prism-017"),
-        ),
+        )),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
-}
-
-#[test]
-fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
-    let mut record = vec![0; 120];
-    record[102] = 2;
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
-
-    record[102] = 1;
-    record[104..108].copy_from_slice(&1u32.to_le_bytes());
-    record[108..112].copy_from_slice(&16u32.to_le_bytes());
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
 }
 
 #[test]
@@ -711,7 +769,9 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
         );
         let record = appearance_record(schema, properties);
         assert_eq!(
-            super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
+            super::appearance_base_color(&cadmpeg_test_support::service_decode_context(), &record)
+                .unwrap()
+                .map(cadmpeg_ir::topology::Color::g),
             Some(0.25),
             "{schema} selects {primary_id}"
         );
@@ -737,7 +797,9 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     );
     let record = appearance_record("PrismOpaqueSchema", properties);
     assert_eq!(
-        super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
+        super::appearance_base_color(&cadmpeg_test_support::service_decode_context(), &record)
+            .unwrap()
+            .map(cadmpeg_ir::topology::Color::g),
         Some(0.625)
     );
 }
@@ -885,6 +947,7 @@ fn schema_appearances(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     super::appearances_from_schema_records(&ctx, records)
+        .map(|(appearances, count, _)| (appearances, count))
 }
 
 #[test]
@@ -1600,8 +1663,10 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (visibility, _storage) =
+        let _storage;
+        let (visibility, held_storage) =
             crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
+        _storage = held_storage;
         assert_eq!(
             visibility
                 .get(&("BREP.synthetic.smbh".into(), 3))
@@ -1628,10 +1693,10 @@ fn protein_revision_suffix_distinguishes_visual_record_identity() {
     };
     assert!(
         !token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015")
-            .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17"))
+            .eq_ignore_ascii_case(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17"))
     );
     assert!(token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015")
-        .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015")));
+        .eq_ignore_ascii_case(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015")));
     assert!(crate::records::references::DesignVisualToken::try_from(
         "not-a-guid_Post2015".to_owned()
     )
@@ -1727,8 +1792,7 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
     super::push_lp(&mut logical, "GenericSchema").unwrap();
     super::push_lp(&mut logical, guid).unwrap();
     logical.extend_from_slice(&u32::MAX.to_le_bytes());
-    let instance =
-        crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical)).unwrap();
+    let instance = super::page_logical(&logical).unwrap();
 
     let options = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1760,3 +1824,99 @@ mod assignment_losses;
 mod limits;
 
 mod appearance_assignments;
+
+#[test]
+fn appearance_payload_comparison_preserves_work_refusal() {
+    let left = opaque_appearance("test-preset");
+    let mut right = left.clone();
+    assert!(crate::test_support::with_decode_context(|decode| {
+        super::appearance_equal(decode, &left, &right)
+    })
+    .unwrap());
+    right.name = Some("Different preset".to_owned());
+    assert!(!crate::test_support::with_decode_context(|decode| {
+        super::appearance_equal(decode, &left, &right)
+    })
+    .unwrap());
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D appearance names",
+        0,
+        |decode| super::appearance_equal(decode, &left, &right),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare F3D appearance names")
+    );
+}
+
+/// Resolve a visual token through an index built over `appearances`.
+fn appearance_for_visual_token<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    appearances: &'a [cadmpeg_ir::appearance::Appearance],
+    token: &crate::records::references::DesignVisualToken,
+    fallback_name: Option<&str>,
+) -> Result<Option<&'a cadmpeg_ir::appearance::Appearance>, cadmpeg_core::CodecError> {
+    super::AppearanceIndex::new(ctx, appearances)?.for_visual_token(
+        ctx,
+        appearances,
+        token,
+        fallback_name,
+    )
+}
+
+#[test]
+fn appearance_token_grammar_admits_the_suffix_before_scanning() {
+    let guid = "11111111-2222-3333-4444-555555555555";
+    for suffix in [
+        "",
+        "_Post2015",
+        "_Post2015_Post2015",
+        "_post2015",
+        "_Post",
+        "_Post2015_bad",
+    ] {
+        let token = format!("{guid}{suffix}");
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(
+                super::appearance_token_is_complete(ctx, &token).unwrap(),
+                crate::design::presentation::visual_token(&token).is_some()
+            );
+        });
+    }
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::appearance_token_is_complete(ctx, guid).unwrap())
+    });
+    let token = format!("{guid}_Post2015");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "f3d appearance visual token grammar",
+        0,
+        |ctx| super::appearance_token_is_complete(ctx, &token),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.used == 0 && limit.additional == 9
+    ));
+    policy.limits.max_work_units = 9;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::appearance_token_is_complete(ctx, &token).unwrap())
+    });
+    let long_token = format!("{guid}{}", "_Post2015".repeat(64));
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "f3d appearance visual token grammar",
+        0,
+        |ctx| super::appearance_token_is_complete(ctx, &long_token),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "f3d appearance visual token grammar"
+            && limit.additional == 9 * 64)
+    );
+}
+
+mod texture_lifetimes;

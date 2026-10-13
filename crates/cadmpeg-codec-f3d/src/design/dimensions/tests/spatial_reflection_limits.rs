@@ -95,3 +95,16 @@ fn spatial_reflection_symmetry_axis_id_refuses_retained_limit() {
         ResourceDimension::RetainedBytes,
     );
 }
+
+#[test]
+fn spatial_reflection_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d spatial reflection owner search",
+        "f3d spatial reflection locus search",
+        "f3d spatial reflection entity lookup",
+        "f3d spatial reflection sketch identity",
+        "f3d spatial reflection entity identity",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
+}
