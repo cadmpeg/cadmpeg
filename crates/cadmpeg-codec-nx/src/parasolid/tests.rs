@@ -305,8 +305,12 @@ fn partition_values_require_a_unique_entity_reference() {
         let owned = crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
             .unwrap()
             .0;
-        let (candidates, _candidate_guard) =
-            super::value_records::value_record_candidates(ctx, &bytes).unwrap();
+        let (candidates, _candidate_guard) = super::value_records::value_record_candidates(
+            ctx,
+            &bytes,
+            &[100, 101, 102].into_iter().collect(),
+        )
+        .unwrap();
         assert_eq!(candidates.len(), 3);
         assert!(
             owned.is_empty(),

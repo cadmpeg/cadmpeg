@@ -112,7 +112,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §4.2 "Type 90 `GROUP` has the complete deltas record" defines the complete record grammar, reference statuses, mode values, and boundary.
 
-**Need.** We must know the roles to construct group membership and ownership relations.
+**Need.** We must know the roles to construct group membership and ownership relations. We must also establish census ownership for complete-looking GROUP frames at shared string terminals before treating every such candidate as a group event.
+
+**Note.** In `Part_17 - Intake Manifold.prt`, partition stream 4 contains six complete-looking GROUP frames at inflated byte offsets 188989, 190112, 215074, 219559, 219895, and 249322. Each begins at the terminal zero of a referenced character value, but the current census does not emit it. Complete field grammar alone does not prove that these candidates have an enclosing ledger owner.
 
 ### PS-14. Deltas type 91
 
@@ -470,12 +472,21 @@ Parasolid topology attribute ownership is independently resolved from a valid
 attribute-list head and the first leading reference of each type-81 record; the
 third leading reference is not required for that ownership relation.
 
-**Need.** We must identify the blend construction relation that assigns the
-created-face subset.
+The structural integer-key relation in `siemens_nx.md` §9.4 "The named
+`UG2/CMOD_FEAT_ATTRIBUTE` instances with one trailing reference carry" links a
+unique GROUP-owned FEAT scalar to the first integer of same-partition,
+FACE-owned FACR pairs. It retains every matching instance and the second
+integer without assigning creation direction.
 
-**Conflict.** GROUP membership assigns topology to the producing feature but
-does not by itself identify which member faces carry a particular blend-surface
-construction.
+**Need.** A controlled before/after construction must distinguish newly
+introduced faces from faces that retain or later acquire the same key. We must
+also determine the second FACR integer's identity domain and stability across
+operation and topology edits.
+
+**Conflict.** GROUP membership and FEAT/FACR equality do not establish creation
+direction. Several FACR instances can belong to one FACE, and second integers
+repeat across instance scopes. Missing current values or unmatched faces do not
+prove absence from an earlier construction state.
 
 ### OM-10. Operation suppression fields
 

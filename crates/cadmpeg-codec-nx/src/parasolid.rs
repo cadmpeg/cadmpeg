@@ -303,13 +303,12 @@ fn referenced_value_offsets<'ctx>(
     multiplicity: ValueMultiplicity,
 ) -> Result<(Vec<usize>, ScopedReservation<'ctx>), CodecError> {
     let (references, _reference_guard) = referenced_value_xmts(ctx, bytes, multiplicity)?;
-    let (candidates, _candidate_guard) = value_records::value_record_candidates(ctx, bytes)?;
+    let (candidates, _candidate_guard) =
+        value_records::value_record_candidates(ctx, bytes, &references)?;
     let mut offsets = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX value owner offsets")?;
-    for (xmt, positions) in candidates {
-        if !value_is_referenced(ctx, &references, xmt, "resolve NX value ownership")?
-            || (multiplicity == ValueMultiplicity::UniqueSnapshot && positions.len() != 1)
-        {
+    for positions in candidates.into_values() {
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && positions.len() != 1 {
             continue;
         }
         for offset in positions {

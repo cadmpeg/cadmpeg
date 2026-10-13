@@ -2549,6 +2549,32 @@ Repeated deltas events with one XMT remain exact native events when a complete
 type-81 record references that XMT, but the type-81 field value remains
 unresolved until one current value event is selected.
 
+Snapshot value discovery first checks that the candidate XMT is referenced by
+an unambiguous complete type-81 trailing lane or an owned type-99 field-name
+list. An unreferenced value-shaped byte sequence does not claim a frame or
+exclude later referenced records inside its apparent counted span. Complete
+referenced frames retain their payload boundaries; duplicate snapshot value
+identities remain unresolved. Historical deltas ownership retains repeated
+events separately.
+
+The named `UG2/CMOD_FEAT_ATTRIBUTE` instances with one trailing reference carry
+one scalar type-82 value. The named `UG2/CMOD_FACR_ATTRIBUTE` instances with two
+trailing references carry two scalar type-82 values. The type-80 name is selected
+through the unique same-stream type-79 identifier and definition relation.
+These stored integer values remain available when the corresponding declaration
+uses field code zero; that does not change code zero into an integer field.
+
+For a `BLEND` or `FACE_BLEND` operation with one body write and a uniquely
+resolved partition GROUP, a unique GROUP-owned FEAT instance supplies a key.
+Every FACE-owned FACR instance in that partition whose first integer equals
+that key supplies a structural face relation. FACE ownership requires the
+attribute-list head and first leading reference described above. All matching
+instances are retained, including several instances on one FACE. The second
+FACR integer is retained separately and is not the partition join key or a
+global FACE identity. The relation does not depend on the surface family and
+does not establish when a face was created. Missing or ambiguous records leave
+the relation unresolved.
+
 Trailing type-81 reference slot `5 + i` supplies declared type-80 field `i`.
 The assignment is valid only when the referenced value family matches the
 declared field code: types 82, 83, 84, 85, 86, 89, 87, 88, and 98 match codes

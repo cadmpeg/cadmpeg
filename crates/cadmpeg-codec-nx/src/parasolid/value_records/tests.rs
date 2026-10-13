@@ -1,6 +1,72 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn unowned_value_candidates_cannot_hide_referenced_values() {
+    crate::test_support::with_decode_context(|ctx| {
+        // These unowned bytes resemble a four-integer value and cover a
+        // complete referenced value. Ownership selects which frame may advance.
+        let mut bytes = vec![0, 0x52];
+        bytes.extend_from_slice(&4u32.to_be_bytes());
+        bytes.extend_from_slice(&999u16.to_be_bytes());
+        let value_offset = bytes.len();
+        bytes.extend_from_slice(&[0, 0x52]);
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&101u16.to_be_bytes());
+        bytes.extend_from_slice(&681u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&[0, 0x51]);
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        bytes.extend_from_slice(&50u16.to_be_bytes());
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&202u16.to_be_bytes());
+        for reference in [2u16, 1, 1, 1, 1, 101] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+
+        let offsets = crate::parasolid::referenced_value_record_offsets(ctx, &bytes)
+            .unwrap()
+            .0;
+        assert_eq!(offsets, [value_offset]);
+        let records = super::entity_value_records_at(ctx, &bytes, offsets)
+            .unwrap()
+            .integers;
+        assert_eq!(records.len(), 1);
+        assert_eq!(u32::from(records[0].xmt), 101);
+        assert_eq!(records[0].value.as_slice(), [681]);
+
+        // A referenced enclosing value retains its complete frame; bytes in
+        // that payload do not become a nested independent record.
+        let references = [999, 101].into_iter().collect();
+        let (candidates, _guard) =
+            super::value_record_candidates(ctx, &bytes, &references).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates.get(&999).unwrap(), &[0]);
+        assert!(!candidates.contains_key(&101));
+    });
+}
+
+#[test]
+fn unowned_value_payloads_do_not_consume_validation_work() {
+    let mut bytes = vec![0, 0x52];
+    bytes.extend_from_slice(&512u32.to_be_bytes());
+    bytes.extend_from_slice(&999u16.to_be_bytes());
+    bytes.extend_from_slice(&[0; 2_048]);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len()) + 100;
+        },
+        |ctx| {
+            let references = [101].into_iter().collect();
+            let (candidates, _guard) =
+                super::value_record_candidates(ctx, &bytes, &references).unwrap();
+            assert!(candidates.is_empty());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
 fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
     crate::test_support::with_decode_context(|ctx| {
         let mut bytes = vec![0xaa, 0x00, 0x54];
@@ -273,6 +339,24 @@ fn parasolid_entity_value_records_dispatches_all_value_families() {
         assert_eq!(records.axes[0].value.as_slice().len(), 1);
         assert_eq!(records.tags[0].value.as_slice(), [17]);
         assert_eq!(records.unicode[0].value.as_str(), "NX");
+
+        let references = (10..=18).collect();
+        let (candidates, _guard) =
+            super::value_record_candidates(ctx, &bytes, &references).unwrap();
+        assert_eq!(candidates.len(), 9);
+        assert!(candidates.values().all(|positions| positions.len() == 1));
+        let selected =
+            super::entity_value_records_at(ctx, &bytes, candidates.into_values().flatten())
+                .unwrap();
+        assert_eq!(selected.integers, records.integers);
+        assert_eq!(selected.doubles, records.doubles);
+        assert_eq!(selected.strings, records.strings);
+        assert_eq!(selected.points, records.points);
+        assert_eq!(selected.vectors, records.vectors);
+        assert_eq!(selected.axes, records.axes);
+        assert_eq!(selected.tags, records.tags);
+        assert_eq!(selected.directions, records.directions);
+        assert_eq!(selected.unicode, records.unicode);
     });
 }
 

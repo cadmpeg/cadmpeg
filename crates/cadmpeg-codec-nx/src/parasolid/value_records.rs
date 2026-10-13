@@ -7,7 +7,7 @@ use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
 use crate::printable_string::PrintableString;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A framed record with a checked family-specific value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +90,7 @@ pub(crate) fn entity_value_records_at<'a, 'ctx>(
 pub(super) fn value_record_candidates<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
+    references: &BTreeSet<u32>,
 ) -> Result<(BTreeMap<u32, Vec<usize>>, ScopedReservation<'ctx>), CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
@@ -99,6 +100,25 @@ pub(super) fn value_record_candidates<'ctx>(
     let mut reservation = ctx.reserve_scoped(0, "NX value candidate index")?;
     let mut offset = 0;
     while offset < bytes.len() {
+        let header = bytes
+            .get(offset + 1)
+            .filter(|tag| matches!(**tag, 0x52..=0x59 | 0x62))
+            .and_then(|&tag| value_record_header_at(bytes, offset, tag));
+        let Some(header) = header else {
+            offset += 1;
+            continue;
+        };
+        // Unowned integer-shaped bytes can span real referenced records.
+        // They cannot claim a frame or its payload-validation budget.
+        if !super::value_is_referenced(
+            ctx,
+            references,
+            u32::from(header.xmt),
+            "resolve NX value ownership",
+        )? {
+            offset += 1;
+            continue;
+        }
         let Some(frame) = value_record_frame_at(ctx, bytes, offset)? else {
             offset += 1;
             continue;
@@ -118,6 +138,29 @@ pub(super) fn value_record_candidates<'ctx>(
         offset = frame.next_offset();
     }
     Ok((candidates, reservation))
+}
+
+struct ValueRecordHeader {
+    count: usize,
+    xmt: NonNullXmt,
+    payload_offset: usize,
+}
+
+fn value_record_header_at(bytes: &[u8], offset: usize, tag: u8) -> Option<ValueRecordHeader> {
+    let mut at = offset.checked_add(2)?;
+    (bytes.get(offset..at) == Some(&[0, tag])).then_some(())?;
+    if bytes.get(at) == Some(&0xff) {
+        at += 1;
+    }
+    let count = cadmpeg_core::decode::index_from_u32(View::u32_be_at(bytes, at)?);
+    (count != 0).then_some(())?;
+    at += 4;
+    let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
+    Some(ValueRecordHeader {
+        count,
+        xmt,
+        payload_offset: at,
+    })
 }
 
 /// Return kind, identity, and extent without allocating a payload.
@@ -240,15 +283,9 @@ fn frame_at<'a>(
     decode: impl FnOnce(&'a [u8]) -> Result<Option<ValuePayload<'a>>, CodecError>,
 ) -> Result<Option<ValueRecordFrame<'a>>, CodecError> {
     let parsed: Option<Result<_, CodecError>> = (|| {
-        let mut at = offset.checked_add(2)?;
-        (bytes.get(offset..at) == Some(&[0, tag])).then_some(())?;
-        if bytes.get(at) == Some(&0xff) {
-            at += 1;
-        }
-        let count = cadmpeg_core::decode::index_from_u32(View::u32_be_at(bytes, at)?);
-        at += 4;
-        let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
-        let mut end = at.checked_add(count.checked_mul(width)?)?;
+        let header = value_record_header_at(bytes, offset, tag)?;
+        let at = header.payload_offset;
+        let mut end = at.checked_add(header.count.checked_mul(width)?)?;
         let payload = propagate_resource!(decode(bytes.get(at..end)?))?;
         if matches!(payload, ValuePayload::String(_)) {
             (bytes.get(end) == Some(&0)).then_some(())?;
@@ -257,7 +294,7 @@ fn frame_at<'a>(
         Some(Ok(ValueRecordFrame {
             offset,
             end,
-            xmt,
+            xmt: header.xmt,
             payload,
         }))
     })();
