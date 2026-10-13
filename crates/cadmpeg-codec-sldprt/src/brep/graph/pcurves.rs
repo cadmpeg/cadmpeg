@@ -279,6 +279,15 @@ pub(super) fn derive_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if out.coedges.is_empty()
+        || out.loops.is_empty()
+        || out.faces.is_empty()
+        || out.surfaces.is_empty()
+        || out.edges.is_empty()
+        || out.curves.is_empty()
+    {
+        return Ok(());
+    }
     let Brep {
         loops,
         faces,
@@ -1272,24 +1281,26 @@ fn derive_nurbs_isoparametric_pcurves(
             continue;
         };
         let curve = &curve.geometry;
-        let endpoints = match (
-            supports.vertex_positions.position(ctx, &edge.start)?,
-            supports.vertex_positions.position(ctx, &edge.end)?,
-        ) {
-            (Some(start), Some(end)) => Some([start, end]),
-            _ => None,
-        };
         let (geometry, parameter_range, fit_tolerance, cache) = match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-                let Some(parameter_range) =
-                    nurbs_edge_parameter_range(ctx, edge, curve, endpoints)?
+                let Some(parameter_range) = nurbs_edge_parameter_range(ctx, edge, curve, || {
+                    Ok(
+                        match (
+                            supports.vertex_positions.position(ctx, &edge.start)?,
+                            supports.vertex_positions.position(ctx, &edge.end)?,
+                        ) {
+                            (Some(start), Some(end)) => Some([start, end]),
+                            _ => None,
+                        },
+                    )
+                })?
                 else {
                     continue;
                 };
                 let resolution =
                     match derive_nurbs_edge_pcurve(ctx, surface, curve, parameter_range) {
                         Ok(resolution) => resolution,
-                        Err(NurbsPcurveFailure::Carrier(error)) => {
+                        Err(NurbsPcurveFailure::Carrier(error, _diagnostic_storage)) => {
                             crate::lane_refusal::scoped::RefusalSink::Scoped(&mut lane_refusals)
                                 .note(
                                     ctx,
@@ -1699,33 +1710,16 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                 return Ok(None);
             }
         }
-        let mut mapped_points_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
-        let mut mapped_points = Vec::new();
-        mapped_points_storage.with_storage(|| ctx.reserve_capacity(&mut mapped_points, control_points.len(), "map intersection support controls"))?;
-        let mut parameters = control_points.iter();
-        while let Some(parameters) = ctx.next_charged(&mut parameters, "scan SLDPRT intersection_support_pcurve values")? {
+        let mut control_errors_storage = ctx.reserve_scoped(0, "hold intersection support control errors")?;
+        let mut control_errors = Vec::new();
+        let mut controls = control_points.iter().zip(chart_points);
+        while let Some((parameters, target)) = ctx.next_charged(&mut controls, "check intersection support control errors")? {
             let Some(point) = crate::brep::evaluation::surface_point(ctx, surface, parameters.u, parameters.v)? else { return Ok(None); };
-            let point = point.get();
-            mapped_points_storage.with_storage(|| ctx.push_vec(&mut (mapped_points), point, "map intersection support controls"))?;
-        }
-        let control_errors_storage;
-        let control_errors;
-        (control_errors, control_errors_storage) = ctx.with_scoped_storage(
-            "hold intersection support control errors", || ctx.collect_retained_vec(
-                mapped_points.iter().zip(chart_points).map(|(point, target)| {
-                    squared_distance(*point, target.get()).sqrt()
-                }),
-                "check intersection support control errors",
-            ),
-        )?;
-        drop(mapped_points);
-        drop(mapped_points_storage);
-        if ctx.any_by(
-            &control_errors,
-            |error| Ok(!error.is_finite() || *error > support_data.fit_tolerance_mm),
-            "check intersection support control errors",
-        )? {
-            return Ok(None);
+            let error = squared_distance(point.get(), target.get()).sqrt();
+            if !error.is_finite() || error > support_data.fit_tolerance_mm {
+                return Ok(None);
+            }
+            control_errors_storage.with_storage(|| ctx.push_vec(&mut control_errors, error, "collect intersection support control errors"))?;
         }
         let mut segments = control_points.windows(2)
             .zip(chart_points.windows(2))

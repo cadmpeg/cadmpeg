@@ -681,19 +681,8 @@ fn hole_profile_construction<'f>(
     let mut sole = None;
     let mut multiple = false;
     let mut complete = None;
-    let mut characters = children.char_indices();
-    let mut start = 0;
-    let mut finished = false;
-    while !finished {
-        let delimiter = ctx.find_map(
-            &mut characters,
-            |(offset, character)| Ok((character == ',').then_some(offset)),
-            OPERATION,
-        )?;
-        let end = delimiter.unwrap_or(children.len());
-        finished = delimiter.is_none();
-        let source = ctx.trim_text(&children[start..end], OPERATION)?;
-        start = end + usize::from(!finished);
+    for token in crate::resolved_features::child_sources::child_tokens(ctx, children, OPERATION) {
+        let source = ctx.trim_text(token?, OPERATION)?;
         if source.is_empty() {
             continue;
         }
