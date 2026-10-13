@@ -894,3 +894,98 @@ fn supplemental_duplicate_model_identities_share_one_replacement_lease() {
     assert_eq!(ir, expected);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn supplemental_losing_producer_identity_is_not_copied() {
+    let mut ir = model();
+    let mut consumer = ir.model.features[0].clone();
+    consumer.id = FeatureId::mint("synthetic:test:feature#chamfer").unwrap();
+    consumer.native_ref = Some("Chamfer".into());
+    ir.model.configurations[0].feature_states.insert(
+        consumer.id.clone(),
+        ConfigurationFeatureState {
+            definition: chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved),
+            dependencies: DistinctMembers::default(),
+            evaluation: ConfigurationEvaluation::Suppressed {},
+        },
+    );
+    let mut losing = ir.model.features[0].clone();
+    losing.id = FeatureId::mint(format!("synthetic:test:feature#{}", "p".repeat(17 * 1024 * 1024))).unwrap();
+    losing.native_ref = Some("Producer".into());
+    let mut winner = losing.clone();
+    winner.id = FeatureId::mint("synthetic:test:feature#winner").unwrap();
+    ir.model.features.extend([consumer.clone(), losing, winner.clone()]);
+    let mut expected = ir.clone();
+    let expected_state = expected.model.configurations[0].feature_states.get_mut(&consumer.id).unwrap();
+    expected_state.definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native(
+        "sldprt:feature-input:edge-ids:7".into(),
+    ));
+    expected_state.dependencies = DistinctMembers::try_from(vec![winner.id], &cadmpeg_test_support::service_decode_context()).unwrap();
+    let mut lane = edge_lane("Chamfer", 7);
+    lane.edge_selections[0].producer_feature_refs.push("Producer".into());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 128 * 1024;
+    policy.limits.max_work_units = 128 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
+    assert_eq!(ir, expected);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn supplemental_unchanged_fillet_does_not_allocate_staging() {
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    let mut ir = model();
+    let id = ir.model.features[0].id.clone();
+    ir.model.configurations[0].feature_states.get_mut(&id).unwrap().definition =
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+                edges: cadmpeg_ir::features::EdgeSelection::Native("Existing edges".into()),
+                radius: RadiusSpec::Constant { radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap() },
+                tangency_weight: None,
+            }),
+        });
+    let expected = ir.clone();
+    let lane = edge_lane(ir.model.features[0].native_ref.as_deref().unwrap(), 7);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "stage SLDPRT supplemental configuration state",
+        None,
+    );
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
+    assert_eq!(ir, expected);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn supplemental_publication_sources_include_only_operation_consumers() {
+    let mut ir = model();
+    let id = ir.model.features[0].id.clone();
+    ir.model.configurations[0].feature_states.get_mut(&id).unwrap().definition =
+        chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
+    let mut identities = std::collections::HashSet::new();
+    for index in 0..128 {
+        let mut producer = ir.model.features[0].clone();
+        producer.id = FeatureId::mint(format!("synthetic:test:feature#producer{index}")).unwrap();
+        producer.native_ref = Some(format!("Producer{index}"));
+        identities.insert(producer.native_ref.clone().unwrap());
+        ir.model.features.push(producer);
+    }
+    let selected = std::collections::HashSet::from([ir.model.features[0].native_ref.as_deref().unwrap()]);
+    let identities = identities.iter().map(String::as_str).collect();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let ((features, publication), storage) = ctx.with_scoped_storage("test edge copies", || {
+        super::super::copy_configuration_edge_features(
+            &ctx, &ir.model.features, &ir.model.configurations[0].feature_states, &selected, &identities,
+        )
+    }).unwrap();
+    assert_eq!(features.len(), 129);
+    assert_eq!(publication, vec![(0, &id)]);
+    drop((features, publication, storage));
+    ctx.finish_session().unwrap();
+}
