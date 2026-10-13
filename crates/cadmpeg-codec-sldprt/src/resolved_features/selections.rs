@@ -417,8 +417,7 @@ pub(super) fn compact_edge_selections(
                 Some(classes) => classes,
                 slot @ None => slot.insert(fillet_dimension_classes(ctx, lane)?),
             };
-            fillet_edge_roster_end(ctx, lane, classes, start, object_end)?
-                .unwrap_or(object_end)
+            fillet_edge_roster_end(ctx, lane, classes, start, object_end)?.unwrap_or(object_end)
         } else {
             object_end
         };
@@ -1771,7 +1770,8 @@ fn cosmetic_thread_component_references(
         let Some((edge_ref_offset, edge_ref)) = classes.get(index + 1) else {
             continue;
         };
-        if edge_ref.name.as_str() != "moEdgeRef_c" || !cosmetic_thread_component_edge_wrapper_at(&lane.native_payload, body)
+        if edge_ref.name.as_str() != "moEdgeRef_c"
+            || !cosmetic_thread_component_edge_wrapper_at(&lane.native_payload, body)
         {
             continue;
         }

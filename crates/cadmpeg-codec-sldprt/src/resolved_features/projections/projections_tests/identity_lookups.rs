@@ -30,11 +30,24 @@ fn feature_identity_index_keeps_the_last_duplicate_and_propagates_work_refusal()
     const OPERATION: &str = "index SLDPRT test feature identities";
     let features = identity_lookup_input();
     crate::test_support::work_refusal_at(OPERATION, |ctx| {
-        super::super::model_feature_ids_by_native(ctx, features.iter().map(|feature| (&feature.id, feature.native_ref.as_deref())), OPERATION).map(|_| ())
+        super::super::model_feature_ids_by_native(
+            ctx,
+            features
+                .iter()
+                .map(|feature| (&feature.id, feature.native_ref.as_deref())),
+            OPERATION,
+        )
+        .map(|_| ())
     });
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (ids, _storage) =
-        super::super::model_feature_ids_by_native(&ctx, features.iter().map(|feature| (&feature.id, feature.native_ref.as_deref())), OPERATION).unwrap();
+    let (ids, _storage) = super::super::model_feature_ids_by_native(
+        &ctx,
+        features
+            .iter()
+            .map(|feature| (&feature.id, feature.native_ref.as_deref())),
+        OPERATION,
+    )
+    .unwrap();
     assert_eq!(ids.len(), 1);
     assert_eq!(
         ids.get("native").map(FeatureId::as_str),
@@ -51,9 +64,15 @@ fn feature_identity_index_refuses_materialized_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = super::super::model_feature_ids_by_native(&ctx, features.iter().map(|feature| (&feature.id, feature.native_ref.as_deref())), OPERATION)
-        .map(|_| ())
-        .expect_err("the feature identity index exceeds the materialized limit");
+    let error = super::super::model_feature_ids_by_native(
+        &ctx,
+        features
+            .iter()
+            .map(|feature| (&feature.id, feature.native_ref.as_deref())),
+        OPERATION,
+    )
+    .map(|_| ())
+    .expect_err("the feature identity index exceeds the materialized limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == OPERATION));
@@ -63,7 +82,8 @@ fn feature_identity_index_refuses_materialized_limit() {
 fn feature_identity_index_copies_only_the_last_duplicate() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     let mut features = identity_lookup_input();
-    features[0].id = FeatureId::mint(format!("synthetic:test:id#{}", "a".repeat(1024 * 1024))).unwrap();
+    features[0].id =
+        FeatureId::mint(format!("synthetic:test:id#{}", "a".repeat(1024 * 1024))).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 4096;
@@ -71,13 +91,23 @@ fn feature_identity_index_copies_only_the_last_duplicate() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (ids, storage) = super::super::model_feature_ids_by_native(
-        &ctx, features.iter().map(|feature| (&feature.id, feature.native_ref.as_deref())),
+        &ctx,
+        features
+            .iter()
+            .map(|feature| (&feature.id, feature.native_ref.as_deref())),
         "index SLDPRT test feature identities",
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(ids.len(), 1);
-    assert_eq!(ids.get("native").map(FeatureId::as_str), Some("synthetic:test:id#second"));
+    assert_eq!(
+        ids.get("native").map(FeatureId::as_str),
+        Some("synthetic:test:id#second")
+    );
     drop(ids);
     drop(storage);
-    drop(ctx.reserve_scoped(4096, "test identity workspace expiry").unwrap());
+    drop(
+        ctx.reserve_scoped(4096, "test identity workspace expiry")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }

@@ -25,23 +25,39 @@ fn inputs() -> ([Feature; 2], FeatureInputLane) {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-            FeatureOperation::Unresolved { family: UnresolvedFamily::Draft },
+            FeatureOperation::Unresolved {
+                family: UnresolvedFamily::Draft,
+            },
         )),
         native_ref: Some(name.into()),
     });
     let lane = FeatureInputLane {
-        id: "lane".into(), configuration: None,
-        native_payload: Vec::new(), classes: Vec::new(), names: Vec::new(),
-        scalars: Vec::new(), relation_bindings: Vec::new(), relation_instances: Vec::new(),
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
         body_selections: Vec::new(),
         edge_selections: vec![FeatureInputEdgeSelection {
-            id: "edge".into(), parent: "lane".into(), ordinal: 0, offset: 0,
-            object_name_ref: "name".into(), feature_ref: "consumer".into(),
-            local_edge_ids: vec![7], components: Vec::new(), references: Vec::new(),
-            producer_feature_refs: Vec::new(), terminal_feature_ref: None,
+            id: "edge".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_name_ref: "name".into(),
+            feature_ref: "consumer".into(),
+            local_edge_ids: vec![7],
+            components: Vec::new(),
+            references: Vec::new(),
+            producer_feature_refs: Vec::new(),
+            terminal_feature_ref: None,
         }],
-        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
-        references: Vec::new(), sketch_entities: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
     };
     (features, lane)
 }
@@ -84,7 +100,10 @@ fn edge_identity_index_waits_for_a_lookup() {
                     if matches!(&groups.as_slice()[0].edges, EdgeSelection::Native(value)
                         if value == "sldprt:feature-input:edge-ids:7")));
         } else if route == 2 {
-            assert_eq!(features[0].evaluation.definition(), &fillet(EdgeSelection::Native("existing".into())));
+            assert_eq!(
+                features[0].evaluation.definition(),
+                &fillet(EdgeSelection::Native("existing".into()))
+            );
         }
         assert!(features[0].dependencies.is_empty());
         let CodecError::ResourceLimit(limit) = ctx.charge_work(1, IDENTITIES).unwrap_err() else {
@@ -99,14 +118,23 @@ fn edge_identity_index_waits_for_a_lookup() {
 fn edge_identity_index_has_terminal_and_producer_reader_boundaries() {
     for terminal in [false, true] {
         let (mut features, mut lane) = inputs();
-        features[0].evaluation.set_definition(fillet(EdgeSelection::Unresolved));
+        features[0]
+            .evaluation
+            .set_definition(fillet(EdgeSelection::Unresolved));
         if terminal {
             lane.edge_selections[0].terminal_feature_ref = Some("producer".into());
         } else {
-            lane.edge_selections[0].producer_feature_refs.push("producer".into());
+            lane.edge_selections[0]
+                .producer_feature_refs
+                .push("producer".into());
         }
         crate::test_support::work_refusal_at(IDENTITIES, |ctx| {
-            super::super::project_compact_edge_selections(ctx, &mut features.clone(), &[], std::slice::from_ref(&lane))
+            super::super::project_compact_edge_selections(
+                ctx,
+                &mut features.clone(),
+                &[],
+                std::slice::from_ref(&lane),
+            )
         });
         let ctx = cadmpeg_test_support::service_decode_context();
         super::super::project_compact_edge_selections(&ctx, &mut features, &[], &[lane]).unwrap();
@@ -116,7 +144,10 @@ fn edge_identity_index_has_terminal_and_producer_reader_boundaries() {
                     if matches!(&groups.as_slice()[0].edges, EdgeSelection::Generated { edges, .. }
                         if edges.as_slice()[0].feature == features[1].id)));
         } else {
-            assert_eq!(features[0].dependencies.as_slice(), std::slice::from_ref(&features[1].id));
+            assert_eq!(
+                features[0].dependencies.as_slice(),
+                std::slice::from_ref(&features[1].id)
+            );
         }
     }
 }
