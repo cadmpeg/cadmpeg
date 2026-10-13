@@ -1018,3 +1018,49 @@ fn swift_literal_related_names_do_not_charge_the_unmatched_text_extent() {
         }
     }
 }
+
+#[test]
+fn swift_related_descriptors_copy_only_bound_entities() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, View};
+    use super::put_pstr;
+    let related_entity = entity("GdtCylinder");
+    for operation in ["copy SWIFT related name", "copy SWIFT related class"] {
+        for invalid_entity in [true, false] {
+            for count in [2u32, 64] {
+                let mut payload = Vec::new();
+                payload.extend(count.to_le_bytes());
+                for _ in 0..count {
+                    put_pstr(&mut payload, &"n".repeat(200));
+                    put_pstr(&mut payload, "DifferentClass");
+                }
+                if invalid_entity {
+                    put_pstr(&mut payload, "Bad");
+                } else {
+                    encode_entity(&related_entity, &mut payload);
+                }
+                let arena = DecodeArena::new();
+                let (ctx, mut cursor) = DecodeContext::from_root_bytes(
+                    &payload, &arena, &DecodePolicy::service(),
+                ).unwrap();
+                let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+                assert!(crate::swift::read_related(&ctx, &mut cursor, 0).unwrap().is_none());
+                ctx.finish_session().unwrap();
+            }
+        }
+        let mut payload = Vec::new();
+        payload.extend(1u32.to_le_bytes());
+        put_pstr(&mut payload, "NomCylinder");
+        put_pstr(&mut payload, &related_entity.class);
+        encode_entity(&related_entity, &mut payload);
+        put_pstr(&mut payload, "EndRelatedObjects");
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            crate::swift::read_related(ctx, &mut View::over_retained(&payload), 0)
+        });
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let objects = crate::swift::read_related(&ctx, &mut View::over_retained(&payload), 0)
+            .unwrap().unwrap();
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].name, "NomCylinder");
+        assert_eq!(objects[0].class, related_entity.class);
+    }
+}
