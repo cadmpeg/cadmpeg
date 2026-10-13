@@ -1381,8 +1381,8 @@ fn typed_body_records(
     }
     let hierarchy_storage;
     let hierarchies;
-    (hierarchies, hierarchy_storage) =
-        ctx.with_scoped_storage("hold typed Parasolid hierarchies", || {
+    (hierarchies, hierarchy_storage) = ctx
+        .with_scoped_storage("hold typed Parasolid hierarchies", || {
             facts.hierarchies(ctx, tables.bridges())
         })?;
     let Some(hierarchies) = hierarchies else {
