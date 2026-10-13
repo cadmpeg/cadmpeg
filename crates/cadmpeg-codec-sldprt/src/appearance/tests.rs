@@ -1531,7 +1531,16 @@ fn appearance_source_set_releases_discarded_record_storage() {
                 let (sources, storage) =
                     ctx.with_scoped_storage("appearance source set test", || {
                         if collect {
-                            super::FeatureAppearances::default().into_source_ids(&ctx, &scan)
+                            let cache = super::FeatureAppearances::default();
+                            let assignment = cache.lookup(
+                                &ctx,
+                                &scan,
+                                super::FeatureSourceId::try_from(36).unwrap(),
+                            )?.expect("warm source assignment");
+                            assert_eq!(assignment.feature_timestamp, 10);
+                            assert!(cache.records.get().is_some());
+                            assert!(cache.index.get().is_some());
+                            cache.into_source_ids(&ctx, &scan)
                         } else {
                             ctx.collect_btree_set(
                                 [super::FeatureSourceId::try_from(36).unwrap()],
