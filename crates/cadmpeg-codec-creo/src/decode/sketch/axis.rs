@@ -3,7 +3,7 @@
 use crate::feature::definitions::VariableType;
 
 /// A sketch-section coordinate axis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(in crate::decode) enum SectionAxis {
     U,
     V,

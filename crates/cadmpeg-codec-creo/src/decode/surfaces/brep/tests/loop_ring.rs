@@ -45,7 +45,15 @@ fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &
 #[test]
 fn brep_ring_coedge_ids_refuse_collection_limit() {
     assert_refusal(
-        &ring_result(0, u64::MAX).expect_err("ring Vec refused"),
+        &ring_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep ring coedge IDs"),
+                |cap| ring_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("ring Vec refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep ring coedge IDs",
     );
@@ -55,11 +63,11 @@ fn brep_ring_coedge_ids_refuse_collection_limit() {
 fn brep_ring_coedge_identities_refuse_retained_limit() {
     assert_refusal(
         &ring_result(
-            16,
+            u64::MAX,
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep ring coedge identities"),
-                |cap| ring_result(16, cap),
+                |cap| ring_result(u64::MAX, cap),
             ),
         )
         .expect_err("ring ID refused"),
@@ -71,7 +79,15 @@ fn brep_ring_coedge_identities_refuse_retained_limit() {
 #[test]
 fn brep_ring_validation_nodes_refuse_collection_limit() {
     assert_refusal(
-        &ring_result(2, u64::MAX).expect_err("validation node refused"),
+        &ring_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("loop ring members"),
+                |cap| ring_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("validation node refused"),
         ResourceDimension::CollectionItems,
         "loop ring members",
     );
@@ -79,7 +95,13 @@ fn brep_ring_validation_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_native_loop_ring_preserves_service_order() {
-    let ring = ring_result(16, u64::MAX).expect("service native ring admitted");
+    let ring = ring_result(
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| {
+            ring_result(cap, u64::MAX)
+        }),
+        u64::MAX,
+    )
+    .expect("service native ring admitted");
     assert_eq!(
         ring.coedges()
             .iter()
@@ -90,15 +112,13 @@ fn brep_native_loop_ring_preserves_service_order() {
 }
 
 #[test]
-fn brep_loop_ring_error_refuses_empty_source_ring_before_projection() {
+fn brep_loop_ring_has_no_empty_source_ring_after_topology_build() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    assert!(
-        crate::topology::Loop::new(&ctx, std::num::NonZeroU32::new(5), Vec::new(), &[])
-            .expect("no allocation for invalid ring")
-            .is_none()
-    );
+    let (edges, loops) = crate::topology::build(&ctx, &[]).expect("empty topology graph");
+    assert!(edges.is_empty());
+    assert!(loops.is_empty());
 }

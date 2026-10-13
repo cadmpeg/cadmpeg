@@ -55,6 +55,45 @@ pub(crate) struct ReferenceLine {
     pub(crate) offset: usize,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for ReferenceLine {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.kind,
+                <[f64; 3]>::from(self.start.get()),
+                <[f64; 3]>::from(self.end.get()),
+                &self.offset,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for ReferenceLineKind {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Line => Ok(1),
+            Self::Line3d {
+                entity_id,
+                original_length,
+            } => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(1_u8, entity_id, original_length.get()),
+                ctx,
+                operation,
+            ),
+        }
+    }
+}
+
 impl ReferenceLine {
     pub(crate) fn try_new(
         kind: ReferenceLineKind,
@@ -226,6 +265,23 @@ pub(crate) enum ConicType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OtherConicType(u32);
 
+impl cadmpeg_core::decode::cost::DecodeCost for ConicType {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Ellipse => Ok(1),
+            Self::Other(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(1_u8, value.0),
+                ctx,
+                operation,
+            ),
+        }
+    }
+}
+
 impl From<u32> for ConicType {
     fn from(value: u32) -> Self {
         match value {
@@ -271,6 +327,35 @@ pub(crate) struct ReferenceConic {
     pub(crate) body: Vec<u8>,
     /// Byte offset of the named conic list record.
     pub(crate) offset: usize,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for ReferenceConic {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        let start: [f64; 3] = self.start.get().into();
+        let end: [f64; 3] = self.end.get().into();
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (&self.entity_id, &self.type_id, &self.flip, start, end),
+                (
+                    self.parameter_start.map(FiniteReal::get),
+                    self.parameter_end.map(FiniteReal::get),
+                    self.coefficient_1.get(),
+                    self.coefficient_2.get(),
+                ),
+                (
+                    self.local_system.map(cadmpeg_ir::units::FiniteVector::get),
+                    &self.body,
+                    &self.offset,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// Complete model-space ellipse derived from a conic record.
@@ -342,7 +427,7 @@ pub(crate) fn ellipse_carriers(
     conics: &[ReferenceConic],
 ) -> Result<Vec<ReferenceEllipse>, CodecError> {
     let mut result = Vec::new();
-    for conic in conics {
+    for conic in ctx.admit_iter(conics, "creo reference conic traversal")? {
         if conic.type_id != ConicType::Ellipse {
             continue;
         }
@@ -483,12 +568,14 @@ pub(crate) fn ellipse_carriers(
             result.push(value);
         }
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo ellipse carriers result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo ellipse carriers result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -517,18 +604,22 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
 
 fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
     let mut candidate = None;
-    for start in 0..row.len() {
-        let Some(values) = (|| {
-            let mut cursor = crate::psb::Cursor::at(row, start);
-            let mut values = [0.0; COUNT];
-            for value in &mut values {
-                *value = cursor.take_with(|data, pos| coordinate(data, pos, cache))?;
-            }
-            (cursor.pos() == row.len() && values.iter().all(|value| value.is_finite()))
-                .then_some(values)
-        })() else {
+    let max_span = COUNT.checked_mul(9)?;
+    let suffix_span = row.len().min(max_span);
+    for start in row.len() - suffix_span..row.len() {
+        let mut cursor = crate::psb::Cursor::at(row, start);
+        let mut values = [0.0; COUNT];
+        let mut complete = true;
+        for value in &mut values {
+            let Some(decoded) = cursor.take_with(|data, pos| coordinate(data, pos, cache)) else {
+                complete = false;
+                break;
+            };
+            *value = decoded;
+        }
+        if !complete || cursor.pos() != row.len() || !values.iter().all(|value| value.is_finite()) {
             continue;
-        };
+        }
         if candidate.is_some() {
             return None;
         }
@@ -634,8 +725,7 @@ impl ConicFrameRun {
 ///   consumes only the `18` (the coordinate is left for the next run).
 /// - otherwise: a frame coordinate, emitting its value.
 ///
-/// Returns `None` only when no arm applies, aborting the frame walk exactly as
-/// the original trailing `frame_coordinate(cursor)?` did.
+/// Returns `None` when no coordinate or marker form applies.
 fn conic_frame_run(
     data: &[u8],
     offset: usize,
@@ -681,18 +771,19 @@ fn conic_local_system(
 }
 
 fn named_conic_local_system(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
     end: usize,
     cache: &ScalarCache,
-) -> Option<(usize, Option<cadmpeg_ir::units::FiniteVector<12>>)> {
+) -> Result<Option<(usize, Option<cadmpeg_ir::units::FiniteVector<12>>)>, CodecError> {
     const TERMINATOR: &[u8] = &[0xf2, crate::psb::token::ENTITY_REF];
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let mut marker_count = 0;
     let mut only_marker = 0;
     let mut complete_frame = None;
     let mut competing_frame = false;
-    for candidate in start..end {
+    for candidate in ctx.admit_iter(start..end, "creo conic frame marker traversal")? {
         if data.get(candidate..candidate + TERMINATOR.len()) != Some(TERMINATOR) {
             continue;
         }
@@ -707,17 +798,17 @@ fn named_conic_local_system(
     }
     if !competing_frame {
         if let Some(frame) = complete_frame {
-            return Some((frame.0, Some(frame.1)));
+            return Ok(Some((frame.0, Some(frame.1))));
         }
     }
-    match marker_count {
+    Ok(match marker_count {
         0 => Some((end, conic_local_system(&data[start..end], cache))),
         1 => Some((
             only_marker,
             conic_local_system(&data[start..only_marker], cache),
         )),
         _ => None,
-    }
+    })
 }
 
 /// Decode the named entity that establishes each `ent_list(conic)` schema.
@@ -734,13 +825,17 @@ pub(crate) fn named_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(offset) = ctx.find_bytes_in(
-        payload,
-        LIST,
-        search,
-        payload.len(),
-        "find Creo reference conic",
-    )? {
+    while payload.len() - search >= LIST.len() {
+        let Some(offset) = ctx.find_bytes_in(
+            payload,
+            LIST,
+            search,
+            payload.len(),
+            "find Creo reference conic",
+        )?
+        else {
+            break;
+        };
         let fields_start = offset + LIST.len();
         let block_end = ctx
             .find_bytes_in(
@@ -878,7 +973,7 @@ pub(crate) fn named_conics(
         }
         let local_start = local_opener + 3;
         let Some((local_end, local_system)) =
-            named_conic_local_system(payload, local_start, block_end, &cache)
+            named_conic_local_system(ctx, payload, local_start, block_end, &cache)?
         else {
             search = block_end.max(fields_start);
             continue;
@@ -914,12 +1009,14 @@ pub(crate) fn named_conics(
         });
         search = block_end.max(fields_start);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo named conics result ordering",
-    )?;
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo named conics result ordering",
+        )?;
+    }
     Ok(result)
 }
 
@@ -947,7 +1044,8 @@ fn positional_conic_local_system(
 ) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let first_end = local_start.checked_add(1)?;
-    let last_end = local_start.checked_add(MAX_FRAME_BYTES)?.min(body.len());
+    let last_end = local_start.checked_add(MAX_FRAME_BYTES)?;
+    let last_end = last_end.min(body.len());
     let mut candidate = None;
     for end in first_end..=last_end {
         let tail = body.get(end..)?;
@@ -1025,13 +1123,17 @@ pub(crate) fn positional_conics(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = ctx.find_bytes_in(
-        payload,
-        LIST,
-        search,
-        payload.len(),
-        "find Creo reference conic",
-    )? {
+    while payload.len() - search >= LIST.len() {
+        let Some(prototype) = ctx.find_bytes_in(
+            payload,
+            LIST,
+            search,
+            payload.len(),
+            "find Creo reference conic",
+        )?
+        else {
+            break;
+        };
         let rows_start = prototype + LIST.len();
         let block_end = ctx
             .find_bytes_in(
@@ -1042,8 +1144,9 @@ pub(crate) fn positional_conics(
                 "find Creo reference conic",
             )?
             .unwrap_or(payload.len());
+        let mut headers_storage = ctx.reserve_scoped(0, "creo positional conic headers")?;
         let mut headers = Vec::new();
-        for close in rows_start..block_end {
+        for close in ctx.admit_iter(rows_start..block_end, "creo reference row header traversal")? {
             if payload.get(close) != Some(&0xe3) {
                 continue;
             }
@@ -1057,10 +1160,15 @@ pub(crate) fn positional_conics(
             if after_type == after_id || payload.get(after_type) != Some(&0xe2) {
                 continue;
             }
-            ctx.reserve_vec(&mut headers, 1, "creo positional conic headers")?;
+            headers_storage.with_storage(|| {
+                ctx.reserve_vec(&mut headers, 1, "creo positional conic headers")
+            })?;
             headers.push((close, entity_id, type_id, after_type + 1));
         }
-        for (index, &(close, entity_id, type_id, body_start)) in headers.iter().enumerate() {
+        for (index, &(close, entity_id, type_id, body_start)) in ctx
+            .admit_iter(&headers, "creo reference header traversal")?
+            .enumerate()
+        {
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _, _)| *next_close);
@@ -1079,13 +1187,19 @@ pub(crate) fn positional_conics(
         }
         search = block_end.max(rows_start);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo positional conics result ordering",
-    )?;
-    result.dedup_by_key(|conic| conic.offset);
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo positional conics result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |conic| Ok(conic.offset),
+            "creo positional conics result deduplication",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1103,48 +1217,76 @@ pub(crate) fn lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = payload[search..]
-        .windows(PROTOTYPE.len())
-        .position(|window| window == PROTOTYPE)
-        .map(|relative| search + relative)
-    {
+    while payload.len() - search >= PROTOTYPE.len() {
+        let Some(prototype) = ctx.find_bytes_in(
+            payload,
+            PROTOTYPE,
+            search,
+            payload.len(),
+            "creo reference byte search",
+        )?
+        else {
+            break;
+        };
         let instance_search = prototype + PROTOTYPE.len();
-        let prototype_end = payload[instance_search..]
-            .windows(LIST.len())
-            .position(|window| window == LIST)
-            .map_or(payload.len(), |relative| instance_search + relative);
-        let Some(instance) = payload[instance_search..prototype_end]
-            .windows(INSTANCE.len())
-            .position(|window| window == INSTANCE)
-            .map(|relative| instance_search + relative)
+        let prototype_end = ctx
+            .find_bytes_in(
+                payload,
+                LIST,
+                instance_search,
+                payload.len(),
+                "creo reference byte search",
+            )?
+            .unwrap_or(payload.len());
+        let Some(instance) = ctx.find_bytes_in(
+            payload,
+            INSTANCE,
+            instance_search,
+            prototype_end,
+            "creo reference byte search",
+        )?
         else {
             search = prototype_end.max(instance_search);
             continue;
         };
         let rows_start = instance + INSTANCE.len();
-        let block_end = payload[rows_start..]
-            .windows(ENTITY.len())
-            .position(|window| window == ENTITY)
-            .map_or(payload.len(), |relative| rows_start + relative);
+        let block_end = ctx
+            .find_bytes_in(
+                payload,
+                ENTITY,
+                rows_start,
+                payload.len(),
+                "creo reference byte search",
+            )?
+            .unwrap_or(payload.len());
+        let mut starts_storage = ctx.reserve_scoped(0, "creo reference line starts")?;
         let mut starts = Vec::new();
         let mut cursor = rows_start;
-        while let Some(start) = payload[cursor..block_end]
-            .windows(ROW_START.len())
-            .position(|window| window == ROW_START)
-            .map(|relative| cursor + relative)
-        {
+        while let Some(start) = ctx.find_bytes_in(
+            payload,
+            ROW_START,
+            cursor,
+            block_end,
+            "creo reference byte search",
+        )? {
             if starts.is_empty()
                 || match start.checked_sub(1) {
                     Some(before) => payload.get(before) == Some(&0xe3),
                     None => false, // Position zero has no preceding row marker.
                 }
             {
-                ctx.reserve_vec(&mut starts, 1, "creo reference line starts")?;
+                starts_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut starts, 1, "creo reference line starts")
+                })?;
                 starts.push(start);
             }
             cursor = start + ROW_START.len();
         }
-        for (index, start) in starts.iter().copied().enumerate() {
+        for (index, start) in ctx
+            .admit_iter(&starts, "creo reference start traversal")?
+            .copied()
+            .enumerate()
+        {
             let end = starts.get(index + 1).map_or(block_end, |next| next - 1);
             let end = match end.checked_sub(1) {
                 Some(before) if payload.get(before) == Some(&0xe3) => before,
@@ -1172,21 +1314,28 @@ pub(crate) fn lines(
         }
         search = block_end.max(instance_search);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo lines result ordering",
-    )?;
-    result.dedup_by_key(|line| line.offset);
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo lines result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |line| Ok(line.offset),
+            "creo lines result deduplication",
+        )?;
+    }
     Ok(result)
 }
 
 fn line3d_fields(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<(FinitePoint3, FinitePoint3, PositiveReal)> {
-    let candidates = (0..body.len()).filter_map(|start| {
+) -> Result<Option<(FinitePoint3, FinitePoint3, PositiveReal)>, CodecError> {
+    let candidate = |start| {
         let mut cursor = start;
         let mut values = [0.0; 7];
         for slot in &mut values {
@@ -1209,34 +1358,45 @@ fn line3d_fields(
             0,
         )?;
         Some((start, first_checked, second_checked, stored_length))
-    });
-    let mut candidates = candidates;
-    let (_, first, second, stored_length) = candidates.next()?;
-    candidates.next().is_none().then_some(())?;
-    Some((first, second, stored_length))
+    };
+    let Some((start, first, second, stored_length)) = ctx.find_map(
+        0..body.len(),
+        |start| Ok(candidate(start)),
+        "creo line3d numeric trials",
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .find_map(
+            start + 1..body.len(),
+            |start| Ok(candidate(start)),
+            "creo line3d numeric trials",
+        )?
+        .is_none()
+        .then_some((first, second, stored_length)))
 }
 
 fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
     let Some(prefix) = payload.get(..close) else {
         return false;
     };
-    prefix
-        .iter()
-        .enumerate()
-        .rev()
-        .take(8)
-        .any(|(candidate, _)| {
-            let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
-                return false;
-            };
-            if previous != id {
-                return false;
-            }
-            after == close
-                || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
-                    && crate::psb::reference_id(payload, after + 1)
-                        .is_ok_and(|(_, reference_end)| reference_end == close))
-        })
+    for (candidate, _) in prefix.iter().enumerate().rev().take(8) {
+        let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
+            continue;
+        };
+        if previous != id {
+            continue;
+        }
+        if after == close
+            || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
+                && crate::psb::reference_id(payload, after + 1)
+                    .is_ok_and(|(_, reference_end)| reference_end == close))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals
@@ -1251,18 +1411,30 @@ pub(crate) fn line3d_lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = payload[search..]
-        .windows(PROTOTYPE.len())
-        .position(|window| window == PROTOTYPE)
-        .map(|relative| search + relative)
-    {
+    while payload.len() - search >= PROTOTYPE.len() {
+        let Some(prototype) = ctx.find_bytes_in(
+            payload,
+            PROTOTYPE,
+            search,
+            payload.len(),
+            "creo reference byte search",
+        )?
+        else {
+            break;
+        };
         let rows_start = prototype + PROTOTYPE.len();
-        let block_end = payload[rows_start..]
-            .windows(LIST.len())
-            .position(|window| window == LIST)
-            .map_or(payload.len(), |relative| rows_start + relative);
+        let block_end = ctx
+            .find_bytes_in(
+                payload,
+                LIST,
+                rows_start,
+                payload.len(),
+                "creo reference byte search",
+            )?
+            .unwrap_or(payload.len());
+        let mut headers_storage = ctx.reserve_scoped(0, "creo line3d headers")?;
         let mut headers = Vec::new();
-        for close in rows_start..block_end {
+        for close in ctx.admit_iter(rows_start..block_end, "creo reference row header traversal")? {
             if payload.get(close) != Some(&0xe3) {
                 continue;
             }
@@ -1277,15 +1449,20 @@ pub(crate) fn line3d_lines(
                 continue;
             }
             let body_start = body_start + 1;
-            ctx.reserve_vec(&mut headers, 1, "creo line3d headers")?;
+            headers_storage
+                .with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo line3d headers"))?;
             headers.push((close, body_start, id));
         }
-        for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
+        for (index, (close, body_start, entity_id)) in ctx
+            .admit_iter(&headers, "creo reference header traversal")?
+            .copied()
+            .enumerate()
+        {
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _)| *next_close);
             let Some((start, end, original_length)) =
-                line3d_fields(&payload[body_start..body_end], &cache)
+                line3d_fields(ctx, &payload[body_start..body_end], &cache)?
             else {
                 continue;
             };
@@ -1304,13 +1481,19 @@ pub(crate) fn line3d_lines(
         }
         search = block_end.max(rows_start);
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo line3d lines result ordering",
-    )?;
-    result.dedup_by_key(|line| line.offset);
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo line3d lines result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |line| Ok(line.offset),
+            "creo line3d lines result deduplication",
+        )?;
+    }
     Ok(result)
 }
 
@@ -1370,11 +1553,7 @@ fn arc_z_fields(
                     Some((direction, first, second))
                 })
         };
-    let work = cadmpeg_core::decode::u64_from_index(body.len())
-        .checked_mul(512)
-        .ok_or_else(|| ctx.refuse_codec_limit("creo arc-z numeric trials", u64::MAX, u64::MAX))?;
-    ctx.charge_work(work, "creo arc-z numeric trials")?;
-    let explicit = (0..body.len()).filter_map(|start| {
+    let explicit = |start| {
         let values = scalar_run::<10>(body, start, cache)?;
         let center = [values[0], values[1], values[2]];
         let radius = PositiveLength::new(values[3].abs())?;
@@ -1390,8 +1569,8 @@ fn arc_z_fields(
             [first, second],
             start,
         )
-    });
-    let diametric = (0..body.len()).filter_map(|start| {
+    };
+    let diametric = |start| {
         let values = scalar_run::<7>(body, start, cache)?;
         let radius = PositiveLength::new(values[0].abs())?;
         let first = [values[1], values[2], values[3]];
@@ -1406,12 +1585,28 @@ fn arc_z_fields(
             [first, second],
             start,
         )
-    });
-    let mut candidates = explicit.chain(diametric);
-    let Some(circle) = candidates.next() else {
-        return Ok(None);
     };
-    Ok(candidates.next().is_none().then_some(circle))
+    let mut selected = None;
+    for stored_center in [true, false] {
+        let mut starts = 0..body.len();
+        while !starts.is_empty() {
+            let Some(start) = ctx.next_charged(&mut starts, "creo arc-z numeric trials")? else {
+                break;
+            };
+            let candidate = if stored_center {
+                explicit(start)
+            } else {
+                diametric(start)
+            };
+            if let Some(circle) = candidate {
+                if selected.is_some() {
+                    return Ok(None);
+                }
+                selected = Some(circle);
+            }
+        }
+    }
+    Ok(selected)
 }
 
 /// Decode complete positional `arc_z` rows whose stored center, radius, and
@@ -1427,30 +1622,19 @@ pub(crate) fn arc_z_circles(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(payload.len() - search),
-            "creo arc-z prototype search",
-        )?;
-        let Some(prototype) = payload[search..]
-            .windows(PROTOTYPE.len())
-            .position(|window| window == PROTOTYPE)
-            .map(|relative| search + relative)
+    while payload.len() - search >= PROTOTYPE.len() {
+        let Some(prototype) =
+            ctx.find_bytes_from(payload, PROTOTYPE, search, "creo arc-z prototype search")?
         else {
             break;
         };
         let rows_start = prototype + PROTOTYPE.len();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(payload.len() - rows_start),
-            "creo arc-z block search",
-        )?;
-        let block_end = payload[rows_start..]
-            .windows(LIST.len())
-            .position(|window| window == LIST)
-            .map_or(payload.len(), |relative| rows_start + relative);
+        let block_end = ctx
+            .find_bytes_from(payload, LIST, rows_start, "creo arc-z block search")?
+            .unwrap_or(payload.len());
+        let mut headers_storage = ctx.reserve_scoped(0, "creo arc-z headers")?;
         let mut headers = Vec::new();
-        for close in rows_start..block_end {
-            ctx.charge_work(32, "creo arc-z row headers")?;
+        for close in ctx.admit_iter(rows_start..block_end, "creo arc-z row headers")? {
             if payload.get(close) != Some(&0xe3) {
                 continue;
             }
@@ -1464,10 +1648,15 @@ pub(crate) fn arc_z_circles(
             if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
                 continue;
             }
-            ctx.reserve_vec(&mut headers, 1, "creo arc-z headers")?;
+            headers_storage
+                .with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo arc-z headers"))?;
             headers.push((close, body_start + 1, id));
         }
-        for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
+        for (index, (close, body_start, entity_id)) in ctx
+            .admit_iter(&headers, "creo reference header traversal")?
+            .copied()
+            .enumerate()
+        {
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _)| *next_close);
@@ -1482,19 +1671,24 @@ pub(crate) fn arc_z_circles(
         }
         search = block_end;
     }
-    ctx.stable_sort_by(
-        result.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo arc z circles result ordering",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(result.len()),
-        "creo arc-z row deduplication",
-    )?;
-    result.dedup_by_key(|circle| circle.offset);
+    if result.len() > 1 {
+        ctx.stable_sort_by(
+            result.as_mut_slice(),
+            |value| &value.offset,
+            Ord::cmp,
+            "creo arc z circles result ordering",
+        )?;
+        ctx.dedup_by_key(
+            &mut result,
+            |circle| Ok(circle.offset),
+            "creo arc-z row deduplication",
+        )?;
+    }
     Ok(result)
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod prefix_visits;

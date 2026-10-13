@@ -104,14 +104,30 @@ pub(crate) struct LoopArrayScan {
     pub(crate) records: Vec<LoopArrayRecord>,
 }
 
-fn find_named_field(data: &[u8], start: usize, end: usize, name: &[u8]) -> Option<usize> {
-    let marker_len = name.len().checked_add(3)?;
-    data.get(start..end)?
-        .windows(marker_len)
-        .position(|marker| {
-            marker[0] == 0xe0 && &marker[2..2 + name.len()] == name && marker[2 + name.len()] == 0
-        })
-        .map(|offset| start + offset)
+fn find_named_field(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+    end: usize,
+    name: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    let Some(marker_len) = name.len().checked_add(3) else {
+        return Ok(None);
+    };
+    let Some(bytes) = data.get(start..end) else {
+        return Ok(None);
+    };
+    let mut markers = bytes.windows(marker_len).enumerate();
+    while markers.len() != 0 {
+        let Some((offset, marker)) = ctx.next_charged(&mut markers, "creo loop prototype scan")?
+        else {
+            break;
+        };
+        if marker[0] == 0xe0 && &marker[2..2 + name.len()] == name && marker[2 + name.len()] == 0 {
+            return Ok(Some(start + offset));
+        }
+    }
+    Ok(None)
 }
 
 fn compact_at(data: &[u8], offset: usize, end: usize) -> Option<(u32, usize)> {
@@ -129,9 +145,21 @@ fn compact_at(data: &[u8], offset: usize, end: usize) -> Option<(u32, usize)> {
     }
 }
 
-fn prototype_close(data: &[u8], start: usize, end: usize, class_id: u32) -> Option<usize> {
-    let close_end = end.checked_sub(4)?;
-    for offset in start..=close_end {
+fn prototype_close(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+    end: usize,
+    class_id: u32,
+) -> Result<Option<usize>, CodecError> {
+    let Some(close_end) = end.checked_sub(4) else {
+        return Ok(None);
+    };
+    let mut offsets = start..=close_end;
+    while !offsets.is_empty() {
+        let Some(offset) = ctx.next_charged(&mut offsets, "creo loop prototype scan")? else {
+            break;
+        };
         if data.get(offset..offset + 2) != Some(&[0xf1, 0xf7]) {
             continue;
         }
@@ -139,23 +167,40 @@ fn prototype_close(data: &[u8], start: usize, end: usize, class_id: u32) -> Opti
             continue;
         };
         if reference == class_id && after_reference < end && data[after_reference] == 0xe3 {
-            return Some(after_reference + 1);
+            return Ok(Some(after_reference + 1));
         }
     }
-    None
+    Ok(None)
 }
 
-fn named_prototype_end(data: &[u8], start: usize, end: usize, class_id: u32) -> Option<usize> {
-    let close_end = prototype_close(data, start, end, class_id)?;
+fn named_prototype_end(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    start: usize,
+    end: usize,
+    class_id: u32,
+) -> Result<Option<usize>, CodecError> {
+    let Some(close_end) = prototype_close(ctx, data, start, end, class_id)? else {
+        return Ok(None);
+    };
     let mut cursor = start;
     for field in PROTOTYPE_FIELDS {
-        cursor = find_named_field(data, cursor, close_end, field)?
-            .checked_add(field.len().checked_add(3)?)?;
+        let Some(offset) = find_named_field(ctx, data, cursor, close_end, field)? else {
+            return Ok(None);
+        };
+        let Some(after_field) = field
+            .len()
+            .checked_add(3)
+            .and_then(|length| offset.checked_add(length))
+        else {
+            return Ok(None);
+        };
+        cursor = after_field;
     }
-    Some(close_end)
+    Ok(Some(close_end))
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Prefix {
     lo_id: u32,
     lo_type: u32,
@@ -165,6 +210,13 @@ struct Prefix {
     direction: u32,
     next_lo_ptr: u32,
     body_offset: usize,
+}
+
+#[derive(Debug, PartialEq)]
+struct PendingLoopRow {
+    prefix: Prefix,
+    offset: usize,
+    close: usize,
 }
 
 fn row_prefix(data: &[u8], offset: usize, end: usize) -> Option<Prefix> {
@@ -187,27 +239,40 @@ fn row_prefix(data: &[u8], offset: usize, end: usize) -> Option<Prefix> {
     })
 }
 
-fn row_end(data: &[u8], body_start: usize, end: usize) -> Option<usize> {
+fn row_end(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    body_start: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
     let mut cursor = body_start;
     while cursor < end {
-        let token = psb::token_at(data, cursor)?;
+        let Some(token) = psb::token_at(ctx, data, cursor)? else {
+            return Ok(None);
+        };
         if matches!(token.kind, psb::TokenKind::CompoundClose) {
-            return Some(cursor);
+            return Ok(Some(cursor));
         }
         // `token_at` answers only for an offset inside `data`, so every token
         // it states spans at least its own head byte. A zero-length token would
         // not advance the walk, and the mint refuses it instead of flooring it.
-        cursor = cursor.checked_add(std::num::NonZeroUsize::new(token.length)?.get())?;
+        let Some(next) = std::num::NonZeroUsize::new(token.length)
+            .and_then(|length| cursor.checked_add(length.get()))
+        else {
+            return Ok(None);
+        };
+        cursor = next;
     }
-    None
+    Ok(None)
 }
 
 fn parse_frame(
     ctx: &DecodeContext<'_>,
+    record_scope: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     data: &[u8],
     offset: usize,
     section_end: usize,
-) -> Result<Option<(LoopArrayFrame, Vec<LoopArrayRecord>)>, CodecError> {
+) -> Result<Option<(LoopArrayFrame, Vec<PendingLoopRow>)>, CodecError> {
     let Some(mut cursor) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
         return Ok(None);
     };
@@ -238,24 +303,22 @@ fn parse_frame(
         return Ok(None);
     }
     let header_end = after_class + 2;
-    let mut end = section_end;
-    for label in ARRAY_BOUNDARY_LABELS {
-        if let Some(offset) = ctx
-            .find_bytes_from(data, label, header_end, "creo loop frame boundaries")?
-            .filter(|offset| *offset < section_end)
-        {
-            end = end.min(offset);
-        }
-    }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(end - header_end)
-            .checked_mul(1 + cadmpeg_core::decode::u64_from_index(PROTOTYPE_FIELDS.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo loop prototype scan", u64::MAX, u64::MAX)
-            })?,
-        "creo loop prototype scan",
-    )?;
-    let Some(prototype_end) = named_prototype_end(data, header_end, end, class_id) else {
+    let Some(tail) = data.get(header_end..section_end) else {
+        return Ok(None);
+    };
+    let end = ctx
+        .find_map(
+            0..tail.len(),
+            |offset| {
+                Ok(ARRAY_BOUNDARY_LABELS
+                    .iter()
+                    .any(|label| tail[offset..].starts_with(label))
+                    .then_some(header_end + offset))
+            },
+            "creo loop frame boundaries",
+        )?
+        .unwrap_or(section_end);
+    let Some(prototype_end) = named_prototype_end(ctx, data, header_end, end, class_id)? else {
         return Ok(None);
     };
 
@@ -278,34 +341,25 @@ fn parse_frame(
     };
     let mut cursor = prototype_end;
     let mut records = Vec::new();
-    while cursor < end && records.len() < max_records {
+    let mut rows = 0..max_records;
+    while cursor < end
+        && !rows.is_empty()
+        && ctx
+            .next_charged(&mut rows, "creo loop row traversal")?
+            .is_some()
+    {
         let Some(prefix) = row_prefix(data, cursor, end) else {
             break;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(end - prefix.body_offset),
-            "creo loop row token walk",
-        )?;
-        let Some(close) = row_end(data, prefix.body_offset, end) else {
+        let Some(close) = row_end(ctx, data, prefix.body_offset, end)? else {
             break;
         };
-        ctx.reserve_vec(&mut records, 1, "creo loop array frame records")?;
-        let body = ctx.copy_retained(
-            &data[prefix.body_offset..=close],
-            "creo loop array record body",
-        )?;
-        records.push(LoopArrayRecord {
-            frame_offset: offset,
-            lo_id: prefix.lo_id,
-            lo_type: prefix.lo_type,
-            lo_subtype: prefix.lo_subtype,
-            feature_id: prefix.feature_id,
-            attributes: prefix.attributes,
-            direction: prefix.direction,
-            next_lo_ptr: prefix.next_lo_ptr,
-            body,
+        record_scope
+            .with_storage(|| ctx.reserve_vec(&mut records, 1, "creo loop array frame records"))?;
+        records.push(PendingLoopRow {
+            prefix,
             offset: cursor,
-            body_offset: prefix.body_offset,
+            close,
         });
         cursor = close + 1;
     }
@@ -331,38 +385,64 @@ fn parse_frame(
 pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan, CodecError> {
     let mut result = LoopArrayScan::default();
     let mut search = 0;
-    while let Some(offset) =
-        ctx.find_bytes_from(data, LO_ARRAY_LABEL, search, "creo loop array discovery")?
+    while data
+        .get(search..)
+        .is_some_and(|remaining| remaining.len() >= LO_ARRAY_LABEL.len())
     {
+        let Some(offset) = ctx.find_map(
+            data.get(search..)
+                .unwrap_or_default()
+                .windows(LO_ARRAY_LABEL.len())
+                .enumerate(),
+            |(offset, bytes)| Ok((bytes == LO_ARRAY_LABEL).then_some(search + offset)),
+            "creo loop array discovery",
+        )?
+        else {
+            break;
+        };
         let Some(next_search) = offset.checked_add(LO_ARRAY_LABEL.len()) else {
             break;
         };
         search = next_search;
-        let Some((frame, records)) = parse_frame(ctx, data, offset, data.len())? else {
+        let mut record_scope = ctx.reserve_scoped(0, "creo loop frame record scratch")?;
+        let Some((frame, records)) = parse_frame(ctx, &mut record_scope, data, offset, data.len())?
+        else {
             continue;
         };
         ctx.reserve_vec(&mut result.frames, 1, "creo loop array frames")?;
+        let frame_offset = frame.offset;
         result.frames.push(frame);
         ctx.reserve_vec(
             &mut result.records,
             records.len(),
             "creo loop array section records",
         )?;
-        result.records.extend(records);
+        for PendingLoopRow {
+            prefix,
+            offset,
+            close,
+        } in ctx.admit_iter(records, "creo loop retained row projection")?
+        {
+            let body = ctx.copy_retained(
+                &data[prefix.body_offset..=close],
+                "creo loop array record body",
+            )?;
+            result.records.push(LoopArrayRecord {
+                frame_offset,
+                lo_id: prefix.lo_id,
+                lo_type: prefix.lo_type,
+                lo_subtype: prefix.lo_subtype,
+                feature_id: prefix.feature_id,
+                attributes: prefix.attributes,
+                direction: prefix.direction,
+                next_lo_ptr: prefix.next_lo_ptr,
+                body,
+                offset,
+                body_offset: prefix.body_offset,
+            });
+        }
         search = search.max(result.frames.last().map_or(search, |frame| frame.end));
     }
-    ctx.stable_sort_by(
-        result.frames.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan result frames ordering",
-    )?;
-    ctx.stable_sort_by(
-        result.records.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo scan result records ordering",
-    )?;
     Ok(result)
 }
 

@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 fn circular_sweep_projects_profile_direction_and_extent() {
     let rows = [12, 13].map(|id| super::surface_row(id, 6, crate::surface::SurfaceKind::Cylinder));
     let sweep = CircularSweepGeometry {
-        cylinder_rows: rows.iter().collect(),
+        cylinder_rows: crate::decode::holes::placement::HoleCylinderRows::Two([&rows[0], &rows[1]]),
         section_definition_id: None,
         direction: [0.0, 0.0, -1.0],
         extent: ExtrudeExtent::OneSided {
@@ -141,7 +141,14 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
                 .expect("nonempty source identity"),
         ),
     )]);
-    assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &definition,
+            &unresolved
+        ))
+        .expect("service locus compatibility admitted")
+    );
 
     let native_arc = BTreeMap::from([(
         entity.clone(),
@@ -149,7 +156,14 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
             cadmpeg_core::text::NonBlankString::try_from("arc").expect("nonempty source identity"),
         ),
     )]);
-    assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &definition,
+            &native_arc
+        ))
+        .expect("service locus compatibility admitted")
+    );
 
     let native_line = BTreeMap::from([(
         entity.clone(),
@@ -157,10 +171,14 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
             cadmpeg_core::text::NonBlankString::try_from("line").expect("nonempty source identity"),
         ),
     )]);
-    assert!(!sketch_constraint_loci_compatible(
-        &definition,
-        &native_line
-    ));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &definition,
+            &native_line
+        ))
+        .expect("service locus compatibility admitted")
+    );
 
     let resolved = BTreeMap::from([(
         entity,
@@ -170,7 +188,14 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
         })
         .expect("valid test fixture"),
     )]);
-    assert!(sketch_constraint_loci_compatible(&definition, &resolved));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &definition,
+            &resolved
+        ))
+        .expect("service locus compatibility admitted")
+    );
 }
 
 #[test]
@@ -349,8 +374,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
@@ -375,8 +399,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
@@ -401,8 +424,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices")
         .is_empty()
     );
@@ -496,7 +518,8 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             (828, [0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
             (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
         ], [
-            CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] },
+            Some(CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] }),
+            None,
         ]),
         Some(cylinder)
             if *cylinder.origin() == Point3::new(-12.5, 4.0, 0.0)

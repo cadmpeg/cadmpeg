@@ -73,8 +73,13 @@ fn scan(payload: &[u8]) -> super::LoopArrayScan {
     scan_with_limits(payload, u64::MAX, u64::MAX).expect("service loop array scan")
 }
 
-fn assert_loop_array_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_loop_array_collection_refusal(operation: &'static str) {
     let payload = frame(1, &row(1, &[0xe2, 0x10]));
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some(operation),
+        |limit| scan_with_limits(&payload, limit, u64::MAX),
+    );
     let error = scan_with_limits(&payload, limit, u64::MAX)
         .expect_err("loop array exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -84,17 +89,17 @@ fn assert_loop_array_collection_refusal(limit: u64, operation: &'static str) {
 
 #[test]
 fn loop_array_refuses_frame_record_before_growth() {
-    assert_loop_array_collection_refusal(0, "creo loop array frame records");
+    assert_loop_array_collection_refusal("creo loop array frame records");
 }
 
 #[test]
 fn loop_array_refuses_frame_before_growth() {
-    assert_loop_array_collection_refusal(1, "creo loop array frames");
+    assert_loop_array_collection_refusal("creo loop array frames");
 }
 
 #[test]
 fn loop_array_refuses_section_record_before_growth() {
-    assert_loop_array_collection_refusal(2, "creo loop array section records");
+    assert_loop_array_collection_refusal("creo loop array section records");
 }
 
 #[test]
@@ -248,10 +253,12 @@ fn loop_array_framing_and_token_walks_refuse_work() {
             "creo loop array discovery",
             "creo loop frame boundaries",
             "creo loop prototype scan",
-            "creo loop row token walk",
+            "creo PSB token traversal",
         ],
         |ctx| super::scan(ctx, &bytes),
     );
     assert_eq!(scan.frames.len(), 1);
     assert_eq!(scan.records.len(), 1);
 }
+
+mod prototype_visits;

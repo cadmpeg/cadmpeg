@@ -37,7 +37,13 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
     ];
     let terminal_plane = [([0.0, 7.5, 0.0], [0.0, 1.0, 0.0])];
     assert_eq!(
-        blind_extrusion_from_carriers(&carriers, &terminal_plane, None),
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &carriers,
+            &terminal_plane,
+            None
+        ))
+        .expect("service resources"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -63,10 +69,31 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
         },
     ];
     assert_eq!(
-        blind_extrusion_from_carriers(&reversed, &terminal_plane, None),
-        blind_extrusion_from_carriers(&carriers, &terminal_plane, None)
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &reversed,
+            &terminal_plane,
+            None
+        ))
+        .expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &carriers,
+            &terminal_plane,
+            None
+        ))
+        .expect("service resources")
     );
-    assert!(blind_extrusion_from_carriers(&carriers, &[], None).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(
+            ctx,
+            &carriers,
+            &[],
+            None
+        ))
+        .expect("service resources")
+        .is_none()
+    );
 }
 
 #[test]
@@ -190,8 +217,9 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         ))
     );
 
-    scan.features.entity_tables[0].entries[2].payload =
-        crate::feature::entity::EntryPayload::Source { entity: None };
+    scan.features.entity_tables[0].entries.edit(2, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Source { entity: None }
+    });
     assert!(service_generated_cap_plane_extent(
         &scan,
         &ir,
@@ -370,7 +398,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         .expect("admitted extent")
         .is_none());
 
-        scan.surfaces.rows[3].reversed = false;
+        scan.surfaces.rows.edit(|rows| rows[3].reversed = false);
         assert!(generated_rectilinear_plane_extent(
             ctx,
             &scan,
@@ -381,7 +409,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         )
         .expect("admitted extent")
         .is_none());
-        scan.surfaces.rows[3].reversed = true;
+        scan.surfaces.rows.edit(|rows| rows[3].reversed = true);
         ir.model.surfaces.pop();
         assert!(generated_rectilinear_plane_extent(
             ctx,

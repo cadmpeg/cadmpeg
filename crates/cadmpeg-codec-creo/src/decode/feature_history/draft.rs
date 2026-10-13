@@ -25,7 +25,7 @@ use super::super::sweep::planes::{
     generated_cap_plane_extent,
 };
 use super::super::uniqueness::{
-    exactly_one, unique_feature_datum_plane, unique_feature_definition_for_transform,
+    unique_feature_datum_plane, unique_feature_definition_for_transform,
     unique_feature_profile_ref, unique_feature_section_transform, unique_owned_feature_definition,
 };
 use super::axes::{
@@ -46,7 +46,7 @@ use super::outputs::{
     section_definition_for_history_feature, sweep_output_kind, sweep_solid, CommaList,
 };
 use super::round::{
-    chamfer_constant_distance, differing_positive_lengths, round_constant_radius,
+    chamfer_constant_distance, differing_positive_length_sets, round_constant_radius,
     round_observed_radii, round_placed_cylinder_radii,
 };
 use super::selections::feature_edge_selection;
@@ -55,15 +55,13 @@ use crate::decode::analytic::planes::{
     placed_plane_surfaces, placed_planes, reconciled_model_plane,
 };
 use crate::decode::sketch_transfer::recipe::{
-    feature_recipe, feature_recipe_effect, feature_revolution_extent, feature_schema_class,
-    feature_section_sweep_semantics_conflict,
+    feature_revolution_extent, feature_schema_class, feature_section_sweep_semantics_conflict,
 };
 use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::{
@@ -97,26 +95,35 @@ pub(super) fn thicken_feature_definition(
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, cadmpeg_core::CodecError> {
-    let transitions = feature_surface_transitions(
-        ctx,
-        feature_id,
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-    )?;
-    let faces = if let Some(transitions) = transitions.as_ref() {
-        let mut source_ids = Vec::new();
-        ctx.reserve_vec(
-            &mut source_ids,
-            transitions.len(),
-            "creo thicken source surface IDs",
-        )?;
-        source_ids.extend(transitions.iter().map(|(source_id, _)| *source_id));
-        let available_features = model_feature_ids(ctx, scan)?;
-        let result_surface_ids = feature_result_surface_ids_by_feature(
+    let mut scratch = ctx.reserve_scoped(0, "creo thicken feature evidence")?;
+    let transitions = scratch.with_storage(|| {
+        feature_surface_transitions(
             ctx,
+            feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        )?;
+        )
+    })?;
+    let faces = if let Some(transitions) = transitions.as_ref() {
+        let mut source_ids = Vec::new();
+        scratch.with_storage(|| {
+            ctx.reserve_capacity(
+                &mut source_ids,
+                transitions.len(),
+                "creo thicken source surface IDs",
+            )
+        })?;
+        for &(source_id, _) in
+            ctx.admit_iter(transitions, "creo thicken source surface references")?
+        {
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut source_ids,
+                    source_id,
+                    "creo thicken source surface IDs",
+                )
+            })?;
+        }
         let native = ctx.format_retained(
             format_args!(
                 "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
@@ -124,47 +131,84 @@ pub(super) fn thicken_feature_definition(
             ),
             "creo thicken native selection",
         )?;
-        let mut faces = Vec::new();
-        for surface_id in &source_ids {
-            let text = ctx.format_retained(
-                format_args!("creo:visibgeom:face#{surface_id}"),
-                "creo thicken face IDs",
-            )?;
-            let face = FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
-            ctx.reserve_vec(&mut faces, 1, "creo thicken face identities")?;
-            faces.push(face);
-        }
-        if faces
-            .iter()
-            .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
-        {
-            FaceSelection::Resolved { faces, native }
-        } else if let Some(faces) = generated_surface_face_refs(
-            ctx,
-            &source_ids,
-            &scan.surfaces.rows,
-            &result_surface_ids,
-            &available_features,
-        )? {
-            FaceSelection::generated(
-                faces,
-                ctx.copy_retained_text(&native, "creo thicken generated native selection")?,
-                ctx,
+        let mut resolved = Vec::new();
+        let mut all_faces_resolved = true;
+        let mut source_iter = source_ids.iter();
+        while source_iter.len() != 0 {
+            let Some(surface_id) =
+                ctx.next_charged(&mut source_iter, "creo thicken source face IDs")?
+            else {
+                break;
+            };
+            let Some(face) = ctx.find_by(
+                &ir.model.faces,
+                |candidate| {
+                    Ok(crate::identity::matches_numbered_identity(
+                        candidate.id.as_str(),
+                        "creo:visibgeom:face#",
+                        *surface_id,
+                    ))
+                },
+                "creo thicken model face lookup",
             )?
-            .unwrap_or(FaceSelection::Native(native))
+            else {
+                all_faces_resolved = false;
+                break;
+            };
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut resolved,
+                    &face.id,
+                    "creo thicken resolved face references",
+                )
+            })?;
+        }
+        if all_faces_resolved {
+            let mut faces = Vec::new();
+            for source in ctx.admit_iter(&resolved, "creo thicken resolved face copies")? {
+                let face = source.try_clone_for_decode(ctx, "creo thicken face IDs")?;
+                ctx.push_vec(&mut faces, face, "creo thicken face identities")?;
+            }
+            FaceSelection::Resolved { faces, native }
         } else {
-            FaceSelection::Native(native)
+            let available_features = scratch.with_storage(|| model_feature_ids(ctx, scan))?;
+            let result_surface_ids = scratch.with_storage(|| {
+                feature_result_surface_ids_by_feature(
+                    ctx,
+                    &scan.features.entity_tables,
+                    &scan.surfaces.rows,
+                )
+            })?;
+            if let Some(faces) = generated_surface_face_refs(
+                ctx,
+                &source_ids,
+                &scan.surfaces.rows,
+                &result_surface_ids,
+                &available_features,
+            )? {
+                match faces.try_into() {
+                    Ok(faces) => {
+                        let native = native.try_into().map_err(|_| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "constructed Creo thicken selection is blank".into(),
+                            )
+                        })?;
+                        FaceSelection::Generated { faces, native }
+                    }
+                    Err(_) => FaceSelection::Native(native),
+                }
+            } else {
+                FaceSelection::Native(native)
+            }
         }
     } else {
         FaceSelection::Unresolved
     };
     let offset = match transitions.as_deref() {
-        Some(transitions) => thicken_plane_offset(
-            ctx,
-            transitions,
-            &placed_planes(ctx, scan)?,
-            &scan.surfaces.rows,
-        )?,
+        Some(transitions) => {
+            let planes = scratch.with_storage(|| placed_planes(ctx, scan))?;
+            thicken_plane_offset(ctx, transitions, &planes, &scan.surfaces.rows)?
+        }
         None => None,
     };
     Ok(IrFeatureDefinition::Operation(
@@ -190,27 +234,24 @@ fn hole_face_selection(
         format_args!("creo:visibgeom:surface#{surface_id}"),
         "creo hole native face selection",
     )?;
-    let (candidate_id, candidate_reservation) = ctx.format_scoped(
-        format_args!("creo:visibgeom:face#{surface_id}"),
-        "creo hole candidate face ID",
+    let resolved = ctx.find_by(
+        &ir.model.faces,
+        |candidate| {
+            Ok(crate::identity::matches_numbered_identity(
+                candidate.id.as_str(),
+                "creo:visibgeom:face#",
+                surface_id,
+            ))
+        },
+        "creo hole face lookup",
     )?;
-    let resolved = ir
-        .model
-        .faces
-        .iter()
-        .any(|candidate| candidate.id.as_str() == candidate_id);
-    if resolved {
-        let face = FaceId::mint(ctx.copy_retained_text(&candidate_id, "creo hole face IDs")?)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        drop(candidate_id);
-        drop(candidate_reservation);
+    if let Some(source) = resolved {
+        let face = source.id.try_clone_for_decode(ctx, "creo hole face IDs")?;
         let mut faces = Vec::new();
         ctx.reserve_vec(&mut faces, 1, "creo hole face identities")?;
         faces.push(face);
         return Ok(FaceSelection::Resolved { faces, native });
     }
-    drop(candidate_id);
-    drop(candidate_reservation);
     if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
         .is_some_and(|row| row.feature_id == feature_id)
     {
@@ -223,22 +264,23 @@ fn hole_face_selection(
         result_surface_ids,
         available_features,
     )? {
-        return Ok(FaceSelection::generated(
-            faces,
-            ctx.copy_retained_text(&native, "creo hole generated native selection")?,
-            ctx,
-        )?
-        .unwrap_or(FaceSelection::Native(native)));
+        let Ok(faces) = faces.try_into() else {
+            return Ok(FaceSelection::Native(native));
+        };
+        let native = native.try_into().map_err(|_| {
+            cadmpeg_core::CodecError::Malformed("constructed Creo hole selection is blank".into())
+        })?;
+        return Ok(FaceSelection::Generated { faces, native });
     }
     Ok(FaceSelection::Native(native))
 }
 
 fn admitted_hole_placements(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    candidates: impl IntoIterator<Item = HolePlacement>,
+    candidates: [Option<HolePlacement>; 3],
 ) -> Result<Vec<HolePlacement>, cadmpeg_core::CodecError> {
     let mut placements = Vec::new();
-    for placement in candidates {
+    for placement in candidates.into_iter().flatten() {
         ctx.reserve_vec(&mut placements, 1, "creo hole placements")?;
         placements.push(placement);
     }
@@ -252,13 +294,20 @@ pub(super) fn linear_extrusion_extent_and_direction(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, cadmpeg_core::CodecError> {
-    let mut transforms = scan
-        .features
-        .section_transforms
-        .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id));
-    let first = transforms.next();
-    let unique_transform = transforms.next().is_none().then_some(first);
+    let transforms = &scan.features.section_transforms;
+    let unique_transform = match ctx.position_by(
+        transforms,
+        |transform| Ok(transform.feature_id == Some(feature_id)),
+        "creo extrusion section transforms",
+    )? {
+        None => Some(None),
+        Some(first) => (!ctx.any_by(
+            &transforms[first + 1..],
+            |transform| Ok(transform.feature_id == Some(feature_id)),
+            "creo extrusion section transforms",
+        )?)
+        .then_some(Some(&transforms[first])),
+    };
     let definition = match unique_transform {
         Some(Some(transform)) => {
             unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
@@ -271,15 +320,19 @@ pub(super) fn linear_extrusion_extent_and_direction(
         let mut extent =
             generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)?;
         if extent.is_none() {
-            extent = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?.and_then(
-                |planes| {
-                    extrusion_extent_and_direction(
-                        transform.origin(),
-                        transform.normal(),
-                        planes.into_iter().map(|plane| (plane.origin, plane.normal)),
-                    )
-                },
-            );
+            if let Some(plane_storage) =
+                feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
+            {
+                extent = extrusion_extent_and_direction(
+                    ctx,
+                    transform.origin(),
+                    transform.normal(),
+                    plane_storage
+                        .0
+                        .iter()
+                        .map(|plane| (plane.origin, plane.normal)),
+                )?;
+            }
         }
         if let Some(extent) = extent {
             return Ok(Some(extent));
@@ -332,20 +385,20 @@ pub(in super::super) fn schema_feature_definition(
     schema_class: Option<SchemaClass>,
     kind: &str,
 ) -> Result<IrFeatureDefinition, cadmpeg_core::CodecError> {
-    if numbered_feature_name_has_family(kind, "Fill") {
+    if numbered_feature_name_has_family(ctx, kind, "Fill")? {
         return filled_surface_feature_definition(ctx, scan, ir, feature_id);
     }
-    if numbered_feature_name_has_family(kind, "Thicken") {
+    if numbered_feature_name_has_family(ctx, kind, "Thicken")? {
         return thicken_feature_definition(ctx, scan, ir, feature_id);
     }
-    if numbered_feature_name_has_family(kind, "Merge") {
+    if numbered_feature_name_has_family(ctx, kind, "Merge")? {
         return knit_surface_feature_definition(ctx, scan, feature_id);
     }
-    if let Some(definition) = reference_named_feature_definition(kind) {
+    if let Some(definition) = reference_named_feature_definition(ctx, kind)? {
         return Ok(definition);
     }
     if schema_class == Some(SchemaClass::Section) {
-        let definition = match section_definition_for_history_feature(scan, feature_id) {
+        let definition = match section_definition_for_history_feature(ctx, scan, feature_id)? {
             Some(definition) => match definition.section_3d.as_ref() {
                 Some(section)
                     if unique_feature_section_transform(
@@ -362,15 +415,32 @@ pub(in super::super) fn schema_feature_definition(
             },
             None => None,
         };
+        let mut sketch_storage = ctx.reserve_scoped(0, "creo schema sketch lookup")?;
         let sketch = match definition {
-            Some(definition) => model_sketch_id(ctx, scan, definition)?.filter(|sketch| {
-                ir.model
-                    .sketches
-                    .iter()
-                    .any(|candidate| candidate.id == *sketch)
-            }),
+            Some(definition) => {
+                match sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? {
+                    Some(sketch) => {
+                        let sketch_found = ctx.any_by(
+                            &ir.model.sketches,
+                            |candidate| {
+                                ctx.equal(
+                                    &candidate.id,
+                                    &sketch,
+                                    "creo schema sketch identity comparison",
+                                )
+                            },
+                            "creo schema sketch model lookup",
+                        )?;
+                        sketch_found.then_some(sketch)
+                    }
+                    None => None,
+                }
+            }
             None => None,
         };
+        let sketch = sketch
+            .map(|sketch| sketch_storage.commit_value(sketch))
+            .transpose()?;
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
         }));
@@ -404,36 +474,45 @@ pub(in super::super) fn schema_feature_definition(
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         )?;
-        let drilled_dimensions = drilled_recipe.and_then(|recipe| {
+        let drilled_dimensions = if let Some(recipe) = drilled_recipe {
             simple_drilled_hole_dimensions(
+                ctx,
                 scan,
-                simple_drilled_hole_envelope_spans(scan, recipe.table),
+                simple_drilled_hole_envelope_spans(ctx, scan, recipe.table)?,
                 recipe.dimension_family,
-            )
-        });
-        let drilled_placement =
-            drilled_recipe
-                .zip(drilled_dimensions)
-                .and_then(|(recipe, (diameter, _, depth))| {
-                    simple_drilled_hole_placement(scan, recipe.table, diameter, depth)
-                });
-        let placement = feature_outline_planes(ctx, scan, feature_id)?.and_then(hole_placement);
+            )?
+        } else {
+            None
+        };
+        let drilled_placement = if let (Some(recipe), Some((diameter, _, depth))) =
+            (drilled_recipe, drilled_dimensions)
+        {
+            simple_drilled_hole_placement(ctx, scan, recipe.table, diameter, depth)?
+        } else {
+            None
+        };
+        let placement = feature_outline_planes(ctx, scan, feature_id)?
+            .and_then(|plane_storage| hole_placement(plane_storage.0));
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
+            ctx,
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        );
+        )?;
         let mut solved = simple_hole_geometry(ctx, scan, feature_id)?;
         if solved.is_none() {
             solved = compact_simple_hole_geometry(ctx, scan, feature_id)?;
         }
         let simple_form = solved.is_some() || compact_cylinder_id.is_some();
-        let result_surface_ids = feature_result_surface_ids_by_feature(
-            ctx,
-            &scan.features.entity_tables,
-            &scan.surfaces.rows,
-        )?;
-        let available_features = model_feature_ids(ctx, scan)?;
+        let mut face_evidence = ctx.reserve_scoped(0, "creo hole face selection evidence")?;
+        let result_surface_ids = face_evidence.with_storage(|| {
+            feature_result_surface_ids_by_feature(
+                ctx,
+                &scan.features.entity_tables,
+                &scan.surfaces.rows,
+            )
+        })?;
+        let available_features = face_evidence.with_storage(|| model_feature_ids(ctx, scan))?;
         let face_selection = |surface_id| {
             hole_face_selection(
                 ctx,
@@ -516,11 +595,21 @@ pub(in super::super) fn schema_feature_definition(
                     && stepped_form.is_none()
                     && stepped_dimensions.is_none()
                     && diameter.as_ref().is_none_or(|diameter| {
-                        (FiniteReal::new(diameter.get())).zip(FiniteReal::new(*drilled_diameter)).is_some_and(|(first, second)| approximately_equal(first, second))
+                        let measured = FiniteReal::new(diameter.get());
+                        let drilled = FiniteReal::new(*drilled_diameter);
+                        measured
+                            .zip(drilled)
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
                     })
                     && extent.as_ref().is_none_or(|extent| {
-                        matches!(extent, LinearTermination::Blind { length }
-                        if (FiniteReal::new(length.get())).zip(FiniteReal::new(*drilled_depth)).is_some_and(|(first, second)| approximately_equal(first, second)))
+                        let LinearTermination::Blind { length } = extent else {
+                            return false;
+                        };
+                        let measured = FiniteReal::new(length.get());
+                        let drilled = FiniteReal::new(*drilled_depth);
+                        measured
+                            .zip(drilled)
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
                     })
             });
         let drilled_axis = if drilled_placement.is_none() {
@@ -532,15 +621,16 @@ pub(in super::super) fn schema_feature_definition(
         } else {
             None
         };
-        let placement_candidates = position
-            .zip(direction)
-            .map(|(position, direction)| HolePlacement::Directed {
-                position,
-                direction,
-            })
-            .into_iter()
-            .chain(stepped_axis)
-            .chain(drilled_axis);
+        let placement_candidates = [
+            position
+                .zip(direction)
+                .map(|(position, direction)| HolePlacement::Directed {
+                    position,
+                    direction,
+                }),
+            stepped_axis,
+            drilled_axis,
+        ];
         let placements = admitted_hole_placements(ctx, placement_candidates)?;
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             profile: None,
@@ -613,28 +703,26 @@ pub(in super::super) fn schema_feature_definition(
         }));
     }
     if schema_class == Some(SchemaClass::Round) {
-        let mut observed_radii = round_observed_radii(ctx, scan, feature_id)?;
-        let placed_radii = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
-        ctx.reserve_vec(
-            &mut observed_radii,
-            placed_radii.len(),
-            "creo feature round samples",
-        )?;
-        observed_radii.extend(placed_radii);
-        let radius = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?
+        let radius = match round_constant_radius(ctx, scan, ir, source_carriers, feature_id)?
             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
-            .map_or_else(
-                || {
-                    if differing_positive_lengths(&observed_radii) {
-                        RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
-                        }
-                    } else {
-                        RadiusSpec::Unresolved { form: None }
+        {
+            Some(radius) => RadiusSpec::Constant { radius },
+            None => {
+                let mut scratch = ctx.reserve_scoped(0, "creo feature round radius evidence")?;
+                let observed =
+                    scratch.with_storage(|| round_observed_radii(ctx, scan, feature_id))?;
+                let placed = scratch.with_storage(|| {
+                    round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)
+                })?;
+                if differing_positive_length_sets(ctx, &observed, &placed)? {
+                    RadiusSpec::Unresolved {
+                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                     }
-                },
-                |radius| RadiusSpec::Constant { radius },
-            );
+                } else {
+                    RadiusSpec::Unresolved { form: None }
+                }
+            }
+        };
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
@@ -684,9 +772,13 @@ pub(in super::super) fn schema_feature_definition(
             outward: None,
         }));
     }
+    let recipe = super::operations::feature_recipe(ctx, scan, feature_id)?;
     if schema_class == Some(SchemaClass::Protrusion)
-        && !feature_section_sweep_semantics_conflict(scan, feature_id)
-        && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
+        && !feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
+        && section_sweep_allows_linear_extrusion(
+            schema_class,
+            recipe.map(crate::feature::operations::FeatureRecipe::kind),
+        )
     {
         if let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? {
             let definition =
@@ -708,24 +800,24 @@ pub(in super::super) fn schema_feature_definition(
                     "creo unresolved section profile identity",
                 )?,
             };
-            let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+            let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
             return Ok(circular_sweep_feature_definition(
                 profile,
                 &sweep,
                 section_sweep_boolean_operation(
-                    feature_recipe_effect(scan, feature_id),
+                    recipe.map(crate::feature::operations::FeatureRecipe::effect),
                     kind,
                     output_kind.is_some(),
-                    preceding_features_establish_body(ir),
+                    preceding_features_establish_body(ctx, ir)?,
                 ),
                 sweep_solid(output_kind),
             ));
         }
     }
-    if feature_recipe(scan, feature_id)
+    if recipe.map(crate::feature::operations::FeatureRecipe::kind)
         == Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     {
-        let extent = feature_revolution_extent(scan, feature_id);
+        let extent = feature_revolution_extent(ctx, scan, feature_id)?;
         let profile = unique_feature_profile_ref(ctx, scan, ir, feature_id)?;
         let axis = feature_revolution_axis_for_transfer(
             ctx,
@@ -735,7 +827,7 @@ pub(in super::super) fn schema_feature_definition(
             feature_id,
             extent.as_ref(),
         )?;
-        let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let profile = profile.and_then(|profile| match profile {
             cadmpeg_ir::features::ProfileRef::Planar(profile) => Some(profile),
             _ => None,
@@ -785,26 +877,33 @@ pub(in super::super) fn schema_feature_definition(
                     },
                 },
                 op: section_sweep_boolean_operation(
-                    feature_recipe_effect(scan, feature_id),
+                    recipe.map(crate::feature::operations::FeatureRecipe::effect),
                     kind,
                     output_kind.is_some(),
-                    preceding_features_establish_body(ir),
+                    preceding_features_establish_body(ctx, ir)?,
                 ),
             },
         ));
     }
-    let recipe = feature_recipe(scan, feature_id);
-    if (!feature_section_sweep_semantics_conflict(scan, feature_id)
-        && section_sweep_allows_linear_extrusion(schema_class, recipe))
-        || feature_is_sheet_extrusion(scan, feature_id)
+    let recipe_kind = recipe.map(crate::feature::operations::FeatureRecipe::kind);
+    if (!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
+        && section_sweep_allows_linear_extrusion(schema_class, recipe_kind))
+        || feature_is_sheet_extrusion(ctx, scan, feature_id)?
     {
-        let mut transforms = scan
-            .features
-            .section_transforms
-            .iter()
-            .filter(|transform| transform.feature_id == Some(feature_id));
-        let first = transforms.next();
-        let unique_transform = transforms.next().is_none().then_some(first);
+        let transforms = &scan.features.section_transforms;
+        let unique_transform = match ctx.position_by(
+            transforms,
+            |transform| Ok(transform.feature_id == Some(feature_id)),
+            "creo extrusion section transforms",
+        )? {
+            None => Some(None),
+            Some(first) => (!ctx.any_by(
+                &transforms[first + 1..],
+                |transform| Ok(transform.feature_id == Some(feature_id)),
+                "creo extrusion section transforms",
+            )?)
+            .then_some(Some(&transforms[first])),
+        };
         let definition = match unique_transform {
             Some(Some(transform)) => {
                 unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
@@ -822,12 +921,12 @@ pub(in super::super) fn schema_feature_definition(
             )?),
             None => None,
         };
-        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            recipe.map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
-            preceding_features_establish_body(ir),
+            preceding_features_establish_body(ctx, ir)?,
         );
         let extent_and_direction =
             linear_extrusion_extent_and_direction(ctx, scan, ir, source_carriers, feature_id)?;
@@ -872,29 +971,38 @@ pub(in super::super) fn schema_feature_definition(
         if let Some(datum) = unique_feature_datum_plane(ctx, &scan.planes.datums, feature_id)? {
             return Ok(datum_plane_feature_definition(&datum.plane()));
         }
-        if scan
-            .planes
-            .datums
-            .iter()
-            .any(|datum| datum.feature_id == feature_id)
-        {
+        if ctx.any_by(
+            &scan.planes.datums,
+            |datum| Ok(datum.feature_id == feature_id),
+            "creo datum plane feature records",
+        )? {
             return Ok(IrFeatureDefinition::Operation(
                 IrFeatureOperation::Unresolved {
                     family: UnresolvedFamily::DatumPlane,
                 },
             ));
         }
-        let mut plane_ids = scan
-            .surfaces
-            .rows
-            .iter()
-            .filter(|row| {
-                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-            })
-            .map(|row| row.id);
-        if let Some(surface_id) = plane_ids.next() {
-            if plane_ids.any(|id| id != surface_id)
-                || crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none()
+        let rows = &*scan.surfaces.rows;
+        if let Some(first) =
+            ctx.position_by(
+                rows,
+                |row| {
+                    Ok(row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Plane)
+                },
+                "creo schema datum surface rows",
+            )?
+        {
+            let surface_id = rows[first].id;
+            if ctx.any_by(
+                &rows[first + 1..],
+                |row| {
+                    Ok(row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Plane
+                        && row.id != surface_id)
+                },
+                "creo schema datum surface rows",
+            )? || crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none()
             {
                 return Ok(IrFeatureDefinition::Operation(
                     IrFeatureOperation::Unresolved {
@@ -913,13 +1021,13 @@ pub(in super::super) fn schema_feature_definition(
                 },
             ));
         }
-        if let Some(definition) = exactly_one(
-            scan.features
-                .definitions
-                .iter()
-                .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
-        ) {
-            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+        if let Some(definition) = crate::decode::uniqueness::exactly_one_by(
+            ctx,
+            &scan.features.definitions,
+            |definition| Ok(definition.identity.owner_feature_id() == Some(feature_id)),
+            "creo schema datum feature definitions",
+        )? {
+            if let Some(values) = crate::placement::unique_complete_local_system(ctx, definition)? {
                 let values = values.get();
                 let raw_normal = [values[6], values[7], values[8]];
                 let raw_u_axis = [values[0], values[1], values[2]];
@@ -950,13 +1058,13 @@ pub(in super::super) fn schema_feature_definition(
         return knit_surface_feature_definition(ctx, scan, feature_id);
     }
     if schema_class == Some(SchemaClass::CoordinateSystem) && kind == "PRT_CSYS_DEF" {
-        if let Some(definition) = exactly_one(
-            scan.features
-                .definitions
-                .iter()
-                .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
-        ) {
-            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+        if let Some(definition) = crate::decode::uniqueness::exactly_one_by(
+            ctx,
+            &scan.features.definitions,
+            |definition| Ok(definition.identity.owner_feature_id() == Some(feature_id)),
+            "creo coordinate system feature definitions",
+        )? {
+            if let Some(values) = crate::placement::unique_complete_local_system(ctx, definition)? {
                 let values = values.get();
                 let x_axis = normalize([values[0], values[1], values[2]]);
                 let y_axis = normalize([values[3], values[4], values[5]]);
@@ -990,15 +1098,15 @@ pub(in super::super) fn schema_feature_definition(
             },
         ));
     }
-    if numbered_feature_name_has_family(kind, "Extrude")
-        && !feature_is_sheet_extrusion(scan, feature_id)
+    if numbered_feature_name_has_family(ctx, kind, "Extrude")?
+        && !feature_is_sheet_extrusion(ctx, scan, feature_id)?
     {
-        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            recipe.map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
-            preceding_features_establish_body(ir),
+            preceding_features_establish_body(ctx, ir)?,
         );
         return extrude_feature_definition_with_profile(
             ctx,
@@ -1011,10 +1119,11 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class == Some(SchemaClass::Surface)
         && class_942_boundary_surface_entity_graph(
+            ctx,
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
-        )
+        )?
     {
         return Ok(IrFeatureDefinition::Operation(
             IrFeatureOperation::Unresolved {
@@ -1039,13 +1148,21 @@ pub(in super::super) fn schema_feature_definition(
             return Ok(definition);
         }
     }
+    let kind = kind.into();
+    let parameter_storage = feature_parameters(ctx, scan, feature_id)?;
+    let text_storage = parameter_storage.1;
+    let node_storage = parameter_storage.2;
+    let parameters = parameter_storage.0;
+    let parameters = text_storage.commit_value(parameters)?;
+    let parameters = cadmpeg_core::text::named_entries_for_decode(
+        ctx,
+        format_args!("creo:model:feature#{feature_id}"),
+        parameters,
+    )?;
+    drop(node_storage);
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-        kind: kind.into(),
-        parameters: cadmpeg_core::text::named_entries_for_decode(
-            ctx,
-            format_args!("creo:model:feature#{feature_id}"),
-            feature_parameters(ctx, scan, feature_id)?,
-        )?,
+        kind,
+        parameters,
     }))
 }
 
@@ -1079,32 +1196,44 @@ fn reconciled_datum_plane_definition(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
-    let local_planes = placed_planes(ctx, scan)?;
-    let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, surface_id) else {
+    let mut scratch = ctx.reserve_scoped(0, "creo datum plane evidence")?;
+    let local_planes = scratch.with_storage(|| placed_planes(ctx, scan))?;
+    let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, surface_id)?
+    else {
         return Ok(None);
     };
     let normal = Vector3::from(plane.normal);
-    let local_surfaces = placed_plane_surfaces(ctx, scan)?;
-    let u_axis = local_surfaces
-        .get(&surface_id)
-        .map(|surface| Vector3::from(surface.u_axis))
-        .or_else(|| {
-            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
-                crate::identity::matches_numbered_identity(
+    let local_surfaces = scratch.with_storage(|| placed_plane_surfaces(ctx, scan))?;
+    let local = ctx.get_btree_map(
+        &local_surfaces,
+        &surface_id,
+        "creo datum local surface lookup",
+    )?;
+    let u_axis = if let Some(surface) = local {
+        Vector3::from(surface.u_axis)
+    } else {
+        let surface = crate::decode::uniqueness::exactly_one_by(
+            ctx,
+            &ir.model.surfaces,
+            |surface| {
+                Ok(crate::identity::matches_numbered_identity(
                     surface.id.as_str(),
                     "creo:visibgeom:surface#",
                     surface_id,
-                )
-            }))?;
-            match source_carriers.surface_geometry(surface) {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                    let u_axis = plane_surface.frame().reference().as_raw();
-                    Some(*u_axis)
-                }
-                _ => None,
+                ))
+            },
+            "creo datum model surface lookup",
+        )?;
+        match surface
+            .map(|surface| source_carriers.surface_geometry(surface))
+            .transpose()?
+        {
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane))) => {
+                *plane.frame().reference().as_raw()
             }
-        })
-        .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
+            _ => cadmpeg_ir::geometry::derive_reference_direction(normal),
+        }
+    };
     Ok(cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
         Point3::from(plane.origin),
         normal,
@@ -1120,9 +1249,13 @@ pub(in super::super) fn unbounded_feature_plane_definition(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
-    let Some(row) = exactly_one(scan.surfaces.rows.iter().filter(|row| {
-        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-    })) else {
+    let Some(row) = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &scan.surfaces.rows,
+        |row| Ok(row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane),
+        "creo unbounded feature plane rows",
+    )?
+    else {
         return Ok(None);
     };
     if !(row.boundary_type == crate::surface::BoundaryType::Code01
@@ -1134,12 +1267,23 @@ pub(in super::super) fn unbounded_feature_plane_definition(
     reconciled_datum_plane_definition(ctx, scan, ir, source_carriers, row.id)
 }
 
-pub(in super::super) fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {
-    name.strip_prefix(family)
+pub(in super::super) fn numbered_feature_name_has_family(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+    family: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(ordinal) = name
+        .strip_prefix(family)
         .and_then(|suffix| suffix.strip_prefix(' '))
-        .is_some_and(|ordinal| {
-            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-        })
+    else {
+        return Ok(false);
+    };
+    Ok(!ordinal.is_empty()
+        && ctx.all_by(
+            ordinal.as_bytes(),
+            |byte| Ok(byte.is_ascii_digit()),
+            "creo numbered feature ordinal bytes",
+        )?)
 }
 
 pub(in super::super) fn section_sweep_allows_linear_extrusion(
@@ -1153,59 +1297,86 @@ pub(in super::super) fn section_sweep_allows_linear_extrusion(
         ) && recipe != Some(crate::feature::operations::FeatureRecipeKind::Revolve))
 }
 
-pub(in super::super) fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
-    feature_schema_class(scan, feature_id) == Some(SchemaClass::Surface)
-        && feature_reference_name(scan, feature_id)
-            .and_then(|name| std::str::from_utf8(name).ok())
-            .is_some_and(|name| numbered_feature_name_has_family(name, "Extrude"))
+pub(in super::super) fn feature_is_sheet_extrusion(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if feature_schema_class(ctx, scan, feature_id)? != Some(SchemaClass::Surface) {
+        return Ok(false);
+    }
+    let Some(name) = feature_reference_name(ctx, scan, feature_id)? else {
+        return Ok(false);
+    };
+    let Ok(name) = ctx.validate_utf8(name, "creo sheet extrusion feature name UTF-8")? else {
+        return Ok(false);
+    };
+    numbered_feature_name_has_family(ctx, name, "Extrude")
 }
 
 pub(in super::super) fn feature_allows_linear_extrusion(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> bool {
-    (!feature_section_sweep_semantics_conflict(scan, feature_id)
-        && feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
-            section_sweep_allows_linear_extrusion(
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let schema_class = feature_schema_class(ctx, scan, feature_id)?;
+    if !feature_section_sweep_semantics_conflict(ctx, scan, feature_id)? {
+        if let Some(schema_class) = schema_class {
+            let recipe = super::operations::feature_recipe(ctx, scan, feature_id)?;
+            if section_sweep_allows_linear_extrusion(
                 Some(schema_class),
-                feature_recipe(scan, feature_id),
-            )
-        }))
-        || feature_is_sheet_extrusion(scan, feature_id)
+                recipe.map(crate::feature::operations::FeatureRecipe::kind),
+            ) {
+                return Ok(true);
+            }
+        }
+    }
+    feature_is_sheet_extrusion(ctx, scan, feature_id)
 }
 
 pub(in super::super) fn feature_allows_additive_linear_extrusion(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> bool {
-    !feature_section_sweep_semantics_conflict(scan, feature_id)
-        && feature_schema_class(scan, feature_id) == Some(SchemaClass::Protrusion)
-        && section_sweep_allows_linear_extrusion(
-            Some(SchemaClass::Protrusion),
-            feature_recipe(scan, feature_id),
-        )
-        && feature_recipe_effect(scan, feature_id).is_none_or(|effect| {
-            effect == crate::feature::operations::FeatureRecipeEffect::Protrude
-        })
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
+        || feature_schema_class(ctx, scan, feature_id)? != Some(SchemaClass::Protrusion)
+    {
+        return Ok(false);
+    }
+    let recipe = super::operations::feature_recipe(ctx, scan, feature_id)?;
+    Ok(section_sweep_allows_linear_extrusion(
+        Some(SchemaClass::Protrusion),
+        recipe.map(crate::feature::operations::FeatureRecipe::kind),
+    ) && recipe
+        .map(crate::feature::operations::FeatureRecipe::effect)
+        .is_none_or(|effect| effect == crate::feature::operations::FeatureRecipeEffect::Protrude))
 }
 
-pub(in super::super) fn preceding_features_establish_body(ir: &CadIr) -> bool {
-    ir.model.features.iter().any(|feature| {
-        feature.suppressed != Some(true)
-            && (!feature.evaluation.outputs().is_empty()
-                || matches!(
-                    feature.evaluation.definition(),
-                    IrFeatureDefinition::Operation(
-                        IrFeatureOperation::Extrude {
-                            op: BooleanOp::NewBody,
-                            ..
-                        } | IrFeatureOperation::Revolve {
-                            op: BooleanOp::NewBody,
-                            ..
-                        }
-                    )
-                ))
-    })
+pub(in super::super) fn preceding_features_establish_body(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    ctx.any_by(
+        &ir.model.features,
+        |feature| {
+            Ok(feature.suppressed != Some(true)
+                && (!feature.evaluation.outputs().is_empty()
+                    || matches!(
+                        feature.evaluation.definition(),
+                        IrFeatureDefinition::Operation(
+                            IrFeatureOperation::Extrude {
+                                op: BooleanOp::NewBody,
+                                ..
+                            } | IrFeatureOperation::Revolve {
+                                op: BooleanOp::NewBody,
+                                ..
+                            }
+                        )
+                    )))
+        },
+        "creo prior feature body lookup",
+    )
 }
 
 pub(in super::super) fn section_sweep_boolean_operation(
@@ -1229,44 +1400,51 @@ pub(in super::super) fn section_sweep_boolean_operation(
 }
 
 pub(in super::super) fn class_942_boundary_surface_entity_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
-) -> bool {
-    let mut generated_surfaces = surface_rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id);
-    let Some(surface) = generated_surfaces.next() else {
-        return false;
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(surface) = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        surface_rows,
+        |row| Ok(row.feature_id == feature_id),
+        "creo boundary surface generated rows",
+    )?
+    else {
+        return Ok(false);
     };
-    if generated_surfaces.next().is_some()
-        || !matches!(surface.kind, crate::surface::SurfaceKind::Extrusion(_))
-    {
-        return false;
+    if !matches!(surface.kind, crate::surface::SurfaceKind::Extrusion(_)) {
+        return Ok(false);
     }
-    let unique_table = |class_id| {
-        let mut matches = tables
-            .iter()
-            .filter(|table| table.feature_id == feature_id && table.table_class_id == class_id);
-        let table = matches.next()?;
-        matches.next().is_none().then_some(table)
-    };
-    let Some(generated) = unique_table(29) else {
-        return false;
-    };
-    let Some(topology) = unique_table(94) else {
-        return false;
-    };
-    let Some(owner) = unique_table(67) else {
-        return false;
-    };
-    let Some(output) = unique_table(100) else {
-        return false;
+    let mut selected = [None; 4];
+    let mut rows = tables.iter();
+    while rows.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut rows, "creo boundary surface entity tables")?
+        else {
+            break;
+        };
+        if table.feature_id != feature_id {
+            continue;
+        }
+        let slot = match table.table_class_id {
+            29 => 0,
+            94 => 1,
+            67 => 2,
+            100 => 3,
+            _ => continue,
+        };
+        if selected[slot].replace(table).is_some() {
+            return Ok(false);
+        }
+    }
+    let [Some(generated), Some(topology), Some(owner), Some(output)] = selected else {
+        return Ok(false);
     };
     let [owner_entry] = owner.entries.as_slice() else {
-        return false;
+        return Ok(false);
     };
-    matches!(
+    Ok(matches!(
         generated.entries.as_slice(),
         [entry]
             if entry.entity_id == surface.id
@@ -1283,7 +1461,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
             [entry]
                 if entry.entity_id == owner_entry.entity_id
                     && entry.class_id() == surface.id
-        )
+        ))
 }
 
 #[cfg(test)]

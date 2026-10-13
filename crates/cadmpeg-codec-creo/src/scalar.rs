@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PSB scalar forms with context-independent IEEE-754 mappings.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be};
 use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
@@ -153,26 +153,30 @@ pub(crate) fn double_xar_tables(
     data: &[u8],
 ) -> Result<Vec<DoubleXarTable>, CodecError> {
     const LABEL: &[u8] = b"double_xar\0";
+    // The label, array opener and count each precede every dictionary slot.
+    if data.len() < LABEL.len() + 2 {
+        return Ok(Vec::new());
+    }
     let mut tables = Vec::new();
-    let mut search = 0;
-    while let Some(offset) =
-        ctx.find_bytes_from(data, LABEL, search, "creo double_xar discovery")?
-    {
+    for offset in ctx.find_bytes_iter(data, LABEL, "creo double_xar discovery")? {
         let count_offset = offset + LABEL.len();
         if data.get(count_offset) != Some(&0xf8) {
-            search = count_offset;
             continue;
         }
         let (count, mut cursor) = compact_int(data, count_offset + 1);
         if cursor == count_offset + 1 {
-            search = count_offset + 1;
             continue;
         }
-        ctx.charge_work(u64::from(count), "creo double_xar slot parsing")?;
+        let mut literal_storage = ctx.reserve_scoped(0, "creo double_xar literal bytes")?;
+        let mut slot_storage = ctx.reserve_scoped(0, "creo double_xar slots")?;
         let mut entries = Vec::new();
-        for _ in 0..count {
+        let mut slots = 0..count;
+        while !slots.is_empty() {
             let Some(head) = data.get(cursor).copied() else {
                 entries.clear();
+                break;
+            };
+            let Some(_) = ctx.next_charged(&mut slots, "creo double_xar slot parsing")? else {
                 break;
             };
             let (slot, end) = match head {
@@ -194,7 +198,9 @@ pub(crate) fn double_xar_tables(
                         (
                             DoubleXarSlot::Literal {
                                 value,
-                                raw: ctx.copy_retained(raw, "creo double_xar literal bytes")?,
+                                raw: literal_storage.with_storage(|| {
+                                    ctx.copy_retained(raw, "creo double_xar literal bytes")
+                                })?,
                             },
                             end,
                         )
@@ -205,7 +211,8 @@ pub(crate) fn double_xar_tables(
                     }
                 },
             };
-            ctx.reserve_vec(&mut entries, 1, "creo double_xar slots")?;
+            slot_storage
+                .with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo double_xar slots"))?;
             entries.push(slot);
             cursor = end;
         }
@@ -214,21 +221,38 @@ pub(crate) fn double_xar_tables(
                 .last()
                 .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
         {
+            let entries = literal_storage.commit_value(entries)?;
+            let entries = slot_storage.commit_value(entries)?;
             ctx.reserve_vec(&mut tables, 1, "creo double_xar tables")?;
             tables.push(DoubleXarTable { offset, entries });
         }
-        search = count_offset + 1;
     }
     Ok(tables)
 }
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub(crate) struct ScalarCache {
     entries: Vec<f64>,
     /// Unique leading payload byte for each paired-form tail. `None` marks a
     /// tail shared by distinct cache images.
-    paired_byte_1_by_tail: BTreeMap<[u8; 6], Option<u8>>,
+    paired_byte_1_by_tail: HashMap<[u8; 6], Option<u8>>,
+}
+
+/// A checked dictionary with its live temporary backing reservation.
+#[derive(Debug)]
+pub(crate) struct CheckedScalarCache<'ctx> {
+    cache: ScalarCache,
+    // Fields drop in declaration order: backing must drop before its receipt.
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl std::ops::Deref for CheckedScalarCache<'_> {
+    type Target = ScalarCache;
+
+    fn deref(&self) -> &Self::Target {
+        &self.cache
+    }
 }
 
 impl ScalarCache {
@@ -238,7 +262,7 @@ impl ScalarCache {
     pub(crate) fn from_section(section: &[u8]) -> Self {
         let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
-        let mut paired_byte_1_by_tail = BTreeMap::new();
+        let mut paired_byte_1_by_tail = HashMap::new();
         for offset in 0..section.len() {
             if section[offset] != 0x46 {
                 continue;
@@ -272,19 +296,20 @@ impl ScalarCache {
     }
 
     /// Build a scalar dictionary under the caller's decode budget.
-    pub(crate) fn from_section_checked(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    pub(crate) fn from_section_checked<'ctx>(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
         section: &[u8],
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Result<CheckedScalarCache<'ctx>, cadmpeg_core::CodecError> {
+        let mut cache_storage = ctx.reserve_scoped(0, "creo scalar cache backing")?;
         let mut entries = Vec::<f64>::new();
+        let mut image_storage = ctx.reserve_scoped(0, "creo scalar cache image scratch")?;
         let mut seen = HashSet::<[u8; 8]>::new();
-        let mut paired_byte_1_by_tail = BTreeMap::new();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(section.len()),
-            "creo scalar cache discovery",
-        )?;
-        for offset in 0..section.len() {
-            if section[offset] != 0x46 {
+        let mut paired_byte_1_by_tail = HashMap::<[u8; 6], Option<u8>>::new();
+        for (offset, &head) in ctx
+            .admit_iter(section, "creo scalar cache discovery")?
+            .enumerate()
+        {
+            if head != 0x46 {
                 continue;
             }
             let Some(&[byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7]) =
@@ -295,46 +320,42 @@ impl ScalarCache {
             let raw = [
                 byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
             ];
-            let rehash_items = if seen.len() == seen.capacity() {
-                seen.len()
-            } else {
-                0
-            };
-            let hash_work = cadmpeg_core::decode::u64_from_index(rehash_items)
-                .checked_mul(8)
-                .and_then(|work| work.checked_add(16))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo scalar cache image hashing", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(hash_work, "creo scalar cache image hashing")?;
-            if !ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")? {
+            // Fixed-width image probes are constant; table growth is admitted.
+            if seen.contains(&raw) {
                 continue;
             }
+            image_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")
+            })?;
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
-            ctx.admit_btree_entry(
-                &paired_byte_1_by_tail,
-                &tail,
-                "creo scalar cache paired tails",
-            )?;
-            match paired_byte_1_by_tail.entry(tail) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(raw[1]));
+            if let Some(paired_byte_1) = paired_byte_1_by_tail.get_mut(&tail) {
+                if paired_byte_1.is_some_and(|existing| existing != raw[1]) {
+                    *paired_byte_1 = None;
                 }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    if (*entry.get()).is_some_and(|existing| existing != raw[1]) {
-                        *entry.get_mut() = None;
-                    }
-                }
+            } else {
+                cache_storage
+                    .with_storage(|| {
+                        ctx.entry_hash_map(
+                            &mut paired_byte_1_by_tail,
+                            tail,
+                            "creo scalar cache paired tails",
+                        )
+                    })?
+                    .or_insert(Some(raw[1]));
             }
-            ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries")?;
+            cache_storage
+                .with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries"))?;
             // endian-exception: reconstructed-scalar
             entries.push(f64::from_be_bytes(ieee));
         }
-        Ok(Self {
-            entries,
-            paired_byte_1_by_tail,
+        Ok(CheckedScalarCache {
+            cache: Self {
+                entries,
+                paired_byte_1_by_tail,
+            },
+            _storage: cache_storage,
         })
     }
 
@@ -924,10 +945,9 @@ pub(crate) enum InlineNonPlaneLocalSystemPrefix {
 /// images name only an axis coordinate; explicit frames use the three
 /// component lanes and the four-slot `18 e5 0f` fill.
 pub(crate) fn decode_inline_non_plane_local_system_prefix(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Result<impl Iterator<Item = InlineNonPlaneLocalSystemPrefix>, CodecError> {
+) -> impl Iterator<Item = InlineNonPlaneLocalSystemPrefix> {
     let compact =
         decode_inline_compact_image(body).and_then(|(axes, reference_sign, axis_sign, cursor)| {
             let values = FiniteVector::new(compact_inline_frame(axes, reference_sign, axis_sign))?;
@@ -939,43 +959,33 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
     let mut explicit = [None; 16];
     let mut count = 0;
     let mut values = [0.0; 12];
-    walk_inline_explicit_local_system(
-        ctx,
-        body,
-        cache,
-        (0, 0),
-        &mut values,
-        &mut explicit,
-        &mut count,
-    )?;
-    Ok(compact
+    walk_inline_explicit_local_system(body, cache, (0, 0), &mut values, &mut explicit, &mut count);
+    compact
         .into_iter()
         .chain(explicit.into_iter().flatten().map(|(values, cursor)| {
             InlineNonPlaneLocalSystemPrefix::Explicit(InlineLocalSystemFrame { values, cursor })
-        })))
+        }))
 }
 
 /// Decode the three origin slots that follow a compact inline local-system
 /// image.
 pub(crate) fn decode_inline_non_plane_origin_prefix(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: usize,
     cache: &ScalarCache,
-) -> Result<impl Iterator<Item = ([f64; 3], usize)>, CodecError> {
+) -> impl Iterator<Item = ([f64; 3], usize)> {
     let mut values = [0.0; 3];
     let mut results = [None; 8];
     let mut count = 0;
     walk_inline_origin(
-        ctx,
         body,
         cache,
         (0, cursor),
         &mut values,
         &mut results,
         &mut count,
-    )?;
-    Ok(results.into_iter().flatten())
+    );
+    results.into_iter().flatten()
 }
 
 /// Decode one inline family suffix scalar. The suffix has its own compact
@@ -1098,107 +1108,88 @@ fn compact_inline_frame(axes: CompactFrameAxes, reference_sign: f64, axis_sign: 
 }
 
 fn walk_inline_explicit_local_system(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
     position: (usize, usize),
     values: &mut [f64; 12],
     results: &mut [Option<(FiniteVector<12>, usize)>; 16],
     count: &mut usize,
-) -> Result<(), CodecError> {
+) {
     let (slot, cursor) = position;
 
-    let _depth = ctx.enter_nested("creo inline explicit frame depth")?;
-    ctx.charge_work(1, "creo inline explicit frame work")?;
     if *count >= results.len() {
-        return Ok(());
+        return;
     }
     if slot == 12 {
         if let Some(values) = finite_local_system_slots(*values) {
             results[*count] = Some((values, cursor));
             *count += 1;
         }
-        return Ok(());
+        return;
     }
 
     if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x0f]) {
         values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, 1.0]);
         walk_inline_explicit_local_system(
-            ctx,
             body,
             cache,
             (slot + 4, cursor + 3),
             values,
             results,
             count,
-        )?;
+        );
     }
     if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x10]) {
         values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, -1.0]);
         walk_inline_explicit_local_system(
-            ctx,
             body,
             cache,
             (slot + 4, cursor + 3),
             values,
             results,
             count,
-        )?;
+        );
     }
     if slot <= 9 && body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
         values[slot..slot + 3].copy_from_slice(&[0.0, 1.0, 0.0]);
         walk_inline_explicit_local_system(
-            ctx,
             body,
             cache,
             (slot + 3, cursor + 2),
             values,
             results,
             count,
-        )?;
+        );
     }
 
     for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot, cache) {
         values[slot] = value;
-        walk_inline_explicit_local_system(
-            ctx,
-            body,
-            cache,
-            (slot + 1, next),
-            values,
-            results,
-            count,
-        )?;
+        walk_inline_explicit_local_system(body, cache, (slot + 1, next), values, results, count);
     }
-    Ok(())
 }
 
 fn walk_inline_origin(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
     position: (usize, usize),
     values: &mut [f64; 3],
     results: &mut [Option<([f64; 3], usize)>; 8],
     count: &mut usize,
-) -> Result<(), CodecError> {
+) {
     let (slot, cursor) = position;
 
-    let _depth = ctx.enter_nested("creo inline origin depth")?;
-    ctx.charge_work(1, "creo inline origin work")?;
     if *count >= results.len() {
-        return Ok(());
+        return;
     }
     if slot == 3 {
         results[*count] = Some((*values, cursor));
         *count += 1;
-        return Ok(());
+        return;
     }
     for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot + 9, cache) {
         values[slot] = value;
-        walk_inline_origin(ctx, body, cache, (slot + 1, next), values, results, count)?;
+        walk_inline_origin(body, cache, (slot + 1, next), values, results, count);
     }
-    Ok(())
 }
 
 fn decode_inline_local_system_coordinates(
@@ -1323,33 +1314,26 @@ fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> Plane
 
 /// Decode a positional plane support frame and retain its storage layout.
 pub(crate) fn decode_plane_support_local_system(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
+) -> Option<(FiniteVector<12>, PlaneSupportFrameLayout)> {
     if let Some((values, cursor)) = decode_diagonal_z_plane_support(body, cache) {
         if cursor != body.len() {
-            return Ok(None);
+            return None;
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
+        return Some((
+            finite_local_system_slots(values)?,
             PlaneSupportFrameLayout::DirectNormalTriples,
-        )));
+        ));
     }
     if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
         if cursor != body.len() {
-            return Ok(None);
+            return None;
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
+        return Some((
+            finite_local_system_slots(values)?,
             PlaneSupportFrameLayout::SupportTriples,
-        )));
+        ));
     }
     let primary = decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)
         .map(|prefix| {
@@ -1363,13 +1347,13 @@ pub(crate) fn decode_plane_support_local_system(
             };
             (prefix.values, prefix.cursor, layout)
         });
-    let Some((values, cursor, layout)) = primary else {
-        return Ok(None);
+    let (values, cursor, layout) = primary?;
+    let primary_frame = match finite_local_system_slots(values) {
+        Some(frame) if plane_support_values_have_valid_frame(frame.as_raw(), layout) => Some(frame),
+        _ => None,
     };
-    let primary_frame = finite_local_system_slots(values)
-        .filter(|frame| plane_support_values_have_valid_frame(frame.as_raw(), layout));
     if let Some(frame) = primary_frame {
-        return Ok((cursor == body.len()).then_some((frame, layout)));
+        return (cursor == body.len()).then_some((frame, layout));
     }
     // Compact image bodies have a distinct token grammar.  Their numeric
     // values can accidentally form another orthogonal frame when replayed as
@@ -1379,33 +1363,21 @@ pub(crate) fn decode_plane_support_local_system(
     // grammar above.
     if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
         if cursor != body.len() {
-            return Ok(None);
+            return None;
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
-            layout,
-        )));
+        return Some((finite_local_system_slots(values)?, layout));
     }
-    let mut variants = decode_plane_support_lane_variants(ctx, body, cache)?;
-    Ok(match (variants.next(), variants.next()) {
+    let mut variants = decode_plane_support_lane_variants(body, cache);
+    match (variants.next(), variants.next()) {
         (Some(variant), None) => Some(variant),
         (None, None) => {
             if cursor != body.len() {
-                return Ok(None);
+                return None;
             }
-            Some((
-                match finite_local_system_slots(values) {
-                    Some(value) => value,
-                    None => return Ok(None),
-                },
-                layout,
-            ))
+            Some((finite_local_system_slots(values)?, layout))
         }
         _ => None,
-    })
+    }
 }
 
 const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
@@ -1424,8 +1396,8 @@ fn plane_support_values_have_valid_frame(
         [values[3], values[4], values[5]],
         [values[6], values[7], values[8]],
     ];
-    [(0, 1), (0, 2), (1, 2)]
-        .into_iter()
+    [(0usize, 1usize), (0, 2), (1, 2)]
+        .iter()
         .filter(|(first, second)| {
             valid_equal_scale_orthogonal_directions(supports[*first], supports[*second])
         })
@@ -1474,12 +1446,10 @@ fn plane_support_coordinate_variants(
 }
 
 fn decode_plane_support_lane_variants(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Result<impl Iterator<Item = (FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
+) -> impl Iterator<Item = (FiniteVector<12>, PlaneSupportFrameLayout)> {
     fn walk(
-        ctx: &DecodeContext<'_>,
         body: &[u8],
         cache: &ScalarCache,
         values: &mut [f64; 12],
@@ -1487,20 +1457,18 @@ fn decode_plane_support_lane_variants(
         results: &mut [Option<(FiniteVector<12>, PlaneSupportFrameLayout)>;
                  MAX_PLANE_SUPPORT_LANE_VARIANTS],
         count: &mut usize,
-    ) -> Result<(), CodecError> {
+    ) {
         let (slot, cursor, saw_zero_slot_prefix) = position;
 
-        let _depth = ctx.enter_nested("creo plane support variants depth")?;
-        ctx.charge_work(1, "creo plane support variants work")?;
         if *count >= results.len() {
-            return Ok(());
+            return;
         }
         if slot == values.len() {
             if cursor != body.len() {
-                return Ok(());
+                return;
             }
             let Some(frame) = finite_local_system_slots(*values) else {
-                return Ok(());
+                return;
             };
             let layout = plane_support_layout(values, saw_zero_slot_prefix);
             if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
@@ -1520,20 +1488,19 @@ fn decode_plane_support_lane_variants(
                 results[*count] = Some((frame, layout));
                 *count += 1;
             }
-            return Ok(());
+            return;
         }
 
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) && slot + 3 <= 12 {
             values[slot..slot + 3].copy_from_slice(&[0.0, 1.0, 0.0]);
             walk(
-                ctx,
                 body,
                 cache,
                 values,
                 (slot + 3, cursor + 2, saw_zero_slot_prefix),
                 results,
                 count,
-            )?;
+            );
         }
         if body.get(cursor) == Some(&0x18)
             && body
@@ -1542,14 +1509,13 @@ fn decode_plane_support_lane_variants(
         {
             values[slot] = 0.0;
             walk(
-                ctx,
                 body,
                 cache,
                 values,
                 (slot + 1, cursor + 1, true),
                 results,
                 count,
-            )?;
+            );
         }
         if body.get(cursor) == Some(&0x18)
             && slot < 11
@@ -1559,38 +1525,35 @@ fn decode_plane_support_lane_variants(
         {
             values[slot] = 0.0;
             walk(
-                ctx,
                 body,
                 cache,
                 values,
                 (slot + 1, cursor + 1, true),
                 results,
                 count,
-            )?;
+            );
         }
         if body.get(cursor) == Some(&0x10) {
             values[slot] = 0.0;
             walk(
-                ctx,
                 body,
                 cache,
                 values,
                 (slot + 1, cursor + 1, saw_zero_slot_prefix),
                 results,
                 count,
-            )?;
+            );
         }
         if body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
             values[slot] = 0.0;
             walk(
-                ctx,
                 body,
                 cache,
                 values,
                 (slot + 1, cursor + 1, true),
                 results,
                 count,
-            )?;
+            );
         }
 
         let candidates = if slot < 9 {
@@ -1615,40 +1578,35 @@ fn decode_plane_support_lane_variants(
         for (value, next) in candidates.into_iter().flatten() {
             values[slot] = value;
             walk(
-                ctx,
                 body,
                 cache,
                 values,
                 (slot + 1, next, saw_zero_slot_prefix),
                 results,
                 count,
-            )?;
+            );
         }
-        Ok(())
     }
 
     let mut values = [0.0; 12];
     let mut results = [None; MAX_PLANE_SUPPORT_LANE_VARIANTS];
     let mut count = 0;
     walk(
-        ctx,
         body,
         cache,
         &mut values,
         (0, 0, false),
         &mut results,
         &mut count,
-    )?;
-    Ok(results.into_iter().flatten())
+    );
+    results.into_iter().flatten()
 }
 
 /// Decode a positional plane support frame whose origin uses the named
 /// local-system sign for compact one-half coordinates.
 #[cfg(test)]
 fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(ctx, body, cache))
-        .expect("service scalar admission")
-        .map(|(values, _)| values.get())
+    decode_plane_support_local_system(body, cache).map(|(values, _)| values.get())
 }
 
 #[derive(Clone, Copy)]
@@ -2359,6 +2317,12 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 }
 
 #[cfg(test)]
+mod admission_tests;
+
+#[cfg(test)]
+mod cache_storage_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         admitted_scalar_body, compact_inline_frame, decode, decode_explicit_local_system_slots,
@@ -2380,7 +2344,7 @@ mod tests {
         NORMAL_X_PLANE_SUPPORT_PREFIXES, POSITIONAL_SLOT_TABLE_WIDTH,
     };
     use cadmpeg_ir::units::FiniteVector;
-    use std::collections::BTreeMap;
+    use std::collections::HashMap;
 
     fn with_recursive_limits<T>(
         bytes: &[u8],
@@ -2399,236 +2363,63 @@ mod tests {
     }
 
     #[test]
-    fn scalar_cache_discovery_and_duplicate_hashing_refuse_work() {
-        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        let cache = crate::test_support::assert_work_boundaries(
-            &[
-                "creo scalar cache discovery",
-                "creo scalar cache image hashing",
-            ],
-            |ctx| ScalarCache::from_section_checked(ctx, &images),
-        );
-        assert_eq!(cache.entries.len(), 1, "equal images remain deduplicated");
-        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| {
-            ScalarCache::from_section_checked(ctx, &[0; 16])
-        })
-        .expect_err("miss scan refuses");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo scalar cache discovery")
-        );
-    }
-
-    #[test]
-    fn duplicate_scalar_image_hashing_refuses_after_the_first_image() {
-        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        // Discovery and first-image hashing precede the first image's hash growth, both
-        // hash-key passes and the first tail insertion, which shifts its node once and
-        // pays two passes for the node it adds to the tree's node bound. The growth charge is
-        // the four-bucket table bound: buckets, 15 bytes of group padding, one control
-        // byte per bucket and the 16-byte trailer.
-        let hash_growth =
-            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<[u8; 8]>() + 15 + 4 + 16);
-        let node_bytes = 11 * (std::mem::size_of::<[u8; 6]>() + std::mem::size_of::<Option<u8>>())
-            + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<usize>();
-        let used = 32 + hash_growth + 2 * 8 + 3 * cadmpeg_core::decode::u64_from_index(node_bytes);
-        let error = with_recursive_limits(&images, 128, used + 16 - 1, |ctx| {
-            ScalarCache::from_section_checked(ctx, &images)
-        })
-        .expect_err("duplicate hashing still consumes work");
-        let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
-            panic!("hash work refusal");
-        };
-        assert_eq!(resource.operation, "creo scalar cache image hashing");
-        assert_eq!(
-            (resource.used, resource.additional, resource.limit),
-            (used, 16, used + 16 - 1)
-        );
-    }
-
-    #[test]
-    fn double_xar_discovery_and_slot_parsing_refuse_work() {
-        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        let tables = crate::test_support::assert_work_boundaries(
-            &["creo double_xar discovery", "creo double_xar slot parsing"],
-            |ctx| double_xar_tables(ctx, bytes),
-        );
-        assert_eq!(tables.len(), 1);
-        let error = with_recursive_limits(&[0; 16], 128, 0, |ctx| double_xar_tables(ctx, &[0; 16]))
-            .expect_err("miss scan refuses");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo double_xar discovery")
-        );
-    }
-
-    #[test]
-    fn inline_explicit_frame_refuses_recursive_depth_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0xe4];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_local_system_prefix(ctx, &bytes, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
-            0
-        );
-        let error =
-            with_recursive_limits(&bytes, 1, u64::MAX, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(limit.operation, "creo inline explicit frame depth");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn inline_explicit_frame_refuses_recursive_work_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0xe4];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_local_system_prefix(ctx, &bytes, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
-            0
-        );
-        let error =
-            with_recursive_limits(&bytes, u64::MAX, 1, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, "creo inline explicit frame work");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn inline_origin_refuses_recursive_depth_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0x18];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
-            0
-        );
-        let error =
-            with_recursive_limits(&bytes, 1, u64::MAX, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(limit.operation, "creo inline origin depth");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn inline_origin_refuses_recursive_work_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0x18];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
-            0
-        );
-        let error =
-            with_recursive_limits(&bytes, u64::MAX, 1, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, "creo inline origin work");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn plane_support_variants_refuses_recursive_depth_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0xe4];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_plane_support_lane_variants(ctx, &bytes, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
-            0
-        );
-        let error =
-            with_recursive_limits(&bytes, 1, u64::MAX, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-        assert_eq!(limit.operation, "creo plane support variants depth");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    #[test]
-    fn plane_support_variants_refuses_recursive_work_before_absent_candidate() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = [0xe4];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_plane_support_lane_variants(ctx, &bytes, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
-        };
-        assert_eq!(
-            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
-            0
-        );
-        let error =
-            with_recursive_limits(&bytes, u64::MAX, 1, decode).expect_err("need minus one refuses");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("recursive resource refusal expected");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, "creo plane support variants work");
-        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
-    }
-
-    fn checked_cache_with_collection_limit(
-        limit: u64,
-    ) -> Result<ScalarCache, cadmpeg_core::CodecError> {
+    fn double_xar_fixed_short_extent_is_free() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let bytes = [0x46, 0x08, 1, 2, 3, 4, 5, 6];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("the scalar image fits the root limit");
-        ScalarCache::from_section_checked(&ctx, &bytes)
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        for bytes in [
+            b"".as_slice(),
+            b"double_xar\0".as_slice(),
+            b"double_xar\0\xf8".as_slice(),
+        ] {
+            assert!(double_xar_tables(&ctx, bytes)
+                .expect("no complete dictionary header")
+                .is_empty());
+        }
+        ctx.finish_session().expect("active zero-budget session");
+    }
+
+    #[test]
+    fn inline_explicit_frame_fixed_grammar_is_free_before_absent_candidate() {
+        let bytes = [0xe4];
+        let decode = || {
+            super::decode_inline_non_plane_local_system_prefix(&bytes, &ScalarCache::default())
+                .count()
+        };
+        assert_eq!(decode(), 0);
+        assert_eq!(decode(), 0);
+    }
+
+    #[test]
+    fn inline_origin_fixed_grammar_is_free_before_absent_candidate() {
+        let bytes = [0x18];
+        let decode = || {
+            super::decode_inline_non_plane_origin_prefix(&bytes, 0, &ScalarCache::default()).count()
+        };
+        assert_eq!(decode(), 0);
+        assert_eq!(decode(), 0);
+    }
+
+    #[test]
+    fn plane_support_variants_fixed_grammar_is_free_before_absent_candidate() {
+        let bytes = [0xe4];
+        let decode = |_ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            Ok(super::decode_plane_support_lane_variants(&bytes, &ScalarCache::default()).count())
+        };
+        assert_eq!(
+            with_recursive_limits(&bytes, 0, 0, decode)
+                .expect("fixed grammar has no input-sized recursion"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile preserves the absent candidate"),
+            0
+        );
     }
 
     fn with_context<T>(
@@ -2641,124 +2432,6 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("the scalar fixture fits the root limit");
         f(&ctx)
-    }
-
-    fn double_xar_with_limits(
-        bytes: &[u8],
-        items: u64,
-        retained: u64,
-    ) -> Result<Vec<super::DoubleXarTable>, cadmpeg_core::CodecError> {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = items;
-        policy.limits.max_retained_bytes = retained;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("the dictionary fixture fits the root limit");
-        double_xar_tables(&ctx, bytes)
-    }
-
-    #[test]
-    fn double_xar_slots_refuse_before_counted_growth() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        assert_eq!(
-            double_xar_with_limits(bytes, 3, u64::MAX)
-                .expect("table admitted")
-                .len(),
-            1
-        );
-        let error =
-            double_xar_with_limits(bytes, 1, u64::MAX).expect_err("second slot needs admission");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo double_xar slots")
-        );
-    }
-
-    #[test]
-    fn double_xar_table_refuses_before_result_growth() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        let error = double_xar_with_limits(bytes, 2, u64::MAX).expect_err("table needs admission");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo double_xar tables")
-        );
-    }
-
-    #[test]
-    fn double_xar_literal_refuses_before_retained_copy() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = b"double_xar\0\xf8\x02\x46\x08\x00\x00\x00\x00\x00\x00\xe0";
-        assert_eq!(
-            double_xar_with_limits(
-                bytes,
-                3,
-                crate::test_support::allocation_limit_at(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    None,
-                    |cap| double_xar_with_limits(bytes, u64::MAX, cap)
-                )
-            )
-            .expect("literal admitted")
-            .len(),
-            1
-        );
-        let error = double_xar_with_limits(
-            bytes,
-            3,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                Some("creo double_xar literal bytes"),
-                |cap| double_xar_with_limits(bytes, 3, cap),
-            ),
-        )
-        .expect_err("literal bytes need admission");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "creo double_xar literal bytes")
-        );
-    }
-
-    #[test]
-    fn scalar_cache_unique_image_refuses_before_hash_growth() {
-        let cache = checked_cache_with_collection_limit(3)
-            .expect("service-sized collection budget admits one scalar");
-        assert_eq!(cache.entries.len(), 1);
-        assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), Some(0x08));
-        let error = checked_cache_with_collection_limit(0)
-            .expect_err("the unique image needs one collection item");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "creo scalar cache unique images"
-        ));
-    }
-
-    #[test]
-    fn scalar_cache_paired_tail_refuses_before_tree_insert() {
-        let error = checked_cache_with_collection_limit(1)
-            .expect_err("the paired tail follows the unique image");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "creo scalar cache paired tails"
-        ));
-    }
-
-    #[test]
-    fn scalar_cache_entry_refuses_before_vector_growth() {
-        let error = checked_cache_with_collection_limit(2)
-            .expect_err("the scalar entry follows the hash and tree nodes");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "creo scalar cache entries"
-        ));
     }
 
     #[test]
@@ -3028,20 +2701,16 @@ mod tests {
         ];
         let cache = ScalarCache::default();
         for (body, axis, expected) in cases {
-            let frame = crate::decode::with_test_decode_ctx(|ctx| {
-                decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-            })
-            .expect("service scalar admission")
-            .into_iter()
-            .find_map(|prefix| match prefix {
-                InlineNonPlaneLocalSystemPrefix::Compact(frame)
-                    if frame.values.get()[6 + axis] != 0.0 =>
-                {
-                    Some(frame)
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
+            let frame = decode_inline_non_plane_local_system_prefix(&body, &cache)
+                .find_map(|prefix| match prefix {
+                    InlineNonPlaneLocalSystemPrefix::Compact(frame)
+                        if frame.values.get()[6 + axis] != 0.0 =>
+                    {
+                        Some(frame)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
             assert_eq!(frame.cursor, body.len());
             assert_eq!(frame.values, expected);
         }
@@ -3107,13 +2776,8 @@ mod tests {
         body.extend([0x18, 0x18, 0x18]);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx,
-                &body,
-                &ScalarCache::default()
-            ))
-            .expect("service scalar admission")
-            .map(|(values, layout)| (values.get(), layout)),
+            decode_plane_support_local_system(&body, &ScalarCache::default())
+                .map(|(values, layout)| (values.get(), layout)),
             Some((
                 [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,],
                 PlaneSupportFrameLayout::SupportTriples,
@@ -3130,16 +2794,13 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-        })
-        .expect("service scalar admission")
-        .into_iter()
-        .any(|prefix| matches!(
-            prefix,
-            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                if frame.cursor == body.len() && frame.values == expected
-        )));
+        assert!(
+            decode_inline_non_plane_local_system_prefix(&body, &cache).any(|prefix| matches!(
+                prefix,
+                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                    if frame.cursor == body.len() && frame.values == expected
+            ))
+        );
     }
 
     #[test]
@@ -3151,16 +2812,13 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-        })
-        .expect("service scalar admission")
-        .into_iter()
-        .any(|prefix| matches!(
-            prefix,
-            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                if frame.cursor == body.len() && frame.values == expected
-        )));
+        assert!(
+            decode_inline_non_plane_local_system_prefix(&body, &cache).any(|prefix| matches!(
+                prefix,
+                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                    if frame.cursor == body.len() && frame.values == expected
+            ))
+        );
     }
 
     #[test]
@@ -3215,21 +2873,12 @@ mod tests {
         body.push(0x18);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx, &body, &cache
-            ))
-            .expect("service scalar admission")
-            .map(|(_, layout)| layout),
+            decode_plane_support_local_system(&body, &cache).map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx,
-                &[0x10; 12],
-                &ScalarCache::default()
-            ))
-            .expect("service scalar admission")
-            .map(|(_, layout)| layout),
+            decode_plane_support_local_system(&[0x10; 12], &ScalarCache::default())
+                .map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
@@ -3262,7 +2911,7 @@ mod tests {
     fn complete_local_system_rejects_a_nonfinite_slot() {
         let cache = ScalarCache {
             entries: vec![1.0, f64::NAN],
-            paired_byte_1_by_tail: BTreeMap::new(),
+            paired_byte_1_by_tail: HashMap::new(),
         };
         let mut body = Vec::new();
         for _ in 0..9 {
@@ -3283,7 +2932,7 @@ mod tests {
         }
         let finite = ScalarCache {
             entries: vec![1.0],
-            paired_byte_1_by_tail: BTreeMap::new(),
+            paired_byte_1_by_tail: HashMap::new(),
         };
         let (frame, cursor) = decode_positional_torus_local_system_prefix(&body, &finite)
             .expect("the twelve finite coordinates are admitted");
@@ -3292,7 +2941,7 @@ mod tests {
 
         let nonfinite = ScalarCache {
             entries: vec![f64::NAN],
-            paired_byte_1_by_tail: BTreeMap::new(),
+            paired_byte_1_by_tail: HashMap::new(),
         };
         assert!(decode_positional_torus_local_system_prefix(&body, &nonfinite).is_none());
     }
@@ -3358,11 +3007,8 @@ mod tests {
     fn diagonal_compact_plane_support_names_the_z_normal() {
         let body = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
 
-        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &ScalarCache::default())
-        })
-        .expect("service scalar admission")
-        .expect("complete diagonal support image");
+        let (slots, layout) = decode_plane_support_local_system(&body, &ScalarCache::default())
+            .expect("complete diagonal support image");
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert_eq!(
             slots,
@@ -3409,11 +3055,8 @@ mod tests {
         body.extend_from_slice(&positive_subunit_coordinate(first_z));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
-        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &cache)
-        })
-        .expect("service scalar admission")
-        .expect("lane-ambiguous frame has one valid orthogonal interpretation");
+        let (slots, layout) = decode_plane_support_local_system(&body, &cache)
+            .expect("lane-ambiguous frame has one valid orthogonal interpretation");
         let slots = slots.get();
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert!((slots[6] - alternate).abs() <= EPS_PLANE_SUPPORT_LANE_TEST);
@@ -3441,21 +3084,8 @@ mod tests {
         body.extend_from_slice(&positive_subunit_coordinate(first));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
-        assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_lane_variants(
-                ctx, &body, &cache
-            ))
-            .expect("service scalar admission")
-            .count(),
-            1
-        );
-        assert!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx, &body, &cache
-            ))
-            .expect("service scalar admission")
-            .is_none()
-        );
+        assert_eq!(decode_plane_support_lane_variants(&body, &cache).count(), 1);
+        assert!(decode_plane_support_local_system(&body, &cache).is_none());
     }
 
     #[test]
@@ -4253,5 +3883,150 @@ mod tests {
         // A shape neither compact integer stated is not a scalar body.
         assert_eq!(admitted_scalar_body(&payload, 1, 3, 1), None);
         assert_eq!(admitted_scalar_body(&payload, 2, 2, 1), None);
+    }
+    #[test]
+    fn incomplete_double_xar_slots_need_no_retained_storage() {
+        let data = b"double_xar\0\xf8\x02\x0b\x10";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("small dictionary input");
+        assert!(double_xar_tables(&ctx, data)
+            .expect("rejected slots are temporary")
+            .is_empty());
+    }
+
+    #[test]
+    fn double_xar_absent_declared_slots_execute_only_discovery() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        const LABEL: &[u8] = b"double_xar\0";
+        for bytes in [
+            b"double_xar\0\xf8\x00".as_slice(),
+            b"double_xar\0\xf8\x01".as_slice(),
+            b"double_xar\0\xf8\x02".as_slice(),
+        ] {
+            let discovery = cadmpeg_core::decode::u64_from_index(bytes.len() + LABEL.len());
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &["creo double_xar discovery"],
+                |allowed| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = allowed;
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 0;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                    match double_xar_tables(&ctx, bytes) {
+                        Err(CodecError::ResourceLimit(r)) => {
+                            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                            assert_eq!(r.operation, "creo double_xar discovery");
+                            assert_eq!((r.used, r.additional), (0, discovery));
+                            Err(CodecError::ResourceLimit(r))
+                        }
+                        result => {
+                            assert!(result?.is_empty());
+                            assert_eq!(allowed, discovery);
+                            let r = ctx
+                                .charge_work_limit(1, "after double_xar discovery")
+                                .expect_err("exact cap");
+                            assert_eq!((r.used, r.additional), (discovery, 1));
+                            Ok(())
+                        }
+                    }
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn double_xar_present_slots_keep_native_values_and_stop_at_source_end() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        const LABEL: &[u8] = b"double_xar\0";
+        let incomplete = b"double_xar\0\xf8\x02\x10".as_slice();
+        let complete = b"double_xar\0\xf8\x02\x10\xe0".as_slice();
+        for (bytes, present, complete_table) in [(incomplete, 1_u64, false), (complete, 2, true)] {
+            let discovery = cadmpeg_core::decode::u64_from_index(bytes.len() + LABEL.len());
+            let need = discovery + present;
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &["creo double_xar slot parsing"],
+                |allowed| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = allowed;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                    match double_xar_tables(&ctx, bytes) {
+                        Err(CodecError::ResourceLimit(r)) => {
+                            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                            if allowed == 0 {
+                                assert_eq!(r.operation, "creo double_xar discovery");
+                                assert_eq!((r.used, r.additional), (0, discovery));
+                            } else {
+                                assert_eq!(r.operation, "creo double_xar slot parsing");
+                                assert_eq!((r.used, r.additional), (allowed, 1));
+                            }
+                            Err(CodecError::ResourceLimit(r))
+                        }
+                        result => {
+                            let tables = result?;
+                            assert_eq!(allowed, need);
+                            if complete_table {
+                                assert_eq!(tables.len(), 1);
+                                assert_eq!(tables[0].offset, 0);
+                                assert_eq!(
+                                    tables[0].entries,
+                                    [
+                                        super::DoubleXarSlot::StockOne,
+                                        super::DoubleXarSlot::TerminalNull
+                                    ]
+                                );
+                                assert_eq!(tables[0].entries[0].raw(), &[0x10]);
+                                assert_eq!(tables[0].entries[1].raw(), &[0xe0]);
+                            } else {
+                                assert!(tables.is_empty());
+                            }
+                            let r = ctx
+                                .charge_work_limit(1, "after double_xar present slots")
+                                .expect_err("exact cap");
+                            assert_eq!((r.used, r.additional), (need, 1));
+                            Ok(())
+                        }
+                    }
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn fixed_scalar_frames_keep_values_with_zero_limits() {
+        let cache = ScalarCache::default();
+        let explicit = [
+            0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x0f, 0x0f, 0x0f,
+        ];
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
+        assert!(
+            super::decode_inline_non_plane_local_system_prefix(&explicit, &cache).any(
+                |prefix| matches!(prefix,
+                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                    if frame.cursor == explicit.len() && frame.values.get() == identity)
+            )
+        );
+        let mut origins = super::decode_inline_non_plane_origin_prefix(&[0x18; 3], 0, &cache);
+        assert_eq!(origins.next(), Some(([0.0; 3], 3)));
+        assert_eq!(origins.next(), None);
+        let support = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
+        let (values, layout) = super::decode_plane_support_local_system(&support, &cache)
+            .expect("complete support image");
+        assert_eq!(
+            values.get(),
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        );
+        assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
     }
 }

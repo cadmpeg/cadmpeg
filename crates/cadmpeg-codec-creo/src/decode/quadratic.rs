@@ -3,8 +3,6 @@
 //! terms they were formed from, which is what states the degree of the problem
 //! and the sign of its discriminant.
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{multiply_divide, power_of_two_bound, scale_power_of_two};
 use cadmpeg_ir::scalar::FiniteReal;
 use std::ops::{Deref, DerefMut};
@@ -170,29 +168,28 @@ impl Coefficient {
 /// coefficients before common scaling. This preserves finite roots when the
 /// original coefficients span more than one f64 exponent range.
 pub(super) fn real_roots(
-    ctx: &DecodeContext<'_>,
     quadratic: Coefficient,
     linear: Coefficient,
     constant: Coefficient,
-) -> Result<QuadraticRoots, CodecError> {
+) -> QuadraticRoots {
     if [quadratic, linear, constant]
         .iter()
         .any(|coefficient| !coefficient.terms.is_finite())
     {
-        return Ok(QuadraticRoots::empty());
+        return QuadraticRoots::empty();
     }
     let [Some(quadratic_value), Some(linear_value), Some(_)] =
         [quadratic, linear, constant].map(|coefficient| FiniteReal::new(coefficient.value))
     else {
-        return Ok(QuadraticRoots::empty());
+        return QuadraticRoots::empty();
     };
     if quadratic.value == 0.0 {
         let root = -constant.value / linear.value;
-        return Ok(if root.is_finite() {
+        return if root.is_finite() {
             QuadraticRoots::one(root)
         } else {
             QuadraticRoots::empty()
-        });
+        };
     }
     let exponent = |value: f64| power_of_two_bound(value).unwrap_or(0);
     let variable_exponent = if constant.value != 0.0 {
@@ -216,10 +213,10 @@ pub(super) fn real_roots(
     let mut errors = [0.0; 3];
     for (index, (coefficient, shift)) in coefficients.into_iter().zip(shifts).enumerate() {
         let Some(value) = scale_power_of_two(coefficient.value, shift - scale_exponent) else {
-            return Ok(QuadraticRoots::empty());
+            return QuadraticRoots::empty();
         };
         let Some(terms) = scale_power_of_two(coefficient.terms, shift - scale_exponent) else {
-            return Ok(QuadraticRoots::empty());
+            return QuadraticRoots::empty();
         };
         values[index] = value.get();
         errors[index] = EPS_QUADRATIC_CANCELLATION * terms.get();
@@ -240,15 +237,13 @@ pub(super) fn real_roots(
                 + error_quadratic * error_constant)
         + EPS_QUADRATIC_CANCELLATION * (b * b + product.abs());
     if discriminant.abs() <= error {
-        return Ok(
-            multiply_divide(linear_value.negated(), FiniteReal::HALF, quadratic_value)
-                .map_or_else(QuadraticRoots::empty, |root| {
-                    QuadraticRoots::one(root.get())
-                }),
-        );
+        return multiply_divide(linear_value.negated(), FiniteReal::HALF, quadratic_value)
+            .map_or_else(QuadraticRoots::empty, |root| {
+                QuadraticRoots::one(root.get())
+            });
     }
     if discriminant < 0.0 {
-        return Ok(QuadraticRoots::empty());
+        return QuadraticRoots::empty();
     }
     let root = discriminant.sqrt();
     let q = -0.5 * (b + root.copysign(b));
@@ -275,26 +270,16 @@ pub(super) fn real_roots(
         roots.values[roots.len] = root;
         roots.len += 1;
     }
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "creo quadratic roots sort",
-    )?;
+    if roots.len == 2 && roots.values[0].total_cmp(&roots.values[1]).is_gt() {
+        roots.values.swap(0, 1);
+    }
     roots.dedup_by(|second, first| *second == *first);
-    Ok(roots)
+    roots
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Coefficient, QuadraticRoots};
-
-    fn roots(quadratic: Coefficient, linear: Coefficient, constant: Coefficient) -> QuadraticRoots {
-        crate::decode::with_test_decode_ctx(|ctx| {
-            super::real_roots(ctx, quadratic, linear, constant)
-        })
-        .expect("roots are admitted")
-    }
+    use super::{real_roots as roots, Coefficient};
 
     #[test]
     fn numerical_followup_quadratic_roots_ignore_common_coefficient_scale() {
