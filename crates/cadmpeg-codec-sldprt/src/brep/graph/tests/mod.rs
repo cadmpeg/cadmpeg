@@ -407,7 +407,6 @@ fn native_brep_carrier_collection_refuses_before_insertion() {
 fn typed_body_records_preserve_stored_sheet_kind_and_links() {
     use crate::brep::typed::{BodyNode, FaceNode, Facts, RegionNode, ShellNode};
     use cadmpeg_ir::topology::BodyKind;
-    use std::collections::BTreeSet;
 
     let facts = Facts {
         bodies: vec![BodyNode {
@@ -483,7 +482,7 @@ fn typed_body_records_preserve_stored_sheet_kind_and_links() {
     assert_eq!(records[0].regions[1].shells[0].refs, vec![100]);
     assert_eq!(
         facts
-            .hierarchies(&ctx, &BTreeSet::from([100]))
+            .hierarchies(&ctx, tables.bridges())
             .expect("hierarchy allocation")
             .expect("typed hierarchy")[0]
             .body

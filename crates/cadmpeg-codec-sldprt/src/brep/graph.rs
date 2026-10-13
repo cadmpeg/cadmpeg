@@ -1383,16 +1383,7 @@ fn typed_body_records(
     let hierarchies;
     (hierarchies, hierarchy_storage) =
         ctx.with_scoped_storage("hold typed Parasolid hierarchies", || {
-            let _bridge_attrs_storage;
-            let bridge_attrs;
-            (bridge_attrs, _bridge_attrs_storage) =
-                ctx.with_scoped_storage("index Parasolid body bridges", || {
-                    ctx.collect_btree_set(
-                        tables.bridges().keys().copied(),
-                        "index Parasolid body bridges",
-                    )
-                })?;
-            facts.hierarchies(ctx, &bridge_attrs)
+            facts.hierarchies(ctx, tables.bridges())
         })?;
     let Some(hierarchies) = hierarchies else {
         return Ok(None);
