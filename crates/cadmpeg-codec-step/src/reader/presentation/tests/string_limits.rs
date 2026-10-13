@@ -23,7 +23,14 @@ fn layer_result(retained_limit: u64) -> Result<(), CodecError> {
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
     let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
-    super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx, &mut admitted)?;
+    super::super::decode(
+        &exchange,
+        &topology.value,
+        &mut ir,
+        &BTreeMap::new(),
+        &ctx,
+        &mut admitted,
+    )?;
     Ok(())
 }
 
@@ -127,8 +134,14 @@ fn repeated_colour_retains_output_text_and_appearance_identities() {
             let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
             let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
             let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
-            let outcome =
-                super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx, &mut admitted)?;
+            let outcome = super::super::decode(
+                &exchange,
+                &topology.value,
+                &mut ir,
+                &BTreeMap::new(),
+                &ctx,
+                &mut admitted,
+            )?;
             assert!(outcome.losses.is_empty());
             assert_eq!(ir.model.appearances.len(), 1);
             assert_eq!(ir.model.appearance_bindings.len(), 2);

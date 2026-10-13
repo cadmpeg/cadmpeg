@@ -27,7 +27,9 @@ fn case_refuses(operation: &str) {
                 &geometry.value,
                 &topology.value,
                 &mut ir.clone(),
-                &ctx, &mut admitted)
+                &ctx,
+                &mut admitted,
+            )
             .map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));

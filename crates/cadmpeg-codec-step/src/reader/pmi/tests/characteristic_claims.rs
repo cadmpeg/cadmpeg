@@ -41,25 +41,31 @@ fn shared_characteristic_representation_claims_are_discovered_once() {
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         // The read-only fixture arena and index use the queried session. Their
         // backing stays scoped through the claim pass; retained limit remains zero.
-        let (_fixture_storage, fixture) = ctx.with_scoped_storage("test annotation claim input", || {
-            let mut fixture_ir = CadIr::empty();
-            let mut annotations =
-                super::super::annotations::Annotations::new(ctx).expect("annotation index");
-            annotations
-                .push(
-                    &mut fixture_ir,
-                    1,
-                    super::super::annotations::AnnotationDraft {
-                        name: None,
-                        targets: Vec::new(),
-                        visible: None,
-                        definition: PmiDefinition::Dimension(
-                            PmiDimension::new(DimensionKind::Size, None, None).expect("dimension"),
-                        ),
-                    }, &mut 0)
-                .expect("characteristic annotation");
-            Ok::<_, cadmpeg_core::CodecError>((fixture_ir, annotations))
-        }).map(|(value, storage)| (storage, value)).expect("scoped annotation fixture");
+        let (_fixture_storage, fixture) = ctx
+            .with_scoped_storage("test annotation claim input", || {
+                let mut fixture_ir = CadIr::empty();
+                let mut annotations =
+                    super::super::annotations::Annotations::new(ctx).expect("annotation index");
+                annotations
+                    .push(
+                        &mut fixture_ir,
+                        1,
+                        super::super::annotations::AnnotationDraft {
+                            name: None,
+                            targets: Vec::new(),
+                            visible: None,
+                            definition: PmiDefinition::Dimension(
+                                PmiDimension::new(DimensionKind::Size, None, None)
+                                    .expect("dimension"),
+                            ),
+                        },
+                        &mut 0,
+                    )
+                    .expect("characteristic annotation");
+                Ok::<_, cadmpeg_core::CodecError>((fixture_ir, annotations))
+            })
+            .map(|(value, storage)| (storage, value))
+            .expect("scoped annotation fixture");
         let (_fixture_ir, annotations) = fixture;
         let mut claims = BTreeSet::new();
         let mut storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");

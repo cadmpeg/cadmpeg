@@ -89,11 +89,9 @@ impl<'ctx, 'arena> Annotations<'ctx, 'arena> {
     }
 
     /// The inserted annotation index for a STEP record.
-    pub(super) fn get(
-        &self,
-        id: u64,
-    ) -> Result<Option<AnnotationIndex>, CodecError> {
-        Ok(self.ctx
+    pub(super) fn get(&self, id: u64) -> Result<Option<AnnotationIndex>, CodecError> {
+        Ok(self
+            .ctx
             .get_btree_map(&self.indices, &id, "STEP annotation index lookup")?
             .copied())
     }
@@ -127,7 +125,9 @@ mod tests {
                     definition: PmiDefinition::Datum {
                         identification: String::new(),
                     },
-                }, &mut 0)
+                },
+                &mut 0,
+            )
             .expect_err("limit must refuse one annotation")
     }
 
@@ -141,16 +141,20 @@ mod tests {
         let mut annotations = Annotations::new(&ctx).expect("annotation index");
         let mut admitted = 0;
         let result = annotations.push(
-            &mut ir, 1,
+            &mut ir,
+            1,
             AnnotationDraft {
                 name: None,
                 targets: Vec::new(),
                 visible: None,
-                definition: PmiDefinition::Datum { identification: String::new() },
+                definition: PmiDefinition::Datum {
+                    identification: String::new(),
+                },
             },
             &mut admitted,
         );
-        let CodecError::ResourceLimit(original) = result.expect_err("annotation entity refuses") else {
+        let CodecError::ResourceLimit(original) = result.expect_err("annotation entity refuses")
+        else {
             panic!("entity refusal");
         };
         assert_eq!(original.dimension, ResourceDimension::Entities);
@@ -206,7 +210,9 @@ mod tests {
                             definition: PmiDefinition::Datum {
                                 identification: String::new(),
                             },
-                        }, &mut 0)
+                        },
+                        &mut 0,
+                    )
                     .expect("annotation");
                 let result = annotations.get(1);
                 if let Err(CodecError::ResourceLimit(ref refusal)) = result {
@@ -227,8 +233,12 @@ mod tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
         let annotations = Annotations::new(&ctx).expect("original index context");
-        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "test original annotation refusal")
-            .expect_err("original caller refuses") else { panic!("resource refusal"); };
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "test original annotation refusal")
+            .expect_err("original caller refuses")
+        else {
+            panic!("resource refusal");
+        };
         assert!(matches!(annotations.get(1),
             Err(CodecError::ResourceLimit(refusal)) if refusal == original));
         assert!(annotations.indices.is_empty());
@@ -245,8 +255,12 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
         let mut annotations = Annotations::new(&ctx).expect("original index context");
         let mut ir = CadIr::empty();
-        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "test original annotation refusal")
-            .expect_err("original caller refuses") else { panic!("resource refusal"); };
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "test original annotation refusal")
+            .expect_err("original caller refuses")
+        else {
+            panic!("resource refusal");
+        };
         assert!(matches!(annotations.push(&mut ir, 1, AnnotationDraft {
             name: None,
             targets: Vec::new(),
