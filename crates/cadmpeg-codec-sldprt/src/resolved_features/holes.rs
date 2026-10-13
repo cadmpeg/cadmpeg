@@ -1238,7 +1238,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                 &mut feature.parameters,
                 cadmpeg_core::nonblank_literal!("D2"),
                 value,
-                OPERATION,
+                "publish SLDPRT cosmetic thread diameter",
             )?;
         }
     }

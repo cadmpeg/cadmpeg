@@ -159,14 +159,6 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
     }
 }
 
-pub(super) fn component_path_features<'a>(
-    ctx: &DecodeContext<'_>,
-    components: &[FeatureInputComponentPathEntry],
-    features: impl IntoIterator<Item = &'a Feature>,
-) -> Result<Vec<String>, CodecError> {
-    FeaturesBySource::new(ctx, features)?.features(ctx, components)
-}
-
 pub(super) fn feature_precedes_consumer(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
@@ -290,10 +282,10 @@ pub(crate) fn surface_selection_producer_features(
     ctx: &DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
     terminal_feature_ref: Option<&str>,
-    features: &[Feature],
+    features: &FeaturesBySource<'_, '_>,
 ) -> Result<Vec<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT surface producers";
-    let mut producers = component_path_features(ctx, components, features)?;
+    let mut producers = features.features(ctx, components)?;
     if let Some(terminal) = terminal_feature_ref {
         if !ctx.any_by(
             &producers,

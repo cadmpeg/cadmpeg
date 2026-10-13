@@ -245,9 +245,16 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
             )
         })
         .expect("sequence fixture uses the index storage admission");
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None, None)
-        .expect("test projection fits policy")
-        .annotations;
+    let projected = project_with_topology(
+        &ctx,
+        &root,
+        Some(&index),
+        &crate::swift::RenderedDimensions::Borrowed(&[]),
+        None,
+        None,
+    )
+    .expect("test projection fits policy")
+    .annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
         first.targets,
@@ -270,9 +277,16 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .entity
         .strings
         .insert("CadIdentifier".into(), "125:99".into());
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None, None)
-        .expect("test projection fits policy")
-        .annotations;
+    let projected = project_with_topology(
+        &ctx,
+        &root,
+        Some(&index),
+        &crate::swift::RenderedDimensions::Borrowed(&[]),
+        None,
+        None,
+    )
+    .expect("test projection fits policy")
+    .annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
         first.targets,
@@ -742,6 +756,7 @@ fn swift_topology_index_refuses_collection_limit() {
 #[test]
 fn pattern_hole_ambiguity_skips_unvisited_dependents() {
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let mut prefix_work = None;
     for tail in [1, 128] {
         let mut features = pattern_hole_features();
         let hole = features.get(2).expect("hole fixture").clone();
@@ -751,6 +766,29 @@ fn pattern_hole_ambiguity_skips_unvisited_dependents() {
                 FeatureId::mint(format!("sldprt:model:feature#hole-{ordinal}")).unwrap();
             additional.ordinal = ordinal;
             features.push(additional);
+        }
+        let before = crate::test_support::work_refusal_at("swift pattern hole search", |ctx| {
+            pattern_hole_nominal_context(ctx, &features)
+        });
+        let CodecError::ResourceLimit(before) = before else {
+            panic!("visited pattern scan boundary");
+        };
+        assert_eq!(before.additional, 1);
+        let after = crate::test_support::work_refusal_at("measure pattern query work", |ctx| {
+            assert!(pattern_hole_nominal_context(ctx, &features)?.is_empty());
+            ctx.copy_retained_text("x", "measure pattern query work")
+        });
+        let CodecError::ResourceLimit(after) = after else {
+            panic!("pattern work measurement");
+        };
+        let visited_work = after.used.checked_sub(before.used).unwrap();
+        if let Some(expected) = prefix_work {
+            assert_eq!(
+                visited_work, expected,
+                "the search does not visit added tail dependents"
+            );
+        } else {
+            prefix_work = Some(visited_work);
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
