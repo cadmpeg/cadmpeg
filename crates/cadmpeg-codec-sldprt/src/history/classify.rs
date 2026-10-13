@@ -59,7 +59,7 @@ const METADATA_OPERATION: &str = "classify SLDPRT history metadata";
 /// Whether `feature` is history metadata among `features`.
 ///
 /// This scans `features` for each record asked about; a caller asking about
-/// many records of one history builds a [`HistoryIndex`] once instead.
+/// many records of one history builds a [`MetadataIndex`] once instead.
 pub(crate) fn is_history_metadata_record(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
@@ -83,6 +83,66 @@ pub(crate) fn is_history_metadata_record(
         },
         METADATA_OPERATION,
     )
+}
+
+/// Attribute names needed by metadata classification, without tree or plane facts.
+pub(crate) struct MetadataIndex<'a, 'ctx> {
+    attribute_names: Vec<&'a str>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx> MetadataIndex<'a, 'ctx> {
+    pub(crate) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        features: &'a [Feature],
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index SLDPRT history metadata";
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut attribute_names = Vec::new();
+        if ctx.any_by(
+            features,
+            |feature| Ok(may_name_attribute(feature) && !is_metadata_by_record(feature)),
+            OPERATION,
+        )? {
+            for feature in ctx.admit_iter(features, OPERATION)? {
+                if is_attribute_record(feature) {
+                    ctx.push_scoped_vec(
+                        &mut storage,
+                        &mut attribute_names,
+                        feature.name.as_str(),
+                        OPERATION,
+                    )?;
+                }
+            }
+            ctx.sort_unstable_by(&mut attribute_names, |name| *name, Ord::cmp, OPERATION)?;
+        }
+        Ok(Self { attribute_names, _storage: storage })
+    }
+
+    pub(crate) fn is_metadata(
+        &self,
+        ctx: &DecodeContext<'_>,
+        feature: &Feature,
+    ) -> Result<bool, CodecError> {
+        if is_metadata_by_record(feature) {
+            return Ok(true);
+        }
+        if !may_name_attribute(feature) {
+            return Ok(false);
+        }
+        let name = feature.name.as_str();
+        let first = ctx.partition_point(
+            &self.attribute_names,
+            |candidate| {
+                Ok(ctx.compare(*candidate, name, METADATA_OPERATION)? == std::cmp::Ordering::Less)
+            },
+            METADATA_OPERATION,
+        )?;
+        match self.attribute_names.get(first) {
+            Some(candidate) => ctx.starts_with(*candidate, name, METADATA_OPERATION),
+            None => Ok(false),
+        }
+    }
 }
 
 /// How many records of one history satisfy a condition, keeping the record
@@ -141,9 +201,7 @@ struct BuiltinSlot<'a> {
 /// Per-history facts that classifying one record of the history consults,
 /// computed once for all of its records.
 pub(crate) struct HistoryIndex<'a, 'ctx> {
-    /// Names of the history's attribute records, sorted for prefix search.
-    attribute_names: Vec<&'a str>,
-    _attribute_storage: ScopedReservation<'ctx>,
+    metadata: MetadataIndex<'a, 'ctx>,
     /// Built-in records by reserved source; index 0 is unused.
     builtins: [BuiltinSlot<'a>; LAST_BUILTIN_SOURCE + 1],
     layout: Option<FeatureManagerLayout>,
@@ -196,8 +254,7 @@ impl<'a, 'ctx> HistoryIndex<'a, 'ctx> {
         }
         ctx.sort_unstable_by(&mut attribute_names, |name| *name, Ord::cmp, OPERATION)?;
         let mut index = Self {
-            attribute_names,
-            _attribute_storage: attribute_storage,
+            metadata: MetadataIndex { attribute_names, _storage: attribute_storage },
             builtins,
             layout: None,
             principal_layout: principal_plane_layout(ctx, features)?,
@@ -215,25 +272,7 @@ impl<'a, 'ctx> HistoryIndex<'a, 'ctx> {
         ctx: &DecodeContext<'_>,
         feature: &Feature,
     ) -> Result<bool, CodecError> {
-        if is_metadata_by_record(feature) {
-            return Ok(true);
-        }
-        if !may_name_attribute(feature) {
-            return Ok(false);
-        }
-        // The names starting with a prefix follow the first name not below it.
-        let name = feature.name.as_str();
-        let first = ctx.partition_point(
-            &self.attribute_names,
-            |candidate| {
-                Ok(ctx.compare(*candidate, name, METADATA_OPERATION)? == std::cmp::Ordering::Less)
-            },
-            METADATA_OPERATION,
-        )?;
-        match self.attribute_names.get(first) {
-            Some(candidate) => ctx.starts_with(*candidate, name, METADATA_OPERATION),
-            None => Ok(false),
-        }
+        self.metadata.is_metadata(ctx, feature)
     }
 
     fn slot(&self, source: u32) -> Option<&BuiltinSlot<'a>> {
@@ -865,4 +904,41 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn metadata_query_indexes_attributes_once_without_tree_facts() {
+        let mut features = Vec::new();
+        for ordinal in 0..1024 {
+            let mut feature = crate::history::tests::feature("reserved", Some("-1"), ordinal);
+            feature.name = format!("Reserved{ordinal}");
+            features.push(feature);
+        }
+        let mut attribute = crate::history::tests::feature("attribute", None, 1024);
+        attribute.input_class = Some("moAttribute_c".into());
+        attribute.name = "Reserved7.Attribute".into();
+        features.push(attribute);
+        let expected = cadmpeg_test_support::service_decode_context();
+        let expected = features.iter().map(|feature|
+            super::is_history_metadata_record(&expected, feature, &features).unwrap()
+        ).collect::<Vec<_>>();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 128 * 1024;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index SLDPRT history records",
+            None,
+        );
+        let index = super::MetadataIndex::new(&ctx, &features).unwrap();
+        let actual = features.iter().map(|feature| index.is_metadata(&ctx, feature).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        assert!(actual[7]);
+        assert!(!actual[8]);
+        drop(index);
+        ctx.finish_session().unwrap();
+    }
+
 }
