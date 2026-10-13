@@ -639,6 +639,9 @@ pub(crate) fn inherit_configuration_operations(
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
+    if features.is_empty() || base_features.is_empty() || histories.is_empty() {
+        return Ok(());
+    }
     const OPERATION: &str = "inherit SLDPRT configuration operations";
     let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
     let mut consumer_storage = ctx.reserve_scoped(0, "SLDPRT configuration operation consumers")?;

@@ -1356,3 +1356,21 @@ fn configuration_operation_base_resolution_is_cached_per_identity() {
     assert_eq!(local, expected);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn configuration_operation_without_bases_or_histories_does_not_build_indexes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (local, histories, lanes) = configuration_operation_evidence();
+    for (base, histories) in [(&[][..], &histories[..]), (&local[..], &[][..])] {
+        let mut configured = local.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        inherit_configuration_operations(&ctx, &mut configured, base, histories, &lanes, &[], Some(4)).unwrap();
+        assert_eq!(configured, local);
+        ctx.finish_session().unwrap();
+    }
+}
