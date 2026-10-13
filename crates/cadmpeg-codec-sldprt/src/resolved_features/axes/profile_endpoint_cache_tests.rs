@@ -479,7 +479,7 @@ fn profile_axis_vectors_span_tied_origin_and_principal() {
             .as_ref()
             .expect("origin consumes both derived views before the incidence tie");
         assert_eq!(cached.bounding.len(), 4);
-        assert_eq!(cached.endpoints.len(), 4);
+        assert_eq!(cached.endpoints.as_ref().unwrap().len(), 4);
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             ResourceDimension::WorkUnits,
             operation,
@@ -567,4 +567,38 @@ fn tied_axis_orchestration_allocates_derived_views_once() {
         });
     assert_eq!(principal.unwrap(), None);
     assert_eq!(allocations, shared_allocations);
+}
+
+#[test]
+fn rejected_principal_axes_do_not_collect_endpoint_coordinates() {
+    const OPERATION: &str = "collect SLDPRT profile curve endpoint points";
+    let mut lane = tied_axis_lane();
+    lane.sketch_entities.retain(|marker| marker.object_index().is_some() || marker.coordinates_m.is_none());
+    for (marker, coordinates) in lane.sketch_entities.iter_mut().take(4).zip([
+        [-0.01, -0.01], [-0.01, 0.01], [0.01, -0.01], [0.01, 0.01],
+    ]) {
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let roster = super::LaneMarkerIndex::new(&ctx, lane.sketch_entities.iter()).unwrap();
+    let owned = roster.by_feature["profile"].as_slice();
+    let mut queries = super::ProfileEndpointQueries::new(&ctx, &lane, &roster.all).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "hold test indexed endpoints").unwrap();
+    let ids = queries.ids(&ctx, &mut storage, owned, true).unwrap();
+    assert_eq!(ids.len(), 4);
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, OPERATION, None);
+    let mut points = None;
+    assert_eq!(super::profile_roster_origin_axis_endpoints(&ctx, owned, &roster, &ids, &mut points).unwrap(), None);
+    assert!(points.is_none());
+    assert_eq!(super::profile_roster_principal_axis_endpoints(&ctx, owned, &roster, &ids, &mut points).unwrap(), None);
+    assert!(points.as_ref().unwrap().endpoints.is_none());
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, OPERATION).unwrap_err() else {
+        panic!("rejected axes must leave endpoint construction unvisited");
+    };
+    assert_eq!(limit.operation, OPERATION);
+    drop(probe);
 }

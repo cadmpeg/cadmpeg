@@ -1,4 +1,4 @@
-//! Class filtering admits traversal and text comparisons.
+//! Fixed class filtering admits traversal.
 
 use crate::records::{FeatureInputClass, FeatureInputLane};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -34,7 +34,7 @@ fn lane(classes: &[(&str, u64)]) -> FeatureInputLane {
 }
 
 #[test]
-fn unmatched_class_filter_charges_operand_comparisons() {
+fn unmatched_class_filter_admits_class_visits() {
     const OPERATION: &str = "test fixed SLDPRT class filter";
     const REPEATS: u64 = 64;
     let lane = lane(&[("moLineRef_x", 0), ("moLineRef_y", 1), ("moLineRef_z", 2)]);
@@ -55,7 +55,7 @@ fn unmatched_class_filter_charges_operand_comparisons() {
     }
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "compare SLDPRT filtered class name",
+        "test fixed SLDPRT class filter",
         |cap| {
             let arena = DecodeArena::new();
             policy.limits.max_work_units = cap;
@@ -72,8 +72,8 @@ fn unmatched_class_filter_charges_operand_comparisons() {
         panic!("work refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "compare SLDPRT filtered class name");
-    assert!(limit.additional > 1);
+    assert_eq!(limit.operation, "test fixed SLDPRT class filter");
+    assert_eq!(limit.additional, 3);
 }
 
 #[test]

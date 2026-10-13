@@ -1,4 +1,4 @@
-//! Typed pattern lookup admits traversal and class text comparisons.
+//! Fixed pattern lookup admits the visited records.
 
 use crate::records::{Feature, FeatureInputClass, FeatureInputLane, FeatureInputName, ObjectId};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 #[test]
-fn unmatched_pattern_class_lookup_charges_operand_comparisons() {
+fn unmatched_pattern_class_lookup_admits_class_visits() {
     const REPEATS: u64 = 64;
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -66,7 +66,7 @@ fn unmatched_pattern_class_lookup_charges_operand_comparisons() {
     }
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "compare SLDPRT linear pattern class name",
+        "look up SLDPRT linear pattern dimensions",
         |cap| {
             let arena = DecodeArena::new();
             policy.limits.max_work_units = cap;
@@ -82,13 +82,13 @@ fn unmatched_pattern_class_lookup_charges_operand_comparisons() {
         panic!("work refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "compare SLDPRT linear pattern class name");
-    assert!(limit.additional > 1);
+    assert_eq!(limit.operation, "look up SLDPRT linear pattern dimensions");
+    assert_eq!(limit.additional, 1);
 }
 
 #[test]
-fn linear_pattern_display_name_comparison_has_its_own_work_boundary() {
-    const OPERATION: &str = "compare SLDPRT linear pattern display name";
+fn linear_pattern_display_lookup_admits_name_visits() {
+    const OPERATION: &str = "find SLDPRT linear pattern display directions";
     let mut payload = [0_u8; 185];
     payload[32..40].copy_from_slice(&1.0f64.to_le_bytes());
     payload[161..169].copy_from_slice(&1.0f64.to_le_bytes());
