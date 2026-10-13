@@ -1,5 +1,8 @@
 # cadmpeg
 
+[![GetMerged Scorecard](https://getmerged.abhishekco.de/api/badge/cadmpeg/cadmpeg)](https://getmerged.abhishekco.de/cadmpeg/cadmpeg)
+
+
 Inspect and convert native CAD files from the command line. Add native CAD import to an application.
 
 ## Purpose
