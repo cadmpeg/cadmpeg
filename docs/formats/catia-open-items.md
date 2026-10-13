@@ -286,13 +286,13 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Conflict.** A source-local 53-member roster and the current 700-face shell have different cardinalities. Descending numeric reference order agrees with six independent face-orientation sequences, but numeric order alone does not supply an allocation-to-standard identity relation.
 
-### SN-25. Class-`0x5f` owner role
+### SN-25. Local boundary-domain location and final identity
 
-**Question.** What higher-level object does each derived `b2`, `b3`, or `b4 03 5f` to `0x62` packet relation represent?
+**Question.** Which controls select the location of a local boundary domain, and which source-closed relation attaches it to final topology?
 
-**Known.** A structurally complete class-`0x5f` face node retains either its compact or tagged-`u16` target encoding and its two terminal bytes. The `03 05` terminal form retains a derived relation to an immediately adjacent class-`0x62` packet when the checked successor identity matches the packet's final reference. The `03 03` terminal form retains the same relation for an all-compact fixed-nine packet. Other terminal and packet-grammar combinations remain unassigned. A separate source-closed production proves that some fixed-nine packets terminate a support-bound carrier chart. `catia.md` §6.4 defines the independent fixed-nine owner-to-A5-carrier and standard-face matching relation. It assigns the packet as a face-local carrier chart when every complete face-owner matching induces the same carrier, but it does not assign the adjacent class-`0x5f` node itself.
+**Known.** `catia.md` §6.4 "**Adjacent `5f,62` relation:**" defines the local face-to-boundary-domain incidence, paired counted lane, fixed-nine dialect, scoped adjacency, and occurrence identity. A local domain may be open or repeated. The class-`5f` terminal and counted tail do not assign outer, inner, or immersed location. Carrier-chart and simple-cycle evidence are independent refinements.
 
-**Need.** We must identify the class-`0x5f` node's role for relations that do not close through the fixed-nine carrier-and-face matching.
+**Need.** Resolve location and complete member identities before forming a neutral loop. Establish a separate unique geometry or topology relation before attaching that loop to a final face. Preserve unresolved and repeated local domains.
 
 ### SN-26. Revolution profile allocation identity
 

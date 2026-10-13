@@ -11,8 +11,7 @@ use crate::native::{
     CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
     CatiaConsolidatedOwnerPacket, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
     CatiaConsolidatedSphere, CatiaConsolidatedSupportBinding, CatiaConsolidatedTorus,
-    CatiaConsolidatedVertexIdentity, CatiaFinjplSegment, CatiaObjectGraph, CatiaOwnerPacketPayload,
-    CatiaValueBlock,
+    CatiaConsolidatedVertexIdentity, CatiaFinjplSegment, CatiaObjectGraph, CatiaValueBlock,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -21,24 +20,10 @@ pub(super) fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, packet) in packets.iter().enumerate() {
-        let valid_face_node = packet.face_node.is_none_or(|face_node| {
-            face_node.byte_offset.checked_add(face_node.byte_len) == Some(packet.byte_offset)
-                && face_node.target.checked_add(1) == packet.payload.final_reference()
-        });
-        let valid_payload = match &packet.payload {
-            CatiaOwnerPacketPayload::FixedNine { numeric_tail, .. } => {
-                numeric_tail.header()[0] == 0x84
-                    && matches!(numeric_tail.header()[1], 0x41 | 0xc1)
-                    && numeric_tail.header()[4] == 0x0d
-            }
-            CatiaOwnerPacketPayload::Counted { references, tail } => {
-                !references.is_empty() && !tail.as_slice().is_empty()
-            }
-        };
-        if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.byte_offset)
+        let valid_payload = crate::native::owner_frames::valid_owner_packet(packet);
+        if packet.id != format!("catia:consolidated:owner-packet#{:010}", packet.frame.pos)
             || !valid_payload
-            || !valid_face_node
-            || index > 0 && packets[index - 1].byte_offset >= packet.byte_offset
+            || index > 0 && packets[index - 1].frame.pos >= packet.frame.pos
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated owner packet `{}` is structurally invalid",

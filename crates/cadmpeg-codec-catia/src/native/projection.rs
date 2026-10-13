@@ -15,16 +15,15 @@ use super::{
     CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeRun,
     CatiaConsolidatedEdgeUses, CatiaConsolidatedOwnerPacket, CatiaConsolidatedPcurve,
     CatiaConsolidatedSupportBinding, CatiaDesignClass, CatiaEntityRecord, CatiaEntityRecordBody,
-    CatiaEntityReference, CatiaExternalReference, CatiaFaceNodeRelation,
-    CatiaFaceNodeTargetEncoding, CatiaFinjplSegment, CatiaObjectClass, CatiaObjectEntity,
-    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaObjectStorage,
+    CatiaEntityReference, CatiaExternalReference, CatiaFinjplSegment, CatiaObjectClass,
+    CatiaObjectEntity, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaObjectStorage,
     CatiaOuterContainerBinding, CatiaOwnerBoundaryCycle, CatiaOwnerBoundaryEdge,
     CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
     CatiaOwnerChartBridgeReference, CatiaOwnerChartCarrier, CatiaOwnerChartRelation,
-    CatiaOwnerIdentityEncoding, CatiaOwnerIdentityTarget, CatiaOwnerPacketPayload,
-    CatiaOwnerReferenceEncoding, CatiaPreviewImage, CatiaReferenceSignature, CatiaValueBlock,
-    CatiaValueSchemaSelection, CatiaValueSchemaSelectionKind, CatiaValueSchemaSelectionValue,
-    CatiaZeroEntityRecord, CodecError, ConsolidatedRecord, DecodeContext, HashMap, HashSet,
+    CatiaOwnerIdentityTarget, CatiaOwnerPacketPayload, CatiaPreviewImage, CatiaReferenceSignature,
+    CatiaValueBlock, CatiaValueSchemaSelection, CatiaValueSchemaSelectionKind,
+    CatiaValueSchemaSelectionValue, CatiaZeroEntityRecord, CodecError, ConsolidatedRecord,
+    DecodeContext, HashMap,
 };
 
 pub(crate) fn consolidated_owner_packets(
@@ -32,6 +31,25 @@ pub(crate) fn consolidated_owner_packets(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedOwnerPacket>, CodecError> {
+    let mut frame_storage = ctx.reserve_scoped(0, "catia native owner frame lookup")?;
+    let mut source_records = HashMap::new();
+    ctx.charge_work(
+        u64_from_index(records.len()),
+        "catia_native_owner_frame_index_work",
+    )?;
+    for record in records.iter().filter(|record| {
+        record.family() == crate::wire::records::ConsolidatedFamily::B
+            && matches!(record.class(), 0x5f | 0x62)
+    }) {
+        frame_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut source_records,
+                (record.source_index(), record.byte_offset()),
+                record,
+                "catia_native_owner_frame_index",
+            )
+        })?;
+    }
     let fixed = ctx.collect_vec(
         crate::families::b2::records::b2_owner_packets_from_records(bytes, records),
         "catia_native_fixed_owner_packets",
@@ -124,30 +142,23 @@ pub(crate) fn consolidated_owner_packets(
     {
         let key = (cycle.source_index, cycle.owner_pos);
         let value = CatiaOwnerBoundaryCycle {
-                    face_node: cycle.face_node.and_then(|face_node| {
-                        let byte_len = cycle.owner_pos.checked_sub(face_node.pos)?;
-                        Some(CatiaFaceNodeRelation {
-                            byte_offset: u64_from_index(face_node.pos),
-                            byte_len: u64_from_index(byte_len),
-                            header_token: face_node.header_token,
-                            target_encoding: match face_node.target_encoding {
-                                crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
-                                    CatiaFaceNodeTargetEncoding::Compact
-                                }
-                                crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
-                                    CatiaFaceNodeTargetEncoding::TaggedU16Strong
-                                }
-                            },
-                            target: face_node.target,
-                            terminal: face_node.terminal.into(),
-                        })
-                    }),
-                    edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
-                        slot: edge.slot,
-                        byte_offset: u64_from_index(edge.target_pos),
-                        endpoint_records: edge.endpoint_records.map(u64_from_index),
-                    }),
-                };
+            face_node: cycle
+                .face_node
+                .map(|node| {
+                    let record = source_records
+                        .get(&(cycle.source_index, node.pos))
+                        .ok_or_else(|| {
+                            CodecError::malformed("boundary face node has no source frame")
+                        })?;
+                    super::owner_frames::face_node(ctx, bytes, record, node)
+                })
+                .transpose()?,
+            edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
+                slot: edge.slot,
+                byte_offset: u64_from_index(edge.target_pos),
+                endpoint_records: edge.endpoint_records.map(u64_from_index),
+            }),
+        };
         ctx.insert_hash_map(
             &mut boundary_cycles,
             key,
@@ -171,6 +182,9 @@ pub(crate) fn consolidated_owner_packets(
         )?;
     }
     for linked in adjacent_counted {
+        if linked.owner.references.len() < 5 || linked.owner.references.len() % 2 == 0 {
+            continue;
+        }
         ctx.insert_hash_map(
             &mut face_nodes,
             (linked.owner.source_index, linked.owner.pos),
@@ -178,72 +192,51 @@ pub(crate) fn consolidated_owner_packets(
             "catia_native_owner_face_nodes",
         )?;
     }
-    let mut fixed_positions = HashSet::new();
-    for packet in &fixed {
-        ctx.insert_hash_set(
-            &mut fixed_positions,
-            (packet.source_index, packet.pos),
-            "catia_native_fixed_owner_positions",
-        )?;
-    }
     let counted_owners =
         crate::families::b2::records::b2_counted_owners_from_records(ctx, bytes, records)?;
-    let mut packets = ctx.collect_vec(fixed
-        .into_iter()
-        .map(|packet| {
+    let mut packets = ctx.collect_vec(
+        fixed.into_iter().map(|packet| {
             (
                 packet.pos,
                 packet.source_index,
-                packet.header_token,
                 CatiaOwnerPacketPayload::FixedNine {
-                    reference_encoding: match packet.reference_encoding {
-                        crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
-                            CatiaOwnerReferenceEncoding::TaggedU16Strong
-                        }
-                        crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
-                            CatiaOwnerReferenceEncoding::WidthCodedStrong
-                        }
-                        crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact => {
-                            CatiaOwnerReferenceEncoding::AllCompact
-                        }
-                    },
+                    reference_encoding: packet.reference_encoding.into(),
                     references: packet.references,
-                    identity_encodings: packet.identity_encodings.map(|encoding| match encoding {
-                        crate::families::b2::records::B2OwnerIdentityEncoding::Allocation(
-                            encoding,
-                        ) => CatiaOwnerIdentityEncoding::Allocation(
-                            native_allocation_reference_encoding(encoding),
-                        ),
-                        crate::families::b2::records::B2OwnerIdentityEncoding::RawU8 => {
-                            CatiaOwnerIdentityEncoding::RawU8
-                        }
-                    }),
+                    identity_encodings: packet.identity_encodings.map(Into::into),
                     numeric_tail: packet.numeric_tail,
                     identity_targets: Vec::new(),
                     owner_chart: None,
                     boundary_cycle: None,
                 },
             )
-        })
-        .chain(
-            counted_owners
+        }),
+        "catia_native_owner_packet_rows",
+    )?;
+    for packet in counted_owners {
+        let reference_encodings = ctx.collect_vec(
+            packet
+                .reference_encodings
                 .into_iter()
-                .filter(|packet| !fixed_positions.contains(&(packet.source_index, packet.pos)))
-                .map(|packet| {
-                    (
-                        packet.pos,
-                        packet.source_index,
-                        packet.header_token,
-                        CatiaOwnerPacketPayload::Counted {
-                            references: packet.references,
-                            tail: packet.tail,
-                        },
-                    )
-                }),
-        ), "catia_native_owner_packet_rows")?;
+                .map(native_allocation_reference_encoding),
+            "catia_native_counted_owner_encodings",
+        )?;
+        ctx.push_vec(
+            &mut packets,
+            (
+                packet.pos,
+                packet.source_index,
+                CatiaOwnerPacketPayload::Counted {
+                    references: packet.references,
+                    reference_encodings,
+                    tail: packet.tail,
+                },
+            ),
+            "catia_native_owner_packet_rows",
+        )?;
+    }
     ctx.stable_sort_by(
         &mut packets,
-        |(left_pos, left_source, _, _), (right_pos, right_source, _, _)| {
+        |(left_pos, left_source, _), (right_pos, right_source, _)| {
             (left_pos, left_source).cmp(&(right_pos, right_source))
         },
         |_| 0,
@@ -255,7 +248,7 @@ pub(crate) fn consolidated_owner_packets(
         packets.len(),
         "catia_native_owner_packet_output",
     )?;
-    for (pos, source_index, header_token, mut payload) in packets {
+    for (pos, source_index, mut payload) in packets {
         if let CatiaOwnerPacketPayload::FixedNine {
             identity_targets: stored_targets,
             owner_chart,
@@ -267,38 +260,31 @@ pub(crate) fn consolidated_owner_packets(
                 .remove(&(source_index, pos))
                 .unwrap_or_default();
             *owner_chart = owner_charts.remove(&(source_index, pos)).map(Box::new);
-            *boundary_cycle = boundary_cycles
-                .get(&(source_index, pos))
-                .copied()
-                .map(Box::new);
+            *boundary_cycle = boundary_cycles.remove(&(source_index, pos)).map(Box::new);
         }
+        let record = source_records
+            .get(&(source_index, pos))
+            .ok_or_else(|| CodecError::malformed("owner packet has no source frame"))?;
+        let face_node = face_nodes
+            .remove(&(source_index, pos))
+            .map(|node| {
+                let record = source_records
+                    .get(&(source_index, node.pos))
+                    .ok_or_else(|| CodecError::malformed("owner face node has no source frame"))?;
+                super::owner_frames::face_node(ctx, bytes, record, node)
+            })
+            .transpose()?;
         output.push(CatiaConsolidatedOwnerPacket {
-                id: ctx.format_retained(format_args!("catia:consolidated:owner-packet#{pos:010}"), "catia_native_owner_packet_id")?,
-                byte_offset: u64_from_index(pos),
-                source_index,
-                header_token,
-                payload,
-                face_node: face_nodes
-                    .get(&(source_index, pos))
-                    .and_then(|face_node| {
-                        let byte_len = pos.checked_sub(face_node.pos)?;
-                        Some(CatiaFaceNodeRelation {
-                            byte_offset: u64_from_index(face_node.pos),
-                            byte_len: u64_from_index(byte_len),
-                            header_token: face_node.header_token,
-                            target_encoding: match face_node.target_encoding {
-                                crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
-                                    CatiaFaceNodeTargetEncoding::Compact
-                                }
-                                crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
-                                    CatiaFaceNodeTargetEncoding::TaggedU16Strong
-                                }
-                            },
-                            target: face_node.target,
-                            terminal: face_node.terminal.into(),
-                        })
-                    }),
-            });
+            id: ctx.format_retained(
+                format_args!("catia:consolidated:owner-packet#{pos:010}"),
+                "catia_native_owner_packet_id",
+            )?,
+            source_offset: u64_from_index(record.source_range().start),
+            source_index,
+            frame: super::owner_frames::source_frame(ctx, bytes, record)?,
+            payload,
+            face_node,
+        });
     }
     Ok(output)
 }

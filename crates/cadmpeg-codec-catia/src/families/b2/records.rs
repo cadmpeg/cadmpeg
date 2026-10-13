@@ -40,8 +40,8 @@ use crate::wire::compact_unsigned::CompactUnsigned;
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
-    family_frames_from_records, ConsolidatedFamily, ConsolidatedFrame, ConsolidatedFrameFlag,
-    ConsolidatedFrameWidth, ConsolidatedRawFrame, ConsolidatedRecord,
+    family_frames_from_records, records_are_contiguous, ConsolidatedFamily, ConsolidatedFrame,
+    ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame, ConsolidatedRecord,
 };
 
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -366,7 +366,7 @@ pub(crate) struct B2CountedOwner {
     /// Persistent identities selected by the leading `0x80+n` count.
     pub(crate) references: Vec<u32>,
     /// Addressing form of each count-selected reference.
-    pub(in crate::families) reference_encodings: Vec<AllocationReferenceEncoding>,
+    pub(crate) reference_encodings: Vec<AllocationReferenceEncoding>,
     /// Nonempty class-specific bytes after the reference lane.
     pub(crate) tail: super::counted_owner_tail::CountedOwnerTail,
 }
@@ -782,6 +782,9 @@ pub(crate) fn b2_counted_owners_from_records(
 ) -> Result<Vec<B2CountedOwner>, CodecError> {
     let mut owners = Vec::new();
     for (frame, source_index) in b2_owner_frames(records) {
+        if b2_owner_packet_from_frame(data, frame, source_index).is_some() {
+            continue;
+        }
         let Some(count) = data
             .get(frame.payload)
             .and_then(|lead| lead.checked_sub(0x80))
@@ -848,17 +851,25 @@ pub(crate) fn b2_owner_packets_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = B2OwnerPacket> + 'a {
-    b2_owner_frames(records).filter_map(|(frame, source_index)| {
-        let mut candidates = [
-            B2OwnerReferenceEncoding::TaggedU16Strong,
-            B2OwnerReferenceEncoding::WidthCodedStrong,
-            B2OwnerReferenceEncoding::AllCompact,
-        ]
-        .into_iter()
-        .filter_map(|encoding| b2_fixed_owner_packet(data, frame, source_index, encoding));
-        let packet = candidates.next()?;
-        candidates.next().is_none().then_some(packet)
-    })
+    b2_owner_frames(records)
+        .filter_map(|(frame, source_index)| b2_owner_packet_from_frame(data, frame, source_index))
+}
+
+/// Decode exactly one fixed-nine reference dialect from a complete payload.
+pub(crate) fn b2_owner_packet_from_frame(
+    data: &[u8],
+    frame: ConsolidatedFrame,
+    source_index: usize,
+) -> Option<B2OwnerPacket> {
+    let mut candidates = [
+        B2OwnerReferenceEncoding::TaggedU16Strong,
+        B2OwnerReferenceEncoding::WidthCodedStrong,
+        B2OwnerReferenceEncoding::AllCompact,
+    ]
+    .into_iter()
+    .filter_map(|encoding| b2_fixed_owner_packet(data, frame, source_index, encoding));
+    let packet = candidates.next()?;
+    candidates.next().is_none().then_some(packet)
 }
 
 /// Resolve backward-distance identities in fixed-nine owner packets within
@@ -1496,27 +1507,39 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2AdjacentFaceOwner>, CodecError> {
     let mut nodes = BTreeMap::new();
-    for value in b2_face_nodes_5f_from_records(data, records) {
-        ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_b2_adjacent_face_nodes")?;
+    for record in records {
+        for value in b2_face_nodes_5f_from_records(data, std::slice::from_ref(record)) {
+            ctx.insert_btree_map(
+                &mut nodes,
+                (record.source_index(), value.pos),
+                value,
+                "catia_b2_adjacent_face_nodes",
+            )?;
+        }
     }
     let mut owners = BTreeMap::new();
     for value in b2_owner_packets_from_records(data, records) {
         ctx.insert_btree_map(
             &mut owners,
-            value.pos,
+            (value.source_index, value.pos),
             value,
             "catia_b2_adjacent_face_owners",
         )?;
     }
     let mut adjacent = Vec::new();
     for window in records.windows(2) {
+        if !records_are_contiguous(window) {
+            continue;
+        }
         let [link_record, owner_record] = window else {
             continue;
         };
-        let Some(face_node) = nodes.get(&link_record.byte_offset()) else {
+        let Some(face_node) = nodes.get(&(link_record.source_index(), link_record.byte_offset()))
+        else {
             continue;
         };
-        let Some(owner) = owners.get(&owner_record.byte_offset()) else {
+        let Some(owner) = owners.get(&(owner_record.source_index(), owner_record.byte_offset()))
+        else {
             continue;
         };
         let terminal_is_admitted = face_node.terminal == [0x03, 0x05]
@@ -1554,29 +1577,40 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2AdjacentFaceCountedOwner>, CodecError> {
     let mut nodes = BTreeMap::new();
-    for value in
-        b2_face_nodes_5f_from_records(data, records).filter(|value| value.terminal == [0x03, 0x05])
-    {
-        ctx.insert_btree_map(&mut nodes, value.pos, value, "catia_b2_counted_face_nodes")?;
+    for record in records {
+        for value in b2_face_nodes_5f_from_records(data, std::slice::from_ref(record))
+            .filter(|value| value.terminal == [0x03, 0x05])
+        {
+            ctx.insert_btree_map(
+                &mut nodes,
+                (record.source_index(), value.pos),
+                value,
+                "catia_b2_counted_face_nodes",
+            )?;
+        }
     }
     let mut owners = BTreeMap::new();
     for value in b2_counted_owners_from_records(ctx, data, records)? {
         ctx.insert_btree_map(
             &mut owners,
-            value.pos,
+            (value.source_index, value.pos),
             value,
             "catia_b2_counted_owner_index",
         )?;
     }
     let mut adjacent = Vec::new();
     for window in records.windows(2) {
+        if !records_are_contiguous(window) {
+            continue;
+        }
         let [link_record, owner_record] = window else {
             continue;
         };
-        let Some(face_node) = nodes.get(&link_record.byte_offset()) else {
+        let Some(face_node) = nodes.get(&(link_record.source_index(), link_record.byte_offset()))
+        else {
             continue;
         };
-        let owner_pos = owner_record.byte_offset();
+        let owner_pos = (owner_record.source_index(), owner_record.byte_offset());
         let Some(owner) = owners.get(&owner_pos) else {
             continue;
         };

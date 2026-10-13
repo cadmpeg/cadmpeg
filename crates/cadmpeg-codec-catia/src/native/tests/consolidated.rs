@@ -1164,7 +1164,8 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
 fn native_fixed_owner_packets_refuse_collection_limit() {
     let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+    // Admit the source-frame index entry, then refuse fixed packet storage.
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
         super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
     });
     assert!(
@@ -1246,8 +1247,8 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
         numeric_tail.bounds(),
         [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]
     );
-    let face_node = packet.face_node.expect("face-node relation");
-    assert_eq!(face_node.byte_len, 11);
+    let face_node = packet.face_node.as_ref().expect("face-node relation");
+    assert_eq!(packet.source_offset - face_node.source_offset, 11);
     assert_eq!(
         face_node.target_encoding,
         crate::native::CatiaFaceNodeTargetEncoding::Compact
@@ -1286,7 +1287,7 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
         panic!("one consolidated owner packet")
     };
 
-    assert_eq!(packet.byte_offset, u64_from_index(owner_pos));
+    assert_eq!(packet.frame.pos, u64_from_index(owner_pos));
     assert_eq!(packet.source_index, 0);
     assert_eq!(
         packet
@@ -1318,7 +1319,7 @@ fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
         panic!("one consolidated owner packet")
     };
 
-    assert_eq!(packet.byte_offset, u64_from_index(owner_pos));
+    assert_eq!(packet.frame.pos, u64_from_index(owner_pos));
     let cycle = packet
         .boundary_cycle()
         .expect("closed fixed-owner boundary cycle");
@@ -1350,9 +1351,9 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
         .face_node
         .as_ref()
         .expect("source-scoped boundary face node");
-    assert_eq!(face_node.byte_offset, u64_from_index(face_node_pos));
+    assert_eq!(face_node.frame.pos, u64_from_index(face_node_pos));
     assert_eq!(
-        face_node.byte_len,
+        packet.source_offset - face_node.source_offset,
         cadmpeg_core::decode::u64_from_index(owner_pos - face_node_pos)
     );
     assert_eq!(face_node.target, 1014);
@@ -1436,7 +1437,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
         .into_inner();
     assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
     assert_eq!(construction_radius.get(), 1.0);
-    assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
+    assert!(chart.parameter_point_byte_offsets[3] < packet.frame.pos);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -1572,13 +1573,29 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
-    let crate::native::CatiaOwnerPacketPayload::Counted { references, tail } = &packet.payload
+    let crate::native::CatiaOwnerPacketPayload::Counted {
+        references,
+        reference_encodings,
+        tail,
+    } = &packet.payload
     else {
         panic!("count-framed owner payload")
     };
     assert_eq!(references, &[911, 7, 263, 258, 281, 276, 917]);
+    assert_eq!(
+        reference_encodings,
+        &[
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::BackwardDistance,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+            crate::native::CatiaAllocationReferenceEncoding::WidthCoded,
+        ]
+    );
     assert_eq!(tail.as_slice(), &[0x83, 0x41, 0x92, 0x00, 0x01]);
-    let face_node = packet.face_node.expect("face-node relation");
+    let face_node = packet.face_node.as_ref().expect("face-node relation");
     assert_eq!(face_node.target, 916);
     assert_eq!(
         face_node.target + 1,

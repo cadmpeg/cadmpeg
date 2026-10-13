@@ -29,6 +29,7 @@ enum CatiaOwnerPacketPayloadWireRef<'a> {
     },
     Counted {
         references: &'a [u32],
+        reference_encodings: &'a [super::CatiaAllocationReferenceEncoding],
         tail: NativeBytes<&'a [u8]>,
     },
 }
@@ -36,9 +37,9 @@ enum CatiaOwnerPacketPayloadWireRef<'a> {
 #[derive(Serialize)]
 struct CatiaConsolidatedOwnerPacketWireRef<'a> {
     id: &'a str,
-    byte_offset: u64,
+    source_offset: u64,
     source_index: usize,
-    header_token: u32,
+    frame: &'a crate::wire::records::ConsolidatedRawFrame<u64>,
     payload: CatiaOwnerPacketPayloadWireRef<'a>,
     #[serde(skip_serializing_if = "slice_is_empty")]
     identity_targets: &'a [CatiaOwnerIdentityTarget],
@@ -75,9 +76,14 @@ impl Serialize for CatiaConsolidatedOwnerPacket {
                 owner_chart.as_deref(),
                 boundary_cycle.as_deref(),
             ),
-            CatiaOwnerPacketPayload::Counted { references, tail } => (
+            CatiaOwnerPacketPayload::Counted {
+                references,
+                reference_encodings,
+                tail,
+            } => (
                 CatiaOwnerPacketPayloadWireRef::Counted {
                     references,
+                    reference_encodings,
                     tail: tail.as_slice().into(),
                 },
                 &[][..],
@@ -87,9 +93,9 @@ impl Serialize for CatiaConsolidatedOwnerPacket {
         };
         CatiaConsolidatedOwnerPacketWireRef {
             id: &self.id,
-            byte_offset: self.byte_offset,
+            source_offset: self.source_offset,
             source_index: self.source_index,
-            header_token: self.header_token,
+            frame: &self.frame,
             payload,
             identity_targets,
             face_node: &self.face_node,

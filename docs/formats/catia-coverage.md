@@ -1421,3 +1421,9 @@ Counted class-`0x61` rosters retain complete frames, logical source coordinates,
 reference addressing forms, roster controls, optional zero prefixes, and
 occurrence-aligned member bits. Wire loading checks these fields against the
 retained bytes. Final topology requires independently resolved member identities.
+
+Class-`0x62` owners and associated class-`0x5f` occurrences retain complete
+frames and logical source coordinates. Counted references retain their
+addressing forms. Incidence requires same-source logical adjacency and the
+checked successor relation; fixed-nine raw weak values keep their dialect.
+Local domains require independent member and location evidence for final topology.

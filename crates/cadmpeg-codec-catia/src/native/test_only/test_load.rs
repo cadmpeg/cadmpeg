@@ -594,7 +594,7 @@ impl CatiaNative {
         validate_consolidated_line_profiles(&consolidated_line_profiles)?;
         let mut consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket> =
             namespace.arena_as("consolidated_owner_packets")?;
-        consolidated_owner_packets.sort_by_key(|packet| packet.byte_offset);
+        consolidated_owner_packets.sort_by_key(|packet| packet.frame.pos);
         validate_consolidated_owner_packets(&consolidated_owner_packets)?;
         let mut consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint> =
             namespace.arena_as("consolidated_parameter_points")?;

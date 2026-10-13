@@ -29,6 +29,7 @@ use projection::{
 pub(crate) mod class5b5c;
 mod class60;
 pub(crate) mod class61;
+mod owner_frames;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
 use class60::CatiaConsolidatedClass60Record;
 
@@ -121,6 +122,20 @@ enum CatiaOwnerReferenceEncoding {
     AllCompact,
 }
 
+impl From<crate::families::b2::records::B2OwnerReferenceEncoding> for CatiaOwnerReferenceEncoding {
+    fn from(value: crate::families::b2::records::B2OwnerReferenceEncoding) -> Self {
+        match value {
+            crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
+                Self::TaggedU16Strong
+            }
+            crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
+                Self::WidthCodedStrong
+            }
+            crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact => Self::AllCompact,
+        }
+    }
+}
+
 /// Target encoding of a consolidated class-`0x5f` face node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -131,22 +146,42 @@ enum CatiaFaceNodeTargetEncoding {
     TaggedU16Strong,
 }
 
-/// Derived class-`0x5f` face-node relation associated with a consolidated
-/// class-`0x62` packet within one bounded record source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Source-local class-`0x5f` occurrence within its owner's bounded source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "CatiaFaceNodeRelationWire")]
 struct CatiaFaceNodeRelation {
-    /// Face-node record byte offset.
-    byte_offset: u64,
-    /// Complete face-node to packet span.
-    byte_len: u64,
-    /// Width-coded header token.
-    header_token: u32,
-    /// Target encoding selected after the `0x82` lead.
+    source_offset: u64,
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
     target_encoding: CatiaFaceNodeTargetEncoding,
-    /// Class-`0x5f` target retained by the enclosing source-scoped relation.
     target: u32,
-    /// Two terminal bytes of the face-node payload.
     terminal: NativeBytes<[u8; 2]>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CatiaFaceNodeRelationWire {
+    source_offset: u64,
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
+    target_encoding: CatiaFaceNodeTargetEncoding,
+    target: u32,
+    terminal: NativeBytes<[u8; 2]>,
+}
+
+impl TryFrom<CatiaFaceNodeRelationWire> for CatiaFaceNodeRelation {
+    type Error = &'static str;
+    fn try_from(wire: CatiaFaceNodeRelationWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            source_offset: wire.source_offset,
+            frame: wire.frame,
+            target_encoding: wire.target_encoding,
+            target: wire.target,
+            terminal: wire.terminal,
+        };
+        if !owner_frames::valid_face_node(&record) {
+            return Err("face-node fields disagree with the complete frame");
+        }
+        Ok(record)
+    }
 }
 
 /// Selected class of a fixed-nine owner identity target.
@@ -223,9 +258,20 @@ enum CatiaOwnerPacketPayload {
     Counted {
         /// Persistent identities in serialization order.
         references: Vec<u32>,
+        /// Addressing form of each serialized occurrence.
+        reference_encodings: Vec<CatiaAllocationReferenceEncoding>,
         /// Complete nonempty class-specific tail.
         tail: crate::families::b2::counted_owner_tail::CountedOwnerTail,
     },
+}
+
+impl CatiaOwnerPacketPayload {
+    fn final_reference(&self) -> Option<u32> {
+        match self {
+            Self::FixedNine { references, .. } => references.last().copied(),
+            Self::Counted { references, .. } => references.last().copied(),
+        }
+    }
 }
 
 /// One fixed-nine boundary edge retained when four resolved class-`0x5e`
@@ -241,7 +287,7 @@ struct CatiaOwnerBoundaryEdge {
 }
 
 /// Owner-local boundary evidence derived from a closed fixed-nine cycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CatiaOwnerBoundaryCycle {
     /// Source-scoped class-`0x5f` face node that precedes this boundary
     /// allocation and closes its checked identity, when present.
@@ -257,12 +303,12 @@ struct CatiaOwnerBoundaryCycle {
 pub(crate) struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
     id: String,
-    /// Record byte offset.
-    byte_offset: u64,
+    /// Logical offset within the bounded record source.
+    source_offset: u64,
+    /// Complete source frame.
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
     /// Zero-based bounded record-source ordinal.
     source_index: usize,
-    /// Width-coded header token.
-    header_token: u32,
     /// Count-specific reference lane and tail.
     payload: CatiaOwnerPacketPayload,
     /// Source-scoped class-`0x5f` face node, when the packet relation closes.
@@ -307,9 +353,9 @@ impl CatiaConsolidatedOwnerPacket {
 #[derive(Serialize, Deserialize)]
 struct CatiaConsolidatedOwnerPacketWire {
     id: String,
-    byte_offset: u64,
+    source_offset: u64,
     source_index: usize,
-    header_token: u32,
+    frame: crate::wire::records::ConsolidatedRawFrame<u64>,
     payload: CatiaOwnerPacketPayload,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     identity_targets: Vec<CatiaOwnerIdentityTarget>,
@@ -351,9 +397,9 @@ impl From<CatiaConsolidatedOwnerPacket> for CatiaConsolidatedOwnerPacketWire {
         };
         Self {
             id: value.id,
-            byte_offset: value.byte_offset,
+            source_offset: value.source_offset,
             source_index: value.source_index,
-            header_token: value.header_token,
+            frame: value.frame,
             payload,
             identity_targets,
             face_node: value.face_node,
@@ -406,14 +452,20 @@ impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket 
                 counted
             }
         };
-        Ok(Self {
+        let record = Self {
             id: wire.id,
-            byte_offset: wire.byte_offset,
+            source_offset: wire.source_offset,
             source_index: wire.source_index,
-            header_token: wire.header_token,
+            frame: wire.frame,
             payload,
             face_node: wire.face_node,
-        })
+        };
+        if !owner_frames::valid_owner_packet(&record) {
+            return Err(
+                "owner fields or incidence disagree with the complete source frames".into(),
+            );
+        }
+        Ok(record)
     }
 }
 
@@ -1289,6 +1341,17 @@ enum CatiaOwnerIdentityEncoding {
     Allocation(CatiaAllocationReferenceEncoding),
     /// Raw one-byte weak identity in the width-coded alternating dialect.
     RawU8,
+}
+
+impl From<crate::families::b2::records::B2OwnerIdentityEncoding> for CatiaOwnerIdentityEncoding {
+    fn from(value: crate::families::b2::records::B2OwnerIdentityEncoding) -> Self {
+        match value {
+            crate::families::b2::records::B2OwnerIdentityEncoding::Allocation(encoding) => {
+                Self::Allocation(projection::native_allocation_reference_encoding(encoding))
+            }
+            crate::families::b2::records::B2OwnerIdentityEncoding::RawU8 => Self::RawU8,
+        }
+    }
 }
 
 /// Typed class-`0x18` descriptor bound to a class-`0x25` edge definition.
