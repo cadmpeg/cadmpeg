@@ -62,8 +62,9 @@ XML table atomically.
 A unique part-owned `NX_Arrangement` string attribute names the active
 configuration when its value equals the unique `Default="YES"` arrangement
 name. The two declarations form one active-configuration identity relation.
-Every body in the selected current B-rep belongs to that active configuration.
-Other arrangements have no body membership without a distinct body-state relation.
+Arrangement identity and active-name agreement do not provide body membership.
+Arrangement state belongs to assembly component occurrences. The XML supplies
+no component suppression or controlling-expression relation.
 An absent declaration, duplicate declaration, multiple defaults, type mismatch,
 or unequal name does not form the relation.
 
@@ -85,21 +86,11 @@ the same dependency, ordinal, and explicit-state checks. This witness assigns
 active state only; it does not create a neutral operation output or construction
 semantics.
 
-When exactly one active configuration has complete body membership, the same
-closure rule produces its configuration-local feature states. Each state
-retains the neutral definition, ordered dependencies, and outputs. Ambiguous
-active configuration identity, unresolved body membership, or a preexisting
-configuration-local state rejects configuration-state derivation. Operations
-outside a proven closed graph retain unresolved suppression.
-
-The same active configuration retains the complete current parameter state when
-every neutral NX parameter identity is unique, every value is evaluated, and
-every parameter dependency names an earlier parameter in the same ownership
-scope. Values retain their neutral length, angle, real, integer, Boolean, or
-string type. An empty parameter set, duplicate identity, unevaluated value,
-missing, cross-scope, or nonpreceding dependency, preexisting
-configuration-local parameter state, or unresolved active body membership
-rejects the parameter map atomically.
+NX expressions and their evaluated parameters belong to the part's current
+parameter graph. Arrangements do not select parameter-value maps or parameter
+overrides. A component suppression expression refers to that global graph.
+Current-document feature closure does not assign arrangement-local feature
+definitions, dependencies, outputs, or suppression states.
 
 The canonical `/Root/UG_PART/UG_PART` payload begins with a segment index of
 12-byte little-endian rows:

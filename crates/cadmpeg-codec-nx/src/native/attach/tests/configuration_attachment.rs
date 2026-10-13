@@ -3,6 +3,7 @@
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
+use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
 use cadmpeg_ir::{AnnotationBuilder, CadIr};
 
 fn attach_one_configuration(
@@ -14,7 +15,22 @@ fn attach_one_configuration(
             configure(policy);
         },
         |ctx| {
-            let mut ir = CadIr::empty();
+            let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            ir.model.parameters.push(DesignParameter {
+                id: ParameterId::mint("test:model:parameter#global").unwrap(),
+                owner: None,
+                ordinal: 0,
+                name: "Global".to_owned(),
+                expression: "7.5".into(),
+                display: None,
+                value: Some(ParameterValue::Real(
+                    cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap(),
+                )),
+                dependencies: DistinctMembers::default(),
+                properties: std::collections::BTreeMap::default(),
+                pmi: None,
+                native_ref: None,
+            });
             let mut annotations = AnnotationBuilder::new();
             let stream = StreamHandle::new(
                 &cadmpeg_test_support::service_decode_context(),
@@ -46,6 +62,18 @@ fn configuration_attachment_preserves_active_relation() {
         panic!("one configuration");
     };
     assert!(configuration.active);
+    assert!(configuration.bodies.is_none());
+    assert!(configuration.parameter_values.is_empty());
+    assert!(configuration.parameter_overrides.is_empty());
+    assert!(configuration.feature_states.is_empty());
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.model.parameters.len(), 1);
+    assert_eq!(
+        ir.model.parameters[0].value,
+        Some(ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap()
+        ))
+    );
     assert_eq!(configuration.name.as_deref(), Some("Primary"));
     assert_eq!(
         configuration

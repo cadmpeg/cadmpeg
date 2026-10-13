@@ -111,36 +111,6 @@ pub(crate) fn active_configuration_state_is_incomplete(
     configuration_state_differs(ir, configuration, &required_features)
 }
 
-/// Decode-time form of [`active_configuration_state_is_incomplete`]: the
-/// active-feature closure is charged to the decode budget.
-pub(crate) fn active_configuration_state_is_incomplete_for_decode(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    if configuration_suppression_differs(ir, configuration) {
-        return Ok(true);
-    }
-    let Some(bodies) = configuration.bodies.as_deref() else {
-        return Ok(true);
-    };
-    let required_features = if ir.model.features.is_empty() {
-        BTreeMap::new()
-    } else {
-        let Ok(active_features) =
-            crate::native::history::active_feature_closure_for_decode(ctx, ir, bodies)?
-        else {
-            return Ok(true);
-        };
-        active_features
-    };
-    Ok(configuration_state_differs(
-        ir,
-        configuration,
-        &required_features,
-    ))
-}
-
 /// Whether a feature's suppression differs from the configuration's
 /// suppression state, or the feature has no suppression state.
 fn configuration_suppression_differs(

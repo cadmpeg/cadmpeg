@@ -1543,19 +1543,13 @@ fn decode_retains_nx_arrangement_configurations() {
         Some("Model")
     );
     assert!(result.ir().model.configurations[0].active);
-    assert_eq!(
-        result.ir().model.configurations[0].bodies.as_deref(),
-        Some(
-            result
-                .ir()
-                .model
-                .bodies
-                .iter()
-                .map(|body| body.id.clone())
-                .collect::<Vec<_>>()
-                .as_slice()
-        )
-    );
+    assert!(result.ir().model.configurations[0].bodies.is_none());
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    for configuration in &result.ir().model.configurations {
+        assert!(configuration.parameter_values.is_empty());
+        assert!(configuration.parameter_overrides.is_empty());
+        assert!(configuration.feature_states.is_empty());
+    }
     assert_eq!(result.ir().model.configurations[1].ordinal, 1);
     assert_eq!(
         result.ir().model.configurations[1].name.as_deref(),

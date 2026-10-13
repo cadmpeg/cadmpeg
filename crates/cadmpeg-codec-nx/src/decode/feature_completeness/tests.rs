@@ -1331,7 +1331,7 @@ fn nx_body_operation_completeness_requires_distinct_members() {
 }
 
 #[test]
-fn nx_configuration_completeness_requires_one_active_full_body_set() {
+fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     use cadmpeg_ir::features::{
         BodySelection, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
         DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
@@ -1363,7 +1363,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     let mut losses = Vec::new();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     ir.model.configurations[0].bodies = Some(
         cadmpeg_ir::features::DistinctMembers::try_from(
@@ -1374,13 +1374,14 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     ir.model.configurations[0].active = false;
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     ir.model.configurations[0].active = true;
     let output = ir.model.bodies[0].id.clone();
@@ -1417,7 +1418,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     ir.model.configurations[0].feature_states.insert(
         feature.id.clone(),
@@ -1435,7 +1436,8 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     let parameter = DesignParameter {
         id: ParameterId::mint("test:test:parameter#length").expect("identity grammar"),
@@ -1456,14 +1458,15 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("1 NX design configuration"));
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     ir.model.configurations[0]
         .parameter_values
         .insert(parameter.id, parameter.value.expect("evaluated parameter"));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     let suppressed = Feature {
         id: FeatureId::mint("test:test:feature#suppressed").expect("identity grammar"),
@@ -1492,7 +1495,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses
         .iter()
-        .any(|loss| loss.message.contains("1 NX design configuration")));
+        .any(|loss| loss.message.contains("1 NX arrangement(s)")));
 
     ir.model.configurations[0].feature_states.insert(
         suppressed.id.clone(),
@@ -1504,7 +1507,8 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("1 NX arrangement(s)"));
 }
 
 #[test]

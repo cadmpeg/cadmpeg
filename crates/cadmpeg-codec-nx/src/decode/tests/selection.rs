@@ -1547,7 +1547,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         .message
         .contains("10 NX feature history operation"));
     assert_eq!(losses[1].code.category(), LossCategory::DesignIntent);
-    assert!(losses[1].message.contains("2 NX design configuration"));
+    assert!(losses[1].message.contains("2 NX arrangement(s)"));
     assert_eq!(losses[2].code.category(), LossCategory::DesignIntent);
     assert!(losses[2].message.contains("DELETE (2)"));
     assert_eq!(losses[3].code.category(), LossCategory::DesignIntent);

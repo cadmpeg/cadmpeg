@@ -294,7 +294,7 @@
             "namespace": "nx",
             "scope": "namespaced"
           },
-          "message": "Activation, complete body membership, evaluated feature state, or evaluated parameter state remains unresolved for 2 NX design configuration(s).",
+          "message": "Arrangement-specific component suppression, its controlling expression, and positioning constraints remain unresolved for 2 NX arrangement(s).",
           "severity": "warning"
         },
         {

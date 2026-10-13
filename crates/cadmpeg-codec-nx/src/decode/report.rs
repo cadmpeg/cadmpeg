@@ -6,12 +6,12 @@ use super::feature_completeness::operands::{
     pattern_feature_is_incomplete,
 };
 use super::feature_completeness::{
-    active_configuration_state_is_incomplete_for_decode, chamfer_definition_is_incomplete,
-    combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
-    delete_body_definition_is_incomplete, draft_definition_is_incomplete,
-    extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
-    face_blend_definition_is_incomplete, fillet_definition_is_incomplete,
-    hole_definition_is_incomplete, incomplete_expression_parameters, loft_definition_is_incomplete,
+    chamfer_definition_is_incomplete, combine_definition_is_incomplete,
+    datum_coordinate_system_is_incomplete, delete_body_definition_is_incomplete,
+    draft_definition_is_incomplete, extend_surface_definition_is_incomplete,
+    extrude_definition_is_incomplete, face_blend_definition_is_incomplete,
+    fillet_definition_is_incomplete, hole_definition_is_incomplete,
+    incomplete_expression_parameters, loft_definition_is_incomplete,
     offset_surface_definition_is_incomplete, output_free_local_body_construction,
     output_free_native_snapshot, output_free_pattern_construction,
     output_free_trim_surface_construction, projected_curve_direction_is_incomplete,
@@ -500,40 +500,15 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let active_configuration_count = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| configuration.active)
-        .count();
-    let mut current_bodies = BTreeSet::new();
-    for body in &ir.model.bodies {
-        ctx.insert_btree_set(&mut current_bodies, &body.id, "nx report current body set")?;
-    }
-    let mut incomplete_configuration_count = 0usize;
-    for configuration in &ir.model.configurations {
-        let incomplete = configuration.bodies.is_none()
-            || active_configuration_count != 1
-            || (configuration.active
-                && configuration.bodies.as_deref().is_none_or(|bodies| {
-                    bodies.len() != current_bodies.len()
-                        || current_bodies.iter().any(|body| !bodies.contains(body))
-                }))
-            || (configuration.active
-                && active_configuration_state_is_incomplete_for_decode(ctx, ir, configuration)?);
-        if incomplete {
-            incomplete_configuration_count += 1;
-        }
-    }
-    if incomplete_configuration_count != 0 {
+    let arrangement_count = ir.model.configurations.len();
+    if arrangement_count != 0 {
         push_report_loss(
             ctx,
             losses,
             NxLossCode::ConfigurationStateUnresolved,
             format_args!(
-                "Activation, complete body membership, evaluated feature state, or evaluated \
-                 parameter state remains unresolved for {incomplete_configuration_count} NX \
-                 design configuration(s)."
+                "Arrangement-specific component suppression, its controlling expression, \
+                 and positioning constraints remain unresolved for {arrangement_count} NX arrangement(s)."
             ),
         )?;
     }

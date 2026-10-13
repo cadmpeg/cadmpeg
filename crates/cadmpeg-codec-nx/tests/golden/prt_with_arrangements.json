@@ -42,9 +42,6 @@
         "configurations": [
           {
             "active": true,
-            "bodies": [
-              "nx:s0:body#2"
-            ],
             "id": "nx:arrangements:configuration#0",
             "name": "Model",
             "native_ref": "nx:arrangements-1:configuration#0",
@@ -336,7 +333,7 @@
             "namespace": "nx",
             "scope": "namespaced"
           },
-          "message": "Activation, complete body membership, evaluated feature state, or evaluated parameter state remains unresolved for 1 NX design configuration(s).",
+          "message": "Arrangement-specific component suppression, its controlling expression, and positioning constraints remain unresolved for 2 NX arrangement(s).",
           "severity": "warning"
         },
         {

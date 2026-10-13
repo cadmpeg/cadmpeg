@@ -519,33 +519,15 @@ those products.
 
 **Note.** The worked spur-gear-housing payload repeats `2d fb 7c df d9 d7 bd bb 00 00 00 50 28 00 00 2a` at payload-relative offsets `0`, `177`, and `354`. Its production decode remains a resource refusal. Directory-bounded offset-table candidates without the admitted product frame require a separate store-grammar proof; monotonic offsets alone do not establish an OM store.
 
-### OM-12. Inactive-arrangement body state
+### OM-12. Arrangement-specific component state
 
-**Question.** Which bodies belong to each inactive arrangement, and what per-body state does that arrangement select?
+**Question.** Which bounded native carriers join an assembly, arrangement, and component occurrence to the suppression-control flag, suppression state, optional controlling expression, and arrangement-specific positioning constraints?
 
-**Known.** `siemens_nx.md` §2 "`/Root/part/arrangements` has an `Arrangements` root." and `siemens_nx.md` §2 "A unique part-owned `NX_Arrangement` string attribute names the active" define arrangement identity and active body membership. Other arrangements have no body membership without a separate relation.
+**Known.** `siemens_nx.md` §2 "`/Root/part/arrangements` has an `Arrangements` root." defines arrangement identity, default flag, and child order. The unique part-owned `NX_Arrangement` string attribute forms an active-name identity relation. Arrangement state has component occurrences as subjects; expressions remain in the part's current global parameter graph. Positioning constraints can have arrangement-specific state in assemblies.
 
-**Need.** We must know the relation to construct inactive configuration body sets.
+**Need.** We must know the carrier framing, identity references, suppression-control flag, suppression-state discriminator, expression reference, and positioning-constraint relation to construct arrangement-specific component state.
 
-**Conflict.** The arrangement XML contains only configuration name, default
-flag, and order. The current B-rep body census has no arrangement key, and the
-active attribute join identifies only the selected configuration. Feature
-closure also describes the current body set, not an alternate arrangement's
-membership or per-body state.
-
-### OM-13. Inactive-arrangement parameter state
-
-**Question.** Which parameter values does each inactive arrangement select?
-
-**Known.** `siemens_nx.md` §2 "When exactly one active configuration has complete body membership, the same" and `siemens_nx.md` §2 "The same active configuration retains the complete current parameter state when" define complete parameter state only for a uniquely resolved active configuration.
-
-**Need.** We must know the relation to construct inactive configuration parameter maps.
-
-**Conflict.** Neutral parameter identities, evaluated values, ownership scopes,
-and dependencies contain no arrangement identity or per-arrangement override
-selector. The complete parameter map is derived only for the unique active
-configuration after the global parameter graph passes its ownership and order
-checks.
+**Conflict.** Arrangement XML has no component-state or expression-reference fields. The current B-rep and feature closure have no arrangement key. Active-name agreement supplies identity without component membership or suppression.
 
 ### OM-14. Operation terminal discriminators
 

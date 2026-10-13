@@ -1,10 +1,10 @@
 use super::feature_projection::{insert_parameter_property, parameter_consumer_identity};
 use super::{
-    Angle, AnnotationBuilder, BTreeMap, CadIr, CodecError, DecodeContext, DesignParameter,
-    DistinctMembers, Exactness, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    FeatureSourceContent, FeatureTreeNodeRole, IdScope, Length, ParameterId, ParameterValue,
-    StreamHandle, TreeChildren,
+    Angle, AnnotationBuilder, BTreeMap, CadIr, CodecError, DecodeContext, DistinctMembers,
+    Exactness, Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
+    FeatureTreeNodeRole, IdScope, Length, ParameterId, StreamHandle, TreeChildren,
 };
+use cadmpeg_ir::features::{DesignParameter, ParameterValue};
 
 pub(in crate::native) fn attach_expression_parameters(
     ctx: &DecodeContext<'_>,
