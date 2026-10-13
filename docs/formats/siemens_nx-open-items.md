@@ -432,31 +432,11 @@ or history relations only; they do not assign an origin or axis. Complete numeri
 frames can also occur outside a coordinate-system payload. The frame bytes and
 field codes alone do not select an origin coordinate or an axis component.
 
-### OM-05. OM declaration trailing code
-
-**Question.** What does the trailing byte in an OM class or member declaration mean?
-
-**Known.** `siemens_nx.md` §7.1 defines the declaration length, `UGS::` or
-`m_` name, and the registry-token byte sequence that follows the name. The
-legacy `trailing_code` field retains the first byte of that sequence.
-
-**Need.** We must know the code domain and the relation between the trailing
-byte and the declared class or member semantics.
-
-**Conflict.** The byte after the printable `UGS::` or `m_` name is not one
-standalone code domain: it is a direct, compact, wide, or null registry-token
-prefix, and its width depends on that prefix. The decoded token positions do
-not assign a type, visibility, field-value grammar, or object-record binding.
-
 ### OM-06. OM registry suffix fields
 
 **Question.** What does each byte in a bounded OM field-registry suffix mean?
 
-**Known.** `siemens_nx.md` §7.1 defines the registry token family, the
-complete class tail (storage token, base token, eight-byte fingerprint, and
-reference token), and the complete member head (storage token and owner
-token). The native decoder retains the exact declaration suffix and decodes
-these token values when their required bytes are present.
+**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use", §3.3 "The first byte after the name is the storage-token prefix.", and §3.3 "A complete `UGS::` class declaration has one storage token, one base token," define the registry token family, complete class tail, and complete member head. The native decoder retains the exact declaration suffix and decodes these token values when their required bytes are present.
 
 **Need.** We must know the semantic field roles represented by the layout
 prefix, schema fingerprint, terminal byte, and remaining member-suffix bytes.

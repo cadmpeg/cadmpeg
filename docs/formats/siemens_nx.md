@@ -717,12 +717,20 @@ Direct tokens decode to their byte. Compact tokens decode to
 token family only; operation-header compact indices use their own zero-based
 encoding. A null token has no value and consumes one byte.
 
+The first byte after the name is the storage-token prefix. It is not a
+standalone trailing code. The legacy `trailing_code` field and
+`registry_suffix` form one byte sequence: `trailing_code || registry_suffix`.
+The prefix selects the token width before the next token is read.
+
 A complete `UGS::` class declaration has one storage token, one base token,
 an eight-byte schema fingerprint, and one reference token in that order. A
 complete `m_` member declaration begins with one storage token and one owner
-token in that order. The decoded token values are registry metadata, not
-object-record identities or field values. Bytes after a complete member head
-remain in the declaration suffix until the next length-framed `m_` declaration
+token in that order. Null storage or base tokens, truncated tokens, and a zero
+or null class reference do not form a complete class tail. A zero base token
+denotes the root. A complete member head requires nonnull storage and a nonzero owner.
+The decoded token values are registry metadata, not object-record identities
+or field values. Bytes after a complete member head remain in the declaration
+suffix until the next length-framed `m_` declaration
 or the section boundary. Plain identifiers such as `first_record_area` do not
 declare members. Incomplete or legacy declarations retain their raw trailing
 bytes without being promoted to a complete registry layout. Declaration order
