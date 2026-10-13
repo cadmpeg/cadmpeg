@@ -699,6 +699,16 @@ declare members. Incomplete or legacy declarations retain their raw trailing
 bytes without being promoted to a complete registry layout. Declaration order
 supplies section-local class and member identity.
 
+Registry owner tokens are one-based class ordinals. Owner value `n` selects
+class ordinal `n - 1` in the same section. Reference-list declarations do not
+increment class ordinals. A zero, null, or out-of-range owner does not bind a
+member to a class.
+
+A storage code does not identify one member. Distinct member names of one
+class can share a storage code. One class can also declare the same member
+name with distinct storage codes. Each declaration retains its own ordinal;
+equal names or storage codes do not merge declarations.
+
 Class and member declaration ordinals are local to one OM section. The containing
 section base plus the declaration ordinal forms their identity; equal ordinals in
 distinct sections do not identify the same class or member. Entity-record

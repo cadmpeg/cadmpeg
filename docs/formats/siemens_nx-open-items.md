@@ -377,17 +377,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### OM-01. Per-class OM field serialization
 
-**Question.** What byte grammar and semantic role does each declared field of each NX OM class use?
+**Question.** What value-record grammar and semantic role does each declared NX OM member use?
 
-**Known.** `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" and `siemens_nx.md` §7.1 "A labeled feature-history operation record begins at the fixed operation-header marker" define OM section boundaries, class and member declarations, store identities, compact indices, and expression records. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines typed fields for selected construction families.
+**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines registry token widths and values. `siemens_nx.md` §3.3 "Registry owner tokens are one-based class ordinals." defines the same-section class join. `siemens_nx.md` §3.3 "A storage code does not identify one member." defines declaration identity independently of storage codes and repeated names. `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the reference, class, and member regions. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines selected typed value records.
 
-The registry token family and the complete reference/class/member declaration
-regions are also defined in `siemens_nx.md` §7.1. Class ordinals exclude the
-reference list, and member owner tokens address that class list. The native
-decoder retains raw suffixes and exposes decoded registry metadata when the
-complete token heads and region boundaries are present.
+**Need.** We must identify the remaining value-record boundaries, field types,
+and semantic roles for feature history, constraints, attributes, and material
+bindings. File-declared class and member lists do not supply those value
+schemas.
 
-**Need.** We must know the remaining class grammars to decode feature history, constraints, attributes, and material bindings as typed fields.
+**Conflict.** Registry storage codes, owner ordinals, and declaration names
+identify registry metadata. They do not define a field's value-record grammar
+or assign its semantic role.
 
 ### OM-02. `SKETCH` scalar-pair geometry
 
