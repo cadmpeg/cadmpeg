@@ -115,3 +115,85 @@ fn short_thicken_intervals_do_not_query_surface_tokens() {
         )
     });
 }
+
+#[test]
+fn edge_dimension_indexes_wait_for_a_fillet_roster_reader() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    const OPERATION: &str = "decode SLDPRT selection class intervals";
+    for class in [None, Some("moMirrorPattern_c"), Some("Chamfer_c")] {
+        let (histories, mut lane) = selected_object(class, "Feature");
+        lane.classes.push(crate::records::FeatureInputClass {
+            id: "edge-dimension".into(), parent: "lane".into(), ordinal: 0,
+            offset: 16, name: "moEdgeDim_c".into(),
+        });
+        if class.is_none() { lane.names.clear(); }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, OPERATION, None);
+        assert!(super::super::compact_edge_selections(&ctx, &histories, &histories[0].features, &lane).unwrap().is_empty());
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_work(1, OPERATION).unwrap_err() else {
+            panic!("no fillet roster reader must leave the dimension probe armed");
+        };
+        assert_eq!(limit.operation, OPERATION);
+        drop(probe);
+    }
+    let (histories, mut lane) = selected_object(Some("Fillet_c"), "Feature");
+    lane.classes.push(crate::records::FeatureInputClass {
+        id: "edge-dimension".into(), parent: "lane".into(), ordinal: 0,
+        offset: 16, name: "moEdgeDim_c".into(),
+    });
+    crate::test_support::work_refusal_at(OPERATION, |ctx| {
+        super::super::compact_edge_selections(ctx, &histories, &histories[0].features, &lane)
+    });
+}
+
+#[test]
+fn generated_identity_scan_requires_a_prefix() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (_, mut lane) = selected_object(None, "Feature");
+    lane.native_payload = vec![0; 64];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(super::super::generated_surface_identities(&ctx, &lane).unwrap().is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn compact_edge_class_waits_for_a_selected_edge_reader() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    const OPERATION: &str = "find SLDPRT compact edge class";
+    for class in [None, Some("moMirrorPattern_c")] {
+        let (histories, mut lane) = selected_object(class, "Feature");
+        if class.is_none() { lane.names.clear(); }
+        lane.classes.push(crate::records::FeatureInputClass {
+            id: "compact-edge".into(), parent: "lane".into(), ordinal: 0,
+            offset: 16, name: "moCompEdge_c".into(),
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, OPERATION, None);
+        assert!(super::super::compact_edge_selections(&ctx, &histories, &histories[0].features, &lane).unwrap().is_empty());
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_work(1, OPERATION).unwrap_err() else {
+            panic!("no selected edge reader must leave the class query probe armed");
+        };
+        assert_eq!(limit.operation, OPERATION);
+        drop(probe);
+    }
+    let (histories, mut lane) = selected_object(Some("Chamfer_c"), "Feature");
+    lane.classes.push(crate::records::FeatureInputClass {
+        id: "compact-edge".into(), parent: "lane".into(), ordinal: 0,
+        offset: 16, name: "moCompEdge_c".into(),
+    });
+    crate::test_support::work_refusal_at(OPERATION, |ctx| {
+        super::super::compact_edge_selections(ctx, &histories, &histories[0].features, &lane)
+    });
+}

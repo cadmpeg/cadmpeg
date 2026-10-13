@@ -24,6 +24,7 @@ use std::collections::BTreeMap;
 
 mod character_growth;
 mod identity_lookups;
+mod edge_identity_readers;
 mod limits;
 mod patterns;
 mod variable_fillets;
