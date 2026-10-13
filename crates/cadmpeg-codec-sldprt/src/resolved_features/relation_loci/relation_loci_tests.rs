@@ -28,6 +28,7 @@ fn profile(entities: &[SketchEntity]) -> super::ProfileEntities<'_> {
         .expect("test entities fit the service budget")
 }
 mod definition_storage;
+mod candidate_borrows;
 mod direct_points;
 mod relation_geometry;
 

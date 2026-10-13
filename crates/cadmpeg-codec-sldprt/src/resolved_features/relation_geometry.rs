@@ -3499,7 +3499,7 @@ pub(super) fn declared_entity_handle_owner<'a>(
 /// the slot's boundary roster alone.
 pub(super) fn declared_slot_handle_dimension_center<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
     slot_center_indices: impl FnOnce(
@@ -3513,7 +3513,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let DeclaredEntityHandleOwner::Unique {
         lane,
         class: entity_class,
-    } = declared_entity_handle_owner(ctx, lanes, operand)?
+    } = owner()?
     else {
         return Ok(None);
     };
@@ -3681,7 +3681,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
 /// carrier on its own.
 pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
     expected_radius: f64,
@@ -3694,7 +3694,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
         return Ok(None);
     }
     let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
+        owner()?
     else {
         return Ok(None);
     };
@@ -3794,7 +3794,7 @@ fn point_dimension_marker_matches_operand(
 /// this explicit identity form.
 pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
 ) -> Result<Option<&'a SketchInputEntity>, cadmpeg_core::CodecError> {
@@ -3802,7 +3802,7 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
         return Ok(None);
     }
     let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
+        owner()?
     else {
         return Ok(None);
     };
@@ -3925,7 +3925,7 @@ pub(super) fn direct_point_dimension_center<'a>(
 
 pub(super) fn declared_entity_handle_circular_marker<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &'a [FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
     expected_radius: f64,
@@ -3934,7 +3934,7 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
         return Ok(None);
     }
     let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
+        owner()?
     else {
         return Ok(None);
     };
@@ -4050,14 +4050,13 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     Ok(unique)
 }
 
-pub(super) fn declared_entity_handle_has_resolved_pair(
+pub(super) fn declared_entity_handle_has_resolved_pair<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &[FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
-    operand: &FeatureInputOperand,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
+        owner()?
     else {
         return Ok(false);
     };
@@ -4070,9 +4069,9 @@ pub(super) fn declared_entity_handle_has_resolved_pair(
 /// Test whether an explicit point reference is the radial member of a
 /// declared entity-handle pair. Radial identity cannot be reinterpreted as a
 /// center by the native point-identity fallback.
-pub(super) fn declared_entity_handle_point_is_declared_radial(
+pub(super) fn declared_entity_handle_point_is_declared_radial<'a>(
     ctx: &DecodeContext<'_>,
-    lanes: &[FeatureInputLane],
+    owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
     operand: &FeatureInputOperand,
 ) -> Result<bool, cadmpeg_core::CodecError> {
@@ -4080,7 +4079,7 @@ pub(super) fn declared_entity_handle_point_is_declared_radial(
         return Ok(false);
     };
     let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        declared_entity_handle_owner(ctx, lanes, operand)?
+        owner()?
     else {
         return Ok(false);
     };
