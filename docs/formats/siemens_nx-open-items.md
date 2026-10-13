@@ -408,9 +408,10 @@ or assign its semantic role.
 pairs and descriptor or object records to a model-space origin, unit normal,
 and in-plane axis.
 
-**Conflict.** The branch indices select descriptor and object blocks but do not
-assign plane-frame roles. Descriptor blocks carry an identity, schema index,
-and label; scalar-pair frames carry two values. Equal descriptor identities
+**Conflict.** The control and branch bytes are section-local class selectors;
+the following descriptor and object indices select store blocks. These selectors
+and references do not assign plane-frame roles. Descriptor blocks carry an identity,
+schema index, and label; scalar-pair frames carry two values. Equal descriptor identities
 between `DATUM_PLANE` and `DATUM_CSYS` records do not assign either operation
 as the source of an origin, axis, or normal.
 

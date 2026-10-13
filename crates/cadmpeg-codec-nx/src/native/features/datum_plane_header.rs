@@ -751,8 +751,14 @@ mod tests {
                 "{column}"
             );
         }
+        for selector in [0x18, 0x29, 0x33, 0xff] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire["branch_tag"] = selector.into();
+            let header: FeatureDatumPlaneHeader = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(header).unwrap(), wire);
+        }
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["branch_tag"] = 41.into();
+        wire["branch_tag"] = 0.into();
         assert!(serde_json::from_value::<FeatureDatumPlaneHeader>(wire).is_err());
     }
     #[test]
