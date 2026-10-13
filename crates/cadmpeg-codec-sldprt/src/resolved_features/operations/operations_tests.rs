@@ -1207,3 +1207,152 @@ fn configuration_operation_base_uses_scoped_storage() {
     );
     run_operation_base(&policy).expect("operation base is temporary");
 }
+
+fn configuration_operation_evidence() -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    [FeatureHistory; 1],
+    Vec<FeatureInputLane>,
+) {
+    let mut native = configuration_extrusion_feature();
+    native.xml_tag = "Extrusion".into();
+    native.kind = "Extrusion".into();
+    native.parameters.insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
+    let mut histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    }];
+    let local = crate::history::project::project_features(
+        &cadmpeg_test_support::service_decode_context(), &histories,
+    ).unwrap();
+    histories[0].features[0].input_class = Some("moExtrusion_c".into());
+    let mut lanes = split_line_limit_input().1;
+    let lane = &mut lanes[0];
+    lane.native_payload = vec![0; 128];
+    lane.classes = vec![FeatureInputClass {
+        id: "class".into(),
+        parent: lane.id.clone(),
+        ordinal: 0,
+        offset: 33,
+        name: "moExtrusion_c".into(),
+    }];
+    lane.names[0].offset = 52;
+    lane.names[0].value = histories[0].features[0].name.clone();
+    lane.names[0].object_id = ObjectId::from_value(1);
+    lane.native_payload[25..29].copy_from_slice(&3_u32.to_le_bytes());
+    (local, histories, lanes)
+}
+
+#[test]
+fn configuration_operation_local_veto_skips_base_name_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (mut local, mut histories, mut base_lanes) = configuration_operation_evidence();
+    histories[0].features[0].source_id = None;
+    let base = local.clone();
+    let mut lanes = base_lanes.clone();
+    lanes[0].native_payload[25..29].copy_from_slice(&999_u32.to_le_bytes());
+    let mut unrelated = base_lanes[0].names[0].clone();
+    unrelated.id = "unrelated".into();
+    unrelated.value = "x".repeat(17 * 1024 * 1024);
+    base_lanes[0].names.push(unrelated);
+    let expected = local.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_materialized_bytes = 128 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "bind SLDPRT extrusion operations", None,
+    );
+    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &base_lanes, &lanes, Some(4)).unwrap();
+    assert_eq!(local, expected);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn configuration_operation_empty_base_lanes_skip_history_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (mut local, mut histories, _) = configuration_operation_evidence();
+    let base = local.clone();
+    let mut unrelated = histories[0].features[0].clone();
+    unrelated.id = "x".repeat(17 * 1024 * 1024);
+    histories[0].features.push(unrelated);
+    let expected = local.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_materialized_bytes = 128 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "index SLDPRT operation history", None,
+    );
+    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &[], &[], Some(4)).unwrap();
+    assert_eq!(local, expected);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn configuration_operation_unresolved_base_indexes_are_scoped() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    for operation in [
+        "index SLDPRT configuration operation consumers",
+        "index SLDPRT base definitions",
+        "index SLDPRT operation history",
+        "index SLDPRT operation classes",
+        "index SLDPRT lane object names",
+        "index SLDPRT object names by id",
+        "index SLDPRT object names by text",
+    ] {
+        for source in [None, FeatureSource::from_value(1)] {
+            let (mut local, mut histories, lanes) = configuration_operation_evidence();
+            histories[0].features[0].source_id = source;
+            let base = local.clone();
+            let mut expected = local.clone();
+            expected[0].evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition {
+                    *op = BooleanOp::Join;
+                }
+            });
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = u64::MAX;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::RetainedBytes, operation, None,
+            );
+            inherit_configuration_operations(&ctx, &mut local, &base, &histories, &lanes, &[], Some(4)).unwrap();
+            assert_eq!(local, expected);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn configuration_operation_base_resolution_is_cached_per_identity() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let (local, histories, lanes) = configuration_operation_evidence();
+    let base = local.clone();
+    let mut local = vec![local[0].clone(); 256];
+    let lanes = vec![lanes[0].clone(); 256];
+    let mut expected = local.clone();
+    for feature in &mut expected {
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition {
+                *op = BooleanOp::Join;
+            }
+        });
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 512 * 1024;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &lanes, &[], Some(4)).unwrap();
+    assert_eq!(local, expected);
+    ctx.finish_session().unwrap();
+}
