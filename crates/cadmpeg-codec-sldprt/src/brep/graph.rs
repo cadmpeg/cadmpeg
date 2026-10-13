@@ -2125,6 +2125,18 @@ mod binding_color_storage_tests {
             cap = cap.max(boundary.used + boundary.additional);
         }
         storage_run(cap, select_color).expect("consumed color stages release their storage");
+
+        // The scalar agreement maps overlap while resolving colors. Output
+        // allocation starts after the color-identity map is released.
+        let boundary = storage_boundary(|ctx| {
+            let mut faces = BTreeMap::<u16, Option<usize>>::new();
+            let mut colors = BTreeMap::<u16, Option<Color>>::new();
+            ctx.insert_btree_map(&mut faces, 10, Some(0), "test scalar face agreement")?;
+            ctx.insert_btree_map(&mut colors, 20, Some(color().color), PROBE)?;
+            Ok(())
+        });
+        storage_run(boundary.used + boundary.additional, select_color)
+            .expect("color agreement storage ends before output allocation");
     }
 
     #[test]
