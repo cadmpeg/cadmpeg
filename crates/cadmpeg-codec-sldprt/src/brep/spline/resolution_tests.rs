@@ -172,8 +172,8 @@ fn control_resolution(ctx: &DecodeContext<'_>, suffix: usize) -> Result<bool, Co
 
 #[test]
 fn exact_control_ambiguity_skips_a_long_candidate_suffix() {
-    // Equality admits each operand separately. Locate the complete first
-    // conflict prefix, including both operands, before adding the suffix.
+    // Locate completion of the first conflicting cell before adding the
+    // remaining candidate suffix.
     let operation = "test completed control ambiguity prefix";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
@@ -698,13 +698,35 @@ fn knot_pair<'ctx>(count: usize, compact: bool) -> (Vec<u8>, Arrays<'ctx>) {
     let multiplicity_at = bytes.len();
     if compact {
         bytes.extend([0, u8::try_from(count).unwrap(), 0, 41]);
-        bytes.extend(multiplicities.iter().flat_map(|value: &u16| value.to_be_bytes()));
-        arrays.compact.insert(40, vec![CompactArray { offset: 0, count }]);
-        arrays.compact.insert(41, vec![CompactArray { offset: multiplicity_at, count }]);
+        bytes.extend(
+            multiplicities
+                .iter()
+                .flat_map(|value: &u16| value.to_be_bytes()),
+        );
+        arrays
+            .compact
+            .insert(40, vec![CompactArray { offset: 0, count }]);
+        arrays.compact.insert(
+            41,
+            vec![CompactArray {
+                offset: multiplicity_at,
+                count,
+            }],
+        );
     } else {
         bytes.extend(u16_array(41, &multiplicities));
-        arrays.f64s.insert(40, framed(&bytes, 0, "decode Parasolid scalar array values"));
-        arrays.u16s.insert(41, framed(&bytes, multiplicity_at, "decode Parasolid integer array values"));
+        arrays.f64s.insert(
+            40,
+            framed(&bytes, 0, "decode Parasolid scalar array values"),
+        );
+        arrays.u16s.insert(
+            41,
+            framed(
+                &bytes,
+                multiplicity_at,
+                "decode Parasolid integer array values",
+            ),
+        );
     }
     (bytes, arrays)
 }
@@ -715,9 +737,13 @@ fn scalar_conflict(ctx: &DecodeContext<'_>, mismatch: usize) -> Result<(), Codec
     knots[mismatch] = 1.0;
     let offset = bytes.len();
     bytes.extend(compact_f64_array(40, &knots));
-    arrays.compact.insert(40, vec![CompactArray { offset, count: 200 }]);
+    arrays
+        .compact
+        .insert(40, vec![CompactArray { offset, count: 200 }]);
     let mut output = ctx.reserve_scoped(0, "test scalar conflict output")?;
-    assert!(super::surface_knot_values(ctx, &mut output, &bytes, &arrays, (40, 41, 200))?.is_none());
+    assert!(
+        super::surface_knot_values(ctx, &mut output, &bytes, &arrays, (40, 41, 200))?.is_none()
+    );
     Ok(())
 }
 
@@ -726,7 +752,9 @@ fn surface_knot_conflicts_stop_at_the_first_scalar_cell() {
     const PROBE: &str = "test completed scalar cell conflict";
     let boundary = |mismatch| {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, PROBE, |cap| {
+            ResourceDimension::WorkUnits,
+            PROBE,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = policy();
                 policy.limits.max_work_units = cap;
@@ -735,7 +763,9 @@ fn surface_knot_conflicts_stop_at_the_first_scalar_cell() {
                 ctx.charge_work(1, PROBE)
             },
         );
-        let CodecError::ResourceLimit(limit) = error else { panic!("scalar conflict completion") };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("scalar conflict completion")
+        };
         limit.used
     };
     let first = boundary(0);
@@ -749,50 +779,86 @@ fn surface_knot_conflicts_stop_at_the_first_scalar_cell() {
     ctx.finish_session().unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(scalar_conflict(&ctx, 199), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "decode Parasolid compact values"));
-    crate::test_support::work_refusal_at("decode Parasolid compact values", |ctx| scalar_conflict(ctx, 0));
+    assert!(
+        matches!(scalar_conflict(&ctx, 199), Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "decode Parasolid compact values")
+    );
+    crate::test_support::work_refusal_at("decode Parasolid compact values", |ctx| {
+        scalar_conflict(ctx, 0)
+    });
 }
 
 /// Bound both selected-pair growth and later integer-prefix growth. Each
 /// growing vector can overlap its preceding half-capacity allocation.
 fn live_knot_storage_cap(last_count: usize) -> u64 {
     const PROBE: &str = "test live selected knot pair and count markers";
-    [false, true].map(|validating| {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::MaterializedBytes, PROBE, |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy();
-                policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let mut storage = ctx.reserve_scoped(0, "test live knot layout")?;
-                storage.with_storage(|| {
-                    let multiplicities = super::read_array(&ctx, 200, "test selected integer slots", |_| Some(2_u16))?.unwrap();
-                    let knots = super::read_array(&ctx, 200, "test selected scalar slots", |_| Some(0.0_f64))?.unwrap();
-                    let mut counts = std::collections::BTreeMap::new();
-                    let mut scratch = Vec::new();
-                    let overlap = if validating {
-                        for count in 200..=last_count {
-                            ctx.insert_btree_map(&mut counts, count, true, "test count markers")?;
-                        }
-                        scratch = super::read_array(&ctx, 200, "test one validating prefix", |_| Some(2_u16))?.unwrap();
-                        scratch.capacity() / 2 * std::mem::size_of::<u16>()
-                    } else {
-                        knots.capacity() / 2 * std::mem::size_of::<f64>()
-                    };
-                    let moving = ctx.reserve_scoped(u64::try_from(overlap).unwrap(), "test preceding vector allocation")?;
-                    let result = ctx.reserve_scoped(1024 * 1024, PROBE).map(drop);
-                    drop((knots, multiplicities, scratch, counts, moving));
-                    result
-                })
-            },
-        );
-        let CodecError::ResourceLimit(limit) = error else { panic!("live knot storage boundary") };
-        limit.used
-    }).into_iter().max().unwrap()
+    [false, true]
+        .map(|validating| {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::MaterializedBytes,
+                PROBE,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = policy();
+                    policy.limits.max_materialized_bytes = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let mut storage = ctx.reserve_scoped(0, "test live knot layout")?;
+                    storage.with_storage(|| {
+                        let multiplicities =
+                            super::read_array(&ctx, 200, "test selected integer slots", |_| {
+                                Some(2_u16)
+                            })?
+                            .unwrap();
+                        let knots =
+                            super::read_array(&ctx, 200, "test selected scalar slots", |_| {
+                                Some(0.0_f64)
+                            })?
+                            .unwrap();
+                        let mut counts = std::collections::BTreeMap::new();
+                        let mut scratch = Vec::new();
+                        let overlap = if validating {
+                            for count in 200..=last_count {
+                                ctx.insert_btree_map(
+                                    &mut counts,
+                                    count,
+                                    true,
+                                    "test count markers",
+                                )?;
+                            }
+                            scratch =
+                                super::read_array(&ctx, 200, "test one validating prefix", |_| {
+                                    Some(2_u16)
+                                })?
+                                .unwrap();
+                            scratch.capacity() / 2 * std::mem::size_of::<u16>()
+                        } else {
+                            knots.capacity() / 2 * std::mem::size_of::<f64>()
+                        };
+                        let moving = ctx.reserve_scoped(
+                            u64::try_from(overlap).unwrap(),
+                            "test preceding vector allocation",
+                        )?;
+                        let result = ctx.reserve_scoped(1024 * 1024, PROBE).map(drop);
+                        drop((knots, multiplicities, scratch, counts, moving));
+                        result
+                    })
+                },
+            );
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("live knot storage boundary")
+            };
+            limit.used
+        })
+        .into_iter()
+        .max()
+        .unwrap()
 }
 
-fn agreeing_knot_counts(ctx: &DecodeContext<'_>, last_count: usize, aliases: usize) -> Result<(), CodecError> {
+fn agreeing_knot_counts(
+    ctx: &DecodeContext<'_>,
+    last_count: usize,
+    aliases: usize,
+) -> Result<(), CodecError> {
     let (mut bytes, mut arrays) = knot_pair(200, false);
     let mut knots = Vec::new();
     let mut multiplicities = Vec::new();
@@ -812,7 +878,8 @@ fn agreeing_knot_counts(ctx: &DecodeContext<'_>, last_count: usize, aliases: usi
     arrays.compact.insert(40, knots);
     arrays.compact.insert(41, multiplicities);
     let mut output = ctx.reserve_scoped(0, "test agreeing count output")?;
-    let result = super::surface_knot_values(ctx, &mut output, &bytes, &arrays, (40, 41, 200))?.unwrap();
+    let result =
+        super::surface_knot_values(ctx, &mut output, &bytes, &arrays, (40, 41, 200))?.unwrap();
     assert_eq!(result.unique, vec![0.0; 200]);
     assert_eq!(result.multiplicities, vec![2; 200]);
     drop((result, output, arrays));
@@ -827,7 +894,13 @@ fn positive_knot_count_cache_keeps_only_agreement_markers() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     agreeing_knot_counts(&ctx, 255, 1).unwrap();
-    drop(ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released count marker storage").unwrap());
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test released count marker storage",
+        )
+        .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -845,15 +918,19 @@ fn later_knot_prefix_is_absent_during_multiplicity_alias_validation() {
 fn selected_pair_collection_cap(count: usize) -> u64 {
     const PROBE: &str = "test collection after selected knot pair";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, PROBE, |cap| {
+        ResourceDimension::CollectionItems,
+        PROBE,
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = policy();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let mut storage = ctx.reserve_scoped(0, "test exclusive pair layout")?;
             storage.with_storage(|| {
-                let knots = super::read_array(&ctx, count, "test scalar prefix slots", |_| Some(0.0_f64))?;
-                let multiplicities = super::read_array(&ctx, count, "test integer prefix slots", |_| Some(2_u16))?;
+                let knots =
+                    super::read_array(&ctx, count, "test scalar prefix slots", |_| Some(0.0_f64))?;
+                let multiplicities =
+                    super::read_array(&ctx, count, "test integer prefix slots", |_| Some(2_u16))?;
                 let mut markers = std::collections::BTreeMap::new();
                 ctx.insert_btree_map(&mut markers, count, true, "test selected count marker")?;
                 let result = ctx.collection_vec::<u8>(1, PROBE).map(drop);
@@ -862,7 +939,9 @@ fn selected_pair_collection_cap(count: usize) -> u64 {
             })
         },
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("selected pair collection boundary") };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("selected pair collection boundary")
+    };
     limit.used
 }
 
@@ -878,13 +957,19 @@ fn owned_surface_knot_prefixes_move_without_second_collection_admission() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let (bytes, arrays) = knot_pair(count, compact);
         let mut output = ctx.reserve_scoped(0, "test moved knot output").unwrap();
-        let result = super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, count)).unwrap().unwrap();
+        let result =
+            super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, count))
+                .unwrap()
+                .unwrap();
         assert_eq!(result.unique, vec![0.0; count]);
         assert_eq!(result.multiplicities, vec![2; count]);
         let live_bytes = result.unique.capacity() * std::mem::size_of::<f64>()
             + result.multiplicities.capacity() * std::mem::size_of::<u16>();
         let probe = RefusalProbe::arm(ResourceDimension::MaterializedBytes, PROBE, None);
-        let Err(CodecError::ResourceLimit(limit)) = ctx.reserve_scoped(1024 * 1024 * 1024, PROBE) else { panic!("transferred payload ownership") };
+        let Err(CodecError::ResourceLimit(limit)) = ctx.reserve_scoped(1024 * 1024 * 1024, PROBE)
+        else {
+            panic!("transferred payload ownership")
+        };
         assert_eq!(limit.used, u64::try_from(live_bytes).unwrap());
         drop((probe, result, output, arrays));
     }
@@ -909,7 +994,9 @@ fn borrowed_knot_prefix(ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
 fn borrowed_surface_knots_copy_the_declared_prefix() {
     const PROBE: &str = "copy Parasolid distinct knots";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, PROBE, |cap| {
+        ResourceDimension::CollectionItems,
+        PROBE,
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = policy();
             policy.limits.max_collection_items = cap;
@@ -939,10 +1026,59 @@ fn matching_physical_knot_counts_reuse_multiplicity_validation() {
         aliases.push(CompactArray { offset, count: 200 });
     }
     arrays.compact.insert(40, aliases);
-    let mut output = ctx.reserve_scoped(0, "test cached physical knot count output").unwrap();
-    let result = super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 200)).unwrap().unwrap();
+    let mut output = ctx
+        .reserve_scoped(0, "test cached physical knot count output")
+        .unwrap();
+    let result = super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 200))
+        .unwrap()
+        .unwrap();
     assert_eq!(result.unique, vec![0.0; 200]);
     assert_eq!(result.multiplicities, vec![2; 200]);
     drop((result, output, arrays));
     ctx.finish_session().unwrap();
+}
+
+fn control_scalar_conflict(ctx: &DecodeContext<'_>, mismatch: usize) -> Result<(), CodecError> {
+    let mut bytes = f64_array(0x2d, 40, &[0.0; 200]);
+    let mut arrays = Arrays::default();
+    arrays.f64s.insert(40, framed(&bytes, 0, "decode Parasolid scalar array values"));
+    let mut incoming = [0.0; 200];
+    incoming[mismatch] = 1.0;
+    let offset = bytes.len();
+    bytes.extend(compact_f64_array(40, &incoming));
+    arrays.compact.insert(40, vec![CompactArray { offset, count: 200 }]);
+    assert!(super::exact_f64_array(ctx, &bytes, &arrays, 40, 200)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn control_array_conflicts_stop_at_the_first_scalar_cell() {
+    const PROBE: &str = "test completed control scalar cell conflict";
+    const COMPARE: &str = "compare Parasolid exact scalar array candidates";
+    let boundary = |mismatch| {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, PROBE, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                control_scalar_conflict(&ctx, mismatch)?;
+                ctx.charge_work(1, PROBE)
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else { panic!("control conflict completion") };
+        limit.used
+    };
+    let first = boundary(0);
+    assert!(first < boundary(199), "control comparisons must not prepay the unread scalar suffix");
+    let arena = DecodeArena::new();
+    let mut policy = policy();
+    policy.limits.max_work_units = first;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    control_scalar_conflict(&ctx, 0).unwrap();
+    ctx.finish_session().unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(control_scalar_conflict(&ctx, 199), Err(CodecError::ResourceLimit(limit)) if limit.operation == COMPARE));
+    crate::test_support::work_refusal_at(COMPARE, |ctx| control_scalar_conflict(ctx, 0));
 }

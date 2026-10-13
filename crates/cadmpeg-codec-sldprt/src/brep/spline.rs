@@ -6,7 +6,6 @@ pub(crate) mod patch;
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::ControlFlow;
 
 use cadmpeg_ir::geometry::{
     nurbs::knots_nondecreasing, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -410,54 +409,6 @@ fn visit_array_headers<'a, 'ctx, T>(
     Ok(true)
 }
 
-/// Read complete candidate values after their count gate accepts the header.
-fn visit_array_candidates<'a, 'ctx, T, State>(
-    ctx: &'ctx DecodeContext<'_>,
-    bytes: &[u8],
-    headers: CandidateHeaders<'a, 'ctx, T>,
-    state: &mut State,
-    mut count_matches: impl FnMut(
-        &mut State,
-        usize,
-    ) -> Result<ControlFlow<(), bool>, cadmpeg_core::CodecError>,
-    read: impl Fn(usize) -> Option<T>,
-    mut visit: impl FnMut(
-        &mut State,
-        ArrayCandidate<'a, 'ctx, T>,
-    ) -> Result<bool, cadmpeg_core::CodecError>,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    visit_array_headers(ctx, bytes, headers, |span, framed| {
-        match count_matches(state, span.count)? {
-            ControlFlow::Break(()) => return Ok(false),
-            ControlFlow::Continue(false) => return Ok(true),
-            ControlFlow::Continue(true) => {}
-        }
-        if let Some(array) = framed {
-            return visit(state, ArrayCandidate::Borrowed(array.read(ctx, &read)?));
-        }
-        let mut candidate_storage =
-            ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
-        let Some(values) = candidate_storage.with_storage(|| {
-            read_array(
-                ctx,
-                span.count,
-                "decode Parasolid compact values",
-                |index| read(span.start + index * std::mem::size_of::<T>()),
-            )
-        })?
-        else {
-            return Ok(true);
-        };
-        visit(
-            state,
-            ArrayCandidate::Owned {
-                values,
-                _storage: candidate_storage,
-            },
-        )
-    })
-}
-
 /// Collect distinct candidates for tests that inspect complete source discovery.
 #[cfg(test)]
 fn array_candidates<'a, 'ctx, T>(
@@ -473,27 +424,36 @@ where
 {
     const OPERATION: &str = "collect Parasolid array candidates";
     let mut candidates = Vec::new();
-    visit_array_candidates(
-        ctx,
-        bytes,
-        (framed, compact, attr),
-        &mut candidates,
-        |_, count| count_matches(count).map(ControlFlow::Continue),
-        read,
-        |candidates, candidate| {
-            if !ctx.any_by(
-                candidates.iter(),
-                |prior: &ArrayCandidate<'_, '_, T>| {
-                    Ok(prior.as_slice().len() == candidate.as_slice().len()
-                        && ctx.equal(prior.as_slice(), candidate.as_slice(), OPERATION)?)
-                },
-                OPERATION,
-            )? {
-                ctx.push_scoped_vec(storage, candidates, candidate, OPERATION)?;
-            }
-            Ok(true)
-        },
-    )?;
+    visit_array_headers(ctx, bytes, (framed, compact, attr), |span, framed| {
+        if !count_matches(span.count)? {
+            return Ok(true);
+        }
+        let candidate = if let Some(array) = framed {
+            ArrayCandidate::Borrowed(array.read(ctx, &read)?)
+        } else {
+            let mut candidate_storage =
+                ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
+            let Some(values) = candidate_storage.with_storage(|| {
+                read_array(ctx, span.count, "decode Parasolid compact values", |index| {
+                    read(span.start + index * std::mem::size_of::<T>())
+                })
+            })? else {
+                return Ok(true);
+            };
+            ArrayCandidate::Owned { values, _storage: candidate_storage }
+        };
+        if !ctx.any_by(
+            candidates.iter(),
+            |prior: &ArrayCandidate<'_, '_, T>| {
+                Ok(prior.as_slice().len() == candidate.as_slice().len()
+                    && ctx.equal(prior.as_slice(), candidate.as_slice(), OPERATION)?)
+            },
+            OPERATION,
+        )? {
+            ctx.push_scoped_vec(storage, &mut candidates, candidate, OPERATION)?;
+        }
+        Ok(true)
+    })?;
     Ok(candidates)
 }
 
@@ -507,23 +467,34 @@ fn exact_f64_array<'a, 'ctx>(
     count: usize,
 ) -> Result<Option<ArrayCandidate<'a, 'ctx, f64>>, cadmpeg_core::CodecError> {
     let mut selected: Option<ArrayCandidate<'a, 'ctx, f64>> = None;
-    let agreed = visit_array_candidates(
-        ctx,
-        bytes,
-        (&arrays.f64s, &arrays.compact, attr),
-        &mut selected,
-        |_, candidate_count| Ok(ControlFlow::Continue(candidate_count == count)),
-        |at| View::f64_be_at(bytes, at),
-        |selected, candidate| match selected.as_ref() {
-            Some(first) => ctx.equal(
-                first.as_slice(),
-                candidate.as_slice(),
-                "compare Parasolid exact scalar array candidates",
-            ),
-            None => {
-                *selected = Some(candidate);
-                Ok(true)
+    let agreed = visit_array_headers(
+        ctx, bytes, (&arrays.f64s, &arrays.compact, attr), |span, framed| {
+            if span.count != count {
+                return Ok(true);
             }
+            if let Some(first) = &selected {
+                return ctx.all_by(
+                    0..count,
+                    |index| Ok(View::f64_be_at(bytes, span.start + index * 8)
+                        == Some(first.as_slice()[index])),
+                    "compare Parasolid exact scalar array candidates",
+                );
+            }
+            let candidate = if let Some(array) = framed {
+                ArrayCandidate::Borrowed(array.read(ctx, |at| View::f64_be_at(bytes, at))?)
+            } else {
+                let mut storage = ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
+                let Some(values) = storage.with_storage(|| {
+                    read_array(ctx, count, "decode Parasolid compact values", |index| {
+                        View::f64_be_at(bytes, span.start + index * 8)
+                    })
+                })? else {
+                    return Ok(true);
+                };
+                ArrayCandidate::Owned { values, _storage: storage }
+            };
+            selected = Some(candidate);
+            Ok(true)
         },
     )?;
     Ok(if agreed { selected } else { None })
@@ -924,10 +895,7 @@ fn read_surface_multiplicities<'ctx>(
             }
             Ok::<_, cadmpeg_core::CodecError>(Some(values))
         })?;
-    Ok(values.map(|values| SurfaceMultiplicities {
-        values,
-        storage,
-    }))
+    Ok(values.map(|values| SurfaceMultiplicities { values, storage }))
 }
 
 struct SurfaceKnotValues {
@@ -995,7 +963,9 @@ fn surface_knot_values<'ctx>(
                     operation,
                 )
             };
-            if let Some(&present) = ctx.get_btree_map(&multiplicities_by_count, &count, OPERATION)? {
+            if let Some(&present) =
+                ctx.get_btree_map(&multiplicities_by_count, &count, OPERATION)?
+            {
                 return match (&resolved, present) {
                     (Some((first, _)), true) => compare_knots(first.as_slice()),
                     _ => Ok(true),
@@ -1011,8 +981,8 @@ fn surface_knot_values<'ctx>(
                     if span.count != count {
                         return Ok(true);
                     }
-                    let multiplicity_operation = framed
-                        .map_or("decode Parasolid compact values", |array| array.operation);
+                    let multiplicity_operation =
+                        framed.map_or("decode Parasolid compact values", |array| array.operation);
                     let Some(multiplicities) = read_surface_multiplicities(
                         ctx,
                         bytes,
@@ -1055,7 +1025,10 @@ fn surface_knot_values<'ctx>(
                             let Some(values) = values else {
                                 return Ok(false);
                             };
-                            ArrayCandidate::Owned { values, _storage: storage }
+                            ArrayCandidate::Owned {
+                                values,
+                                _storage: storage,
+                            }
                         };
                         selected = Some((values, multiplicities));
                     }
@@ -1088,9 +1061,13 @@ fn surface_knot_values<'ctx>(
         return Ok(None);
     };
     let unique = match unique {
-        ArrayCandidate::Borrowed(values) => output
-            .with_storage(|| ctx.copy_slice(values, "copy Parasolid distinct knots"))?,
-        ArrayCandidate::Owned { values, _storage: mut storage } => {
+        ArrayCandidate::Borrowed(values) => {
+            output.with_storage(|| ctx.copy_slice(values, "copy Parasolid distinct knots"))?
+        }
+        ArrayCandidate::Owned {
+            values,
+            _storage: mut storage,
+        } => {
             output.absorb(&mut storage)?;
             values
         }
