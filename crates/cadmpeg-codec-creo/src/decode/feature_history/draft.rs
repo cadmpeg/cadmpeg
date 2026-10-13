@@ -186,12 +186,17 @@ pub(super) fn thicken_feature_definition(
                 &result_surface_ids,
                 &available_features,
             )? {
-                FaceSelection::generated(
-                    faces,
-                    ctx.copy_retained_text(&native, "creo thicken generated native selection")?,
-                    ctx,
-                )?
-                .unwrap_or(FaceSelection::Native(native))
+                match faces.try_into() {
+                    Ok(faces) => {
+                        let native = native.try_into().map_err(|_| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "constructed Creo thicken selection is blank".into(),
+                            )
+                        })?;
+                        FaceSelection::Generated { faces, native }
+                    }
+                    Err(_) => FaceSelection::Native(native),
+                }
             } else {
                 FaceSelection::Native(native)
             }
@@ -259,12 +264,13 @@ fn hole_face_selection(
         result_surface_ids,
         available_features,
     )? {
-        return Ok(FaceSelection::generated(
-            faces,
-            ctx.copy_retained_text(&native, "creo hole generated native selection")?,
-            ctx,
-        )?
-        .unwrap_or(FaceSelection::Native(native)));
+        let Ok(faces) = faces.try_into() else {
+            return Ok(FaceSelection::Native(native));
+        };
+        let native = native.try_into().map_err(|_| {
+            cadmpeg_core::CodecError::Malformed("constructed Creo hole selection is blank".into())
+        })?;
+        return Ok(FaceSelection::Generated { faces, native });
     }
     Ok(FaceSelection::Native(native))
 }
@@ -409,26 +415,32 @@ pub(in super::super) fn schema_feature_definition(
             },
             None => None,
         };
+        let mut sketch_storage = ctx.reserve_scoped(0, "creo schema sketch lookup")?;
         let sketch = match definition {
-            Some(definition) => match model_sketch_id(ctx, scan, definition)? {
-                Some(sketch) => {
-                    let sketch_found = ctx.any_by(
-                        &ir.model.sketches,
-                        |candidate| {
-                            ctx.equal(
-                                &candidate.id,
-                                &sketch,
-                                "creo schema sketch identity comparison",
-                            )
-                        },
-                        "creo schema sketch model lookup",
-                    )?;
-                    sketch_found.then_some(sketch)
+            Some(definition) => {
+                match sketch_storage.with_storage(|| model_sketch_id(ctx, scan, definition))? {
+                    Some(sketch) => {
+                        let sketch_found = ctx.any_by(
+                            &ir.model.sketches,
+                            |candidate| {
+                                ctx.equal(
+                                    &candidate.id,
+                                    &sketch,
+                                    "creo schema sketch identity comparison",
+                                )
+                            },
+                            "creo schema sketch model lookup",
+                        )?;
+                        sketch_found.then_some(sketch)
+                    }
+                    None => None,
                 }
-                None => None,
-            },
+            }
             None => None,
         };
+        let sketch = sketch
+            .map(|sketch| sketch_storage.commit_value(sketch))
+            .transpose()?;
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
         }));
