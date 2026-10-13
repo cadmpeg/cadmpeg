@@ -75,6 +75,19 @@ class DenyCensusTests(unittest.TestCase):
     def item(self, path: str, name: str) -> census.Item:
         return census.Item(Path(path), 1, "struct", name, "", "")
 
+    def test_macro_keyword_list_is_not_read_as_a_declaration(self) -> None:
+        status, output = self.run_census({"lib.rs": """
+struct Reader;
+
+impl<'de> serde::Deserializer<'de> for Reader {
+    forward_to_deserialize_any! {
+        bool str seq tuple_struct map enum identifier
+        ignored_any
+    }
+}
+"""})
+        self.assertEqual(status, 0, output)
+
     def test_same_file_declaration_wins_over_a_duplicate_elsewhere(self) -> None:
         local = self.item("crates/ir/src/local.rs", "Wire")
         foreign = self.item("crates/core/src/foreign.rs", "Wire")
