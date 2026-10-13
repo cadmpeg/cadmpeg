@@ -99,6 +99,32 @@ struct EdgeIncidences<'ctx> {
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
+/// The shared stream is materialized when an annotation first needs it.
+struct AnnotationStream<'ctx, 'arena, 'source> {
+    ctx: &'ctx DecodeContext<'arena>,
+    stream: &'source cadmpeg_ir::StreamName,
+    value: Option<StreamHandle>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl AnnotationStream<'_, '_, '_> {
+    fn handle(&mut self) -> Result<&StreamHandle, cadmpeg_core::CodecError> {
+        match self.value {
+            Some(ref handle) => Ok(handle),
+            None => {
+                let handle = self.storage.with_storage(|| {
+                    StreamHandle::new(
+                        self.ctx,
+                        copy_graph_stream_name(self.ctx, self.stream)?,
+                        "allocate annotation stream handle",
+                    )
+                })?;
+                Ok(self.value.insert(handle))
+            }
+        }
+    }
+}
+
 pub(super) fn decode_graph(
     ctx: &DecodeContext<'_>,
     carriers: CarrierView<'_, '_>,
@@ -240,14 +266,12 @@ pub(super) fn decode_graph(
             ..Brep::default()
         });
     }
-    let mut source_storage = ctx.reserve_scoped(0, "hold Parasolid annotation stream")?;
-    let source_stream = source_storage.with_storage(|| {
-        StreamHandle::new(
-            ctx,
-            copy_graph_stream_name(ctx, stream)?,
-            "allocate annotation stream handle",
-        )
-    })?;
+    let mut source_stream = AnnotationStream {
+        ctx,
+        stream,
+        value: None,
+        storage: ctx.reserve_scoped(0, "hold Parasolid annotation stream")?,
+    };
     let mut annotations = AnnotationBuilder::new();
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
@@ -312,8 +336,8 @@ pub(super) fn decode_graph(
             }
         }
     }
-    let (forward_coedges, forward_storage) = ctx
-        .with_scoped_storage("hold Parasolid forward coedge stage", || {
+    let (forward_coedges, forward_storage) =
+        ctx.with_scoped_storage("hold Parasolid forward coedge stage", || {
             if edge_incidence.is_empty() {
                 Ok(BTreeMap::new())
             } else {
@@ -389,7 +413,7 @@ pub(super) fn decode_graph(
         annotations.note(
             ctx,
             id_point(a).as_str(),
-            &source_stream,
+            source_stream.handle()?,
             u64_from_index(rec.offset),
             Some("00_1d"),
         )?;
@@ -415,7 +439,7 @@ pub(super) fn decode_graph(
         annotations.note(
             ctx,
             id_vertex(a).as_str(),
-            &source_stream,
+            source_stream.handle()?,
             u64_from_index(rec.offset),
             Some("00_12"),
         )?;
@@ -470,7 +494,7 @@ pub(super) fn decode_graph(
             annotations.note(
                 ctx,
                 point_id.as_str(),
-                &source_stream,
+                source_stream.handle()?,
                 0,
                 Some("derived_closed_circle_seam"),
             )?;
@@ -478,7 +502,7 @@ pub(super) fn decode_graph(
             annotations.note(
                 ctx,
                 vertex_id.as_str(),
-                &source_stream,
+                source_stream.handle()?,
                 0,
                 Some("derived_closed_circle_seam"),
             )?;
@@ -599,7 +623,7 @@ pub(super) fn decode_graph(
                             annotations.note(
                                 ctx,
                                 id_curve(curve_attr).as_str(),
-                                &source_stream,
+                                source_stream.handle()?,
                                 u64_from_index(offset),
                                 Some("surface_intersection"),
                             )?;
@@ -624,7 +648,7 @@ pub(super) fn decode_graph(
                         annotations.note(
                             ctx,
                             id_curve(curve_attr).as_str(),
-                            &source_stream,
+                            source_stream.handle()?,
                             u64_from_index(offset),
                             Some("unknown_curve"),
                         )?;
@@ -652,7 +676,7 @@ pub(super) fn decode_graph(
         annotations.note(
             ctx,
             id_edge(e).as_str(),
-            &source_stream,
+            source_stream.handle()?,
             u64_from_index(off),
             Some("00_10"),
         )?;
@@ -744,7 +768,7 @@ pub(super) fn decode_graph(
                 annotations.note(
                     ctx,
                     id_coedge(ce_attr).as_str(),
-                    &source_stream,
+                    source_stream.handle()?,
                     u64_from_index(ce.offset),
                     Some("00_11"),
                 )?;
@@ -810,7 +834,7 @@ pub(super) fn decode_graph(
                         annotations.note(
                             ctx,
                             id.as_str(),
-                            &source_stream,
+                            source_stream.handle()?,
                             u64_from_index(offset),
                             Some(match source {
                                 IntersectionPcurveSource::StoredCache => "surface_intersection_uv",
@@ -920,7 +944,7 @@ pub(super) fn decode_graph(
             annotations.note(
                 ctx,
                 id_loop(*loop_attr).as_str(),
-                &source_stream,
+                source_stream.handle()?,
                 u64_from_index(off),
                 Some("00_0f"),
             )?;
@@ -1002,7 +1026,7 @@ pub(super) fn decode_graph(
                 annotations.note(
                     ctx,
                     id_surf(f.bridge_attr).as_str(),
-                    &source_stream,
+                    source_stream.handle()?,
                     u64_from_index(c.offset),
                     Some("compact_surface"),
                 )?;
@@ -1042,7 +1066,7 @@ pub(super) fn decode_graph(
                             carriers,
                             &mut procedural_supports,
                             &mut annotations,
-                            &source_stream,
+                            source_stream.handle()?,
                         )?
                         .map(|support| (offset, support))
                     } else {
@@ -1168,7 +1192,7 @@ pub(super) fn decode_graph(
                         carriers,
                         &mut procedural_supports,
                         &mut annotations,
-                        &source_stream,
+                        source_stream.handle()?,
                     )? {
                         ensure_surface_support(
                             &mut BrepSink {
@@ -1181,7 +1205,7 @@ pub(super) fn decode_graph(
                             carriers,
                             &mut procedural_supports,
                             &mut annotations,
-                            &source_stream,
+                            source_stream.handle()?,
                         )?
                         .map(|second| (blend, first, second))
                     } else {
@@ -1203,7 +1227,7 @@ pub(super) fn decode_graph(
                             hidden_storage: &mut hidden_storage,
                         },
                         &mut annotations,
-                        &source_stream,
+                        source_stream.handle()?,
                         id_surf(f.bridge_attr),
                         construction,
                         support,
@@ -1223,7 +1247,7 @@ pub(super) fn decode_graph(
                             annotations.note(
                                 ctx,
                                 id_curve(blend.spine).as_str(),
-                                &source_stream,
+                                source_stream.handle()?,
                                 u64_from_index(carrier.offset),
                                 Some("blend_spine"),
                             )?;
@@ -1274,7 +1298,7 @@ pub(super) fn decode_graph(
                     annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
-                        &source_stream,
+                        source_stream.handle()?,
                         u64_from_index(blend.offset),
                         Some("00_38"),
                     )?;
@@ -1321,7 +1345,7 @@ pub(super) fn decode_graph(
                     annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
-                        &source_stream,
+                        source_stream.handle()?,
                         u64_from_index(offset),
                         Some(tag),
                     )?;
@@ -1340,7 +1364,7 @@ pub(super) fn decode_graph(
                     annotations.note(
                         ctx,
                         id_surf(f.bridge_attr).as_str(),
-                        &source_stream,
+                        source_stream.handle()?,
                         u64_from_index(surf_off),
                         Some("unknown_surface"),
                     )?;
@@ -1364,7 +1388,7 @@ pub(super) fn decode_graph(
         annotations.note(
             ctx,
             id_face(f.bridge_attr).as_str(),
-            &source_stream,
+            source_stream.handle()?,
             u64_from_index(surf_off),
             Some("00_0e"),
         )?;
@@ -1497,9 +1521,11 @@ pub(super) fn decode_graph(
     drop(face_atom_storage);
     drop(entity_facts);
     solve_face_orientation(ctx, &mut out)?;
-    synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;
-    synthesize_sphere_seams(ctx, &mut out, &mut annotations, &source_stream)?;
-    derive_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
+    if !out.faces.is_empty() {
+        synthesize_cylinder_seams(ctx, &mut out, &mut annotations, source_stream.handle()?)?;
+        synthesize_sphere_seams(ctx, &mut out, &mut annotations, source_stream.handle()?)?;
+        derive_pcurves(ctx, &mut out, &mut annotations, source_stream.handle()?)?;
+    }
     prune_rejected_topology(ctx, &mut out)?;
 
     if out.faces.is_empty() {
@@ -1531,7 +1557,7 @@ pub(super) fn decode_graph(
                     (0, "synthetic_grouping", Exactness::Derived),
                     |(offset, tag)| (offset, tag, Exactness::ByteExact),
                 );
-                annotations.note(ctx, id, &source_stream, u64_from_index(offset), Some(tag))?;
+                annotations.note(ctx, id, source_stream.handle()?, u64_from_index(offset), Some(tag))?;
                 annotations.exactness(ctx, id, exactness)?;
                 Ok(())
             };
@@ -1664,7 +1690,7 @@ pub(super) fn decode_graph(
             annotations.note(
                 ctx,
                 curve.id.as_str(),
-                &source_stream,
+                source_stream.handle()?,
                 u64_from_index(carrier.offset),
                 Some("compact_curve"),
             )?;
@@ -1786,7 +1812,7 @@ pub(super) fn decode_graph(
     annotations.retain_exactness(ctx, keep)?;
     out.annotations = annotations.build();
     if !out.annotations.provenance.is_empty() {
-        out = source_storage.commit_value(out)?;
+        out = source_stream.storage.commit_value(out)?;
     }
     metadata_storage.commit_value(out)
 }

@@ -408,9 +408,18 @@ fn ambiguous_owner_selection_skips_discarded_ring_walks() {
     for (dimension, operation) in [
         (ResourceDimension::WorkUnits, "walk Parasolid face loops"),
         (ResourceDimension::WorkUnits, "sort Parasolid face owners"),
-        (ResourceDimension::WorkUnits, "copy Parasolid graph stream name"),
-        (ResourceDimension::CollectionItems, "allocate annotation stream handle"),
-        (ResourceDimension::CollectionItems, "collect Parasolid face uses"),
+        (
+            ResourceDimension::WorkUnits,
+            "copy Parasolid graph stream name",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "allocate annotation stream handle",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "collect Parasolid face uses",
+        ),
         (
             ResourceDimension::MaterializedBytes,
             "collect Parasolid face uses",
@@ -759,7 +768,11 @@ fn incidence_map_admits_shared_nodes_before_endpoint_publication() {
                     &mut entries,
                     attr,
                     group,
-                    if attr == 5 { "reference incidence node" } else { "seed incidence nodes" },
+                    if attr == 5 {
+                        "reference incidence node"
+                    } else {
+                        "seed incidence nodes"
+                    },
                 )
             })?;
         }
@@ -790,30 +803,81 @@ fn empty_incidence_stage_skips_the_forward_coedge_index() {
     bridge.refs[2] = 0;
     tables.insert_bridge(&setup, bridge).unwrap();
     assert_eq!(tables.coedges().len(), 3);
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "index Parasolid forward coedges"),
+        (ResourceDimension::WorkUnits, "copy Parasolid graph stream name"),
+        (ResourceDimension::CollectionItems, "allocate annotation stream handle"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_collection_items = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut facts = crate::brep::entity::FactsSource::empty(&ctx).unwrap();
+        facts.entity_count = 7;
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            dimension,
+            operation,
+            None,
+        );
+        let decoded = super::decode_graph(
+            &ctx,
+            crate::brep::index::view::CarrierView::Retained(&carriers),
+            &tables,
+            facts,
+            &crate::brep::typed::Facts::default(),
+            &cadmpeg_ir::stream_name!("no-incidences"),
+        )
+        .unwrap();
+        drop(probe);
+        assert!(decoded.faces.is_empty());
+        assert!(decoded.coedges.is_empty());
+        assert!(decoded.annotations.provenance.is_empty());
+        assert_eq!(decoded.stats.source_entity_records, 7);
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn annotation_stream_materializes_once_and_releases_unpublished_backing() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let name = cadmpeg_ir::stream_name!("stream-cache");
+    materialized_boundary("copy Parasolid graph stream name", |ctx| {
+        let mut source = super::AnnotationStream {
+            ctx,
+            stream: &name,
+            value: None,
+            storage: ctx.reserve_scoped(0, "hold test annotation stream")?,
+        };
+        source.handle().map(|_| ())
+    });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut facts = crate::brep::entity::FactsSource::empty(&ctx).unwrap();
-    facts.entity_count = 7;
+    let mut source = super::AnnotationStream {
+        ctx: &ctx,
+        stream: &name,
+        value: None,
+        storage: ctx.reserve_scoped(0, "hold test annotation stream").unwrap(),
+    };
+    source.handle().unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         ResourceDimension::WorkUnits,
-        "index Parasolid forward coedges",
+        "copy Parasolid graph stream name",
         None,
     );
-    let decoded = super::decode_graph(
-        &ctx,
-        crate::brep::index::view::CarrierView::Retained(&carriers),
-        &tables,
-        facts,
-        &crate::brep::typed::Facts::default(),
-        &cadmpeg_ir::stream_name!("no-incidences"),
-    )
-    .unwrap();
+    source.handle().unwrap();
     drop(probe);
-    assert!(decoded.faces.is_empty());
-    assert!(decoded.coedges.is_empty());
-    assert!(decoded.annotations.provenance.is_empty());
-    assert_eq!(decoded.stats.source_entity_records, 7);
+    drop(source);
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse unpublished annotation stream storage",
+        )
+        .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
