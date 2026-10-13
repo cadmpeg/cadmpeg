@@ -1846,9 +1846,8 @@ mod walk_storage_tests {
                 let mut faces = Vec::new();
                 let face = graph_storage.with_storage(|| walk_face(&ctx, &bridge, &tables))?;
                 assert_eq!(face.loops.len(), 2);
-                graph_storage.with_storage(|| {
-                    ctx.push_vec(&mut faces, face, "collect Parasolid faces")
-                })?;
+                graph_storage
+                    .with_storage(|| ctx.push_vec(&mut faces, face, "collect Parasolid faces"))?;
                 let (groups, shells) = graph_storage
                     .with_storage(|| super::bind_bridges(&ctx, &tables, &records, &faces))?;
                 assert!(groups.is_empty() && shells.is_empty());
@@ -1864,10 +1863,9 @@ mod walk_storage_tests {
                     "select claimed Parasolid faces",
                 )?;
                 assert!(faces.is_empty());
-                vector_bytes = u64::try_from(
-                    faces.capacity() * std::mem::size_of::<super::WalkedFace<'_>>(),
-                )
-                .unwrap();
+                vector_bytes =
+                    u64::try_from(faces.capacity() * std::mem::size_of::<super::WalkedFace<'_>>())
+                        .unwrap();
                 let _probe = ctx.reserve_scoped(65536, PROBE)?;
                 drop((faces, graph_storage));
                 Ok(())
