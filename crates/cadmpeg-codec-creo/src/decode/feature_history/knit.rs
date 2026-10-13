@@ -274,12 +274,15 @@ pub(super) fn knit_surface_feature_definition(
             None => None,
         };
         match generated {
-            Some(faces) => FaceSelection::generated(
-                faces,
-                ctx.copy_retained_text(&native, "creo knit generated native selection")?,
-                ctx,
-            )?
-            .unwrap_or(FaceSelection::Native(native)),
+            Some(faces) => match faces.try_into() {
+                Ok(faces) => {
+                    let native = native.try_into().map_err(|_| {
+                        CodecError::Malformed("constructed Creo knit selection is blank".into())
+                    })?;
+                    FaceSelection::Generated { faces, native }
+                }
+                Err(_) => FaceSelection::Native(native),
+            },
             None => FaceSelection::Native(native),
         }
     } else {
@@ -776,7 +779,7 @@ pub(in super::super) fn feature_result_topology(
             format_args!("surface#{surface_id}"),
             "creo feature result face local IDs",
         )?;
-        let id = NonBlankString::for_decode(ctx, text, "validate nonblank text")?
+        let id = NonBlankString::from_ascii_leading(text)
             .ok_or_else(|| CodecError::Malformed("constructed face local ID is blank".into()))?;
         ctx.reserve_vec(&mut faces, 1, "creo feature result face members")?;
         faces.push(id);
@@ -790,7 +793,7 @@ pub(in super::super) fn feature_result_topology(
             format_args!("curve#{curve_id}"),
             "creo feature result edge local IDs",
         )?;
-        let id = NonBlankString::for_decode(ctx, text, "validate nonblank text")?
+        let id = NonBlankString::from_ascii_leading(text)
             .ok_or_else(|| CodecError::Malformed("constructed edge local ID is blank".into()))?;
         ctx.reserve_vec(&mut edges, 1, "creo feature result edge members")?;
         edges.push(id);

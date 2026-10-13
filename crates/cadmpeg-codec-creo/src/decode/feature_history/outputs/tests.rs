@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    bodies_containing_edges, copy_body_id, decoded_feature_reference_name,
-    evaluated_sweep_body_kind, feature_output_bodies, feature_reference_name,
-    generated_edge_output_bodies, generated_input_output_bodies,
+    bodies_containing_edges, decoded_feature_reference_name, evaluated_sweep_body_kind,
+    feature_output_bodies, feature_reference_name, generated_edge_output_bodies,
+    generated_input_output_bodies,
 };
 
 #[test]
@@ -176,28 +176,11 @@ fn evaluated_sweep_candidate_refuses_before_scoped_text() {
 fn evaluated_sweep_body_refuses_before_retained_id() {
     let scan = crate::test_support::empty_container_scan();
     let ir = sweep_output_ir();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo feature output body IDs"),
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = policy;
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            feature_output_bodies(&ctx, &scan, &ir, 40).map(|_| ())
-        },
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = feature_output_bodies(&ctx, &scan, &ir, 40)
-        .expect_err("one output needs a retained ID");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo feature output body IDs")
-    );
+    let outputs =
+        crate::test_support::assert_retained_boundaries(&["creo feature output body IDs"], |ctx| {
+            feature_output_bodies(ctx, &scan, &ir, 40)
+        });
+    assert_eq!(outputs, vec![ir.model.bodies[0].id.clone()]);
 }
 
 #[test]
@@ -219,53 +202,12 @@ fn evaluated_sweep_body_refuses_before_output_row() {
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = feature_output_bodies(&ctx, &scan, &ir, 40)
-        .expect_err("one output needs a Vec row");
+    let error =
+        feature_output_bodies(&ctx, &scan, &ir, 40).expect_err("one output needs a Vec row");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo evaluated sweep output bodies")
-    );
-}
-
-#[test]
-fn copied_output_body_id_refuses_before_retained_bytes() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo feature output body IDs"),
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = policy;
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let body = BodyId::mint("creo:test:body#1").expect("identity grammar");
-            copy_body_id(&ctx, &body).map(|_| ())
-        },
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let body = BodyId::mint("creo:test:body#1").expect("identity grammar");
-    let error = copy_body_id(&ctx, &body).expect_err("body ID needs retained bytes");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo feature output body IDs")
-    );
-}
-
-#[test]
-fn copied_unicode_output_body_id_charges_only_retained_copy_work() {
-    let arena = DecodeArena::new();
-    let body = BodyId::mint("creo:test:body#é").expect("identity grammar");
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(body.as_str().len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-
-    assert_eq!(
-        copy_body_id(&ctx, &body).expect("typed identity copy fits its byte-work limit"),
-        body
     );
 }
 

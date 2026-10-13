@@ -20,13 +20,6 @@ use cadmpeg_ir::topology::BodyKind;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(in super::super) fn copy_body_id(
-    ctx: &DecodeContext<'_>,
-    body: &BodyId,
-) -> Result<BodyId, CodecError> {
-    body.try_clone_for_decode(ctx, "creo feature output body IDs")
-}
-
 struct FeatureOutputCandidates<'ir, 'ctx> {
     bodies: Vec<&'ir BodyId>,
     storage: ScopedReservation<'ctx>,
@@ -88,7 +81,7 @@ pub(super) fn feature_output_bodies_with_history<'ir, 'ctx>(
     )? {
         let body = *candidate;
         ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
-        outputs.push(copy_body_id(ctx, body)?);
+        outputs.push(body.try_clone_for_decode(ctx, "creo feature output body IDs")?);
     }
     Ok(outputs)
 }
@@ -1164,7 +1157,9 @@ pub(in super::super) fn feature_source_properties<'ctx>(
             schema_class,
         )?;
     }
-    let row_schema_classes = feature_row_schema_classes(ctx, scan, feature_id)?;
+    let mut class_storage = ctx.reserve_scoped(0, "creo source property schema class evidence")?;
+    let row_schema_classes =
+        class_storage.with_storage(|| feature_row_schema_classes(ctx, scan, feature_id))?;
     if !row_schema_classes.is_empty() {
         insert_feature_source_property(
             ctx,
