@@ -1306,8 +1306,7 @@ pub(super) fn circle_dimension_handle_driver<'a>(
                 next_relation_offset.map_or(class.offset, |limit: u64| limit.min(class.offset)),
             );
         }
-        if class.offset > first.offset && class.name == "sgEntHandle"
-        {
+        if class.offset > first.offset && class.name == "sgEntHandle" {
             first_handle_offset = Some(
                 first_handle_offset.map_or(class.offset, |offset: u64| offset.min(class.offset)),
             );

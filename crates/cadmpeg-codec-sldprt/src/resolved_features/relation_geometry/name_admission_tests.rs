@@ -103,7 +103,9 @@ fn declared_slot_handle_reuses_selected_reference_and_class() {
         let mut probe = None;
         assert!(declared_slot_handle_dimension_center(
             &ctx,
-            || crate::resolved_features::relation_geometry::declared_entity_handle_owner(&ctx, &lanes, &operand),
+            || crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+                &ctx, &lanes, &operand
+            ),
             "feature",
             &operand,
             |lane, _| {
@@ -139,7 +141,8 @@ fn declared_slot_handle_requires_class_inside_owner_marker_interval() {
     payload[4..16].copy_from_slice(&reference(0));
     payload[16..28].copy_from_slice(&reference(0));
     lanes[0].native_payload = payload;
-    let mut marker = SketchInputEntity::new("slot", "lane", 0, 30, SketchInputKind::from_handle_code(0));
+    let mut marker =
+        SketchInputEntity::new("slot", "lane", 0, 30, SketchInputKind::from_handle_code(0));
     marker.feature_ref = Some("feature".into());
     lanes[0].sketch_entities[0] = marker;
     lanes[0].sketch_entities[0] = lanes[0].sketch_entities[0].with_test_identity(None, Some(0));
@@ -148,7 +151,8 @@ fn declared_slot_handle_requires_class_inside_owner_marker_interval() {
     point = point.with_test_identity(None, Some(0));
     point.coordinates_m = Some(cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]).unwrap());
     lanes[0].sketch_entities.push(point);
-    let mut other = SketchInputEntity::new("other-center", "lane", 2, 34, SketchInputKind::Point).with_test_identity(None, Some(1));
+    let mut other = SketchInputEntity::new("other-center", "lane", 2, 34, SketchInputKind::Point)
+        .with_test_identity(None, Some(1));
     other.feature_ref = Some("feature".into());
     other.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.0]);
     lanes[0].sketch_entities.push(other);
@@ -163,8 +167,18 @@ fn declared_slot_handle_requires_class_inside_owner_marker_interval() {
         }
         let ctx = cadmpeg_test_support::service_decode_context();
         let resolved = declared_slot_handle_dimension_center(
-            &ctx, || crate::resolved_features::relation_geometry::declared_entity_handle_owner(&ctx, &lanes, &operand), "feature", &operand, |_, _| Ok(Some([0, 1])),
-        ).unwrap().unwrap();
+            &ctx,
+            || {
+                crate::resolved_features::relation_geometry::declared_entity_handle_owner(
+                    &ctx, &lanes, &operand,
+                )
+            },
+            "feature",
+            &operand,
+            |_, _| Ok(Some([0, 1])),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(resolved.0.id(), "slot");
         assert_eq!(resolved.1.id(), "center");
     }

@@ -3693,9 +3693,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        owner()?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(None);
     };
     let mut markers_storage = ctx.reserve_scoped(0, DIMENSIONED_HANDLE_OPERATION)?;
@@ -3801,9 +3799,7 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        owner()?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(None);
     };
     Ok(ctx
@@ -3933,9 +3929,7 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     if !expected_radius.is_finite() || expected_radius <= 0.0 {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        owner()?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(None);
     };
     let child_pairs_scope = ctx
@@ -4055,9 +4049,7 @@ pub(super) fn declared_entity_handle_has_resolved_pair<'a>(
     owner: impl FnOnce() -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError>,
     feature: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        owner()?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(false);
     };
     let pairs_scope = ctx.with_scoped_storage("SLDPRT resolved entity-handle pairs", || {
@@ -4078,9 +4070,7 @@ pub(super) fn declared_entity_handle_point_is_declared_radial<'a>(
     let Some(entity_ref) = operand.entity_ref.as_deref() else {
         return Ok(false);
     };
-    let DeclaredEntityHandleOwner::Unique { lane, .. } =
-        owner()?
-    else {
+    let DeclaredEntityHandleOwner::Unique { lane, .. } = owner()? else {
         return Ok(false);
     };
     let pairs_scope = ctx.with_scoped_storage("SLDPRT declared radial identity pairs", || {

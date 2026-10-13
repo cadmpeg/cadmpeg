@@ -70,9 +70,13 @@ fn circle_handle_classifies_literal_names_and_skips_singleton_sort() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &probe_policy).unwrap();
     let operation = "match SLDPRT circle handle class";
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, operation, None,
+        ResourceDimension::WorkUnits,
+        operation,
+        None,
     );
-    assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
+    assert!(circle_dimension_handle_driver(&ctx, &relation, &input)
+        .unwrap()
+        .is_none());
     let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
         panic!("fixed-literal classification must not charge name lengths");
     };
