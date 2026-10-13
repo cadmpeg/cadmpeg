@@ -237,7 +237,10 @@ fn exact_placed_revolution_records_surface_layer_refusal_after_curve_insertion()
         };
         assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(ctx.resource_refusal(), Some(first));
-        let need = first.used.checked_add(first.additional).expect("retained need");
+        let need = first
+            .used
+            .checked_add(first.additional)
+            .expect("retained need");
         assert!(need > cap);
         // Both layer charges have the same operation and amount. Admit each
         // measured need until the placed curve distinguishes the second one.
@@ -264,7 +267,15 @@ fn exact_placed_revolution_records_surface_layer_refusal_after_curve_insertion()
                 cadmpeg_ir::geometry::SolvedCurveGeometry::Transformed(_)
             )
         ));
-        assert_eq!(curve.source_object.as_ref().expect("curve source").layer.as_deref(), Some("0"));
+        assert_eq!(
+            curve
+                .source_object
+                .as_ref()
+                .expect("curve source")
+                .layer
+                .as_deref(),
+            Some("0")
+        );
         let refused_model = ir.model.clone();
         for _ in 0..64 {
             assert!(matches!(super::super::project(

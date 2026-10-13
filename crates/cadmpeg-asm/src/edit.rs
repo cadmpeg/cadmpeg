@@ -2153,8 +2153,14 @@ mod tests {
 
     fn stream_with_product_strings(width: RefWidth, length: u8) -> Vec<u8> {
         let (magic, header_len): (&[u8], _) = match width {
-            RefWidth::Four => (b"ASM BinaryFile4", crate::layout::asmheader_binaryfile4::LEN),
-            RefWidth::Eight => (b"ASM BinaryFile8", crate::layout::asmheader_binaryfile8::LEN),
+            RefWidth::Four => (
+                b"ASM BinaryFile4",
+                crate::layout::asmheader_binaryfile4::LEN,
+            ),
+            RefWidth::Eight => (
+                b"ASM BinaryFile8",
+                crate::layout::asmheader_binaryfile8::LEN,
+            ),
         };
         let mut bytes = magic.to_vec();
         bytes.resize(header_len, 0);
