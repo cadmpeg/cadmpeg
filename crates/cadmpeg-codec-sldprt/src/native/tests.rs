@@ -513,10 +513,10 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
     assert!(!super::edge_selection_disagrees_with_payload(&service, &lane, &record, &[]).unwrap());
 }
 
-#[test]
-fn native_surface_validation_collection_limit_refuses_before_candidates() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn surface_validation_fixture() -> (
+    crate::records::FeatureInputLane,
+    crate::records::FeatureInputSurfaceSelection,
+) {
     let mut lane = emitter_models()
         .iter()
         .flat_map(|model| &model.feature_input_lanes)
@@ -544,17 +544,25 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
         type_signature: signature,
         local_id: Some(12),
     }];
+    (lane, record)
+}
+
+#[test]
+fn native_surface_validation_collection_limit_refuses_before_candidates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (lane, record) = surface_validation_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let features_by_source =
-        crate::resolved_features::component_paths::FeaturesBySource::new(&limited, []).unwrap();
+    let mut features_by_source = None;
     let error = super::surface_selection_disagrees_with_payload(
         &limited,
         &lane,
         &record,
-        &features_by_source,
+        &[],
+        &mut features_by_source,
     )
     .unwrap_err();
     assert!(matches!(
@@ -565,13 +573,13 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let features_by_source =
-        crate::resolved_features::component_paths::FeaturesBySource::new(&service, []).unwrap();
+    let mut features_by_source = None;
     assert!(!super::surface_selection_disagrees_with_payload(
         &service,
         &lane,
         &record,
-        &features_by_source,
+        &[],
+        &mut features_by_source,
     )
     .unwrap());
 }
@@ -1947,3 +1955,5 @@ fn native_identity_vectors_drop_before_lane_validation() {
 }
 
 mod ownership;
+
+mod surface_index;
