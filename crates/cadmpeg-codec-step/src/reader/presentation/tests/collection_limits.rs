@@ -67,13 +67,13 @@ fn decode_refuses(operation: &'static str) {
             let (ctx, _) =
                 DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
             let mut ir = cadmpeg_ir::CadIr::empty();
+            let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
             let result = super::super::decode(
                 &exchange,
                 &topology,
                 &mut ir,
                 &std::collections::BTreeMap::new(),
-                &ctx,
-            );
+                &ctx, &mut admitted);
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal(), Some(*refusal));
                 if matches!(

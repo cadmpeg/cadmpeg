@@ -22,7 +22,8 @@ fn layer_result(retained_limit: u64) -> Result<(), CodecError> {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
-    super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx)?;
+    let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+    super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx, &mut admitted)?;
     Ok(())
 }
 
@@ -125,8 +126,9 @@ fn repeated_colour_retains_output_text_and_appearance_identities() {
             let mut ir = cadmpeg_ir::document::CadIr::empty();
             let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
             let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
+            let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
             let outcome =
-                super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx)?;
+                super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx, &mut admitted)?;
             assert!(outcome.losses.is_empty());
             assert_eq!(ir.model.appearances.len(), 1);
             assert_eq!(ir.model.appearance_bindings.len(), 2);
@@ -181,8 +183,9 @@ fn presentation_warning_text_refuses_before_report_insertion() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
         assert!(
-            matches!(super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx), Err(CodecError::ResourceLimit(limit))
+            matches!(super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx, &mut admitted), Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "step_presentation_loss_text"
                 && limit.used == 0

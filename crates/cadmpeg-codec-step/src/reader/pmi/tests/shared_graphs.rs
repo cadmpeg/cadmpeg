@@ -339,7 +339,8 @@ fn geometric_usage_shares_repeated_applications_and_keeps_targets_and_claims() {
                 crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("control carriers");
             let topology = crate::reader::topology::decode(&control, &mut ir, &carriers, &setup)
                 .expect("control topology");
-            super::super::decode(&control, &geometry.value, &topology.value, &mut ir, ctx)
+            let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+            super::super::decode(&control, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
                 .expect("two unique applications");
         });
         let setup = cadmpeg_test_support::service_decode_context();
@@ -352,8 +353,9 @@ fn geometric_usage_shares_repeated_applications_and_keeps_targets_and_claims() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = first_work + 3000 * (2 * count + 4);
         with_session(&policy, |ctx| {
+            let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
             let (outcome, _report_text) =
-                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx)
+                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
                     .expect("shared applications fit");
             assert!(outcome.losses.is_empty());
             for id in 10000..10000 + count {
@@ -442,8 +444,9 @@ fn geometric_usage_shares_unsupported_pairs_without_claiming_records() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 3000 * 132;
         with_session(&policy, |ctx| {
+            let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
             let (outcome, _report_text) =
-                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx)
+                super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
                     .expect("shared unsupported queries fit");
             assert!(outcome.losses.is_empty());
             for id in 10000..10064 {
@@ -480,13 +483,13 @@ fn placement_ambiguity_admits_warning_text_before_publication() {
             policy.limits.max_retained_bytes = limit;
             with_session(&policy, |ctx| {
                 let mut output = ir.clone();
+                let mut admitted = cadmpeg_core::decode::u64_from_index(output.model.entity_count());
                 let result = super::super::decode(
                     &exchange,
                     &geometry.value,
                     &topology.value,
                     &mut output,
-                    ctx,
-                )
+                    ctx, &mut admitted)
                 .map(|_| ());
                 if let Err(CodecError::ResourceLimit(ref refusal)) = result {
                     assert_eq!(refusal.operation, operation);
@@ -855,8 +858,9 @@ fn discarded_tolerance_warning_text_refuses_when_promoted() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     with_session(&policy, |ctx| {
+        let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
         let (outcome, report_text) =
-            super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx)
+            super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, ctx, &mut admitted)
                 .expect("temporary report text");
         assert_eq!(outcome.losses.len(), 1);
         assert_eq!(
