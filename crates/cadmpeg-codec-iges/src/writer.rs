@@ -619,6 +619,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_curves.contains(curve.id.as_str()) {
                 continue;
             }
+            let Some(status) = ownership.curve_status(curve, &mut losses) else {
+                continue;
+            };
             let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
             })?)?;
@@ -636,7 +639,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                     geometry: &geometry,
                     span: span.as_ref(),
                     sense: Sense::Forward,
-                    status: ownership.status(curve.source_object.as_ref()),
+                    status,
                     reference_offset: 0,
                 },
             )?;
@@ -1841,6 +1844,9 @@ fn brep_entities(
         {
             continue;
         }
+        let Some(status) = ownership.curve_status(curve, losses) else {
+            continue;
+        };
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
             CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
         })?)?;
@@ -1858,7 +1864,7 @@ fn brep_entities(
                 geometry: &geometry,
                 span: span.as_ref(),
                 sense: Sense::Forward,
-                status: ownership.status(curve.source_object.as_ref()),
+                status,
                 reference_offset: 0,
             },
         )?;
@@ -2712,6 +2718,9 @@ fn topology_entities(
         {
             continue;
         }
+        let Some(status) = ownership.curve_status(curve, losses) else {
+            continue;
+        };
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
             CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
         })?)?;
@@ -2729,7 +2738,7 @@ fn topology_entities(
                 geometry: &geometry,
                 span: span.as_ref(),
                 sense: Sense::Forward,
-                status: ownership.status(curve.source_object.as_ref()),
+                status,
                 reference_offset: 0,
             },
         )?;

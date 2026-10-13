@@ -435,3 +435,77 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 .starts_with("1 free point record (test:model:point#free)")));
     }
 }
+
+#[test]
+fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
+    for (file, expected_pcurves) in [
+        (
+            crate::test_support::test_surface_fixtures::trimmed_plane_file(),
+            1,
+        ),
+        (
+            crate::test_support::test_drawing_and_trimming::multi_pcurve_boundary_file(),
+            2,
+        ),
+    ] {
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+        let curve_entries: Vec<_> = generated
+            .bytes
+            .chunks_exact(81)
+            .filter(|card| card[72] == b'D' && card[..8].trim_ascii() == b"126")
+            .collect();
+        // One model-space boundary carrier and one entity per boundary pcurve.
+        assert_eq!(curve_entries.len(), (1 + expected_pcurves) * 2);
+        assert_eq!(
+            generated
+                .losses
+                .iter()
+                .filter(|loss| loss.code
+                    == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind())
+                .count(),
+            expected_pcurves
+        );
+        let result = IgesCodec
+            .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().model.pcurves.len(), expected_pcurves);
+        assert_eq!(result.ir().model.edges.len(), 1);
+    }
+}
+
+#[test]
+fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    let file = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters: "110,0,0,0,1,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "POINT".into(),
+            status: "00000000",
+            parameters: "116,2,3,4,0;".into(),
+        },
+    ]);
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+    assert!(generated.losses.iter().any(|loss| loss.code
+        == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
+        && loss.message.contains("parameter-space carrier")));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.points.len(), 1);
+}
