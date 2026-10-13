@@ -1670,12 +1670,27 @@ is admitted only when both complete grammars consume the same two bytes.
 
 The field roster of a feature-history section declares `m_rollForwardStates`
 only when its value is present. Its value is a sequence of counted groups. A
-group opener is `01 00` or `01 01`, followed by the counted header `01,
-declared_count:u8`; the row count is `max(declared_count-1, 0)`. A list row is
-`4a, object_index, position, ff`. A relation row is `4f` or `48`, two object
-indices, and `ff ff`. Rows retain order, exact tokens, and source offsets.
-An empty group has declared count zero. The table ends before the state-counter
-map and retains any exact table-boundary bytes.
+group opener is `01 00` or `01 01`, followed by either `00` for an empty
+group or `01, declared_count:u8`; the counted row count is
+`max(declared_count-1, 0)`. A list row is `4a, endpoint, position, ff`.
+A relation row is `4f` or `48`, two endpoints, and `ff ff`. Endpoint and
+position tokens use the non-null operation-state index encoding. Rows retain
+order, exact tokens, and source offsets. The table ends before the state-counter
+map with either no boundary bytes or the exact `01 01` boundary marker.
+
+In the retained `Drone Wing Chassis - Small wing radius.prt`,
+`Drone Wing Chassis - Small wing radius -90 degree.prt`, and
+`Drone Wing Chassis.prt` tables, all 261 endpoint values fall within the
+zero-based row-ordinal ranges of their following counter maps, which contain 1,073, 1,109,
+and 1,447 rows respectively. Each table's largest endpoint equals its last
+counter-row ordinal. List positions are a separate lane; a position can exceed
+the counter-row count. An endpoint does not directly contain the counter row's
+object-index value: 69 of 70, 71 of 73, and 66 of 66 distinct endpoints,
+respectively, do not occur in that value lane. Aligning equal list positions
+or pair tags within corresponding group and row ordinals in the two small-wing
+tables yields 81 uses of a bijection between 70 endpoint identities. These
+observations support a save-local counter-row ordinal relation; they do not
+supply a Boolean suppression value or a unique operation-to-state-object binding.
 
 The object state-counter map is the contiguous suffix
 `05, row_kind:u8, object_index, introduced_state:u8, modified_state:u8, 4e`.
