@@ -13,6 +13,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
@@ -629,15 +630,13 @@ fn retain_v1_record(
             )
         }
         None => {
-            let digest = cadmpeg_ir::hash::sha256(bytes);
+            let digest =
+                Sha256Digest::digest_for_decode(ctx, bytes, "Rhino V1 source digest text")?;
             UnknownRecord::unavailable(
                 id,
                 offset,
                 cadmpeg_core::decode::u64_from_index(bytes.len()),
-                ctx.format_retained(
-                    format_args!("{}", cadmpeg_ir::hash::LowerHex(&digest)),
-                    "Rhino V1 source digest text",
-                )?,
+                String::from(digest),
                 Vec::new(),
             )
         }
