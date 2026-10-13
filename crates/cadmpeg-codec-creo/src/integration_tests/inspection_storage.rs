@@ -106,11 +106,9 @@ fn inspect_with_retained_limit(
 }
 
 fn minimum_retained_limit(input: &[u8]) -> u64 {
-    crate::test_support::allocation_limit_at(
-        ResourceDimension::RetainedBytes,
-        None,
-        |limit| inspect_with_retained_limit(input, limit),
-    )
+    crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None, |limit| {
+        inspect_with_retained_limit(input, limit)
+    })
 }
 
 #[test]

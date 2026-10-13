@@ -16,8 +16,8 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-mod orientations;
 mod ordering_storage;
+mod orientations;
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
     Surface {
@@ -915,5 +915,5 @@ fn geometry_section_record_refuses_retained_identity_limit() {
             && resource.operation == "creo geometry section record identity"));
 }
 
-mod predicates;
 mod admission_visits;
+mod predicates;

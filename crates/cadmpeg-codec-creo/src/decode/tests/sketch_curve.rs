@@ -6,9 +6,7 @@ use crate::decode::feature_history::dimensions::{
     feature_dimension_display, feature_dimension_parameter_id, feature_dimension_parameter_layout,
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
-use crate::decode::feature_history::outputs::{
-    evaluated_sweep_body_kind, feature_output_bodies,
-};
+use crate::decode::feature_history::outputs::{evaluated_sweep_body_kind, feature_output_bodies};
 use crate::decode::sketch::geometry::section_circle_geometry;
 use crate::decode::sketch::radii::resolved_section_radii;
 use crate::decode::sketch_transfer::constraints::{

@@ -289,4 +289,3 @@ fn detection_reads_fixed_magic_with_zero_work_budget() {
         );
     }
 }
-

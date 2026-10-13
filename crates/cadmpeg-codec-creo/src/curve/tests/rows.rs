@@ -425,8 +425,8 @@ fn two_chart_samples_with_collection_limit(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("root input is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root input is admitted");
     two_chart_pcurve_samples(&ctx, payload, Some(face_ids))
 }
 

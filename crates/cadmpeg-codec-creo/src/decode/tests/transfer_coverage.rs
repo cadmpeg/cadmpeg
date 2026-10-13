@@ -769,8 +769,5 @@ fn incidence_family_lattice_narrows_endpoint_evidence() {
     .into_iter()
     .collect();
     normalize_section_incidence_curve_family_evidence(&mut conflicting);
-    assert_eq!(
-        conflicting.len(),
-        2
-    );
+    assert_eq!(conflicting.len(), 2);
 }

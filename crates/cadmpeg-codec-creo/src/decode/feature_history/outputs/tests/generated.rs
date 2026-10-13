@@ -371,16 +371,17 @@ fn duplicate_generated_output_candidates_copy_one_final_body_id() {
     };
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(feature_row);
-    scan.features.affected_ids.push(crate::feature::rows::FeatureAffectedIds {
-        feature_id: 10,
-        kind: crate::feature::rows::AffectedIdKind::Edges,
-        ids: vec![45],
-        offset: 0,
-    });
+    scan.features
+        .affected_ids
+        .push(crate::feature::rows::FeatureAffectedIds {
+            feature_id: 10,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
+            ids: vec![45],
+            offset: 0,
+        });
     scan.curves.topology_rows.push(curve_row);
 
-    let body_id = BodyId::mint("creo:feature:extrusion#50:body")
-        .expect("identity grammar");
+    let body_id = BodyId::mint("creo:feature:extrusion#50:body").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -473,8 +474,8 @@ fn duplicate_generated_output_candidates_copy_one_final_body_id() {
         .checked_add(1)
         .expect("retained-byte boundary");
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     assert_eq!(
         feature_output_bodies(&ctx, &scan, &ir, 10)
             .expect("duplicate candidates need one final body ID copy"),

@@ -29,10 +29,17 @@ fn terminal_plane_corner_candidates_preserve_one_and_eight_byte_scalar_widths() 
                 }
                 let slots = first_coordinate_plane_corner_tokens(&body, &cache)
                     .expect("complete six-scalar corner suffix");
-                let expected = if width == 1 { [1.0, 0.0, 1.0, 1.0, 0.0, 1.0] } else { [2.0; 6] };
+                let expected = if width == 1 {
+                    [1.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+                } else {
+                    [2.0; 6]
+                };
                 for (index, (value, first, end)) in slots.into_iter().enumerate() {
                     assert_eq!(value, expected[index]);
-                    assert_eq!((first, end), (start + index * width, start + (index + 1) * width));
+                    assert_eq!(
+                        (first, end),
+                        (start + index * width, start + (index + 1) * width)
+                    );
                 }
                 assert_eq!(slots[5].2, frame_end);
                 body[prefix + 2] = 0x9b;
