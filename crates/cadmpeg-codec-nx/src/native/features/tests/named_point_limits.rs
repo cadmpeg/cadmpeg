@@ -8,11 +8,10 @@ use crate::native::features::offset_store_named_points;
 fn named_point_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
+    let source_bytes_1 = crate::test_support::test_prt::composed_feature_history_prt();
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            crate::test_support::test_prt::composed_feature_history_prt(),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_1)
     })
     .expect("composed feature-history container");
     let admitted =
@@ -69,11 +68,10 @@ fn named_point_refuses_work_limit() {
 fn named_point_block_use_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
+    let source_bytes_2 = crate::test_support::test_prt::composed_feature_history_prt();
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            crate::test_support::test_prt::composed_feature_history_prt(),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_2)
     })
     .expect("composed feature-history container");
     let (references, points) = crate::test_support::with_decode_context(|ctx| {

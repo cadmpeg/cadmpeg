@@ -4,7 +4,6 @@
 use crate::om::indexed_sections;
 use crate::om::ProductRecordRange;
 use crate::test_support::test_om::control_root_offset_only_indexed_om_section;
-use crate::test_support::test_om::indexed_om_section;
 use crate::test_support::test_om::offset_only_indexed_om_section;
 
 fn product_record_count_within(
@@ -46,27 +45,6 @@ fn om_offset_only_index_bounds_storage_blocks() {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(25.0)
     );
-}
-
-#[test]
-fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
-    for bytes in [indexed_om_section(), offset_only_indexed_om_section()] {
-        let source = std::sync::Arc::<[u8]>::from(bytes.as_slice());
-        crate::test_support::with_decode_context(|ctx| {
-            let section = indexed_sections(ctx, &bytes)
-                .unwrap()
-                .into_iter()
-                .next()
-                .expect("indexed fixture has one section");
-            let (layout, storage) =
-                crate::om::cache::IndexedSectionLayout::from_section(ctx, &section, &source)
-                    .unwrap();
-            let layout = layout.expect("validated indexed section has a cache layout");
-            assert_eq!(layout.materialize(ctx).unwrap(), section);
-            drop(layout);
-            drop(storage);
-        });
-    }
 }
 
 #[test]

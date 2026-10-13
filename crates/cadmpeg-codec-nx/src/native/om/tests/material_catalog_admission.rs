@@ -78,7 +78,7 @@ fn material_catalog_search_refusal(operation: &str) {
         ("/Root/qafmetadata", qaf.to_vec()),
     ]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("material catalog container");
     let assets = crate::test_support::with_decode_context(|ctx| {
         super::super::material_texture::material_texture_assets(ctx, &container)

@@ -260,3 +260,60 @@ fn unicode_record_native_limit_refuses_before_code_unit_copy() {
         serde_json::from_str::<serde_json::Value>(wire).unwrap(),
     );
 }
+
+#[test]
+fn attribute_definition_text_projection_copies_the_checked_value() {
+    let streams =
+        crate::test_support::extract_streams(&crate::test_support::test_prt::prt_with_partition(
+            &crate::test_support::test_streams::parasolid_entity_records_stream(),
+        ));
+    let rows = crate::test_support::with_decode_context(|ctx| {
+        super::super::parasolid_attribute_definitions(ctx, &streams)
+    })
+    .unwrap();
+    assert!(!rows.is_empty());
+    let expected = rows[0].name.as_str().len();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "retain NX attribute definition name",
+        |ctx| super::super::parasolid_attribute_definitions(ctx, &streams),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.additional == cadmpeg_core::decode::u64_from_index(expected))
+    );
+}
+
+#[test]
+fn parasolid_string_text_projection_copies_the_checked_value() {
+    let text = "Label ".repeat(512);
+    let mut bytes = vec![0, 0x54];
+    bytes.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&12u16.to_be_bytes());
+    bytes.extend_from_slice(text.as_bytes());
+    bytes.push(0);
+    let streams = [super::stream(
+        crate::parasolid::ParasolidSubtype::Deltas,
+        "SCH_TEST",
+        bytes,
+    )];
+    let events = super::super::parasolid_deltas_events(&streams);
+    assert_eq!(events.records.len(), 1);
+    let rows = crate::test_support::with_decode_context(|ctx| {
+        super::super::parasolid_entity_value_records(ctx, &streams, &events.records)
+    })
+    .unwrap();
+    assert_eq!(rows.strings.len(), 1);
+    assert_eq!(rows.strings[0].value.as_str(), text);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "retain NX Parasolid string value",
+        |ctx| super::super::parasolid_entity_value_records(ctx, &streams, &events.records),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.additional == cadmpeg_core::decode::u64_from_index(text.len()))
+    );
+}
