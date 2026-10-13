@@ -698,7 +698,10 @@ current levels require those matrices and representative fixtures.
   pcurves require the complete finite arc-length circle grammar. Both transfer
   over their stored parameter intervals.
   Object-stream `b5 03 21` pcurves require the exact single-segment clamped
-  Bézier grammar, complete finite suffix, and positive scalar domain.
+  Bézier grammar, complete finite suffix, and positive scalar domain. The suffix
+  span equals the serialized knot difference exactly. Transfer subtracts the
+  native knot origin and checks incidence stations in the zero-based domain;
+  a nonzero origin does not change the locus or the occurrence interval.
   Object-stream `a8 03 21` pcurves require the complete degree-5 UV
   position/first-derivative/second-derivative jet, multiplicity grammar, and
   finite tail. Each knot span transfers as an exact quintic Bézier segment.
@@ -1427,6 +1430,19 @@ frames and logical source coordinates. Counted references retain their
 addressing forms. Incidence requires same-source logical adjacency and the
 checked successor relation; fixed-nine raw weak values keep their dialect.
 Local domains require independent member and location evidence for final topology.
+
+The class-`5b` interval prefix and class-`5c` parallel reference/item production
+retain their complete controls and suffixes in native frames. The three
+closed binary32 intervals admit degenerate bounds. Four-byte item order
+follows allocation-reference occurrence order; other widths remain retained.
+Short five- and six-byte nine-reference tails remain counted-owner payloads.
+Neither control production assigns a standard support identity or a face sense.
+
+Independent verification covers all 79 native inputs, 5,214 copied control
+frames, and 19,277 copied owner frames with full composed model checking.
+The broader source graph census and the typed fixed-nine cycle population use
+different admission rules. The proposed universal face-node identity-offset
+rule has three source counterexamples and is not an integration invariant.
 
 Consolidated class-`27` plane carriers decode the five `ec/e4/c4/dc/d4`
 layouts as a finite XY point, stored or implicit horizontal U direction,

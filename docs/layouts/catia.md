@@ -1076,6 +1076,38 @@ Offsets are relative to the payload after the 4+w-byte B-family frame header. He
 | 18 | 16 | `direction_xy` | `f64[2]` | little | spec | `+18` direction XY (`2×f64le`) |
 | 34 | 32 | `bounds` | `f64[4]` | little | spec | the 66-byte two-component direction payload has bounds at `+34` |
 
+## `consolidated_class5b_interval_prefix`
+
+Spec §6.4 · layout: byte offsets · size: 28 B
+
+Fixed payload prefix only; the complete B-family frame retains a separate suffix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `controls` | `u8[4]` | little | spec | `81 03 05 01` at payload `+0` |
+| 4 | 8 | `interval0` | `f32[2]` | little | spec | three finite closed binary32 intervals at `+4`, `+12`, and `+20` |
+| 12 | 8 | `interval1` | `f32[2]` | little | spec | three finite closed binary32 intervals at `+4`, `+12`, and `+20` |
+| 20 | 8 | `interval2` | `f32[2]` | little | spec | three finite closed binary32 intervals at `+4`, `+12`, and `+20` |
+
+## `consolidated_nine_reference_short_tail`
+
+Spec §6.4 · layout: byte offsets · size: 5 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header` | `u8[4]` | little | spec | `<header:u8[4]> 01`, exactly five bytes |
+| 4 | 1 | `length_control` | `u8` | little | spec | Tail byte `+4` selects these two lengths |
+
+## `consolidated_nine_reference_six_byte_tail`
+
+Spec §6.4 · layout: byte offsets · size: 6 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header` | `u8[4]` | little | spec | `<header:u8[4]> 00 <residue:u8>` |
+| 4 | 1 | `length_control` | `u8` | little | spec | Tail byte `+4` selects these two lengths |
+| 5 | 1 | `residue` | `u8` | little | spec | `<header:u8[4]> 00 <residue:u8>` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
