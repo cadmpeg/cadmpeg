@@ -34,6 +34,24 @@ anchor = "| Small index | `uint16` BE, 2 bytes |"
 # --- §2 SPLMSSTR container --------------------------------------------------
 
 [[record]]
+name = "assembly_placement_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/native/assembly_placement.rs"
+kind = "byte"
+section = "2.3"
+anchor = "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with"
+size = 6
+endianness = "big"
+note = "Twelve variable-width matrix atoms follow this fixed prefix."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "`ff 00 45 01 04 01`. Twelve scalar atoms follow in row-major order as a"
+value = [255, 0, 69, 1, 4, 1]
+
+[[record]]
 name = "splmsstr_header"
 parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
 kind = "byte"

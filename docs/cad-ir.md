@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"8"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"9"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -212,7 +212,7 @@ Feature-operation records are exactly bounded and ordered. They retain separatel
 
 Sketch retention reconstructs exact payloads across ordered column boundaries, including framed sketch scalar and name fields, name-delimited scalar groups, and complete named two-dimensional sketch points. Expressions keep exact-name links to object-ID-bounded parameter declarations, parsed parameter indices, qualifiers, declaration-local constant literals, formulas, dependencies, and values. Ordered operation-input-to-parameter bindings, framed entity strings, ordered entity-reference occurrences with resolved same-section targets, grouped persistent handles, indexed external-reference handle sets, end-anchored external child-part strings, arrangements, and typed part attributes travel with the same namespace.
 
-NX datum-coordinate-system payloads retain complete framed scalar fields with exact source offsets. NX JPEG previews with valid bounded marker structure and embedded TIFF material textures transfer to exact neutral document assets. NX native data retains TIFF metadata and exact QAF stored-path-to-logical-material-path catalog relations. Those relations identify texture assets and logical names and leave body and face appearance assignment to the neutral appearance model. Topology-owned Parasolid type-81 attribute instances retain exact class relations to same-stream type-79 definitions selected by their serialized discriminators. Class-specific field-value roles remain native-only. Byte layout for these records lives in [`formats/siemens_nx.md`](formats/siemens_nx.md).
+NX datum-coordinate-system payloads retain complete framed scalar fields with exact source offsets. NX assembly placement records retain complete frame bytes, row-major matrices in their serialized translation unit, labels, UUIDs, and container-image offsets. Native validation checks all derived fields against the frame bytes. NX JPEG previews with valid bounded marker structure and embedded TIFF material textures transfer to exact neutral document assets. NX native data retains TIFF metadata and exact QAF stored-path-to-logical-material-path catalog relations. Those relations identify texture assets and logical names and leave body and face appearance assignment to the neutral appearance model. Topology-owned Parasolid type-81 attribute instances retain exact class relations to same-stream type-79 definitions selected by their serialized discriminators. Class-specific field-value roles remain native-only. Byte layout for these records lives in [`formats/siemens_nx.md`](formats/siemens_nx.md).
 
 Native records retain typed references into the neutral model. Format-neutral consumers treat foreign native records as opaque. An exporter preserves a supported namespace or reports its omission as loss. Native IDs participate in global uniqueness. A consumer that does not know a namespace still processes the neutral model and treats that namespace as opaque.
 
@@ -272,7 +272,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "8"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "9"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -286,7 +286,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "8",
+  "ir_version": "9",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

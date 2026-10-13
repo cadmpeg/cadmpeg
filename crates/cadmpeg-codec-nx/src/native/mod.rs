@@ -10,6 +10,7 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use crate::decode::Scan;
 
+pub(crate) mod assembly_placement;
 mod attach;
 pub(crate) mod catalogue;
 pub(crate) mod display_jt;

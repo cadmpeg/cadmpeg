@@ -126,6 +126,7 @@ use crate::NxCodec;
 
 /// Arena names the native catalogue can emit.
 const KNOWN_ARENAS: &[&str] = &[
+    "assembly_placements",
     "class_definitions",
     "configuration_attribute_uses",
     "configurations",
@@ -384,7 +385,7 @@ const KNOWN_ARENAS: &[&str] = &[
 ];
 
 /// Minimum distinct arenas the golden fixtures must collectively populate.
-const ARENA_COVERAGE_FLOOR: usize = 122;
+const ARENA_COVERAGE_FLOOR: usize = 123;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
@@ -593,6 +594,14 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             payload.extend_from_slice(&word.to_le_bytes());
         }
         payload.extend_from_slice(&section);
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+    }));
+
+    f.push(("assembly_placement", {
+        let mut payload = vec![0xff, 0, 0x45, 1, 4, 1];
+        payload.extend([1, 0, 0, 0x50, 0x18, 0, 0, 0, 1, 0, 0x80, 0, 0, 1, 0]);
+        payload.extend([0, 0, 0, 1, 63, 0xf0, 0, 0, 0]);
+        payload.extend(b"\x03\x03A\0\x03\x2601234567-89ab-cdef-0123-456789abcdef\0");
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
     }));
 
@@ -1009,7 +1018,7 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 255, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 256, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
@@ -1023,7 +1032,7 @@ fn catalogue_arenas_match_known_arenas() {
             .iter()
             .filter(|row| matches!(&row.phase, Phase::GroupB { .. }))
             .count(),
-        9,
+        10,
         "group B family count"
     );
 

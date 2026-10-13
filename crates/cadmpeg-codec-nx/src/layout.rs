@@ -54,6 +54,18 @@ pub(crate) mod token {
     pub(crate) const SP_CURVE: u8 = 137;
 }
 
+/// Byte offsets for the `assembly_placement_prefix` record.
+///
+/// Spec §2.3. Record length 6 B.
+///
+/// ```text
+/// Twelve variable-width matrix atoms follow this fixed prefix.
+/// ```
+pub(crate) mod assembly_placement_prefix {
+    /// Stated value of `magic` (`bytes[6]`). Spec §2.3.
+    pub(crate) const MAGIC_VALUE: [u8; 6] = [0xff, 0x00, 0x45, 0x01, 0x04, 0x01];
+}
+
 /// Byte offsets for the `splmsstr_header` record.
 ///
 /// Spec §2. Record length 31 B.

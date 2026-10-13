@@ -68,8 +68,9 @@
 //! their complete earlier dependency closure transfer as active; other
 //! operation suppression remains unresolved. Embedded
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
-//! Complete design history, assembly occurrence placement, material and appearance
-//! assignment and `.prt` writing are not supported.
+//! Native assembly placement frames retain exact bytes and decoded matrices.
+//! Complete design history, binding placements to external child occurrences,
+//! material and appearance assignment and `.prt` writing are not supported.
 //! Part attributes transfer as document attributes. The object-model extraction
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
@@ -146,6 +147,23 @@ impl CodecBackend for NxCodec {
                 native::structure::occurrences::FastLoadOccurrences::from_namespace_with_context(
                     ctx, namespace,
                 )
+            })
+            .and_then(|_| {
+                for record in namespace
+                    .arena_iter_as_for_decode::<native::assembly_placement::AssemblyPlacement>(
+                        ctx,
+                        "assembly_placements",
+                    )
+                {
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(
+                            native::assembly_placement::MAX_FRAME_BYTES,
+                        ),
+                        "admit NX assembly placement frame",
+                    )?;
+                    record?;
+                }
+                Ok(())
             })
         });
         Ok(match admitted {

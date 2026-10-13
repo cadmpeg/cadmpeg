@@ -550,6 +550,35 @@ catalog atomically.
 
 Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams. Their component geometry resides in the external child `.prt` files named by `EXTREFSTREAM`. Occurrence placement binds each external component instance.
 
+**Assembly placement frames.**
+
+An assembly placement frame in `/Root/UG_PART/UG_PART` begins with
+`ff 00 45 01 04 01`. Twelve scalar atoms follow in row-major order as a
+three-by-four matrix. Each row contains three rotation entries and one
+translation entry.
+
+Atoms `00`, `01`, `80`, and `81` encode positive zero, positive one,
+negative zero, and negative one. An eight-byte atom starts with a byte in
+`20..3f` or `a0..bf`: add `0x10` to that byte, interpret the eight bytes as
+big-endian binary64, then divide by four. A four-byte atom starts with a
+byte in `40..5f` or `c0..df`: subtract `0x10` from that byte, append four
+zero bytes, interpret the resulting eight bytes as big-endian binary64,
+then divide by four. The four-byte form truncates binary64; it is not
+binary32. Every decoded entry is finite. Rotation row dot products differ
+from the identity matrix by less than `1e-4`, and the rotation determinant
+differs from positive one by less than `1e-4`.
+
+The matrix is followed by `00 00 00 01`, a five-byte trailer whose second
+byte is `f0`, a label frame, and a UUID frame. Each text frame is
+`03, length:u8, ASCII[length-2], 00`, with `length >= 2`. Text payloads
+contain no zero bytes. The UUID frame contains 36 canonical lowercase UUID
+characters and has `length = 38`.
+
+The native placement retains the complete frame bytes, matrix, label,
+UUID, and container-image source offset. Equal UUIDs or matrices do not
+merge placement records. Physical placement order does not define a
+FastLoad occurrence ordinal.
+
 ### 2.4 Legacy CFB envelope
 
 Legacy NX parts use the Compound File Binary envelope with the eight-byte header

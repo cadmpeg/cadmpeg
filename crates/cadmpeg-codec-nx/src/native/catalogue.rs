@@ -6,6 +6,7 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use super::assembly_placement::AssemblyPlacement;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::native::features::object_frame::DataBlockObjectFrame;
@@ -78,6 +79,12 @@ use super::structure::{
 use super::toggle::{SavedToggleEntry, SavedToggleStream};
 
 type CatalogueRow = FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, Exactness>;
+
+impl ContainerNoted for AssemblyPlacement {
+    fn container_note(&self) -> (Cow<'_, str>, u64) {
+        (Cow::Borrowed(&self.id), self.source_offset)
+    }
+}
 
 /// Serialize a record family into its arena when non-empty.
 fn emit_arena<T: Serialize>(
@@ -2733,6 +2740,17 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.structure.prototypes, r, ns),
         len: |m| m.structure.prototypes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "assembly_placements",
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupB {
+            tag: Some("ASSEMBLY_PLACEMENT"),
+            note: |ctx, m, r, tag, a| note_container(ctx, &m.om.assembly_placements, r, tag, a),
+        },
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.assembly_placements, r, ns),
+        len: |m| m.om.assembly_placements.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

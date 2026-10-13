@@ -13,14 +13,14 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
-  "ir_version": "8",
+  "ir_version": "9",
   "command": "check",
   "status": "ok",
   "refusal": null
 }"#;
 
 const JOIN_DOC: &str = r#"{
-  "ir_version": "8",
+  "ir_version": "9",
   "model": {
     "features": [
       {"id": "f1", "native_ref": "n1"},
@@ -38,7 +38,7 @@ const JOIN_DOC: &str = r#"{
 }"#;
 
 const RIGHT_DOC: &str = r#"{
-  "ir_version": "8",
+  "ir_version": "9",
   "native": {
     "rhino": {
       "unknowns": [

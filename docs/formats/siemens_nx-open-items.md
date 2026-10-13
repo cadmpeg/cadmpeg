@@ -1034,11 +1034,13 @@ member as a neutral suppression or visibility state.
 
 ### AM-05. Assembly occurrence placement
 
-**Question.** Which serialized fields define the transform and units of each assembly occurrence placement?
+**Question.** Which serialized relation binds each placement frame to one child occurrence, and which field defines its translation unit?
 
-**Known.** `siemens_nx.md` §2.3 "Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams." defines external child geometry and requires occurrence placement. The OM expression grammar defines stored numeric expression values.
+**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order.
 
-**Need.** We must know the fields to place each child part in assembly coordinates.
+**Need.** We must identify the child occurrence and translation unit to apply the matrix to external child geometry.
+
+**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. The five-byte trailer has no established instance or unit role.
 
 ### AM-06. Assembly pattern dimensions
 

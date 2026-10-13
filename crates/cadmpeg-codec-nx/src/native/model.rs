@@ -38,6 +38,7 @@ use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
 use crate::native::features::pattern::FeaturePatternReference;
 use crate::native::features::pattern::FeaturePatternTransformLane;
 
+use super::assembly_placement::{assembly_placements, AssemblyPlacement};
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
     display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
@@ -497,6 +498,7 @@ pub(in crate::native) struct FeatureRecords {
 
 /// Records extracted from the `om` domain.
 pub(in crate::native) struct OmRecords {
+    pub(super) assembly_placements: Vec<AssemblyPlacement>,
     pub(super) om_record_areas: Vec<OmRecordArea>,
     pub(super) audit_trail_rows: Vec<OmAuditTrailRow>,
     pub(super) operation_state_journal_groups: Vec<OmOperationStateJournalGroup>,
@@ -1462,6 +1464,7 @@ impl NativeModel {
             &object_uuid_values,
         )?;
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(ctx, container)?;
+        let assembly_placements = assembly_placements(ctx, container)?;
         Ok(NativeModel {
             display_jt: DisplayJtRecords {
                 graph: DisplayJtGraph::from_wire_with_context(
@@ -1685,6 +1688,7 @@ impl NativeModel {
                 feature_block_dimensions,
             },
             om: OmRecords {
+                assembly_placements,
                 om_record_areas,
                 audit_trail_rows,
                 operation_state_journal_groups,

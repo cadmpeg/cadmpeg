@@ -52,6 +52,19 @@ record states which lane it is in.
 | `134` | B_CURVE | 23 B | logical fixed record length | §4.1 |
 | `137` | SP_CURVE | variable | 33 bytes plus escape and large-index shifts | §4.1 |
 
+## `assembly_placement_prefix`
+
+Spec §2.3 · layout: byte offsets · size: 6 B
+
+Twelve variable-width matrix atoms follow this fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/native/assembly_placement.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `magic` | `bytes[6]` | big | spec | `ff 00 45 01 04 01`. Twelve scalar atoms follow in row-major order as a · value `[255, 0, 69, 1, 4, 1]` |
+
 ## `splmsstr_header`
 
 Spec §2 · layout: byte offsets · size: 31 B
