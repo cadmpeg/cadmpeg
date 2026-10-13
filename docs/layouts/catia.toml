@@ -3051,3 +3051,69 @@ offset = 5
 type = "u8"
 source = "spec"
 anchor = "`<header:u8[4]> 00 <residue:u8>`"
+
+[[record]]
+name = "fillet_control_scalar_tail"
+kind = "byte"
+section = "6.7"
+anchor = "The fillet tail starts immediately after the five references:"
+size = 22
+note = "Tail-relative offsets after five variable-width object references."
+
+[[record.field]]
+name = "result_selector"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | result selector:"
+
+[[record.field]]
+name = "sentinel"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "| `+1` | `u8` | fixed literal `05` |"
+
+[[record.field]]
+name = "radius"
+offset = 2
+type = "f64"
+endianness = "little"
+source = "spec"
+anchor = "| `+2` | `f64le` | positive construction radius R |"
+
+[[record.field]]
+name = "support0_side"
+offset = 10
+type = "u8"
+source = "spec"
+anchor = "| `+10` | `u8` | support-0 normal side:"
+
+[[record.field]]
+name = "support1_side"
+offset = 11
+type = "u8"
+source = "spec"
+anchor = "| `+11` | `u8` | support-1 normal side:"
+
+[[record.field]]
+name = "zero"
+offset = 12
+type = "f64"
+endianness = "little"
+source = "spec"
+anchor = "| `+12` | `f64le` | bit-exact positive zero |"
+
+[[record.field]]
+name = "contact_order"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "| `+20` | `u8` | support contact order:"
+
+[[record.field]]
+name = "closure"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "| `+21` | `u8` | sphere pole closure, or `05` for a non-sphere result |"

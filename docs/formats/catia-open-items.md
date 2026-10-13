@@ -358,22 +358,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** We must determine the terminal's selection rule and the allocation context that selects its value and form. Equal edge geometry and endpoint incidences do not supply that rule. A fresh native writer needs evidence for the terminal; existing records retain their exact byte.
 
-### OS-11. Class-`0x2c` auxiliary scalars
-
-**Question.** What does each decreasing auxiliary scalar in class-`0x2c` terminal forms `01 09` and `01 15` control?
-
-**Known.** The enclosing class-`0x30` construction supplies the exact result chart.
-
-**Need.** We must know the scalar roles to preserve the native construction.
-
-### OS-12. Class-`0x37` support construction
-
-**Question.** What operation does a `b5 03 37` support-bound construction represent? What does each of its six control bytes control?
-
-**Known.** `catia.md` §6.7 "`b5 03 37` (support-bound surface construction):" defines the support and result-carrier references.
-
-**Need.** We must know the operation and controls to construct the result surface directly.
-
 ## 5. Zero-entity `a9 03`
 
 ### ZE-05. Zero-entity ownership-root selection

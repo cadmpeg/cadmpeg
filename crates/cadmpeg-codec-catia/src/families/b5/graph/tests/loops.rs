@@ -1123,11 +1123,11 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         payload.push(0x18);
         payload.extend_from_slice(&reference.to_le_bytes());
     }
-    payload.extend_from_slice(&[0x01, 0x02]);
+    payload.extend_from_slice(&[0x11, 0x05]);
     payload.extend_from_slice(&2.0f64.to_le_bytes());
-    payload.extend_from_slice(&[0x03, 0x04]);
+    payload.extend_from_slice(&[0x03, 0x05]);
     payload.extend_from_slice(&0.0f64.to_le_bytes());
-    payload.extend_from_slice(&[0x05, 0x06]);
+    payload.extend_from_slice(&[0x05, 0x05]);
     let record = B5Record {
         offset: 0,
         family: 0xb5,
@@ -1135,7 +1135,7 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         object_id: 10,
         payload,
     };
-    let records = HashMap::from([(10, Some(record))]);
+    let mut records = HashMap::from([(10, Some(record))]);
     let rolling = HashMap::from([(
         1,
         Some(B5Surface::RollingBall {
@@ -1149,6 +1149,15 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
     assert_eq!(
         resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
         rolling.get(&1).cloned().flatten()
+    );
+    let record = records
+        .get_mut(&10)
+        .and_then(Option::as_mut)
+        .expect("construction");
+    record.payload[16] = 0x05; // Cylinder selector contradicts the rolling-ball carrier.
+    assert_eq!(
+        resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
+        None
     );
 }
 

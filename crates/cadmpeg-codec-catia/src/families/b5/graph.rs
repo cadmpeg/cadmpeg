@@ -541,7 +541,7 @@ impl B5ExtrusionDirectrix {
     }
 }
 
-/// A class-`37` support-bound surface construction with an explicit result carrier.
+/// A two-support fillet or chamfer construction with an explicit result carrier.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct B5SupportedSurface {
     /// This construction's result surface id.
@@ -559,10 +559,9 @@ pub(in crate::families) struct B5SupportedSurface {
 /// Native parameter layouts of a support-bound surface construction.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum B5SupportedSurfaceParameters {
-    /// Class `37`: interleaved controls, a positive construction radius, and
-    /// a zero scalar.
+    /// Class `37`: constant-radius fillet controls and construction radius.
     Radius {
-        /// Six control bytes surrounding the scalar fields.
+        /// Result selector, sentinel, two support sides, bound order, and closure.
         controls: [u8; 6],
         /// Positive radius of the support-bound construction.
         construction_radius: PositiveLength,
@@ -1270,9 +1269,10 @@ fn parse_from_records_with_class21(
                 let Some(carrier) = surfaces.get(&construction.carrier_surface) else {
                     continue;
                 };
+                if !supported_surface_parameters_match_carrier(&construction.parameters, carrier) {
+                    continue;
+                }
                 let carrier = copy_surface(ctx, carrier)?;
-                let parameters_match_carrier =
-                    supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
                 let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
                 if merge_surface_candidate(
                     ctx,
@@ -1280,8 +1280,7 @@ fn parse_from_records_with_class21(
                     &mut conflicting_surfaces,
                     record.object_id,
                     carrier,
-                )? && parameters_match_carrier
-                    && supported_surface_pcurves_match(&construction, by_id, &a8_pcurve_supports)
+                )? && supported_surface_pcurves_match(&construction, by_id, &a8_pcurve_supports)
                     && construction
                         .support_surfaces
                         .iter()
@@ -2415,8 +2414,23 @@ fn resolve_targeted_surface_inner(
             continue;
         }
         if let Some(construction) = parse_supported_surface(record) {
-            object_id = construction.carrier_surface;
-            continue;
+            let Some(carrier) = resolve_targeted_surface_inner(
+                ctx,
+                construction.carrier_surface,
+                records,
+                headers,
+                resolved,
+                rolling,
+                ctx.copy_retained_set(&visited, "catia_b5_targeted_visited_copy")?,
+            )?
+            else {
+                return Ok(None);
+            };
+            return Ok(supported_surface_parameters_match_carrier(
+                &construction.parameters,
+                &carrier,
+            )
+            .then_some(carrier));
         }
         if record.family == 0xb5 && record.class == 0x30 {
             return resolve_targeted_analytic_offset(
@@ -4025,7 +4039,7 @@ fn parse_offset_surface(
             ) {
                 if carrier.direction != source.direction
                     || carrier.u_bounds != v_bounds
-                    || carrier.v_bounds != Some(u_bounds)
+                    || !matches!(carrier.chart, B5ExtrusionChart::Direct { bounds, .. } if bounds == u_bounds)
                 {
                     return None;
                 }
@@ -4389,38 +4403,51 @@ fn parse_extrusion_surface_with_context(
     let Some(carrier) = extrusion_carrier(record) else {
         return Ok(None);
     };
-    let Some(active_bounds) = carrier.v_bounds else {
-        let Some(directrix_record) = records.get(&carrier.directrix_id) else {
-            return Ok(None);
-        };
-        let Some(directrix) =
-            parse_extrusion_directrix(ctx, directrix_record, records, object_stream_pcurves)?
-        else {
-            return Ok(None);
-        };
-        let Some(parameter_bounds) = contextual_offset_extrusion_bounds(
-            record.object_id,
-            &carrier,
-            &directrix,
-            offset_constructions,
-            extrusion_surfaces,
-        ) else {
-            return Ok(None);
-        };
-        return Ok(Some(B5ExtrusionSurface {
-            object_id: record.object_id,
-            direction: carrier.direction,
-            parameter_bounds,
-            directrix,
-        }));
+    let (active_bounds, controls) = match carrier.chart {
+        B5ExtrusionChart::Direct { bounds, controls } => (bounds, controls),
+        B5ExtrusionChart::OffsetLimits { .. } => {
+            let Some(directrix_record) = records.get(&carrier.directrix_id) else {
+                return Ok(None);
+            };
+            let Some(directrix) =
+                parse_extrusion_directrix(ctx, directrix_record, records, object_stream_pcurves)?
+            else {
+                return Ok(None);
+            };
+            let B5ExtrusionDirectrix::Offset { source, .. } = &directrix else {
+                return Ok(None);
+            };
+            if !records
+                .get(&source.object_id())
+                .is_some_and(|record| record.family == 0xb5 && record.class == 0x24)
+            {
+                return Ok(None);
+            }
+            let Some(parameter_bounds) = contextual_offset_extrusion_bounds(
+                record.object_id,
+                &carrier,
+                &directrix,
+                offset_constructions,
+                extrusion_surfaces,
+                object_stream_pcurves,
+            ) else {
+                return Ok(None);
+            };
+            return Ok(Some(B5ExtrusionSurface {
+                object_id: record.object_id,
+                direction: carrier.direction,
+                parameter_bounds,
+                directrix,
+            }));
+        }
     };
     let active = active_bounds.endpoints();
-    let terminal_span_chart = matches!(carrier.controls, [0x05, 0x15 | 0x19]);
+    let terminal_span_chart = matches!(controls, [0x05, 0x15 | 0x19]);
     let directrix = if terminal_span_chart {
         terminal_span_directrix(
             carrier.directrix_id,
             active_bounds,
-            carrier.controls,
+            controls,
             object_stream_pcurves,
         )
     } else {
@@ -4439,7 +4466,7 @@ fn parse_extrusion_surface_with_context(
             64.0 * f64::EPSILON,
         )
     });
-    let translated_chart = carrier.controls == [0x05, 0x11];
+    let translated_chart = controls == [0x05, 0x11];
     if records
         .get(&carrier.directrix_id)
         .is_some_and(|record| record.family == 0xa8 && record.class == 0x25)
@@ -4448,13 +4475,8 @@ fn parse_extrusion_surface_with_context(
         return Ok(None);
     }
     if translated_chart {
-        if translated_directrix_span_count(
-            &directrix,
-            active,
-            carrier.controls,
-            object_stream_pcurves,
-        )
-        .is_none()
+        if translated_directrix_span_count(&directrix, active, controls, object_stream_pcurves)
+            .is_none()
         {
             return Ok(None);
         }
@@ -4486,9 +4508,11 @@ fn contextual_offset_extrusion_bounds(
     directrix: &B5ExtrusionDirectrix,
     offset_constructions: &[B5OffsetSurface],
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
+    object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
 ) -> Option<[IncreasingParameterInterval; 2]> {
     let B5ExtrusionDirectrix::Offset {
         source,
+        source_parameter_range,
         distance,
         direction,
         parameter_range,
@@ -4497,6 +4521,39 @@ fn contextual_offset_extrusion_bounds(
     else {
         return None;
     };
+    let B5ExtrusionChart::OffsetLimits {
+        values,
+        source_knot_count,
+    } = carrier.chart
+    else {
+        return None;
+    };
+    let B5ExtrusionDirectrix::SurfaceCurve { support, .. } = source.as_ref() else {
+        return None;
+    };
+    let pcurve = object_stream_pcurves.get(&support.1)?;
+    (pcurve.class == 0x21).then_some(())?;
+    let active = source_parameter_range.endpoints();
+    let first = pcurve
+        .distinct_knots
+        .iter()
+        .position(|knot| knot.get().to_bits() == active[0].to_bits())?;
+    let last = pcurve
+        .distinct_knots
+        .iter()
+        .position(|knot| knot.get().to_bits() == active[1].to_bits())?;
+    (last.checked_sub(first)?.checked_add(1)? == source_knot_count).then_some(())?;
+    let lower_origin = pcurve.distinct_knots.get(first.checked_sub(1)?)?.get();
+    let upper_origin = pcurve.distinct_knots.get(last)?.get();
+    let upper_flank = pcurve.distinct_knots.get(last.checked_add(1)?)?.get();
+    let result = parameter_range.endpoints();
+    (lower_origin < result[0]
+        && result[0] < active[0]
+        && active[1] < result[1]
+        && result[1] < upper_flank
+        && (result[0] - lower_origin).to_bits() == values[0].get().to_bits()
+        && (result[1] - upper_origin).to_bits() == values[1].get().to_bits())
+    .then_some(())?;
     let mut resolved = None;
     for construction in offset_constructions.iter().filter(|construction| {
         construction.carrier_surface == carrier_surface
@@ -4622,11 +4679,20 @@ struct B5ExtrusionCarrier {
     directrix_id: u32,
     direction: UnitVector3,
     u_bounds: IncreasingParameterInterval,
-    /// The increasing V interval, absent on a contextual offset chart, which
-    /// stores its V bounds in decreasing order and takes its chart from the
-    /// offset construction.
-    v_bounds: Option<IncreasingParameterInterval>,
-    controls: [u8; 2],
+    chart: B5ExtrusionChart,
+}
+
+#[derive(Clone, Copy)]
+enum B5ExtrusionChart {
+    Direct {
+        bounds: IncreasingParameterInterval,
+        controls: [u8; 2],
+    },
+    /// Two result limits measured from distinct source-knot origins.
+    OffsetLimits {
+        values: [FiniteReal; 2],
+        source_knot_count: usize,
+    },
 }
 
 fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
@@ -4647,17 +4713,22 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     .then_some(())?;
     let direction = ExactUnitVector3::new([values[0], values[1], values[2]])?.into();
     let u_bounds = IncreasingParameterInterval::new([values[3], values[4]])?;
-    let v_bounds = if contextual_offset_chart {
-        (values[7] > values[8]).then_some(None)?
+    let chart = if contextual_offset_chart {
+        B5ExtrusionChart::OffsetLimits {
+            values: [FiniteReal::new(values[7])?, FiniteReal::new(values[8])?],
+            source_knot_count: if controls[1] == 0x09 { 2 } else { 5 },
+        }
     } else {
-        Some(IncreasingParameterInterval::new([values[7], values[8]])?)
+        B5ExtrusionChart::Direct {
+            bounds: IncreasingParameterInterval::new([values[7], values[8]])?,
+            controls,
+        }
     };
     Some(B5ExtrusionCarrier {
         directrix_id,
         direction,
         u_bounds,
-        v_bounds,
-        controls,
+        chart,
     })
 }
 
@@ -4927,9 +4998,24 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
                 record.payload[position + 20],
                 record.payload[position + 21],
             ];
+            (matches!(controls[0], 0x05 | 0x09 | 0x0d | 0x11)
+                && controls[1] == 0x05
+                && matches!(controls[2], 0x03 | 0x05)
+                && matches!(controls[3], 0x03 | 0x05)
+                && matches!(controls[4], 0x01 | 0x05)
+                && if controls[0] == 0x0d {
+                    matches!(
+                        (controls[4], controls[5]),
+                        (0x01, 0x11 | 0x81) | (0x05, 0x09 | 0x81)
+                    )
+                } else {
+                    controls[5] == 0x05
+                })
+            .then_some(())?;
             let construction_radius =
                 PositiveLength::new(f64_le(&record.payload, position + 2)?.get())?;
-            (f64_le(&record.payload, position + 12)?.get() == 0.0).then_some(())?;
+            (f64_le(&record.payload, position + 12)?.get().to_bits() == 0.0f64.to_bits())
+                .then_some(())?;
             B5SupportedSurfaceParameters::Radius {
                 controls,
                 construction_radius,
@@ -4957,28 +5043,45 @@ fn supported_surface_parameters_match_carrier(
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
-                ..
+                controls,
             },
             B5Surface::Cylinder { radius, .. },
-        ) => relative_close(construction_radius.get(), radius.get()),
+        ) => controls[0] == 0x05 && relative_close(construction_radius.get(), radius.get()),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
-                ..
+                controls,
             },
             B5Surface::Torus { minor_radius, .. },
-        ) => relative_close(construction_radius.get(), minor_radius.get()),
+        ) => controls[0] == 0x09 && relative_close(construction_radius.get(), minor_radius.get()),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
-                ..
+                controls,
             },
             B5Surface::Sphere {
                 construction_radius: carrier_radius,
+                latitude_range,
                 ..
             },
-        ) => relative_close(construction_radius.get(), carrier_radius.get()),
-        (B5SupportedSurfaceParameters::Radius { .. }, B5Surface::RollingBall { .. }) => true,
+        ) => {
+            let [lower, upper] = latitude_range.endpoints();
+            let pole = std::f64::consts::FRAC_PI_2;
+            let closure = if lower == -pole {
+                0x81
+            } else if controls[4] == 0x01 {
+                0x11
+            } else {
+                0x09
+            };
+            controls[0] == 0x0d
+                && upper == pole
+                && controls[5] == closure
+                && relative_close(construction_radius.get(), carrier_radius.get())
+        }
+        (B5SupportedSurfaceParameters::Radius { controls, .. }, B5Surface::RollingBall { .. }) => {
+            controls[0] == 0x11
+        }
         (B5SupportedSurfaceParameters::Chamfer(parameters), B5Surface::Plane { .. }) => {
             parameters.result_kind == ChamferResultKind::Plane
         }

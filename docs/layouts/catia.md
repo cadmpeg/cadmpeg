@@ -1108,6 +1108,23 @@ Spec §6.4 · layout: byte offsets · size: 6 B
 | 4 | 1 | `length_control` | `u8` | little | spec | Tail byte `+4` selects these two lengths |
 | 5 | 1 | `residue` | `u8` | little | spec | `<header:u8[4]> 00 <residue:u8>` |
 
+## `fillet_control_scalar_tail`
+
+Spec §6.7 · layout: byte offsets · size: 22 B
+
+Tail-relative offsets after five variable-width object references.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `result_selector` | `u8` | little | spec | \| `+0` \| `u8` \| result selector: |
+| 1 | 1 | `sentinel` | `u8` | little | spec | \| `+1` \| `u8` \| fixed literal `05` \| |
+| 2 | 8 | `radius` | `f64` | little | spec | \| `+2` \| `f64le` \| positive construction radius R \| |
+| 10 | 1 | `support0_side` | `u8` | little | spec | \| `+10` \| `u8` \| support-0 normal side: |
+| 11 | 1 | `support1_side` | `u8` | little | spec | \| `+11` \| `u8` \| support-1 normal side: |
+| 12 | 8 | `zero` | `f64` | little | spec | \| `+12` \| `f64le` \| bit-exact positive zero \| |
+| 20 | 1 | `contact_order` | `u8` | little | spec | \| `+20` \| `u8` \| support contact order: |
+| 21 | 1 | `closure` | `u8` | little | spec | \| `+21` \| `u8` \| sphere pole closure, or `05` for a non-sphere result \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

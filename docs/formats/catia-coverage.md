@@ -726,12 +726,14 @@ current levels require those matrices and representative fixtures.
   reparameterization. Controls `05 15` and `05 19` select and reorigin the
   terminal span of a direct class-`20` pcurve having exactly five and six
   spans respectively. Controls `01 09` and `01 15` use the class-`14` result
-  interval as V bounds only when at least one class-`30` kind-`21` construction
-  names the carrier and every such construction matches the source directrix
-  identity, source extrusion, signed distance, plane-normal direction, and both
-  result-chart bound pairs. The class-`14` source and result intervals define an
-  affine parameter map. The neutral surface offset retains the defining source
-  extrusion directly. Face-local class-`30`
+  interval as V bounds only after bit-exact two-origin limit checks, strict
+  flanking-knot checks, and the inclusive two- or five-knot count. At least one
+  class-`30` kind-`21` construction must name the carrier, and every such
+  construction must match the source directrix identity, source extrusion,
+  signed distance, plane-normal direction, and both result-chart bound pairs.
+  The class-`14` source and result intervals define an affine parameter map.
+  The neutral surface offset retains the defining source extrusion directly.
+  Face-local class-`30`
   analytic offsets also resolve from length-closed surface frames when their
   result and source carriers have the same family, kind code, and distance
   magnitude required for planes, cylinders, spheres, and tori,
@@ -1451,3 +1453,13 @@ layout and bounds; unknown selectors retain their scalar lanes. Neutral
 support binding requires an independent unique endpoint-lift witness.
 Consolidated revolution profiles require one exact interval match. Their
 nonzero reference value remains distinct from circle and revolution object identities.
+
+OS-11 independently verifies all three contextual offset charts against their
+source knots, exact auxiliary limits, and class-`30` construction fields across
+79 inputs. OS-12 resolves all 677 fillet constructions in 18 inputs and verifies
+all result selectors, control domains, analytic radii, and sphere closures.
+Independent support lifts verify 783 contact lanes at 2,349 points and 348
+contact-bound orders; the maximum center residual is 5.97e−12 mm. The 571
+remaining lanes use generic results or unsupported analytic support forms and
+remain geometric abstentions. Fillet transfer uses the explicit exact carrier;
+construction controls remain retained in native records.

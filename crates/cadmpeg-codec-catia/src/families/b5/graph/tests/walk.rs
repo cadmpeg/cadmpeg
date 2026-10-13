@@ -1433,7 +1433,10 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         payload: offset_payload,
     };
     let records = HashMap::from([(2, &source), (4, &offset_directrix)]);
-    let pcurves = BTreeMap::from([(3, object_stream_pcurve(7, vec![-3.0, 4.0], None))]);
+    let pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-10.0, -3.0, 4.0, 10.0], Some(20.0)),
+    )]);
     let source_extrusion = B5ExtrusionSurface {
         object_id: 10,
         direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
@@ -1457,7 +1460,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         ]),
     };
     let mut carrier_payload = vec![0x81, 0x84];
-    for value in [0.0f64, 0.0, 1.0, 2.0, 9.0, 1.0, 0.0, 35.0, 7.0] {
+    for value in [0.0f64, 0.0, 1.0, 2.0, 9.0, 1.0, 0.0, 5.0, 2.0] {
         carrier_payload.extend_from_slice(&value.to_le_bytes());
     }
     carrier_payload.extend_from_slice(&[0x01, 0x09]);
@@ -1525,15 +1528,63 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         None
     );
 
-    let mut increasing_auxiliary_scalars = carrier;
     let auxiliary_start = 2 + 7 * 8;
+    let mut increasing_auxiliary_scalars = carrier.clone();
     increasing_auxiliary_scalars.payload[auxiliary_start..auxiliary_start + 8]
-        .copy_from_slice(&7.0f64.to_le_bytes());
-    increasing_auxiliary_scalars.payload[auxiliary_start + 8..auxiliary_start + 16]
-        .copy_from_slice(&35.0f64.to_le_bytes());
+        .copy_from_slice(&1.0f64.to_le_bytes());
+    let increasing_pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-6.0, -3.0, 4.0, 20.0], Some(26.0)),
+    )]);
+    assert!(parse_extrusion_surface_with_context(
+        &increasing_auxiliary_scalars,
+        &records,
+        &increasing_pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_some());
+    let mut five_knot_carrier = carrier.clone();
+    *five_knot_carrier.payload.last_mut().expect("count control") = 0x15;
+    let five_knot_pcurves = BTreeMap::from([(
+        3,
+        object_stream_pcurve(7, vec![-10.0, -3.0, -2.0, 0.0, 2.0, 4.0, 10.0], Some(20.0)),
+    )]);
+    assert!(parse_extrusion_surface_with_context(
+        &five_knot_carrier,
+        &records,
+        &five_knot_pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_some());
+    let mut wrong_count = carrier.clone();
+    *wrong_count.payload.last_mut().expect("count control") = 0x15;
+    assert!(parse_extrusion_surface_with_context(
+        &wrong_count,
+        &records,
+        &pcurves,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_none());
+    let missing_flanks = BTreeMap::from([(3, object_stream_pcurve(7, vec![-3.0, 4.0], Some(7.0)))]);
+    assert!(parse_extrusion_surface_with_context(
+        &carrier,
+        &records,
+        &missing_flanks,
+        std::slice::from_ref(&offset_construction),
+        &source_extrusions,
+    )
+    .is_none());
+    let mut swapped_auxiliary_scalars = carrier;
+    swapped_auxiliary_scalars.payload[auxiliary_start..auxiliary_start + 8]
+        .copy_from_slice(&2.0f64.to_le_bytes());
+    swapped_auxiliary_scalars.payload[auxiliary_start + 8..auxiliary_start + 16]
+        .copy_from_slice(&5.0f64.to_le_bytes());
     assert_eq!(
         parse_extrusion_surface_with_context(
-            &increasing_auxiliary_scalars,
+            &swapped_auxiliary_scalars,
             &records,
             &pcurves,
             std::slice::from_ref(&offset_construction),
@@ -1693,7 +1744,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
 fn supported_surface_parameter_matching_is_scale_independent() {
     let radius = 1e-200_f64;
     let parameters = B5SupportedSurfaceParameters::Radius {
-        controls: [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
+        controls: [0x05, 0x05, 0x03, 0x03, 0x05, 0x05],
         construction_radius: crate::test_support::test_b5::positive_length(radius),
     };
     let cylinder = |carrier_radius| B5Surface::Cylinder {
@@ -1733,32 +1784,57 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(1.0),
         azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
-        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        latitude_range: crate::test_support::test_b5::increasing([
+            -1.0,
+            std::f64::consts::FRAC_PI_2,
+        ]),
         construction_radius: carrier_radius,
         chart_origin: crate::test_support::test_b5::finite(0.0),
     };
 
-    for carrier in [
-        cylinder(radius),
-        torus(radius),
-        sphere(crate::test_support::test_b5::positive_length(radius)),
+    for (selector, closure, carrier) in [
+        (0x05, 0x05, cylinder(radius)),
+        (0x09, 0x05, torus(radius)),
+        (
+            0x0d,
+            0x09,
+            sphere(crate::test_support::test_b5::positive_length(radius)),
+        ),
     ] {
+        let mut parameters = parameters.clone();
+        if let B5SupportedSurfaceParameters::Radius { controls, .. } = &mut parameters {
+            controls[0] = selector;
+            controls[5] = closure;
+        }
         assert!(supported_surface_parameters_match_carrier(
             &parameters,
             &carrier
         ));
     }
-    for carrier in [
-        cylinder(2.0 * radius),
-        torus(2.0 * radius),
-        sphere(crate::test_support::test_b5::positive_length(2.0 * radius)),
+    for (selector, closure, carrier) in [
+        (0x05, 0x05, cylinder(2.0 * radius)),
+        (0x09, 0x05, torus(2.0 * radius)),
+        (
+            0x0d,
+            0x09,
+            sphere(crate::test_support::test_b5::positive_length(2.0 * radius)),
+        ),
     ] {
+        let mut parameters = parameters.clone();
+        if let B5SupportedSurfaceParameters::Radius { controls, .. } = &mut parameters {
+            controls[0] = selector;
+            controls[5] = closure;
+        }
         assert!(!supported_surface_parameters_match_carrier(
             &parameters,
             &carrier
         ));
     }
 
+    assert!(!supported_surface_parameters_match_carrier(
+        &parameters,
+        &torus(radius)
+    ));
     let half_angle = 1e-200_f64;
     let cone_parameters = B5SupportedSurfaceParameters::Chamfer(
         crate::families::chamfer::ChamferParameters::decode(
