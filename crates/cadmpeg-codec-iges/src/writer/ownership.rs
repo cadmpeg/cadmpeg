@@ -2,9 +2,11 @@
 //! Preserve source dependency for carriers without standalone topology.
 
 use super::EntityStatus;
+use crate::loss::IgesLossCode;
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::{Curve, Surface};
 use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -83,6 +85,25 @@ impl<'ir> SourceOwnership<'ir> {
             }
         } else {
             status
+        }
+    }
+
+    pub(super) fn curve_status(
+        &self,
+        curve: &Curve,
+        losses: &mut Vec<LossNote>,
+    ) -> Option<EntityStatus> {
+        let status = self.status(curve.source_object.as_ref());
+        // Parameter-space carriers are emitted through their owning pcurves.
+        // An unreferenced copy can be imported as standalone model-space geometry.
+        if matches!(status, EntityStatus::ParameterCurve) {
+            losses.push(IgesLossCode::WriterSupportGeometryNotRepresented.note(format!(
+                "1 support geometry record ({}) was withheld because its parameter-space carrier has no exported owner",
+                curve.id
+            )));
+            None
+        } else {
+            Some(status)
         }
     }
 
