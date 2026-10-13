@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve face-selection operands and extrude start planes.
 
-use crate::design::dimensions::{planar_point, sketch_normal_sign};
-use crate::design::feature_project::design_angle_unit;
-use crate::ids::native_stream;
+use crate::design::feature_project::{design_angle_unit, unique_feature_match_for_decode};
+use crate::ids::{self, native_stream_charged};
 use crate::records::{
     feature::{
         extrude::{DesignExtrudeExtent, DesignExtrudePrologue},
         scope::DesignParameterScope,
     },
     parameters::DesignParameter,
-    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
     sketch_placement::DesignSketchPlacement,
     topology::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
@@ -20,15 +18,21 @@ use crate::records::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-const EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9: f64 = 1.0e-9;
+use self::membership::{contains_face, contains_slot};
+use self::operand_queries::unique_face_operand;
+use self::planes::{face_coincident_with_sketch, parallel_vectors, plane_for_face};
+
+mod membership;
+mod operand_queries;
+mod planes;
+
+const MAX_FREE_I64_TEXT_BYTES: usize = 20;
+const FACE_SLOT_PREFIX: &str = "f3d:brep:entity#";
 
 fn face_slot_id(ctx: &DecodeContext<'_>, slot: i64) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
-    const PREFIX: &str = "f3d:brep:entity#";
-
     use std::fmt::Write;
 
     let mut magnitude = slot.unsigned_abs();
@@ -37,11 +41,11 @@ fn face_slot_id(ctx: &DecodeContext<'_>, slot: i64) -> Result<cadmpeg_ir::ids::F
         magnitude /= 10;
         digits += 1;
     }
-    let len = PREFIX.len() + digits + usize::from(slot.is_negative());
+    let len = FACE_SLOT_PREFIX.len() + digits + usize::from(slot.is_negative());
     let operation = "f3d resolved face slot id";
 
     let mut text = ctx.retained_string(len, operation)?;
-    text.push_str(PREFIX);
+    text.push_str(FACE_SLOT_PREFIX);
 
     write!(&mut text, "{slot}")
         .map_err(|_| CodecError::malformed("face slot formatting failed"))?;
@@ -72,7 +76,7 @@ fn historical_face_id(
 
     let mut text = ctx.retained_string(len, operation)?;
     text.push_str(NAMESPACE);
-    text.push_str(prefix.as_str());
+    ctx.append_retained(&mut text, prefix.as_str(), operation)?;
     text.push(':');
 
     write!(&mut text, "{slot}")
@@ -105,22 +109,29 @@ pub(super) fn resolved_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    let Some(stream) = native_stream(&group.id) else {
+    if group.members().is_empty() || operands.is_empty() {
+        return Ok(None);
+    }
+    let Some(stream) =
+        crate::ids::native_stream_charged(ctx, &group.id, "resolve F3D face group stream")?
+    else {
         return Ok(None);
     };
-    let mut faces = Vec::new();
-    for record_index in group.members().iter().map(|member| &member.value) {
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == *record_index
-        });
-        let Some(operand) = matches.next() else {
+    let mut selected = Vec::new();
+    let mut seen = HashSet::new();
+    let mut selection_storage = ctx.reserve_scoped(0, "f3d face group proof storage")?;
+    let mut members = group.members().iter();
+    while let Some(member) = ctx.next_charged(&mut members, "visit F3D face group member")? {
+        let Some(operand) = unique_face_operand(
+            ctx,
+            operands,
+            Some(stream),
+            group.scope_record_index,
+            member.value,
+        )?
+        else {
             return Ok(None);
         };
-        if matches.next().is_some() {
-            return Ok(None);
-        }
         if operand.resolved_active_face.is_none()
             && operand.resolved_face_slots.is_empty()
             && operand.alternate_selector_candidate_faces.is_empty()
@@ -130,17 +141,33 @@ pub(super) fn resolved_face_group(
         {
             return Ok(None);
         }
-        let Some(operand_faces) = resolved_face_operand(ctx, operand)? else {
+        let (operand_faces, _operand_storage) = ctx
+            .with_scoped_storage("f3d face operand proof storage", || {
+                resolved_face_operand(ctx, operand)
+            })?;
+        let Some(operand_faces) = operand_faces else {
             return Ok(None);
         };
-        for face in operand_faces {
-            if !faces.contains(&face) {
-                ctx.push_vec(&mut faces, face, "f3d resolved face group member")?;
-            }
+        for face in ctx.admit_iter(operand_faces, "f3d resolved group selected face source")? {
+            selection_storage.with_storage(|| -> Result<(), CodecError> {
+                if ctx.insert_hash_set(
+                    &mut seen,
+                    face.key(),
+                    "find F3D resolved face group member",
+                )? {
+                    ctx.push_vec(&mut selected, face, "f3d resolved face group proof")?;
+                }
+                Ok(())
+            })?;
         }
     }
-    if faces.is_empty() {
+    if selected.is_empty() {
         return Ok(None);
+    }
+    let mut faces = Vec::new();
+    for candidate in ctx.admit_iter(&selected, "f3d resolved face group output source")? {
+        let face = candidate.materialize(ctx)?;
+        ctx.push_vec(&mut faces, face, "f3d resolved face group member")?;
     }
     let native = ctx.copy_retained_text(&group.id, "f3d resolved face group native id")?;
     Ok(Some(cadmpeg_ir::features::FaceSelection::Resolved {
@@ -162,41 +189,61 @@ pub(super) fn resolved_explicit_bounded_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    let Some(stream) = native_stream(&group.id) else {
+    let Some(stream) = native_stream_charged(ctx, &group.id, "f3d explicit bounded group stream")?
+    else {
         return Ok(None);
     };
-    let mut faces = Vec::new();
-    for record_index in group.members().iter().map(|member| &member.value) {
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == *record_index
-        });
-        let Some(operand) = matches.next() else {
+    let mut selected = Vec::new();
+    let mut seen = HashSet::new();
+    let mut selection_storage = ctx.reserve_scoped(0, "f3d face group proof storage")?;
+    let mut members = group.members().iter();
+    while let Some(member) =
+        ctx.next_charged(&mut members, "f3d explicit bounded group member source")?
+    {
+        let Some(operand) = unique_face_operand(
+            ctx,
+            operands,
+            Some(stream),
+            group.scope_record_index,
+            member.value,
+        )?
+        else {
             return Ok(None);
         };
-        if matches.next().is_some() {
+        let (candidate_faces, _operand_storage) =
+            ctx.with_scoped_storage("f3d explicit face operand proof storage", || {
+                if operand.resolved_face_slots.is_empty() {
+                    explicit_bounded_face_candidates(ctx, operand)
+                } else {
+                    resolved_face_operand(ctx, operand)
+                }
+            })?;
+        let Some(candidate_faces) = candidate_faces else {
             return Ok(None);
-        }
-        let candidate_faces = if operand.resolved_face_slots.is_empty() {
-            let Some(faces) = explicit_bounded_face_candidates(ctx, operand)? else {
-                return Ok(None);
-            };
-            faces
-        } else {
-            let Some(faces) = resolved_face_operand(ctx, operand)? else {
-                return Ok(None);
-            };
-            faces
         };
-        for face in candidate_faces {
-            if !faces.contains(&face) {
-                ctx.push_vec(&mut faces, face, "f3d explicit bounded face group member")?;
-            }
+        for face in ctx.admit_iter(
+            candidate_faces,
+            "f3d explicit bounded group selected face source",
+        )? {
+            selection_storage.with_storage(|| -> Result<(), CodecError> {
+                if ctx.insert_hash_set(
+                    &mut seen,
+                    face.key(),
+                    "find F3D explicit bounded face group member",
+                )? {
+                    ctx.push_vec(&mut selected, face, "f3d explicit bounded face group proof")?;
+                }
+                Ok(())
+            })?;
         }
     }
-    if faces.is_empty() {
+    if selected.is_empty() {
         return Ok(None);
+    }
+    let mut faces = Vec::new();
+    for candidate in ctx.admit_iter(&selected, "f3d explicit bounded face group output source")? {
+        let face = candidate.materialize(ctx)?;
+        ctx.push_vec(&mut faces, face, "f3d explicit bounded face group member")?;
     }
     let native = ctx.copy_retained_text(&group.id, "f3d explicit bounded face group native id")?;
     Ok(Some(cadmpeg_ir::features::FaceSelection::Resolved {
@@ -214,13 +261,19 @@ pub(super) fn resolved_direct_face_selection(
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
-    let Some(stream) = native_stream(&scope.id) else {
+    let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d direct face scope stream")?
+    else {
         return Ok(None);
     };
+    let mut matching_storage = ctx.reserve_scoped(0, "f3d direct face match storage")?;
     let mut matching = Vec::new();
-    for operand in operands.iter().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.scope_record_index == scope.record_index
+    for operand in ctx.admit_iter(operands, "f3d direct face operand source")? {
+        if crate::design::feature_project::feature_stream_matches(
+            ctx,
+            &operand.id,
+            Some(stream),
+            "f3d direct face operand stream",
+        )? && operand.scope_record_index == scope.record_index
             && operand.group_record_index().is_none()
             && operand.group_member_ordinal().is_none()
             && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
@@ -228,8 +281,10 @@ pub(super) fn resolved_direct_face_selection(
                 .ok()
                 .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                 == Some(&operand.record_index())
-    }) {
-        ctx.push_vec(&mut matching, operand, "f3d direct face operand")?;
+        {
+            matching_storage
+                .with_storage(|| ctx.push_vec(&mut matching, operand, "f3d direct face operand"))?;
+        }
     }
     ctx.stable_sort_by_key(
         &mut matching[..],
@@ -243,38 +298,113 @@ pub(super) fn resolved_direct_face_selection(
         "sort f3d design face_resolve 1",
     )?;
     if matching.is_empty()
-        || matching
-            .iter()
-            .any(|operand| operand.resolved_face_slots.is_empty())
+        || ctx.any_by(
+            &matching,
+            |operand| Ok(operand.resolved_face_slots.is_empty()),
+            "f3d direct face completeness source",
+        )?
     {
         return Ok(None);
     }
-    let Some(mut faces) = resolved_face_operand(ctx, matching[0])? else {
+    let (first, _first_storage) = ctx
+        .with_scoped_storage("f3d direct face proof storage", || {
+            resolved_face_operand(ctx, matching[0])
+        })?;
+    let Some(first) = first.filter(|faces| !faces.is_empty()) else {
         return Ok(None);
     };
+    let mut index_storage = ctx.reserve_scoped(0, "f3d direct face comparison index storage")?;
+    let (positions, counts) = index_storage.with_storage(|| -> Result<_, CodecError> {
+        if matching.len() == 1 {
+            return Ok((HashMap::new(), Vec::<usize>::new()));
+        }
+        let mut positions = HashMap::new();
+        let mut counts = Vec::<usize>::new();
+        for face in ctx.admit_iter(&first, "f3d direct face comparison index source")? {
+            let key = face.key();
+            if let Some(index) = ctx
+                .get_hash_map(&positions, &key, "f3d direct face comparison lookup")?
+                .copied()
+            {
+                counts[index] += 1;
+            } else {
+                ctx.insert_hash_map(
+                    &mut positions,
+                    key,
+                    counts.len(),
+                    "f3d direct face comparison index",
+                )?;
+                ctx.push_vec(&mut counts, 1, "f3d direct face comparison count")?;
+            }
+        }
+        Ok((positions, counts))
+    })?;
+    let mut remaining = matching[1..].iter();
+    while let Some(operand) =
+        ctx.next_charged(&mut remaining, "f3d direct face comparison operand source")?
+    {
+        let (candidate, _candidate_storage) = ctx
+            .with_scoped_storage("f3d direct face comparison storage", || {
+                resolved_face_operand(ctx, operand)
+            })?;
+        let Some(candidate) = candidate else {
+            return Ok(None);
+        };
+        if candidate.len() != first.len() {
+            return Ok(None);
+        }
+        let (mut unmatched, _count_storage) = ctx.with_scoped_storage(
+            "f3d direct face comparison count storage",
+            || -> Result<_, CodecError> {
+                let mut copied = Vec::new();
+                for count in ctx.admit_iter(&counts, "f3d direct face comparison count source")? {
+                    ctx.push_vec(&mut copied, *count, "f3d direct face comparison count copy")?;
+                }
+                Ok(copied)
+            },
+        )?;
+        if !ctx.all_by(
+            &candidate,
+            |face| {
+                let Some(index) = ctx
+                    .get_hash_map(
+                        &positions,
+                        &face.key(),
+                        "f3d direct face candidate comparison",
+                    )?
+                    .copied()
+                else {
+                    return Ok(false);
+                };
+                if unmatched[index] == 0 {
+                    return Ok(false);
+                }
+                unmatched[index] -= 1;
+                Ok(true)
+            },
+            "f3d direct face candidate source",
+        )? {
+            return Ok(None);
+        }
+    }
+    let (mut faces, face_storage) = ctx.with_scoped_storage(
+        "f3d direct face selection storage",
+        || -> Result<_, CodecError> {
+            let mut faces = Vec::new();
+            for candidate in ctx.admit_iter(&first, "f3d direct face selected output source")? {
+                let face = candidate.materialize(ctx)?;
+                ctx.push_vec(&mut faces, face, "f3d direct face selected output")?;
+            }
+            Ok(faces)
+        },
+    )?;
     ctx.stable_sort_by(
         &mut faces[..],
         |value| value.as_str(),
         Ord::cmp,
         "sort f3d design face_resolve 2",
     )?;
-    if faces.is_empty() {
-        return Ok(None);
-    }
-    for operand in &matching[1..] {
-        let Some(mut candidate) = resolved_face_operand(ctx, operand)? else {
-            return Ok(None);
-        };
-        ctx.stable_sort_by(
-            &mut candidate[..],
-            |value| value.as_str(),
-            Ord::cmp,
-            "sort f3d design face_resolve 3",
-        )?;
-        if candidate != faces {
-            return Ok(None);
-        }
-    }
+    let faces = face_storage.commit_value(faces)?;
     let native = ctx.copy_retained_text(&scope.id, "f3d direct face native id")?;
     Ok(Some(FaceSelection::Resolved { faces, native }))
 }
@@ -293,11 +423,17 @@ pub(super) fn resolved_historical_face_operand(
     let Some(previous_state_id) = scope.previous_history_state_id() else {
         return Ok(None);
     };
-    let Some(face_slot) = resolve_face_operand_history_candidates(operand) else {
+    let Some(face_slot) = resolve_face_operand_history_candidates(ctx, operand)? else {
         return Ok(None);
     };
-    let native = ctx.copy_retained_text(&operand.id, "f3d historical face operand id")?;
-    historical_face_selection_with_native(ctx, scope, previous_state_id, vec![face_slot], native)
+    historical_face_selection_with_native(
+        ctx,
+        scope,
+        previous_state_id,
+        &[face_slot],
+        &operand.id,
+        "f3d historical face operand id",
+    )
 }
 
 /// Resolve the complete input-state body boundaries selected by a body-recipe
@@ -315,42 +451,58 @@ pub(super) fn resolved_body_recipe_selection(
     {
         return Ok(None);
     }
-    let Some(stream) = native_stream(&group.id) else {
+    let Some(stream) = native_stream_charged(ctx, &group.id, "f3d face group native stream")?
+    else {
         return Ok(None);
     };
-    if native_stream(&scope.id) != Some(stream) {
+    if !crate::design::feature_project::feature_stream_matches(
+        ctx,
+        &scope.id,
+        Some(stream),
+        "f3d body recipe scope stream",
+    )? {
         return Ok(None);
     }
     let mut faces = Vec::new();
     let mut state_id = None;
     let mut member_records = HashSet::new();
-    for (ordinal, record_index) in group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .enumerate()
+    let mut proof_storage = ctx.reserve_scoped(0, "f3d body recipe proof storage")?;
+    let mut source = group.members().iter().enumerate();
+    while let Some((ordinal, member)) =
+        ctx.next_charged(&mut source, "f3d face group member source")?
     {
-        if !ctx.insert_hash_set(
-            &mut member_records,
-            *record_index,
-            "f3d body recipe member index",
-        )? {
+        let record_index = &member.value;
+        if !proof_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut member_records,
+                *record_index,
+                "f3d body recipe member index",
+            )
+        })? {
             return Ok(None);
         }
         let Some(ordinal) = u32::try_from(ordinal).ok() else {
             return Ok(None);
         };
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == group.scope_record_index
-                && operand.owner.group() == Some((group.record_index, ordinal))
-                && operand.record_index() == *record_index
-        });
-        let Some(operand) = matches.next() else {
+        let operand = unique_feature_match_for_decode(
+            ctx,
+            operands,
+            |operand| {
+                Ok(crate::design::feature_project::feature_stream_matches(
+                    ctx,
+                    &operand.id,
+                    Some(stream),
+                    "f3d face member operand stream",
+                )? && operand.scope_record_index == group.scope_record_index
+                    && operand.owner.group() == Some((group.record_index, ordinal))
+                    && operand.record_index() == *record_index)
+            },
+            "f3d face group operand source",
+        )?;
+        let Some(operand) = operand else {
             return Ok(None);
         };
-        if matches.next().is_some()
-            || operand.references().is_empty()
+        if operand.references().is_empty()
             || operand.resolved_body_slot.is_none()
             || operand.resolved_body_face_slots.is_empty()
         {
@@ -364,16 +516,21 @@ pub(super) fn resolved_body_recipe_selection(
             Some(expected) if expected == operand_state_id => {}
             Some(_) => return Ok(None),
         }
-        for face in &operand.resolved_body_face_slots {
-            if !faces.contains(face) {
-                ctx.push_vec(&mut faces, *face, "f3d body recipe face slot")?;
+        for face in ctx.admit_iter(
+            &operand.resolved_body_face_slots,
+            "f3d body recipe selected slot source",
+        )? {
+            if !contains_slot(ctx, &faces, *face, "find F3D body recipe face slot")? {
+                proof_storage.with_storage(|| {
+                    ctx.push_vec(&mut faces, *face, "f3d body recipe face slot")
+                })?;
             }
         }
     }
     let Some(state_id) = state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, state_id, faces)
+    historical_face_selection_in_state(ctx, scope, group, state_id, &faces)
 }
 
 /// Resolve the complete input-state body boundaries selected by an Extrude
@@ -392,6 +549,22 @@ pub(super) fn resolved_body_recipe_shape(
         return Ok(None);
     }
     resolved_body_recipe_selection(ctx, scope, group, operands)
+}
+
+fn historical_profile_native_group(
+    ctx: &DecodeContext<'_>,
+    native: cadmpeg_core::text::NonBlankString,
+) -> Result<cadmpeg_ir::features::NativeSelections, CodecError> {
+    let native = native.into_string(ctx, "f3d historical profile native id")?;
+    let mut members = ctx.collection_vec(1, "f3d historical profile native group")?;
+    // The singleton slot is already admitted and cannot grow the allocation.
+    members.push(native);
+    cadmpeg_ir::features::NativeSelections::new(
+        members,
+        ctx,
+        "f3d historical profile native validation",
+    )?
+    .map_err(CodecError::malformed)
 }
 
 pub(super) fn resolved_profile_face_group(
@@ -420,14 +593,11 @@ pub(super) fn resolved_profile_face_group(
     else {
         return Ok(None);
     };
-    let native_copy = ctx.copy_retained_text(native.as_str(), "f3d Loft face profile native id")?;
     Ok(Some(ProfileRef::Planar(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![native_copy]
-                .try_into()
-                .map_err(CodecError::malformed)?,
+            native: historical_profile_native_group(ctx, native)?,
         },
     )))
 }
@@ -444,16 +614,29 @@ pub(crate) fn extrude_profile_group_roots<'a>(
 ) -> Result<Option<Vec<&'a DesignConstructionOperandGroup>>, CodecError> {
     use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 
-    let Some(stream) = native_stream(&scope.id) else {
+    let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d Extrude profile native stream")?
+    else {
         return Ok(None);
     };
+    let mut proof_storage = ctx.reserve_scoped(0, "f3d Extrude profile proof storage")?;
     let mut profile_groups = Vec::new();
-    for group in groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
-    }) {
-        ctx.push_vec(&mut profile_groups, group, "f3d Extrude profile group")?;
+    let mut group_source = groups.iter();
+    while let Some(group) =
+        ctx.next_charged(&mut group_source, "f3d Extrude profile group source")?
+    {
+        if !(crate::design::feature_project::feature_stream_matches(
+            ctx,
+            &group.id,
+            Some(stream),
+            "f3d Extrude profile group stream",
+        )? && group.scope_record_index == scope.record_index
+            && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile))
+        {
+            continue;
+        }
+        proof_storage.with_storage(|| {
+            ctx.push_vec(&mut profile_groups, group, "f3d Extrude profile group")
+        })?;
     }
     ctx.stable_sort_by_key(
         &mut profile_groups[..],
@@ -466,42 +649,64 @@ pub(crate) fn extrude_profile_group_roots<'a>(
         Ord::cmp,
         "sort f3d design face_resolve 4",
     )?;
-    if profile_groups.windows(2).any(|groups| {
-        groups[0].scope_reference_ordinal == groups[1].scope_reference_ordinal
-            || groups[0].record_index == groups[1].record_index
-    }) {
+    if ctx.any_by(
+        profile_groups.windows(2),
+        |groups| {
+            Ok(
+                groups[0].scope_reference_ordinal == groups[1].scope_reference_ordinal
+                    || groups[0].record_index == groups[1].record_index,
+            )
+        },
+        "f3d Extrude profile ordinal uniqueness",
+    )? {
         return Ok(None);
     }
 
     let mut groups_by_record = HashMap::new();
-    for group in &profile_groups {
+    for group in ctx.admit_iter(&profile_groups, "f3d Extrude profile index source")? {
         // discarded-value: duplicate record indices are rejected by the length check below.
-        let _ = ctx.insert_hash_map(
-            &mut groups_by_record,
-            group.record_index,
-            *group,
-            "f3d Extrude profile group index",
-        )?;
+        let _ = proof_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut groups_by_record,
+                group.record_index,
+                *group,
+                "f3d Extrude profile group index",
+            )
+        })?;
     }
     if groups_by_record.len() != profile_groups.len() {
         return Ok(None);
     }
     let mut parent_by_child = HashMap::new();
-    for parent in &profile_groups {
-        for member in parent.members().iter().map(|member| &member.value) {
-            let Some(child) = groups_by_record.get(member) else {
+    let mut parent_source = profile_groups.iter();
+    while let Some(parent) =
+        ctx.next_charged(&mut parent_source, "f3d Extrude profile parent source")?
+    {
+        let mut members = parent.members().iter();
+        while let Some(member) =
+            ctx.next_charged(&mut members, "f3d Extrude profile parent member source")?
+        {
+            let member = &member.value;
+            let Some(child) = ctx.get_hash_map(
+                &groups_by_record,
+                member,
+                "f3d Extrude profile child lookup",
+            )?
+            else {
                 continue;
             };
             if child.scope_reference_ordinal <= parent.scope_reference_ordinal {
                 return Ok(None);
             }
-            if ctx
-                .insert_hash_map(
-                    &mut parent_by_child,
-                    child.record_index,
-                    parent.record_index,
-                    "f3d Extrude profile parent index",
-                )?
+            if proof_storage
+                .with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut parent_by_child,
+                        child.record_index,
+                        parent.record_index,
+                        "f3d Extrude profile parent index",
+                    )
+                })?
                 .is_some()
             {
                 return Ok(None);
@@ -509,11 +714,15 @@ pub(crate) fn extrude_profile_group_roots<'a>(
         }
     }
     let mut roots = Vec::new();
-    for group in profile_groups
-        .iter()
-        .copied()
-        .filter(|group| !parent_by_child.contains_key(&group.record_index))
-    {
+    for group in ctx.admit_iter(&profile_groups, "f3d Extrude profile root source")? {
+        let group = *group;
+        if ctx.contains_key_hash_map(
+            &parent_by_child,
+            &group.record_index,
+            "f3d Extrude profile parent lookup",
+        )? {
+            continue;
+        }
         ctx.push_vec(&mut roots, group, "f3d Extrude profile root")?;
     }
     if !profile_groups.is_empty() && roots.is_empty() {
@@ -521,8 +730,13 @@ pub(crate) fn extrude_profile_group_roots<'a>(
     }
 
     let mut visited = HashSet::new();
-    for root in &roots {
-        if !visit_extrude_profile_group(ctx, root, &groups_by_record, &mut visited)? {
+    let mut root_source = roots.iter();
+    while let Some(root) =
+        ctx.next_charged(&mut root_source, "f3d Extrude profile validation source")?
+    {
+        if !proof_storage.with_storage(|| {
+            visit_extrude_profile_group(ctx, root, &groups_by_record, &mut visited)
+        })? {
             return Ok(None);
         }
     }
@@ -539,9 +753,6 @@ fn visit_extrude_profile_group(
     visited: &mut HashSet<u32>,
 ) -> Result<bool, CodecError> {
     let _depth = Some((ctx.enter_nested("f3d Extrude profile hierarchy"))?);
-    {
-        ctx.charge_work(1, "f3d Extrude profile hierarchy")?;
-    }
     if !ctx.insert_hash_set(
         visited,
         group.record_index,
@@ -549,8 +760,16 @@ fn visit_extrude_profile_group(
     )? {
         return Ok(false);
     }
-    for member in group.members().iter().map(|member| &member.value) {
-        if let Some(child) = groups_by_record.get(member) {
+    let mut members = group.members().iter();
+    while let Some(member) =
+        ctx.next_charged(&mut members, "f3d Extrude profile hierarchy member source")?
+    {
+        let member = &member.value;
+        if let Some(child) = ctx.get_hash_map(
+            groups_by_record,
+            member,
+            "f3d Extrude profile hierarchy child lookup",
+        )? {
             if !visit_extrude_profile_group(ctx, child, groups_by_record, visited)? {
                 return Ok(false);
             }
@@ -573,34 +792,57 @@ pub(crate) fn extrude_profile_group_operand_indices(
 ) -> Result<Option<Vec<usize>>, CodecError> {
     use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 
-    let Some(stream) = native_stream(&root.id) else {
+    let Some(stream) = native_stream_charged(ctx, &root.id, "f3d Extrude profile native stream")?
+    else {
         return Ok(None);
     };
+    let mut proof_storage = ctx.reserve_scoped(0, "f3d Extrude profile proof storage")?;
     let mut profile_groups = Vec::new();
-    for group in groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == root.scope_record_index
-            && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
-    }) {
-        ctx.push_vec(&mut profile_groups, group, "f3d Extrude leaf profile group")?;
+    let mut group_source = groups.iter();
+    while let Some(group) = ctx.next_charged(&mut group_source, "f3d Extrude leaf group source")? {
+        if !(crate::design::feature_project::feature_stream_matches(
+            ctx,
+            &group.id,
+            Some(stream),
+            "f3d Extrude leaf group stream",
+        )? && group.scope_record_index == root.scope_record_index
+            && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile))
+        {
+            continue;
+        }
+        proof_storage.with_storage(|| {
+            ctx.push_vec(&mut profile_groups, group, "f3d Extrude leaf profile group")
+        })?;
     }
     let mut groups_by_record = HashMap::new();
-    for group in &profile_groups {
+    for group in ctx.admit_iter(&profile_groups, "f3d Extrude profile index source")? {
         // discarded-value: duplicate record indices are rejected by the length check below.
-        let _ = ctx.insert_hash_map(
-            &mut groups_by_record,
-            group.record_index,
-            *group,
-            "f3d Extrude leaf group index",
-        )?;
+        let _ = proof_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut groups_by_record,
+                group.record_index,
+                *group,
+                "f3d Extrude leaf group index",
+            )
+        })?;
     }
-    if groups_by_record.len() != profile_groups.len()
-        || groups_by_record.get(&root.record_index).copied() != Some(root)
-    {
+    if groups_by_record.len() != profile_groups.len() {
+        return Ok(None);
+    }
+    let Some(found) = ctx.get_hash_map(
+        &groups_by_record,
+        &root.record_index,
+        "f3d Extrude leaf root lookup",
+    )?
+    else {
+        return Ok(None);
+    };
+    if !std::ptr::eq(*found, root) && !ctx.equal(*found, root, "f3d Extrude leaf root equality")? {
         return Ok(None);
     }
 
     let mut visited_groups = HashSet::new();
+    let mut visited_storage = ctx.reserve_scoped(0, "f3d Extrude leaf visited storage")?;
     collect_extrude_profile_group_operands(
         ctx,
         root,
@@ -608,6 +850,7 @@ pub(crate) fn extrude_profile_group_operand_indices(
         &groups_by_record,
         operands,
         &mut visited_groups,
+        &mut visited_storage,
     )
 }
 
@@ -618,44 +861,52 @@ fn collect_extrude_profile_group_operands(
     groups_by_record: &HashMap<u32, &DesignConstructionOperandGroup>,
     operands: &[DesignFaceOperand],
     visited_groups: &mut HashSet<u32>,
+    visited_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<Vec<usize>>, CodecError> {
     let _depth = Some((ctx.enter_nested("f3d Extrude leaf hierarchy"))?);
-    {
-        ctx.charge_work(1, "f3d Extrude leaf hierarchy")?;
-    }
     if group.members().is_empty()
-        || !ctx.insert_hash_set(
-            visited_groups,
-            group.record_index,
-            "f3d Extrude leaf visited group",
-        )?
+        || !visited_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                visited_groups,
+                group.record_index,
+                "f3d Extrude leaf visited group",
+            )
+        })?
     {
         return Ok(None);
     }
     let mut indices = Vec::new();
-    for (ordinal, record_index) in group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .enumerate()
+    let mut members = group.members().iter().enumerate();
+    while let Some((ordinal, member)) =
+        ctx.next_charged(&mut members, "f3d Extrude leaf member source")?
     {
+        let record_index = &member.value;
         let Some(ordinal) = u32::try_from(ordinal).ok() else {
             return Ok(None);
         };
-        let mut direct = operands
-            .iter()
-            .enumerate()
-            .filter(|(_, operand)| {
-                native_stream(&operand.id) == Some(stream)
-                    && operand.scope_record_index == group.scope_record_index
+        let mut direct = operands.iter().enumerate();
+        let mut matches =
+            |(index, operand): (usize, &DesignFaceOperand)| -> Result<Option<usize>, CodecError> {
+                Ok((crate::design::feature_project::feature_stream_matches(
+                    ctx,
+                    &operand.id,
+                    Some(stream),
+                    "f3d Extrude leaf operand stream",
+                )? && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(ordinal)
-                    && operand.record_index() == *record_index
-            })
-            .map(|(index, _)| index);
-        let first = direct.next();
-        let second = direct.next();
-        let child = groups_by_record.get(record_index).copied();
+                    && operand.record_index() == *record_index)
+                    .then_some(index))
+            };
+        let first = ctx.find_map(&mut direct, &mut matches, "f3d Extrude leaf operand source")?;
+        let second = ctx.find_map(direct, matches, "f3d Extrude leaf operand source")?;
+        let child = ctx
+            .get_hash_map(
+                groups_by_record,
+                record_index,
+                "f3d Extrude leaf child lookup",
+            )?
+            .copied();
         let index = match ((first, second), child) {
             ((Some(index), None), None) => index,
             ((None, None), Some(child))
@@ -668,6 +919,7 @@ fn collect_extrude_profile_group_operands(
                     groups_by_record,
                     operands,
                     visited_groups,
+                    visited_storage,
                 )?;
                 let Some(child_indices) = child_indices else {
                     return Ok(None);
@@ -679,7 +931,14 @@ fn collect_extrude_profile_group_operands(
             }
             _ => return Ok(None),
         };
-        if indices.contains(&index) {
+
+        if !indices.is_empty()
+            && ctx.any_by(
+                &indices,
+                |candidate| Ok(*candidate == index),
+                "find F3D Extrude leaf index",
+            )?
+        {
             return Ok(None);
         }
         ctx.push_vec(&mut indices, index, "f3d Extrude leaf index")?;
@@ -698,26 +957,36 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
         recipes::ConstructionRecipeKind, topology::extrude_selection::DesignExtrudeOperandRole,
     };
 
-    let Some(stream) = native_stream(&root.id) else {
+    let Some(stream) =
+        native_stream_charged(ctx, &root.id, "f3d paired Extrude profile native stream")?
+    else {
         return Ok(false);
     };
     if root.members().is_empty() {
         return Ok(false);
     }
-    for record_index in root.members().iter().map(|member| &member.value) {
-        let mut children = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == root.scope_record_index
-                && group.record_index == *record_index
-                && group.scope_reference_ordinal > root.scope_reference_ordinal
-                && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
-        });
-        let Some(child) = children.next() else {
+    let mut members = root.members().iter();
+    while let Some(member) = ctx.next_charged(&mut members, "f3d paired Extrude member source")? {
+        let record_index = &member.value;
+        let child = unique_feature_match_for_decode(
+            ctx,
+            groups,
+            |group| {
+                Ok(crate::design::feature_project::feature_stream_matches(
+                    ctx,
+                    &group.id,
+                    Some(stream),
+                    "f3d paired Extrude child stream",
+                )? && group.scope_record_index == root.scope_record_index
+                    && group.record_index == *record_index
+                    && group.scope_reference_ordinal > root.scope_reference_ordinal
+                    && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile))
+            },
+            "f3d paired Extrude child source",
+        )?;
+        let Some(child) = child else {
             return Ok(false);
         };
-        if children.next().is_some() {
-            return Ok(false);
-        }
         let [crate::records::identity::Located {
             value: operand_record_index,
             ..
@@ -725,27 +994,28 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
         else {
             return Ok(false);
         };
-        let leaves = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == root.scope_record_index
-                && operand.group_record_index() == Some(child.record_index)
-                && operand.group_member_ordinal() == Some(0)
-                && operand.record_index() == *operand_record_index
-                && operand.recipe_kind == ConstructionRecipeKind::BoundedFace
-        });
-        let mut found = false;
-        for operand in leaves {
-            if crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
-                ctx,
-                &operand.recipe_prefix_bytes,
-            )? {
-                if found {
-                    return Ok(false);
-                }
-                found = true;
-            }
-        }
-        if !found {
+        let leaf = unique_feature_match_for_decode(
+            ctx,
+            operands,
+            |operand| {
+                Ok(crate::design::feature_project::feature_stream_matches(
+                    ctx,
+                    &operand.id,
+                    Some(stream),
+                    "f3d paired Extrude leaf stream",
+                )? && operand.scope_record_index == root.scope_record_index
+                    && operand.group_record_index() == Some(child.record_index)
+                    && operand.group_member_ordinal() == Some(0)
+                    && operand.record_index() == *operand_record_index
+                    && operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                    && crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
+                        ctx,
+                        &operand.recipe_prefix_bytes,
+                    )?)
+            },
+            "f3d paired Extrude leaf source",
+        )?;
+        if leaf.is_none() {
             return Ok(false);
         }
     }
@@ -775,21 +1045,21 @@ pub(crate) fn resolved_extrude_profile_face_group(
         )));
     }
     let mut faces = Vec::new();
-    for index in indices {
-        let Some(operand) = operands.get(index) else {
+    for index in ctx.admit_iter(&indices, "f3d Extrude historical operand source")? {
+        let Some(operand) = operands.get(*index) else {
             return Ok(None);
         };
         let slots = &operand.resolved_face_slots;
         if slots.is_empty() {
             return Ok(None);
         }
-        for slot in slots {
-            if !faces.contains(slot) {
+        for slot in ctx.admit_iter(slots, "f3d Extrude historical slot source")? {
+            if !contains_slot(ctx, &faces, *slot, "find F3D Extrude historical face slot")? {
                 ctx.push_vec(&mut faces, *slot, "f3d Extrude historical face slot")?;
             }
         }
     }
-    let Some(selection) = historical_face_selection(ctx, scope, root, faces)? else {
+    let Some(selection) = historical_face_selection(ctx, scope, root, &faces)? else {
         return Ok(None);
     };
     let cadmpeg_ir::features::FaceSelection::Historical {
@@ -804,11 +1074,7 @@ pub(crate) fn resolved_extrude_profile_face_group(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![
-                ctx.copy_retained_text(native.as_str(), "f3d Extrude historical group id")?
-            ]
-            .try_into()
-            .map_err(CodecError::malformed)?,
+            native: historical_profile_native_group(ctx, native)?,
         },
     )))
 }
@@ -818,8 +1084,14 @@ fn resolved_extrude_profile_active_faces(
     indices: &[usize],
     operands: &[DesignFaceOperand],
 ) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
-    let mut faces = Vec::new();
-    for index in indices {
+    if indices.is_empty() {
+        return Ok(None);
+    }
+    let mut storage = ctx.reserve_scoped(0, "f3d Extrude active face proof storage")?;
+    let mut seen = HashSet::new();
+    let mut selected = Vec::new();
+    let mut source = indices.iter();
+    while let Some(index) = ctx.next_charged(&mut source, "f3d Extrude active operand source")? {
         let Some(operand) = operands.get(*index) else {
             return Ok(None);
         };
@@ -843,14 +1115,27 @@ fn resolved_extrude_profile_active_faces(
         if operand.recipe_nodes.len() != header_value {
             return Ok(None);
         }
-        for face in &operand.candidate_faces {
-            if !faces.contains(face) {
-                let face = (face).try_clone_for_decode(ctx, "f3d Extrude active face id")?;
-                ctx.push_vec(&mut faces, face, "f3d Extrude active face")?;
-            }
+        for face in ctx.admit_iter(
+            &operand.candidate_faces,
+            "f3d Extrude active candidate source",
+        )? {
+            storage.with_storage(|| -> Result<(), CodecError> {
+                if ctx.insert_hash_set(&mut seen, face, "f3d Extrude active face membership")? {
+                    ctx.push_vec(&mut selected, face, "f3d Extrude active face selection")?;
+                }
+                Ok(())
+            })?;
         }
     }
-    Ok((!faces.is_empty()).then_some(faces))
+    if selected.is_empty() {
+        return Ok(None);
+    }
+    let mut faces = Vec::new();
+    for face in ctx.admit_iter(&selected, "f3d Extrude active selected source")? {
+        let face = (*face).try_clone_for_decode(ctx, "f3d Extrude active face id")?;
+        ctx.push_vec(&mut faces, face, "f3d Extrude active face")?;
+    }
+    Ok(Some(faces))
 }
 
 /// Resolve a Loft section whose members use the edge-recipe envelope.
@@ -879,19 +1164,27 @@ pub(super) fn resolved_loft_edge_profile_group(
     let Some(previous_state_id) = scope.previous_history_state_id() else {
         return Ok(None);
     };
-    let Some(stream) = native_stream(&group.id) else {
+    let Some(stream) = native_stream_charged(ctx, &group.id, "f3d Loft profile native stream")?
+    else {
         return Ok(None);
     };
     let Some(group_ordinal) = usize::try_from(group.scope_reference_ordinal).ok() else {
         return Ok(None);
     };
+    let mut proof_storage = ctx.reserve_scoped(0, "f3d Loft edge profile proof storage")?;
     let mut member_ids = HashSet::new();
-    for member in group.members().iter().map(|member| member.value) {
-        if !ctx.insert_hash_set(
-            &mut member_ids,
-            member,
-            "f3d Loft edge profile member index",
-        )? {
+    let mut members = group.members().iter();
+    while let Some(member) =
+        ctx.next_charged(&mut members, "f3d Loft edge member uniqueness source")?
+    {
+        let member = member.value;
+        if !proof_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut member_ids,
+                member,
+                "f3d Loft edge profile member index",
+            )
+        })? {
             return Ok(None);
         }
     }
@@ -899,54 +1192,72 @@ pub(super) fn resolved_loft_edge_profile_group(
         return Ok(None);
     }
     let mut member_operands = Vec::new();
-    for (ordinal, record_index) in group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .enumerate()
+    let mut members = group.members().iter().enumerate();
+    while let Some((ordinal, member)) =
+        ctx.next_charged(&mut members, "f3d Loft edge profile member source")?
     {
-        let Some(operand) = (|| {
-            let scope_ordinal = group
-                .scope_reference_ordinal
-                .checked_add(1)?
-                .checked_add(u32::try_from(ordinal).ok()?)?;
-            if scope
-                .reference_members()
-                .values()
-                .nth(group_ordinal.checked_add(ordinal.checked_add(1)?)?)
-                != Some(record_index)
-            {
-                return None;
+        let record_index = &member.value;
+        let Some(operand) = (|| -> Result<Option<&DesignEdgeOperand>, CodecError> {
+            let Some(scope_ordinal) = u32::try_from(ordinal).ok().and_then(|ordinal| {
+                group
+                    .scope_reference_ordinal
+                    .checked_add(1)?
+                    .checked_add(ordinal)
+            }) else {
+                return Ok(None);
+            };
+            let Some(member_ordinal) = group_ordinal
+                .checked_add(ordinal)
+                .and_then(|index| index.checked_add(1))
+            else {
+                return Ok(None);
+            };
+            if scope.reference_members().values().nth(member_ordinal) != Some(record_index) {
+                return Ok(None);
             }
-            let mut matches = operands.iter().filter(|operand| {
-                native_stream(&operand.id) == Some(stream)
-                    && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index() == *record_index
-            });
-            let operand = matches.next()?;
-            if matches.next().is_some()
-                || operand.scope_reference_ordinal != scope_ordinal
+            let operand = unique_feature_match_for_decode(
+                ctx,
+                operands,
+                |operand| {
+                    Ok(crate::design::feature_project::feature_stream_matches(
+                        ctx,
+                        &operand.id,
+                        Some(stream),
+                        "f3d Loft edge profile operand stream",
+                    )? && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index() == *record_index)
+                },
+                "f3d Loft edge profile operand source",
+            )?;
+            let Some(operand) = operand else {
+                return Ok(None);
+            };
+            if operand.scope_reference_ordinal != scope_ordinal
                 || operand.recipe_state_id != Some(previous_state_id)
                 || operand.recipe_structure.is_none()
                 || operand.surface_patch_recipe_structure.is_some()
             {
-                return None;
+                return Ok(None);
             }
-            Some(operand)
-        })() else {
+            Ok(Some(operand))
+        })()?
+        else {
             return Ok(None);
         };
-        ctx.push_vec(
-            &mut member_operands,
-            operand,
-            "f3d Loft edge profile member",
-        )?;
+        proof_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut member_operands,
+                operand,
+                "f3d Loft edge profile member",
+            )
+        })?;
     }
-    let Some(face_slot) = loft_edge_profile_face_slot(group.members().len(), &member_operands)
+    let Some(face_slot) =
+        loft_edge_profile_face_slot(group.members().len(), &member_operands, ctx)?
     else {
         return Ok(None);
     };
-    let Some(selection) = historical_face_selection(ctx, scope, group, vec![face_slot])? else {
+    let Some(selection) = historical_face_selection(ctx, scope, group, &[face_slot])? else {
         return Ok(None);
     };
     let cadmpeg_ir::features::FaceSelection::Historical {
@@ -961,9 +1272,7 @@ pub(super) fn resolved_loft_edge_profile_group(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![ctx.copy_retained_text(native.as_str(), "f3d Loft historical group id")?]
-                .try_into()
-                .map_err(CodecError::malformed)?,
+            native: historical_profile_native_group(ctx, native)?,
         },
     )))
 }
@@ -971,147 +1280,214 @@ pub(super) fn resolved_loft_edge_profile_group(
 fn loft_edge_profile_face_slot(
     member_count: usize,
     operands: &[&DesignEdgeOperand],
-) -> Option<i64> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<i64>, CodecError> {
     if member_count == 0 || operands.len() != member_count {
-        return None;
+        return Ok(None);
     }
-    let mut common_clause = None;
-    for reference in &operands.first()?.recipe_references {
+    let matches_clause =
+        |candidate: &crate::records::dimensions::DesignRecipeReference,
+         reference: &crate::records::dimensions::DesignRecipeReference| {
+            Ok(candidate.selector == reference.selector
+                && ctx.equal(
+                    candidate.token.as_str(),
+                    reference.token.as_str(),
+                    "f3d Loft face clause token",
+                )?
+                && candidate.design_reference == reference.design_reference
+                && candidate.candidate_faces.len() == 1
+                && candidate.alternate_selector_faces.is_empty())
+        };
+    let mut common_clause: Option<(i64, &str, i64)> = None;
+    let mut references = operands[0].recipe_references.iter();
+    while let Some(reference) = ctx.next_charged(&mut references, "f3d Loft face clause scan")? {
         if reference.candidate_faces.len() != 1 || !reference.alternate_selector_faces.is_empty() {
             continue;
         }
-        if !operands.iter().all(|operand| {
-            operand
-                .recipe_references
-                .iter()
-                .filter(|candidate| {
-                    candidate.selector == reference.selector
-                        && candidate.token == reference.token
-                        && candidate.design_reference == reference.design_reference
-                        && candidate.candidate_faces.len() == 1
-                        && candidate.alternate_selector_faces.is_empty()
-                })
-                .count()
-                == 1
-        }) {
+        if !ctx.all_by(
+            operands,
+            |operand| {
+                let mut clauses = operand.recipe_references.iter();
+                let first = ctx.find_by(
+                    clauses.by_ref(),
+                    |candidate| matches_clause(candidate, reference),
+                    "f3d Loft face clause uniqueness",
+                )?;
+                Ok(first.is_some()
+                    && !ctx.any_by(
+                        clauses,
+                        |candidate| matches_clause(candidate, reference),
+                        "f3d Loft face clause uniqueness",
+                    )?)
+            },
+            "f3d Loft face common clause operands",
+        )? {
             continue;
         }
-        if let Some(prior) = common_clause {
-            if prior
-                != (
-                    reference.selector,
-                    &reference.token,
-                    reference.design_reference,
-                )
+        if let Some((selector, token, design_reference)) = common_clause {
+            if selector != reference.selector
+                || !ctx.equal(
+                    token,
+                    reference.token.as_str(),
+                    "f3d Loft face common token",
+                )?
+                || design_reference != reference.design_reference
             {
-                return None;
+                return Ok(None);
             }
         } else {
             common_clause = Some((
                 reference.selector,
-                &reference.token,
+                reference.token.as_str(),
                 reference.design_reference,
             ));
         }
     }
-    let (selector, token, design_reference) = common_clause?;
+    let Some((selector, token, design_reference)) = common_clause else {
+        return Ok(None);
+    };
     let mut evidence = None;
-    for operand in operands {
-        let (candidate, slot, count) = (|| {
-            if operand.recipe_references.len() != operand.recipe_reference_contexts.len()
-                || operand.candidate_faces.is_empty()
-                || operand.preceding_candidate_faces.is_empty()
-                || operand.result_candidate_faces.is_empty()
-            {
-                return None;
+    let mut members = operands.iter();
+    while let Some(operand) = ctx.next_charged(&mut members, "f3d Loft face operand scan")? {
+        if operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+            || operand.candidate_faces.is_empty()
+            || operand.preceding_candidate_faces.is_empty()
+            || operand.result_candidate_faces.is_empty()
+        {
+            return Ok(None);
+        }
+        let Some(target_ordinal) = ctx.position_by(
+            &operand.recipe_references,
+            |reference| {
+                Ok(reference.selector == selector
+                    && ctx.equal(
+                        reference.token.as_str(),
+                        token,
+                        "f3d Loft face target token",
+                    )?
+                    && reference.design_reference == design_reference
+                    && reference.candidate_faces.len() == 1
+                    && reference.alternate_selector_faces.is_empty())
+            },
+            "f3d Loft face target clause",
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut target = None;
+        let mut contexts = operand
+            .recipe_references
+            .iter()
+            .zip(&operand.recipe_reference_contexts)
+            .enumerate();
+        while let Some((ordinal, (reference, context))) =
+            ctx.next_charged(&mut contexts, "f3d Loft face context scan")?
+        {
+            let Ok(reference_ordinal) = u32::try_from(ordinal) else {
+                return Ok(None);
+            };
+            if context.reference_ordinal != reference_ordinal {
+                return Ok(None);
             }
-            let target_ordinal = operand
-                .recipe_references
-                .iter()
-                .enumerate()
-                .filter(|(_, reference)| {
-                    reference.selector == selector
-                        && reference.token == *token
-                        && reference.design_reference == design_reference
-                        && reference.candidate_faces.len() == 1
-                        && reference.alternate_selector_faces.is_empty()
-                })
-                .map(|(ordinal, _)| ordinal)
-                .next()?;
-            let mut target = None;
-            for (ordinal, (reference, context)) in operand
-                .recipe_references
-                .iter()
-                .zip(&operand.recipe_reference_contexts)
-                .enumerate()
-            {
-                if context.reference_ordinal != u32::try_from(ordinal).ok()? {
-                    return None;
-                }
-                let [candidate] = reference.candidate_faces.as_slice() else {
-                    return None;
-                };
-                let [preceding_face] = context.preceding_faces.as_slice() else {
-                    return None;
-                };
-                if preceding_face != candidate {
-                    return None;
-                }
-                let slot = preceding_face
-                    .as_str()
-                    .rsplit_once('#')?
-                    .1
-                    .parse::<i64>()
-                    .ok()?;
-                if !operand.preceding_candidate_faces.contains(candidate)
-                    || !operand.result_candidate_faces.contains(candidate)
-                {
-                    return None;
-                }
-                let [preceding_boundary] = context.preceding_face_boundaries.as_slice() else {
-                    return None;
-                };
-                let boundary_edge_count = boundary_edge_count([preceding_boundary])?;
-                if preceding_boundary.face_slot != slot {
-                    return None;
-                }
-                let [result_face] = context.result_faces.as_slice() else {
-                    return None;
-                };
-                let [result_boundary] = context.result_face_boundaries.as_slice() else {
-                    return None;
-                };
-                if result_face != candidate || result_boundary.face_slot != slot {
-                    return None;
-                }
-                let [support_slot] = context.preceding_support_face_slots.as_slice() else {
-                    return None;
-                };
-                let [support_boundary] = context.preceding_support_face_boundaries.as_slice()
-                else {
-                    return None;
-                };
-                if *support_slot != slot || support_boundary.face_slot != slot {
-                    return None;
-                }
-                if ordinal == target_ordinal {
-                    target = Some((candidate, slot, boundary_edge_count));
-                }
+            let [candidate] = reference.candidate_faces.as_slice() else {
+                return Ok(None);
+            };
+            let [preceding_face] = context.preceding_faces.as_slice() else {
+                return Ok(None);
+            };
+            if !ctx.equal(
+                preceding_face,
+                candidate,
+                "f3d Loft preceding face identity",
+            )? {
+                return Ok(None);
             }
-            target
-        })()?;
+            let Some((_, slot)) =
+                ctx.rsplit_once(preceding_face.as_str(), "#", "f3d Loft face slot suffix")?
+            else {
+                return Ok(None);
+            };
+            let parsed_slot = if slot.len() <= MAX_FREE_I64_TEXT_BYTES {
+                slot.parse::<i64>()
+            } else {
+                ctx.parse_text::<i64>(slot, "f3d Loft face slot value")?
+            };
+            let Ok(slot) = parsed_slot else {
+                return Ok(None);
+            };
+            if !ctx.contains(
+                &operand.preceding_candidate_faces,
+                candidate,
+                "f3d Loft preceding face membership",
+            )? || !ctx.contains(
+                &operand.result_candidate_faces,
+                candidate,
+                "f3d Loft result face membership",
+            )? {
+                return Ok(None);
+            }
+            let [preceding_boundary] = context.preceding_face_boundaries.as_slice() else {
+                return Ok(None);
+            };
+            let mut boundary_edge_count = 0usize;
+            let mut loops = preceding_boundary.loops.iter();
+            while let Some(loop_) =
+                ctx.next_charged(&mut loops, "f3d Loft face boundary loop scan")?
+            {
+                let count = loop_.boundary.coedge_count();
+                if count == 0 {
+                    return Ok(None);
+                }
+                let Some(total) = boundary_edge_count.checked_add(count) else {
+                    return Ok(None);
+                };
+                boundary_edge_count = total;
+            }
+            if preceding_boundary.face_slot != slot {
+                return Ok(None);
+            }
+            let [result_face] = context.result_faces.as_slice() else {
+                return Ok(None);
+            };
+            let [result_boundary] = context.result_face_boundaries.as_slice() else {
+                return Ok(None);
+            };
+            if !ctx.equal(result_face, candidate, "f3d Loft result face identity")?
+                || result_boundary.face_slot != slot
+            {
+                return Ok(None);
+            }
+            let [support_slot] = context.preceding_support_face_slots.as_slice() else {
+                return Ok(None);
+            };
+            let [support_boundary] = context.preceding_support_face_boundaries.as_slice() else {
+                return Ok(None);
+            };
+            if *support_slot != slot || support_boundary.face_slot != slot {
+                return Ok(None);
+            }
+            if ordinal == target_ordinal {
+                target = Some((candidate, slot, boundary_edge_count));
+            }
+        }
+        let Some((candidate, slot, count)) = target else {
+            return Ok(None);
+        };
         if count != member_count {
-            return None;
+            return Ok(None);
         }
         if let Some((face, prior_slot, prior_count)) = evidence {
-            if candidate != face || slot != prior_slot || count != prior_count {
-                return None;
+            if !ctx.equal(candidate, face, "f3d Loft common face identity")?
+                || slot != prior_slot
+                || count != prior_count
+            {
+                return Ok(None);
             }
         } else {
             evidence = Some((candidate, slot, count));
         }
     }
-    Some(evidence?.1)
+    Ok(evidence.map(|(_, slot, _)| slot))
 }
 
 pub(super) fn resolved_historical_face_group(
@@ -1129,14 +1505,14 @@ pub(super) fn resolved_historical_face_group(
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
+    historical_face_selection_in_state(ctx, scope, group, previous_state_id, &faces)
 }
 
 fn historical_face_selection(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    faces: Vec<i64>,
+    faces: &[i64],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     let Some(previous_state_id) = scope.previous_history_state_id() else {
         return Ok(None);
@@ -1149,43 +1525,68 @@ fn historical_face_selection_in_state(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     previous_state_id: i64,
-    faces: Vec<i64>,
+    faces: &[i64],
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    let native = ctx.copy_retained_text(&group.id, "f3d historical face group id")?;
-    historical_face_selection_with_native(ctx, scope, previous_state_id, faces, native)
+    historical_face_selection_with_native(
+        ctx,
+        scope,
+        previous_state_id,
+        faces,
+        &group.id,
+        "f3d historical face group id",
+    )
 }
 
 fn historical_face_selection_with_native(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     previous_state_id: i64,
-    faces: Vec<i64>,
-    native: String,
+    faces: &[i64],
+    native: &str,
+    native_operation: &'static str,
 ) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
     use cadmpeg_ir::features::FaceSelection;
-
     if faces.is_empty() {
         return Ok(None);
     }
-    let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
-    let feature_key = crate::design::identity::identity_key(feature.as_str())?;
-    let prefix =
-        crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
-    let mut historical_faces = Vec::new();
-    for face in faces {
-        let id = historical_face_id(ctx, &prefix, face)?;
-        ctx.push_vec(&mut historical_faces, id, "f3d historical face member")?;
+    let ((feature, prefix), _identity_storage) =
+        ctx.with_scoped_storage("f3d historical face identity storage", || {
+            let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
+            let feature_key = crate::design::identity::identity_key(ctx, feature.as_str())?;
+            let prefix =
+                crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?;
+            Ok::<_, CodecError>((feature, prefix))
+        })?;
+    let (selection, selection_storage) =
+        ctx.with_scoped_storage("f3d historical face selection storage", || {
+            let historical_native = ctx.copy_retained_text(native, native_operation)?;
+            let mut historical_faces = Vec::new();
+            for face in ctx.admit_iter(faces, "f3d historical face slot source")? {
+                let id = historical_face_id(ctx, &prefix, *face)?;
+                ctx.push_vec(&mut historical_faces, id, "f3d historical face member")?;
+            }
+            let selection = FaceSelection::historical(
+                crate::design::identity::feature_input_topology_id(
+                    ctx,
+                    &feature,
+                    previous_state_id,
+                )?,
+                historical_faces,
+                historical_native,
+                ctx,
+            )?;
+            Ok::<_, CodecError>(selection)
+        })?;
+    match selection {
+        Ok(selection) => selection_storage.commit_value(Some(selection)),
+        Err(_) => {
+            drop(selection_storage);
+            Ok(Some(FaceSelection::Native(ctx.copy_retained_text(
+                native,
+                "f3d historical face fallback id",
+            )?)))
+        }
     }
-    let fallback_native = ctx.copy_retained_text(&native, "f3d historical face fallback id")?;
-    Ok(Some(
-        cadmpeg_ir::features::FaceSelection::historical(
-            crate::design::identity::feature_input_topology_id(ctx, &feature, previous_state_id)?,
-            historical_faces,
-            native,
-            ctx,
-        )?
-        .unwrap_or(FaceSelection::Native(fallback_native)),
-    ))
 }
 
 /// Resolve `SplitFace` target groups whose bounded-face member run can include
@@ -1214,7 +1615,7 @@ pub(super) fn resolved_historical_split_face_target_group(
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
+    historical_face_selection_in_state(ctx, scope, group, previous_state_id, &faces)
 }
 
 /// Resolve a `SplitFace` target from the operation transition when the member
@@ -1252,7 +1653,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
     };
-    historical_face_selection_in_state(ctx, scope, group, previous_state_id, faces)
+    historical_face_selection_in_state(ctx, scope, group, previous_state_id, &faces)
 }
 
 fn split_face_updated_target_slots(
@@ -1269,62 +1670,75 @@ fn split_face_updated_target_slots(
     {
         return Ok(None);
     }
+    let mut proof_storage = ctx.reserve_scoped(0, "f3d SplitFace updated proof storage")?;
     let mut updated = HashSet::new();
-    for slot in updated_face_slots {
-        ctx.insert_hash_set(&mut updated, *slot, "f3d SplitFace updated face index")?;
+    for slot in ctx.admit_iter(updated_face_slots, "f3d SplitFace updated slot source")? {
+        proof_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut updated, *slot, "f3d SplitFace updated face index")
+        })?;
     }
     if updated.len() != updated_face_slots.len() {
         return Ok(None);
     }
-    let Some(stream) = native_stream(&group.id) else {
+    let Some(stream) = native_stream_charged(ctx, &group.id, "f3d face group native stream")?
+    else {
         return Ok(None);
     };
     let mut represented = HashSet::new();
     let mut faces = Vec::new();
-    for (ordinal, record_index) in group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .enumerate()
+    let mut source = group.members().iter().enumerate();
+    while let Some((ordinal, member)) =
+        ctx.next_charged(&mut source, "f3d face group member source")?
     {
+        let record_index = &member.value;
         let Some(ordinal) = u32::try_from(ordinal).ok() else {
             return Ok(None);
         };
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == group.scope_record_index
-                && operand.group_record_index() == Some(group.record_index)
-                && operand.group_member_ordinal() == Some(ordinal)
-                && operand.record_index() == *record_index
-                && operand.recipe_kind
-                    == crate::records::recipes::ConstructionRecipeKind::BoundedFace
-        });
-        let Some(operand) = matches.next() else {
+        let operand = unique_feature_match_for_decode(
+            ctx,
+            operands,
+            |operand| {
+                Ok(crate::design::feature_project::feature_stream_matches(
+                    ctx,
+                    &operand.id,
+                    Some(stream),
+                    "f3d face member operand stream",
+                )? && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index() == Some(group.record_index)
+                    && operand.group_member_ordinal() == Some(ordinal)
+                    && operand.record_index() == *record_index
+                    && operand.recipe_kind
+                        == crate::records::recipes::ConstructionRecipeKind::BoundedFace)
+            },
+            "f3d face group operand source",
+        )?;
+        let Some(operand) = operand else {
             return Ok(None);
         };
-        if matches.next().is_some() || operand.preceding_candidate_faces.is_empty() {
+        if operand.preceding_candidate_faces.is_empty() {
             return Ok(None);
         }
-        for face in &operand.preceding_candidate_faces {
-            let Some(slot) = face
-                .as_str()
-                .rsplit_once('#')
-                .and_then(|(_, slot)| slot.parse().ok())
-            else {
+        let mut candidates = operand.preceding_candidate_faces.iter();
+        while let Some(face) =
+            ctx.next_charged(&mut candidates, "f3d SplitFace preceding target source")?
+        {
+            let Some(slot) = stable_face_slot(ctx, face)? else {
                 return Ok(None);
             };
-            if updated.contains(&slot)
-                && ctx.insert_hash_set(
-                    &mut represented,
-                    slot,
-                    "f3d SplitFace represented face index",
-                )?
+            if ctx.contains_hash_set(&updated, &slot, "f3d SplitFace updated slot membership")?
+                && proof_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut represented,
+                        slot,
+                        "f3d SplitFace represented face index",
+                    )
+                })?
             {
                 ctx.push_vec(&mut faces, slot, "f3d SplitFace updated face")?;
             }
         }
     }
-    Ok((represented == updated).then_some(faces))
+    Ok((represented.len() == updated.len()).then_some(faces))
 }
 
 #[derive(Clone, Copy)]
@@ -1339,39 +1753,45 @@ fn historical_face_group_slots(
     operands: &[DesignFaceOperand],
     members: FaceGroupMembers,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    let Some(stream) = native_stream(&group.id) else {
+    let Some(stream) = native_stream_charged(ctx, &group.id, "f3d face group native stream")?
+    else {
         return Ok(None);
     };
     let mut faces = Vec::new();
     let mut contributing_members = 0;
-    for (ordinal, record_index) in group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .enumerate()
+    let mut source = group.members().iter().enumerate();
+    while let Some((ordinal, member)) =
+        ctx.next_charged(&mut source, "f3d face group member source")?
     {
+        let record_index = &member.value;
         let Some(ordinal) = u32::try_from(ordinal).ok() else {
             return Ok(None);
         };
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == group.scope_record_index
-                && operand.group_record_index() == Some(group.record_index)
-                && operand.group_member_ordinal() == Some(ordinal)
-                && operand.record_index() == *record_index
-        });
-        let Some(operand) = matches.next() else {
+        let operand = unique_feature_match_for_decode(
+            ctx,
+            operands,
+            |operand| {
+                Ok(crate::design::feature_project::feature_stream_matches(
+                    ctx,
+                    &operand.id,
+                    Some(stream),
+                    "f3d face member operand stream",
+                )? && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index() == Some(group.record_index)
+                    && operand.group_member_ordinal() == Some(ordinal)
+                    && operand.record_index() == *record_index)
+            },
+            "f3d face group operand source",
+        )?;
+        let Some(operand) = operand else {
             return Ok(None);
         };
-        if matches.next().is_some() {
-            return Ok(None);
-        }
         let mut candidate_slots = None;
         if operand.resolved_face_slots.is_empty() {
             if matches!(members, FaceGroupMembers::SplitFaceContext) {
                 if let Some(slots) = split_face_complete_candidate_slots(ctx, operand)? {
                     candidate_slots = Some(slots);
-                } else if is_split_face_context_member(operand) {
+                } else if is_split_face_context_member(ctx, operand)? {
                     continue;
                 } else {
                     return Ok(None);
@@ -1384,8 +1804,8 @@ fn historical_face_group_slots(
             .as_deref()
             .unwrap_or(&operand.resolved_face_slots);
         contributing_members += 1;
-        for face in member_slots {
-            if !faces.contains(face) {
+        for face in ctx.admit_iter(member_slots, "f3d historical member slot source")? {
+            if !contains_slot(ctx, &faces, *face, "find F3D historical face group slot")? {
                 ctx.push_vec(&mut faces, *face, "f3d historical face group slot")?;
             }
         }
@@ -1397,7 +1817,7 @@ fn split_face_complete_candidate_slots(
     ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    if complete_counted_face_recipe(operand).is_none() {
+    if complete_counted_face_recipe(ctx, operand)?.is_none() {
         return Ok(None);
     }
     let faces = if let Some(face) = &operand.resolved_active_face {
@@ -1412,238 +1832,455 @@ fn split_face_complete_candidate_slots(
         }
         candidates
     };
+    let mut storage = ctx.reserve_scoped(0, "f3d SplitFace complete candidate storage")?;
     let mut slots = Vec::new();
-    for face in faces {
-        let Some(slot) = face
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
+    let mut source = faces.iter();
+    while let Some(face) =
+        ctx.next_charged(&mut source, "f3d SplitFace complete candidate source")?
+    {
+        let Some(slot) = stable_face_slot(ctx, face)? else {
             return Ok(None);
         };
-        ctx.push_vec(&mut slots, slot, "f3d SplitFace complete candidate slot")?;
+        storage.with_storage(|| {
+            ctx.push_vec(&mut slots, slot, "f3d SplitFace complete candidate slot")
+        })?;
     }
     let mut preceding = HashSet::new();
-    for face in &operand.preceding_candidate_faces {
-        if let Some(slot) = face
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        {
-            ctx.insert_hash_set(
-                &mut preceding,
-                slot,
-                "f3d SplitFace preceding candidate index",
-            )?;
+    for face in ctx.admit_iter(
+        &operand.preceding_candidate_faces,
+        "f3d SplitFace preceding candidate source",
+    )? {
+        if let Some(slot) = stable_face_slot(ctx, face)? {
+            storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut preceding,
+                    slot,
+                    "f3d SplitFace preceding candidate index",
+                )
+            })?;
         }
     }
-    Ok((!slots.is_empty() && slots.iter().all(|slot| preceding.contains(slot))).then_some(slots))
+    if slots.is_empty()
+        || !ctx.all_by(
+            &slots,
+            |slot| ctx.contains_hash_set(&preceding, slot, "f3d SplitFace preceding membership"),
+            "f3d SplitFace complete containment",
+        )?
+    {
+        return Ok(None);
+    }
+    Ok(Some(ctx.collect_vec(
+        slots.iter().copied(),
+        "f3d SplitFace accepted candidate slots",
+    )?))
 }
 
-fn is_split_face_context_member(operand: &DesignFaceOperand) -> bool {
-    operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
-        && crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
-            .is_some_and(|kind| {
-                matches!(
-                    kind,
-                    crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. }
-                )
-            })
-        && !operand.recipe_nodes.is_empty()
-        && operand
-            .recipe_nodes
-            .iter()
-            .all(|node| node.recipe_structure.is_some())
-        && face_operand_candidates(operand).is_empty()
-        && operand.alternate_selector_candidate_faces.is_empty()
-        && operand.preceding_candidate_faces.is_empty()
-        && operand.changed_candidate_faces.is_empty()
-        && operand.recipe_references.iter().any(|reference| {
-            !reference.candidate_faces.is_empty() || !reference.alternate_selector_faces.is_empty()
-        })
-}
-
-fn resolved_face_operand(
+fn is_split_face_context_member(
     ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
-) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
+) -> Result<bool, CodecError> {
+    Ok(
+        operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+            && matches!(
+                crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
+                Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. })
+            )
+            && !operand.recipe_nodes.is_empty()
+            && ctx.all_by(
+                &operand.recipe_nodes,
+                |node| Ok(node.recipe_structure.is_some()),
+                "f3d SplitFace context node source",
+            )?
+            && face_operand_candidates(operand).is_empty()
+            && operand.alternate_selector_candidate_faces.is_empty()
+            && operand.preceding_candidate_faces.is_empty()
+            && operand.changed_candidate_faces.is_empty()
+            && ctx.any_by(
+                &operand.recipe_references,
+                |reference| {
+                    Ok(!reference.candidate_faces.is_empty()
+                        || !reference.alternate_selector_faces.is_empty())
+                },
+                "f3d SplitFace context reference source",
+            )?,
+    )
+}
+
+fn stable_face_slot(
+    ctx: &DecodeContext<'_>,
+    face: &cadmpeg_ir::ids::FaceId,
+) -> Result<Option<i64>, CodecError> {
+    let Some((_, slot)) = ctx.rsplit_once(face.as_str(), "#", "f3d stable face slot suffix")?
+    else {
+        return Ok(None);
+    };
+    Ok(if slot.len() <= MAX_FREE_I64_TEXT_BYTES {
+        slot.parse::<i64>().ok()
+    } else {
+        ctx.parse_text::<i64>(slot, "f3d stable face slot value")?
+            .ok()
+    })
+}
+
+// Source identities and scalar slots remain borrowed until every operand agrees.
+#[derive(Clone, Copy)]
+enum FaceCandidate<'source> {
+    Existing {
+        face: &'source cadmpeg_ir::ids::FaceId,
+        operation: &'static str,
+    },
+    Generated(i64),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum FaceKey<'source> {
+    Slot(i64),
+    Text(&'source cadmpeg_ir::ids::FaceId),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FaceKey<'_> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Slot(_) => Ok(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<i64>(),
+            )),
+            Self::Text(face) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(*face, ctx, operation)
+            }
+        }
+    }
+}
+
+impl<'source> FaceCandidate<'source> {
+    fn key(self) -> FaceKey<'source> {
+        let face = match self {
+            Self::Existing { face, .. } => face,
+            Self::Generated(slot) => return FaceKey::Slot(slot),
+        };
+        let text = face.as_str();
+        // A canonical generated identity has a literal prefix and at most 20
+        // decimal bytes. These fixed bounds admit no input-sized text scan.
+        if text.len() > FACE_SLOT_PREFIX.len() + MAX_FREE_I64_TEXT_BYTES {
+            return FaceKey::Text(face);
+        }
+        let Some(tail) = text.strip_prefix(FACE_SLOT_PREFIX) else {
+            return FaceKey::Text(face);
+        };
+        let minimal =
+            tail == "0" || matches!(tail.as_bytes(), [b'1'..=b'9', ..] | [b'-', b'1'..=b'9', ..]);
+        if minimal {
+            if let Ok(slot) = tail.parse::<i64>() {
+                return FaceKey::Slot(slot);
+            }
+        }
+        FaceKey::Text(face)
+    }
+
+    fn materialize(self, ctx: &DecodeContext<'_>) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
+        match self {
+            Self::Existing { face, operation } => face.try_clone_for_decode(ctx, operation),
+            Self::Generated(slot) => face_slot_id(ctx, slot),
+        }
+    }
+}
+
+fn resolved_face_operand<'source>(
+    ctx: &DecodeContext<'_>,
+    operand: &'source DesignFaceOperand,
+) -> Result<Option<Vec<FaceCandidate<'source>>>, CodecError> {
     if let Some(face) = &operand.resolved_active_face {
         let mut faces = Vec::new();
-        let face = (face).try_clone_for_decode(ctx, "f3d resolved active face id")?;
+        let face = FaceCandidate::Existing {
+            face,
+            operation: "f3d resolved active face id",
+        };
         ctx.push_vec(&mut faces, face, "f3d resolved active face")?;
         return Ok(Some(faces));
     }
     if !operand.resolved_face_slots.is_empty() {
-        let active_candidates = || {
-            operand
-                .candidate_faces
-                .iter()
-                .chain(&operand.unreferenced_candidate_faces)
-                .chain(&operand.alternate_selector_candidate_faces)
-        };
-        let mut faces = Vec::new();
-        for slot in &operand.resolved_face_slots {
-            let face = if active_candidates().next().is_none() {
-                face_slot_id(ctx, *slot)?
-            } else {
-                let Some(face) = active_candidates().find(|face| {
-                    face.as_str()
-                        .rsplit_once('#')
-                        .and_then(|(_, ordinal)| ordinal.parse::<i64>().ok())
-                        == Some(*slot)
-                }) else {
-                    return Ok(None);
-                };
-                (face).try_clone_for_decode(ctx, "f3d resolved face slot candidate id")?
-            };
-            ctx.push_vec(&mut faces, face, "f3d resolved face slot")?;
+        if operand.candidate_faces.is_empty()
+            && operand.unreferenced_candidate_faces.is_empty()
+            && operand.alternate_selector_candidate_faces.is_empty()
+        {
+            let mut faces = Vec::new();
+            for slot in ctx.admit_iter(
+                &operand.resolved_face_slots,
+                "f3d generated face slot source",
+            )? {
+                let face = FaceCandidate::Generated(*slot);
+                ctx.push_vec(&mut faces, face, "f3d resolved face slot")?;
+            }
+            return Ok(Some(faces));
         }
-        return Ok(Some(faces));
+        let mut storage = ctx.reserve_scoped(0, "f3d resolved slot proof storage")?;
+        let mut by_slot = HashMap::new();
+        let mut selected = Vec::new();
+        let mut candidates = operand
+            .candidate_faces
+            .iter()
+            .chain(&operand.unreferenced_candidate_faces)
+            .chain(&operand.alternate_selector_candidate_faces);
+        let mut slots = operand.resolved_face_slots.iter();
+        while let Some(slot) = ctx.next_charged(&mut slots, "f3d resolved face slot source")? {
+            let cached = ctx
+                .get_hash_map(&by_slot, slot, "f3d resolved face slot lookup")?
+                .copied();
+            let face = if let Some(face) = cached {
+                Some(face)
+            } else {
+                ctx.find_map(
+                    &mut candidates,
+                    |face| {
+                        let Some(candidate_slot) = stable_face_slot(ctx, face)? else {
+                            return Ok(None);
+                        };
+                        let first = storage.with_storage(|| -> Result<_, CodecError> {
+                            Ok(*ctx
+                                .entry_hash_map(
+                                    &mut by_slot,
+                                    candidate_slot,
+                                    "f3d resolved face slot index",
+                                )?
+                                .or_insert(face))
+                        })?;
+                        Ok((candidate_slot == *slot).then_some(first))
+                    },
+                    "f3d resolved slot candidate source",
+                )?
+            };
+            let Some(face) = face else { return Ok(None) };
+            ctx.push_vec(
+                &mut selected,
+                FaceCandidate::Existing {
+                    face,
+                    operation: "f3d resolved face slot candidate id",
+                },
+                "f3d resolved face slot selection",
+            )?;
+        }
+        return Ok(Some(selected));
     }
     let candidates = face_operand_candidates(operand);
     if !operand.alternate_selector_candidate_faces.is_empty() {
         let mut faces = Vec::new();
-        for face in candidates {
-            let face = (face).try_clone_for_decode(ctx, "f3d alternate face candidate id")?;
+        for face in ctx.admit_iter(candidates, "f3d resolved candidate source")? {
+            let face = FaceCandidate::Existing {
+                face,
+                operation: "f3d alternate face candidate id",
+            };
             ctx.push_vec(&mut faces, face, "f3d alternate face candidate")?;
         }
         return Ok(Some(faces));
     }
     if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
-        let mut referenced = Vec::new();
-        for reference in &operand.recipe_references {
-            for face in &reference.candidate_faces {
-                if !referenced.contains(face) {
-                    let face = (face).try_clone_for_decode(ctx, "f3d referenced face id")?;
-                    ctx.push_vec(&mut referenced, face, "f3d referenced face")?;
+        let mut storage = ctx.reserve_scoped(0, "f3d referenced face proof storage")?;
+        let mut seen = HashSet::new();
+        let mut selected = Vec::new();
+        for reference in ctx.admit_iter(
+            &operand.recipe_references,
+            "f3d referenced face reference source",
+        )? {
+            for face in ctx.admit_iter(
+                &reference.candidate_faces,
+                "f3d referenced face candidate source",
+            )? {
+                if storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut seen, face, "f3d referenced face membership")
+                })? {
+                    ctx.push_vec(
+                        &mut selected,
+                        FaceCandidate::Existing {
+                            face,
+                            operation: "f3d referenced face id",
+                        },
+                        "f3d referenced face selection",
+                    )?;
                 }
             }
         }
-        if !referenced.is_empty() {
-            return Ok(Some(referenced));
+        if !selected.is_empty() {
+            return Ok(Some(selected));
         }
     }
     if !operand.unreferenced_candidate_faces.is_empty()
-        && complete_counted_face_recipe(operand).is_some()
+        && complete_counted_face_recipe(ctx, operand)?.is_some()
     {
         let mut faces = Vec::new();
-        for face in candidates {
-            let face = (face).try_clone_for_decode(ctx, "f3d unreferenced face candidate id")?;
+        for face in ctx.admit_iter(candidates, "f3d resolved candidate source")? {
+            let face = FaceCandidate::Existing {
+                face,
+                operation: "f3d unreferenced face candidate id",
+            };
             ctx.push_vec(&mut faces, face, "f3d unreferenced face candidate")?;
         }
         return Ok(Some(faces));
     }
     let [face] = candidates else { return Ok(None) };
     let mut faces = Vec::new();
-    let face = (face).try_clone_for_decode(ctx, "f3d unique face candidate id")?;
+    let face = FaceCandidate::Existing {
+        face,
+        operation: "f3d unique face candidate id",
+    };
     ctx.push_vec(&mut faces, face, "f3d unique face candidate")?;
     Ok(Some(faces))
 }
 
-fn explicit_bounded_face_candidates(
+fn explicit_bounded_face_candidates<'source>(
     ctx: &DecodeContext<'_>,
-    operand: &DesignFaceOperand,
-) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
+    operand: &'source DesignFaceOperand,
+) -> Result<Option<Vec<FaceCandidate<'source>>>, CodecError> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !operand.resolved_face_slots.is_empty()
         || !operand.alternate_selector_candidate_faces.is_empty()
         || !operand.historical_support_contexts.is_empty()
-        || complete_counted_face_recipe(operand).is_none()
+        || complete_counted_face_recipe(ctx, operand)?.is_none()
     {
         return Ok(None);
     }
     if !operand.candidate_faces.is_empty() && operand.unreferenced_candidate_faces.is_empty() {
         let mut candidates = Vec::new();
-        for face in &operand.candidate_faces {
-            let face =
-                (face).try_clone_for_decode(ctx, "f3d explicit bounded face candidate id")?;
+        for face in ctx.admit_iter(
+            &operand.candidate_faces,
+            "f3d explicit bounded owned candidate source",
+        )? {
+            let face = FaceCandidate::Existing {
+                face,
+                operation: "f3d explicit bounded face candidate id",
+            };
             ctx.push_vec(&mut candidates, face, "f3d explicit bounded face candidate")?;
         }
         return Ok(Some(candidates));
     }
 
-    let mut lanes = HashMap::<i64, Vec<cadmpeg_ir::ids::FaceId>>::new();
-    for reference in &operand.recipe_references {
-        if operand.recipe_references.iter().any(|other| {
-            other.design_reference == reference.design_reference
-                && !other.alternate_selector_faces.is_empty()
-        }) {
-            continue;
-        }
-        for face in &reference.candidate_faces {
-            if operand.candidate_faces.is_empty() || operand.candidate_faces.contains(face) {
-                if !lanes.contains_key(&reference.design_reference) {
-                    {
-                        ctx.reserve_map(&mut lanes, 1, "f3d explicit bounded face lane")?;
+    let mut storage = ctx.reserve_scoped(0, "f3d explicit bounded lane storage")?;
+    let lanes = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut lookup_storage = ctx.reserve_scoped(0, "f3d explicit bounded lookup storage")?;
+        let (alternate_references, candidates) =
+            lookup_storage.with_storage(|| -> Result<_, CodecError> {
+                let mut candidates = HashSet::new();
+                for face in ctx.admit_iter(
+                    &operand.candidate_faces,
+                    "f3d explicit bounded candidate index scan",
+                )? {
+                    ctx.insert_hash_set(
+                        &mut candidates,
+                        face,
+                        "f3d explicit bounded candidate index",
+                    )?;
+                }
+                let mut alternate_references = HashSet::new();
+                for reference in ctx.admit_iter(
+                    &operand.recipe_references,
+                    "f3d explicit bounded alternate scan",
+                )? {
+                    if !reference.alternate_selector_faces.is_empty() {
+                        ctx.insert_hash_set(
+                            &mut alternate_references,
+                            reference.design_reference,
+                            "f3d explicit bounded alternate reference",
+                        )?;
                     }
                 }
-                let lane = lanes.entry(reference.design_reference).or_default();
-                if !lane.contains(face) {
-                    let face =
-                        (face).try_clone_for_decode(ctx, "f3d explicit bounded face lane id")?;
-                    ctx.push_vec(lane, face, "f3d explicit bounded face lane member")?;
+                Ok((alternate_references, candidates))
+            })?;
+        let mut lanes = BTreeMap::<i64, BTreeSet<&cadmpeg_ir::ids::FaceId>>::new();
+        for reference in ctx.admit_iter(
+            &operand.recipe_references,
+            "f3d explicit bounded reference scan",
+        )? {
+            if ctx.contains_hash_set(
+                &alternate_references,
+                &reference.design_reference,
+                "f3d explicit bounded alternate lookup",
+            )? {
+                continue;
+            }
+            for face in ctx.admit_iter(
+                &reference.candidate_faces,
+                "f3d explicit bounded candidate scan",
+            )? {
+                if operand.candidate_faces.is_empty()
+                    || ctx.contains_hash_set(
+                        &candidates,
+                        face,
+                        "f3d explicit bounded candidate membership",
+                    )?
+                {
+                    ctx.insert_btree_group_set(
+                        &mut lanes,
+                        reference.design_reference,
+                        face,
+                        "f3d explicit bounded face lane",
+                        "f3d explicit bounded face lane member",
+                    )?;
                 }
             }
         }
+        Ok(lanes)
+    })?;
+    let mut largest = None::<&BTreeSet<&cadmpeg_ir::ids::FaceId>>;
+    let mut tied = false;
+    for (_, lane) in ctx.admit_iter(&lanes, "f3d explicit bounded lane selection")? {
+        match largest {
+            Some(previous) if BTreeSet::len(previous) > lane.len() => {}
+            Some(previous) if previous.len() == lane.len() => tied = true,
+            _ => {
+                largest = Some(lane);
+                tied = false;
+            }
+        }
     }
-    let mut ordered_lanes = Vec::new();
-    for lane in lanes.into_values().filter(|lane| !lane.is_empty()) {
-        ctx.push_vec(
-            &mut ordered_lanes,
-            lane,
-            "f3d explicit bounded face ordered lane",
-        )?;
-    }
-    for lane in &mut ordered_lanes {
-        ctx.stable_sort_by(
-            &mut lane[..],
-            |value| value.as_str(),
-            Ord::cmp,
-            "sort f3d design face_resolve 5",
-        )?;
-    }
-    ctx.stable_sort_by(
-        &mut ordered_lanes[..],
-        |value| value,
-        |left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)),
-        "sort f3d design face_resolve 6",
-    )?;
-    let [lane, next @ ..] = ordered_lanes.as_slice() else {
+    let Some(lane) = largest.filter(|_| !tied) else {
         return Ok(None);
     };
-    if next.first().is_some_and(|other| other.len() == lane.len()) {
-        return Ok(None);
-    }
     let mut selected = Vec::new();
-    for face in lane {
-        let face = (face).try_clone_for_decode(ctx, "f3d explicit bounded selected face id")?;
+    for face in ctx.admit_iter(lane, "f3d explicit bounded selected scan")? {
+        let face = FaceCandidate::Existing {
+            face,
+            operation: "f3d explicit bounded selected face id",
+        };
         ctx.push_vec(&mut selected, face, "f3d explicit bounded selected face")?;
     }
     Ok(Some(selected))
 }
 
-fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
+fn complete_counted_face_recipe(
+    ctx: &DecodeContext<'_>,
+    operand: &DesignFaceOperand,
+) -> Result<Option<usize>, CodecError> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
-        return None;
+        return Ok(None);
     }
     let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
         crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
     else {
-        return None;
+        return Ok(None);
     };
     if operand.recipe_nodes.is_empty()
-        || !operand
-            .recipe_nodes
-            .iter()
-            .all(|node| node.recipe_structure.is_some())
+        || !ctx.all_by(
+            &operand.recipe_nodes,
+            |node| Ok(node.recipe_structure.is_some()),
+            "f3d counted face structure source",
+        )?
     {
-        return None;
+        return Ok(None);
     }
-    let boundary_edge_count =
-        unique_preceding_face_boundaries(&operand.historical_support_contexts)
-            .and_then(boundary_edge_count);
-    (operand.recipe_nodes.len() == header_value || boundary_edge_count == Some(header_value))
-        .then_some(header_value)
+    if operand.recipe_nodes.len() == header_value {
+        return Ok(Some(header_value));
+    }
+    let Some(boundaries) =
+        unique_preceding_face_boundaries(ctx, &operand.historical_support_contexts)?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        (boundary_edge_count(ctx, boundaries.boundaries.iter().copied())? == Some(header_value))
+            .then_some(header_value),
+    )
 }
 
 /// Return the result-face lane of a legacy bounded-face recipe.
@@ -1672,78 +2309,133 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
     {
         return Ok(None);
     }
-    let mut candidates = Vec::new();
-    for face in operand
-        .recipe_references
-        .iter()
-        .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
-        .flat_map(|reference| {
-            if reference.candidate_faces.is_empty() {
-                reference.alternate_selector_faces.iter()
-            } else {
-                reference.candidate_faces.iter()
-            }
-        })
-    {
-        let face = (face).try_clone_for_decode(ctx, "f3d legacy face candidate id")?;
-        ctx.push_vec(&mut candidates, face, "f3d legacy face candidate")?;
+    let mut storage = ctx.reserve_scoped(0, "f3d legacy face proof storage")?;
+    let mut selected = BTreeSet::new();
+    for reference in ctx.admit_iter(
+        &operand.recipe_references,
+        "f3d legacy face reference source",
+    )? {
+        if reference.design_reference != i64::from(recipe_record_index) {
+            continue;
+        }
+        let candidates = if reference.candidate_faces.is_empty() {
+            &reference.alternate_selector_faces
+        } else {
+            &reference.candidate_faces
+        };
+        for face in ctx.admit_iter(candidates, "f3d legacy selected candidate source")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut selected, face, "f3d legacy selected face index")
+            })?;
+        }
     }
-    ctx.stable_sort_by(
-        &mut candidates[..],
-        |value| value.as_str(),
-        Ord::cmp,
-        "sort f3d design face_resolve 7",
-    )?;
-    candidates.dedup();
+    if selected.is_empty() {
+        return Ok(None);
+    }
     if !operand.candidate_faces.is_empty() {
-        let mut active = HashSet::new();
-        for face in &operand.candidate_faces {
-            ctx.insert_hash_set(&mut active, face, "f3d legacy active face index")?;
+        let mut active_storage = ctx.reserve_scoped(0, "f3d legacy active face storage")?;
+        let mut active = BTreeSet::new();
+        for face in ctx.admit_iter(
+            &operand.candidate_faces,
+            "f3d legacy active candidate source",
+        )? {
+            active_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut active, face, "f3d legacy active face index")
+            })?;
         }
-        let mut selected = HashSet::new();
-        for face in &candidates {
-            ctx.insert_hash_set(&mut selected, face, "f3d legacy selected face index")?;
-        }
-        if active != selected {
+        if active.len() != selected.len()
+            || !ctx.all_by(
+                active.iter().zip(&selected),
+                |(first, second)| ctx.equal(*first, *second, "f3d legacy face id comparison"),
+                "f3d legacy face set comparison",
+            )?
+        {
             return Ok(None);
         }
     }
-    Ok((!candidates.is_empty()).then_some(candidates))
+    let mut candidates = Vec::new();
+    for face in ctx.admit_iter(&selected, "f3d legacy accepted face source")? {
+        let face = (*face).try_clone_for_decode(ctx, "f3d legacy face candidate id")?;
+        ctx.push_vec(&mut candidates, face, "f3d legacy face candidate")?;
+    }
+    Ok(Some(candidates))
 }
 
-pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
+pub(crate) fn resolve_face_operand_history_candidates(
+    ctx: &DecodeContext<'_>,
+    operand: &DesignFaceOperand,
+) -> Result<Option<i64>, CodecError> {
     let Some(direct) = unique_face_operand_history_candidate(operand) else {
-        return resolve_face_operand_support_candidate(operand);
+        return resolve_face_operand_support_candidate(ctx, operand);
     };
-    if !historical_face_operand_candidate_iter(operand).any(|candidate| candidate == direct)
-        && (!has_nested_bounded_face_history_candidates(operand)
-            || !operand
-                .recipe_references
-                .iter()
-                .flat_map(|reference| {
+    let mut referenced_lane = false;
+    let mut matched = false;
+    if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
+        matched = ctx.any_by(
+            &operand.recipe_references,
+            |reference| {
+                referenced_lane |= !reference.candidate_faces.is_empty()
+                    || !reference.alternate_selector_faces.is_empty();
+                ctx.any_by(
                     reference
                         .candidate_faces
                         .iter()
-                        .chain(&reference.alternate_selector_faces)
-                })
-                .any(|candidate| candidate == direct))
-    {
-        return None;
+                        .chain(&reference.alternate_selector_faces),
+                    |candidate| {
+                        ctx.equal(candidate, direct, "f3d direct referenced face membership")
+                    },
+                    "f3d direct referenced candidate source",
+                )
+            },
+            "f3d direct face reference source",
+        )?;
     }
-    direct.as_str().rsplit_once('#')?.1.parse().ok()
+    if !matched && !referenced_lane {
+        matched = ctx.contains(
+            face_operand_candidates(operand),
+            direct,
+            "f3d direct face candidate membership",
+        )?;
+    }
+    if !matched
+        && complete_counted_face_recipe(ctx, operand)?.is_some()
+        && operand.candidate_faces.is_empty()
+        && operand.unreferenced_candidate_faces.is_empty()
+        && operand.alternate_selector_candidate_faces.is_empty()
+    {
+        matched = ctx.any_by(
+            &operand.recipe_references,
+            |reference| {
+                ctx.any_by(
+                    reference
+                        .candidate_faces
+                        .iter()
+                        .chain(&reference.alternate_selector_faces),
+                    |candidate| ctx.equal(candidate, direct, "f3d direct nested face membership"),
+                    "f3d direct nested candidate source",
+                )
+            },
+            "f3d direct nested reference source",
+        )?;
+    }
+    if !matched {
+        return Ok(None);
+    }
+    stable_face_slot(ctx, direct)
 }
 
 pub(crate) fn resolve_face_operand_history_candidate_from(
+    ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
     candidates: &[cadmpeg_ir::ids::FaceId],
-) -> Option<i64> {
+) -> Result<Option<i64>, CodecError> {
     let Some(direct) = unique_face_operand_history_candidate(operand) else {
-        return resolve_face_operand_support_candidate(operand);
+        return resolve_face_operand_support_candidate(ctx, operand);
     };
-    candidates
-        .contains(direct)
-        .then(|| direct.as_str().rsplit_once('#')?.1.parse().ok())
-        .flatten()
+    if !ctx.contains(candidates, direct, "f3d direct supplied face membership")? {
+        return Ok(None);
+    }
+    stable_face_slot(ctx, direct)
 }
 
 fn unique_face_operand_history_candidate(
@@ -1768,7 +2460,7 @@ pub(crate) fn resolve_bounded_face_history_candidates(
     if let Some(candidate) = convergent_effective_face_support(ctx, operand)? {
         return Ok(Some(candidate));
     }
-    let Some(header_value) = complete_counted_face_recipe(operand) else {
+    let Some(header_value) = complete_counted_face_recipe(ctx, operand)? else {
         return Ok(None);
     };
     bounded_face_candidate_by_boundary_cardinality(
@@ -1782,22 +2474,26 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
     ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    if complete_counted_face_recipe(operand).is_none() {
+    if complete_counted_face_recipe(ctx, operand)?.is_none() {
         return Ok(None);
     }
+    let mut active_storage = ctx.reserve_scoped(0, "f3d stable bounded candidate storage")?;
     let mut active_faces = Vec::new();
-    for face in &operand.preceding_candidate_faces {
-        let Some(slot) = face
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
+    let mut faces = operand.preceding_candidate_faces.iter();
+    while let Some(face) = ctx.next_charged(&mut faces, "f3d stable bounded candidate source")? {
+        let Some(slot) = stable_face_slot(ctx, face)? else {
             return Ok(None);
         };
-        if active_faces.contains(&slot) {
+        if ctx.contains(
+            &active_faces,
+            &slot,
+            "f3d stable bounded candidate membership",
+        )? {
             return Ok(None);
         }
-        ctx.push_vec(&mut active_faces, slot, "f3d stable bounded active face")?;
+        active_storage.with_storage(|| {
+            ctx.push_vec(&mut active_faces, slot, "f3d stable bounded active face")
+        })?;
     }
     stable_face_support_set(ctx, &active_faces, &operand.historical_support_contexts)
 }
@@ -1814,39 +2510,58 @@ pub(crate) fn resolve_surface_delete_face_history_set(
     ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    if counted_face_recipe_frame(operand).is_none() {
+    if counted_face_recipe_frame(ctx, operand)?.is_none() {
         return Ok(None);
     }
-    let Some(active_faces) = unique_stable_face_slots(ctx, &operand.preceding_candidate_faces)?
-    else {
+    if operand.preceding_candidate_faces.is_empty() || operand.changed_candidate_faces.is_empty() {
+        return Ok(None);
+    }
+    let Some(active) = unique_stable_face_slots(ctx, &operand.preceding_candidate_faces)? else {
         return Ok(None);
     };
-    let Some(changed_faces) = unique_stable_face_slots(ctx, &operand.changed_candidate_faces)?
-    else {
+    let Some(changed) = unique_stable_face_slots(ctx, &operand.changed_candidate_faces)? else {
         return Ok(None);
     };
-    if active_faces.is_empty() || changed_faces != active_faces {
+    let active_faces = &active.0;
+    if active_faces.is_empty()
+        || changed.0.len() != active_faces.len()
+        || !ctx.equal(
+            &changed.0,
+            active_faces,
+            "f3d SurfaceDeleteFace changed equality",
+        )?
+        || operand.historical_support_contexts.len() != active_faces.len()
+    {
         return Ok(None);
     }
-    if operand.historical_support_contexts.len() != active_faces.len() {
-        return Ok(None);
-    }
+    let mut storage = ctx.reserve_scoped(0, "f3d SurfaceDeleteFace coverage storage")?;
     let mut covered = HashSet::new();
-    for context in &operand.historical_support_contexts {
-        if !active_faces.contains(&context.active_face_slot)
-            || context.preceding_face_slots != [context.active_face_slot]
-            || context.changed_preceding_face_slots != [context.active_face_slot]
+    let mut source = operand.historical_support_contexts.iter();
+    while let Some(context) =
+        ctx.next_charged(&mut source, "f3d SurfaceDeleteFace context source")?
+    {
+        if ctx
+            .binary_search(
+                active_faces,
+                &context.active_face_slot,
+                "f3d SurfaceDeleteFace active membership",
+            )?
+            .is_err()
+            || !matches!(context.preceding_face_slots.as_slice(), [face] if *face == context.active_face_slot)
+            || !matches!(context.changed_preceding_face_slots.as_slice(), [face] if *face == context.active_face_slot)
         {
             return Ok(None);
         }
-        if !ctx.insert_hash_set(
-            &mut covered,
-            context.active_face_slot,
-            "f3d SurfaceDeleteFace covered face index",
-        )? {
+        if !storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut covered,
+                context.active_face_slot,
+                "f3d SurfaceDeleteFace covered face index",
+            )
+        })? {
             return Ok(None);
         }
-        let Some(boundaries) = valid_preceding_face_boundaries(context) else {
+        let Some(boundaries) = valid_preceding_face_boundaries(ctx, context)? else {
             return Ok(None);
         };
         let [boundary] = boundaries else {
@@ -1856,26 +2571,30 @@ pub(crate) fn resolve_surface_delete_face_history_set(
             return Ok(None);
         }
     }
-    Ok((covered.len() == active_faces.len()).then_some(active_faces))
+    if covered.len() != active_faces.len() {
+        return Ok(None);
+    }
+    Ok(Some(ctx.collect_vec(
+        active_faces.iter().copied(),
+        "f3d SurfaceDeleteFace accepted slots",
+    )?))
 }
 
-fn unique_stable_face_slots(
-    ctx: &DecodeContext<'_>,
+fn unique_stable_face_slots<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     faces: &[cadmpeg_ir::ids::FaceId],
-) -> Result<Option<Vec<i64>>, CodecError> {
+) -> Result<Option<(Vec<i64>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "f3d stable face slot storage")?;
     let mut slots = Vec::new();
-    for face in faces {
-        let Some(slot) = face
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
+    let mut source = faces.iter();
+    while let Some(face) = ctx.next_charged(&mut source, "f3d stable face slot source")? {
+        let Some(slot) = stable_face_slot(ctx, face)? else {
             return Ok(None);
         };
-        ctx.push_vec(&mut slots, slot, "f3d stable face slot")?;
-    }
-    if slots.iter().any(|slot| *slot < 0) {
-        return Ok(None);
+        if slot < 0 {
+            return Ok(None);
+        }
+        storage.with_storage(|| ctx.push_vec(&mut slots, slot, "f3d stable face slot"))?;
     }
     ctx.sort_unstable_by(
         &mut slots,
@@ -1883,29 +2602,37 @@ fn unique_stable_face_slots(
         Ord::cmp,
         "f3d stable face slot sort",
     )?;
-    let unique = slots.windows(2).all(|pair| pair[0] != pair[1]);
-    Ok(unique.then_some(slots))
+    let unique = ctx.all_by(
+        slots.windows(2),
+        |pair| Ok(pair[0] != pair[1]),
+        "f3d stable face slot uniqueness",
+    )?;
+    Ok(unique.then_some((slots, storage)))
 }
 
-fn counted_face_recipe_frame(operand: &DesignFaceOperand) -> Option<usize> {
+fn counted_face_recipe_frame(
+    ctx: &DecodeContext<'_>,
+    operand: &DesignFaceOperand,
+) -> Result<Option<usize>, CodecError> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
-        return None;
+        return Ok(None);
     }
     let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
         crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
     else {
-        return None;
+        return Ok(None);
     };
     if operand.recipe_nodes.len() != header_value
         || operand.recipe_nodes.is_empty()
-        || operand
-            .recipe_nodes
-            .iter()
-            .any(|node| !matches!(node.program.as_slice(), [-1, -1, 2, ..]))
+        || ctx.any_by(
+            &operand.recipe_nodes,
+            |node| Ok(!matches!(node.program.as_slice(), [-1, -1, 2, ..])),
+            "f3d counted face frame source",
+        )?
     {
-        return None;
+        return Ok(None);
     }
-    Some(header_value)
+    Ok(Some(header_value))
 }
 
 fn stable_face_support_set(
@@ -1916,37 +2643,49 @@ fn stable_face_support_set(
     if active_faces.is_empty() || contexts.len() != active_faces.len() {
         return Ok(None);
     }
+    let mut active_storage = ctx.reserve_scoped(0, "f3d stable bounded active storage")?;
     let mut unique_active = HashSet::new();
-    for face in active_faces {
-        if !ctx.insert_hash_set(
-            &mut unique_active,
-            *face,
-            "f3d stable bounded active face index",
-        )? {
+    let mut faces = active_faces.iter();
+    while let Some(face) = ctx.next_charged(&mut faces, "f3d stable bounded active source")? {
+        if !active_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut unique_active,
+                *face,
+                "f3d stable bounded active face index",
+            )
+        })? {
             return Ok(None);
         }
     }
+    let mut covered_storage = ctx.reserve_scoped(0, "f3d stable bounded covered storage")?;
     let mut covered = HashSet::new();
-    for context in contexts {
-        if !active_faces.contains(&context.active_face_slot)
-            || context.preceding_face_slots != [context.active_face_slot]
+    let mut contexts = contexts.iter();
+    while let Some(context) =
+        ctx.next_charged(&mut contexts, "f3d stable bounded context source")?
+    {
+        if !ctx.contains_hash_set(
+            &unique_active,
+            &context.active_face_slot,
+            "f3d stable bounded active membership",
+        )? || !matches!(context.preceding_face_slots.as_slice(), [slot] if *slot == context.active_face_slot)
             || !context.changed_preceding_face_slots.is_empty()
         {
             return Ok(None);
         }
-        if !ctx.insert_hash_set(
-            &mut covered,
-            context.active_face_slot,
-            "f3d stable bounded covered face index",
-        )? {
+        if !covered_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut covered,
+                context.active_face_slot,
+                "f3d stable bounded covered face index",
+            )
+        })? {
             return Ok(None);
         }
     }
-    let mut result = Vec::new();
-    for face in active_faces {
-        ctx.push_vec(&mut result, *face, "f3d stable bounded support face")?;
-    }
-    Ok(Some(result))
+    Ok(Some(ctx.collect_vec(
+        active_faces.iter().copied(),
+        "f3d stable bounded support face",
+    )?))
 }
 
 fn convergent_effective_face_support(
@@ -1961,7 +2700,7 @@ fn convergent_effective_face_support(
     else {
         return Ok(None);
     };
-    convergent_face_support(ctx, &active_faces, &operand.historical_support_contexts)
+    convergent_face_support(ctx, &active_faces.0, &operand.historical_support_contexts)
 }
 
 /// Return candidate slots that have a complete historical support context.
@@ -1972,25 +2711,25 @@ fn convergent_effective_face_support(
 /// support contexts, so the context-active set is the effective subset. Keep
 /// the subset admission explicit and reject a context that is not in the
 /// operand's candidate lane.
-fn effective_historical_face_slots(
-    ctx: &DecodeContext<'_>,
+fn effective_historical_face_slots<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     candidates: &[cadmpeg_ir::ids::FaceId],
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
-) -> Result<Option<Vec<i64>>, CodecError> {
+) -> Result<Option<(Vec<i64>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+    let mut candidate_storage = ctx.reserve_scoped(0, "f3d effective candidate storage")?;
     let mut candidate_slots = Vec::new();
-    for face in candidates {
-        let Some(slot) = face
-            .as_str()
-            .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-        else {
+    let mut candidates = candidates.iter();
+    while let Some(face) = ctx.next_charged(&mut candidates, "f3d effective candidate source")? {
+        let Some(slot) = stable_face_slot(ctx, face)? else {
             return Ok(None);
         };
-        ctx.push_vec(
-            &mut candidate_slots,
-            slot,
-            "f3d effective candidate face slot",
-        )?;
+        candidate_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut candidate_slots,
+                slot,
+                "f3d effective candidate face slot",
+            )
+        })?;
     }
     ctx.sort_unstable_by(
         &mut candidate_slots,
@@ -1998,28 +2737,43 @@ fn effective_historical_face_slots(
         Ord::cmp,
         "f3d effective candidate face sort",
     )?;
-    candidate_slots.dedup();
-
+    ctx.dedup_vec(
+        &mut candidate_slots,
+        "f3d face resolve candidate slots dedup",
+    )?;
+    let mut active_storage = ctx.reserve_scoped(0, "f3d effective active storage")?;
     let mut active_faces = Vec::new();
-    for context in contexts {
-        ctx.push_vec(
-            &mut active_faces,
-            context.active_face_slot,
-            "f3d effective active face slot",
-        )?;
-    }
+    active_storage.with_storage(|| -> Result<(), CodecError> {
+        for context in ctx.admit_iter(contexts, "f3d effective active source")? {
+            ctx.push_vec(
+                &mut active_faces,
+                context.active_face_slot,
+                "f3d effective active face slot",
+            )?;
+        }
+        Ok(())
+    })?;
     ctx.sort_unstable_by(
         &mut active_faces,
         |value| value,
         Ord::cmp,
         "f3d effective active face sort",
     )?;
-    active_faces.dedup();
-    Ok((!active_faces.is_empty()
-        && active_faces
-            .iter()
-            .all(|slot| candidate_slots.binary_search(slot).is_ok()))
-    .then_some(active_faces))
+    ctx.dedup_vec(&mut active_faces, "f3d face resolve active faces dedup")?;
+    if active_faces.is_empty()
+        || !ctx.all_by(
+            &active_faces,
+            |slot| {
+                Ok(ctx
+                    .binary_search(&candidate_slots, slot, "f3d effective candidate membership")?
+                    .is_ok())
+            },
+            "f3d effective active containment",
+        )?
+    {
+        return Ok(None);
+    }
+    Ok(Some((active_faces, active_storage)))
 }
 
 fn convergent_face_support(
@@ -2031,53 +2785,71 @@ fn convergent_face_support(
         return Ok(None);
     }
     let mut contexts = support_contexts.iter();
-    let Some(first) = contexts.next() else {
+    let Some(first) = ctx.next_charged(&mut contexts, "f3d convergent context source")? else {
         return Ok(None);
     };
+    let mut support_storage = ctx.reserve_scoped(0, "f3d convergent support storage")?;
     let mut support = Vec::new();
-    for slot in &first.preceding_face_slots {
-        ctx.push_vec(&mut support, *slot, "f3d convergent support face")?;
-    }
+    support_storage.with_storage(|| -> Result<(), CodecError> {
+        for slot in ctx.admit_iter(&first.preceding_face_slots, "f3d convergent support source")? {
+            ctx.push_vec(&mut support, *slot, "f3d convergent support face")?;
+        }
+        Ok(())
+    })?;
     ctx.sort_unstable_by(
         &mut support,
         |value| value,
         Ord::cmp,
         "f3d convergent support face sort",
     )?;
-    support.dedup();
+    ctx.dedup_vec(&mut support, "f3d face resolve support dedup")?;
     if support.is_empty() {
         return Ok(None);
     }
+    let mut covered_storage = ctx.reserve_scoped(0, "f3d convergent covered storage")?;
     let mut covered = Vec::new();
-    ctx.push_vec(
-        &mut covered,
-        first.active_face_slot,
-        "f3d convergent covered face",
-    )?;
-    for context in contexts {
+    covered_storage.with_storage(|| {
+        ctx.push_vec(
+            &mut covered,
+            first.active_face_slot,
+            "f3d convergent covered face",
+        )
+    })?;
+    while let Some(context) = ctx.next_charged(&mut contexts, "f3d convergent context source")? {
+        let mut candidate_storage = ctx.reserve_scoped(0, "f3d convergent candidate storage")?;
         let mut candidate = Vec::new();
-        for slot in &context.preceding_face_slots {
-            ctx.push_vec(
-                &mut candidate,
-                *slot,
-                "f3d convergent candidate support face",
-            )?;
-        }
+        candidate_storage.with_storage(|| -> Result<(), CodecError> {
+            for slot in ctx.admit_iter(
+                &context.preceding_face_slots,
+                "f3d convergent candidate source",
+            )? {
+                ctx.push_vec(
+                    &mut candidate,
+                    *slot,
+                    "f3d convergent candidate support face",
+                )?;
+            }
+            Ok(())
+        })?;
         ctx.sort_unstable_by(
             &mut candidate,
             |value| value,
             Ord::cmp,
             "f3d convergent candidate face sort",
         )?;
-        candidate.dedup();
-        if candidate != support {
+        ctx.dedup_vec(&mut candidate, "f3d face resolve candidate dedup")?;
+        if candidate.len() != support.len()
+            || !ctx.equal(&candidate, &support, "f3d convergent support equality")?
+        {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut covered,
-            context.active_face_slot,
-            "f3d convergent covered face",
-        )?;
+        covered_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut covered,
+                context.active_face_slot,
+                "f3d convergent covered face",
+            )
+        })?;
     }
     ctx.sort_unstable_by(
         &mut covered,
@@ -2085,8 +2857,20 @@ fn convergent_face_support(
         Ord::cmp,
         "f3d convergent covered face sort",
     )?;
-    covered.dedup();
-    Ok((covered == active_faces).then_some(support))
+    ctx.dedup_vec(&mut covered, "f3d face resolve covered dedup")?;
+    if covered.len() != active_faces.len()
+        || !ctx.equal(
+            covered.as_slice(),
+            active_faces,
+            "f3d convergent active coverage",
+        )?
+    {
+        return Ok(None);
+    }
+    Ok(Some(ctx.collect_vec(
+        support.iter().copied(),
+        "f3d convergent accepted support faces",
+    )?))
 }
 
 fn bounded_face_candidate_by_boundary_cardinality(
@@ -2094,168 +2878,284 @@ fn bounded_face_candidate_by_boundary_cardinality(
     header_value: usize,
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    if contexts.is_empty() {
+        return Ok(None);
+    }
+    let mut selected_storage = ctx.reserve_scoped(0, "f3d bounded selected face storage")?;
     let mut selected: Option<Vec<i64>> = None;
-    for context in contexts {
-        let Some(boundaries) = valid_preceding_face_boundaries(context) else {
+    let mut source = contexts.iter();
+    while let Some(context) =
+        ctx.next_charged(&mut source, "f3d bounded cardinality context source")?
+    {
+        let Some(boundaries) = valid_preceding_face_boundaries(ctx, context)? else {
             continue;
         };
-        if boundary_edge_count(boundaries.iter()) != Some(header_value) {
+        if boundary_edge_count(ctx, boundaries.iter())? != Some(header_value) {
             continue;
         }
-        let mut slots = Vec::new();
-        for boundary in boundaries {
-            ctx.push_vec(
-                &mut slots,
-                boundary.face_slot,
+        let mut storage = ctx.reserve_scoped(0, "f3d bounded candidate face storage")?;
+        let mut slots = storage.with_storage(|| {
+            ctx.collect_vec(
+                boundaries.iter().map(|boundary| boundary.face_slot),
                 "f3d bounded face cardinality candidate",
-            )?;
-        }
+            )
+        })?;
         ctx.sort_unstable_by(
             &mut slots,
             |value| value,
             Ord::cmp,
             "f3d bounded face candidate sort",
         )?;
-        if selected.as_ref().is_some_and(|first| first != &slots) {
-            return Ok(None);
+        if let Some(first) = &selected {
+            if first.len() != slots.len()
+                || !ctx.equal(first, &slots, "f3d bounded face cardinality equality")?
+            {
+                return Ok(None);
+            }
+        } else {
+            // The candidate allocation remains scratch until every competing set agrees.
+            selected_storage = storage;
+            selected = Some(slots);
         }
-        selected.get_or_insert(slots);
     }
-    if let Some(boundaries) = unique_preceding_face_boundaries(contexts) {
-        let mut slots = Vec::new();
-        let mut edge_count = Some(0usize);
-        for boundary in boundaries {
-            edge_count = edge_count.and_then(|count| {
-                boundary.loops.iter().try_fold(count, |total, loop_| {
-                    let edges = loop_.boundary.coedges().count();
-                    (edges != 0).then(|| total.checked_add(edges)).flatten()
-                })
-            });
-            ctx.push_vec(
-                &mut slots,
-                boundary.face_slot,
-                "f3d bounded face cardinality union",
-            )?;
-        }
-        if edge_count == Some(header_value) {
+    if let Some(boundaries) = unique_preceding_face_boundaries(ctx, contexts)? {
+        if boundary_edge_count(ctx, boundaries.boundaries.iter().copied())? == Some(header_value) {
+            let mut storage = ctx.reserve_scoped(0, "f3d bounded union face storage")?;
+            let mut slots = storage.with_storage(|| {
+                ctx.collect_vec(
+                    boundaries
+                        .boundaries
+                        .iter()
+                        .map(|boundary| boundary.face_slot),
+                    "f3d bounded face cardinality union",
+                )
+            })?;
             ctx.sort_unstable_by(
                 &mut slots,
                 |value| value,
                 Ord::cmp,
                 "f3d bounded face union sort",
             )?;
-            if selected.as_ref().is_some_and(|first| first != &slots) {
-                return Ok(None);
+            if let Some(first) = &selected {
+                if first.len() != slots.len()
+                    || !ctx.equal(first, &slots, "f3d bounded face cardinality equality")?
+                {
+                    return Ok(None);
+                }
+            } else {
+                selected_storage = storage;
+                selected = Some(slots);
             }
-            selected.get_or_insert(slots);
         }
     }
-    Ok(selected)
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let result = ctx.collect_vec(selected.iter().copied(), "f3d bounded accepted face slots")?;
+    drop(selected);
+    drop(selected_storage);
+    Ok(Some(result))
 }
 
-fn valid_preceding_face_boundaries(
-    context: &crate::records::topology::historical_context::DesignHistoricalFaceSupportContext,
-) -> Option<&[crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]> {
+fn valid_preceding_face_boundaries<'a>(
+    ctx: &DecodeContext<'_>,
+    context: &'a crate::records::topology::historical_context::DesignHistoricalFaceSupportContext,
+) -> Result<
+    Option<&'a [crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]>,
+    CodecError,
+> {
     let expected_faces = &context.preceding_face_slots;
     let boundaries = &context.preceding_face_boundaries;
     if expected_faces.is_empty() || boundaries.is_empty() {
-        return None;
+        return Ok(None);
     }
-    if boundaries.iter().enumerate().any(|(index, boundary)| {
-        boundary.loops.is_empty()
-            || !expected_faces.contains(&boundary.face_slot)
-            || boundaries[..index]
-                .iter()
-                .any(|prior| prior.face_slot == boundary.face_slot)
-    }) || expected_faces.iter().any(|face| {
-        !boundaries
-            .iter()
-            .any(|boundary| boundary.face_slot == *face)
-    }) {
-        return None;
+    let mut storage = ctx.reserve_scoped(0, "f3d preceding boundary membership storage")?;
+    let mut expected = HashSet::new();
+    let mut seen = HashSet::new();
+    let mut source = boundaries.iter();
+    while let Some(boundary) = ctx.next_charged(&mut source, "f3d preceding boundary source")? {
+        if boundary.loops.is_empty() {
+            return Ok(None);
+        }
+        if expected.is_empty() {
+            storage.with_storage(|| -> Result<(), CodecError> {
+                for face in ctx.admit_iter(expected_faces, "f3d preceding expected face source")? {
+                    ctx.insert_hash_set(&mut expected, *face, "f3d preceding expected face index")?;
+                }
+                Ok(())
+            })?;
+        }
+        if !ctx.contains_hash_set(
+            &expected,
+            &boundary.face_slot,
+            "f3d preceding expected face lookup",
+        )? || !storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut seen,
+                boundary.face_slot,
+                "f3d preceding boundary face index",
+            )
+        })? {
+            return Ok(None);
+        }
     }
-    Some(boundaries)
+    Ok((expected.len() == seen.len()).then_some(boundaries.as_slice()))
 }
 
-fn unique_preceding_face_boundaries(
-    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
-) -> Option<
-    impl Iterator<
-        Item = &crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext,
-    >,
-> {
+struct FaceBoundarySet<'a, 'ctx> {
+    boundaries:
+        Vec<&'a crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn unique_preceding_face_boundaries<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    contexts: &'a [crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
+) -> Result<Option<FaceBoundarySet<'a, 'ctx>>, CodecError> {
     if contexts.is_empty() {
-        return None;
+        return Ok(None);
     }
-    for (index, context) in contexts.iter().enumerate() {
-        if contexts[..index]
-            .iter()
-            .any(|prior| prior.active_face_slot == context.active_face_slot)
+    let mut index_storage = ctx.reserve_scoped(0, "f3d unique preceding boundary indexes")?;
+    let mut active = HashSet::new();
+    let mut by_face = BTreeMap::new();
+    let mut output_storage = ctx.reserve_scoped(0, "f3d unique preceding boundary storage")?;
+    let mut boundaries = Vec::new();
+    let mut source = contexts.iter();
+    while let Some(context) =
+        ctx.next_charged(&mut source, "f3d unique preceding context source")?
+    {
+        if !index_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut active,
+                context.active_face_slot,
+                "f3d unique preceding active index",
+            )
+        })? {
+            return Ok(None);
+        }
+        let Some(context_boundaries) = valid_preceding_face_boundaries(ctx, context)? else {
+            return Ok(None);
+        };
+        let mut source = context_boundaries.iter();
+        while let Some(boundary) =
+            ctx.next_charged(&mut source, "f3d unique preceding boundary source")?
         {
-            return None;
-        }
-        for boundary in valid_preceding_face_boundaries(context)? {
-            if contexts[..index]
-                .iter()
-                .flat_map(|prior| &prior.preceding_face_boundaries)
-                .any(|prior| prior.face_slot == boundary.face_slot && prior != boundary)
-            {
-                return None;
+            let first = index_storage.with_storage(|| -> Result<Option<bool>, CodecError> {
+                match ctx.entry_btree_map(
+                    &mut by_face,
+                    boundary.face_slot,
+                    "f3d unique preceding boundary index",
+                )? {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(boundary);
+                        Ok(Some(true))
+                    }
+                    std::collections::btree_map::Entry::Occupied(entry) => Ok(ctx
+                        .equal(
+                            *entry.get(),
+                            boundary,
+                            "f3d unique preceding boundary equality",
+                        )?
+                        .then_some(false)),
+                }
+            })?;
+            let Some(first) = first else { return Ok(None) };
+            if !first {
+                continue;
             }
+            output_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut boundaries,
+                    boundary,
+                    "f3d unique preceding boundary output",
+                )
+            })?;
         }
     }
-    Some(
-        contexts
-            .iter()
-            .enumerate()
-            .flat_map(move |(index, context)| {
-                context
-                    .preceding_face_boundaries
-                    .iter()
-                    .filter(move |boundary| {
-                        !contexts[..index]
-                            .iter()
-                            .flat_map(|prior| &prior.preceding_face_boundaries)
-                            .any(|prior| prior.face_slot == boundary.face_slot)
-                    })
-            }),
-    )
+    Ok(Some(FaceBoundarySet {
+        boundaries,
+        _storage: output_storage,
+    }))
 }
 
 fn boundary_edge_count<'a>(
+    ctx: &DecodeContext<'_>,
     boundaries: impl IntoIterator<Item = &'a crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>,
-) -> Option<usize> {
-    boundaries.into_iter().try_fold(0usize, |total, boundary| {
-        boundary.loops.iter().try_fold(total, |total, loop_| {
-            let count = loop_.boundary.coedges().count();
-            (count != 0).then(|| total.checked_add(count)).flatten()
-        })
-    })
+) -> Result<Option<usize>, CodecError> {
+    let mut total = 0usize;
+    let mut source = boundaries.into_iter();
+    while let Some(boundary) = ctx.next_charged(&mut source, "f3d boundary count face source")? {
+        let mut loops = boundary.loops.iter();
+        while let Some(loop_) = ctx.next_charged(&mut loops, "f3d boundary count loop source")? {
+            // One boundary variant supplies one exact-length slice; the other iterator lanes are empty.
+            let count = loop_.boundary.coedges().size_hint().0;
+            if count == 0 {
+                return Ok(None);
+            }
+            let Some(sum) = total.checked_add(count) else {
+                return Ok(None);
+            };
+            total = sum;
+        }
+    }
+    Ok(Some(total))
 }
 
-fn resolve_face_operand_support_candidate(operand: &DesignFaceOperand) -> Option<i64> {
-    let reference = operand.recipe_references.first()?;
+fn resolve_face_operand_support_candidate(
+    ctx: &DecodeContext<'_>,
+    operand: &DesignFaceOperand,
+) -> Result<Option<i64>, CodecError> {
+    let Some(reference) = operand.recipe_references.first() else {
+        return Ok(None);
+    };
     let active_faces = if reference.candidate_faces.is_empty() {
         &reference.alternate_selector_faces
     } else {
         &reference.candidate_faces
     };
-    if !active_faces.iter().any(|face| {
-        face.as_str()
-            .rsplit_once('#')
-            .and_then(|(_, slot)| slot.parse::<i64>().ok())
-            .is_some()
-    }) {
-        return None;
+    if active_faces.is_empty() || operand.historical_support_contexts.is_empty() {
+        return Ok(None);
     }
+    let mut faces = active_faces.iter();
+    let Some(first) = ctx.find_map(
+        &mut faces,
+        |face| stable_face_slot(ctx, face),
+        "f3d support initial face source",
+    )?
+    else {
+        return Ok(None);
+    };
+    let mut storage = ctx.reserve_scoped(0, "f3d support face index storage")?;
+    let mut active = HashSet::new();
+    storage.with_storage(|| {
+        ctx.insert_hash_set(&mut active, first, "f3d support active face index")
+    })?;
     let mut candidate = None;
-    for context in &operand.historical_support_contexts {
-        if !active_faces.iter().any(|face| {
-            face.as_str()
-                .rsplit_once('#')
-                .and_then(|(_, slot)| slot.parse::<i64>().ok())
-                == Some(context.active_face_slot)
-        }) {
+    let mut contexts = operand.historical_support_contexts.iter();
+    while let Some(context) = ctx.next_charged(&mut contexts, "f3d support context source")? {
+        let mut matched = ctx.contains_hash_set(
+            &active,
+            &context.active_face_slot,
+            "f3d support active face lookup",
+        )?;
+        if !matched && faces.len() != 0 {
+            matched = ctx
+                .find_map(
+                    &mut faces,
+                    |face| {
+                        let Some(slot) = stable_face_slot(ctx, face)? else {
+                            return Ok(None);
+                        };
+                        storage.with_storage(|| {
+                            ctx.insert_hash_set(&mut active, slot, "f3d support active face index")
+                        })?;
+                        Ok((slot == context.active_face_slot).then_some(()))
+                    },
+                    "f3d support active face source",
+                )?
+                .is_some();
+        }
+        if !matched {
             continue;
         }
         let slots = if context.changed_preceding_face_slots.is_empty() {
@@ -2263,14 +3163,15 @@ fn resolve_face_operand_support_candidate(operand: &DesignFaceOperand) -> Option
         } else {
             &context.changed_preceding_face_slots
         };
-        for slot in slots {
+        let mut slots = slots.iter();
+        while let Some(slot) = ctx.next_charged(&mut slots, "f3d support predecessor source")? {
             if candidate.is_some_and(|first| first != *slot) {
-                return None;
+                return Ok(None);
             }
             candidate = Some(*slot);
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_ir::ids::FaceId] {
@@ -2292,59 +3193,25 @@ pub(crate) fn historical_face_operand_candidates(
     operand: &DesignFaceOperand,
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, CodecError> {
     if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
-        let mut referenced = Vec::new();
-        for candidate in operand.recipe_references.iter().flat_map(|reference| {
-            reference
-                .candidate_faces
-                .iter()
-                .chain(&reference.alternate_selector_faces)
-        }) {
-            let candidate =
-                (candidate).try_clone_for_decode(ctx, "f3d historical face candidate id")?;
-            ctx.push_vec(&mut referenced, candidate, "f3d historical face candidate")?;
-        }
-        ctx.stable_sort_by(
-            &mut referenced[..],
-            |value| value.as_str(),
-            Ord::cmp,
-            "sort f3d design face_resolve 8",
+        let referenced = historical_reference_face_candidates(
+            ctx,
+            operand,
+            "f3d historical face candidate id",
+            "f3d historical face candidate",
         )?;
-        referenced.dedup();
         if !referenced.is_empty() {
             return Ok(referenced);
         }
     }
     let mut candidates = Vec::new();
-    for candidate in face_operand_candidates(operand) {
-        let candidate = (candidate).try_clone_for_decode(ctx, "f3d historical fallback face id")?;
+    for candidate in ctx.admit_iter(
+        face_operand_candidates(operand),
+        "f3d historical fallback candidate source",
+    )? {
+        let candidate = candidate.try_clone_for_decode(ctx, "f3d historical fallback face id")?;
         ctx.push_vec(&mut candidates, candidate, "f3d historical fallback face")?;
     }
     Ok(candidates)
-}
-
-pub(crate) fn historical_face_operand_candidate_iter(
-    operand: &DesignFaceOperand,
-) -> impl Iterator<Item = &cadmpeg_ir::ids::FaceId> {
-    let use_referenced = operand.recipe_kind
-        == crate::records::recipes::ConstructionRecipeKind::Face
-        && operand.recipe_references.iter().any(|reference| {
-            !reference.candidate_faces.is_empty() || !reference.alternate_selector_faces.is_empty()
-        });
-    operand
-        .recipe_references
-        .iter()
-        .flat_map(|reference| {
-            reference
-                .candidate_faces
-                .iter()
-                .chain(&reference.alternate_selector_faces)
-        })
-        .filter(move |_| use_referenced)
-        .chain(
-            face_operand_candidates(operand)
-                .iter()
-                .filter(move |_| !use_referenced),
-        )
 }
 
 /// Return nested persistent-reference faces for a complete bounded-face
@@ -2355,48 +3222,77 @@ pub(crate) fn nested_bounded_face_history_candidates(
     ctx: &DecodeContext<'_>,
     operand: &DesignFaceOperand,
 ) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
-    if complete_counted_face_recipe(operand).is_none() {
-        return Ok(None);
-    }
     if !operand.candidate_faces.is_empty()
         || !operand.unreferenced_candidate_faces.is_empty()
         || !operand.alternate_selector_candidate_faces.is_empty()
+        || complete_counted_face_recipe(ctx, operand)?.is_none()
     {
         return Ok(None);
     }
-    let mut candidates = Vec::new();
-    for candidate in operand.recipe_references.iter().flat_map(|reference| {
-        reference
-            .candidate_faces
-            .iter()
-            .chain(&reference.alternate_selector_faces)
-    }) {
-        let candidate =
-            (candidate).try_clone_for_decode(ctx, "f3d nested bounded face candidate id")?;
-        ctx.push_vec(
-            &mut candidates,
-            candidate,
-            "f3d nested bounded face candidate",
-        )?;
-    }
-    ctx.stable_sort_by(
-        &mut candidates[..],
-        |value| value.as_str(),
-        Ord::cmp,
-        "sort f3d design face_resolve 9",
+    let candidates = historical_reference_face_candidates(
+        ctx,
+        operand,
+        "f3d nested bounded face candidate id",
+        "f3d nested bounded face candidate",
     )?;
-    candidates.dedup();
     Ok((!candidates.is_empty()).then_some(candidates))
 }
 
-fn has_nested_bounded_face_history_candidates(operand: &DesignFaceOperand) -> bool {
-    complete_counted_face_recipe(operand).is_some()
+fn historical_reference_face_candidates(
+    ctx: &DecodeContext<'_>,
+    operand: &DesignFaceOperand,
+    id_operation: &'static str,
+    output_operation: &'static str,
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "f3d historical referenced candidate storage")?;
+    let mut selected = BTreeSet::new();
+    for reference in ctx.admit_iter(
+        &operand.recipe_references,
+        "f3d historical reference source",
+    )? {
+        for candidate in ctx
+            .admit_iter(
+                &reference.candidate_faces,
+                "f3d historical referenced candidate source",
+            )?
+            .chain(ctx.admit_iter(
+                &reference.alternate_selector_faces,
+                "f3d historical referenced candidate source",
+            )?)
+        {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut selected,
+                    candidate,
+                    "f3d historical referenced candidate index",
+                )
+            })?;
+        }
+    }
+    let mut candidates = Vec::new();
+    for candidate in ctx.admit_iter(&selected, "f3d historical accepted candidate source")? {
+        let candidate = (*candidate).try_clone_for_decode(ctx, id_operation)?;
+        ctx.push_vec(&mut candidates, candidate, output_operation)?;
+    }
+    Ok(candidates)
+}
+
+fn has_nested_bounded_face_history_candidates(
+    ctx: &DecodeContext<'_>,
+    operand: &DesignFaceOperand,
+) -> Result<bool, CodecError> {
+    Ok(complete_counted_face_recipe(ctx, operand)?.is_some()
         && operand.candidate_faces.is_empty()
         && operand.unreferenced_candidate_faces.is_empty()
         && operand.alternate_selector_candidate_faces.is_empty()
-        && operand.recipe_references.iter().any(|reference| {
-            !reference.candidate_faces.is_empty() || !reference.alternate_selector_faces.is_empty()
-        })
+        && ctx.any_by(
+            &operand.recipe_references,
+            |reference| {
+                Ok(!reference.candidate_faces.is_empty()
+                    || !reference.alternate_selector_faces.is_empty())
+            },
+            "f3d nested bounded reference source",
+        )?)
 }
 
 /// Return active B-rep faces for the legacy `FromFace` envelope whose counted
@@ -2405,12 +3301,12 @@ fn has_nested_bounded_face_history_candidates(operand: &DesignFaceOperand) -> bo
 /// This is a candidate-generation proof, not a selection proof. The caller
 /// must reduce the returned faces to one plane coincident with the profile
 /// sketch before binding it to the operand.
-fn extrude_start_plane_geometry_candidates(
+fn extrude_start_plane_geometry_candidates<'faces>(
     ctx: &DecodeContext<'_>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-    faces: &[cadmpeg_ir::topology::Face],
-) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
+    faces: &'faces [cadmpeg_ir::topology::Face],
+) -> Result<Option<&'faces [cadmpeg_ir::topology::Face]>, CodecError> {
     let [crate::records::identity::Located {
         value: record_index,
         ..
@@ -2418,30 +3314,25 @@ fn extrude_start_plane_geometry_candidates(
     else {
         return Ok(None);
     };
-    let mut matching = operands.iter().filter(|operand| {
-        native_stream(&operand.id) == native_stream(&group.id)
-            && operand.scope_record_index == group.scope_record_index
-            && operand.record_index() == *record_index
-    });
-    let Some(operand) = matching.next() else {
+    let stream = native_stream_charged(ctx, &group.id, "f3d start geometry group stream")?;
+    let Some(operand) = unique_face_operand(
+        ctx,
+        operands,
+        stream,
+        group.scope_record_index,
+        *record_index,
+    )?
+    else {
         return Ok(None);
     };
-    if matching.next().is_some()
-        || !face_operand_candidates(operand).is_empty()
+    if !face_operand_candidates(operand).is_empty()
         || !operand.resolved_face_slots.is_empty()
         || operand.resolved_active_face.is_some()
-        || !has_nested_bounded_face_history_candidates(operand)
+        || !has_nested_bounded_face_history_candidates(ctx, operand)?
     {
         return Ok(None);
     }
-    let mut candidates = Vec::new();
-    for face in faces {
-        let id = face
-            .id
-            .try_clone_for_decode(ctx, "f3d start plane candidate ID")?;
-        ctx.push_vec(&mut candidates, id, "f3d start plane candidate")?;
-    }
-    Ok(Some(candidates))
+    Ok(Some(faces))
 }
 
 fn extrude_profile_sketch_id(
@@ -2488,7 +3379,7 @@ pub(crate) fn bind_extrude_start_planes(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
 
-    for feature in features {
+    for feature in ctx.admit_iter(features, "f3d Extrude start feature source")? {
         let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
@@ -2504,7 +3395,13 @@ pub(crate) fn bind_extrude_start_planes(
                     let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
                         break 'feature_edit;
                     };
-                    let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id)
+                    let Some(sketch) = ctx.find_by(
+                        sketches,
+                        |sketch| {
+                            ctx.equal(&sketch.id, sketch_id, "f3d Extrude start sketch comparison")
+                        },
+                        "f3d Extrude start sketch source",
+                    )?
                     else {
                         break 'feature_edit;
                     };
@@ -2516,38 +3413,57 @@ pub(crate) fn bind_extrude_start_planes(
                         break 'feature_edit;
                     };
                     let retained_offset = *offset;
-                    let mut matching_groups =
-                        resolution.groups.iter().filter(|group| group.id == *native);
-                    let Some(group) = matching_groups.next() else {
+                    let Some(group) =
+                        crate::design::feature_project::unique_feature_match_for_decode(
+                            ctx,
+                            resolution.groups.iter(),
+                            |group| {
+                                ctx.equal(&group.id, native, "f3d Extrude start group comparison")
+                            },
+                            "f3d Extrude start group source",
+                        )?
+                    else {
                         break 'feature_edit;
                     };
-                    if matching_groups.next().is_some()
-                        || group.extrude_face_role() != Some(DesignExtrudeFaceRole::Start)
-                    {
+                    if group.extrude_face_role() != Some(DesignExtrudeFaceRole::Start) {
                         break 'feature_edit;
                     }
-                    let Some(stream) = native_stream(&group.id) else {
+                    let Some(stream) = ids::native_stream_charged(
+                        ctx,
+                        &group.id,
+                        "f3d Extrude start group stream",
+                    )?
+                    else {
                         break 'feature_edit;
                     };
+                    let mut candidate_storage =
+                        ctx.reserve_scoped(0, "f3d Extrude start candidate storage")?;
                     let mut candidates = Vec::new();
-                    for record_index in group.members().iter().map(|member| &member.value) {
-                        let mut matching_operands = resolution.operands.iter().filter(|operand| {
-                            native_stream(&operand.id) == Some(stream)
-                                && operand.scope_record_index == group.scope_record_index
-                                && operand.record_index() == *record_index
-                        });
-                        let Some(operand) = matching_operands.next() else {
+                    let mut members = group.members().iter();
+                    while let Some(member) =
+                        ctx.next_charged(&mut members, "f3d Extrude start member source")?
+                    {
+                        let Some(operand) = unique_face_operand(
+                            ctx,
+                            resolution.operands,
+                            Some(stream),
+                            group.scope_record_index,
+                            member.value,
+                        )?
+                        else {
                             candidates.clear();
                             break;
                         };
-                        if matching_operands.next().is_some() {
-                            candidates.clear();
-                            break;
-                        }
-                        for face in face_operand_candidates(operand) {
-                            let id = (face)
-                                .try_clone_for_decode(ctx, "f3d start plane operand face ID")?;
-                            ctx.push_vec(&mut candidates, id, "f3d start plane operand candidate")?;
+                        for face in ctx.admit_iter(
+                            face_operand_candidates(operand),
+                            "f3d Extrude start candidate source",
+                        )? {
+                            ctx.push_scoped_vec(
+                                &mut candidate_storage,
+                                &mut candidates,
+                                face,
+                                "f3d start plane operand candidate",
+                            )?;
                         }
                     }
                     ctx.stable_sort_by(
@@ -2556,45 +3472,72 @@ pub(crate) fn bind_extrude_start_planes(
                         Ord::cmp,
                         "sort f3d design face_resolve 10",
                     )?;
-                    candidates.dedup();
+                    ctx.dedup_vec(&mut candidates, "f3d face resolve candidates dedup")?;
                     if candidates.is_empty() {
-                        if let Some(geometry_candidates) = extrude_start_plane_geometry_candidates(
+                        if let Some(found) = extrude_start_plane_geometry_candidates(
                             ctx,
                             group,
                             resolution.operands,
                             resolution.faces,
                         )? {
-                            candidates = geometry_candidates;
+                            for face in ctx
+                                .admit_iter(found, "f3d Extrude start geometry candidate source")?
+                            {
+                                ctx.push_scoped_vec(
+                                    &mut candidate_storage,
+                                    &mut candidates,
+                                    &face.id,
+                                    "f3d start plane operand candidate",
+                                )?;
+                            }
                         }
                     }
-                    let mut coincident = Vec::new();
-                    for candidate in candidates {
-                        if face_coincident_with_sketch(
-                            &candidate,
-                            sketch,
-                            resolution.faces,
-                            resolution.surfaces,
-                            resolution.linear_tolerance,
-                            resolution.angular_tolerance,
-                        ) {
-                            ctx.push_vec(
-                                &mut coincident,
-                                candidate,
-                                "f3d coincident start plane face",
-                            )?;
-                        }
-                    }
-                    if let [face] = coincident.as_slice() {
-                        let selected =
-                            (face).try_clone_for_decode(ctx, "f3d selected start plane face ID")?;
-                        let native =
-                            ctx.copy_retained_text(native, "f3d selected start plane native ID")?;
-                        if retain_face_operand_resolution(ctx, group, resolution.operands, face)? {
-                            *start = ExtrudeStart::FromFace {
-                                face: FaceSelection::Resolved {
-                                    faces: vec![selected],
-                                    native,
+                    let coincident =
+                        crate::design::feature_project::unique_feature_match_for_decode(
+                            ctx,
+                            candidates.iter().copied(),
+                            |candidate| {
+                                face_coincident_with_sketch(
+                                    ctx,
+                                    candidate,
+                                    sketch,
+                                    resolution.faces,
+                                    resolution.surfaces,
+                                    resolution.linear_tolerance,
+                                    resolution.angular_tolerance,
+                                )
+                            },
+                            "f3d Extrude start coincidence source",
+                        )?;
+                    if let Some(face) = coincident {
+                        let (selected, selected_storage) = ctx
+                            .with_scoped_storage("f3d selected start plane storage", || {
+                                face.try_clone_for_decode(ctx, "f3d selected start plane face ID")
+                            })?;
+                        drop(candidates);
+                        drop(candidate_storage);
+                        if retain_face_operand_resolution(
+                            ctx,
+                            group,
+                            resolution.operands,
+                            &selected,
+                        )? {
+                            let (face, output_storage) = ctx.with_scoped_storage(
+                                "f3d selected start plane output storage",
+                                || {
+                                    let faces = ctx
+                                        .collect_vec([selected], "f3d selected start plane face")?;
+                                    let native = ctx.copy_retained_text(
+                                        native,
+                                        "f3d selected start plane native ID",
+                                    )?;
+                                    Ok::<_, CodecError>(FaceSelection::Resolved { faces, native })
                                 },
+                            )?;
+                            selected_storage.commit()?;
+                            let face = output_storage.commit_value(face)?;
+                            *start = ExtrudeStart::FromFace {
+                                face,
                                 offset: retained_offset,
                             };
                         }
@@ -2625,7 +3568,7 @@ pub(crate) fn bind_extrude_target_faces(
         ExtrudeDirection, ExtrudeExtent, FeatureDefinition, FeatureOperation,
     };
 
-    for feature in features {
+    for feature in ctx.admit_iter(features, "f3d Extrude target feature source")? {
         let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
@@ -2642,7 +3585,17 @@ pub(crate) fn bind_extrude_target_faces(
                     let Some(sketch_id) = extrude_profile_sketch_id(profile) else {
                         break 'feature_edit;
                     };
-                    let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id)
+                    let Some(sketch) = ctx.find_by(
+                        sketches,
+                        |sketch| {
+                            ctx.equal(
+                                &sketch.id,
+                                sketch_id,
+                                "f3d Extrude target sketch comparison",
+                            )
+                        },
+                        "f3d Extrude target sketch source",
+                    )?
                     else {
                         break 'feature_edit;
                     };
@@ -2713,27 +3666,32 @@ fn bind_extrude_target_face(
         return Ok(());
     };
     let offset = *retained_offset;
-    let mut matching_groups = resolution.groups.iter().filter(|group| {
-        group.id == *native && group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination)
-    });
-    let Some(group) = matching_groups.next() else {
+    let Some(group) = unique_feature_match_for_decode(
+        ctx,
+        resolution.groups.iter(),
+        |group| {
+            Ok(
+                ctx.equal(&group.id, native, "f3d Extrude target group comparison")?
+                    && group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination),
+            )
+        },
+        "f3d Extrude target group source",
+    )?
+    else {
         return Ok(());
     };
-    if matching_groups.next().is_some() {
-        return Ok(());
-    }
     let Some(face) =
         extrude_target_plane_candidate(ctx, group, resolution, sketch_origin, sweep_direction)?
     else {
         return Ok(());
     };
-    let native = ctx.copy_retained_text(native, "f3d target face native ID")?;
-    if retain_face_operand_resolution(ctx, group, resolution.operands, &face)? {
+    let face = &resolution.faces[face].id;
+    if retain_face_operand_resolution(ctx, group, resolution.operands, face)? {
+        let face = face.try_clone_for_decode(ctx, "f3d target plane face ID")?;
+        let faces = ctx.collect_vec([face], "f3d target face output")?;
+        let native = ctx.copy_retained_text(native, "f3d target face native ID")?;
         *termination = LinearTermination::ToFace {
-            face: FaceSelection::Resolved {
-                faces: vec![face],
-                native,
-            },
+            face: FaceSelection::Resolved { faces, native },
             offset,
         };
     }
@@ -2746,7 +3704,7 @@ fn extrude_target_plane_candidate(
     resolution: &ExtrudeFaceResolution<'_>,
     sketch_origin: Point3,
     sweep_direction: Vector3,
-) -> Result<Option<cadmpeg_ir::ids::FaceId>, CodecError> {
+) -> Result<Option<usize>, CodecError> {
     let [crate::records::identity::Located {
         value: record_index,
         ..
@@ -2754,46 +3712,33 @@ fn extrude_target_plane_candidate(
     else {
         return Ok(None);
     };
-    let Some(stream) = native_stream(&group.id) else {
+    let Some(stream) = native_stream_charged(ctx, &group.id, "f3d target plane group stream")?
+    else {
         return Ok(None);
     };
-    let mut matching_operands = resolution.operands.iter().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.scope_record_index == group.scope_record_index
-            && operand.record_index() == *record_index
-    });
-    let Some(operand) = matching_operands.next() else {
+    let Some(operand) = unique_face_operand(
+        ctx,
+        resolution.operands,
+        Some(stream),
+        group.scope_record_index,
+        *record_index,
+    )?
+    else {
         return Ok(None);
     };
-    if matching_operands.next().is_some() {
-        return Ok(None);
-    }
     let direction_length = sweep_direction.norm();
     let mut found = None;
     let mut ambiguous = false;
-    let mut consider = |candidate: &cadmpeg_ir::ids::FaceId| {
-        let Some((index, face)) = resolution
-            .faces
-            .iter()
-            .enumerate()
-            .find(|(_, face)| face.id == *candidate)
+    let mut consider = |candidate: &cadmpeg_ir::ids::FaceId| -> Result<(), CodecError> {
+        let Some((index, plane_surface)) =
+            plane_for_face(ctx, candidate, resolution.faces, resolution.surfaces)?
         else {
-            return;
-        };
-        let Some(surface) = resolution
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-        else {
-            return;
-        };
-        let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
-            return;
+            return Ok(());
         };
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
-            return;
+            return Ok(());
         }
         let distance = origin.vector_from(sketch_origin).dot(sweep_direction) / direction_length;
         if distance > resolution.linear_tolerance {
@@ -2803,37 +3748,43 @@ fn extrude_target_plane_candidate(
                 found = Some(index);
             }
         }
+        Ok(())
     };
     let direct = face_operand_candidates(operand);
     if direct.is_empty() {
-        if !has_nested_bounded_face_history_candidates(operand) {
+        if !has_nested_bounded_face_history_candidates(ctx, operand)? {
             return Ok(None);
         }
-        for reference in &operand.recipe_references {
-            for candidate in reference
+        let mut references = operand.recipe_references.iter();
+        while let Some(reference) =
+            ctx.next_charged(&mut references, "visit F3D target plane reference")?
+        {
+            if reference.candidate_faces.is_empty() && reference.alternate_selector_faces.is_empty()
+            {
+                continue;
+            }
+            let mut candidates = reference
                 .candidate_faces
                 .iter()
-                .chain(&reference.alternate_selector_faces)
+                .chain(&reference.alternate_selector_faces);
+            while let Some(candidate) =
+                ctx.next_charged(&mut candidates, "visit F3D target plane nested candidate")?
             {
-                consider(candidate);
+                consider(candidate)?;
             }
         }
     } else {
-        for candidate in direct {
-            consider(candidate);
+        let mut candidates = direct.iter();
+        while let Some(candidate) =
+            ctx.next_charged(&mut candidates, "visit F3D target plane candidate")?
+        {
+            consider(candidate)?;
         }
     }
     if ambiguous {
         return Ok(None);
     }
-    let Some(index) = found else {
-        return Ok(None);
-    };
-    Ok(Some(
-        resolution.faces[index]
-            .id
-            .try_clone_for_decode(ctx, "f3d target plane face ID")?,
-    ))
+    Ok(found)
 }
 
 pub(super) fn retain_face_operand_resolution(
@@ -2842,95 +3793,78 @@ pub(super) fn retain_face_operand_resolution(
     operands: &mut [DesignFaceOperand],
     face: &cadmpeg_ir::ids::FaceId,
 ) -> Result<bool, CodecError> {
-    let Some(stream) = native_stream(&group.id) else {
+    let Some(stream) = crate::ids::native_stream_charged(
+        ctx,
+        &group.id,
+        "resolve F3D retained face group stream",
+    )?
+    else {
         return Ok(false);
     };
-    let mut matches = operands.iter_mut().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.scope_record_index == group.scope_record_index
-            && group
-                .members()
-                .iter()
-                .any(|member| member.value == operand.record_index())
-            && (face_operand_candidates(operand).contains(face)
-                || (face_operand_candidates(operand).is_empty()
-                    && operand.resolved_face_slots.is_empty()
-                    && operand.resolved_active_face.is_none()
-                    && has_nested_bounded_face_history_candidates(operand)))
-    });
-    let Some(operand) = matches.next() else {
-        return Ok(false);
-    };
-    if matches.next().is_some() {
-        return Ok(false);
+    let mut selected = None;
+    let mut input = operands.iter_mut();
+    while let Some(operand) = ctx.next_charged(&mut input, "visit F3D retained face operand")? {
+        let same_stream = match crate::ids::native_stream_charged(
+            ctx,
+            &operand.id,
+            "resolve F3D retained face operand stream",
+        )? {
+            Some(candidate) => ctx.equal_bytes(
+                candidate.as_bytes(),
+                stream.as_bytes(),
+                "compare F3D retained face operand stream",
+            )?,
+            None => false,
+        };
+        if !same_stream || operand.scope_record_index != group.scope_record_index {
+            continue;
+        }
+        if group.members().is_empty()
+            || !ctx.any_by(
+                group.members(),
+                |member| Ok(member.value == operand.record_index()),
+                "find F3D retained face group member",
+            )?
+        {
+            continue;
+        }
+        if !(contains_face(
+            ctx,
+            face_operand_candidates(operand),
+            face,
+            "find F3D retained face operand candidate",
+        )? || (face_operand_candidates(operand).is_empty()
+            && operand.resolved_face_slots.is_empty()
+            && operand.resolved_active_face.is_none()
+            && has_nested_bounded_face_history_candidates(ctx, operand)?))
+        {
+            continue;
+        }
+        if selected.is_some() {
+            return Ok(false);
+        }
+        selected = Some(operand);
     }
+    let Some(operand) = selected else {
+        return Ok(false);
+    };
     let geometry_bound = face_operand_candidates(operand).is_empty()
         && operand.resolved_face_slots.is_empty()
         && operand.resolved_active_face.is_none()
-        && has_nested_bounded_face_history_candidates(operand);
+        && has_nested_bounded_face_history_candidates(ctx, operand)?;
     if geometry_bound {
         operand.resolved_active_face =
             Some((face).try_clone_for_decode(ctx, "f3d retained operand active face")?);
         return Ok(true);
     }
-    let Some(slot) = face
-        .as_str()
-        .rsplit_once('#')
-        .and_then(|(_, slot)| slot.parse::<i64>().ok())
-    else {
+    let Some(slot) = stable_face_slot(ctx, face)? else {
         return Ok(false);
     };
     if !operand.resolved_face_slots.is_empty() && operand.resolved_face_slots != [slot] {
         return Ok(false);
     }
-    operand.resolved_face_slots = vec![slot];
+    operand.resolved_face_slots = ctx.collect_vec([slot], "f3d retained operand face slot")?;
     Ok(true)
-}
-
-fn face_coincident_with_sketch(
-    candidate: &cadmpeg_ir::ids::FaceId,
-    sketch: &cadmpeg_ir::sketches::Sketch,
-    faces: &[cadmpeg_ir::topology::Face],
-    surfaces: &[cadmpeg_ir::geometry::Surface],
-    linear_tolerance: f64,
-    angular_tolerance: f64,
-) -> bool {
-    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-
-    let Some(face) = faces.iter().find(|face| face.id == *candidate) else {
-        return false;
-    };
-    let Some(surface) = surfaces.iter().find(|surface| surface.id == face.surface) else {
-        return false;
-    };
-    let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
-        return false;
-    };
-    let origin = plane_surface.origin().get();
-    let normal = plane_surface.frame().axis().as_raw();
-    let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
-        return false;
-    };
-    parallel_vectors(*normal, sketch_normal.get(), angular_tolerance)
-        && point_plane_distance(origin, sketch_origin.get(), sketch_normal.get())
-            <= linear_tolerance
-}
-
-fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {
-    let left_length = left.norm();
-    let right_length = right.norm();
-    let cross_length = left.cross(right).norm();
-    left_length > 0.0
-        && right_length > 0.0
-        && cross_length <= tolerance * left_length * right_length
-}
-
-fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
-    let normal_length = normal.norm();
-    if normal_length == 0.0 {
-        return f64::INFINITY;
-    }
-    point.vector_from(origin).dot(normal).abs() / normal_length
 }
 
 pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Angle> {
@@ -2963,33 +3897,19 @@ pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     }
 }
 
-pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
-    match curve.geometry.as_ref() {
-        Some(SketchCurveGeometry::Line { start, end, .. }) => {
-            !(planar_point(start.as_raw()) && planar_point(end.as_raw()))
-        }
-        Some(SketchCurveGeometry::Arc {
-            center,
-            normal,
-            reference_direction,
-            ..
-        }) => {
-            !(planar_point(center.as_raw())
-                && reference_direction.as_raw().z.abs()
-                    <= EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9
-                && sketch_normal_sign(normal.as_raw()).is_some())
-        }
-        Some(SketchCurveGeometry::Nurbs { geometry, .. }) => {
-            geometry.poles().points().any(|point| !planar_point(point))
-        }
-        None => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    mod borrowed_candidates;
+    mod selection_proofs;
+
+    mod boundary_admission;
+    mod candidate_admission;
     mod candidate_limits;
+    mod explicit_lanes;
     mod extrude;
+    mod membership_queries;
+    mod profile_native_transfer;
+    mod support_admission;
 
     use super::{
         bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
@@ -3068,30 +3988,27 @@ mod tests {
         operand
     }
 
-    fn assert_legacy_face_candidate_collection_refusal(operation: &'static str, limit: u64) {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            use cadmpeg_core::decode::{
-                DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-            };
-            use cadmpeg_core::CodecError;
-            let operand = legacy_face_candidate_limit_fixture();
+    fn assert_legacy_face_candidate_collection_refusal(operation: &'static str) {
+        use cadmpeg_core::decode::ResourceDimension;
+        let operand = legacy_face_candidate_limit_fixture();
+        crate::test_support::with_decode_context(|ctx| {
             assert_eq!(
-                legacy_face_recipe_reference_candidates(decode_ctx, &operand, 201).unwrap(),
+                legacy_face_recipe_reference_candidates(ctx, &operand, 201).unwrap(),
                 Some(vec![face(10)])
             );
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = limit;
-
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = legacy_face_recipe_reference_candidates(&ctx, &operand, 201);
-            assert!(
-                matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        });
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| legacy_face_recipe_reference_candidates(ctx, &operand, 201),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
             if failure.operation == operation
                 && failure.dimension == ResourceDimension::CollectionItems),
-                "expected {operation} refusal, got {result:?}"
-            );
-        });
+            "expected {operation} refusal, got {error:?}"
+        );
     }
 
     #[test]
@@ -3115,17 +4032,17 @@ mod tests {
 
     #[test]
     fn legacy_face_candidate_refuses_collection_limit() {
-        assert_legacy_face_candidate_collection_refusal("f3d legacy face candidate", 0);
+        assert_legacy_face_candidate_collection_refusal("f3d legacy face candidate");
     }
 
     #[test]
     fn legacy_active_face_index_refuses_collection_limit() {
-        assert_legacy_face_candidate_collection_refusal("f3d legacy active face index", 1);
+        assert_legacy_face_candidate_collection_refusal("f3d legacy active face index");
     }
 
     #[test]
     fn legacy_selected_face_index_refuses_collection_limit() {
-        assert_legacy_face_candidate_collection_refusal("f3d legacy selected face index", 2);
+        assert_legacy_face_candidate_collection_refusal("f3d legacy selected face index");
     }
 
     #[test]
@@ -3640,32 +4557,32 @@ mod tests {
 
     #[test]
     fn bounded_face_cardinality_candidate_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let contexts = [support(10, &[(100, 4)])];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = bounded_face_candidate_by_boundary_cardinality(&ctx, 4, &contexts);
-        assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d bounded face cardinality candidate",
+            0,
+            |ctx| bounded_face_candidate_by_boundary_cardinality(ctx, 4, &contexts),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d bounded face cardinality candidate"));
     }
 
     #[test]
     fn bounded_face_cardinality_union_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let contexts = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = bounded_face_candidate_by_boundary_cardinality(&ctx, 8, &contexts);
-        assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d bounded face cardinality union",
+            0,
+            |ctx| bounded_face_candidate_by_boundary_cardinality(ctx, 8, &contexts),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d bounded face cardinality union"));
     }
@@ -3705,12 +4622,15 @@ mod tests {
             ];
             let candidates = [face(10), face(11), face(12), face(13)];
             assert_eq!(
-                effective_historical_face_slots(decode_ctx, &candidates, &contexts).unwrap(),
+                effective_historical_face_slots(decode_ctx, &candidates, &contexts)
+                    .unwrap()
+                    .map(|value| value.0),
                 Some(vec![10, 11, 12])
             );
             assert_eq!(
                 effective_historical_face_slots(decode_ctx, &[face(10), face(11)], &contexts)
-                    .unwrap(),
+                    .unwrap()
+                    .map(|value| value.0),
                 None
             );
         });
@@ -3883,22 +4803,60 @@ mod tests {
     }
 
     #[test]
+    fn complete_counted_face_node_run_does_not_require_support_boundary_proof() {
+        let mut operand = stable_bounded_face_operand();
+        let mut contexts = [support(10, &[(100, 4_096)]), support(11, &[(100, 4_096)])];
+        let crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Coedges(
+            rows,
+        ) = &mut contexts[1].preceding_face_boundaries[0].loops[0].boundary
+        else {
+            panic!("coedge fixture");
+        };
+        rows.last_mut().expect("last coedge").edge_slot += 1;
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::unique_preceding_face_boundaries(ctx, &contexts)
+                .unwrap()
+                .is_none()
+        }));
+        operand.historical_support_contexts = Vec::from(contexts);
+        let native_before = serde_json::to_value(&operand).unwrap();
+
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| super::complete_counted_face_recipe(
+                ctx, &operand
+            ))
+            .unwrap(),
+            Some(1)
+        );
+        assert_eq!(serde_json::to_value(&operand).unwrap(), native_before);
+    }
+
+    #[test]
     fn face_support_candidate_requires_one_matching_predecessor() {
         let mut operand = stable_bounded_face_operand();
         operand.recipe_references = vec![reference(10, "selected", 1)];
         assert_eq!(
-            super::resolve_face_operand_support_candidate(&operand),
+            crate::test_support::with_decode_context(|ctx| {
+                super::resolve_face_operand_support_candidate(ctx, &operand)
+            })
+            .unwrap(),
             Some(10)
         );
         operand.recipe_references[0].candidate_faces.push(face(11));
         assert_eq!(
-            super::resolve_face_operand_support_candidate(&operand),
+            crate::test_support::with_decode_context(|ctx| {
+                super::resolve_face_operand_support_candidate(ctx, &operand)
+            })
+            .unwrap(),
             None
         );
         operand.recipe_references[0].candidate_faces.truncate(1);
         operand.historical_support_contexts[0].changed_preceding_face_slots = vec![12];
         assert_eq!(
-            super::resolve_face_operand_support_candidate(&operand),
+            crate::test_support::with_decode_context(|ctx| {
+                super::resolve_face_operand_support_candidate(ctx, &operand)
+            })
+            .unwrap(),
             Some(12)
         );
     }
@@ -3930,89 +4888,28 @@ mod tests {
         );
     }
 
-    fn assert_historical_face_group_retained_refusal(limit: u64, operation: &'static str) {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn assert_historical_face_group_materialized_refusal(operation: &'static str) {
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
-
         let (mut operand, group, _) = start_geometry_fixture();
         operand.resolved_face_slots = vec![10];
         let scope = loft_scope();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        let feature = crate::ids::neutral_feature_id(&scope);
-        let prefix = crate::ids::history_input_prefix(
-            &feature.key(),
-            scope.previous_history_state_id().unwrap(),
-        );
-        let identifiers = if operation == "f3d historical face group id" {
-            0
-        } else {
-            feature.as_str().len() + prefix.as_str().len()
-        };
-        policy.limits.max_retained_bytes = limit + u64::try_from(identifiers).unwrap();
-        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::MaterializedBytes,
             operation,
-            |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match ResourceDimension::RetainedBytes {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (resolved_historical_face_group(
-                    &ctx,
+            0,
+            |ctx| {
+                resolved_historical_face_group(
+                    ctx,
                     &scope,
                     scope.previous_history_state_id(),
                     &group,
                     std::slice::from_ref(&operand),
-                ))
-                .map(|_| ())
+                )
             },
-        ) {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-            error => panic!("unexpected refusal: {error:?}"),
-        };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match ResourceDimension::RetainedBytes {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = resolved_historical_face_group(
-            &ctx,
-            &scope,
-            scope.previous_history_state_id(),
-            &group,
-            std::slice::from_ref(&operand),
         );
         assert!(
-            matches!(result, Err(CodecError::ResourceLimit(ref failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == operation),
-            "expected {operation} refusal, got {result:?}"
+            matches!(error, CodecError::ResourceLimit(failure) if failure.dimension == ResourceDimension::MaterializedBytes && failure.operation == operation)
         );
     }
 
@@ -4027,40 +4924,13 @@ mod tests {
     }
 
     #[test]
-    fn historical_face_group_id_refuses_retained_limit() {
-        assert_historical_face_group_retained_refusal(0, "f3d historical face group id");
+    fn historical_face_group_id_refuses_materialized_limit() {
+        assert_historical_face_group_materialized_refusal("f3d historical face group id");
     }
 
     #[test]
-    fn historical_face_id_refuses_retained_limit() {
-        let (_, group, _) = start_geometry_fixture();
-        assert_historical_face_group_retained_refusal(
-            u64::try_from(group.id.len()).unwrap(),
-            "f3d historical face id",
-        );
-    }
-
-    #[test]
-    fn historical_face_fallback_id_refuses_retained_limit() {
-        crate::test_support::with_decode_context(|decode_ctx| {
-            let (mut operand, group, _) = start_geometry_fixture();
-            operand.resolved_face_slots = vec![10];
-            let scope = loft_scope();
-            let selection = resolved_historical_face_group(
-                decode_ctx,
-                &scope,
-                scope.previous_history_state_id(),
-                &group,
-                std::slice::from_ref(&operand),
-            )
-            .unwrap()
-            .unwrap();
-            let cadmpeg_ir::features::FaceSelection::Historical { faces, .. } = selection else {
-                panic!("expected historical selection");
-            };
-            let limit = u64::try_from(group.id.len() + faces[0].as_str().len()).unwrap();
-            assert_historical_face_group_retained_refusal(limit, "f3d historical face fallback id");
-        });
+    fn historical_face_id_refuses_materialized_limit() {
+        assert_historical_face_group_materialized_refusal("f3d historical face id");
     }
 
     #[test]
@@ -4089,7 +4959,7 @@ mod tests {
             assert!(
                 matches!(result, Err(CodecError::ResourceLimit(ref failure))
             if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d historical face operand id"),
+                && failure.operation == "f3d historical face selection storage"),
                 "expected historical operand ID refusal, got {result:?}"
             );
         });
@@ -4229,15 +5099,15 @@ mod tests {
 
     #[test]
     fn surface_delete_face_slots_refuse_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
-
         let operand = surface_delete_face_operand();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = resolve_surface_delete_face_history_set(&ctx, &operand).unwrap_err();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d stable face slot",
+            0,
+            |ctx| resolve_surface_delete_face_history_set(ctx, &operand),
+        );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d stable face slot"));
@@ -4245,15 +5115,15 @@ mod tests {
 
     #[test]
     fn surface_delete_face_covered_index_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
-
         let operand = surface_delete_face_operand();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 5;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = resolve_surface_delete_face_history_set(&ctx, &operand).unwrap_err();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d SurfaceDeleteFace covered face index",
+            0,
+            |ctx| resolve_surface_delete_face_history_set(ctx, &operand),
+        );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d SurfaceDeleteFace covered face index"));
@@ -4265,11 +5135,21 @@ mod tests {
         let second = edge_operand(2, 100, 1, 3, 201);
         let third = edge_operand(3, 100, 0, 3, 202);
         let members = [&first, &second, &third];
-        assert_eq!(loft_edge_profile_face_slot(3, &members), Some(100));
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(
+                loft_edge_profile_face_slot(3, &members, ctx).unwrap(),
+                Some(100)
+            );
+        });
 
         let different_target = edge_operand(4, 101, 1, 3, 203);
         let mismatched = [&first, &different_target, &third];
-        assert_eq!(loft_edge_profile_face_slot(3, &mismatched), None);
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(
+                loft_edge_profile_face_slot(3, &mismatched, ctx).unwrap(),
+                None
+            );
+        });
 
         let mut ambiguous = first.clone();
         append_reference(&mut ambiguous, 2, 300, "alternate", 309, 2);
@@ -4278,7 +5158,12 @@ mod tests {
         let mut ambiguous_third = third.clone();
         append_reference(&mut ambiguous_third, 2, 300, "alternate", 309, 2);
         let ambiguous_members = [&ambiguous, &ambiguous_second, &ambiguous_third];
-        assert_eq!(loft_edge_profile_face_slot(3, &ambiguous_members), None);
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(
+                loft_edge_profile_face_slot(3, &ambiguous_members, ctx).unwrap(),
+                None
+            );
+        });
     }
 
     #[test]
@@ -4308,7 +5193,7 @@ mod tests {
     }
 
     fn assert_loft_edge_profile_collection_limit(operation: &'static str) {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
 
         let scope = loft_scope();
@@ -4318,20 +5203,15 @@ mod tests {
             edge_operand(2, 100, 1, 3, 201),
             edge_operand(3, 100, 0, 3, 202),
         ];
-        for limit in 0..16 {
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = limit;
-            let arena = DecodeArena::new();
-
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            if matches!(super::resolved_loft_edge_profile_group(&ctx, &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
-                    if failure.dimension == ResourceDimension::CollectionItems
-                        && failure.operation == operation)
-            {
-                return;
-            }
-        }
-        panic!("no Loft edge profile refusal at {operation}");
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| super::resolved_loft_edge_profile_group(ctx, &scope, &group, &operands),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation));
     }
 
     #[test]
@@ -4345,37 +5225,8 @@ mod tests {
     }
 
     #[test]
-    fn loft_historical_group_id_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let scope = loft_scope();
-        let group = loft_group();
-        let operands = vec![
-            edge_operand(1, 100, 0, 3, 200),
-            edge_operand(2, 100, 1, 3, 201),
-            edge_operand(3, 100, 0, 3, 202),
-        ];
-        {
-            let error = cadmpeg_test_support::refusal::resource_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                "f3d Loft historical group id",
-                |cap| {
-                    let mut policy = DecodePolicy::default();
-                    policy.limits.max_retained_bytes = cap;
-                    let arena = DecodeArena::new();
-
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                    (super::resolved_loft_edge_profile_group(&ctx, &scope, &group, &operands))
-                        .map(|_| ())
-                },
-            );
-            assert!(
-                matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
-                    if failure.dimension == ResourceDimension::RetainedBytes
-                        && failure.operation == "f3d Loft historical group id")
-            );
-        }
+    fn loft_edge_profile_native_group_refuses_collection_limit() {
+        assert_loft_edge_profile_collection_limit("f3d historical profile native group");
     }
 
     fn start_geometry_fixture() -> (DesignFaceOperand, DesignConstructionOperandGroup, Vec<Face>) {
@@ -4470,13 +5321,8 @@ mod tests {
     }
 
     #[test]
-    fn loft_face_profile_native_id_refuses_retained_limit() {
+    fn loft_face_profile_moves_owned_native_selection() {
         crate::test_support::with_decode_context(|decode_ctx| {
-            use cadmpeg_core::decode::{
-                DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-            };
-            use cadmpeg_core::CodecError;
-
             let (mut operand, group, _) = start_geometry_fixture();
             operand.resolved_face_slots = vec![10];
             let scope = loft_scope();
@@ -4488,55 +5334,22 @@ mod tests {
             )
             .unwrap()
             .is_some());
-
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes =
-                match cadmpeg_test_support::refusal::resource_limit_at(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    "f3d Loft face profile native id",
-                    |cap| {
-                        let mut policy = DecodePolicy::default();
-                        policy.limits.max_retained_bytes = cap;
-                        let (ctx, _) =
-                            DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                        resolved_profile_face_group(
-                            &ctx,
-                            &scope,
-                            &group,
-                            std::slice::from_ref(&operand),
-                        )
-                        .map(|_| ())
-                    },
-                ) {
-                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                    error => panic!("unexpected refusal: {error:?}"),
-                };
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error =
-                resolved_profile_face_group(&ctx, &scope, &group, std::slice::from_ref(&operand))
-                    .unwrap_err();
-            assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d Loft face profile native id"));
         });
     }
 
     fn assert_face_operand_retained_refusal(operand: &DesignFaceOperand, operation: &'static str) {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::resolved_face_operand(&ctx, operand),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::RetainedBytes
-        ));
+        use cadmpeg_core::decode::ResourceDimension;
+        let (_, group, _) = start_geometry_fixture();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            0,
+            |ctx| super::resolved_face_group(ctx, &group, std::slice::from_ref(operand)),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
@@ -4591,19 +5404,19 @@ mod tests {
 
     #[test]
     fn resolved_face_group_refuses_member_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
-
         let (mut operand, group, _) = start_geometry_fixture();
         operand.resolved_active_face = Some(face(10));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d resolved face group member",
+            0,
+            |ctx| resolved_face_group(ctx, &group, std::slice::from_ref(&operand)),
+        );
         assert!(matches!(
-            resolved_face_group(&ctx, &group, std::slice::from_ref(&operand)),
-            Err(CodecError::ResourceLimit(failure))
+            error,
+            CodecError::ResourceLimit(failure)
                 if failure.operation == "f3d resolved face group member"
                     && failure.dimension == ResourceDimension::CollectionItems
         ));

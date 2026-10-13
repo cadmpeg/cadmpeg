@@ -106,3 +106,5 @@ fn revolve_native_profile_id_refuses_retained_limit() {
             && failure.operation == "f3d Revolve native profile id")
     );
 }
+
+mod callback_refusal;

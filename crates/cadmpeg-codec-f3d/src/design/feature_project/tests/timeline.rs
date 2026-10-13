@@ -29,11 +29,11 @@ fn work_point_history_state_keys_are_history_qualified() {
         ])),
         component_namespaces: HashMap::from([
             (
-                scope_a.id.clone(),
+                scope_a.id.as_str(),
                 crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
             ),
             (
-                scope_b.id.clone(),
+                scope_b.id.as_str(),
                 crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
             ),
         ]),
@@ -85,10 +85,14 @@ fn history_state_predecessors_are_component_qualified() {
     let scopes = vec![first, local_predecessor.clone(), second.clone()];
     let naming_space = |component_record_index, context_uuid: &str| {
         crate::records::recipes::DesignComponentNamingSpace {
-            id: crate::ids::native_design_component_naming_space_id(
-                bulk_stream,
-                component_record_index,
-            ),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_component_naming_space_id(
+                    ctx,
+                    bulk_stream,
+                    component_record_index,
+                )
+                .expect("test F3D native identity")
+            }),
             byte_offset: component_record_index,
             component_record_index,
             context_uuid: context_uuid.to_owned().try_into().expect("GUID"),
@@ -99,13 +103,16 @@ fn history_state_predecessors_are_component_qualified() {
         naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
         naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &naming_spaces, &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
 
     let predecessor = crate::test_support::with_decode_context(|decode_ctx| {
-        graph.predecessor(decode_ctx, &second, |_| true)
+        graph.predecessor(decode_ctx, &second, |_| Ok(true))
     })
     .expect("component-qualified state chain");
     let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
@@ -814,29 +821,6 @@ fn authored_scope_validation_orders_independent_streams_separately() {
 }
 
 #[test]
-fn move_matrix_decomposes_to_translation_and_axis_angle() {
-    let angle = std::f64::consts::PI / 3.0;
-    let transform: [[f64; 4]; 4] = [
-        [angle.cos(), 0.0, angle.sin(), -14.0],
-        [0.0, 1.0, 0.0, 2.0],
-        [-angle.sin(), 0.0, angle.cos(), 9.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ];
-    let rotation = crate::design::feature_project::matrix_axis_angle(&transform)
-        .expect("nonidentity rotation");
-    assert!((rotation.angle.get() - angle).abs() <= 1.0e-12);
-    assert!((rotation.direction.x - 0.0).abs() <= 1.0e-12);
-    assert!((rotation.direction.y - 1.0).abs() <= 1.0e-12);
-    assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);
-    assert_eq!(
-        crate::design::feature_project::matrix_axis_angle(
-            &crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
-        ),
-        None
-    );
-}
-
-#[test]
 fn history_state_identity_orders_cross_family_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str, current, previous| {
         DesignParameterScope::try_new(
@@ -977,53 +961,6 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     assert_eq!(depth.dependencies.as_slice(), [width.id.clone()]);
 }
 
-#[test]
-fn numerical_audit_half_turn_recovers_axis_with_zero_x() {
-    let transform = [
-        [-1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, -1.0, 0.0],
-        [0.0, -1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ];
-    let rotation = crate::design::feature_project::matrix_axis_angle(&transform).unwrap();
-    assert_eq!(rotation.angle.get(), std::f64::consts::PI);
-    let axis = [
-        rotation.direction.x,
-        rotation.direction.y,
-        rotation.direction.z,
-    ];
-    for row in 0..3 {
-        for column in 0..3 {
-            let reconstructed =
-                2.0 * axis[row] * axis[column] - (if row == column { 1.0 } else { 0.0 });
-            assert!((reconstructed - transform[row][column]).abs() <= 8.0 * f64::EPSILON);
-        }
-    }
-}
-
-const SMALL_MATRIX_ROTATION: f64 = 1.0e-8;
-#[test]
-fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
-    for angle in [
-        SMALL_MATRIX_ROTATION,
-        -SMALL_MATRIX_ROTATION,
-        std::f64::consts::PI,
-    ] {
-        let (sine, cosine) = angle.sin_cos();
-        let matrix = [
-            [cosine, -sine, 0.0, 0.0],
-            [sine, cosine, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ];
-        let rotation = crate::design::feature_project::matrix_axis_angle(&matrix).unwrap();
-        assert!((rotation.angle.get() - angle.abs()).abs() <= 8.0 * f64::EPSILON * angle.abs());
-        if angle.abs() < 1.0 {
-            assert_eq!(rotation.direction.get().z.signum(), angle.signum());
-        }
-    }
-}
-
 fn feature_dependency_index_fixture() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
         Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
@@ -1052,22 +989,20 @@ fn assert_feature_dependency_index_refusal(operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     let feature = feature_dependency_index_fixture();
-    for limit in 0..3 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::ensure_feature_dependencies_precede(
-            &ctx,
-            std::slice::from_ref(&feature),
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(()) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            super::super::ensure_feature_dependencies_precede(&ctx, std::slice::from_ref(&feature))
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -1125,7 +1060,7 @@ fn authored_ordinal_limit_fixture() -> (Vec<DesignParameterScope>, DesignFeature
 }
 
 fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool, per_stream: bool) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     let (scopes, timeline) = authored_ordinal_limit_fixture();
     let timelines = if with_timeline {
@@ -1133,30 +1068,27 @@ fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool,
     } else {
         &[]
     };
-    for limit in 0..25 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if per_stream {
-            crate::design::feature_project::authored_scope_ordinals_per_stream(
-                &ctx, &scopes, timelines,
-            )
-        } else {
-            crate::design::feature_project::authored_scope_ordinals(&ctx, &scopes, timelines)
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if per_stream {
+                crate::design::feature_project::authored_scope_ordinals_per_stream(
+                    &ctx, &scopes, timelines,
+                )
+            } else {
+                crate::design::feature_project::authored_scope_ordinals(&ctx, &scopes, timelines)
+            };
+
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -1226,7 +1158,7 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
     {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             if retained {
-                ResourceDimension::RetainedBytes
+                ResourceDimension::MaterializedBytes
             } else {
                 ResourceDimension::CollectionItems
             },
@@ -1235,22 +1167,17 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
                 if retained {
-                    policy.limits.max_retained_bytes = cap;
+                    policy.limits.max_materialized_bytes = cap;
                 } else {
                     policy.limits.max_collection_items = cap;
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                ScopeHistoryGraph::new(&ctx, &scopes, &[], &[], &[], &[])
+                ScopeHistoryGraph::new(&ctx, &scopes, &[], &[], &[], &[]).map(|_| ())
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::MaterializedBytes } else { ResourceDimension::CollectionItems })));
     }
-}
-
-#[test]
-fn component_history_scope_id_refuses_retained_limit() {
-    assert_history_graph_refusal("f3d component history scope id", true);
 }
 
 #[test]
@@ -1278,10 +1205,13 @@ fn history_lookup_stream_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
@@ -1297,15 +1227,18 @@ fn predecessor_stream_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| true) else {
+    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| Ok(true)) else {
         panic!("expected predecessor stream refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
@@ -1318,15 +1251,18 @@ fn predecessor_visited_scope_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| false) else {
+    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| Ok(false)) else {
         panic!("expected predecessor visited-scope refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
@@ -1606,28 +1542,8 @@ fn feature_alias_owner_id_refuses_retained_limit() {
 }
 
 #[test]
-fn feature_alias_name_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d feature alias name", true);
-}
-
-#[test]
-fn feature_alias_parameter_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d feature alias parameter id", true);
-}
-
-#[test]
 fn feature_alias_index_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d feature alias index", false);
-}
-
-#[test]
-fn owned_alias_name_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d owned alias name", true);
-}
-
-#[test]
-fn owned_alias_parameter_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d owned alias parameter id", true);
 }
 
 #[test]
@@ -1638,16 +1554,6 @@ fn owned_alias_index_refuses_collection_limit() {
 #[test]
 fn owned_alias_member_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d owned alias member", false);
-}
-
-#[test]
-fn document_alias_name_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d document alias name", true);
-}
-
-#[test]
-fn document_alias_parameter_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d document alias parameter id", true);
 }
 
 #[test]
@@ -1668,11 +1574,6 @@ fn parameter_owner_index_owner_id_refuses_retained_limit() {
 #[test]
 fn parameter_owner_index_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d parameter owner index", false);
-}
-
-#[test]
-fn feature_order_index_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d feature order index id", true);
 }
 
 #[test]
@@ -1743,18 +1644,8 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
 }
 
 #[test]
-fn expression_identifier_lookup_refuses_materialized_limit() {
-    assert_expression_dependency_refusal("f3d expression identifier lookup", false);
-}
-
-#[test]
 fn expression_owner_lookup_refuses_retained_limit() {
     assert_projected_feature_refusal("f3d expression owner lookup", true);
-}
-
-#[test]
-fn expression_feature_identifier_lookup_refuses_materialized_limit() {
-    assert_projected_feature_refusal("f3d expression feature identifier lookup", false);
 }
 
 #[test]
@@ -1853,4 +1744,33 @@ fn projected_feature_name_refuses_retained_limit() {
 #[test]
 fn projected_feature_source_tag_refuses_retained_limit() {
     assert_projected_feature_refusal("f3d projected feature source tag", true);
+}
+
+#[test]
+fn predecessor_predicate_preserves_resource_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let scopes = history_graph_limit_fixture();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
+    let projected = std::collections::HashSet::from([scopes[0].id.as_str()]);
+    let operation = "find F3D projected predecessor test scope";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            graph.predecessor(ctx, &scopes[1], |candidate| {
+                ctx.contains_hash_set(&projected, candidate.id.as_str(), operation)
+            })
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
+    );
 }

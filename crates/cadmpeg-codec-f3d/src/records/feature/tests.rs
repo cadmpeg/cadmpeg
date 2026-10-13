@@ -488,6 +488,7 @@ fn snapshot_body_rows_preserve_wire_and_reject_unequal_arrays() {
 
 #[test]
 fn direct_base_feature_emits_its_single_body_reference_views() {
+    use crate::records::feature::base_feature::DesignBaseFeatureBodyReferenceSource;
     let wire = r#"{"body_entity_suffixes":[201],"body_entity_suffix_offsets":[22],"body_reference_records":[201],"body_reference_record_offsets":[22],"parameter_body_record":198,"parameter_body_record_offset":100,"auxiliary_record":202,"auxiliary_record_offset":120,"envelope_guid":"fcec56e3-832f-4468-88a4-d710e62e629f","envelope_guid_offset":140,"tag_body_based_on_faces":true,"tag_body_based_on_faces_offset":90}"#;
     let parsed: crate::records::feature::base_feature::DesignBaseFeatureConstruction =
         serde_json::from_str(wire).expect("direct body form");
@@ -507,7 +508,25 @@ fn direct_base_feature_emits_its_single_body_reference_views() {
         }
     }
     assert_eq!(parsed.body_entity_suffixes().collect::<Vec<_>>(), [201]);
-    assert_eq!(parsed.body_reference_records().collect::<Vec<_>>(), [201]);
+    let body_reference_records = match parsed.body_reference_records() {
+        DesignBaseFeatureBodyReferenceSource::ResultRows(rows) => rows
+            .iter()
+            .map(|row| row.reference.value)
+            .collect::<Vec<_>>(),
+        DesignBaseFeatureBodyReferenceSource::RepeatedResultRows { first, rest } => {
+            std::iter::once(first.reference.value)
+                .chain(rest.iter().map(|(row, _)| row.reference.value))
+                .collect()
+        }
+        DesignBaseFeatureBodyReferenceSource::LegacyRows(rows) => {
+            rows.iter().map(|row| row.entity.value).collect::<Vec<_>>()
+        }
+        DesignBaseFeatureBodyReferenceSource::SingleBody(body) => {
+            vec![*body]
+        }
+        DesignBaseFeatureBodyReferenceSource::Empty => Vec::new(),
+    };
+    assert_eq!(body_reference_records, [201]);
     for (field, old, new) in [
         ("body_entity_suffixes", "[201]", "[]"),
         ("body_entity_suffixes", "[201]", "[201,202]"),

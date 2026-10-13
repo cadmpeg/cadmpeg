@@ -21,6 +21,16 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// Type GUID of the point-and-direction carrier selected by a `Hole` scope.
 const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
 
@@ -226,7 +236,7 @@ fn hole_carrier_frame(
     let mut cursor = frame.inputs_at;
     for _ in 0..frame.input_count {
         ctx.charge_work(1, "scan F3D Hole input records")?;
-        if input_record(body, &mut cursor).is_none() {
+        if input_record(ctx, body, &mut cursor)?.is_none() {
             return Ok(None);
         }
     }
@@ -293,13 +303,17 @@ fn hole_carrier_layout(
 
 /// The marked input reference at `cursor` with the offset of its record
 /// index, advancing past it.
-fn input_record(body: &[u8], cursor: &mut usize) -> Option<crate::records::identity::Located<u32>> {
-    let offset = u64_from_index(cursor.checked_add(1)?);
-    let reference = take_reference(body, cursor)?;
-    Some(crate::records::identity::Located {
-        value: u32::try_from(reference.target()?).ok()?,
+fn input_record(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cursor: &mut usize,
+) -> Result<Option<crate::records::identity::Located<u32>>, CodecError> {
+    let offset = u64_from_index(try_some!(cursor.checked_add(1)));
+    let reference = try_some!(take_reference(ctx, body, cursor)?);
+    Ok(Some(crate::records::identity::Located {
+        value: try_some!(u32::try_from(try_some!(reference.target())).ok()),
         offset,
-    })
+    }))
 }
 
 /// The construction of a validated carrier frame, with its input run copied
@@ -341,7 +355,7 @@ fn hole_construction(
     let mut input_records = ctx.vector_storage(frame.input_count, "f3d Hole input records")?;
     let mut cursor = frame.inputs_at;
     for _ in ctx.admit_iter(&(0..frame.input_count), "scan F3D Hole input records")? {
-        let Some(input) = input_record(body, &mut cursor) else {
+        let Some(input) = input_record(ctx, body, &mut cursor)? else {
             return Ok(None);
         };
         ctx.push_vec(&mut input_records, input, "f3d Hole input records")?;

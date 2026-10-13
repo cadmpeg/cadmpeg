@@ -27,12 +27,51 @@ fn null_locus_entry_conversion_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let entry = crate::records::dimension_null_locus_wire::Entry(pair(true));
+    let entry =
+        crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(pair(true));
     let error = DesignDimensionNullLocusPairs::from_entries_charged(&ctx, vec![entry]).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "load F3D null locus pairs"
+    ));
+}
+
+#[test]
+fn null_locus_entry_conversion_refuses_source_work_after_valid_output() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let expected = pair(true);
+    let entries =
+        vec![crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(pair(true))];
+    let result = crate::test_support::with_decode_context(|ctx| {
+        DesignDimensionNullLocusPairs::from_entries_charged(ctx, entries)
+    })
+    .expect("valid null-locus entry converts");
+    assert_eq!(&*result, &[expected]);
+
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "load F3D null locus pairs",
+        0,
+        |ctx| {
+            DesignDimensionNullLocusPairs::from_entries_charged(
+                ctx,
+                vec![
+                    crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(
+                        pair(true),
+                    ),
+                ],
+            )
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "load F3D null locus pairs"
     ));
 }
 
@@ -106,4 +145,222 @@ fn null_locus_borrowed_wire_matches_owned_wire_bytes() {
         serde_json::to_vec(&borrowed).unwrap(),
         serde_json::to_vec(&owned).unwrap()
     );
+}
+
+#[test]
+fn nonnull_locus_conversion_admits_only_reached_validation_steps() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let expected = vec![pair(false), pair(false)];
+    let required = u64::try_from(expected.len()).unwrap() + 1;
+    for cap in [required, required - 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = DesignDimensionLocusPairs::from_pairs_charged(&ctx, expected.clone())
+            .map_err(|error| error.into_codec_error(&ctx));
+        if cap == required {
+            assert_eq!(&*result.unwrap(), expected.as_slice());
+            assert_eq!(ctx.resource_refusal(), None);
+        } else {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                panic!("the validation end probe must refuse");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "validate F3D nonnull locus pairs");
+            assert_eq!(limit.used, cap);
+            assert_eq!(limit.additional, 1);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+    }
+}
+
+#[test]
+fn nonnull_locus_empty_conversion_is_free() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(
+            DesignDimensionLocusPairs::from_pairs_charged(ctx, Vec::new())
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn nonnull_locus_first_invalid_pair_leaves_the_validation_suffix_unread() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut pairs = vec![pair(true)];
+    pairs.extend((0..4096).map(|_| pair(false)));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let expected = format!(
+        "native record conversion failed: {}",
+        super::NONNULL_LOCUS_ERROR
+    );
+    // One reached predicate; the formatter measures and writes the final text.
+    policy.limits.max_work_units = 1 + 2 * u64::try_from(expected.len()).unwrap();
+    policy.limits.max_retained_bytes = u64::try_from(expected.len()).unwrap();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = DesignDimensionLocusPairs::from_pairs_charged(&ctx, pairs)
+        .map_err(|error| error.into_codec_error(&ctx))
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::Malformed(ref message) if message == &expected)
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn nonnull_locus_diagnostic_refuses_before_its_owned_copy() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let expected = format!(
+        "native record conversion failed: {}",
+        super::NONNULL_LOCUS_ERROR
+    );
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "validate F3D nonnull locus pairs",
+        0,
+        |ctx| {
+            DesignDimensionLocusPairs::from_pairs_charged(ctx, vec![pair(true)])
+                .map(|_| ())
+                .map_err(|error| error.into_codec_error(ctx))
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("the final diagnostic must exceed retained storage");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "validate F3D nonnull locus pairs");
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, u64::try_from(expected.len()).unwrap());
+}
+
+#[test]
+fn native_load_preserves_the_native_nonnull_locus_diagnostic() {
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_dimension_locus_pairs",
+            &[pair(true)],
+        )
+        .unwrap();
+    let error = F3dNative::load(&namespace).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "native record conversion failed: {}",
+            super::NONNULL_LOCUS_ERROR
+        )
+    );
+    assert!(
+        matches!(error, cadmpeg_ir::NativeConvertError::ConversionMessage(message)
+        if message == super::NONNULL_LOCUS_ERROR)
+    );
+}
+
+#[test]
+fn native_load_retains_the_final_nonnull_locus_diagnostic_once() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_dimension_locus_pairs",
+            &[pair(true)],
+        )
+        .unwrap();
+    let expected = format!(
+        "native record conversion failed: {}",
+        super::NONNULL_LOCUS_ERROR
+    );
+    let result =
+        crate::test_support::with_decode_context(|ctx| F3dNative::load_charged(ctx, &namespace));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::Malformed(ref message)) if message == &expected)
+    );
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "validate F3D nonnull locus pairs",
+        0,
+        |ctx| F3dNative::load_charged(ctx, &namespace).map(|_| ()),
+    );
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(ref limit)
+        if limit.additional == u64::try_from(expected.len()).unwrap())
+    );
+}
+
+#[test]
+fn null_locus_conversion_moves_validated_entries_without_a_second_validation_scan() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let expected = vec![pair(true), pair(true)];
+    let entries = expected
+        .iter()
+        .cloned()
+        .map(crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test)
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Each collect source step is admitted once, including its end probe.
+    // Both fixed moves fit the first four-slot allocation.
+    policy.limits.max_work_units = u64::try_from(expected.len()).unwrap() + 1;
+    policy.limits.max_collection_items = u64::try_from(expected.len()).unwrap();
+    policy.limits.max_retained_bytes =
+        4 * u64::try_from(std::mem::size_of::<DesignDimensionLocusPair>()).unwrap();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        &*DesignDimensionNullLocusPairs::from_entries_charged(&ctx, entries).unwrap(),
+        expected.as_slice()
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn native_load_reaches_nonnull_locus_validation_with_the_original_context() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_dimension_locus_pairs",
+            &[pair(false)],
+        )
+        .unwrap();
+    let loaded =
+        crate::test_support::with_decode_context(|ctx| F3dNative::load_charged(ctx, &namespace))
+            .unwrap();
+    assert_eq!(&*loaded.design_dimension_locus_pairs, &[pair(false)]);
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "validate F3D nonnull locus pairs",
+        0,
+        |ctx| F3dNative::load_charged(ctx, &namespace),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D nonnull locus pairs"
+                && limit.additional == 1
+    ));
 }

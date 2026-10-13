@@ -1007,45 +1007,55 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
 }
 
 #[test]
-fn dimension_binding_scope_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut bindings = std::collections::HashMap::new();
-    assert!(matches!(
-        crate::design::dimensions::insert_dimension_binding(
-            &ctx, &mut bindings, "stream", 20, 100,
-        ),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d dimension binding scope"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
+fn dimension_binding_key_refuses_work_limit() {
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "f3d dimension binding record",
+        0,
+        |ctx| {
+            let mut storage = ctx.reserve_scoped(0, "dimension binding test storage")?;
+            let mut bindings = std::collections::HashMap::new();
+            crate::design::dimensions::insert_dimension_binding(
+                ctx,
+                &mut storage,
+                &mut bindings,
+                "stream",
+                20,
+                100,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d dimension binding record"
+            && failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
 fn dimension_binding_record_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut bindings = std::collections::HashMap::new();
-    assert!(matches!(
-        crate::design::dimensions::insert_dimension_binding(
-            &ctx, &mut bindings, "stream", 20, 100,
-        ),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d dimension binding record"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d dimension binding record",
+        0,
+        |ctx| {
+            let mut storage = ctx.reserve_scoped(0, "dimension binding test storage")?;
+            let mut bindings = std::collections::HashMap::new();
+            crate::design::dimensions::insert_dimension_binding(
+                ctx,
+                &mut storage,
+                &mut bindings,
+                "stream",
+                20,
+                100,
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d dimension binding record"
+            && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
