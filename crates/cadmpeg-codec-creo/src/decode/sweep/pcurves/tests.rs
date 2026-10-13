@@ -120,3 +120,5 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
         assert!(point.z.abs() < 1.0e-12);
     }
 }
+
+mod refusal_routes;
