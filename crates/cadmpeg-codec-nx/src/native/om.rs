@@ -24,6 +24,8 @@ pub(super) mod material_texture;
 pub(super) mod object_uuid;
 mod reference_wire;
 mod registry_borrowed_wires;
+mod registry_reference;
+use registry_reference::RegistryReferenceDeclaration;
 mod state_index_wire;
 use journal_group::OmOperationStateJournalGroup;
 use material_texture::MaterialTextureAsset;
@@ -1169,12 +1171,27 @@ pub(super) struct ClassDefinition {
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     registry_suffix: NativeBytes<Vec<u8>>,
+    /// Raw reference-list declaration selected by the complete class terminal.
+    registry_reference_declaration: Option<RegistryReferenceDeclaration>,
     /// Absolute file offset of the containing OM section base.
     section_offset: u64,
     /// Directory entry containing the OM section.
     source_entry: String,
     /// Absolute file offset of the definition's length byte.
     source_offset: u64,
+}
+
+impl ClassDefinition {
+    fn registry_layout(&self) -> Option<crate::om::registry::ClassRegistryLayout> {
+        if self.registry_suffix.len() > 16 {
+            return None;
+        }
+        let mut tail = [0_u8; 17];
+        tail[0] = self.trailing_code;
+        let end = self.registry_suffix.len() + 1;
+        tail[1..end].copy_from_slice(&self.registry_suffix);
+        crate::om::registry::class_registry_layout(&tail[..end])
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1209,26 +1226,23 @@ struct ClassDefinitionWire {
         deserialize_with = "deserialize_registry_reference"
     )]
     registry_reference: Option<u32>,
+    /// Raw reference-list declaration selected by the complete class terminal.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_registry_reference_declaration"
+    )]
+    registry_reference_declaration: Option<RegistryReferenceDeclaration>,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     registry_suffix: NativeBytes<Vec<u8>>,
-    /// Variable-width prefix of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    layout_prefix: NativeBytes<Vec<u8>>,
-    /// Stable eight-byte class fingerprint in a framed registry suffix.
+    /// Opaque eight-byte signature from the complete class registry grammar.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_schema_fingerprint"
     )]
     schema_fingerprint: Option<NativeBytes<[u8; 8]>>,
-    /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_layout_terminal"
-    )]
-    layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section base.
     section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1239,11 +1253,7 @@ struct ClassDefinitionWire {
 
 impl From<ClassDefinition> for ClassDefinitionWire {
     fn from(value: ClassDefinition) -> Self {
-        let tail: Vec<_> = std::iter::once(value.trailing_code)
-            .chain(value.registry_suffix.iter().copied())
-            .collect();
-        let registry = crate::om::registry::class_registry_layout(&tail);
-        let layout = registry_layout(&tail[1..]);
+        let registry = value.registry_layout();
         Self {
             id: value.id,
             name: value.name,
@@ -1253,16 +1263,9 @@ impl From<ClassDefinition> for ClassDefinitionWire {
             registry_base_class: registry
                 .map(|layout| layout.base_class.map_or(0, std::num::NonZeroU32::get)),
             registry_reference: registry.map(|layout| layout.reference.get()),
+            registry_reference_declaration: value.registry_reference_declaration,
             registry_suffix: (value.registry_suffix),
-            layout_prefix: (layout
-                .as_ref()
-                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()))
-            .into(),
-            schema_fingerprint: (registry
-                .map(|layout| layout.schema_fingerprint)
-                .or_else(|| layout.as_ref().map(|layout| layout.fingerprint)))
-            .map(Into::into),
-            layout_terminal: layout.as_ref().map(|layout| layout.terminal),
+            schema_fingerprint: registry.map(|layout| layout.schema_fingerprint.into()),
             section_offset: value.section_offset,
             source_entry: value.source_entry,
             source_offset: value.source_offset,
@@ -1279,11 +1282,21 @@ impl TryFrom<ClassDefinitionWire> for ClassDefinition {
             ordinal: wire.ordinal,
             trailing_code: wire.trailing_code,
             registry_suffix: (wire.registry_suffix),
+            registry_reference_declaration: wire.registry_reference_declaration,
             section_offset: wire.section_offset,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
         };
         let expected = ClassDefinitionWire::from(value.clone());
+        if let Some(reference) = &value.registry_reference_declaration {
+            if expected.registry_reference.is_none() {
+                return Err(
+                    "ClassDefinition registry_reference_declaration requires a complete class tail"
+                        .into(),
+                );
+            }
+            reference.validate(&value)?;
+        }
         if wire.registry_storage_code != expected.registry_storage_code {
             return Err(
                 "ClassDefinition registry_storage_code disagrees with registry bytes".into(),
@@ -1295,14 +1308,8 @@ impl TryFrom<ClassDefinitionWire> for ClassDefinition {
         if wire.registry_reference != expected.registry_reference {
             return Err("ClassDefinition registry_reference disagrees with registry bytes".into());
         }
-        if wire.layout_prefix != expected.layout_prefix {
-            return Err("ClassDefinition layout_prefix disagrees with registry bytes".into());
-        }
         if wire.schema_fingerprint != expected.schema_fingerprint {
             return Err("ClassDefinition schema_fingerprint disagrees with registry bytes".into());
-        }
-        if wire.layout_terminal != expected.layout_terminal {
-            return Err("ClassDefinition layout_terminal disagrees with registry bytes".into());
         }
         Ok(value)
     }
@@ -1314,7 +1321,7 @@ impl TryFrom<ClassDefinitionWire> for ClassDefinition {
 pub(super) struct FieldDefinition {
     /// Globally unique declaration identity.
     id: String,
-    /// Registered `m_` member name.
+    /// Registered field name, including a bounded plain-name declaration.
     name: String,
     /// Zero-based declaration ordinal within its section.
     ordinal: u32,
@@ -1331,11 +1338,21 @@ pub(super) struct FieldDefinition {
     source_offset: u64,
 }
 
+impl FieldDefinition {
+    fn registry_layout(&self) -> Option<crate::om::registry::FieldRegistryLayout> {
+        let mut tail = [0_u8; 6];
+        tail[0] = self.trailing_code;
+        let suffix_len = self.registry_suffix.len().min(5);
+        tail[1..=suffix_len].copy_from_slice(&self.registry_suffix[..suffix_len]);
+        crate::om::registry::field_registry_layout(&tail[..=suffix_len])
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct FieldDefinitionWire {
     /// Globally unique declaration identity.
     id: String,
-    /// Registered `m_` member name.
+    /// Registered field name, including a bounded plain-name declaration.
     name: String,
     /// Zero-based declaration ordinal within its section.
     ordinal: u32,
@@ -1358,23 +1375,6 @@ struct FieldDefinitionWire {
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     registry_suffix: NativeBytes<Vec<u8>>,
-    /// Variable-width prefix of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    layout_prefix: NativeBytes<Vec<u8>>,
-    /// Stable eight-byte field fingerprint in a framed registry suffix.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_schema_fingerprint"
-    )]
-    schema_fingerprint: Option<NativeBytes<[u8; 8]>>,
-    /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_layout_terminal"
-    )]
-    layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section signature.
     section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1385,11 +1385,7 @@ struct FieldDefinitionWire {
 
 impl From<FieldDefinition> for FieldDefinitionWire {
     fn from(value: FieldDefinition) -> Self {
-        let tail: Vec<_> = std::iter::once(value.trailing_code)
-            .chain(value.registry_suffix.iter().copied())
-            .collect();
-        let registry = crate::om::registry::field_registry_layout(&tail);
-        let layout = registry_layout(&tail[1..]);
+        let registry = value.registry_layout();
         Self {
             id: value.id,
             name: value.name,
@@ -1398,12 +1394,6 @@ impl From<FieldDefinition> for FieldDefinitionWire {
             registry_storage_code: registry.map(|layout| layout.storage_code.value()),
             registry_owner_class: registry.map(|layout| layout.owner_class.get()),
             registry_suffix: (value.registry_suffix),
-            layout_prefix: (layout
-                .as_ref()
-                .map_or_else(Vec::new, |layout| layout.prefix.to_vec()))
-            .into(),
-            schema_fingerprint: (layout.as_ref().map(|layout| layout.fingerprint)).map(Into::into),
-            layout_terminal: layout.as_ref().map(|layout| layout.terminal),
             section_offset: value.section_offset,
             source_entry: value.source_entry,
             source_offset: value.source_offset,
@@ -1434,15 +1424,6 @@ impl TryFrom<FieldDefinitionWire> for FieldDefinition {
             return Err(
                 "FieldDefinition registry_owner_class disagrees with registry bytes".into(),
             );
-        }
-        if wire.layout_prefix != expected.layout_prefix {
-            return Err("FieldDefinition layout_prefix disagrees with registry bytes".into());
-        }
-        if wire.schema_fingerprint != expected.schema_fingerprint {
-            return Err("FieldDefinition schema_fingerprint disagrees with registry bytes".into());
-        }
-        if wire.layout_terminal != expected.layout_terminal {
-            return Err("FieldDefinition layout_terminal disagrees with registry bytes".into());
         }
         Ok(value)
     }
@@ -4116,36 +4097,20 @@ pub(super) fn class_definitions(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ClassDefinition>, CodecError> {
-    registry_definitions(ctx, container, RegistryKind::Class, |d| ClassDefinition {
-        id: d.id,
-        name: d.name,
-        ordinal: d.ordinal,
-        trailing_code: d.trailing_code,
-        registry_suffix: (d.registry_suffix).into(),
-        section_offset: d.section_offset,
-        source_entry: d.source_entry,
-        source_offset: d.source_offset,
-    })
-}
-
-struct RegistryLayout<'a> {
-    prefix: &'a [u8],
-    fingerprint: [u8; 8],
-    terminal: u8,
-}
-
-fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
-    if !(11..=14).contains(&suffix.len()) {
-        return None;
-    }
-    let fingerprint_start = suffix.len() - 9;
-    Some(RegistryLayout {
-        prefix: &suffix[..fingerprint_start],
-        fingerprint: suffix[fingerprint_start..fingerprint_start + 8]
-            .try_into()
-            .ok()?,
-        terminal: suffix[fingerprint_start + 8],
-    })
+    let mut classes =
+        registry_definitions(ctx, container, RegistryKind::Class, |d| ClassDefinition {
+            id: d.id,
+            name: d.name,
+            ordinal: d.ordinal,
+            trailing_code: d.trailing_code,
+            registry_suffix: (d.registry_suffix).into(),
+            registry_reference_declaration: None,
+            section_offset: d.section_offset,
+            source_entry: d.source_entry,
+            source_offset: d.source_offset,
+        })?;
+    registry_reference::join_references(ctx, container, &mut classes)?;
+    Ok(classes)
 }
 
 /// Decode member definitions from every framed OM section.
@@ -6573,11 +6538,15 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_registry_base_class, u32, "registry_base_class");
 cadmpeg_core::named_optional_field!(deserialize_registry_reference, u32, "registry_reference");
 cadmpeg_core::named_optional_field!(
+    deserialize_registry_reference_declaration,
+    RegistryReferenceDeclaration,
+    "registry_reference_declaration"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_schema_fingerprint,
     cadmpeg_ir::native::bytes::NativeBytes<[u8; 8]>,
     "schema_fingerprint"
 );
-cadmpeg_core::named_optional_field!(deserialize_layout_terminal, u8, "layout_terminal");
 cadmpeg_core::named_optional_field!(
     deserialize_registry_owner_class,
     u32,

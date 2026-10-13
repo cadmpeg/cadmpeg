@@ -180,7 +180,7 @@ pub(crate) struct TypeDefinition<'a> {
 pub(crate) struct FieldDefinition<'a> {
     /// Offset of the declaration length byte.
     pub(crate) offset: usize,
-    /// Registered `m_` member name.
+    /// Registered field name, including a bounded plain-name declaration.
     pub(crate) name: &'a str,
     /// Complete registry bytes following the member name.
     pub(crate) registry_tail: &'a [u8],
@@ -4361,6 +4361,7 @@ pub(crate) fn sections<'a>(
             continue;
         }
         let type_registry = registry::type_registry(ctx, bytes, offset + 16, end)?;
+        let field_owner_count = type_registry.field_owner_count;
         let types = type_registry.definitions;
         let field_start = type_registry.field_start;
         let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end)
@@ -4370,12 +4371,18 @@ pub(crate) fn sections<'a>(
         let (fields, record_area_offset) =
             if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
                 (
-                    registry::all_field_definitions(ctx, bytes, field_start, pointer_offset)?,
+                    registry::all_field_definitions(
+                        ctx,
+                        bytes,
+                        field_start,
+                        pointer_offset,
+                        field_owner_count,
+                    )?,
                     Some(record_area_offset),
                 )
             } else {
                 (
-                    registry::field_definitions(ctx, bytes, field_start, end)?,
+                    registry::field_definitions(ctx, bytes, field_start, end, field_owner_count)?,
                     None,
                 )
             };
@@ -4580,6 +4587,7 @@ fn materialize_indexed_candidate<'a>(
         bytes,
         type_registry.field_start,
         entity_index_offset,
+        type_registry.field_owner_count,
     )?;
     let (object_id_table_offset, store) = match candidate.kind {
         IndexedCandidateKind::Fixed(index) => (

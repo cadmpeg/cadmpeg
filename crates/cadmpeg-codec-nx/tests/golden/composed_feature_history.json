@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -764,12 +764,9 @@
             },
             {
               "id": "nx:om-entry-0:class#51",
-              "layout_prefix": "8121",
-              "layout_terminal": 6,
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
               "registry_suffix": "81210123456789abcdef06",
-              "schema_fingerprint": "0123456789abcdef",
               "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 127,

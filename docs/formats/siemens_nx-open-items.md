@@ -432,20 +432,15 @@ or history relations only; they do not assign an origin or axis. Complete numeri
 frames can also occur outside a coordinate-system payload. The frame bytes and
 field codes alone do not select an origin coordinate or an axis component.
 
-### OM-06. OM registry suffix fields
+### OM-06. OM registry signature and storage semantics
 
-**Question.** What does each byte in a bounded OM field-registry suffix mean?
+**Question.** How is the eight-byte class signature constructed, and what semantic domains do class and field storage values represent?
 
-**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use", §3.3 "The first byte after the name is the storage-token prefix.", and §3.3 "A complete `UGS::` class declaration has one storage token, one base token," define the registry token family, complete class tail, and complete member head. The native decoder retains the exact declaration suffix and decodes these token values when their required bytes are present.
+**Known.** `siemens_nx.md` §3.3 "A complete `UGS::` class declaration has one storage token, one base token," and §3.3 "The class reference token is a one-based ordinal into the maximal contiguous" define the complete token grammar, opaque signature, section-local reference join, and independently framed plain-name fields.
 
-**Need.** We must know the semantic field roles represented by the layout
-prefix, schema fingerprint, terminal byte, and remaining member-suffix bytes.
+**Need.** We must know the complete inputs and algorithm for the class signature and the serialized or runtime relations that assign a storage value to type, cardinality, visibility, access, or object-record binding. A controlled class-registration trace or primary schema definition must supply those relations.
 
-**Conflict.** The 11–14-byte suffix decomposes into a 2–5-byte prefix,
-eight-byte fingerprint, and one terminal byte for some legacy declarations,
-but that heuristic is not the complete registry grammar. The registry token
-positions do not assign an OM object record to a class or provide the value
-grammar, cardinality, access role, or semantic meaning of each member.
+**Conflict.** A class name can have different signatures, so the name alone does not determine the bytes. Equal storage values and names do not identify one declaration or establish a value grammar. The reference ordinal and field owner ordinal provide structural joins only.
 
 ### OM-08. Blend-created faces
 

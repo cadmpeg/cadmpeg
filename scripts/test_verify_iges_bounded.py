@@ -38,7 +38,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         executable.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         return executable
 
-    def test_accepts_v8_decode_refusal(self) -> None:
+    def test_accepts_v10_decode_refusal(self) -> None:
         refusal = {
             "stage": "decode",
             "code": "decode_failed",
@@ -46,7 +46,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         }
         self.write(
             {
-                "ir_version": "9",
+                "ir_version": "10",
                 "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
@@ -61,7 +61,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def test_rejects_success_report_as_refusal(self) -> None:
         self.write(
             {
-                "ir_version": "9",
+                "ir_version": "10",
                 "command": "dump",
                 "status": "ok",
                 "refusal": None,
@@ -74,7 +74,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.assertEqual(error, "decode refusal report status is not refused")
 
     def test_rejects_unsupported_refusal_version(self) -> None:
-        for version in ("5", "7", "8"):
+        for version in ("5", "7", "8", "9"):
             with self.subTest(version=version):
                 self.write(
                     {
@@ -92,7 +92,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
                 actual, error = MODULE.load_decode_refusal(self.path)
 
                 self.assertIsNone(actual)
-                self.assertEqual(error, 'decode refusal report does not use ir_version "9"')
+                self.assertEqual(error, 'decode refusal report does not use ir_version "10"')
 
     def test_gate_rejects_unclassified_decode_exit(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"
@@ -123,7 +123,7 @@ import sys
 report = pathlib.Path(sys.argv[sys.argv.index('--report') + 1])
 assert sys.argv[1] == 'dump'
 report.write_text(json.dumps({
-    'ir_version': '9',
+    'ir_version': '10',
     'command': 'dump',
     'status': 'refused',
     'refusal': {

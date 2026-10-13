@@ -1429,32 +1429,10 @@ fn decode_retains_length_framed_nx_field_definitions() {
     assert_eq!(fields[0].registry_storage_code, Some(2));
     assert_eq!(fields[0].registry_owner_class, Some(2));
     assert_eq!(fields[0].registry_suffix, [0x01, 0x02]);
-    assert_eq!(fields[0].layout_prefix, Vec::<u8>::new());
-    assert_eq!(
-        fields[0]
-            .schema_fingerprint
-            .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
-        None
-    );
-    assert_eq!(fields[0].layout_terminal, None);
     assert_eq!(fields[1].name, "m_tools");
     assert_eq!(fields[1].trailing_code, 0x81);
     assert!(fields[1].registry_suffix.is_empty());
     assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
-    let layout = super::registry_layout(&[
-        0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
-    ]);
-    let prefix = layout
-        .as_ref()
-        .map_or_else(Vec::new, |layout| layout.prefix.to_vec());
-    let fingerprint = layout.as_ref().map(|layout| layout.fingerprint);
-    let terminal = layout.as_ref().map(|layout| layout.terminal);
-    assert_eq!(prefix, [0x81, 0x21]);
-    assert_eq!(
-        fingerprint,
-        Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
-    );
-    assert_eq!(terminal, Some(0x06));
     let classes = result
         .ir()
         .native
@@ -1467,14 +1445,12 @@ fn decode_retains_length_framed_nx_field_definitions() {
         .cloned()
         .map(super::ClassDefinitionWire::from)
         .collect();
-    assert_eq!(classes[0].layout_prefix, &[0x81, 0x21]);
     assert_eq!(
         classes[0]
             .schema_fingerprint
             .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
-        Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
+        None
     );
-    assert_eq!(classes[0].layout_terminal, Some(0x06));
 }
 
 #[test]
@@ -1493,6 +1469,7 @@ fn class_registry_metadata_requires_a_complete_tail() {
         ordinal: 0,
         trailing_code: legacy_definition.registry_tail[0],
         registry_suffix: legacy_definition.registry_tail[1..].to_vec().into(),
+        registry_reference_declaration: None,
         section_offset: 0,
         source_entry: String::new(),
         source_offset: 0,
@@ -1501,12 +1478,15 @@ fn class_registry_metadata_requires_a_complete_tail() {
     assert_eq!(legacy.registry_base_class, None);
     assert_eq!(legacy.registry_reference, None);
     assert_eq!(
+        legacy.registry_suffix.as_slice(),
+        &legacy_definition.registry_tail[1..]
+    );
+    assert_eq!(
         legacy
             .schema_fingerprint
             .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
-        Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
+        None
     );
-    assert_eq!(legacy.layout_terminal, Some(0x06));
 
     let complete_definition = crate::om::TypeDefinition {
         offset: 0,
@@ -1521,6 +1501,7 @@ fn class_registry_metadata_requires_a_complete_tail() {
         ordinal: 0,
         trailing_code: complete_definition.registry_tail[0],
         registry_suffix: complete_definition.registry_tail[1..].to_vec().into(),
+        registry_reference_declaration: None,
         section_offset: 0,
         source_entry: String::new(),
         source_offset: 0,
@@ -1534,7 +1515,6 @@ fn class_registry_metadata_requires_a_complete_tail() {
             .map(cadmpeg_ir::native::bytes::NativeBytes::into_inner),
         Some([0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80])
     );
-    assert_eq!(complete.layout_terminal, None);
 }
 
 #[test]

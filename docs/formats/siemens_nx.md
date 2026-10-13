@@ -729,12 +729,22 @@ token in that order. Null storage or base tokens, truncated tokens, and a zero
 or null class reference do not form a complete class tail. A zero base token
 denotes the root. A complete member head requires nonnull storage and a nonzero owner.
 The decoded token values are registry metadata, not object-record identities
-or field values. Bytes after a complete member head remain in the declaration
-suffix until the next length-framed `m_` declaration
-or the section boundary. Plain identifiers such as `first_record_area` do not
-declare members. Incomplete or legacy declarations retain their raw trailing
+or field values. Within a bounded registry lane, a complete member head can be
+followed by separate declarations with plain printable names. Each declaration
+has the same length framing, a storage token, and a nonzero owner token that
+joins a class in the same section. The declarations must consume the bounded
+post-member bytes exactly. They are independent fields, including when their
+owners differ from the preceding member's owner. Incomplete or legacy declarations retain their raw trailing
 bytes without being promoted to a complete registry layout. Declaration order
 supplies section-local class and member identity.
+
+The class reference token is a one-based ordinal into the maximal contiguous
+raw `UGS::` reference-declaration run immediately before the class registry.
+The run ends with `01`. Reference value `n` selects declaration `n - 1` in
+that run; it does not select the declaration's raw code byte. A zero, null,
+or out-of-range reference does not establish a join. Each reference declaration
+retains its name, one raw code byte, and source offset. The eight-byte class
+signature is one opaque value.
 
 Registry owner tokens are one-based class ordinals. Owner value `n` selects
 class ordinal `n - 1` in the same section. Reference-list declarations do not
@@ -1534,7 +1544,7 @@ or record position, and retains persistent-handle bytes as serialized. Equal
 canonical graphs in the same directory entry remain position-dependent because
 no serialized owner distinguishes them.
 
-The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`. `version_text` is printable ASCII beginning with `NX ` and may end in a space. The registry then has a reference-list region, a class region, and a member region. A reference-list declaration is `declared_len:u8, name[declared_len-1], code:u8`; `name` is printable ASCII beginning with `UGS::`, and the region ends with `01`. A class declaration is `declared_len:u8, name[declared_len-1], storage_code:token, base:token, schema_fingerprint[8], reference:token`; the class region normally ends with `02`. An alternate class/member boundary may place one opaque separator byte between the final class tail and the first member declaration; that byte is outside both declarations. A member declaration has the same length framing with a printable name beginning `m_`, followed by `storage_code:token, owner:token`. Plain printable declarations interleaved with member declarations remain registry bytes and are not members. Class and member ordinals count only their own regions. The bytes following a member's trailing code through the next length-framed `m_` declaration or the section boundary form that member's retained suffix.
+The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`. `version_text` is printable ASCII beginning with `NX ` and may end in a space. The registry then has a reference-list region, a class region, and a member region. A reference-list declaration is `declared_len:u8, name[declared_len-1], code:u8`; `name` is printable ASCII beginning with `UGS::`, and the region ends with `01`. A class declaration is `declared_len:u8, name[declared_len-1], storage_code:token, base:token, schema_fingerprint[8], reference:token`; the class region normally ends with `02`. An alternate class/member boundary may place one opaque separator byte between the final class tail and the first member declaration; that byte is outside both declarations. A member declaration has the same length framing with a printable name, followed by `storage_code:token, owner:token`. Plain printable declarations after a complete `m_` head form independent fields when their exact frames consume the bounded lane and their owners join same-section classes. Class and field ordinals count declarations in their own regions. Incomplete declarations retain their bounded raw bytes without borrowing following bytes.
 
 The part member `m_objectStateCollection` has trailing code `78`. The code is
 not a section-local class ordinal: the UG_PART class registry declares
