@@ -80,31 +80,60 @@ fn curve_coverage_with_limit(
 
 #[test]
 fn curve_coverage_refuses_unique_count_node() {
-    assert_collection_refusal(&curve_coverage_with_limit(0), "creo unique-row count nodes");
+    assert_collection_refusal(
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo unique-row count nodes"),
+            curve_coverage_with_limit,
+        )),
+        "creo unique-row count nodes",
+    );
 }
 
 #[test]
 fn curve_coverage_refuses_unique_projection() {
-    assert_collection_refusal(&curve_coverage_with_limit(2), "creo unique-row projection");
+    assert_collection_refusal(
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo unique-row projection"),
+            curve_coverage_with_limit,
+        )),
+        "creo unique-row projection",
+    );
 }
 
 #[test]
 fn curve_coverage_refuses_transferred_id_node() {
     assert_collection_refusal(
-        &curve_coverage_with_limit(4),
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo transferred curve ID nodes"),
+            curve_coverage_with_limit,
+        )),
         "creo transferred curve ID nodes",
     );
 }
 
 #[test]
 fn curve_coverage_refuses_unknown_id_node() {
-    assert_collection_refusal(&curve_coverage_with_limit(5), "creo unknown curve ID nodes");
+    assert_collection_refusal(
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo unknown curve ID nodes"),
+            curve_coverage_with_limit,
+        )),
+        "creo unknown curve ID nodes",
+    );
 }
 
 #[test]
 fn curve_coverage_refuses_type_node() {
     assert_collection_refusal(
-        &curve_coverage_with_limit(6),
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo curve coverage type nodes"),
+            curve_coverage_with_limit,
+        )),
         "creo curve coverage type nodes",
     );
 }
@@ -112,7 +141,11 @@ fn curve_coverage_refuses_type_node() {
 #[test]
 fn curve_coverage_refuses_unknown_type_node() {
     assert_collection_refusal(
-        &curve_coverage_with_limit(7),
+        &curve_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo curve coverage unknown type nodes"),
+            curve_coverage_with_limit,
+        )),
         "creo curve coverage unknown type nodes",
     );
 }
@@ -197,7 +230,11 @@ fn surface_coverage_with_limit(
 #[test]
 fn surface_coverage_refuses_unique_count_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(0),
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo unique-row count nodes"),
+            surface_coverage_with_limit,
+        )),
         "creo unique-row count nodes",
     );
 }
@@ -205,7 +242,11 @@ fn surface_coverage_refuses_unique_count_node() {
 #[test]
 fn surface_coverage_refuses_unique_projection() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(2),
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo unique-row projection"),
+            surface_coverage_with_limit,
+        )),
         "creo unique-row projection",
     );
 }
@@ -213,7 +254,11 @@ fn surface_coverage_refuses_unique_projection() {
 #[test]
 fn surface_coverage_refuses_extrusion_construction_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(4),
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo extrusion construction nodes"),
+            surface_coverage_with_limit,
+        )),
         "creo extrusion construction nodes",
     );
 }
@@ -221,7 +266,11 @@ fn surface_coverage_refuses_extrusion_construction_node() {
 #[test]
 fn surface_coverage_refuses_extrusion_surface_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(5),
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo extrusion surface nodes"),
+            surface_coverage_with_limit,
+        )),
         "creo extrusion surface nodes",
     );
 }
@@ -229,7 +278,11 @@ fn surface_coverage_refuses_extrusion_surface_node() {
 #[test]
 fn surface_coverage_refuses_transferred_row() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(6),
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo transferred surface rows"),
+            surface_coverage_with_limit,
+        )),
         "creo transferred surface rows",
     );
 }
@@ -237,7 +290,11 @@ fn surface_coverage_refuses_transferred_row() {
 #[test]
 fn surface_coverage_refuses_unknown_id_node() {
     assert_collection_refusal(
-        &surface_coverage_with_limit(7),
+        &surface_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo unknown surface ID nodes"),
+            surface_coverage_with_limit,
+        )),
         "creo unknown surface ID nodes",
     );
 }
@@ -281,13 +338,18 @@ fn constraint_coverage_with_limit(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    design_constraint_transfer_coverage(&ctx, &[constraint], ":relation:", "creo:relation:")
+    design_constraint_transfer_coverage(&ctx, &[constraint], [(":relation:", "creo:relation:")])
+        .map(|[coverage]| coverage)
 }
 
 #[test]
 fn constraint_coverage_refuses_native_kind_node() {
     assert_collection_refusal(
-        &constraint_coverage_with_limit(0),
+        &constraint_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo native constraint kind nodes"),
+            constraint_coverage_with_limit,
+        )),
         "creo native constraint kind nodes",
     );
 }
@@ -295,7 +357,11 @@ fn constraint_coverage_refuses_native_kind_node() {
 #[test]
 fn constraint_coverage_refuses_active_native_kind_node() {
     assert_collection_refusal(
-        &constraint_coverage_with_limit(1),
+        &constraint_coverage_with_limit(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo active native constraint kind nodes"),
+            constraint_coverage_with_limit,
+        )),
         "creo active native constraint kind nodes",
     );
 }
@@ -502,7 +568,8 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     constraints[2].active = Some(false);
 
     let coverage = crate::decode::with_test_decode_ctx(|ctx| {
-        design_constraint_transfer_coverage(ctx, &constraints, ":relation:", "creo:relation:")
+        design_constraint_transfer_coverage(ctx, &constraints, [(":relation:", "creo:relation:")])
+            .map(|[coverage]| coverage)
     })
     .expect("service constraint coverage");
 
@@ -553,8 +620,13 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         report_coverage
     });
     assert_eq!(
-        constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",)
-            .to_string(),
+        crate::decode::with_test_decode_ctx(|ctx| constraint_kind_breakdown(
+            ctx,
+            &report_coverage,
+            "active_native_feature_relation_type_"
+        )
+        .expect("breakdown")
+        .to_string()),
         "type 1=2, type 9=1"
     );
 }
@@ -615,11 +687,25 @@ fn native_curve_families_accept_only_their_defined_loci() {
             SketchLocus::Center(circle.clone()),
         ],
     };
-    assert!(sketch_constraint_loci_compatible(&compatible, &geometry));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &compatible,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
     let incompatible = SketchConstraintDefinitionInput::CoincidentLoci {
         loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
     };
-    assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &incompatible,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
     let centered_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(
             SketchEntityId::mint("synthetic:test:id#line".to_string()).expect("valid test fixture"),
@@ -627,19 +713,27 @@ fn native_curve_families_accept_only_their_defined_loci() {
         entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
             .expect("valid test fixture"),
     };
-    assert!(sketch_constraint_loci_compatible(
-        &centered_midpoint,
-        &geometry
-    ));
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &centered_midpoint,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
     let incompatible_midpoint = SketchConstraintDefinitionInput::Midpoint {
         point: SketchLocus::Center(reference_line),
         entity: SketchEntityId::mint("synthetic:test:id#bounded".to_string())
             .expect("valid test fixture"),
     };
-    assert!(!sketch_constraint_loci_compatible(
-        &incompatible_midpoint,
-        &geometry
-    ));
+    assert!(
+        !crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(
+            ctx,
+            &incompatible_midpoint,
+            &geometry
+        ))
+        .expect("service locus compatibility admitted")
+    );
 }
 
 #[test]

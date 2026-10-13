@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native-arena nested record types moved from `decode.rs`.
+//! Native record types and their wire projections.
 
 use serde::Serialize;
 
@@ -218,18 +218,8 @@ pub(super) struct CreoSketchBucketHeader {
     pub(super) index: u32,
     /// Number of entries the bucket array opener declares.
     pub(super) declared_entry_count: u32,
-    /// Number of structurally complete entries decoded within the bucket
-    /// frame.
-    ///
-    /// `None` states that the scan decoded more entries than the `u32` the
-    /// declared count is stored in can name, so the two counts cannot be
-    /// compared and the bucket states no completeness. It is copied from
-    /// `crate::feature::definitions::FeatureTrimBucket::decoded_entry_count`,
-    /// whose one producer is `trim_bucket_entry_count`
-    /// (`feature/definitions.rs:2745`): it counts decoded rows over the bucket
-    /// frame and answers `None` from `u32::try_from` when that count passes
-    /// the stored width. `FeatureTrimBucket::is_complete` is the reader that
-    /// acts on it, and `None` is not complete.
+    /// Number of structurally complete entries decoded within the bucket frame.
+    /// `None` means the count exceeds u32 and cannot establish completeness.
     pub(super) decoded_entry_count: Option<u32>,
     /// Byte offset of the stored bucket index.
     pub(super) offset: usize,
@@ -507,16 +497,41 @@ fn serialize_variable_guess<S: serde::Serializer>(
     map.end()
 }
 
+/// Scoped solver rows in native wire order; an absent table serializes as an empty array.
+pub(super) struct CreoSketchEquations(
+    pub(super) Option<crate::feature::definitions::FeatureEquationTable>,
+);
+
+impl Serialize for CreoSketchEquations {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let rows = self
+            .0
+            .as_ref()
+            .map(|table| table.rows.as_slice())
+            .unwrap_or_default();
+        serializer.collect_seq(rows.iter().map(|equation| CreoSketchEquation {
+            equation_id: equation.equation_id,
+            function_id: equation.function_id,
+            explicit_argument_count: equation.explicit_argument_count,
+            arguments: &equation.arguments,
+            arguments_body: &equation.arguments_body,
+            auxiliary_body: &equation.auxiliary_body,
+            body: &equation.body,
+            offset: equation.offset,
+        }))
+    }
+}
+
 #[derive(Serialize)]
-pub(super) struct CreoSketchEquation {
-    pub(super) equation_id: u32,
-    pub(super) function_id: u32,
-    pub(super) explicit_argument_count: Option<u32>,
-    pub(super) arguments: Vec<Option<u32>>,
-    pub(super) arguments_body: Vec<u8>,
-    pub(super) auxiliary_body: Vec<u8>,
-    pub(super) body: Vec<u8>,
-    pub(super) offset: usize,
+struct CreoSketchEquation<'a> {
+    equation_id: u32,
+    function_id: u32,
+    explicit_argument_count: Option<u32>,
+    arguments: &'a [Option<u32>],
+    arguments_body: &'a [u8],
+    auxiliary_body: &'a [u8],
+    body: &'a [u8],
+    offset: usize,
 }
 
 #[derive(Serialize)]

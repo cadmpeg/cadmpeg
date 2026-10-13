@@ -3,7 +3,7 @@
 
 #[cfg(test)]
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -165,6 +165,23 @@ pub(crate) enum OperationKind {
     Native,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for OperationKind {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        match self {
+            Self::Stored(value) => DecodeCost::decode_cost(&(0_u8, value.as_str()), ctx, operation),
+            Self::Extrude => DecodeCost::decode_cost(&(1_u8,), ctx, operation),
+            Self::Revolve => DecodeCost::decode_cost(&(2_u8,), ctx, operation),
+            Self::Native => DecodeCost::decode_cost(&(3_u8,), ctx, operation),
+        }
+    }
+}
+
 impl OperationKind {
     pub(crate) fn as_str(&self) -> &str {
         match self {
@@ -322,22 +339,6 @@ pub(crate) struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     pub(crate) state_offset: usize,
 }
 
-impl FeatureOperationState {
-    /// Project one selected source state onto the current-state operation.
-    fn project(self) -> FeatureOperation {
-        FeatureOperation {
-            feature_id: self.feature_id,
-            kind: self.kind,
-            name: self.name,
-            recipe: self.recipe.into(),
-            display_state_conflict: self.display_state_conflict,
-            depdb: self.depdb,
-            offset: self.offset,
-            state_offset: self.state_offset,
-        }
-    }
-}
-
 impl<R: RecipeForm> FeatureOperation<R> {
     pub(crate) fn display_name_stored(&self) -> bool {
         self.name.display_name_stored()
@@ -389,11 +390,13 @@ pub(crate) fn reference_names(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
+    const NAME_WINDOW: usize = 256;
+
     let mut names = Vec::new();
     let Some(last) = payload.len().checked_sub(2) else {
         return Ok(names);
     };
-    for offset in 0..last {
+    for offset in ctx.admit_iter(0..last, "creo reference name scan")? {
         if payload.get(offset..offset + 2) != Some(&[psb::token::ENTITY_REF, 0x71]) {
             continue;
         }
@@ -407,17 +410,23 @@ pub(crate) fn reference_names(
         {
             continue;
         }
-        let Some(name_end) = payload
-            .get(name_start..)
-            .and_then(|tail| tail.iter().take(256).position(|byte| *byte == 0))
-            .map(|relative| name_start + relative)
-        else {
+        let Some(tail) = payload.get(name_start..) else {
+            continue;
+        };
+        let mut name_end = None;
+        for (relative, byte) in tail.iter().take(NAME_WINDOW).enumerate() {
+            if *byte == 0 {
+                name_end = Some(name_start + relative);
+                break;
+            }
+            if byte.is_ascii_control() {
+                break;
+            }
+        }
+        let Some(name_end) = name_end.filter(|end| *end != name_start) else {
             continue;
         };
         let name_bytes = &payload[name_start..name_end];
-        if name_bytes.is_empty() || name_bytes.iter().any(u8::is_ascii_control) {
-            continue;
-        }
         let (first_close, after_first_close) = psb::compact_int(payload, name_end + 1);
         let (second_close, after_second_close) = psb::compact_int(payload, after_first_close);
         if after_first_close == name_end + 1
@@ -451,8 +460,10 @@ fn recipe_bindings(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<(u32, FeatureRecipeBinding)>, CodecError> {
+    const DISPLAY_WINDOW: usize = 96;
+
     let mut bindings = Vec::new();
-    for marker in 0..payload.len() {
+    for marker in ctx.admit_iter(0..payload.len(), "creo recipe binding scan")? {
         if payload.get(marker) != Some(&psb::token::ENTITY_REF) {
             continue;
         }
@@ -469,11 +480,15 @@ fn recipe_bindings(
             continue;
         }
         let (parent_feature_id, display_start) = psb::compact_int(payload, after_schema + 1);
-        let Some(display_end) = payload
-            .get(display_start..)
-            .and_then(|bytes| bytes.iter().take(96).position(|byte| *byte == 0))
-            .map(|relative| display_start + relative)
-        else {
+        let Some(tail) = payload.get(display_start..) else {
+            continue;
+        };
+        let display_end = tail
+            .iter()
+            .take(DISPLAY_WINDOW)
+            .position(|byte| *byte == 0)
+            .map(|relative| display_start + relative);
+        let Some(display_end) = display_end else {
             continue;
         };
         let recipe_start = display_end + 3;
@@ -501,122 +516,212 @@ fn recipe_bindings(
     Ok(bindings)
 }
 
-fn agreeing_recipe_binding(bindings: &[FeatureRecipeBinding]) -> Option<FeatureRecipeBinding> {
-    let first = *bindings.first()?;
-    bindings
-        .iter()
-        .all(|binding| {
-            binding.recipe == first.recipe
-                && binding.root_schema_class == first.root_schema_class
-                && binding.parent_feature_id == first.parent_feature_id
-        })
-        .then_some(first)
-}
-
-fn inline_recipe_resolution(record: &[u8]) -> RecipeState {
+fn inline_recipe_resolution(
+    ctx: &DecodeContext<'_>,
+    record: &[u8],
+) -> Result<RecipeState, CodecError> {
     let mut found = None;
     for (name, recipe) in FEATURE_RECIPES {
-        for _ in record.windows(name.len()).filter(|window| *window == *name) {
+        let mut windows = record.windows(name.len());
+        while windows.len() != 0 {
+            let Some(window) = ctx.next_charged(&mut windows, "creo inline recipe scan")? else {
+                break;
+            };
+            if window != *name {
+                continue;
+            }
             if found.is_some() {
-                return RecipeState::Conflicting { candidate: None };
+                return Ok(RecipeState::Conflicting { candidate: None });
             }
             found = Some(*recipe);
         }
     }
-    found.into()
+    Ok(found.into())
 }
 
-fn conflicting_recipe_features(
-    ctx: &DecodeContext<'_>,
-    bindings: &[(u32, FeatureRecipeBinding)],
-) -> Result<BTreeSet<u32>, CodecError> {
-    let mut by_feature = BTreeMap::<u32, Vec<FeatureRecipeBinding>>::new();
-    for (feature_id, binding) in bindings {
-        ctx.admit_btree_entry(&by_feature, feature_id, "creo recipe feature nodes")?;
-        match by_feature.entry(*feature_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                let mut values = Vec::new();
-                ctx.reserve_vec(&mut values, 1, "creo recipe feature bindings")?;
-                values.push(*binding);
-                entry.insert(values);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let values = entry.get_mut();
-                ctx.reserve_vec(values, 1, "creo recipe feature bindings")?;
-                values.push(*binding);
-            }
+struct RecipeSummary {
+    first: FeatureRecipeBinding,
+    agreed: bool,
+    count: usize,
+}
+
+#[derive(Clone, Copy)]
+enum ParsedKind<'a> {
+    Stored(&'a str),
+    Recipe(FeatureRecipe),
+    Native,
+}
+
+#[derive(Clone, Copy)]
+struct ParsedName<'a> {
+    bytes: &'a [u8],
+    keyword: IdKeyword,
+    prefix: Option<u8>,
+}
+
+struct ParsedOperation<'a, R: RecipeForm = RecipeState> {
+    feature_id: u32,
+    kind: ParsedKind<'a>,
+    name: Option<ParsedName<'a>>,
+    recipe: R,
+    display_state_conflict: bool,
+    depdb: Option<DepdbPrefix>,
+    offset: usize,
+    state_offset: usize,
+}
+
+impl<'a> ParsedOperation<'a> {
+    fn project(self) -> ParsedOperation<'a, RecipeResolution> {
+        ParsedOperation {
+            feature_id: self.feature_id,
+            kind: self.kind,
+            name: self.name,
+            recipe: self.recipe.into(),
+            display_state_conflict: self.display_state_conflict,
+            depdb: self.depdb,
+            offset: self.offset,
+            state_offset: self.state_offset,
         }
     }
-    let mut conflicting = BTreeSet::new();
-    for (feature_id, bindings) in by_feature {
-        if agreeing_recipe_binding(&bindings).is_none() {
-            ctx.insert_btree_set(
-                &mut conflicting,
-                feature_id,
-                "creo conflicting recipe features",
-            )?;
-        }
+}
+
+impl<R: RecipeForm> ParsedOperation<'_, R> {
+    fn display_name_stored(&self) -> bool {
+        self.name.is_some()
     }
-    Ok(conflicting)
+    fn root_schema_class(&self) -> Option<SchemaClass> {
+        self.depdb.map(|prefix| prefix.schema)
+    }
+    fn parent_feature_id(&self) -> Option<u32> {
+        self.depdb.map(|prefix| prefix.parent)
+    }
+
+    fn materialize(self, ctx: &DecodeContext<'_>) -> Result<FeatureOperation<R>, CodecError> {
+        let kind = match self.kind {
+            ParsedKind::Stored(text) => {
+                OperationKind::Stored(ctx.copy_retained_text(text, "creo operation family name")?)
+            }
+            ParsedKind::Recipe(recipe) => OperationKind::from_recipe(recipe),
+            ParsedKind::Native => OperationKind::Native,
+        };
+        let name = match self.name {
+            Some(name) => OperationName::Stored {
+                bytes: ctx.copy_retained(name.bytes, "creo operation stored name bytes")?,
+                keyword: name.keyword,
+                prefix: name.prefix,
+            },
+            None => OperationName::Derived,
+        };
+        Ok(FeatureOperation {
+            feature_id: self.feature_id,
+            kind,
+            name,
+            recipe: self.recipe,
+            display_state_conflict: self.display_state_conflict,
+            depdb: self.depdb,
+            offset: self.offset,
+            state_offset: self.state_offset,
+        })
+    }
 }
 
-fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<T> {
-    let first = values.next()?;
-    values.all(|value| value == first).then_some(first)
-}
-
-/// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
-/// procedural-recipe record from one feature-state namespace, in byte order.
+/// Decode source states and materialize each stored name in source order.
 pub(crate) fn operation_states(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureOperationState>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo parsed operation state storage")?;
+    let states = storage.with_storage(|| parse_operation_states(ctx, payload))?;
+    let mut result = Vec::new();
+    for state in ctx.admit_iter(states, "creo operation state materialization")? {
+        let state = state.materialize(ctx)?;
+        ctx.push_vec(&mut result, state, "creo materialized operation states")?;
+    }
+    Ok(result)
+}
+
+/// Visit recipe-bearing source states without copying their display names.
+pub(crate) fn for_each_recipe_state(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    mut visit: impl FnMut(u32, Option<SchemaClass>, FeatureRecipe, usize) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo recipe source state storage")?;
+    let states = storage.with_storage(|| parse_operation_states(ctx, payload))?;
+    for state in ctx.admit_iter(states, "creo DEPDB recipe source traversal")? {
+        if let Some(recipe) = state.recipe.candidate() {
+            visit(
+                state.feature_id,
+                state.root_schema_class(),
+                recipe,
+                state.offset,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
+/// procedural-recipe record from one feature-state namespace, in byte order.
+fn parse_operation_states<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a [u8],
+) -> Result<Vec<ParsedOperation<'a>>, CodecError> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
         byte.is_ascii_alphanumeric()
             || byte >= 0x80
             || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
     };
-    let bound_recipes = recipe_bindings(ctx, payload)?;
-    let conflicting_features = conflicting_recipe_features(ctx, &bound_recipes)?;
-    let mut recipe_binding_counts = BTreeMap::<u32, usize>::new();
-    for (feature_id, _) in &bound_recipes {
-        ctx.admit_btree_entry(
-            &recipe_binding_counts,
-            feature_id,
-            "creo recipe binding counts",
-        )?;
-        match recipe_binding_counts.entry(*feature_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(1);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-        }
+    let mut binding_storage = ctx.reserve_scoped(0, "creo recipe binding storage")?;
+    let bound_recipes = binding_storage.with_storage(|| recipe_bindings(ctx, payload))?;
+    let mut summaries = HashMap::<u32, RecipeSummary>::new();
+    for &(feature_id, binding) in ctx.admit_iter(&bound_recipes, "creo recipe binding summaries")? {
+        let summary = binding_storage
+            .with_storage(|| {
+                ctx.entry_hash_map(&mut summaries, feature_id, "creo recipe binding counts")
+            })?
+            .or_insert(RecipeSummary {
+                first: binding,
+                agreed: true,
+                count: 0,
+            });
+        summary.count += 1;
+        summary.agreed &= binding.recipe == summary.first.recipe
+            && binding.root_schema_class == summary.first.root_schema_class
+            && binding.parent_feature_id == summary.first.parent_feature_id;
     }
+    let mut display_counts = HashMap::<u32, usize>::new();
+    let mut displayed_bindings = HashSet::<u32>::new();
     let mut result = Vec::new();
     let Some(last) = payload.len().checked_sub(4) else {
         return Ok(result);
     };
-    for separator in 0..last {
+    for separator in ctx.admit_iter(0..last, "creo operation display scan")? {
         let Some(separator_bytes) = SEPARATORS.iter().find(|candidate| {
             payload.get(separator..separator + candidate.len()) == Some(**candidate)
         }) else {
             continue;
         };
-        let mut offset = separator;
-        while offset > 0 && family_byte(payload[offset - 1]) {
-            offset -= 1;
-        }
-        while offset < separator && std::str::from_utf8(&payload[offset..separator]).is_err() {
-            offset += 1;
-        }
+        let mut offset = ctx
+            .rposition_by(
+                &payload[..separator],
+                |byte| Ok(!family_byte(*byte)),
+                "creo operation family start",
+            )?
+            .map_or(0, |position| position + 1);
+        let stored_family = loop {
+            match ctx.validate_utf8(&payload[offset..separator], "creo UTF-8 validation")? {
+                Ok(text) => break text,
+                Err(_) => offset += 1,
+            }
+        };
         let state_offset = offset;
-        let stored_family = &payload[offset..separator];
         let family = stored_family;
-        if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
+        if family.is_empty() || family.starts_with(' ') || family.ends_with(' ') {
             continue;
         }
-        let (stored_name_prefix, family) = match family {
+        let (stored_name_prefix, family) = match family.as_bytes() {
             [prefix @ (b'o' | b'x' | b'y' | b'z'), first, ..] if first.is_ascii_uppercase() => {
                 offset += 1;
                 (Some(*prefix), &family[1..])
@@ -624,63 +729,73 @@ pub(crate) fn operation_states(
             _ => (None, family),
         };
         let digits = &payload[separator + separator_bytes.len()..];
-        let Some(end) = digits.iter().position(|byte| *byte == 0) else {
-            continue;
-        };
-        if end == 0 || !digits[..end].iter().all(u8::is_ascii_digit) {
-            continue;
-        }
-        let Some(feature_id) = std::str::from_utf8(&digits[..end])
-            .ok()
-            .and_then(|digits| digits.parse::<u32>().ok())
+        let Some(end) =
+            ctx.position_by(digits, |byte| Ok(*byte == 0), "creo operation identity end")?
         else {
             continue;
         };
-        let record_start = payload[..offset]
-            .iter()
-            .rposition(|byte| *byte == 0xe3)
+        if end == 0
+            || !ctx.all_by(
+                &digits[..end],
+                |byte| Ok(byte.is_ascii_digit()),
+                "creo operation identity digits",
+            )?
+        {
+            continue;
+        }
+        let Ok(digits) = ctx.validate_utf8(&digits[..end], "creo UTF-8 validation")? else {
+            continue;
+        };
+        let Ok(feature_id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
+            continue;
+        };
+        let record_start = ctx
+            .rposition_by(
+                &payload[..offset],
+                |byte| Ok(*byte == 0xe3),
+                "creo operation record start",
+            )?
             .map_or(0, |position| position + 1);
         let record = &payload[record_start..offset];
-        let mut matching_recipes = bound_recipes
-            .iter()
-            .filter(|(candidate, _)| *candidate == feature_id)
-            .map(|(_, binding)| binding);
-        let first_binding = matching_recipes.next().copied();
-        let bound_recipe = first_binding.filter(|first| {
-            matching_recipes.all(|binding| {
-                binding.recipe == first.recipe
-                    && binding.root_schema_class == first.root_schema_class
-                    && binding.parent_feature_id == first.parent_feature_id
-            })
-        });
-        let recipe = if first_binding.is_none() {
-            inline_recipe_resolution(record)
+        let summary = summaries.get(&feature_id);
+        let bound_recipe = summary
+            .filter(|summary| summary.agreed)
+            .map(|summary| summary.first);
+        let recipe = if summary.is_none() {
+            inline_recipe_resolution(ctx, record)?
         } else {
             bound_recipe.map_or(RecipeState::Conflicting { candidate: None }, |binding| {
                 RecipeState::Resolved(binding.recipe)
             })
         };
-        let text_work = cadmpeg_core::decode::u64_from_index(family.len())
-            .checked_mul(6)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo operation family text work", u64::MAX, u64::MAX)
+        if bound_recipe.is_some() {
+            binding_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut displayed_bindings,
+                    feature_id,
+                    "creo displayed recipe bindings",
+                )
             })?;
-        ctx.charge_work(text_work, "creo operation family text work")?;
-        let kind = ctx.copy_retained_lossy_utf8(family, "creo operation family name")?;
-        let name_bytes = ctx.copy_retained(
-            &payload[state_offset..separator + separator_bytes.len() + end],
-            "creo operation stored name bytes",
-        )?;
+        }
+        *binding_storage
+            .with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut display_counts,
+                    feature_id,
+                    "creo operation display counts",
+                )
+            })?
+            .or_insert(0) += 1;
         ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
-        result.push(FeatureOperation {
+        result.push(ParsedOperation {
             feature_id,
-            kind: OperationKind::Stored(kind),
-            name: OperationName::Stored {
-                bytes: name_bytes,
+            kind: ParsedKind::Stored(family),
+            name: Some(ParsedName {
+                bytes: &payload[state_offset..separator + separator_bytes.len() + end],
                 keyword: IdKeyword::from_bytes(&separator_bytes[1..separator_bytes.len() - 1])
                     .unwrap_or(IdKeyword::Id),
                 prefix: stored_name_prefix,
-            },
+            }),
             recipe,
             display_state_conflict: false,
             depdb: bound_recipe.map(|binding| DepdbPrefix {
@@ -691,23 +806,23 @@ pub(crate) fn operation_states(
             state_offset,
         });
     }
-    for (feature_id, binding) in bound_recipes {
-        if recipe_binding_counts.get(&feature_id) == Some(&1)
-            && result.iter().any(|operation| {
-                operation.feature_id == feature_id
-                    && operation.recipe == RecipeState::Resolved(binding.recipe)
-                    && operation.root_schema_class() == Some(binding.root_schema_class)
-                    && operation.parent_feature_id() == Some(binding.parent_feature_id)
-            })
+    for &(feature_id, binding) in ctx.admit_iter(&bound_recipes, "creo bound recipe states")? {
+        if summaries
+            .get(&feature_id)
+            .is_some_and(|summary| summary.count == 1)
+            && displayed_bindings.contains(&feature_id)
         {
             continue;
         }
         ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
-        result.push(FeatureOperation {
+        result.push(ParsedOperation {
             feature_id,
-            kind: OperationKind::from_recipe(binding.recipe),
-            name: OperationName::Derived,
-            recipe: if conflicting_features.contains(&feature_id) {
+            kind: ParsedKind::Recipe(binding.recipe),
+            name: None,
+            recipe: if summaries
+                .get(&feature_id)
+                .is_some_and(|summary| !summary.agreed)
+            {
                 RecipeState::Conflicting {
                     candidate: Some(binding.recipe),
                 }
@@ -729,38 +844,169 @@ pub(crate) fn operation_states(
         Ord::cmp,
         "creo operation states result ordering",
     )?;
-    let mut display_counts = BTreeMap::<u32, usize>::new();
-    for operation in result
-        .iter()
-        .filter(|operation| operation.display_name_stored())
-    {
-        ctx.admit_btree_entry(
-            &display_counts,
-            &operation.feature_id,
-            "creo operation display counts",
-        )?;
-        match display_counts.entry(operation.feature_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(1);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-        }
-    }
-    let mut conflicting_display_features = BTreeSet::new();
-    for (feature_id, count) in display_counts {
-        if count > 1 {
-            ctx.insert_btree_set(
-                &mut conflicting_display_features,
-                feature_id,
-                "creo conflicting operation displays",
-            )?;
-        }
-    }
-    for operation in &mut result {
-        operation.display_state_conflict =
-            conflicting_display_features.contains(&operation.feature_id);
+    for operation in ctx.admit_iter(&mut result, "creo operation display conflicts")? {
+        operation.display_state_conflict = display_counts
+            .get(&operation.feature_id)
+            .is_some_and(|count| *count > 1);
     }
     Ok(result)
+}
+
+/// Visit one borrowed consensus projection per feature identifier.
+fn visit_current_operations<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a [u8],
+    mut visit: impl FnMut(ParsedOperation<'a, RecipeResolution>) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let mut grouping_storage = ctx.reserve_scoped(0, "creo operation grouping storage")?;
+    let mut by_feature = BTreeMap::<u32, Vec<ParsedOperation<'_>>>::new();
+    let mut parsed_storage = ctx.reserve_scoped(0, "creo parsed grouping input storage")?;
+    let parsed = parsed_storage.with_storage(|| parse_operation_states(ctx, payload))?;
+    for operation in ctx.admit_iter(parsed, "creo operation grouping")? {
+        match grouping_storage.with_storage(|| {
+            ctx.entry_btree_map(
+                &mut by_feature,
+                operation.feature_id,
+                "creo operation feature nodes",
+            )
+        })? {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let mut states = Vec::new();
+                grouping_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut states, 1, "creo operation feature states")
+                })?;
+                states.push(operation);
+                entry.insert(states);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let states = entry.get_mut();
+                grouping_storage
+                    .with_storage(|| ctx.reserve_vec(states, 1, "creo operation feature states"))?;
+                states.push(operation);
+            }
+        }
+    }
+    drop(parsed_storage);
+    for (_, mut states) in ctx.admit_iter(by_feature, "creo operation projection groups")? {
+        let mut first_display: Option<usize> = None;
+        let mut last_display = None;
+        let mut same_kind = true;
+        let mut agreed_recipe = None;
+        let mut recipe = None;
+        let mut schema = None;
+        let mut parent = None;
+        let mut binding_conflict = false;
+        for (index, state) in ctx
+            .admit_iter(&states, "creo operation state consensus")?
+            .enumerate()
+        {
+            binding_conflict |= !state.display_name_stored()
+                && matches!(
+                    state.recipe,
+                    RecipeState::Conflicting { candidate: Some(_) }
+                );
+            if !state.display_name_stored() {
+                continue;
+            }
+            if let Some(first) = first_display {
+                same_kind = same_kind
+                    && match (state.kind, states[first].kind) {
+                        (ParsedKind::Stored(a), ParsedKind::Stored(b)) => {
+                            ctx.equal(a, b, "creo feature operation kind comparison")?
+                        }
+                        _ => false,
+                    };
+                if agreed_recipe != Some(state.recipe.resolved()) {
+                    agreed_recipe = None;
+                }
+                if recipe != Some(RecipeResolution::from(state.recipe)) {
+                    recipe = None;
+                }
+                if schema != Some(state.root_schema_class()) {
+                    schema = None;
+                }
+                if parent != Some(state.parent_feature_id()) {
+                    parent = None;
+                }
+            } else {
+                first_display = Some(index);
+                agreed_recipe = Some(state.recipe.resolved());
+                recipe = Some(RecipeResolution::from(state.recipe));
+                schema = Some(state.root_schema_class());
+                parent = Some(state.parent_feature_id());
+            }
+            last_display = Some(index);
+        }
+        let projection = match (first_display, last_display) {
+            (None, None) => {
+                if states.is_empty() {
+                    None
+                } else {
+                    Some(states.swap_remove(0).project())
+                }
+            }
+            (Some(first), Some(last)) => {
+                let first_offset = states[first].offset;
+                let first_state_offset = states[first].state_offset;
+                let mut projection = states.swap_remove(last).project();
+                if first != last {
+                    projection.offset = first_offset;
+                    projection.state_offset = first_state_offset;
+                    projection.display_state_conflict = true;
+                    if !same_kind {
+                        projection.kind = agreed_recipe
+                            .flatten()
+                            .map_or(ParsedKind::Native, ParsedKind::Recipe);
+                    }
+                    projection.name = None;
+                    projection.recipe = recipe.unwrap_or(RecipeResolution::Conflicting);
+                    projection.depdb = match (schema.flatten(), parent.flatten()) {
+                        (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
+                        _ => None,
+                    };
+                }
+                Some(projection)
+            }
+            _ => None,
+        };
+        if let Some(mut projection) = projection {
+            if binding_conflict {
+                projection.recipe = RecipeResolution::Conflicting;
+                projection.depdb = None;
+                if !projection.display_name_stored() {
+                    projection.kind = ParsedKind::Native;
+                }
+            }
+            visit(projection)?;
+        }
+    }
+    Ok(())
+}
+
+/// Select the only feature whose current operation has a resolved recipe.
+pub(crate) fn unique_recipe_owner(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<u32>, CodecError> {
+    enum Owner {
+        Absent,
+        Unique(u32),
+        Conflicting,
+    }
+    let mut owner = Owner::Absent;
+    visit_current_operations(ctx, payload, |operation| {
+        if operation.recipe.resolved().is_some() {
+            owner = match owner {
+                Owner::Absent => Owner::Unique(operation.feature_id),
+                Owner::Unique(_) | Owner::Conflicting => Owner::Conflicting,
+            };
+        }
+        Ok(())
+    })?;
+    Ok(match owner {
+        Owner::Unique(id) => Some(id),
+        Owner::Absent | Owner::Conflicting => None,
+    })
 }
 
 /// Decode one unambiguous or consensus operation projection per feature identifier.
@@ -768,121 +1014,12 @@ pub(crate) fn operations(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureOperation>, CodecError> {
-    let bindings = recipe_bindings(ctx, payload)?;
-    let conflicting_features = conflicting_recipe_features(ctx, &bindings)?;
-    let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
-    for operation in operation_states(ctx, payload)? {
-        ctx.admit_btree_entry(
-            &by_feature,
-            &operation.feature_id,
-            "creo operation feature nodes",
-        )?;
-        match by_feature.entry(operation.feature_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                let mut states = Vec::new();
-                ctx.reserve_vec(&mut states, 1, "creo operation feature states")?;
-                states.push(operation);
-                entry.insert(states);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let states = entry.get_mut();
-                ctx.reserve_vec(states, 1, "creo operation feature states")?;
-                states.push(operation);
-            }
-        }
-    }
     let mut current = Vec::new();
-    for states in by_feature.into_values() {
-        let display_count = states
-            .iter()
-            .filter(|state| state.display_name_stored())
-            .count();
-        let projection = match display_count {
-            0 => states
-                .into_iter()
-                .next()
-                .map(FeatureOperationState::project),
-            1 => states
-                .into_iter()
-                .find(FeatureOperationState::display_name_stored)
-                .map(FeatureOperationState::project),
-            _ => {
-                let first = states.iter().find(|state| state.display_name_stored());
-                let last_index = states
-                    .iter()
-                    .rposition(FeatureOperationState::display_name_stored);
-                if let (Some(first), Some(last_index)) = (first, last_index) {
-                    let first_offset = first.offset;
-                    let first_state_offset = first.state_offset;
-                    let same_kind = states
-                        .iter()
-                        .filter(|state| state.display_name_stored())
-                        .all(|state| state.kind == first.kind);
-                    let agreed_recipe = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(|state| state.recipe.resolved()),
-                    )
-                    .flatten();
-                    let recipe = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(|state| RecipeResolution::from(state.recipe)),
-                    )
-                    .unwrap_or(RecipeResolution::Conflicting);
-                    let schema = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(FeatureOperationState::root_schema_class),
-                    )
-                    .flatten();
-                    let parent = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(FeatureOperationState::parent_feature_id),
-                    )
-                    .flatten();
-                    states.into_iter().nth(last_index).map(|state| {
-                        let mut projection = state.project();
-                        projection.offset = first_offset;
-                        projection.state_offset = first_state_offset;
-                        projection.display_state_conflict = true;
-                        if !same_kind {
-                            projection.kind = agreed_recipe
-                                .map_or(OperationKind::Native, OperationKind::from_recipe);
-                        }
-                        projection.name = OperationName::Derived;
-                        projection.recipe = recipe;
-                        projection.depdb = match (schema, parent) {
-                            (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
-                            _ => None,
-                        };
-                        projection
-                    })
-                } else {
-                    None
-                }
-            }
-        };
-        if let Some(projection) = projection {
-            ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
-            current.push(projection);
-        }
-    }
-    for operation in &mut current {
-        if !conflicting_features.contains(&operation.feature_id) {
-            continue;
-        }
-        operation.recipe = RecipeResolution::Conflicting;
-        operation.depdb = None;
-        if !operation.display_name_stored() {
-            operation.kind = OperationKind::Native;
-        }
-    }
+    visit_current_operations(ctx, payload, |projection| {
+        ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
+        current.push(projection.materialize(ctx)?);
+        Ok(())
+    })?;
     ctx.stable_sort_by(
         current.as_mut_slice(),
         |value| &value.offset,
@@ -894,6 +1031,10 @@ pub(crate) fn operations(
 
 #[cfg(test)]
 mod tests {
+    mod admission_visits;
+    mod decode_cost;
+    mod prefix_visits;
+    mod recipe_owner;
     mod resource_limits;
 
     use super::reference_names;
@@ -912,8 +1053,13 @@ mod tests {
                 .expect("root input is admitted");
             reference_names(&ctx, data)
         };
-        assert_eq!(run(1).expect("one entry admitted").len(), 1);
-        let error = run(0).expect_err("entry needs one Vec item");
+        assert_eq!(run(u64::MAX).expect("one entry admitted").len(), 1);
+        let error = run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo reference name entries"),
+            run,
+        ))
+        .expect_err("entry needs one Vec item");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo reference name entries"));
@@ -930,11 +1076,13 @@ mod tests {
                 .expect("root input is admitted");
             reference_names(&ctx, data)
         };
-        let slots = cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<super::FeatureReferenceName>(),
-        );
-        assert_eq!(run(slots + 4).expect("four name bytes admitted").len(), 1);
-        let error = run(slots + 3).expect_err("fourth retained byte exceeds limit");
+        assert_eq!(run(u64::MAX).expect("four name bytes admitted").len(), 1);
+        let error = run(crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo reference name bytes"),
+            run,
+        ))
+        .expect_err("fourth retained byte exceeds limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "creo reference name bytes"));
@@ -958,3 +1106,6 @@ mod tests {
         assert_eq!(record.name(), Cow::Borrowed("Renamed"));
     }
 }
+
+#[cfg(test)]
+mod recipe_tests;

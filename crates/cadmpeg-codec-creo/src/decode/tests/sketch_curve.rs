@@ -6,9 +6,7 @@ use crate::decode::feature_history::dimensions::{
     feature_dimension_display, feature_dimension_parameter_id, feature_dimension_parameter_layout,
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
 };
-use crate::decode::feature_history::outputs::{
-    evaluated_sweep_body_kind, evaluated_sweep_output_bodies,
-};
+use crate::decode::feature_history::outputs::{evaluated_sweep_body_kind, feature_output_bodies};
 use crate::decode::sketch::geometry::section_circle_geometry;
 use crate::decode::sketch::radii::resolved_section_radii;
 use crate::decode::sketch_transfer::constraints::{
@@ -338,7 +336,7 @@ fn dimension_identity_includes_its_feature_definition() {
                 (sketch_1200, 3),
             ]
         )
-        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .map(|result| result.map(|layout| layout.rows)))
         .expect("layout fits service limits"),
         Some(vec![
             (0, "d3".to_string(), None),
@@ -352,7 +350,7 @@ fn dimension_identity_includes_its_feature_definition() {
             ctx,
             &[(sketch_917.clone(), 3), (sketch_917.clone(), 3)]
         )
-        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .map(|result| result.map(|layout| layout.rows)))
         .expect("layout fits service limits"),
         Some(vec![
             (0, "d917_3_1".to_string(), Some(0)),
@@ -698,7 +696,8 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        section_circle_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_circle_geometry(
+            ctx,
             &BTreeMap::from([(7, [1.0, 2.0])]),
             &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve"),
@@ -710,7 +709,8 @@ fn dimension_identity_includes_its_feature_definition() {
                 .circles()
                 .cloned()
                 .collect::<Vec<_>>()[0],
-        ),
+        ))
+        .expect("admitted test lookup"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(1.0, 2.0),
@@ -782,6 +782,7 @@ fn dimension_display_preserves_radius_and_diameter_types() {
 #[test]
 fn evaluated_sweep_bodies_are_feature_outputs() {
     let mut ir = CadIr::empty();
+    let scan = crate::test_support::empty_container_scan();
     for id in [
         "creo:feature:extrusion#40:body",
         "creo:feature:revolution#40:body",
@@ -807,7 +808,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         visible: None,
     });
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_output_bodies(ctx, &ir, 40))
+        crate::decode::with_test_decode_ctx(|ctx| feature_output_bodies(ctx, &scan, &ir, 40))
             .expect("service profile admits output bodies"),
         vec![
             BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
@@ -815,16 +816,43 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         ]
     );
     assert_eq!(
-        evaluated_sweep_body_kind(&ir, "extrusion", 40),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(
+            ctx,
+            &ir,
+            "extrusion",
+            40
+        ))
+        .expect("service profile admits scalar parsing"),
         Some(BodyKind::Solid)
     );
     assert_eq!(
-        evaluated_sweep_body_kind(&ir, "revolution", 40),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(
+            ctx,
+            &ir,
+            "revolution",
+            40
+        ))
+        .expect("service profile admits scalar parsing"),
         Some(BodyKind::Solid)
     );
     assert_eq!(
-        evaluated_sweep_body_kind(&ir, "extrusion", 43),
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(
+            ctx,
+            &ir,
+            "extrusion",
+            43
+        ))
+        .expect("service profile admits scalar parsing"),
         Some(BodyKind::Sheet)
     );
-    assert_eq!(evaluated_sweep_body_kind(&ir, "revolution", 42), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| evaluated_sweep_body_kind(
+            ctx,
+            &ir,
+            "revolution",
+            42
+        ))
+        .expect("service profile admits scalar parsing"),
+        None
+    );
 }

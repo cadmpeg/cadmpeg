@@ -18,8 +18,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
-    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
-    feature_schema_class, feature_section_sweep_semantics_conflict,
+    feature_revolution_extent, feature_schema_class, feature_section_sweep_semantics_conflict,
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
@@ -69,8 +68,7 @@ pub(in super::super) fn named_feature_definition(
 /// The definition a feature name alone establishes, before the schema class
 /// is consulted.
 ///
-/// Every answer here comes from the name and the scan, so the function has no
-/// failure of its own; `None` means the name establishes nothing.
+/// `None` means the name establishes no definition.
 fn name_only_feature_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -79,22 +77,22 @@ fn name_only_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
-    if feature_section_sweep_semantics_conflict(scan, feature_id)
+    if feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
         && (matches!(kind, "Protrusion" | "Cut" | "Extrude" | "Revolve")
-            || numbered_feature_name_has_family(kind, "Extrude")
-            || numbered_feature_name_has_family(kind, "Revolve"))
+            || numbered_feature_name_has_family(ctx, kind, "Extrude")?
+            || numbered_feature_name_has_family(ctx, kind, "Revolve")?)
     {
         return Ok(None);
     }
-    if numbered_feature_name_has_family(kind, "Fill") {
+    if numbered_feature_name_has_family(ctx, kind, "Fill")? {
         return Ok(Some(filled_surface_feature_definition(
             ctx, scan, ir, feature_id,
         )?));
     }
-    if numbered_feature_name_has_family(kind, "Thicken") {
+    if numbered_feature_name_has_family(ctx, kind, "Thicken")? {
         return Ok(Some(thicken_feature_definition(ctx, scan, ir, feature_id)?));
     }
-    if numbered_feature_name_has_family(kind, "Merge") {
+    if numbered_feature_name_has_family(ctx, kind, "Merge")? {
         return Ok(Some(knit_surface_feature_definition(
             ctx, scan, feature_id,
         )?));
@@ -102,7 +100,7 @@ fn name_only_feature_definition(
     if let Some(definition) = surface_intersect_feature_definition(ctx, scan, feature_id, kind)? {
         return Ok(Some(definition));
     }
-    if let Some(definition) = reference_named_feature_definition(kind) {
+    if let Some(definition) = reference_named_feature_definition(ctx, kind)? {
         return Ok(Some(definition));
     }
     if matches!(kind, "Protrusion" | "Cut") {
@@ -113,10 +111,11 @@ fn name_only_feature_definition(
             source_carriers,
             feature_id,
             section_sweep_boolean_operation(
-                feature_recipe_effect(scan, feature_id),
+                super::operations::feature_recipe(ctx, scan, feature_id)?
+                    .map(crate::feature::operations::FeatureRecipe::effect),
                 kind,
                 false,
-                preceding_features_establish_body(ir),
+                preceding_features_establish_body(ctx, ir)?,
             ),
         )?));
     }
@@ -124,14 +123,14 @@ fn name_only_feature_definition(
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
         "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
         "Body" | "Körper"
-            if feature_reference_name(scan, feature_id).is_none()
-                && feature_schema_class(scan, feature_id).is_none() =>
+            if feature_reference_name(ctx, scan, feature_id)?.is_none()
+                && feature_schema_class(ctx, scan, feature_id)?.is_none() =>
         {
             Some(FeatureTreeNodeRole::SolidBodies)
         }
         "Surface"
-            if feature_reference_name(scan, feature_id).is_none()
-                && feature_schema_class(scan, feature_id).is_none() =>
+            if feature_reference_name(ctx, scan, feature_id)?.is_none()
+                && feature_schema_class(ctx, scan, feature_id)?.is_none() =>
         {
             Some(FeatureTreeNodeRole::SurfaceBodies)
         }
@@ -153,13 +152,14 @@ fn name_only_feature_definition(
             },
         )));
     }
-    if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
-        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+    if kind == "Extrude" || numbered_feature_name_has_family(ctx, kind, "Extrude")? {
+        let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            super::operations::feature_recipe(ctx, scan, feature_id)?
+                .map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
-            preceding_features_establish_body(ir),
+            preceding_features_establish_body(ctx, ir)?,
         );
         return Ok(Some(extrude_feature_definition_with_profile(
             ctx,
@@ -170,13 +170,14 @@ fn name_only_feature_definition(
             op,
         )?));
     }
-    if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
-        let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+    if kind == "Revolve" || numbered_feature_name_has_family(ctx, kind, "Revolve")? {
+        let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            super::operations::feature_recipe(ctx, scan, feature_id)?
+                .map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
-            preceding_features_establish_body(ir),
+            preceding_features_establish_body(ctx, ir)?,
         );
         return Ok(Some(revolve_feature_definition_with_profile(
             ctx,
@@ -204,16 +205,25 @@ pub(in super::super) fn named_or_referenced_feature_definition(
         return Ok(Some(definition));
     }
     if kind == "Native Feature"
-        && current_feature_operation(&scan.features.operations, feature_id)
-            .is_some_and(|operation| operation.display_state_conflict)
+        && crate::decode::uniqueness::exactly_one_by(
+            ctx,
+            &scan.features.operations,
+            |operation| Ok(operation.feature_id == feature_id),
+            "creo current feature operation lookup",
+        )?
+        .is_some_and(|operation| operation.display_state_conflict)
     {
         return Ok(None);
     }
-    let Some(reference_name) = feature_reference_name(scan, feature_id) else {
+    let Some(reference_name) = feature_reference_name(ctx, scan, feature_id)? else {
         return Ok(None);
     };
     let reference_name = decoded_feature_reference_name(ctx, reference_name)?;
-    if reference_name == kind {
+    if ctx.equal(
+        reference_name.as_ref(),
+        kind,
+        "creo named feature reference comparison",
+    )? {
         return Ok(None);
     }
     named_feature_definition(ctx, scan, ir, source_carriers, feature_id, &reference_name)
@@ -235,7 +245,7 @@ pub(super) fn extrude_feature_definition_with_profile(
             "creo unresolved named profile identity",
         )?,
     };
-    let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+    let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
         BooleanOp::NewBody
     } else {
@@ -284,8 +294,8 @@ fn revolve_feature_definition_with_profile(
     feature_id: u32,
     op: BooleanOp,
 ) -> Result<IrFeatureDefinition, CodecError> {
-    let extent = feature_revolution_extent(scan, feature_id);
-    let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
+    let extent = feature_revolution_extent(ctx, scan, feature_id)?;
+    let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
     let profile =
         unique_feature_profile_ref(ctx, scan, ir, feature_id)?.and_then(|profile| match profile {
             ProfileRef::Planar(planar) => Some(planar),
@@ -362,23 +372,48 @@ fn surface_intersect_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Result<Option<IrFeatureDefinition>, CodecError> {
-    let eligible = (|| {
-        numbered_feature_name_has_family(kind, "Intersect").then_some(())?;
-        let mut surface_tables = scan.features.entity_tables.iter().filter(|table| {
-            table.feature_id == feature_id
-                && table.table_class_id == 29
-                && table.surface_ids_iter().next().is_some()
-                && table.unique_surface_ids().len() == table.surface_ids_iter().count()
-                && table.surface_ids_iter().all(|surface_id| {
-                    crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)
-                        .is_some_and(|surface| surface.feature_id == feature_id)
-                })
-        });
-        surface_tables.next()?;
-        surface_tables.next().is_none().then_some(())?;
-        Some(())
-    })();
-    if eligible.is_none() {
+    if !numbered_feature_name_has_family(ctx, kind, "Intersect")? {
+        return Ok(None);
+    }
+    let mut eligible_table = None;
+    let mut table_iter = scan.features.entity_tables.iter();
+    while table_iter.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut table_iter, "creo intersect entity tables")? else {
+            break;
+        };
+        if table.feature_id != feature_id || table.table_class_id != 29 {
+            continue;
+        }
+        let mut surface_count = 0usize;
+        let mut all_surfaces_owned = true;
+        let mut entry_iter = table.entries.iter();
+        while entry_iter.len() != 0 {
+            let Some(entry) = ctx.next_charged(&mut entry_iter, "creo intersect table entries")?
+            else {
+                break;
+            };
+            if !table.contains_surface_id(entry.entity_id) {
+                continue;
+            }
+            surface_count = surface_count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo intersect surface count", u64::MAX, u64::MAX)
+            })?;
+            if crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
+                .is_none_or(|surface| surface.feature_id != feature_id)
+            {
+                all_surfaces_owned = false;
+                break;
+            }
+        }
+        if surface_count > 0
+            && surface_count == table.unique_surface_ids().len()
+            && all_surfaces_owned
+            && eligible_table.replace(()).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    if eligible_table.is_none() {
         return Ok(None);
     }
     Ok(Some(IrFeatureDefinition::Operation(
@@ -396,39 +431,41 @@ fn surface_intersect_feature_definition(
 }
 
 pub(in super::super) fn reference_named_feature_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
-) -> Option<IrFeatureDefinition> {
-    if numbered_feature_name_has_family(kind, "Boundary Blend") {
-        return Some(IrFeatureDefinition::Operation(
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
+    if numbered_feature_name_has_family(ctx, kind, "Boundary Blend")? {
+        return Ok(Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::Unresolved {
                 family: UnresolvedFamily::BoundarySurface,
             },
-        ));
+        )));
     }
-    if numbered_feature_name_has_family(kind, "Thicken") {
-        return Some(IrFeatureDefinition::Operation(
+    if numbered_feature_name_has_family(ctx, kind, "Thicken")? {
+        return Ok(Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::Thicken {
                 faces: FaceSelection::Unresolved,
                 thickness: None,
                 side: None,
             },
-        ));
+        )));
     }
-    if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(IrFeatureDefinition::Operation(
+    if numbered_feature_name_has_family(ctx, kind, "Merge")? {
+        return Ok(Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::KnitSurface {
                 faces: FaceSelection::Unresolved,
                 merge_entities: Some(true),
                 create_solid: Some(false),
                 gap_tolerance: None,
             },
-        ));
+        )));
     }
-    None
+    Ok(None)
 }
 
 pub(in super::super) fn retain_native_feature_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source_property_nodes: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     source_properties: &mut BTreeMap<String, String>,
     definition: &IrFeatureDefinition,
     parameters: &BTreeMap<String, String>,
@@ -439,9 +476,10 @@ pub(in super::super) fn retain_native_feature_parameters(
     ) {
         return Ok(());
     }
-    for (name, value) in parameters {
+    for (name, value) in ctx.admit_iter(parameters, "creo native feature parameters")? {
         insert_feature_source_property(
             ctx,
+            source_property_nodes,
             source_properties,
             format_args!("native_parameter.{name}"),
             value,
@@ -550,7 +588,10 @@ mod tests {
         );
 
         let mut foreign_surface = valid_scan();
-        foreign_surface.surfaces.rows[1].feature_id = 51;
+        foreign_surface
+            .surfaces
+            .rows
+            .edit(|rows| rows[1].feature_id = 51);
         assert_eq!(
             surface_intersect_feature_definition(
                 &cadmpeg_test_support::service_decode_context(),

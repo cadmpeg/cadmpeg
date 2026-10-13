@@ -11,6 +11,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::build_prt;
 use crate::CreoCodec;
 
+mod geometry_custody;
+
 #[test]
 fn tabulated_cylinder_refusals_charge_text_and_loss_rows() {
     let records = ["missing chart".to_string()];
@@ -98,9 +100,22 @@ fn line_extrusion_replay_set_refuses_before_node_insertion() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(1).expect("service admits replay set"), 0);
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("service admits replay set"),
+        0
+    );
+    let refused_limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo line-extrusion replay surface ids"),
+        run,
+    );
     assert!(matches!(
-        run(0),
+        run(refused_limit),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo line-extrusion replay surface ids"
@@ -125,9 +140,22 @@ fn tabulated_replay_counts_refuse_before_node_insertion() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(1).expect("service admits replay count"), 0);
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("service admits replay count"),
+        0
+    );
+    let refused_limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo tabulated-cylinder replay counts"),
+        run,
+    );
     assert!(matches!(
-        run(0),
+        run(refused_limit),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo tabulated-cylinder replay counts"
@@ -179,8 +207,21 @@ fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
 
 #[test]
 fn positional_torus_round_feature_node_refuses_before_insertion() {
-    assert_eq!(positional_round_result(2).expect("service admits round"), 0);
-    let error = positional_round_result(0).expect_err("round feature needs a set node");
+    assert_eq!(
+        positional_round_result(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            None,
+            positional_round_result
+        ))
+        .expect("service admits round"),
+        0
+    );
+    let error = positional_round_result(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional torus round feature ids"),
+        positional_round_result,
+    ))
+    .expect_err("round feature needs a set node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -191,7 +232,12 @@ fn positional_torus_round_feature_node_refuses_before_insertion() {
 
 #[test]
 fn positional_torus_constant_round_node_refuses_before_insertion() {
-    let error = positional_round_result(1).expect_err("constant round follows feature node");
+    let error = positional_round_result(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional torus constant round ids"),
+        positional_round_result,
+    ))
+    .expect_err("constant round follows feature node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -232,8 +278,21 @@ fn paired_sphere_association_copy_refuses_before_vec_growth() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(37).expect("service limit admits the association"), 0);
-    let error = run(36).expect_err("the copied association follows two discovery charges");
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("service limit admits the association"),
+        0
+    );
+    let error = run(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo paired sphere associations"),
+        run,
+    ))
+    .expect_err("the copied association needs a collection item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -325,18 +384,20 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     ));
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.parameters.len(), 1);
-    scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Torus(
-            crate::surface::PositionalTorusFrame::new(
-                [2.0, 2.0, 4.0],
-                [0.0, 0.0, 1.0],
-                [-1.0, 0.0, 0.0],
-                0.0,
-                2.0,
-            )
-            .expect("valid positional torus frame"),
-        ),
-    );
+    scan.surfaces.parameters.edit(|rows| {
+        rows[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Torus(
+                crate::surface::PositionalTorusFrame::new(
+                    [2.0, 2.0, 4.0],
+                    [0.0, 0.0, 1.0],
+                    [-1.0, 0.0, 0.0],
+                    0.0,
+                    2.0,
+                )
+                .expect("valid positional torus frame"),
+            ),
+        );
+    });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
@@ -368,18 +429,20 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
         "inline-sphere",
         &[("ND:0:VisibGeom:0", payload)],
     ));
-    scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Torus(
-            crate::surface::PositionalTorusFrame::new(
-                [1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0],
-                [1.0, 0.0, 0.0],
-                0.0,
-                2.0,
-            )
-            .expect("valid positional sphere frame"),
-        ),
-    );
+    scan.surfaces.parameters.edit(|rows| {
+        rows[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Torus(
+                crate::surface::PositionalTorusFrame::new(
+                    [1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],
+                    0.0,
+                    2.0,
+                )
+                .expect("valid positional sphere frame"),
+            ),
+        );
+    });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
@@ -401,7 +464,9 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
     assert_eq!(sphere.center().get(), [25.4, 0.0, 0.0].into());
     assert_eq!(sphere.radius().get(), 50.8);
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(source)) =
-        source_carriers.surface_geometry(surface)
+        source_carriers
+            .surface_geometry(surface)
+            .expect("source carrier lookup")
     else {
         panic!("source positional sphere changed family");
     };
@@ -522,7 +587,7 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
         1,
         crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
     ));
-    scan.surfaces.rows[0].offset = 0;
+    scan.surfaces.rows.edit(|rows| rows[0].offset = 0);
     let frame = |offset, values: &[f64]| crate::surface::SurfaceParameterScalarFrame {
         offset,
         slots: values

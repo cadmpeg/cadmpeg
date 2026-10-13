@@ -2,7 +2,6 @@
 //! Checked identity namespaces used by the Creo decoder, and the row
 //! uniqueness a namespace identity depends on.
 
-use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
@@ -111,41 +110,45 @@ pub(crate) fn source_object_id_checked(
 }
 
 /// Return unique native rows after admitting the count map and selected rows.
-pub(crate) fn uniquely_identified_rows_checked<'a, T>(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn uniquely_identified_rows_checked<'ctx, 'a, T>(
+    ctx: &'ctx DecodeContext<'_>,
     rows: &'a [T],
     id: impl Fn(&T) -> u32,
-) -> Result<Vec<&'a T>, CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(rows.len());
-    let lookup_work = 24 * (u64::from(u64::BITS - count.leading_zeros()) + 1);
-    let mut counts = BTreeMap::<u32, usize>::new();
-    for row in rows {
-        ctx.charge_work(lookup_work, "creo unique-row identity work")?;
+) -> Result<(Vec<&'a T>, ScopedReservation<'ctx>), CodecError> {
+    let mut count_storage = ctx.reserve_scoped(0, "creo unique-row count storage")?;
+    let mut counts = std::collections::HashMap::<u32, usize>::new();
+    for row in ctx.admit_iter(rows, "creo unique-row identity work")? {
         let key = id(row);
-        ctx.admit_btree_entry(&counts, &key, "creo unique-row count nodes")?;
-        match counts.entry(key) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
+        match count_storage
+            .with_storage(|| ctx.entry_hash_map(&mut counts, key, "creo unique-row count nodes"))?
+        {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = entry.get().checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("creo unique-row multiplicity", u64::MAX, u64::MAX)
                 })?;
             }
-            std::collections::btree_map::Entry::Vacant(entry) => {
+            std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(1);
             }
         }
     }
-    let mut unique = Vec::new();
-    for row in rows {
-        ctx.charge_work(lookup_work, "creo unique-row identity work")?;
+    let unique_owned_storage = ctx.temporary_vec(0, "creo unique-row projection storage")?;
+    let mut unique_storage = unique_owned_storage.1;
+    let mut unique = unique_owned_storage.0;
+    for row in ctx.admit_iter(rows, "creo unique-row identity work")? {
         if counts.get(&id(row)) == Some(&1) {
-            ctx.reserve_vec(&mut unique, 1, "creo unique-row projection")?;
+            unique_storage
+                .with_storage(|| ctx.reserve_vec(&mut unique, 1, "creo unique-row projection"))?;
             unique.push(row);
         }
     }
-    Ok(unique)
+    Ok((unique, unique_storage))
 }
 
 /// Compare a numbered identity without constructing a temporary identity string.
+///
+/// The work is bounded by the caller's constant `prefix` and the ten decimal
+/// digits of a `u32`: the suffix length is checked before it is parsed.
 pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32) -> bool {
     let Some(suffix) = actual.strip_prefix(prefix) else {
         return false;
@@ -289,14 +292,17 @@ mod tests {
             cadmpeg_core::decode::u64_from_index("creo:visibgeom:shell#7".len());
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited root admitted");
-        let (id, reservation) = compose_scoped::<ShellId>(
+        let id_owned_storage = compose_scoped::<ShellId>(
             &ctx,
             &crate::identity::VISIBGEOM_SHELL,
             7,
             "creo temporary curve identity",
         )
         .expect("service temporary identity admitted");
+        let reservation = id_owned_storage.1;
+        let id = id_owned_storage.0;
         assert_eq!(id.as_str(), "creo:visibgeom:shell#7");
+        drop(id);
         drop(reservation);
         compose_scoped::<ShellId>(
             &ctx,
@@ -411,5 +417,58 @@ mod tests {
             prefix,
             1
         ));
+    }
+    #[test]
+    fn unique_row_projection_holds_scratch_storage_until_drop() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let rows = [1u32, 2, 1];
+        let cap = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let unique_owned_storage =
+                    super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
+                let storage = unique_owned_storage.1;
+                let unique = unique_owned_storage.0;
+                assert_eq!(unique, [&2]);
+                drop(unique);
+                drop(storage);
+                Ok(())
+            },
+        );
+        let probe = |release: bool| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let unique_owned_storage =
+                super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
+            let storage = unique_owned_storage.1;
+            let unique = unique_owned_storage.0;
+            if release {
+                drop(unique);
+                drop(storage);
+                ctx.reserve_scoped(cap, "unique projection storage probe")
+                    .map(drop)
+            } else {
+                let result = ctx
+                    .reserve_scoped(cap, "unique projection storage probe")
+                    .map(drop);
+                drop(unique);
+                drop(storage);
+                result
+            }
+        };
+        let error = probe(false).expect_err("live projection consumes temporary bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "unique projection storage probe"));
+        probe(true).expect("dropped projection releases all temporary bytes");
     }
 }

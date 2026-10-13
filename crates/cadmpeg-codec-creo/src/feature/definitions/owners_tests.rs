@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::feature::definitions::bind_definition_owners;
+use crate::feature::definitions::bind_definition_owners as bind_definition_owners_checked;
 use crate::feature::definitions::bind_replay_definition_owners;
 use crate::feature::definitions::bind_section_owners;
 use crate::feature::definitions::bind_trimmed_definition_owners;
@@ -177,12 +177,10 @@ fn trim_external_id_uniqueness_uses_admitted_sorted_ids() {
         (&[9, 10, 9][..], false),
     ] {
         let definition = pending_trimmed_definition(ids);
+        let table = definition.trim_entities.as_ref().expect("trim table");
         assert_eq!(
-            definition
-                .trim_entities
-                .as_ref()
-                .expect("trim table")
-                .has_unique_external_ids(),
+            crate::decode::with_test_decode_ctx(|ctx| table.has_unique_external_ids(ctx))
+                .expect("admitted uniqueness check"),
             unique,
         );
     }
@@ -406,33 +404,38 @@ fn trimmed_owner_binding_refuses_each_collection_boundary() {
         owner_feature_id: Some(667),
     };
     let arena = DecodeArena::new();
-    for (limit, definition, operation) in [
-        (0, claimed, "creo trimmed claimed owner nodes"),
-        (
-            0,
-            candidate.clone(),
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let error =
+        super::bind_trimmed_definition_owners(&ctx, vec![claimed], std::slice::from_ref(&table))
+            .expect_err("collection limit refuses claimed trimmed owner");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo trimmed claimed owner nodes"),
+        "{error:?}"
+    );
+    crate::test_support::assert_refusal_order(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[
             "creo generated source entity ID nodes",
-        ),
-        (1, candidate.clone(), "creo trimmed owner candidate nodes"),
-        (2, candidate.clone(), "creo trimmed owner candidate rows"),
-        (3, candidate.clone(), "creo trimmed owner count nodes"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::bind_trimmed_definition_owners(
-            &ctx,
-            vec![definition],
-            std::slice::from_ref(&table),
-        )
-        .expect_err("collection limit refuses trimmed owner binding");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
-    }
+            "creo trimmed owner candidate nodes",
+            "creo trimmed owner candidate rows",
+            "creo trimmed owner count nodes",
+        ],
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+            super::bind_trimmed_definition_owners(
+                &ctx,
+                vec![candidate.clone()],
+                std::slice::from_ref(&table),
+            )
+        },
+    );
     let bound = crate::decode::with_test_decode_ctx(|ctx| {
         super::bind_trimmed_definition_owners(ctx, vec![candidate], &[table])
     })
@@ -449,52 +452,43 @@ fn replay_owner_binding_refuses_each_collection_boundary() {
     let subset_candidate = pending_replay(&[10]);
     let subset_table = generated_entity_table(43, &[10]);
     let arena = DecodeArena::new();
-    for (limit, operation) in [
-        (0, "creo generated source entity ID nodes"),
-        (1, "creo replay exact owner nodes"),
-        (2, "creo replay owner candidate rows"),
-        (3, "creo replay owner count nodes"),
+    for (candidate, table, operations) in [
+        (
+            &exact_candidate,
+            &exact_table,
+            &[
+                "creo generated source entity ID nodes",
+                "creo replay exact owner nodes",
+                "creo replay owner candidate rows",
+                "creo replay owner count nodes",
+            ][..],
+        ),
+        (
+            &subset_candidate,
+            &subset_table,
+            &[
+                "creo generated source entity ID nodes",
+                "creo replay subset owner nodes",
+                "creo replay owner candidate rows",
+                "creo replay owner count nodes",
+            ][..],
+        ),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::bind_replay_definition_owners(
-            &ctx,
-            vec![exact_candidate.clone()],
-            std::slice::from_ref(&exact_table),
-            &BTreeSet::new(),
-        )
-        .expect_err("collection limit refuses exact replay owner binding");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
-    }
-    for (limit, operation) in [
-        (0, "creo replay order entity ID nodes"),
-        (1, "creo generated source entity ID nodes"),
-        (2, "creo generated source entity ID nodes"),
-        (3, "creo replay subset owner nodes"),
-        (4, "creo replay owner candidate rows"),
-        (5, "creo replay owner count nodes"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::bind_replay_definition_owners(
-            &ctx,
-            vec![subset_candidate.clone()],
-            std::slice::from_ref(&subset_table),
-            &BTreeSet::new(),
-        )
-        .expect_err("collection limit refuses subset replay owner binding");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operations,
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root admitted");
+                super::bind_replay_definition_owners(
+                    &ctx,
+                    vec![candidate.clone()],
+                    std::slice::from_ref(table),
+                    &BTreeSet::new(),
+                )
+            },
         );
     }
     let exact = crate::decode::with_test_decode_ctx(|ctx| {
@@ -633,42 +627,45 @@ fn section_owner_binding_refuses_each_collection_boundary() {
         owner_feature_id: Some(247),
     };
     let arena = DecodeArena::new();
-    for (limit, definitions, operations, operation) in [
+    for (definitions, operations, boundaries) in [
         (
-            0,
             vec![claimed],
             Vec::new(),
-            "creo section claimed owner nodes",
+            &["creo section claimed owner nodes"][..],
         ),
         (
-            0,
             vec![candidate.clone()],
             operations.to_vec(),
-            "creo section plane count nodes",
-        ),
-        (
-            1,
-            vec![candidate.clone()],
-            operations.to_vec(),
-            "creo section ordered operations",
-        ),
-        (
-            2,
-            vec![candidate.clone()],
-            operations.to_vec(),
-            "creo section ordered operations",
+            &[
+                "creo section plane count nodes",
+                "creo section ordered operations",
+                "creo section ordered operations",
+            ][..],
         ),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::bind_section_owners(&ctx, definitions, &operations, &[(0, usize::MAX)])
-            .expect_err("collection limit refuses owner binding");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            boundaries,
+            |limit| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root admitted");
+                let result = super::bind_section_owners(
+                    &ctx,
+                    definitions.clone(),
+                    &operations,
+                    &[(0, usize::MAX)],
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = &result {
+                    assert_eq!(
+                        resource.dimension,
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    );
+                    assert_eq!((resource.used, resource.additional), (limit, 1));
+                }
+                result
+            },
         );
     }
     let bound = crate::decode::with_test_decode_ctx(|ctx| {
@@ -789,8 +786,18 @@ fn definition_revolution_extent_refuses_before_vec_growth() {
             std::slice::from_ref(&revolve),
         )
     };
-    assert_eq!(run(1).expect("one definition extent admitted").len(), 1);
-    let error = run(0).expect_err("definition extent needs one item");
+    let admitted =
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run);
+    assert_eq!(
+        run(admitted).expect("one definition extent admitted").len(),
+        1
+    );
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo definition revolution extents"),
+        run,
+    );
+    let error = run(boundary).expect_err("definition extent needs one item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo definition revolution extents"));
@@ -1483,5 +1490,109 @@ fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].body,
         payload[10..],
         "the retained body includes the optional type wrapper and row close"
+    );
+}
+
+#[test]
+fn definition_identity_utf8_refuses_work() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo UTF-8 validation",
+        |ctx| super::definition_starts(ctx, b"feat_defs_1\0"),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo UTF-8 validation")
+    );
+}
+
+#[test]
+fn depdb_section_identity_ascii_parses_after_bounded_search() {
+    let starts = crate::test_support::assert_work_boundaries(
+        &["creo DEPDB section marker traversal"],
+        |ctx| super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D1\0"),
+    );
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].offset, 0);
+    assert_eq!(starts[0].id, std::num::NonZeroU32::new(1));
+    assert_eq!(starts[0].owner_override, None);
+    assert!(!starts[0].positional);
+
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D4294967296\0")
+    })
+    .expect("overflowing ASCII section ID is rejected")
+    .is_empty());
+}
+
+#[test]
+fn depdb_definition_identity_ascii_parses_after_bounded_search() {
+    let definition = crate::test_support::assert_work_boundaries(
+        &[
+            "creo standalone section search",
+            "creo standalone section uniqueness",
+            "find Creo feature definition field",
+        ],
+        |ctx| super::depdb_section_definition(ctx, b"gsec2d_ptr\0name\0S2D1\0", None),
+    );
+    let definition = definition.expect("bounded DEPDB section is recognized");
+    assert_eq!(
+        definition.identity.schema_id(),
+        std::num::NonZeroU32::new(1)
+    );
+    assert_eq!(definition.identity.owner_feature_id(), None);
+}
+
+fn bind_definition_owners(
+    definitions: Vec<FeatureDefinition>,
+    tables: &[FeatureGeometryTable],
+) -> Vec<FeatureDefinition> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        bind_definition_owners_checked(ctx, definitions, tables)
+    })
+    .expect("datum owner admission")
+}
+
+#[test]
+fn owner_join_scans_refuse_at_work_boundaries() {
+    let definition = pending_trimmed_definition(&[9]);
+    let table = generated_entity_table(42, &[9]);
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo trimmed definition candidate traversal",
+            "creo generated owner table traversal",
+            "creo generated source entry traversal",
+            "creo trimmed source set traversal",
+            "creo trimmed source set agreement",
+            "creo trimmed candidate owner traversal",
+            "creo trimmed bound definition traversal",
+        ],
+        |ctx| {
+            bind_trimmed_definition_owners(
+                ctx,
+                vec![definition.clone()],
+                std::slice::from_ref(&table),
+            )
+        },
+    );
+    let replay = pending_replay(&[9]);
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo replay definition candidate traversal",
+            "creo replay subset source traversal",
+            "creo replay subset membership",
+            "creo replay candidate owner traversal",
+            "creo replay bound definition traversal",
+        ],
+        |ctx| {
+            bind_replay_definition_owners(
+                ctx,
+                vec![replay.clone()],
+                std::slice::from_ref(&table),
+                &BTreeSet::new(),
+            )
+        },
     );
 }

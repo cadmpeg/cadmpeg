@@ -447,7 +447,8 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 0,
-            }],
+            }]
+            .into(),
             offset: 0,
         }),
         section_3d: None,
@@ -968,7 +969,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             internal_id: 10,
             bitmask: 0,
             offset: 0,
-        }],
+        }]
+        .into(),
         offset: 0,
     });
     saved_endpoint_definition.saved_section =

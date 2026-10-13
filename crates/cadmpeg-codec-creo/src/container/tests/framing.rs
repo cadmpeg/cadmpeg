@@ -181,14 +181,29 @@ fn scan_skips_empty_binary_model_name_fields() {
 #[test]
 fn relation_model_name_accepts_binary_root_name() {
     assert_eq!(
-        super::super::relation_model_name("DRILL_BIT_10D0_SUPPRESSED_FEAT"),
+        crate::decode::with_test_decode_ctx(|ctx| super::super::relation_model_name(
+            ctx,
+            "DRILL_BIT_10D0_SUPPRESSED_FEAT"
+        ))
+        .expect("relation model name"),
         Some("DRILL_BIT_10D0_SUPPRESSED_FEAT")
     );
     assert_eq!(
-        super::super::relation_model_name("widget.PrT "),
+        crate::decode::with_test_decode_ctx(|ctx| super::super::relation_model_name(
+            ctx,
+            "widget.PrT "
+        ))
+        .expect("relation model name"),
         Some("widget")
     );
-    assert_eq!(super::super::relation_model_name("widget.step"), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::super::relation_model_name(
+            ctx,
+            "widget.step"
+        ))
+        .expect("relation model name"),
+        None
+    );
 }
 
 #[test]
@@ -472,7 +487,11 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
     };
 
     assert_eq!(
-        super::super::legacy_geom_depend_value(&persistence, "first_quilt_ptr"),
+        crate::decode::with_test_decode_ctx(|ctx| super::super::legacy_first_quilt_ptr(
+            ctx,
+            &persistence
+        ))
+        .expect("legacy value selection admitted"),
         None
     );
 }
@@ -484,7 +503,7 @@ fn nd_decoration_selects_nd_layout() {
     assert_eq!(scan.framing.layout, Layout::Nd);
     // The decorated name is normalized for classification and census.
     assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
-    assert_eq!(scan.framing.sections[0].raw_name, "ND:0:VisibGeom:1");
+    assert_eq!(scan.framing.sections[0].raw_name(), "ND:0:VisibGeom:1");
     assert_eq!(scan.framing.census.srf_array_count, Some(3));
 }
 
@@ -681,23 +700,34 @@ fn a_section_extent_the_file_does_not_hold_is_not_a_section() {
     let data = b"#Geomlists\n0123";
 
     // One byte past the last byte of the file.
-    assert!(
-        container::Section::scan("Geomlists".to_string(), 0, data.len() + 1, None, data).is_none()
-    );
+    assert!(container::Section::scan_for_test(
+        "Geomlists".to_string(),
+        0,
+        data.len() + 1,
+        None,
+        data
+    )
+    .is_none());
 
     // An offset and a length that state no address between them: the end is
     // before the offset, which is what an overflowing `offset + length` leaves.
-    assert!(
-        container::Section::scan("Geomlists".to_string(), usize::MAX - 3, 12, None, data).is_none()
-    );
+    assert!(container::Section::scan_for_test(
+        "Geomlists".to_string(),
+        usize::MAX - 3,
+        12,
+        None,
+        data
+    )
+    .is_none());
 }
 
 #[test]
 fn a_section_that_ends_on_the_last_byte_is_admitted() {
     let data = b"#Geomlists\n0123";
-    let section = container::Section::scan("Geomlists".to_string(), 0, data.len(), None, data)
-        .expect("section extent")
-        .section;
+    let section =
+        container::Section::scan_for_test("Geomlists".to_string(), 0, data.len(), None, data)
+            .expect("section extent")
+            .section;
 
     assert_eq!(section.offset(), 0);
     assert_eq!(section.length(), data.len());
@@ -715,8 +745,9 @@ fn a_section_that_ends_on_the_last_byte_is_admitted() {
 #[test]
 fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
     let data = b"#VisibGeom\nsrf_array\0";
-    let scanned = container::Section::scan("VisibGeom".to_string(), 0, data.len(), None, data)
-        .expect("section extent");
+    let scanned =
+        container::Section::scan_for_test("VisibGeom".to_string(), 0, data.len(), None, data)
+            .expect("section extent");
     assert_eq!(scanned.region, data.as_slice());
 
     let selected = crate::decode::with_test_decode_ctx(|ctx| {
@@ -735,8 +766,9 @@ fn model_geometry_section_with_limits(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let data = b"#VisibGeom\nsrf_array\0";
-    let scanned = container::Section::scan("VisibGeom".to_string(), 0, data.len(), None, data)
-        .expect("section extent");
+    let scanned =
+        container::Section::scan_for_test("VisibGeom".to_string(), 0, data.len(), None, data)
+            .expect("section extent");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_items;
@@ -808,8 +840,9 @@ fn nonvisible_geometry_section_refuses_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let data = b"nonvisible";
-    let scanned = container::Section::scan("NovisGeom".to_string(), 0, data.len(), None, data)
-        .expect("section extent");
+    let scanned =
+        container::Section::scan_for_test("NovisGeom".to_string(), 0, data.len(), None, data)
+            .expect("section extent");
     let run = |limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -838,8 +871,9 @@ fn loop_array_section_sources_refuse_before_vec_growth() {
         ("NovisGeom", b"nonvisible".as_slice(), 1),
         ("Xsections", b"Sld_Xsections\0".as_slice(), 2),
     ] {
-        let scanned = container::Section::scan(name.to_string(), 0, data.len(), None, data)
-            .expect("section extent");
+        let scanned =
+            container::Section::scan_for_test(name.to_string(), 0, data.len(), None, data)
+                .expect("section extent");
         let run = |limit| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -854,8 +888,18 @@ fn loop_array_section_sources_refuse_before_vec_growth() {
             };
             super::super::loop_array_sections(&ctx, model, nonvisible, all)
         };
-        assert_eq!(run(1).expect("one loop section admitted").len(), 1);
-        let error = run(0).expect_err("one loop section requires an output Vec item");
+        let selected = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo loop array sections"],
+            run,
+        );
+        assert_eq!(selected.len(), 1);
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo loop array sections"),
+            run,
+        );
+        let error = run(limit).expect_err("one loop section requires an output Vec item");
         assert!(matches!(
             error,
             CodecError::ResourceLimit(limit)
@@ -887,14 +931,19 @@ fn loop_array_aggregate_fixture() -> Vec<u8> {
     payload
 }
 
-fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
+fn assert_loop_array_aggregate_refusal(operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     let payload = loop_array_aggregate_fixture();
-    let scanned =
-        container::Section::scan("VisibGeom".to_string(), 0, payload.len(), None, &payload)
-            .expect("loop array section extent");
+    let scanned = container::Section::scan_for_test(
+        "VisibGeom".to_string(),
+        0,
+        payload.len(),
+        None,
+        &payload,
+    )
+    .expect("loop array section extent");
     let run = |limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -910,6 +959,11 @@ fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
             .len(),
         1
     );
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some(operation),
+        run,
+    );
     let error = run(limit).expect_err("loop array aggregate exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -918,20 +972,21 @@ fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
 
 #[test]
 fn loop_array_aggregate_frame_refuses_before_growth() {
-    assert_loop_array_aggregate_refusal(3, "creo loop array aggregate frames");
+    assert_loop_array_aggregate_refusal("creo loop array aggregate frames");
 }
 
 #[test]
 fn loop_array_aggregate_record_refuses_before_growth() {
-    assert_loop_array_aggregate_refusal(4, "creo loop array aggregate records");
+    assert_loop_array_aggregate_refusal("creo loop array aggregate records");
 }
 
 #[test]
 fn a_section_contains_its_own_offset_and_every_byte_before_its_end() {
     let data = b"0123#Geomlists\n0123";
-    let section = container::Section::scan("Geomlists".to_string(), 4, data.len(), None, data)
-        .expect("section extent")
-        .section;
+    let section =
+        container::Section::scan_for_test("Geomlists".to_string(), 4, data.len(), None, data)
+            .expect("section extent")
+            .section;
 
     assert!(!section.contains(section.offset() - 1));
     assert!(section.contains(section.offset()));
@@ -1012,7 +1067,7 @@ fn legacy_framing_box_refuses_its_retained_slot() {
         persistence: crate::legacy::Persistence::default(),
     };
     assert!(
-        matches!(super::super::identify_layout(&ctx, &[], &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box")
+        matches!(super::super::identify_layout(&ctx, &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box")
     );
 }
 

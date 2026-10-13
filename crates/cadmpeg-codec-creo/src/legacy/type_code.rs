@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declaration codes for legacy ASCII persistence.
 
+use cadmpeg_core::decode::cost::DecodeCost;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 /// Stored attribute grammar selected by a declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LegacyTypeCode {
@@ -33,6 +37,41 @@ pub(crate) enum LegacyTypeCode {
 /// An unrecognized code; known codes can only select their named variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct UnknownTypeCode(u8);
+
+impl DecodeCost for UnknownTypeCode {
+    const FIXED_BYTES: Option<u64> = <u8 as DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
+
+impl DecodeCost for LegacyTypeCode {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Object => (0_u8,).decode_cost(ctx, operation),
+            Self::Integer => (1_u8,).decode_cost(ctx, operation),
+            Self::Real => (2_u8,).decode_cost(ctx, operation),
+            Self::NullableString => (3_u8,).decode_cost(ctx, operation),
+            Self::ByteString => (4_u8,).decode_cost(ctx, operation),
+            Self::Unsigned5 => (5_u8,).decode_cost(ctx, operation),
+            Self::Real6 => (6_u8,).decode_cost(ctx, operation),
+            Self::Unsigned7 => (7_u8,).decode_cost(ctx, operation),
+            Self::Unsigned9 => (8_u8,).decode_cost(ctx, operation),
+            Self::String => (9_u8,).decode_cost(ctx, operation),
+            Self::Unsigned11 => (10_u8,).decode_cost(ctx, operation),
+            Self::Other(code) => (11_u8, code).decode_cost(ctx, operation),
+        }
+    }
+}
 
 impl LegacyTypeCode {
     /// The identity token that names this grammar in a value record id.
