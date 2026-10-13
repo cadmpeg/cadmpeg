@@ -73,6 +73,19 @@ impl<T> BranchItems<T> {
     }
 }
 
+impl<T> AsRef<[T]> for BranchItems<T> {
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T> TryFrom<Vec<T>> for BranchItems<T> {
+    type Error = &'static str;
+    fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
+        Self::new(items)
+    }
+}
+
 impl<T> BranchItems<Option<T>> {
     #[cfg(test)]
     pub(crate) fn transpose(self) -> Option<BranchItems<T>> {

@@ -507,19 +507,17 @@ that current production limits admit those files. The 217 successful decodes
 emit no roll-forward groups; group census completeness remains unresolved for
 those products.
 
-### OM-11. `DELETE` nullable-reference roles
+### OM-11. `DELETE` construction-payload fields
 
-**Question.** What object family can each of the five leading nullable references in a `DELETE` payload address, and what is the role of each slot?
+**Question.** Which fields in the concatenated `DELETE` construction payload encode its operands and construction parameters?
 
-**Known.** `siemens_nx.md` §2 "`DELETE` is a body-deletion operation only when its bounded record contains the" and `siemens_nx.md` §2 "A `DELETE` payload begins with one nullable reference field" define the five-slot field, canonical reference encodings, resolution rule, logical payload, and body-target exclusion.
+**Known.** `siemens_nx.md` §2 "A `DELETE` payload begins with one nullable reference field" defines the counted nullable field, canonical reference encodings, column-fragment resolution, and concatenation in field order. The explicit fragment count is the count byte minus one; five- and six-fragment forms use `06` and `07`. No explicit fragment identifies the separate primary-body target.
 
-**Need.** We must know the slot roles to decode the delete construction independently of its primary-body target.
+**Need.** Identify complete inner payload frames, their field widths, and their operand relations before projecting delete-construction parameters.
 
-**Conflict.** Each slot carries only a nullable canonical object index. Unique
-offset-store resolution identifies a block, but the slot has no discriminator,
-schema tag, or independent relation that assigns an object family or semantic
-role. Slot order and five-block concatenation preserve construction order only;
-the separate primary-body field does not label any of these slots.
+**Conflict.** Physical column boundaries split inner frames. Consecutive block ordinals and physical adjacency do not establish field boundaries. A repeated inner header does not identify operands or delimit every following field.
+
+**Note.** The worked spur-gear-housing payload repeats `2d fb 7c df d9 d7 bd bb 00 00 00 50 28 00 00 2a` at payload-relative offsets `0`, `177`, and `354`. Its production decode remains a resource refusal. Directory-bounded offset-table candidates without the admitted product frame require a separate store-grammar proof; monotonic offsets alone do not establish an OM store.
 
 ### OM-12. Inactive-arrangement body state
 
