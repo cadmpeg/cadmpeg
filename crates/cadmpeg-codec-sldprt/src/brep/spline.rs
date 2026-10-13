@@ -893,7 +893,7 @@ fn scan_surface_descriptors(
 /// A valid multiplicity prefix. The physical tail is checked but not stored.
 struct SurfaceMultiplicities<'ctx> {
     values: Vec<u16>,
-    _storage: ScopedReservation<'ctx>,
+    storage: ScopedReservation<'ctx>,
 }
 
 fn read_surface_multiplicities<'ctx>(
@@ -926,7 +926,7 @@ fn read_surface_multiplicities<'ctx>(
         })?;
     Ok(values.map(|values| SurfaceMultiplicities {
         values,
-        _storage: storage,
+        storage,
     }))
 }
 
@@ -968,8 +968,8 @@ fn surface_knot_values<'ctx>(
         return Ok(None);
     }
     let mut cache_storage = ctx.reserve_scoped(0, "hold Parasolid knot multiplicity counts")?;
-    let mut multiplicities_by_count = BTreeMap::<usize, Option<SurfaceMultiplicities<'ctx>>>::new();
-    let mut resolved: Option<(ArrayCandidate<'_, 'ctx, f64>, usize)> = None;
+    let mut multiplicities_by_count = BTreeMap::<usize, bool>::new();
+    let mut resolved: Option<(ArrayCandidate<'_, 'ctx, f64>, SurfaceMultiplicities<'ctx>)> = None;
     let agreed = visit_array_headers(
         ctx,
         bytes,
@@ -979,133 +979,126 @@ fn surface_knot_values<'ctx>(
             if count < declared_count {
                 return Ok(true);
             }
-            let mut unique = None;
-            let read_knots = || {
-                if let Some((values, _storage)) = framed.and_then(|array| array.values.get()) {
-                    return Ok(Some(ArrayCandidate::Borrowed(
-                        values.as_slice().split_at(declared_count).0,
-                    )));
-                }
-                let operation =
-                    framed.map_or("decode Parasolid compact values", |array| array.operation);
-                let (values, storage) =
-                    ctx.with_scoped_storage("hold Parasolid surface knot prefix", || {
-                        read_array(ctx, declared_count, operation, |index| {
-                            View::f64_be_at(bytes, knot_span.start + index * 8)
-                        })
-                    })?;
-                Ok::<_, cadmpeg_core::CodecError>(values.map(|values| ArrayCandidate::Owned {
-                    values,
-                    _storage: storage,
-                }))
-            };
-            if let Some(cached) = ctx.get_btree_map(&multiplicities_by_count, &count, OPERATION)? {
-                if cached.is_none() {
-                    return Ok(true);
-                }
-            } else {
-                let mut selected: Option<SurfaceMultiplicities<'ctx>> = None;
-                let agreed = visit_array_headers(
-                    ctx,
-                    bytes,
-                    (&arrays.u16s, &arrays.compact, multiplicity_attr),
-                    |span, framed| {
-                        if span.count != count {
-                            return Ok(true);
-                        }
-                        let operation = framed
-                            .map_or("decode Parasolid compact values", |array| array.operation);
-                        let Some(multiplicities) = read_surface_multiplicities(
-                            ctx,
-                            bytes,
-                            span,
-                            declared_count,
-                            operation,
-                        )?
-                        else {
-                            return Ok(true);
+            let operation =
+                framed.map_or("decode Parasolid compact values", |array| array.operation);
+            let cached_knots = framed.and_then(|array| array.values.get());
+            let compare_knots = |first: &[f64]| {
+                ctx.all_by(
+                    0..declared_count,
+                    |index| {
+                        let incoming = match cached_knots {
+                            Some((values, _)) => values.get(index).copied(),
+                            None => View::f64_be_at(bytes, knot_span.start + index * 8),
                         };
-                        if let Some(first) = selected.as_ref() {
-                            return ctx.equal(&first.values, &multiplicities.values, OPERATION);
+                        Ok(incoming == Some(first[index]))
+                    },
+                    operation,
+                )
+            };
+            if let Some(&present) = ctx.get_btree_map(&multiplicities_by_count, &count, OPERATION)? {
+                return match (&resolved, present) {
+                    (Some((first, _)), true) => compare_knots(first.as_slice()),
+                    _ => Ok(true),
+                };
+            }
+            let mut selected = None;
+            let mut present = false;
+            let agreed = visit_array_headers(
+                ctx,
+                bytes,
+                (&arrays.u16s, &arrays.compact, multiplicity_attr),
+                |span, framed| {
+                    if span.count != count {
+                        return Ok(true);
+                    }
+                    let multiplicity_operation = framed
+                        .map_or("decode Parasolid compact values", |array| array.operation);
+                    let Some(multiplicities) = read_surface_multiplicities(
+                        ctx,
+                        bytes,
+                        span,
+                        declared_count,
+                        multiplicity_operation,
+                    )?
+                    else {
+                        return Ok(true);
+                    };
+                    let baseline = resolved.as_ref().or(selected.as_ref());
+                    if let Some((_, first)) = baseline {
+                        if !ctx.all_by(
+                            0..declared_count,
+                            |index| Ok(first.values[index] == multiplicities.values[index]),
+                            OPERATION,
+                        )? {
+                            return Ok(false);
                         }
-                        if let Some((_, first_count)) = &resolved {
-                            let Some(Some(first)) = ctx.get_btree_map(
-                                &multiplicities_by_count,
-                                first_count,
-                                OPERATION,
-                            )?
-                            else {
+                    }
+                    if present {
+                        return Ok(true);
+                    }
+                    if let Some((first, _)) = &resolved {
+                        if !compare_knots(first.as_slice())? {
+                            return Ok(false);
+                        }
+                    } else {
+                        let values = if let Some((values, _)) = cached_knots {
+                            ArrayCandidate::Borrowed(values.as_slice().split_at(declared_count).0)
+                        } else {
+                            let (values, storage) = ctx.with_scoped_storage(
+                                "hold Parasolid surface knot prefix",
+                                || {
+                                    read_array(ctx, declared_count, operation, |index| {
+                                        View::f64_be_at(bytes, knot_span.start + index * 8)
+                                    })
+                                },
+                            )?;
+                            let Some(values) = values else {
                                 return Ok(false);
                             };
-                            if !ctx.equal(&first.values, &multiplicities.values, OPERATION)? {
-                                return Ok(false);
-                            }
-                        }
-                        let Some(values) = read_knots()? else {
-                            return Ok(false);
+                            ArrayCandidate::Owned { values, _storage: storage }
                         };
-                        if let Some((first, _)) = &resolved {
-                            if !ctx.equal(first.as_slice(), values.as_slice(), OPERATION)? {
-                                return Ok(false);
-                            }
-                        }
-                        unique = Some(values);
-                        selected = Some(multiplicities);
-                        Ok(true)
-                    },
-                )?;
-                if !agreed {
-                    return Ok(false);
-                }
-                let present = selected.is_some();
-                cache_storage.with_storage(|| {
-                    ctx.insert_btree_map(
-                        &mut multiplicities_by_count,
-                        count,
-                        selected,
-                        "index Parasolid knot multiplicity counts",
-                    )
-                })?;
-                if !present {
-                    return Ok(true);
-                }
-            }
-            // Cached physical counts already have a valid multiplicity lane.
-            let compared = unique.is_some();
-            let Some(values) = (match unique {
-                Some(unique) => Some(unique),
-                None => read_knots()?,
-            }) else {
-                return Ok(false);
-            };
-            if let Some((first, _)) = &resolved {
-                // A new count compared its prefix at the first valid pair.
-                if compared || ctx.equal(first.as_slice(), values.as_slice(), OPERATION)? {
-                    return Ok(true);
-                }
+                        selected = Some((values, multiplicities));
+                    }
+                    present = true;
+                    Ok(true)
+                },
+            )?;
+            if !agreed {
                 return Ok(false);
             }
-            resolved = Some((values, count));
+            cache_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut multiplicities_by_count,
+                    count,
+                    present,
+                    "index Parasolid knot multiplicity counts",
+                )
+            })?;
+            if let Some(pair) = selected {
+                resolved = Some(pair);
+            }
             Ok(true)
         },
     )?;
+    drop((multiplicities_by_count, cache_storage));
     if !agreed {
         return Ok(None);
     }
-    let Some((unique, count)) = resolved else {
+    let Some((unique, mut multiplicities)) = resolved else {
         return Ok(None);
     };
-    let Some(Some(multiplicities)) =
-        ctx.get_btree_map(&multiplicities_by_count, &count, OPERATION)?
-    else {
-        return Ok(None);
+    let unique = match unique {
+        ArrayCandidate::Borrowed(values) => output
+            .with_storage(|| ctx.copy_slice(values, "copy Parasolid distinct knots"))?,
+        ArrayCandidate::Owned { values, _storage: mut storage } => {
+            output.absorb(&mut storage)?;
+            values
+        }
     };
+    output.absorb(&mut multiplicities.storage)?;
     Ok(Some(SurfaceKnotValues {
-        unique: output
-            .with_storage(|| ctx.copy_slice(unique.as_slice(), "copy Parasolid distinct knots"))?,
-        multiplicities: output.with_storage(|| {
-            ctx.copy_slice(&multiplicities.values, "copy Parasolid knot multiplicities")
-        })?,
+        unique,
+        multiplicities: multiplicities.values,
     }))
 }
 
