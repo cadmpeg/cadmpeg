@@ -114,9 +114,19 @@ impl<'a, 'ctx> MetadataIndex<'a, 'ctx> {
                     )?;
                 }
             }
-            ctx.sort_unstable_by(&mut attribute_names, |name| *name, Ord::cmp, OPERATION)?;
+            if attribute_names.len() > 1 {
+                ctx.sort_unstable_by(
+                    &mut attribute_names,
+                    |name| *name,
+                    Ord::cmp,
+                    "sort SLDPRT history metadata",
+                )?;
+            }
         }
-        Ok(Self { attribute_names, _storage: storage })
+        Ok(Self {
+            attribute_names,
+            _storage: storage,
+        })
     }
 
     pub(crate) fn is_metadata(
@@ -252,9 +262,19 @@ impl<'a, 'ctx> HistoryIndex<'a, 'ctx> {
                 slot.classless.add(feature);
             }
         }
-        ctx.sort_unstable_by(&mut attribute_names, |name| *name, Ord::cmp, OPERATION)?;
+        if attribute_names.len() > 1 {
+            ctx.sort_unstable_by(
+                &mut attribute_names,
+                |name| *name,
+                Ord::cmp,
+                "sort SLDPRT history metadata",
+            )?;
+        }
         let mut index = Self {
-            metadata: MetadataIndex { attribute_names, _storage: attribute_storage },
+            metadata: MetadataIndex {
+                attribute_names,
+                _storage: attribute_storage,
+            },
             builtins,
             layout: None,
             principal_layout: principal_plane_layout(ctx, features)?,
@@ -918,9 +938,12 @@ mod tests {
         attribute.name = "Reserved7.Attribute".into();
         features.push(attribute);
         let expected = cadmpeg_test_support::service_decode_context();
-        let expected = features.iter().map(|feature|
-            super::is_history_metadata_record(&expected, feature, &features).unwrap()
-        ).collect::<Vec<_>>();
+        let expected = features
+            .iter()
+            .map(|feature| {
+                super::is_history_metadata_record(&expected, feature, &features).unwrap()
+            })
+            .collect::<Vec<_>>();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 128 * 1024;
@@ -933,7 +956,9 @@ mod tests {
             None,
         );
         let index = super::MetadataIndex::new(&ctx, &features).unwrap();
-        let actual = features.iter().map(|feature| index.is_metadata(&ctx, feature).unwrap())
+        let actual = features
+            .iter()
+            .map(|feature| index.is_metadata(&ctx, feature).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
         assert!(actual[7]);
@@ -942,4 +967,32 @@ mod tests {
         ctx.finish_session().unwrap();
     }
 
+    #[test]
+    fn metadata_single_attribute_does_not_admit_unused_sort_work() {
+        let mut reserved = crate::history::tests::feature("reserved", Some("-1"), 0);
+        reserved.name = "Reserved".into();
+        let mut attribute = crate::history::tests::feature("attribute", None, 1);
+        attribute.input_class = Some("moAttribute_c".into());
+        attribute.name = "A".repeat(17 * 1024 * 1024);
+        let features = [reserved, attribute];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "sort SLDPRT history metadata",
+            None,
+        );
+        let index = super::MetadataIndex::new(&ctx, &features).unwrap();
+        assert!(!index.is_metadata(&ctx, &features[0]).unwrap());
+        assert!(index.is_metadata(&ctx, &features[1]).unwrap());
+        drop(index);
+        let index = super::HistoryIndex::new(&ctx, &features).unwrap();
+        assert!(!index.is_metadata(&ctx, &features[0]).unwrap());
+        assert!(index.is_metadata(&ctx, &features[1]).unwrap());
+        drop(index);
+        ctx.finish_session().unwrap();
+    }
 }
