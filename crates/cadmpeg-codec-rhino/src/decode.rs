@@ -471,6 +471,7 @@ pub(crate) struct DecodeContext<'a> {
     session: cadmpeg_ir::draft::CommitSession<'a, CadIr>,
     annotations: cadmpeg_ir::Annotations,
     opaque_records: Vec<UnknownRecord>,
+    opaque_record_storage: cadmpeg_core::decode::ScopedReservation<'a>,
     unknown_record_storage: Option<cadmpeg_core::decode::ScopedReservation<'a>>,
     statuses: Vec<Option<GeometryOutcome>>,
     status_storage: Option<cadmpeg_core::decode::ScopedReservation<'a>>,
@@ -552,6 +553,7 @@ impl<'a> DecodeContext<'a> {
             session: cadmpeg_ir::draft::CommitSession::new(ir, session, Some("rhino"))?,
             annotations: cadmpeg_ir::Annotations::default(),
             opaque_records: Vec::new(),
+            opaque_record_storage: session.reserve_scoped(0, "Rhino opaque source backing")?,
             unknown_record_storage: None,
             statuses: Vec::new(),
             status_storage: None,
@@ -4520,6 +4522,7 @@ impl<'a> DecodeContext<'a> {
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         source_fidelity.retain_unknown_records_for_decode(ctx, "rhino", self.opaque_records)?;
+        drop(self.opaque_record_storage);
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
@@ -4629,7 +4632,12 @@ impl<'a> DecodeContext<'a> {
                 &cadmpeg_ir::identity_namespace!("rhino", "history", "source"),
                 IdentityKey::zero_padded(cadmpeg_core::decode::u64_from_index(range.start), 12),
             );
-            ctx.reserve_vec(&mut self.opaque_records, 1, "Rhino history source records")?;
+            ctx.reserve_scoped_vec(
+                &mut self.opaque_record_storage,
+                &mut self.opaque_records,
+                1,
+                "Rhino history source records",
+            )?;
             let retained = self.source_record(id, range.clone())?;
             self.opaque_records.push(retained);
             self.report.phase_warnings.push_coded_admitted(
@@ -4662,7 +4670,8 @@ impl<'a> DecodeContext<'a> {
             &cadmpeg_ir::identity_namespace!("rhino", "opaque", "record"),
             key,
         );
-        self.expand.ctx().reserve_vec(
+        self.expand.ctx().reserve_scoped_vec(
+            &mut self.opaque_record_storage,
             &mut self.opaque_records,
             1,
             "Rhino opaque source records",
