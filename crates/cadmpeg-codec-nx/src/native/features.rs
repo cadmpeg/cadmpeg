@@ -2218,7 +2218,7 @@ pub(super) struct FeatureSketchPayloadNamedRecord {
     payload_end_offset: u64,
 }
 
-/// Complete named two-dimensional point in a reconstructed sketch payload.
+/// Complete named two-scalar record in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct FeatureSketchPoint {
     /// Globally unique point identity.
@@ -2229,9 +2229,9 @@ pub(super) struct FeatureSketchPoint {
     pub(super) named_record: String,
     /// Exact `Point<decimal>` source name.
     pub(super) name: String,
-    /// Ordered scalar fields carrying the two coordinates.
+    /// Ordered scalar fields carrying the two native values.
     pub(super) scalar_fields: [String; 2],
-    /// Ordered native coordinate values.
+    /// Ordered native scalar values; no solved axes or unit are assigned.
     pub(super) coordinates: cadmpeg_ir::units::FiniteVector<2>,
 }
 
@@ -2380,7 +2380,7 @@ pub(super) struct FeatureSketchPrecedingNamedPointUse {
     pub(super) source_offset: u64,
 }
 
-/// Exact identity of one solved sketch point across its payload and reference lanes.
+/// Exact native binding of a named scalar group to its reference lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "FeatureSketchPointUseWire")]
 pub(super) struct FeatureSketchPointUse {
@@ -8255,7 +8255,7 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
     Ok(uses)
 }
 
-/// Join the two exact encodings of a solved sketch point.
+/// Join named scalar groups and referenced objects by their exact native fields.
 pub(super) fn feature_sketch_point_uses(
     ctx: &DecodeContext<'_>,
     point_groups: &[FeatureSketchPointGroup],

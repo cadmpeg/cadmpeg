@@ -39,8 +39,6 @@ use crate::native::history::BodyWriterHistory;
 use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::math::Point2;
-
 use crate::native::om::display_color::{
     DisplayColorFrame, RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
 };
@@ -1177,7 +1175,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
 }
 
 #[test]
-fn solved_sketch_points_require_unique_exact_ownership_atomically() {
+fn native_sketch_groups_require_unique_exact_ownership_atomically() {
     let label = crate::native::features::FeatureOperationLabel {
         id: "nx:feature-history:operation-label#section-7".to_string(),
         section_link: "section".to_string(),
@@ -1235,9 +1233,9 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         .expect("one exact point use projects a sketch");
         assert_eq!(ir.model.sketches[0].id, sketch);
         assert!(matches!(
-            *ir.model.sketch_entities[0].geometry.definition(),
-            SketchGeometryDefinition::Point { position }
-                if position == Point2 { u: 12.5, v: -3.0 }
+            ir.model.sketch_entities[0].geometry.definition(),
+            SketchGeometryDefinition::Native { native_kind }
+                if native_kind == "nx-point-group"
         ));
 
         let mut rejected_ir = CadIr::empty();
@@ -1271,7 +1269,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
 }
 
 #[test]
-fn named_sketch_points_project_without_an_external_named_point() {
+fn named_sketch_groups_retain_native_geometry_without_solved_axes() {
     let label = crate::native::features::FeatureOperationLabel {
         id: "nx:feature-history:operation-label#section-8".to_string(),
         section_link: "section".to_string(),
@@ -1353,9 +1351,9 @@ fn named_sketch_points_project_without_an_external_named_point() {
             Some("point-group")
         );
         assert!(matches!(
-            *ir.model.sketch_entities[0].geometry.definition(),
-            SketchGeometryDefinition::Point { position }
-                if position == Point2 { u: 12.5, v: -3.0 }
+            ir.model.sketch_entities[0].geometry.definition(),
+            SketchGeometryDefinition::Native { native_kind }
+                if native_kind == "nx-point-group"
         ));
     });
 }

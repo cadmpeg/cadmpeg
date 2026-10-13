@@ -16,7 +16,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, UnknownId,
 };
-use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -6307,7 +6306,7 @@ fn attach_sketch_graph(
                 {
                     "SKETCH_NATIVE_FIXED_POINT"
                 }
-                _ => "SKETCH_NATIVE",
+                _ => return Ok(None),
             };
             annotations.note(ctx, entity.id().as_str(), stream, *source_offset, Some(tag))?;
             annotations.exactness(ctx, entity.id().as_str(), Exactness::ByteExact)?;
@@ -6429,9 +6428,8 @@ fn attach_sketch_graph(
             return Ok(None);
         };
         let native_ref = ctx.copy_retained_text(native_ref_source, "allocate NX sketch text")?;
-        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
-            position: Point2::new(group.coordinates[0], group.coordinates[1]),
-        }) else {
+        let kind = ctx.copy_retained_text("nx-point-group", "NX named scalar group kind")?;
+        let Some(kind) = cadmpeg_core::text::NonBlankString::new(kind) else {
             return Ok(None);
         };
         push_sketch_entity(
@@ -6442,7 +6440,7 @@ fn attach_sketch_graph(
             SketchEntity::new(
                 entity_id,
                 sketch_id.try_clone_for_decode(ctx, "NX decoded IR value copy")?,
-                geometry,
+                SketchGeometry::native(kind),
             )
             .with_native_ref(Some(native_ref)),
         )?;
@@ -6472,23 +6470,24 @@ fn attach_sketch_graph(
     }
     for (source_offset, entity) in &entities {
         match entity.geometry.definition() {
-            SketchGeometryDefinition::Point { .. } => {
+            SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-point-group" => {
                 annotations.note(
                     ctx,
                     entity.id().as_str(),
                     stream,
                     *source_offset,
-                    Some("SKETCH_POINT"),
+                    Some("SKETCH_NATIVE_POINT_GROUP"),
                 )?;
                 annotations.exactness(ctx, entity.id().as_str(), Exactness::Derived)?;
             }
-            SketchGeometryDefinition::Native { native_kind } => {
-                let tag = if native_kind == "nx-fixed-point" {
-                    "SKETCH_NATIVE_FIXED_POINT"
-                } else {
-                    "SKETCH_NATIVE"
-                };
-                annotations.note(ctx, entity.id().as_str(), stream, *source_offset, Some(tag))?;
+            SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point" => {
+                annotations.note(
+                    ctx,
+                    entity.id().as_str(),
+                    stream,
+                    *source_offset,
+                    Some("SKETCH_NATIVE_FIXED_POINT"),
+                )?;
                 annotations.exactness(ctx, entity.id().as_str(), Exactness::ByteExact)?;
             }
             _ => return Ok(None),
