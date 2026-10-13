@@ -1564,17 +1564,26 @@ mod tests {
         assert!(!facts.shells.is_empty());
         assert!(!facts.regions.is_empty());
         assert!(!facts.faces.is_empty());
-        let error = crate::test_support::work_refusal_at("test completed empty BODY face selector", |ctx| {
-            assert!(facts.valid_ownership_face_attrs(ctx)?.is_none());
-            ctx.charge_work(1, "test completed empty BODY face selector")
-        });
-        let CodecError::ResourceLimit(limit) = error else { panic!("empty BODY selector work") };
+        let error = crate::test_support::work_refusal_at(
+            "test completed empty BODY face selector",
+            |ctx| {
+                assert!(facts.valid_ownership_face_attrs(ctx)?.is_none());
+                ctx.charge_work(1, "test completed empty BODY face selector")
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("empty BODY selector work")
+        };
         assert_eq!(limit.used, 0);
     }
 
     fn test_hierarchies(facts: &Facts, attrs: &BTreeSet<u16>) -> Option<Vec<super::Hierarchy>> {
-        let bridges: BTreeMap<_, _> = attrs.iter().map(|&attr| (attr, ())).collect();
-        with_test_context(|ctx| facts.hierarchies(ctx, &bridges).expect("hierarchy allocation"))
+        let bridges: BTreeMap<_, _> = attrs.iter().map(|&attr| (attr, true)).collect();
+        with_test_context(|ctx| {
+            facts
+                .hierarchies(ctx, &bridges)
+                .expect("hierarchy allocation")
+        })
     }
 
     fn test_has_valid_ownership(facts: &Facts) -> bool {

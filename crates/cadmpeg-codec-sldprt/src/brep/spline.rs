@@ -434,13 +434,20 @@ where
             let mut candidate_storage =
                 ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
             let Some(values) = candidate_storage.with_storage(|| {
-                read_array(ctx, span.count, "decode Parasolid compact values", |index| {
-                    read(span.start + index * std::mem::size_of::<T>())
-                })
-            })? else {
+                read_array(
+                    ctx,
+                    span.count,
+                    "decode Parasolid compact values",
+                    |index| read(span.start + index * std::mem::size_of::<T>()),
+                )
+            })?
+            else {
                 return Ok(true);
             };
-            ArrayCandidate::Owned { values, _storage: candidate_storage }
+            ArrayCandidate::Owned {
+                values,
+                _storage: candidate_storage,
+            }
         };
         if !ctx.any_by(
             candidates.iter(),
@@ -468,30 +475,40 @@ fn exact_f64_array<'a, 'ctx>(
 ) -> Result<Option<ArrayCandidate<'a, 'ctx, f64>>, cadmpeg_core::CodecError> {
     let mut selected: Option<ArrayCandidate<'a, 'ctx, f64>> = None;
     let agreed = visit_array_headers(
-        ctx, bytes, (&arrays.f64s, &arrays.compact, attr), |span, framed| {
+        ctx,
+        bytes,
+        (&arrays.f64s, &arrays.compact, attr),
+        |span, framed| {
             if span.count != count {
                 return Ok(true);
             }
             if let Some(first) = &selected {
                 return ctx.all_by(
                     0..count,
-                    |index| Ok(View::f64_be_at(bytes, span.start + index * 8)
-                        == Some(first.as_slice()[index])),
+                    |index| {
+                        Ok(View::f64_be_at(bytes, span.start + index * 8)
+                            == Some(first.as_slice()[index]))
+                    },
                     "compare Parasolid exact scalar array candidates",
                 );
             }
             let candidate = if let Some(array) = framed {
                 ArrayCandidate::Borrowed(array.read(ctx, |at| View::f64_be_at(bytes, at))?)
             } else {
-                let mut storage = ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
+                let mut storage =
+                    ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
                 let Some(values) = storage.with_storage(|| {
                     read_array(ctx, count, "decode Parasolid compact values", |index| {
                         View::f64_be_at(bytes, span.start + index * 8)
                     })
-                })? else {
+                })?
+                else {
                     return Ok(true);
                 };
-                ArrayCandidate::Owned { values, _storage: storage }
+                ArrayCandidate::Owned {
+                    values,
+                    _storage: storage,
+                }
             };
             selected = Some(candidate);
             Ok(true)

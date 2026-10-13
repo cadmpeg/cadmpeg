@@ -1041,12 +1041,17 @@ fn matching_physical_knot_counts_reuse_multiplicity_validation() {
 fn control_scalar_conflict(ctx: &DecodeContext<'_>, mismatch: usize) -> Result<(), CodecError> {
     let mut bytes = f64_array(0x2d, 40, &[0.0; 200]);
     let mut arrays = Arrays::default();
-    arrays.f64s.insert(40, framed(&bytes, 0, "decode Parasolid scalar array values"));
+    arrays.f64s.insert(
+        40,
+        framed(&bytes, 0, "decode Parasolid scalar array values"),
+    );
     let mut incoming = [0.0; 200];
     incoming[mismatch] = 1.0;
     let offset = bytes.len();
     bytes.extend(compact_f64_array(40, &incoming));
-    arrays.compact.insert(40, vec![CompactArray { offset, count: 200 }]);
+    arrays
+        .compact
+        .insert(40, vec![CompactArray { offset, count: 200 }]);
     assert!(super::exact_f64_array(ctx, &bytes, &arrays, 40, 200)?.is_none());
     Ok(())
 }
@@ -1057,7 +1062,9 @@ fn control_array_conflicts_stop_at_the_first_scalar_cell() {
     const COMPARE: &str = "compare Parasolid exact scalar array candidates";
     let boundary = |mismatch| {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, PROBE, |cap| {
+            ResourceDimension::WorkUnits,
+            PROBE,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = policy();
                 policy.limits.max_work_units = cap;
@@ -1066,11 +1073,16 @@ fn control_array_conflicts_stop_at_the_first_scalar_cell() {
                 ctx.charge_work(1, PROBE)
             },
         );
-        let CodecError::ResourceLimit(limit) = error else { panic!("control conflict completion") };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("control conflict completion")
+        };
         limit.used
     };
     let first = boundary(0);
-    assert!(first < boundary(199), "control comparisons must not prepay the unread scalar suffix");
+    assert!(
+        first < boundary(199),
+        "control comparisons must not prepay the unread scalar suffix"
+    );
     let arena = DecodeArena::new();
     let mut policy = policy();
     policy.limits.max_work_units = first;
@@ -1079,6 +1091,8 @@ fn control_array_conflicts_stop_at_the_first_scalar_cell() {
     ctx.finish_session().unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(control_scalar_conflict(&ctx, 199), Err(CodecError::ResourceLimit(limit)) if limit.operation == COMPARE));
+    assert!(
+        matches!(control_scalar_conflict(&ctx, 199), Err(CodecError::ResourceLimit(limit)) if limit.operation == COMPARE)
+    );
     crate::test_support::work_refusal_at(COMPARE, |ctx| control_scalar_conflict(ctx, 0));
 }
