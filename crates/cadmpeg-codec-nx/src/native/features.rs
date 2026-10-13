@@ -4833,7 +4833,9 @@ pub(super) fn feature_operation_common_frames(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let decoded = crate::om::operation_common_frames(ctx, record.payload_view())?;
+            let mut decoded_storage = ctx.reserve_scoped(0, "NX operation common frame parser")?;
+            let decoded = decoded_storage
+                .with_storage(|| crate::om::operation_common_frames(ctx, record.payload_view()))?;
             for (ordinal, frame) in ctx
                 .admit_iter(decoded, "visit NX operation common frames")?
                 .enumerate()
@@ -4880,6 +4882,7 @@ pub(super) fn feature_operation_common_frames(
                     frame,
                 });
             }
+            drop(decoded_storage);
         }
     }
     Ok(frames)
