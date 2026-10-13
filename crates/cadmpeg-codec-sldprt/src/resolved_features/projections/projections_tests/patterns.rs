@@ -149,7 +149,10 @@ fn pattern_surface_seed_refuses_collection_limit() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             project_compact_surface_selections(
-                &ctx, &mut features.clone(), &[], std::slice::from_ref(&lane),
+                &ctx,
+                &mut features.clone(),
+                &[],
+                std::slice::from_ref(&lane),
             )
         },
     );

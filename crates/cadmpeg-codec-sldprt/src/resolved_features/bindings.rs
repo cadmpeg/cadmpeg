@@ -248,10 +248,9 @@ pub(crate) fn bind_pattern_inputs(
                     "scan SLDPRT pattern input candidates",
                 )
             })?;
-            for (offset, feature) in ctx.admit_iter(
-                objects,
-                "collect SLDPRT pattern input candidates",
-            )? {
+            for (offset, feature) in
+                ctx.admit_iter(objects, "collect SLDPRT pattern input candidates")?
+            {
                 if let Ok(offset) = usize::try_from(offset) {
                     lane_storage.with_storage(|| {
                         ctx.push_vec(
@@ -460,9 +459,10 @@ pub(crate) fn bind_pattern_inputs(
                         let generated_identities = if lane.generated_surface_identities.is_empty() {
                             match &mut discovered_identities {
                                 Some(identities) => identities,
-                                slot @ None => slot.insert(lane_storage.with_storage(|| {
-                                    generated_surface_identities(ctx, lane)
-                                })?),
+                                slot @ None => slot
+                                    .insert(lane_storage.with_storage(|| {
+                                        generated_surface_identities(ctx, lane)
+                                    })?),
                             }
                         } else {
                             &lane.generated_surface_identities

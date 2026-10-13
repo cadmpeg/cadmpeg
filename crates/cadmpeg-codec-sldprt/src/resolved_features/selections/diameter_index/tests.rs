@@ -175,9 +175,15 @@ fn variable_fillet_literal_kind_requires_no_work_allowance() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(super::super::variable_fillet_control_references(&ctx, &feature, &lane, 0, 0)
-        .unwrap().is_none());
-    assert!(super::super::compact_edge_reference_list_for_feature(&ctx, &[], 0, &feature.kind)
-        .unwrap().is_none());
+    assert!(
+        super::super::variable_fillet_control_references(&ctx, &feature, &lane, 0, 0)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        super::super::compact_edge_reference_list_for_feature(&ctx, &[], 0, &feature.kind)
+            .unwrap()
+            .is_none()
+    );
     ctx.finish_session().unwrap();
 }

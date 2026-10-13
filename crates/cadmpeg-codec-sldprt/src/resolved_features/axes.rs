@@ -2293,7 +2293,10 @@ impl<'ctx> ProfileAxisPoints<'ctx> {
         match &mut self.endpoints {
             Some(endpoints) => Ok(endpoints),
             slot @ None => Ok(slot.insert(curve_endpoint_points(
-                ctx, &mut self.storage, roster, curve_endpoints,
+                ctx,
+                &mut self.storage,
+                roster,
+                curve_endpoints,
             )?)),
         }
     }
@@ -2340,7 +2343,8 @@ fn profile_roster_origin_axis_endpoints<'ctx>(
     for &(end, indexed) in ctx.admit_iter(endpoint_points, OPERATION)? {
         let endpoints = [[origin_u, origin_v], end];
         if indexed && bounded_profile_axis_coordinates(ctx, bounding, endpoints)? {
-            candidate_storage.with_storage(|| ctx.push_vec(&mut candidates, endpoints, OPERATION))?;
+            candidate_storage
+                .with_storage(|| ctx.push_vec(&mut candidates, endpoints, OPERATION))?;
         }
     }
     ctx.stable_sort_by_key(

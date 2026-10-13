@@ -439,7 +439,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 continue;
             };
             let vote = consensus.vote;
-            drop(ctx.insert_btree_map(&mut feature.properties,
+            drop(ctx.insert_btree_map(
+                &mut feature.properties,
                 cadmpeg_core::nonblank_literal!("EndCondition"),
                 vote.condition().into(),
                 OPERATION,
@@ -449,7 +450,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     if !ctx.contains_key_btree_map(&feature.properties, "Vertex", OPERATION)? {
                         let reference = ctx
                             .copy_retained_text(reference, "agree SLDPRT extrusion terminations")?;
-                        drop(ctx.insert_btree_map(&mut feature.properties,
+                        drop(ctx.insert_btree_map(
+                            &mut feature.properties,
                             cadmpeg_core::nonblank_literal!("Vertex"),
                             reference,
                             OPERATION,
@@ -463,7 +465,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
                         let reference = ctx
                             .copy_retained_text(reference, "agree SLDPRT extrusion terminations")?;
-                        drop(ctx.insert_btree_map(&mut feature.properties,
+                        drop(ctx.insert_btree_map(
+                            &mut feature.properties,
                             cadmpeg_core::nonblank_literal!("Face"),
                             reference,
                             OPERATION,
@@ -471,7 +474,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     }
                 }
                 TerminationVote::BlindSecondThroughAll => {
-                    drop(ctx.insert_btree_map(&mut feature.properties,
+                    drop(ctx.insert_btree_map(
+                        &mut feature.properties,
                         cadmpeg_core::nonblank_literal!("EndCondition2"),
                         "ThroughAll".into(),
                         OPERATION,
@@ -487,7 +491,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             format_args!("{}", crate::history::literals::LengthLiteral(depth)),
                             OPERATION,
                         )?;
-                        drop(ctx.insert_btree_map(&mut feature.parameters,
+                        drop(ctx.insert_btree_map(
+                            &mut feature.parameters,
                             cadmpeg_core::nonblank_literal!("D1"),
                             value,
                             OPERATION,

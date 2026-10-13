@@ -23,8 +23,8 @@ use cadmpeg_ir::{
 use std::collections::BTreeMap;
 
 mod character_growth;
-mod identity_lookups;
 mod edge_identity_readers;
+mod identity_lookups;
 mod limits;
 mod patterns;
 mod variable_fillets;
