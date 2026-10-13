@@ -274,21 +274,26 @@ Spec §6.6 · layout: byte offsets · size: 11 B
 
 ## `surface_of_revolution_b2_03_2d`
 
-Spec §5.15 · layout: byte offsets · size: 174 B
+Spec §5.15 · layout: byte offsets · size: 179 B
 
 Three normalized relations hold to f64 bit-equality: `angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, and `mean/scale==π+0.5`.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 5 | 1 | `reference_token` | `u8` | little | spec | `+5` reference token (`08` or `0a`) |
-| 6 | 2 | `profile_allocation_identity` | `u16` | little | spec | `+6` profile allocation identity (u16le) |
+| 5 | 1 | `reference_token` | `u8` | little | spec | `+5` reference lead (`08` or `0a`) |
+| 6 | 2 | `profile_reference` | `u16` | little | spec | `+6` nonzero profile reference (u16le) |
 | 8 | 96 | `frame` | `f64[12]` | little | spec | `+8` 12×f64le (axis origin XYZ + three basis vectors) |
-| 104 | 32 | `bounds` | `f64[4]` | little | spec | `+104` 4×f64le angular/profile bounds, then scale/flag tail |
+| 104 | 32 | `bounds` | `f64[4]` | little | spec | `+104` 4×f64le angular/profile bounds |
+| 136 | 2 | `controls` | `u8[2]` | little | spec | `+136` controls `05 05` |
+| 138 | 8 | `angular_scale` | `f64` | little | spec | `+138` positive angular scale (f64le) |
+| 146 | 16 | `unit_scalars` | `f64[2]` | little | spec | `+146` fixed unit scalars `1,1` (2×f64le) |
+| 162 | 8 | `zero` | `f64` | little | spec | `+162` fixed zero (f64le) |
+| 170 | 1 | `terminal` | `u8` | little | spec | `+170` terminal `01` |
+| 171 | 8 | `mean` | `f64` | little | spec | `+171` mean angular parameter (f64le) |
 
 Unstated regions:
 
-- `0..5` (5 B): `b2 03 2d` family, class, and length bytes; the spec's offsets are stated from the record start.
-- `136..174` (38 B): Scale and flag tail. The spec names it but states no field offsets; the parser asserts constants inside it at payload-relative +131..133, +141, +149, +157, +165, and +166.
+- `0..5` (5 B): Four-byte B-family prefix and one-byte header token; offsets are stated from the record start.
 
 ## `a9_03_frame`
 
@@ -1029,6 +1034,47 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `reference_count_prefix` | `u8` | little | spec | \| `+0` \| `u8` \| nonzero reference count prefix `80+n` \| |
+
+## `consolidated_plane_implicit_axis_payload`
+
+Spec §6.3 · layout: byte offsets · size: 50 B
+
+Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
+| 18 | 32 | `bounds` | `f64[4]` | little | spec | The 50-byte implicit-axis payload has bounds at `+18` |
+
+## `consolidated_plane_one_component_payload`
+
+Spec §6.3 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
+| 18 | 8 | `direction_component` | `f64` | little | spec | `+18` direction component (`f64le`) |
+| 26 | 32 | `bounds` | `f64[4]` | little | spec | the 58-byte one-component direction payload has bounds at `+26` |
+
+## `consolidated_plane_two_component_payload`
+
+Spec §6.3 · layout: byte offsets · size: 66 B
+
+Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
+| 18 | 16 | `direction_xy` | `f64[2]` | little | spec | `+18` direction XY (`2×f64le`) |
+| 34 | 32 | `bounds` | `f64[4]` | little | spec | the 66-byte two-component direction payload has bounds at `+34` |
 
 ## Not tabulated
 

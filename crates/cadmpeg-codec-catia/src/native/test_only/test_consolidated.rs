@@ -1,11 +1,12 @@
+use crate::families::b2::records::{B2PlaneCarrierLayout, B2PlaneCarrierPayload};
 use crate::native::chamfer::{CatiaConsolidatedChamfer, CatiaObjectChamfer};
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::{
     CatiaConsolidatedCircle, CatiaConsolidatedCone, CatiaConsolidatedCylinder,
     CatiaConsolidatedCylinderPayload, CatiaConsolidatedLineProfile,
     CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier,
-    CatiaConsolidatedPlaneCarrierPayload, CatiaConsolidatedReferenceList,
-    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
+    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
+    CatiaConsolidatedTorus,
 };
 use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -291,15 +292,14 @@ pub(super) fn validate_consolidated_plane_carriers(
     carriers: &[CatiaConsolidatedPlaneCarrier],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, carrier) in carriers.iter().enumerate() {
-        let (selector, scalar_count, payload_valid) = match &carrier.payload {
-            CatiaConsolidatedPlaneCarrierPayload::PointDirection2 { direction, .. } => {
-                (0xe4, 7, direction.iter().all(|value| value.is_finite()))
+        let (scalar_count, payload_valid) = match &carrier.payload {
+            B2PlaneCarrierPayload::Plane { layout, .. } => {
+                (layout.scalar_count(), carrier.payload.valid_plane())
             }
-            CatiaConsolidatedPlaneCarrierPayload::PointDirection3 { .. } => (0xc4, 8, true),
-            CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => (0xec, 6, true),
-            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values, .. } => {
-                (carrier.payload.selector(), values.len(), !values.is_empty())
-            }
+            B2PlaneCarrierPayload::ScalarLane { selector, values } => (
+                values.len(),
+                !values.is_empty() && B2PlaneCarrierLayout::try_from(*selector).is_err(),
+            ),
         };
         let header_limit = 1u32 << (8 * u8::from(carrier.width));
         let scalar_count = u64::try_from(scalar_count).map_err(|_| {
@@ -311,11 +311,6 @@ pub(super) fn validate_consolidated_plane_carriers(
         let expected_len = 4 + u64::from(u8::from(carrier.width)) + 2 + 8 * scalar_count;
         if carrier.id != format!("catia:consolidated:plane-carrier#{index}")
             || carrier.header_token >= header_limit
-            || matches!(
-                &carrier.payload,
-                CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. }
-            ) && matches!(carrier.payload.selector(), 0xe4 | 0xc4 | 0xec)
-            || carrier.payload.selector() != selector
             || carrier.byte_len != expected_len
             || !payload_valid
             || index > 0 && carriers[index - 1].byte_offset >= carrier.byte_offset
@@ -327,26 +322,6 @@ pub(super) fn validate_consolidated_plane_carriers(
         }
     }
     Ok(())
-}
-
-pub(super) fn valid_consolidated_plane_geometry(
-    payload: &CatiaConsolidatedPlaneCarrierPayload,
-) -> bool {
-    let (direction, tail) = match payload {
-        CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-            direction, tail, ..
-        } => ([direction[0], direction[1], 0.0], tail.get()),
-        CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-            direction, tail, ..
-        } => (direction.get(), tail.get()),
-        CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => return false,
-        CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. } => return false,
-    };
-    let norm = direction[0].hypot(direction[1]).hypot(direction[2]);
-    (norm - 1.0).abs() <= 1.0e-9
-        && direction[2].abs() <= 1.0e-9
-        && tail[0] > 0.0
-        && tail[1] < tail[2]
 }
 
 pub(super) fn validate_consolidated_reference_lists(
@@ -391,7 +366,7 @@ pub(super) fn validate_consolidated_revolutions(
             direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
         if revolution.id != expected_id
-            || revolution.profile_allocation_id == 0
+            || revolution.profile_reference == 0
             || revolution.profile_circle.as_deref() != expected_profile
             || cross
                 .iter()

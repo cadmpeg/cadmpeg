@@ -1,4 +1,3 @@
-use super::test_consolidated::valid_consolidated_plane_geometry;
 use crate::container;
 use crate::families::consolidated::records::{Class23Slots, ConsolidatedEdgeDefinitionData};
 use crate::native::edge_node::consolidated_vertex_identities;
@@ -90,7 +89,7 @@ pub(super) fn validate_consolidated_edge_runs(
     let plane_offsets = supports
         .planes
         .iter()
-        .filter(|plane| valid_consolidated_plane_geometry(&plane.payload))
+        .filter(|plane| plane.payload.valid_plane())
         .map(|plane| plane.byte_offset)
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();

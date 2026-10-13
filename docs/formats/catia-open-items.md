@@ -294,21 +294,13 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Resolve location and complete member identities before forming a neutral loop. Establish a separate unique geometry or topology relation before attaching that loop to a final face. Preserve unresolved and repeated local domains.
 
-### SN-26. Revolution profile allocation identity
+### SN-26. Revolution profile reference namespace
 
-**Question.** How does the `u16le` profile allocation identity in a `b2 03 2d` revolution record select its native profile record?
+**Question.** Which namespace does the nonzero `u16le` profile reference in a consolidated class-`2d` record address?
 
-**Known.** `catia.md` §5.15 "The `00 33 30` byte is only" defines the axis frame, angular chart, and exact unique profile-interval binding.
+**Known.** `catia.md` §5.15 "The `00 33 30` kind tag selects" defines the complete frame, two-byte reference forms, axis chart, and exact unique profile-interval binding. Equality with a circle record identity does not resolve an ambiguous interval. The reference does not establish a revolution object identity.
 
-**Need.** We must define the allocation namespace and directrix relation when profile intervals do not identify one record.
-
-### SN-27. Consolidated class-`0x27` plane carrier
-
-**Question.** What semantic roles do the four tail scalars of an `ec` class-`0x27` record have, and what supplies its missing plane axis frame?
-
-**Known.** A complete `b2`, `b3`, or `b4 03 27` frame has payload marker `b4`, a selector, and a nonempty finite f64 lane. Selector `e4` carries seven values as a two-coordinate point, a two-coordinate direction with an omitted third component, and a three-scalar tail. Selector `c4` carries eight values as a two-coordinate point, a three-coordinate direction, and a three-scalar tail. Selector `ec` carries six values as a two-coordinate point and a four-scalar tail. Other selectors retain their complete finite scalar lanes without a neutral plane layout. The direction-bearing `e4` and `c4` layouts define a plane frame with origin `(point_x,point_y,0)`, the stored unit direction as `u_axis`, global Z as the second chart axis, and `unit(u_axis×Z)` as the normal. Their tails are finite with a positive first scalar and an increasing final pair. A direction-bearing carrier binds a consolidated pcurve side only when endpoint lifts select exactly one carrier and reach the object-stream vertices. A directionless `ec` carrier is retained in the native namespace and does not supply a neutral plane support.
-
-**Need.** Resolve the `ec` tail roles and its axis-frame source before transferring that layout as a neutral plane support.
+**Need.** Define a source-closed reference namespace and directrix relation for profiles that lack a unique interval match.
 
 ### SN-37. Fixed-nine owner boundary cycle
 

@@ -25,8 +25,7 @@ use std::mem::size_of;
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
     ExactDeviation, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3, HypotLength,
-    RelaxedDeviation, RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
-    SquaredLength, UnitFrame3,
+    RelaxedDeviation, RelaxedUnitVector2, RelaxedUnitVector3, SquaredLength, UnitFrame3,
 };
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
@@ -45,7 +44,6 @@ use crate::wire::records::{
 };
 
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
-const EPS_B2_RECORD_GEOMETRY: f64 = 1.0e-9;
 const EPS_B2_RECORD_EXACT_GEOMETRY: f64 = 1.0e-12;
 const EPS_PARAMETER_LINE: f64 = 1.0e-12;
 const B2_SINGLE_CHILD_ALLOCATION_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
@@ -148,59 +146,111 @@ impl B2ParameterPointPayload {
     }
 }
 
-/// Structurally decoded payload of a consolidated class-`0x27` plane carrier.
-///
-/// The selector chooses the scalar layout. The trailing lanes are retained as
-/// source scalars until their parameter-bound roles are established.
-#[derive(Debug, Clone, PartialEq)]
+/// Stored scalar layout of a consolidated class-`0x27` plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub(crate) enum B2PlaneCarrierLayout {
+    /// Point and bounds; U is implicit +X.
+    ImplicitX,
+    /// Point, stored U-X component, and bounds; U-Y is zero.
+    DirectionX,
+    /// Point, both stored XY components of U, and bounds.
+    DirectionXY,
+    /// Point and bounds; U is implicit +Y.
+    ImplicitY,
+    /// Point, stored U-Y component, and bounds; U-X is zero.
+    DirectionY,
+}
+
+impl B2PlaneCarrierLayout {
+    pub(crate) const fn scalar_count(self) -> usize {
+        match self {
+            Self::ImplicitX | Self::ImplicitY => 6,
+            Self::DirectionX | Self::DirectionY => 7,
+            Self::DirectionXY => 8,
+        }
+    }
+
+    fn admits_direction(self, [x, y, z]: [f64; 3]) -> bool {
+        z == 0.0
+            && match self {
+                Self::ImplicitX => x == 1.0 && y == 0.0,
+                Self::ImplicitY => x == 0.0 && y == 1.0,
+                Self::DirectionX => y == 0.0,
+                Self::DirectionY => x == 0.0,
+                Self::DirectionXY => true,
+            }
+    }
+}
+
+impl From<B2PlaneCarrierLayout> for u8 {
+    fn from(value: B2PlaneCarrierLayout) -> Self {
+        match value {
+            B2PlaneCarrierLayout::ImplicitX => 0xec,
+            B2PlaneCarrierLayout::DirectionX => 0xe4,
+            B2PlaneCarrierLayout::DirectionXY => 0xc4,
+            B2PlaneCarrierLayout::ImplicitY => 0xdc,
+            B2PlaneCarrierLayout::DirectionY => 0xd4,
+        }
+    }
+}
+
+impl TryFrom<u8> for B2PlaneCarrierLayout {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0xec => Ok(Self::ImplicitX),
+            0xe4 => Ok(Self::DirectionX),
+            0xc4 => Ok(Self::DirectionXY),
+            0xdc => Ok(Self::ImplicitY),
+            0xd4 => Ok(Self::DirectionY),
+            other => Err(format!("unknown plane selector {other:#04x}")),
+        }
+    }
+}
+
+/// Exact stored plane chart or an unclassified finite scalar lane.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum B2PlaneCarrierPayload {
-    /// Two-coordinate point, two-coordinate direction, and three tail scalars.
-    PointDirection2 {
-        /// Stored point, with the host-implied third coordinate zero.
-        origin: FinitePoint3,
-        /// Plane normal `unit(direction × Z)` and the stored unit direction,
-        /// with its omitted third component zero.
-        frame: OrthonormalFrame3,
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<3>,
-    },
-    /// Two-coordinate point, three-coordinate direction, and three tail scalars.
-    PointDirection3 {
-        /// Stored point, with the host-implied third coordinate zero.
-        origin: FinitePoint3,
-        /// Plane normal `unit(direction × Z)` and the stored unit direction.
-        frame: OrthonormalFrame3,
-        /// Stored in-plane unit direction.
-        direction: RelaxedHypotUnitVector3,
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<3>,
-    },
-    /// Two-coordinate point followed by four scalar values with no direction
-    /// lane in this layout.
-    PointTail {
-        /// In-plane point with the host-implied third coordinate omitted.
+    /// Point, unit U direction and increasing parameter bounds.
+    Plane {
+        /// Source scalar layout; omitted direction components are implicit.
+        layout: B2PlaneCarrierLayout,
+        /// Stored XY point; model-space Z is zero.
         point: FiniteVector<2>,
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<4>,
+        /// Stored or implicit horizontal U direction.
+        direction: ExactHypotUnitVector3,
+        /// Stored U bounds.
+        u_range: IncreasingParameterInterval,
+        /// Stored V bounds; V is global +Z.
+        v_range: IncreasingParameterInterval,
     },
-    /// Finite scalar lane for a selector whose semantic layout is not yet
-    /// established.
+    /// Complete finite lane for an unassigned selector.
     ScalarLane {
-        /// Second payload byte selecting the scalar layout.
+        /// Source selector, carried separately by the native record wire view.
+        #[serde(skip, default)]
         selector: u8,
-        /// Complete selector-specific scalar lane in source order.
+        /// Complete source-order scalar lane.
         values: Vec<FiniteReal>,
     },
 }
 
-#[cfg(test)]
 impl B2PlaneCarrierPayload {
-    pub(super) const fn selector(&self) -> u8 {
+    pub(crate) fn selector(&self) -> u8 {
         match self {
-            Self::PointDirection2 { .. } => 0xe4,
-            Self::PointDirection3 { .. } => 0xc4,
-            Self::PointTail { .. } => 0xec,
+            Self::Plane { layout, .. } => u8::from(*layout),
             Self::ScalarLane { selector, .. } => *selector,
+        }
+    }
+
+    pub(crate) fn valid_plane(&self) -> bool {
+        match self {
+            Self::Plane {
+                layout, direction, ..
+            } => layout.admits_direction(direction.get()),
+            Self::ScalarLane { .. } => false,
         }
     }
 }
@@ -422,8 +472,6 @@ pub(crate) enum B2FaceNode5fTargetEncoding {
 pub(crate) struct B2FaceNode5f {
     /// Record byte offset.
     pub(crate) pos: usize,
-    /// Complete framed-record byte length.
-    byte_len: usize,
     /// Width-coded header token.
     pub(crate) header_token: u32,
     /// Target encoding selected after the `0x82` lead.
@@ -1364,8 +1412,6 @@ fn compact_owner_identity(data: &[u8], at: &mut usize) -> Option<(u32, B2OwnerId
     let lead = *data.get(*at)?;
     let encoding = match lead % 4 {
         1 => AllocationReferenceEncoding::BackwardDistance,
-        3 if lead != 0 => AllocationReferenceEncoding::OwnedChild,
-        2 if lead != 0 => AllocationReferenceEncoding::Selector2,
         0 if lead != 0 => AllocationReferenceEncoding::WidthCoded,
         _ => return None,
     };
@@ -1480,7 +1526,6 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
         let terminal = <[u8; 2]>::try_from(data.get(at..frame.end)?).ok()?;
         Some(B2FaceNode5f {
             pos: frame.pos,
-            byte_len: frame.end.checked_sub(frame.pos)?,
             header_token: frame.header_token,
             target_encoding,
             target,
@@ -1716,73 +1761,74 @@ pub(crate) fn b2_plane_carriers_from_records(
         let Some(lane) = data.get(range.start + 2..range.end) else {
             continue;
         };
-        let payload = match selector {
-            0xe4 => {
-                if lane.len() != 7 * size_of::<f64>() {
-                    continue;
-                }
-                let Some(values) = read_f64_array::<7>(lane, 0) else {
-                    continue;
-                };
-                let tail = FiniteVector::from([values[4], values[5], values[6]]);
-                let Some((origin, frame, _)) = b2_plane_chart(
-                    [values[0], values[1]],
-                    [values[2].get(), values[3].get(), 0.0],
-                    tail,
-                ) else {
-                    continue;
-                };
-                B2PlaneCarrierPayload::PointDirection2 {
-                    origin,
-                    frame,
-                    tail,
-                }
+        let payload = if let Ok(layout) = B2PlaneCarrierLayout::try_from(selector) {
+            let count = layout.scalar_count();
+            if lane.len() != count * size_of::<f64>() {
+                continue;
             }
-            0xc4 => {
-                if lane.len() != 8 * size_of::<f64>() {
-                    continue;
+            let parsed = match layout {
+                B2PlaneCarrierLayout::ImplicitX | B2PlaneCarrierLayout::ImplicitY => {
+                    read_f64_array::<6>(lane, 0).map(|values| {
+                        let direction = if layout == B2PlaneCarrierLayout::ImplicitX {
+                            [1.0, 0.0, 0.0]
+                        } else {
+                            [0.0, 1.0, 0.0]
+                        };
+                        (
+                            [values[0], values[1]],
+                            direction,
+                            [values[2], values[3], values[4], values[5]],
+                        )
+                    })
                 }
-                let Some(values) = read_f64_array::<8>(lane, 0) else {
-                    continue;
-                };
-                let tail = FiniteVector::from([values[5], values[6], values[7]]);
-                let Some((origin, frame, direction)) = b2_plane_chart(
-                    [values[0], values[1]],
-                    [values[2], values[3], values[4]].map(FiniteReal::get),
-                    tail,
-                ) else {
-                    continue;
-                };
-                B2PlaneCarrierPayload::PointDirection3 {
-                    origin,
-                    frame,
-                    direction,
-                    tail,
+                B2PlaneCarrierLayout::DirectionX | B2PlaneCarrierLayout::DirectionY => {
+                    read_f64_array::<7>(lane, 0).map(|values| {
+                        let direction = if layout == B2PlaneCarrierLayout::DirectionX {
+                            [values[2].get(), 0.0, 0.0]
+                        } else {
+                            [0.0, values[2].get(), 0.0]
+                        };
+                        (
+                            [values[0], values[1]],
+                            direction,
+                            [values[3], values[4], values[5], values[6]],
+                        )
+                    })
                 }
+                B2PlaneCarrierLayout::DirectionXY => read_f64_array::<8>(lane, 0).map(|values| {
+                    (
+                        [values[0], values[1]],
+                        [values[2].get(), values[3].get(), 0.0],
+                        [values[4], values[5], values[6], values[7]],
+                    )
+                }),
+            };
+            let Some((point, direction, bounds)) = parsed else {
+                continue;
+            };
+            let (Some(direction), Some(u_range), Some(v_range)) = (
+                ExactHypotUnitVector3::new(direction),
+                IncreasingParameterInterval::new([bounds[0].get(), bounds[1].get()]),
+                IncreasingParameterInterval::new([bounds[2].get(), bounds[3].get()]),
+            ) else {
+                continue;
+            };
+            B2PlaneCarrierPayload::Plane {
+                layout,
+                point: point.into(),
+                direction,
+                u_range,
+                v_range,
             }
-            0xec => {
-                if lane.len() != 6 * size_of::<f64>() {
-                    continue;
-                }
-                let Some(values) = read_f64_array::<6>(lane, 0) else {
-                    continue;
-                };
-                B2PlaneCarrierPayload::PointTail {
-                    point: [values[0], values[1]].into(),
-                    tail: [values[2], values[3], values[4], values[5]].into(),
-                }
+        } else {
+            let Some(values) = finite_f64_lane_charged(ctx, lane, "catia_b2_plane_scalar_lane")?
+            else {
+                continue;
+            };
+            if values.is_empty() {
+                continue;
             }
-            _ => {
-                let Some(values) =
-                    finite_f64_lane_charged(ctx, lane, "catia_b2_plane_scalar_lane")?
-                else {
-                    continue;
-                };
-                if values.is_empty() {
-                    continue;
-                }
-                B2PlaneCarrierPayload::ScalarLane { selector, values }
-            }
+            B2PlaneCarrierPayload::ScalarLane { selector, values }
         };
         let Some(record_range) = record.range() else {
             continue;
@@ -1803,40 +1849,23 @@ pub(crate) fn b2_plane_carriers_from_records(
     Ok(carriers)
 }
 
-/// Admit the plane chart of a direction-bearing class-`0x27` layout from its
-/// finite lane values. The direction is unit length and lies in the global XY
-/// plane, and the tail has a positive first scalar and a strictly increasing
-/// final pair. The origin is the point with a zero third coordinate, the u
-/// axis is the direction and the normal is `unit(u_axis × Z)`.
-fn b2_plane_chart(
-    [x, y]: [FiniteReal; 2],
-    direction: [f64; 3],
-    tail: FiniteVector<3>,
-) -> Option<(FinitePoint3, OrthonormalFrame3, RelaxedHypotUnitVector3)> {
-    let origin = FinitePoint3::from_coordinates(x, y, FiniteReal::ZERO);
-    let u_axis = RelaxedHypotUnitVector3::new(direction)?;
-    (direction[2].abs() <= EPS_B2_RECORD_GEOMETRY && tail[0] > 0.0 && tail[1] < tail[2])
-        .then_some(())?;
-    Some((
-        origin,
-        OrthonormalFrame3::about_horizontal_normal(u_axis.into())?,
-        u_axis,
-    ))
-}
-
-/// Return the model-space plane carried by a direction-bearing class-`0x27`
-/// layout. The directionless `ec` layout remains a retained native record
-/// until its axis rule is resolved.
+/// Return the plane chart of a known selector. U is the stored or implicit
+/// horizontal direction, V is global +Z, and the normal is `unit(U × V)`.
 pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeometry> {
-    match &carrier.payload {
-        B2PlaneCarrierPayload::PointDirection2 { origin, frame, .. }
-        | B2PlaneCarrierPayload::PointDirection3 { origin, frame, .. } => {
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::new(*origin, *frame),
-            )))
-        }
-        B2PlaneCarrierPayload::PointTail { .. } | B2PlaneCarrierPayload::ScalarLane { .. } => None,
+    let B2PlaneCarrierPayload::Plane {
+        point, direction, ..
+    } = &carrier.payload
+    else {
+        return None;
+    };
+    if !carrier.payload.valid_plane() {
+        return None;
     }
+    let origin = FinitePoint3::new(Point3::new(point[0], point[1], 0.0))?;
+    let frame = OrthonormalFrame3::about_horizontal_normal((*direction).into())?;
+    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
+    )))
 }
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
@@ -2287,8 +2316,8 @@ pub(crate) struct B2Revolution {
     pub(crate) pos: usize,
     /// Reference-token dialect.
     pub(crate) reference_token: crate::native::CatiaRevolutionReferenceToken,
-    /// Stored profile allocation identity.
-    pub(crate) profile_allocation_id: u16,
+    /// Stored nonzero profile reference; its namespace is unresolved.
+    pub(crate) profile_reference: u16,
     /// Axis-frame origin.
     pub(crate) origin: FinitePoint3,
     /// First transverse unit direction, the profile-circle normal, as the
@@ -2572,7 +2601,7 @@ pub(crate) fn b2_revolutions_from_records<'a>(
         {
             continue;
         }
-        let Some(profile_allocation_id) = View::u16_le_at(data, p + 1) else {
+        let Some(profile_reference) = View::u16_le_at(data, p + 1) else {
             continue;
         };
         let Some(axis_frame) = read_f64_array::<12>(data, p + 3) else {
@@ -2619,7 +2648,7 @@ pub(crate) fn b2_revolutions_from_records<'a>(
         ]) else {
             continue;
         };
-        if profile_allocation_id == 0
+        if profile_reference == 0
             || angular_interval.lower() != 0.5
             || (bounds[1] - bounds[0]) / angular_scale.get() != std::f64::consts::TAU
             || mean_angle_parameter / angular_scale.get() != std::f64::consts::PI + 0.5
@@ -2629,7 +2658,7 @@ pub(crate) fn b2_revolutions_from_records<'a>(
         return Some(B2Revolution {
             pos: frame.pos,
             reference_token,
-            profile_allocation_id,
+            profile_reference,
             origin,
             profile_frame,
             axis,
@@ -2641,8 +2670,7 @@ pub(crate) fn b2_revolutions_from_records<'a>(
     })
 }
 
-/// Bind revolution profiles by direct allocation identity, then by an exact,
-/// unique stored parameter interval when no identity target is present.
+/// Bind revolution profiles only by an exact, unique stored parameter interval.
 #[must_use]
 #[cfg(test)]
 fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
@@ -2668,37 +2696,19 @@ pub(crate) fn b2_resolved_revolutions_from_records(
         b2_revolutions_from_records(data, records)
             .enumerate()
             .filter_map(|(revolution_index, revolution)| {
-                let mut identity_profiles = circles.iter().filter(|circle| {
-                    circle.record_id == u32::from(revolution.profile_allocation_id)
+                let mut profiles = circles.iter().filter(|circle| {
+                    circle.range.lower().to_bits() == revolution.profile_range.lower().to_bits()
+                        && circle.range.upper().to_bits()
+                            == revolution.profile_range.upper().to_bits()
                 });
-                let profile = match (identity_profiles.next(), identity_profiles.next()) {
-                    (Some(profile), None)
-                        if profile.range.lower().to_bits()
-                            == revolution.profile_range.lower().to_bits()
-                            && profile.range.upper().to_bits()
-                                == revolution.profile_range.upper().to_bits() =>
-                    {
-                        profile.clone()
-                    }
-                    (None, None) => {
-                        let mut interval_profiles = circles.iter().filter(|circle| {
-                            circle.range.lower().to_bits()
-                                == revolution.profile_range.lower().to_bits()
-                                && circle.range.upper().to_bits()
-                                    == revolution.profile_range.upper().to_bits()
-                        });
-                        let profile = interval_profiles.next()?;
-                        interval_profiles
-                            .next()
-                            .is_none()
-                            .then(|| (*profile).clone())?
-                    }
-                    _ => return None,
-                };
+                let profile = profiles.next()?;
+                if profiles.next().is_some() {
+                    return None;
+                }
                 Some(B2ResolvedRevolution {
                     revolution_index,
                     revolution,
-                    profile,
+                    profile: profile.clone(),
                 })
             }),
         "catia_b2_resolved_revolutions",

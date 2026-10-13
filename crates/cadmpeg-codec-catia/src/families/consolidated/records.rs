@@ -2262,15 +2262,14 @@ mod tests {
             width: crate::wire::records::ConsolidatedFrameWidth::One,
             flag: crate::wire::records::ConsolidatedFrameFlag::Flag03,
             header_token: 0,
-            payload: crate::families::b2::records::B2PlaneCarrierPayload::PointDirection2 {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
+            payload: crate::families::b2::records::B2PlaneCarrierPayload::Plane {
+                layout: crate::families::b2::records::B2PlaneCarrierLayout::ImplicitX,
+                point: cadmpeg_ir::units::FiniteVector::new([f64::MAX, 0.0])
                     .expect("finite origin"),
-                frame: cadmpeg_ir::units::OrthonormalFrame3::new(
-                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("orthonormal frame"),
-                tail: cadmpeg_ir::units::FiniteVector::new([0.0; 3]).expect("finite tail"),
+                direction: crate::checked::ExactHypotUnitVector3::new([1.0, 0.0, 0.0])
+                    .expect("unit direction"),
+                u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+                v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
             },
         };
         let pcurve = |points: [[f64; 2]; 2]| ConsolidatedPcurve {

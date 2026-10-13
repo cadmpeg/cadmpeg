@@ -307,31 +307,18 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
         ],
         [0xe4, 0xc4, 0xec]
     );
-    assert!(matches!(
-        &direction2.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-            point,
-            direction: [1.0, 0.0],
-            tail,
-        } if *point == [10.0, 20.0] && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &direction3.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-            point,
-            direction,
-            tail,
-        } if *point == [10.0, 20.0]
-            && direction.get() == [1.0, 0.0, 0.0]
-            && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &tail.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointTail {
-            point,
-            tail,
-        } if *point == [10.0, 20.0] && *tail == [-2.0, 5.0, -2.0, 3.0]
-    ));
+    for (carrier, u_bounds) in [
+        (direction2, [0.0, 5.0]),
+        (direction3, [0.0, 5.0]),
+        (tail, [-2.0, 5.0]),
+    ] {
+        assert!(
+            matches!(&carrier.payload, crate::families::b2::records::B2PlaneCarrierPayload::Plane {
+            point, direction, u_range, v_range, ..
+        } if *point == [10.0,20.0] && direction.get() == [1.0,0.0,0.0]
+            && u_range.endpoints() == u_bounds && v_range.endpoints() == [-2.0,3.0])
+        );
+    }
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -382,7 +369,7 @@ fn native_namespace_retains_unclassified_consolidated_plane_carrier_lanes() {
     assert_eq!(carrier.payload.selector(), 0x40);
     assert!(matches!(
         &carrier.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values: lane, .. }
+        crate::families::b2::records::B2PlaneCarrierPayload::ScalarLane { values: lane, .. }
             if cadmpeg_ir::scalar::FiniteReal::raw_lane(lane) == values
     ));
 
@@ -889,9 +876,9 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     };
     assert_eq!(
         revolution.reference_token,
-        crate::native::CatiaRevolutionReferenceToken::Wide
+        crate::native::CatiaRevolutionReferenceToken::Lead0a
     );
-    assert_eq!(revolution.profile_allocation_id, 0x1234);
+    assert_eq!(revolution.profile_reference, 0x1234);
     assert_eq!(
         revolution.origin,
         crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
@@ -976,6 +963,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .expect("transferred revolution construction");
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         decoded.ir().model.procedural_surface_owner(&revolution.id) == Some(&surface.id)
+            && surface.source_object.is_none()
             && matches!(surface.geometry.solved_cache(), Some(SolvedSurfaceGeometry::Torus(torus_surface))
                     if {
                         let center = torus_surface.center();
@@ -1922,3 +1910,22 @@ fn consolidated_cone_deserialization_rejects_combined_frame_and_chart_defects() 
 }
 
 mod admission;
+
+#[test]
+fn plane_wire_rejects_selector_direction_and_range_contradictions() {
+    let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
+    let original =
+        serde_json::to_value(&native.consolidated_plane_carriers[0]).expect("plane wire");
+    for (field, value) in [
+        ("layout", serde_json::json!(0xdc)),
+        ("direction", serde_json::json!([0.0, 1.0, 0.0])),
+        ("u_range", serde_json::json!([5.0, 0.0])),
+        ("v_range", serde_json::json!([3.0, -2.0])),
+    ] {
+        let mut wire = original.clone();
+        wire["payload"][field] = value;
+        assert!(
+            serde_json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(wire).is_err()
+        );
+    }
+}

@@ -694,8 +694,8 @@ anchor = "<object_id:u32le @+7> <payload @+11>"
 name = "surface_of_revolution_b2_03_2d"
 kind = "byte"
 section = "5.15"
-anchor = "geometry is a dedicated 174-byte `b2 03 2d` record: `+5` reference token (`08` or `0a`), `+6` profile allocation identity (u16le), `+8` 12×f64le (axis origin XYZ + three basis vectors), `+104` 4×f64le angular/profile bounds, then scale/flag tail."
-size = 174
+anchor = "A `b2 03 2d` frame has a 174-byte payload. Its complete width-one frame has 179 bytes."
+size = 179
 note = "Three normalized relations hold to f64 bit-equality: `angular_lo/scale==0.5`, `(angular_hi−angular_lo)/scale==2π`, and `mean/scale==π+0.5`."
 
 [[record.field]]
@@ -703,14 +703,14 @@ name = "reference_token"
 offset = 5
 type = "u8"
 source = "spec"
-anchor = "`+5` reference token (`08` or `0a`)"
+anchor = "`+5` reference lead (`08` or `0a`)"
 
 [[record.field]]
-name = "profile_allocation_identity"
+name = "profile_reference"
 offset = 6
 type = "u16"
 source = "spec"
-anchor = "`+6` profile allocation identity (u16le)"
+anchor = "`+6` nonzero profile reference (u16le)"
 
 [[record.field]]
 name = "frame"
@@ -724,17 +724,54 @@ name = "bounds"
 offset = 104
 type = "f64[4]"
 source = "spec"
-anchor = "`+104` 4×f64le angular/profile bounds, then scale/flag tail"
+anchor = "`+104` 4×f64le angular/profile bounds"
 
 [[record.gap]]
 offset = 0
 size = 5
-note = "`b2 03 2d` family, class, and length bytes; the spec's offsets are stated from the record start."
+note = "Four-byte B-family prefix and one-byte header token; offsets are stated from the record start."
 
-[[record.gap]]
+[[record.field]]
+name = "controls"
 offset = 136
-size = 38
-note = "Scale and flag tail. The spec names it but states no field offsets; the parser asserts constants inside it at payload-relative +131..133, +141, +149, +157, +165, and +166."
+type = "u8[2]"
+source = "spec"
+anchor = "`+136` controls `05 05`"
+
+[[record.field]]
+name = "angular_scale"
+offset = 138
+type = "f64"
+source = "spec"
+anchor = "`+138` positive angular scale (f64le)"
+
+[[record.field]]
+name = "unit_scalars"
+offset = 146
+type = "f64[2]"
+source = "spec"
+anchor = "`+146` fixed unit scalars `1,1` (2×f64le)"
+
+[[record.field]]
+name = "zero"
+offset = 162
+type = "f64"
+source = "spec"
+anchor = "`+162` fixed zero (f64le)"
+
+[[record.field]]
+name = "terminal"
+offset = 170
+type = "u8"
+source = "spec"
+anchor = "`+170` terminal `01`"
+
+[[record.field]]
+name = "mean"
+offset = 171
+type = "f64"
+source = "spec"
+anchor = "`+171` mean angular parameter (f64le)"
 
 # --- §8 Zero-entity `a9 03` --------------------------------------------------
 
@@ -2805,3 +2842,127 @@ offset = 0
 type = "u8"
 source = "spec"
 anchor = "| `+0` | `u8` | nonzero reference count prefix `80+n` |"
+
+[[record]]
+name = "consolidated_plane_implicit_axis_payload"
+kind = "byte"
+section = "6.3"
+anchor = "The 50-byte implicit-axis payload has bounds at `+18`"
+size = 50
+note = "Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`+0` marker `b4`"
+
+[[record.field]]
+name = "selector"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "`+1` selector"
+
+[[record.field]]
+name = "point_xy"
+offset = 2
+type = "f64[2]"
+source = "spec"
+anchor = "`+2` point XY (`2×f64le`)"
+
+[[record.field]]
+name = "bounds"
+offset = 18
+type = "f64[4]"
+source = "spec"
+anchor = "The 50-byte implicit-axis payload has bounds at `+18`"
+
+
+[[record]]
+name = "consolidated_plane_one_component_payload"
+kind = "byte"
+section = "6.3"
+anchor = "the 58-byte one-component direction payload has bounds at `+26`"
+size = 58
+note = "Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`+0` marker `b4`"
+
+[[record.field]]
+name = "selector"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "`+1` selector"
+
+[[record.field]]
+name = "point_xy"
+offset = 2
+type = "f64[2]"
+source = "spec"
+anchor = "`+2` point XY (`2×f64le`)"
+
+[[record.field]]
+name = "direction_component"
+offset = 18
+type = "f64"
+source = "spec"
+anchor = "`+18` direction component (`f64le`)"
+
+[[record.field]]
+name = "bounds"
+offset = 26
+type = "f64[4]"
+source = "spec"
+anchor = "the 58-byte one-component direction payload has bounds at `+26`"
+
+
+[[record]]
+name = "consolidated_plane_two_component_payload"
+kind = "byte"
+section = "6.3"
+anchor = "the 66-byte two-component direction payload has bounds at `+34`"
+size = 66
+note = "Offsets are relative to the payload after the 4+w-byte B-family frame header. Header width and flag do not change the layout."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`+0` marker `b4`"
+
+[[record.field]]
+name = "selector"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "`+1` selector"
+
+[[record.field]]
+name = "point_xy"
+offset = 2
+type = "f64[2]"
+source = "spec"
+anchor = "`+2` point XY (`2×f64le`)"
+
+[[record.field]]
+name = "direction_xy"
+offset = 18
+type = "f64[2]"
+source = "spec"
+anchor = "`+18` direction XY (`2×f64le`)"
+
+[[record.field]]
+name = "bounds"
+offset = 34
+type = "f64[4]"
+source = "spec"
+anchor = "the 66-byte two-component direction payload has bounds at `+34`"

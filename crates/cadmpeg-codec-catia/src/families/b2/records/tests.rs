@@ -91,47 +91,27 @@ fn b2_parameter_point_parser_reads_ordered_scalar_layouts() {
 
 #[test]
 fn b2_plane_carrier_parser_preserves_each_selector_layout() {
-    use crate::families::b2::records::B2PlaneCarrierPayload;
-
+    use crate::families::b2::records::{B2PlaneCarrierLayout, B2PlaneCarrierPayload};
     let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
     assert_eq!(carriers.len(), 3);
     assert_eq!(
         carriers
             .iter()
-            .map(|carrier| carrier.payload.selector())
+            .map(|c| c.payload.selector())
             .collect::<Vec<_>>(),
         [0xe4, 0xc4, 0xec]
     );
-    let point = cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0);
-    let direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
-    assert!(matches!(
-        &carriers[0].payload,
-        B2PlaneCarrierPayload::PointDirection2 {
-            origin,
-            frame,
-            tail,
-        } if origin.get() == point
-            && *frame.reference().as_raw() == direction
-            && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &carriers[1].payload,
-        B2PlaneCarrierPayload::PointDirection3 {
-            origin,
-            frame,
-            tail,
-            ..
-        } if origin.get() == point
-            && *frame.reference().as_raw() == direction
-            && *tail == [5.0, -2.0, 3.0]
-    ));
-    assert!(matches!(
-        &carriers[2].payload,
-        B2PlaneCarrierPayload::PointTail {
-            point,
-            tail,
-        } if *point == [10.0, 20.0] && *tail == [-2.0, 5.0, -2.0, 3.0]
-    ));
+    for (carrier, layout, u_bounds) in [
+        (&carriers[0], B2PlaneCarrierLayout::DirectionX, [0.0, 5.0]),
+        (&carriers[1], B2PlaneCarrierLayout::DirectionXY, [0.0, 5.0]),
+        (&carriers[2], B2PlaneCarrierLayout::ImplicitX, [-2.0, 5.0]),
+    ] {
+        assert!(matches!(&carrier.payload, B2PlaneCarrierPayload::Plane {
+            layout: actual, point, direction, u_range, v_range,
+        } if *actual == layout && *point == [10.0,20.0]
+            && direction.get() == [1.0,0.0,0.0]
+            && u_range.endpoints() == u_bounds && v_range.endpoints() == [-2.0,3.0]));
+    }
     assert_eq!(carriers[0].end - carriers[0].pos, 63);
 }
 
@@ -229,29 +209,29 @@ fn b2_plane_carrier_parser_rejects_open_or_nonfinite_layouts() {
 }
 
 #[test]
-fn b2_plane_geometry_uses_direction_bearing_layouts_only() {
-    use crate::families::b2::records::B2PlaneCarrierPayload;
-
+fn b2_plane_geometry_uses_stored_and_implicit_directions() {
     let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
-    let geometry =
-        crate::families::b2::records::b2_plane_geometry(&carriers[0]).expect("e4 plane geometry");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-        geometry
-    else {
-        panic!("plane carrier geometry")
-    };
-    let origin = plane_surface.origin();
-    let normal = plane_surface.frame().axis().as_raw();
-    let u_axis = plane_surface.frame().reference().as_raw();
-    assert_eq!(*origin, cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0));
-    assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
-    assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
-    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[1]).is_some());
-    assert!(matches!(
-        &carriers[2].payload,
-        B2PlaneCarrierPayload::PointTail { .. }
-    ));
-    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[2]).is_none());
+    for carrier in &carriers {
+        let geometry =
+            crate::families::b2::records::b2_plane_geometry(carrier).expect("known plane geometry");
+        let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(surface)) =
+            geometry
+        else {
+            panic!("plane carrier geometry")
+        };
+        assert_eq!(
+            *surface.origin(),
+            cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
+        );
+        assert_eq!(
+            *surface.frame().reference().as_raw(),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            *surface.frame().axis().as_raw(),
+            cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0)
+        );
+    }
 }
 
 #[test]
@@ -1222,7 +1202,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].pos, 0);
         assert_eq!(u8::from(records[0].reference_token), reference_token);
-        assert_eq!(records[0].profile_allocation_id, 0x1234);
+        assert_eq!(records[0].profile_reference, 0x1234);
         assert_eq!(<[f64; 3]>::from(records[0].origin.get()), [1.0, 2.0, 3.0]);
         assert_eq!(records[0].profile_frame.axis().get(), [1.0, 0.0, 0.0]);
         assert_eq!(records[0].profile_frame.reference().get(), [0.0, 1.0, 0.0]);
@@ -1295,7 +1275,7 @@ fn b2_revolution_profile_and_resolved_output_refuse_collection_limits() {
 }
 
 #[test]
-fn b2_revolution_profile_identity_disambiguates_equal_intervals() {
+fn b2_revolution_profile_reference_does_not_disambiguate_equal_intervals() {
     let mut first = b2_circle_stream();
     first[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
     first[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
@@ -1303,21 +1283,16 @@ fn b2_revolution_profile_identity_disambiguates_equal_intervals() {
     let mut second = b2_circle_stream();
     second[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
     second[40..48].copy_from_slice(&9.0f64.to_le_bytes());
-    let second_pos = first.len();
     let mut stream = first;
     stream.extend_from_slice(&second);
     stream.extend_from_slice(&b2_revolution_stream());
 
     let resolved_revolutions = crate::families::b2::records::b2_resolved_revolutions(&stream);
-    let [resolved] = resolved_revolutions.as_slice() else {
-        panic!("one identity-bound revolution profile");
-    };
-    assert_eq!(resolved.profile.record_id, 0x1234);
-    assert_eq!(resolved.profile.pos, second_pos);
+    assert!(resolved_revolutions.is_empty());
 }
 
 #[test]
-fn b2_revolution_profile_identity_mismatch_does_not_fall_back_to_interval() {
+fn b2_revolution_profile_reference_does_not_veto_a_unique_interval() {
     let mut identity_mismatch = b2_circle_stream();
     identity_mismatch[32..40].copy_from_slice(&10.0f64.to_le_bytes());
     identity_mismatch[40..48].copy_from_slice(&20.0f64.to_le_bytes());
@@ -1325,11 +1300,18 @@ fn b2_revolution_profile_identity_mismatch_does_not_fall_back_to_interval() {
     interval_match[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
     interval_match[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
     interval_match[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let expected_profile_pos = identity_mismatch.len();
     let mut stream = identity_mismatch;
     stream.extend_from_slice(&interval_match);
     stream.extend_from_slice(&b2_revolution_stream());
 
-    assert!(crate::families::b2::records::b2_resolved_revolutions(&stream).is_empty());
+    let profiles = crate::families::b2::records::b2_resolved_revolutions(&stream);
+    let [resolved] = profiles.as_slice() else {
+        panic!("one profile with the exact unique interval");
+    };
+    assert_eq!(resolved.profile.record_id, 0x9999);
+    assert_eq!(resolved.profile.pos, expected_profile_pos);
+    assert_eq!(resolved.profile.range.endpoints(), [-4.0, 9.0]);
 }
 
 #[test]
@@ -1784,3 +1766,5 @@ fn b2_use_payload_bytes_refuse_retained_limit() {
         if limit.operation == "catia_b2_use_payload")
     );
 }
+
+mod plane_carriers;

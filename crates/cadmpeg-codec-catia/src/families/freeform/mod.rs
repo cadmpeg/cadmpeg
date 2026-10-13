@@ -186,7 +186,7 @@ pub(super) fn append_consolidated_revolutions(
             &surface,
             "consolidated_b2_03_2d",
             u64_from_index(revolution.pos),
-            format_args!("profile-allocation:{}", revolution.profile_allocation_id),
+            format_args!("profile-reference:{}", revolution.profile_reference),
             Exactness::ByteExact,
         )?;
         let procedural_id = crate::resource::compose_index_id(
@@ -213,11 +213,7 @@ pub(super) fn append_consolidated_revolutions(
                 construction: surface_construction_id,
                 cache: Some(cache),
             },
-            source_object: Some(cgm_source(
-                admission.context(),
-                "revolution",
-                u32::from(revolution.profile_allocation_id),
-            )?),
+            source_object: None,
         });
         admission.reserve_entity(
             &mut ir.model.procedural_surfaces,

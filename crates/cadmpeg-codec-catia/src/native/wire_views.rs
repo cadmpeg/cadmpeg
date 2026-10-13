@@ -12,10 +12,9 @@ use super::{
     slice_is_empty, CatiaCircleLayout, CatiaConsolidatedCircle, CatiaConsolidatedCylinder,
     CatiaConsolidatedCylinderPayload, CatiaConsolidatedCylinderPayloadWire,
     CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint, CatiaConsolidatedPlaneCarrier,
-    CatiaConsolidatedPlaneCarrierPayload, CatiaFaceNodeRelation, CatiaOwnerBoundaryCycle,
-    CatiaOwnerIdentityEncoding, CatiaOwnerIdentityTarget, CatiaOwnerNumericTail,
-    CatiaOwnerPacketPayload, CatiaOwnerReferenceEncoding, ConsolidatedFrameFlag,
-    ConsolidatedFrameWidth,
+    CatiaFaceNodeRelation, CatiaOwnerBoundaryCycle, CatiaOwnerIdentityEncoding,
+    CatiaOwnerIdentityTarget, CatiaOwnerNumericTail, CatiaOwnerPacketPayload,
+    CatiaOwnerReferenceEncoding, ConsolidatedFrameFlag, ConsolidatedFrameWidth,
 };
 
 #[derive(Serialize)]
@@ -236,7 +235,7 @@ struct CatiaConsolidatedPlaneCarrierWireRef<'a> {
     flag: ConsolidatedFrameFlag,
     header_token: u32,
     selector: u8,
-    payload: &'a CatiaConsolidatedPlaneCarrierPayload,
+    payload: &'a crate::families::b2::records::B2PlaneCarrierPayload,
 }
 
 impl Serialize for CatiaConsolidatedPlaneCarrier {

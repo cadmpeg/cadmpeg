@@ -1427,3 +1427,11 @@ frames and logical source coordinates. Counted references retain their
 addressing forms. Incidence requires same-source logical adjacency and the
 checked successor relation; fixed-nine raw weak values keep their dialect.
 Local domains require independent member and location evidence for final topology.
+
+Consolidated class-`27` plane carriers decode the five `ec/e4/c4/dc/d4`
+layouts as a finite XY point, stored or implicit horizontal U direction,
+global-Z V direction, and increasing U/V bounds. Native records preserve
+layout and bounds; unknown selectors retain their scalar lanes. Neutral
+support binding requires an independent unique endpoint-lift witness.
+Consolidated revolution profiles require one exact interval match. Their
+nonzero reference value remains distinct from circle and revolution object identities.

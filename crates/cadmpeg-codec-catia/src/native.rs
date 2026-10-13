@@ -989,59 +989,6 @@ impl TryFrom<CatiaConsolidatedParameterPointWire> for CatiaConsolidatedParameter
     }
 }
 
-/// Selector-specific payload of a consolidated `B:27` plane carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum CatiaConsolidatedPlaneCarrierPayload {
-    /// Two-coordinate point, two-coordinate direction, and three tail scalars.
-    PointDirection2 {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: FiniteVector<2>,
-        /// In-plane direction with its third component omitted; the decoder
-        /// stores the first two components of an admitted unit direction.
-        direction: [f64; 2],
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<3>,
-    },
-    /// Two-coordinate point, three-coordinate direction, and three tail scalars.
-    PointDirection3 {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: FiniteVector<2>,
-        /// In-plane unit direction.
-        direction: crate::checked::RelaxedHypotUnitVector3,
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<3>,
-    },
-    /// Two-coordinate point followed by four scalar values with no direction
-    /// lane in this layout.
-    PointTail {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: FiniteVector<2>,
-        /// Complete trailing scalar lane.
-        tail: FiniteVector<4>,
-    },
-    /// Finite scalar lane for a selector whose semantic layout is not yet
-    /// established.
-    ScalarLane {
-        /// Second payload byte selecting the scalar layout.
-        #[serde(skip, default)]
-        selector: u8,
-        /// Complete selector-specific scalar lane in source order.
-        values: Vec<FiniteReal>,
-    },
-}
-
-impl CatiaConsolidatedPlaneCarrierPayload {
-    const fn selector(&self) -> u8 {
-        match self {
-            Self::PointDirection2 { .. } => 0xe4,
-            Self::PointDirection3 { .. } => 0xc4,
-            Self::PointTail { .. } => 0xec,
-            Self::ScalarLane { selector, .. } => *selector,
-        }
-    }
-}
-
 /// One complete consolidated `B:27` plane-carrier record.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "CatiaConsolidatedPlaneCarrierWire")]
@@ -1059,10 +1006,11 @@ pub(crate) struct CatiaConsolidatedPlaneCarrier {
     /// Width-coded frame header token.
     header_token: u32,
     /// Selector-specific finite scalar payload.
-    payload: CatiaConsolidatedPlaneCarrierPayload,
+    payload: crate::families::b2::records::B2PlaneCarrierPayload,
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CatiaConsolidatedPlaneCarrierWire {
     id: String,
     byte_offset: u64,
@@ -1071,7 +1019,7 @@ struct CatiaConsolidatedPlaneCarrierWire {
     flag: ConsolidatedFrameFlag,
     header_token: u32,
     selector: u8,
-    payload: CatiaConsolidatedPlaneCarrierPayload,
+    payload: crate::families::b2::records::B2PlaneCarrierPayload,
 }
 
 #[cfg(test)]
@@ -1094,14 +1042,26 @@ impl TryFrom<CatiaConsolidatedPlaneCarrierWire> for CatiaConsolidatedPlaneCarrie
     type Error = String;
 
     fn try_from(mut wire: CatiaConsolidatedPlaneCarrierWire) -> Result<Self, Self::Error> {
-        if let CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, .. } = &mut wire.payload
+        if let crate::families::b2::records::B2PlaneCarrierPayload::ScalarLane {
+            selector, ..
+        } = &mut wire.payload
         {
             *selector = wire.selector;
+            if crate::families::b2::records::B2PlaneCarrierLayout::try_from(*selector).is_ok() {
+                return Err("known plane selector requires a plane payload".to_owned());
+            }
         } else if wire.payload.selector() != wire.selector {
             return Err(format!(
                 "plane-carrier selector {:#04x} does not match payload",
                 wire.selector
             ));
+        }
+        if matches!(
+            wire.payload,
+            crate::families::b2::records::B2PlaneCarrierPayload::Plane { .. }
+        ) && !wire.payload.valid_plane()
+        {
+            return Err("plane direction does not match its scalar layout".to_owned());
         }
         Ok(Self {
             id: wire.id,
@@ -1231,17 +1191,17 @@ pub(crate) struct CatiaConsolidatedLineProfile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 pub(crate) enum CatiaRevolutionReferenceToken {
-    /// Compact object-reference token `0x08`.
-    Compact,
-    /// Wide object-reference token `0x0a`.
-    Wide,
+    /// Reference lead `0x08` followed by a two-byte value.
+    Lead08,
+    /// Reference lead `0x0a` followed by a two-byte value.
+    Lead0a,
 }
 
 impl From<CatiaRevolutionReferenceToken> for u8 {
     fn from(value: CatiaRevolutionReferenceToken) -> Self {
         match value {
-            CatiaRevolutionReferenceToken::Compact => 0x08,
-            CatiaRevolutionReferenceToken::Wide => 0x0a,
+            CatiaRevolutionReferenceToken::Lead08 => 0x08,
+            CatiaRevolutionReferenceToken::Lead0a => 0x0a,
         }
     }
 }
@@ -1251,8 +1211,8 @@ impl TryFrom<u8> for CatiaRevolutionReferenceToken {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x08 => Ok(Self::Compact),
-            0x0a => Ok(Self::Wide),
+            0x08 => Ok(Self::Lead08),
+            0x0a => Ok(Self::Lead0a),
             other => Err(format!("reference_token {other:#x} is not 0x08 or 0x0a")),
         }
     }
@@ -1260,6 +1220,7 @@ impl TryFrom<u8> for CatiaRevolutionReferenceToken {
 
 /// One structurally complete consolidated `B:2d` surface-of-revolution record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CatiaConsolidatedRevolution {
     /// Stable native-record identity.
     id: String,
@@ -1267,8 +1228,8 @@ pub(crate) struct CatiaConsolidatedRevolution {
     byte_offset: u64,
     /// Reference-token dialect.
     reference_token: CatiaRevolutionReferenceToken,
-    /// Unresolved consolidated allocation identity of the profile curve.
-    profile_allocation_id: u16,
+    /// Stored nonzero profile reference; its namespace is unresolved.
+    profile_reference: u16,
     /// Axis-frame origin.
     origin: FiniteVector<3>,
     /// First transverse unit direction.
@@ -8653,48 +8614,12 @@ fn consolidated_plane_carriers(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedPlaneCarrier>, CodecError> {
-    use crate::families::b2::records::B2PlaneCarrierPayload;
-
     let mut carriers = Vec::new();
     for (index, carrier) in
         crate::families::b2::records::b2_plane_carriers_from_records(ctx, bytes, records)?
             .into_iter()
             .enumerate()
     {
-        let payload = match carrier.payload {
-            B2PlaneCarrierPayload::PointDirection2 {
-                origin,
-                frame,
-                tail,
-            } => {
-                let [x, y, _] = origin.coordinates();
-                let direction = frame.reference().as_raw();
-                CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-                    point: [x, y].into(),
-                    direction: [direction.x, direction.y],
-                    tail,
-                }
-            }
-            B2PlaneCarrierPayload::PointDirection3 {
-                origin,
-                direction,
-                tail,
-                ..
-            } => {
-                let [x, y, _] = origin.coordinates();
-                CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-                    point: [x, y].into(),
-                    direction,
-                    tail,
-                }
-            }
-            B2PlaneCarrierPayload::PointTail { point, tail } => {
-                CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
-            }
-            B2PlaneCarrierPayload::ScalarLane { selector, values } => {
-                CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
-            }
-        };
         let value = CatiaConsolidatedPlaneCarrier {
             id: ctx.format_retained(
                 format_args!("catia:consolidated:plane-carrier#{index:00}"),
@@ -8705,7 +8630,7 @@ fn consolidated_plane_carriers(
             width: carrier.width,
             flag: carrier.flag,
             header_token: carrier.header_token,
-            payload,
+            payload: carrier.payload,
         };
         ctx.push_vec(&mut carriers, value, "catia_native_plane_carriers")?;
     }
@@ -8877,7 +8802,7 @@ fn consolidated_revolutions(
             )?,
             byte_offset: u64_from_index(revolution.pos),
             reference_token: revolution.reference_token,
-            profile_allocation_id: revolution.profile_allocation_id,
+            profile_reference: revolution.profile_reference,
             origin: revolution.origin.coordinates().into(),
             direction_x: revolution.profile_frame.axis(),
             direction_y: revolution.profile_frame.reference(),
