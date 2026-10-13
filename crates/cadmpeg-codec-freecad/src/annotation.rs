@@ -346,12 +346,16 @@ pub(crate) fn transfer_neutral(
             assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }
         model.semantic_annotations.push(SemanticAnnotation {
-            id: SemanticAnnotationId::mint(crate::native::model_id_charged(
+            id: SemanticAnnotationId::mint_for_decode(
                 ctx,
-                "semantic-annotation",
-                &record.object,
-                "content",
-            )?)
+                crate::native::model_id_charged(
+                    ctx,
+                    "semantic-annotation",
+                    &record.object,
+                    "content",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)?,
             object: ctx.copy_retained_text(&record.object, "fcstd neutral annotation object")?,
             kind: schema.kind.clone(),

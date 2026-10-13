@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 #[test]
-fn external_prototype_name_does_not_create_a_local_product_cycle() {
+fn external_prototype_name_creates_a_local_product_cycle() {
     use crate::native::{
         ExternalDocument, LinkArray, LinkOccurrence, ProductNode, ProductNodeRecord,
     };
@@ -41,9 +41,10 @@ fn external_prototype_name_does_not_create_a_local_product_cycle() {
     };
     with_service_context(&[], |ctx| {
         let records = [super::node(assembly, &[occurrence]), link.clone()];
-        assert!(product_cycle_nodes(ctx, &records)
-            .expect("external prototype")
-            .is_empty());
+        assert_eq!(
+            product_cycle_nodes(ctx, &records).expect("external prototype"),
+            std::collections::BTreeSet::from([assembly, occurrence]),
+        );
     });
     let ProductNode::Occurrence(value) = &mut link.node else {
         unreachable!("occurrence fixture")
@@ -383,4 +384,21 @@ fn product_scale_list_rejects_first_invalid_tuple_without_prepaying_suffix() {
         3,
         "element_scales: scale vector components must be finite",
     );
+}
+
+#[test]
+fn product_definition_identity_grammar_preserves_resource_refusal() {
+    let reference = serde_json::from_value::<crate::native::LinkTarget>(serde_json::json!({
+        "document": null, "object": "fcstd:native:object#Part", "subelements": []
+    }))
+    .expect("local reference");
+    let error = crate::test_support::refusal_at(
+        ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD model identity grammar",
+        |ctx| super::super::neutral_link_target(ctx, &reference),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "FreeCAD model identity grammar"));
 }

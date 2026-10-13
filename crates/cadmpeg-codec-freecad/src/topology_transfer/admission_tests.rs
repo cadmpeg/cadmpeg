@@ -71,15 +71,8 @@ fn assert_topology_occurrence_materialized_refusal(operation: &str) {
                 crate::brep::transfer_text_geometry(ctx, &payloads, &properties)?;
             ir.model.curves = curves.curves;
             ir.model.surfaces = surfaces.surfaces;
-            super::transfer(
-                ctx,
-                &mut ir,
-                &payloads,
-                &properties,
-                &mut Vec::new(),
-                !maps.is_empty(),
-            )
-            .map(|_| ())
+            super::transfer(ctx, &mut ir, &payloads, &properties, &mut Vec::new(), &maps)
+                .map(|_| ())
         },
     );
 }
