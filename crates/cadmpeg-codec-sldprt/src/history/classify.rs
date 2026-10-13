@@ -925,9 +925,10 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 128 * 1024;
         policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
             "index SLDPRT history records",
             None,
         );
