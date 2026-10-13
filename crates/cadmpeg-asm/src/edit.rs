@@ -157,7 +157,9 @@ impl<'ctx> AsmEditSet<'ctx> {
 
     /// Frame the solved record partition without changing the input bytes.
     pub fn frame(ctx: &'ctx DecodeContext<'_>, bytes: &[u8]) -> Result<Self, CodecError> {
-        let header = asm_header::parse(ctx, bytes)?
+        let (header, _header_storage) =
+            ctx.with_scoped_storage("ASM edit header", || asm_header::parse(ctx, bytes))?;
+        let header = header
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let start = asm_header::record_stream_start_with_header(&header)
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -2148,6 +2150,90 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    fn stream_with_product_strings(width: RefWidth, length: u8) -> Vec<u8> {
+        let (magic, header_len): (&[u8], _) = match width {
+            RefWidth::Four => (b"ASM BinaryFile4", crate::layout::asmheader_binaryfile4::LEN),
+            RefWidth::Eight => (b"ASM BinaryFile8", crate::layout::asmheader_binaryfile8::LEN),
+        };
+        let mut bytes = magic.to_vec();
+        bytes.resize(header_len, 0);
+        for _ in 0..3 {
+            bytes.extend_from_slice(&[7, length]);
+            bytes.extend(std::iter::repeat_n(b'x', usize::from(length)));
+        }
+        for value in [2.0_f64, 1.0, 1.0] {
+            bytes.push(6);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(b"\x0d\x01x\x11");
+        bytes
+    }
+
+    #[test]
+    fn edit_framing_retained_storage_is_independent_of_product_string_length() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let mut retained = None;
+            for length in [0, 1, u8::MAX] {
+                let bytes = stream_with_product_strings(width, length);
+                let error = cadmpeg_test_support::refusal::resource_limit_at(
+                    ResourceDimension::RetainedBytes,
+                    "ASM edit framing retained total",
+                    |cap| {
+                        let arena = DecodeArena::new();
+                        let mut policy = DecodePolicy::service();
+                        policy.limits.max_retained_bytes = cap;
+                        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                        let edits = AsmEditSet::frame(&ctx, &bytes)?;
+                        assert_eq!(edits.records().len(), 1);
+                        assert_eq!(edits.records()[0].head(), "x");
+                        assert_eq!(edits.ref_width, width);
+                        assert_eq!(edits.header_scale.expect("scale").get(), 2.0);
+                        ctx.charge_retained(1, "ASM edit framing retained total")
+                    },
+                );
+                let CodecError::ResourceLimit(limit) = error else {
+                    panic!("resource refusal");
+                };
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(limit.operation, "ASM edit framing retained total");
+                assert_eq!(limit.additional, 1);
+                assert_eq!(limit.limit, limit.used);
+                assert!(limit.used > 0, "the framed records remain retained");
+                assert_eq!(*retained.get_or_insert(limit.used), limit.used);
+            }
+        }
+    }
+
+    #[test]
+    fn edit_framing_refuses_product_string_scratch_before_copy() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let bytes = stream_with_product_strings(width, u8::MAX);
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::MaterializedBytes,
+                "retain kernel header product string",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_materialized_bytes = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    AsmEditSet::frame(&ctx, &bytes).map(|_| ())
+                },
+            );
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(limit.operation, "retain kernel header product string");
+            assert_eq!(limit.additional, u64::from(u8::MAX));
+        }
+    }
 
     #[test]
     fn edit_framing_uses_default_subtype_depth_limit() {
