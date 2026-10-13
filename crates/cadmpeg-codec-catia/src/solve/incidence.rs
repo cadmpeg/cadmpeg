@@ -777,7 +777,7 @@ fn order_incidence_components_by_constraints(
         }
     }
     let mut ordered = Vec::new();
-    while let Some(&next) = ready.first() {
+    while let Some(&next) = ctx.find_by(&ready, |_| Ok(true), "catia_incidence_ready_visit")? {
         ctx.remove_btree_set(&mut ready, &next, "catia incidence ready components")?;
         let (_, component) = next;
         ctx.push_vec(

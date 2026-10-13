@@ -809,18 +809,28 @@ fn mesh_edge_occurrences(
     cycles: &[Vec<Vec<u32>>],
 ) -> Result<Option<Vec<Vec<MeshEdgeRun>>>, CodecError> {
     const OPERATION: &str = "catia_mesh_occurrence_matches";
+    const QUERIES: &str = "catia_mesh_occurrence_queries";
     let mut scratch = ctx.reserve_scoped(0, "catia_mesh_occurrence_handles")?;
     let mut widths = [false; 3];
-    ctx.any_by(
-        edge_rows,
-        |row| {
-            if let Some(pattern) = row.boundary_pattern() {
-                widths[pattern.len().min(3) - 1] = true;
-            }
-            Ok(widths == [true; 3])
-        },
-        "catia_mesh_occurrence_rows",
-    )?;
+    let mut long_queries = HashMap::<&[u32], (usize, Option<usize>)>::new();
+    for row in ctx.admit_iter(edge_rows, QUERIES)? {
+        let Some(pattern) = row.boundary_pattern() else {
+            continue;
+        };
+        widths[pattern.len().min(3) - 1] = true;
+        if pattern.len() > 3 && edge_rows.len() > 1 {
+            scratch.with_storage(|| {
+                let query = ctx
+                    .entry_hash_map(&mut long_queries, pattern, QUERIES)?
+                    .or_insert((0usize, None));
+                query.0 = query
+                    .0
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit(QUERIES, u64::MAX, u64::MAX))?;
+                Ok::<_, CodecError>(())
+            })?;
+        }
+    }
     let [single_patterns, pair_patterns, triple_patterns] = widths;
     if !single_patterns && !pair_patterns && !triple_patterns {
         return ctx
@@ -866,8 +876,8 @@ fn mesh_edge_occurrences(
             }
         }
     }
-    let mut long_matches = HashMap::<&[u32], BTreeMap<(usize, usize, usize), bool>>::new();
-    let mut rows = ctx.collection_vec(edge_rows.len(), "catia_mesh_occurrence_rows")?;
+    let mut rows: Vec<Vec<MeshEdgeRun>> =
+        ctx.collection_vec(edge_rows.len(), "catia_mesh_occurrence_rows")?;
     let mut charged_steps = edge_rows.iter().enumerate();
     while let Some((edge, row)) =
         ctx.next_charged(&mut charged_steps, "catia_mesh_occurrence_rows")?
@@ -879,16 +889,61 @@ fn mesh_edge_occurrences(
         let (Some(&first), Some(&last)) = (pattern.first(), pattern.last()) else {
             return Ok(None);
         };
-        // A forward match at a start position wins over a reversed one.
-        let cached = if pattern.len() > 3 {
-            ctx.get_hash_map(&long_matches, &pattern, OPERATION)?
+        let query = if pattern.len() > 3 && edge_rows.len() > 1 {
+            Some(
+                ctx.get_mut_hash_map(&mut long_queries, &pattern, QUERIES)?
+                    .ok_or_else(|| CodecError::malformed("long pattern has no query count"))?,
+            )
         } else {
             None
         };
-        let computed = if cached.is_some() {
-            None
+        let cached_edge = query.as_ref().and_then(|query| query.1);
+        let mut previous_cycle = None;
+        let mut occurrences = Vec::new();
+        let mut push_occurrence = |face: usize,
+                                   cycle: usize,
+                                   pattern_start: usize,
+                                   reversed: bool|
+         -> Result<bool, CodecError> {
+            if previous_cycle.replace((face, cycle)) == Some((face, cycle)) {
+                return Ok(false);
+            }
+            let cycle_len = cycles[face][cycle].len();
+            let Some((start, segment_count)) = row.boundary_span(pattern_start, cycle_len) else {
+                return Ok(false);
+            };
+            ctx.push_vec(
+                &mut occurrences,
+                MeshEdgeRun {
+                    edge,
+                    face,
+                    cycle,
+                    start,
+                    segment_count,
+                    reversed,
+                },
+                "catia_mesh_occurrence_runs",
+            )?;
+            Ok(true)
+        };
+        let unique = if let Some(cached_edge) = cached_edge {
+            ctx.all_by(
+                &rows[cached_edge],
+                |run| {
+                    let cycle_len = cycles[run.face][run.cycle].len();
+                    let pattern_start = match edge_rows[cached_edge].boundary_layout() {
+                        EdgeBoundaryLayout::CompleteBoundaryRun => run.start,
+                        EdgeBoundaryLayout::InteriorWithFlankingCorners => {
+                            (run.start + 1) % cycle_len
+                        }
+                    };
+                    push_occurrence(run.face, run.cycle, pattern_start, run.reversed)
+                },
+                "catia_mesh_occurrence_runs",
+            )?
         } else {
-            Some(ctx.with_scoped_storage(
+            // A forward match at a start position wins over a reversed one.
+            let (matches, _storage) = ctx.with_scoped_storage(
                 OPERATION,
                 || -> Result<BTreeMap<(usize, usize, usize), bool>, CodecError> {
                     let mut matches = BTreeMap::new();
@@ -951,47 +1006,23 @@ fn mesh_edge_occurrences(
                     }
                     Ok(matches)
                 },
-            )?)
-        };
-        let matches = match &computed {
-            Some((matches, _storage)) => matches,
-            None => cached.ok_or_else(|| CodecError::malformed("cached pattern has no matches"))?,
-        };
-        // Matches are in (face, cycle, start) order, so a cycle holding two
-        // occurrences shows as two neighbouring keys.
-        let mut previous_cycle = None;
-        let mut occurrences = Vec::new();
-        let mut charged_steps = matches.iter();
-        while let Some((&(face, cycle, start), &reversed)) =
-            ctx.next_charged(&mut charged_steps, "catia_mesh_occurrence_runs")?
-        {
-            if previous_cycle.replace((face, cycle)) == Some((face, cycle)) {
-                return Ok(None);
-            }
-            let cycle_len = cycles[face][cycle].len();
-            let Some((start, segment_count)) = row.boundary_span(start, cycle_len) else {
-                return Ok(None);
-            };
-            ctx.push_vec(
-                &mut occurrences,
-                MeshEdgeRun {
-                    edge,
-                    face,
-                    cycle,
-                    start,
-                    segment_count,
-                    reversed,
-                },
-                "catia_mesh_occurrence_runs",
             )?;
+            // Ordered keys put two occurrences on one cycle next to each other.
+            ctx.all_by(
+                &matches,
+                |(&(face, cycle, start), &reversed)| push_occurrence(face, cycle, start, reversed),
+                "catia_mesh_occurrence_runs",
+            )?
+        };
+        if !unique {
+            return Ok(None);
         }
-        if pattern.len() > 3 {
-            if let Some((matches, mut storage)) = computed {
-                scratch.absorb(&mut storage)?;
-                scratch.with_storage(|| {
-                    ctx.insert_hash_map(&mut long_matches, pattern, matches, OPERATION)
-                })?;
-            }
+        if let Some((remaining, cached)) = query {
+            *remaining = remaining
+                .checked_sub(1)
+                .ok_or_else(|| CodecError::malformed("long pattern query count is empty"))?;
+            // The output row is already retained. Keep its index only for a later reader.
+            *cached = (*remaining > 0).then_some(cached_edge.unwrap_or(edge));
         }
         rows.push(occurrences);
     }
@@ -3572,8 +3603,9 @@ fn standard_mesh_missing_edge_assignment_domains(
             })?;
         }
         let mut trails = Vec::<EndpointTrail>::new();
-        while let Some(&smallest) = unseen.first() {
-            ctx.charge_work(1, "catia_missing_edge_iteration")?;
+        while let Some(&smallest) =
+            ctx.find_by(&unseen, |_| Ok(true), "catia_missing_edge_iteration")?
+        {
             // Start at the smallest edge with an open end, else the smallest edge.
             let open_start = ctx.find_by(
                 unseen.iter().copied(),
@@ -6541,9 +6573,12 @@ pub(crate) fn motif_port_points(
         }
         at += 3;
     }
-    while trims.get(at).is_some_and(|record| record.kind == 0x4a) {
-        ctx.charge_work(1, "catia_missing_edge_iteration")?;
-        let Some((first, last)) = columns(&trims[at]) else {
+    let mut quads = trims[at..].iter();
+    while let Some(record) = ctx
+        .next_charged(&mut quads, "catia_missing_edge_iteration")?
+        .filter(|record| record.kind == 0x4a)
+    {
+        let Some((first, last)) = columns(record) else {
             return Ok(None);
         };
         emit_column(ctx, &mut seen, first)?;
