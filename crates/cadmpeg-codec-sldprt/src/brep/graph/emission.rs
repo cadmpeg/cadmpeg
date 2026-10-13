@@ -93,9 +93,9 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
 
-/// One consumable graph group owns its value and admitted tree entry.
-struct GraphGroup<'ctx, T> {
-    value: T,
+/// One edge owns its incidence vector independently of the map nodes.
+struct EdgeIncidences<'ctx> {
+    value: Vec<(u16, u16, u16)>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -166,7 +166,6 @@ pub(super) fn decode_graph(
         )
     })?;
     drop(color_storage);
-    let mut source_storage = ctx.reserve_scoped(0, "hold Parasolid annotation stream")?;
     let mut out = Brep {
         face_colors: owned_face_colors,
         face_bridge_sequences,
@@ -184,14 +183,6 @@ pub(super) fn decode_graph(
     if t.bridges().is_empty() {
         return metadata_storage.commit_value(out);
     }
-    let source_stream = source_storage.with_storage(|| {
-        StreamHandle::new(
-            ctx,
-            copy_graph_stream_name(ctx, stream)?,
-            "allocate annotation stream handle",
-        )
-    })?;
-    let mut annotations = AnnotationBuilder::new();
     // Indexes and membership sets that only steer this walk are held here,
     // apart from the arenas the walk emits.
     let mut scratch = ctx.reserve_scoped(0, "SLDPRT graph walk scratch")?;
@@ -199,26 +190,22 @@ pub(super) fn decode_graph(
     // Equal references and sense give the same ring walk within one owner.
     // Keep the earliest equivalent bridge; None marks a conflicting owner.
     let mut faces = Vec::new();
-    let mut owned_faces = BTreeMap::<u16, GraphGroup<'_, Option<&topology::Bridge>>>::new();
+    let mut owner_storage = ctx.reserve_scoped(0, "hold Parasolid face owner map")?;
+    let mut owned_faces = BTreeMap::<u16, Option<&topology::Bridge>>::new();
     for (_, bridge) in ctx.admit_iter(t.bridges(), "select Parasolid face bridges")? {
         if let Some(owner) = bridge.owner {
-            let mut group = GraphGroup {
-                value: Some(bridge),
-                storage: ctx.reserve_scoped(0, "hold Parasolid face owner group")?,
-            };
-            match group.storage.with_storage(|| {
+            match owner_storage.with_storage(|| {
                 ctx.entry_btree_map(&mut owned_faces, owner, "index Parasolid face owners")
             })? {
                 std::collections::btree_map::Entry::Vacant(slot) => {
-                    slot.insert(group);
+                    slot.insert(Some(bridge));
                 }
                 std::collections::btree_map::Entry::Occupied(mut slot) => {
-                    let group = slot.get_mut();
-                    if let Some(selected) = group.value {
+                    if let Some(selected) = *slot.get() {
                         if bridge.refs != selected.refs || bridge.sense != selected.sense {
-                            group.value = None;
+                            *slot.get_mut() = None;
                         } else if (bridge.offset, bridge.attr) < (selected.offset, selected.attr) {
-                            group.value = Some(bridge);
+                            *slot.get_mut() = Some(bridge);
                         }
                     }
                 }
@@ -229,9 +216,7 @@ pub(super) fn decode_graph(
         }
     }
     let mut ambiguous_face_owners = 0;
-    for (_, group) in ctx.admit_iter(owned_faces, "resolve Parasolid face owners")? {
-        let selected = group.value;
-        drop(group);
+    for (_, selected) in ctx.admit_iter(owned_faces, "resolve Parasolid face owners")? {
         if let Some(first_bridge) = selected {
             let first_face = scratch.with_storage(|| walk_face(ctx, first_bridge, t))?;
             scratch
@@ -240,6 +225,7 @@ pub(super) fn decode_graph(
             ambiguous_face_owners += 1;
         }
     }
+    drop(owner_storage);
     ctx.stable_sort_by(
         &mut faces,
         |value| &value.bridge_attr,
@@ -247,11 +233,28 @@ pub(super) fn decode_graph(
         "sort Parasolid topology",
     )?;
     out.stats.ambiguous_face_owners += ambiguous_face_owners;
+    if faces.is_empty() {
+        return Ok(Brep {
+            losses: std::mem::take(&mut out.losses),
+            stats: std::mem::take(&mut out.stats),
+            ..Brep::default()
+        });
+    }
+    let mut source_storage = ctx.reserve_scoped(0, "hold Parasolid annotation stream")?;
+    let source_stream = source_storage.with_storage(|| {
+        StreamHandle::new(
+            ctx,
+            copy_graph_stream_name(ctx, stream)?,
+            "allocate annotation stream handle",
+        )
+    })?;
+    let mut annotations = AnnotationBuilder::new();
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
     // the ring walk. The ring order supplies a boundary edge's second endpoint;
     // a reciprocal twin supplies it for a two-sided edge.
-    let mut edge_incidence = BTreeMap::<u16, GraphGroup<'_, Vec<(u16, u16, u16)>>>::new();
+    let mut incidence_storage = ctx.reserve_scoped(0, "hold Parasolid edge incidence map")?;
+    let mut edge_incidence = BTreeMap::<u16, EdgeIncidences<'_>>::new();
 
     for f in ctx.admit_iter(&faces, "index Parasolid face edge incidences")? {
         for (_loop_attr, ring) in
@@ -275,11 +278,11 @@ pub(super) fn decode_graph(
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
                     let value = (ce_attr, start_vuse, next_vuse);
-                    let mut group = GraphGroup {
+                    let mut group = EdgeIncidences {
                         value: Vec::new(),
                         storage: ctx.reserve_scoped(0, "hold Parasolid edge incidence group")?,
                     };
-                    match group.storage.with_storage(|| {
+                    match incidence_storage.with_storage(|| {
                         ctx.entry_btree_map(
                             &mut edge_incidence,
                             edge_attr,
@@ -311,7 +314,11 @@ pub(super) fn decode_graph(
     }
     let (forward_coedges, forward_storage) = ctx
         .with_scoped_storage("hold Parasolid forward coedge stage", || {
-            forward_coedges_by_edge(ctx, t.coedges())
+            if edge_incidence.is_empty() {
+                Ok(BTreeMap::new())
+            } else {
+                forward_coedges_by_edge(ctx, t.coedges())
+            }
         })?;
 
     // Kept-entity sets, so only chain-reachable records are emitted.
@@ -372,7 +379,7 @@ pub(super) fn decode_graph(
         }
     }
 
-    drop((forward_coedges, forward_storage));
+    drop((incidence_storage, forward_coedges, forward_storage));
 
     // Points, in attr order.
     for &a in ctx.admit_iter(&kept_points, "emit Parasolid points")? {

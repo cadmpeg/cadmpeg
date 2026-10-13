@@ -408,6 +408,9 @@ fn ambiguous_owner_selection_skips_discarded_ring_walks() {
     for (dimension, operation) in [
         (ResourceDimension::WorkUnits, "walk Parasolid face loops"),
         (ResourceDimension::WorkUnits, "sort Parasolid face owners"),
+        (ResourceDimension::WorkUnits, "copy Parasolid graph stream name"),
+        (ResourceDimension::CollectionItems, "allocate annotation stream handle"),
+        (ResourceDimension::CollectionItems, "collect Parasolid face uses"),
         (
             ResourceDimension::MaterializedBytes,
             "collect Parasolid face uses",
@@ -416,6 +419,8 @@ fn ambiguous_owner_selection_skips_discarded_ring_walks() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_materialized_bytes = u64::MAX;
+        policy.limits.max_collection_items = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let probe =
             cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(dimension, operation, None);
@@ -618,4 +623,197 @@ fn consumed_owner_groups_retire_before_orientation() {
     let owned = boundary(&owned_tables);
     assert_eq!(owned.used, unowned.used);
     assert_eq!(owned.additional, unowned.additional);
+}
+
+fn materialized_boundary(
+    operation: &str,
+    mut run: impl FnMut(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError>,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            run(&ctx)?;
+            ctx.finish_session()
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("materialized storage boundary");
+    };
+    limit
+}
+
+fn graph_storage_boundary(
+    operation: &str,
+    tables: &crate::brep::topology::Tables,
+    carriers: &crate::brep::index::CarrierIndex,
+) -> cadmpeg_core::decode::ResourceLimit {
+    materialized_boundary(operation, |ctx| {
+        super::decode_graph(
+            ctx,
+            crate::brep::index::view::CarrierView::Retained(carriers),
+            tables,
+            crate::brep::entity::FactsSource::empty(ctx)?,
+            &crate::brep::typed::Facts::default(),
+            &cadmpeg_ir::stream_name!("live-map"),
+        )
+        .map(drop)
+    })
+}
+
+#[test]
+fn owner_map_backing_stays_live_during_the_first_of_two_walks() {
+    let setup = cadmpeg_test_support::service_decode_context();
+    let body = crate::test_support::parasolid::triangle_body();
+    let mut unowned = crate::brep::topology::scan(&setup, &body).unwrap();
+    let mut second = unowned.bridges()[&10].clone();
+    second.attr = 11;
+    unowned.insert_bridge(&setup, second).unwrap();
+    let mut owned = crate::brep::topology::scan(&setup, &body).unwrap();
+    for (&attr, bridge) in unowned.bridges() {
+        let mut bridge = bridge.clone();
+        bridge.owner = Some(700 + attr);
+        owned.insert_bridge(&setup, bridge).unwrap();
+    }
+    let carriers = crate::brep::index::scan_carriers(&setup, &body).unwrap();
+    let unowned_walk = graph_storage_boundary("walk Parasolid face loops", &unowned, &carriers);
+    let owned_walk = graph_storage_boundary("walk Parasolid face loops", &owned, &carriers);
+    let node = materialized_boundary("reference owner node", |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "reference owner map")?;
+        let mut owners = std::collections::BTreeMap::<u16, Option<&Bridge>>::new();
+        for owner in [710, 711] {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut owners, owner, None, "reference owner node")
+            })?;
+        }
+        Ok(())
+    });
+    assert_eq!(owned_walk.used, unowned_walk.used + node.additional);
+    assert_eq!(owned_walk.additional, unowned_walk.additional);
+}
+
+#[test]
+fn rejected_first_incidence_retires_only_its_vector() {
+    let setup = cadmpeg_test_support::service_decode_context();
+    let body = crate::test_support::parasolid::triangle_body();
+    let mut rejected = crate::brep::topology::scan(&setup, &body).unwrap();
+    let mut omitted = crate::brep::topology::scan(&setup, &body).unwrap();
+    let mut first = rejected.coedges()[&30].clone();
+    first.sense = Sense::Reversed;
+    rejected.insert_coedge(&setup, first.clone()).unwrap();
+    first.refs[6] = 0;
+    omitted.insert_coedge(&setup, first).unwrap();
+    let carriers = crate::brep::index::scan_carriers(&setup, &body).unwrap();
+    // Edge 40 rejects before endpoint publication. Both maps still own the
+    // node containing edges 41 and 42; neither keeps edge 40's vector.
+    let rejected = graph_storage_boundary("index Parasolid edge endpoints", &rejected, &carriers);
+    let omitted = graph_storage_boundary("index Parasolid edge endpoints", &omitted, &carriers);
+    assert_eq!(rejected.used, omitted.used);
+    assert_eq!(rejected.additional, omitted.additional);
+}
+
+#[test]
+fn incidence_map_admits_shared_nodes_before_endpoint_publication() {
+    let setup = cadmpeg_test_support::service_decode_context();
+    let body = crate::test_support::parasolid::triangle_body();
+    let mut six = crate::brep::topology::scan(&setup, &body).unwrap();
+    let template = six.coedges()[&30].clone();
+    for attr in 30..36 {
+        let mut coedge = if attr < 33 {
+            six.coedges()[&attr].clone()
+        } else {
+            template.clone()
+        };
+        coedge.attr = attr;
+        coedge.refs[3] = if attr == 35 { 30 } else { attr + 1 };
+        coedge.refs[6] = attr + 10;
+        six.insert_coedge(&setup, coedge).unwrap();
+    }
+    let mut five = crate::brep::topology::scan(&setup, &body).unwrap();
+    for coedge in six.coedges().values() {
+        five.insert_coedge(&setup, coedge.clone()).unwrap();
+    }
+    let mut last = five.coedges()[&35].clone();
+    last.refs[6] = 0;
+    five.insert_coedge(&setup, last).unwrap();
+    let carriers = crate::brep::index::scan_carriers(&setup, &body).unwrap();
+    let five = graph_storage_boundary("index Parasolid edge endpoints", &five, &carriers);
+    let six = graph_storage_boundary("index Parasolid edge endpoints", &six, &carriers);
+    let node = materialized_boundary("reference incidence node", |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "reference incidence map")?;
+        let mut entries = std::collections::BTreeMap::new();
+        for attr in 0_u16..6 {
+            let group = super::EdgeIncidences {
+                value: Vec::new(),
+                storage: ctx.reserve_scoped(0, "reference incidence group")?,
+            };
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut entries,
+                    attr,
+                    group,
+                    if attr == 5 { "reference incidence node" } else { "seed incidence nodes" },
+                )
+            })?;
+        }
+        Ok(())
+    });
+    let vector = materialized_boundary("reference incidence vector", |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "reference vector")?;
+        let mut values = Vec::new();
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut values,
+            (30_u16, 50_u16, 51_u16),
+            "reference incidence vector",
+        )
+    });
+    assert_eq!(six.used, five.used + node.additional + vector.additional);
+    assert_eq!(six.additional, five.additional);
+}
+
+#[test]
+fn empty_incidence_stage_skips_the_forward_coedge_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let setup = cadmpeg_test_support::service_decode_context();
+    let body = crate::test_support::parasolid::triangle_body();
+    let mut tables = crate::brep::topology::scan(&setup, &body).unwrap();
+    let carriers = crate::brep::index::scan_carriers(&setup, &body).unwrap();
+    let mut bridge = tables.bridges()[&10].clone();
+    bridge.refs[2] = 0;
+    tables.insert_bridge(&setup, bridge).unwrap();
+    assert_eq!(tables.coedges().len(), 3);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut facts = crate::brep::entity::FactsSource::empty(&ctx).unwrap();
+    facts.entity_count = 7;
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index Parasolid forward coedges",
+        None,
+    );
+    let decoded = super::decode_graph(
+        &ctx,
+        crate::brep::index::view::CarrierView::Retained(&carriers),
+        &tables,
+        facts,
+        &crate::brep::typed::Facts::default(),
+        &cadmpeg_ir::stream_name!("no-incidences"),
+    )
+    .unwrap();
+    drop(probe);
+    assert!(decoded.faces.is_empty());
+    assert!(decoded.coedges.is_empty());
+    assert!(decoded.annotations.provenance.is_empty());
+    assert_eq!(decoded.stats.source_entity_records, 7);
+    ctx.finish_session().unwrap();
 }
