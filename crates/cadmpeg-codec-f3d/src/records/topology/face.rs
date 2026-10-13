@@ -812,6 +812,20 @@ pub(crate) struct DesignFaceRecipeStructure {
     pub(crate) postlude_value: Option<i32>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignFaceRecipeStructure {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.root, &self.prelude, &self.sides, &self.postlude_value),
+            ctx,
+            operation,
+        )
+    }
+}
+
 impl Serialize for DesignFaceRecipeStructure {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;

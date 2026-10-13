@@ -176,3 +176,14 @@ fn unique_point_line_parameter_id_refuses_retained_limit() {
         ResourceDimension::RetainedBytes,
     );
 }
+
+#[test]
+fn point_line_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d point line source",
+        "f3d point line sketch identity",
+        "f3d point line pair source",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
+}

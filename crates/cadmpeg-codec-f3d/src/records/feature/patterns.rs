@@ -60,6 +60,21 @@ impl DesignAxis {
     }
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignAxis {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.origin.get(), self.direction.as_raw()).decode_cost(ctx, operation)
+    }
+}
+
 /// Proven origin and unit normal.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignPlane {

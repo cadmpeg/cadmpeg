@@ -19,9 +19,15 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         .expect("identity grammar");
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        directional_point_dimension(ctx, &[&first, &second], 2.0, parameter.clone(), 0.0)
-            .transpose()
-            .map(|_| ())
+        directional_point_dimension(
+            ctx,
+            &[&first, &second],
+            2.0,
+            (&parameter, "f3d directional point dimension parameter id"),
+            0.0,
+        )
+        .transpose()
+        .map(|_| ())
     });
 }
 
@@ -37,6 +43,14 @@ fn directional_point_dimension_first_id_refuses_retained_limit() {
 fn directional_point_dimension_second_id_refuses_retained_limit() {
     fixture(
         "f3d directional point dimension second id",
+        ResourceDimension::RetainedBytes,
+    );
+}
+
+#[test]
+fn directional_point_dimension_parameter_id_refuses_retained_limit() {
+    fixture(
+        "f3d directional point dimension parameter id",
         ResourceDimension::RetainedBytes,
     );
 }

@@ -68,7 +68,7 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
                     &sketch,
                     &entities,
                     EPS_TRANSITION_PROFILE,
-                    selections,
+                    &selections,
                     decode_ctx,
                 )
             })
@@ -76,23 +76,58 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         };
 
     assert_eq!(
-        crate::design::profile_select::unique_resolved_selection([Some(3), Some(3), Some(3)]),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::profile_select::unique_resolved_selection(
+                [Some(3), Some(3), Some(3)],
+                ctx,
+                |left, right| ctx.equal(left, right, "f3d test selected value comparison"),
+            )
+        })
+        .unwrap(),
         Some(3)
     );
     assert_eq!(
-        crate::design::profile_select::unique_resolved_selection([Some(3), None, Some(3)]),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::profile_select::unique_resolved_selection(
+                [Some(3), None, Some(3)],
+                ctx,
+                |left, right| ctx.equal(left, right, "f3d test selected value comparison"),
+            )
+        })
+        .unwrap(),
         Some(3)
     );
     assert_eq!(
-        crate::design::profile_select::unique_resolved_selection([Some(3), Some(4)]),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::profile_select::unique_resolved_selection(
+                [Some(3), Some(4)],
+                ctx,
+                |left, right| ctx.equal(left, right, "f3d test selected value comparison"),
+            )
+        })
+        .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::profile_select::unique_resolved_selection(std::iter::empty::<Option<u32>>()),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::profile_select::unique_resolved_selection(
+                std::iter::empty::<Option<u32>>(),
+                ctx,
+                |left, right| ctx.equal(left, right, "f3d test selected value comparison"),
+            )
+        })
+        .unwrap(),
         None
     );
     assert_eq!(
-        crate::design::profile_select::unique_resolved_selection([None::<u32>, None]),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::profile_select::unique_resolved_selection(
+                [None::<u32>, None],
+                ctx,
+                |left, right| ctx.equal(left, right, "f3d test selected value comparison"),
+            )
+        })
+        .unwrap(),
         None
     );
     let region = crate::design::profile_select::ResolvedProfileSelection::Regions(vec![

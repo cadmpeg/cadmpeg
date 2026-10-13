@@ -33,6 +33,22 @@ pub(crate) enum DesignEdgeIdentityLayout {
     Shortest,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeIdentityLayout {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 impl DesignEdgeIdentityLayout {
     /// Byte offset of the presence marker from the indexed-record header.
     pub(crate) fn marker_offset(self) -> u64 {
@@ -100,6 +116,40 @@ pub(crate) struct DesignEdgeIdentityOperand {
     /// Native identity or embedded bounded-face operand proving the resolved
     /// edge selection.
     pub(crate) resolution_identity_id: Option<String>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeIdentityOperand {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                &self.frame,
+                &self.id,
+                &self.scope_record_index,
+                &self.group_record_index,
+                &self.group_member_ordinal,
+                &self.class_tag,
+            ),
+            (
+                &self.layout,
+                &self.local_id,
+                &self.asset_id,
+                &self.context_id,
+                &self.historical,
+                &self.treatment_radius_candidates,
+            ),
+            (
+                &self.transition_edge_candidates,
+                &self.resolved_edge_slots,
+                &self.resolved_edge_slot,
+                &self.resolution_identity_id,
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -551,6 +601,69 @@ pub(crate) struct DesignEdgeOperand {
     pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     next_byte_offset: u64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeOperand {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                (
+                    &self.frame,
+                    &self.id,
+                    &self.scope_record_index,
+                    &self.scope_reference_ordinal,
+                    &self.class_tag,
+                    &self.paired_byte_offset,
+                ),
+                (
+                    &self.paired_class_tag,
+                    &self.recipe_record_byte_offset,
+                    &self.recipe_id,
+                    &self.recipe_prefix_bytes,
+                    &self.recipe_references,
+                    &self.recipe_program_offset,
+                ),
+                (
+                    &self.recipe_program,
+                    &self.recipe_structure,
+                    &self.surface_patch_recipe_structure,
+                    &self.local_topology_references,
+                    &self.candidate_faces,
+                    &self.result_candidate_faces,
+                ),
+                (
+                    &self.result_boundary_edge_slots,
+                    &self.preceding_candidate_faces,
+                    &self.terminal_candidate_faces,
+                    &self.changed_candidate_faces,
+                    &self.preceding_boundary_edge_slots,
+                    &self.terminal_boundary_edge_slots,
+                ),
+                (
+                    &self.changed_boundary_edge_slots,
+                    &self.deleted_boundary_edge_slots,
+                    &self.updated_boundary_edge_slots,
+                    &self.treatment_radius_candidates,
+                    &self.changed_boundary_edge_contexts,
+                    &self.terminal_boundary_edge_contexts,
+                ),
+                (
+                    &self.terminal_reference_edge_slots,
+                    &self.recipe_reference_contexts,
+                    &self.recipe_selectors,
+                    &self.recipe_state_id,
+                    &self.resolved_edge_slot,
+                    &self.resolved_axis,
+                ),
+            ),
+            (&self.next_record_index, &self.next_byte_offset),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -1095,6 +1208,16 @@ pub(crate) struct DesignEdgeTreatmentRadiusCandidate {
     pub(crate) edge_slot: i64,
     /// Characteristic radius of the inserted treatment carrier.
     pub(crate) radius: cadmpeg_ir::scalar::PositiveReal,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeTreatmentRadiusCandidate {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.edge_slot, &self.radius.get()).decode_cost(ctx, operation)
+    }
 }
 
 cadmpeg_core::named_optional_field!(pub(super) deserialize_resolved_edge_slot, i64, "resolved_edge_slot");

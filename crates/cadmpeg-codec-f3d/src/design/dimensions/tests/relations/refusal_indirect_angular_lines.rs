@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    indirect_angular_lines, HashMap, Point2, SketchEntityId, SketchGeometry,
+    indirect_angular_lines, BTreeMap, Point2, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId,
 };
 use cadmpeg_core::decode::ResourceDimension;
@@ -44,7 +44,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         })
         .unwrap(),
     );
-    let projected = HashMap::from([
+    let projected = BTreeMap::from([
         (("native", 1), &point),
         (("native", 2), &explicit),
         (("native", 3), &diagonal),
@@ -76,5 +76,37 @@ fn indirect_angular_second_id_refuses_retained_limit() {
     fixture(
         "f3d indirect angular second id",
         ResourceDimension::RetainedBytes,
+    );
+}
+
+#[test]
+fn indirect_angular_candidate_source_refuses_work_limit() {
+    fixture(
+        "f3d indirect angular candidate source",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn indirect_angular_candidate_stream_refuses_work_limit() {
+    fixture(
+        "f3d indirect angular candidate stream",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn indirect_angular_sketch_equality_refuses_work_limit() {
+    fixture(
+        "f3d indirect angular sketch equality",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn indirect_angular_explicit_equality_refuses_work_limit() {
+    fixture(
+        "f3d indirect angular explicit equality",
+        ResourceDimension::WorkUnits,
     );
 }
