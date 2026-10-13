@@ -72,7 +72,6 @@ use crate::om::sketch_scalar::{SketchMixedScalars, SketchScalarLaneForm, SketchS
 use crate::printable_string::PrintableString;
 use object_frame::DataBlockObjectFrame;
 use operation_record::{FeatureOperationRecord, OperationRecordSpan};
-use std::borrow::Cow;
 use std::num::NonZeroU8;
 use unlabeled_record::FeatureUnlabeledOperationRecord;
 mod pair_wire;
@@ -5122,7 +5121,11 @@ pub(super) fn feature_payload_strings(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let values = crate::om::operation_payload_strings(ctx, record.payload_view())?;
+            let mut value_storage =
+                ctx.reserve_scoped(0, "NX feature payload string parser rows")?;
+            let values = value_storage.with_storage(|| {
+                crate::om::operation_payload_strings(ctx, record.payload_view())
+            })?;
             for (ordinal, value) in ctx
                 .admit_iter(values, "visit NX operation payload strings")?
                 .enumerate()
@@ -5137,8 +5140,9 @@ pub(super) fn feature_payload_strings(
                     continue;
                 };
                 ctx.reserve_vec(&mut strings, 1, "NX feature payload strings")?;
-                let text =
-                    ctx.copy_retained_text(value.value.as_str(), "NX feature payload string text")?;
+                let text = value
+                    .value
+                    .try_into_owned_for_decode(ctx, "NX feature payload string text")?;
                 strings.push(FeaturePayloadString {
                     id: format_feature_history_id(
                         ctx,
@@ -5155,13 +5159,7 @@ pub(super) fn feature_payload_strings(
                         None,
                     )?,
                     ordinal: ordinal_u32,
-                    value: crate::payload_text::PayloadText::new(text).map_err(|error| {
-                        ctx.format_retained(
-                            format_args!("{error}"),
-                            "NX feature payload string error",
-                        )
-                        .map_or_else(|limit| limit, CodecError::InvalidInput)
-                    })?,
+                    value: text,
                     source_offset,
                 });
             }
@@ -6344,29 +6342,48 @@ pub(super) fn feature_datum_plane_payloads(
             continue;
         };
         let mut reservation = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
+        let mut source_text_storage = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
         let mut data_blocks = Vec::new();
-        let owned = ctx.copy_retained_text(first_source, "copy NX datum plane source blocks")?;
+        let owned = ctx.copy_scoped_text(
+            first_source,
+            &mut source_text_storage,
+            "copy NX datum plane source blocks",
+        )?;
         reservation.with_storage(|| {
             ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks")
         })?;
         for source in sources {
-            let owned = ctx.copy_retained_text(source, "copy NX datum plane source blocks")?;
+            let owned = ctx.copy_scoped_text(
+                source,
+                &mut source_text_storage,
+                "copy NX datum plane source blocks",
+            )?;
             reservation.with_storage(|| {
                 ctx.push_vec(&mut data_blocks, owned, "copy NX datum plane source blocks")
             })?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
-            continue;
-        };
-        drop(reservation);
-        let Some(joined) =
-            JoinedPayload::from_source(ctx, content.block_ids(), content.blocks().len(), &blocks)?
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+        })?
         else {
             continue;
         };
-        let (lanes, _lanes_storage, _lane_tokens_storage) =
+        let Some(joined) =
+            JoinedPayload::from_source(ctx, content.block_ids(), content.blocks().len(), blocks)?
+        else {
+            continue;
+        };
+        let (lanes, lane_tokens_storage, lanes_storage) =
             crate::om::datum_index::scan(ctx, joined.bytes())?;
-        let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
+        let lane = match <[_; 1]>::try_from(lanes) {
+            Ok([lane]) => Some(lane_tokens_storage.commit_value(lane.into_u64())?),
+            Err(_) => {
+                drop(lane_tokens_storage);
+                None
+            }
+        };
+        drop(lanes_storage);
+        let content = source_text_storage.commit_value(content)?;
         let key = identity_key(ctx, &header.id, "NX datum plane payload identity")?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:datum-plane-payload#{key}"),
@@ -6384,7 +6401,7 @@ pub(super) fn feature_datum_plane_payloads(
             operation_label,
             datum_plane_header,
             content,
-            index_lane: lane.map(crate::om::datum_index::DatumIndexLane::into_u64),
+            index_lane: lane,
         });
     }
     Ok(output)
@@ -6402,13 +6419,18 @@ pub(super) fn feature_datum_csys_payloads(
         let first = &construction.frame.members()[0].1;
         let second = &construction.frame.members()[1].1;
 
-        let data_blocks = [
-            ctx.copy_retained_text(first, "NX datum CSYS source block identity")?,
-            ctx.copy_retained_text(second, "NX datum CSYS source block identity")?,
-        ];
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let (content, source_storage) =
+            ctx.with_scoped_storage("NX datum CSYS source block identity", || {
+                let data_blocks = [
+                    ctx.copy_retained_text(first, "NX datum CSYS source block identity")?,
+                    ctx.copy_retained_text(second, "NX datum CSYS source block identity")?,
+                ];
+                FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)
+            })?;
+        let Some(content) = content else {
             continue;
         };
+        let content = source_storage.commit_value(content)?;
 
         let id = replace_operation_text(
             ctx,
@@ -6638,7 +6660,7 @@ pub(super) fn feature_datum_csys_descriptors(
             let reference_ordinal = u8::from(slot);
             let data_block = &construction.frame.members()[usize::from(reference_ordinal)].1;
             let Some(&(bytes, source_offset)) =
-                ctx.get_btree_map(&blocks, data_block, "find NX descriptor block bytes")?
+                ctx.get_btree_map(blocks, data_block, "find NX descriptor block bytes")?
             else {
                 continue;
             };
@@ -6830,7 +6852,7 @@ pub(super) fn feature_datum_plane_descriptors(
             .enumerate()
         {
             let Some(&(bytes, source_offset)) =
-                ctx.get_btree_map(&blocks, data_block, "find NX descriptor block bytes")?
+                ctx.get_btree_map(blocks, data_block, "find NX descriptor block bytes")?
             else {
                 continue;
             };
@@ -7278,11 +7300,16 @@ pub(super) fn feature_sketch_construction_payloads(
             .map(|member| member.data_block.as_str())
             .chain(std::iter::once(construction.terminal_data_block.as_str()));
         let mut reservation = ctx.reserve_scoped(0, "copy NX sketch construction source blocks")?;
+        let mut source_text_storage =
+            ctx.reserve_scoped(0, "copy NX sketch construction source blocks")?;
         let mut data_blocks = Vec::new();
         for source in source_ids {
             ctx.charge_work(1, "copy NX sketch construction source blocks")?;
-            let owned =
-                ctx.copy_retained_text(source, "copy NX sketch construction source blocks")?;
+            let owned = ctx.copy_scoped_text(
+                source,
+                &mut source_text_storage,
+                "copy NX sketch construction source blocks",
+            )?;
             reservation.with_storage(|| {
                 ctx.push_vec(
                     &mut data_blocks,
@@ -7291,10 +7318,13 @@ pub(super) fn feature_sketch_construction_payloads(
                 )
             })?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+        })?
+        else {
             continue;
         };
-        drop(reservation);
+        let content = source_text_storage.commit_value(content)?;
         let id = replace_operation_text(
             ctx,
             &construction.id,
@@ -7556,7 +7586,7 @@ fn construction_payload_frames<F: ConstructionPayloadFrames>(
             ctx,
             payload_blocks.iter().map(|block| &block.id),
             payload_blocks.len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -7578,102 +7608,17 @@ fn construction_payload_frames<F: ConstructionPayloadFrames>(
 
 type OffsetDataBlocks<'a> = BTreeMap<String, (&'a [u8], u64)>;
 
-struct OffsetDataBlockView<'blocks, 'ctx> {
-    blocks: Cow<'blocks, OffsetDataBlocks<'blocks>>,
-    _reservation: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
-}
-
-impl<'blocks> std::ops::Deref for OffsetDataBlockView<'blocks, '_> {
-    type Target = OffsetDataBlocks<'blocks>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.blocks
-    }
-}
-
-fn offset_data_block_bytes_for_section<'a>(
+fn offset_data_block_bytes<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    blocks: &mut OffsetDataBlocks<'a>,
-    section_ordinal: usize,
-    entry_offset: u64,
-    control: &crate::om::EntityRecord<'a>,
-    records: &[crate::om::EntityRecord<'a>],
-) -> Result<(), cadmpeg_core::CodecError> {
-    let block_count = records
-        .len()
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit("count NX offset block view records", 0, 1))?;
-    for block_ordinal in ctx.admit_iter(&(0..block_count), "visit NX offset block view records")? {
-        let block = if block_ordinal == 0 {
-            control
-        } else {
-            let Some(record) = records.get(block_ordinal - 1) else {
-                return Err(ctx.refuse_codec_limit("visit NX offset block view records", 0, 1));
-            };
-            record
-        };
-        let key = ctx.format_scoped_text(
-            reservation,
-            format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
-            "NX offset block view storage",
-        )?;
-        let offset = entry_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view source offset", 0, 1))?;
-        reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                blocks,
-                key,
-                (block.bytes, offset),
-                "NX offset block view entries",
-            )
-        })?;
-    }
-    Ok(())
-}
-
-fn offset_data_block_bytes<'a, 'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     container: &'a Container<'_>,
-) -> Result<OffsetDataBlockView<'a, 'ctx>, cadmpeg_core::CodecError> {
+) -> Result<&'a OffsetDataBlocks<'a>, cadmpeg_core::CodecError> {
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
-        return Ok(OffsetDataBlockView {
-            blocks: Cow::Borrowed(blocks),
-            _reservation: None,
-        });
+        return Ok(blocks);
     }
-    let (indexed, _indexed_storage) = container.indexed_om_sections(ctx)?;
-    if let Some(blocks) = container.cached_offset_data_block_bytes() {
-        return Ok(OffsetDataBlockView {
-            blocks: Cow::Borrowed(blocks),
-            _reservation: None,
-        });
-    }
-    let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage")?;
-    let mut blocks = BTreeMap::new();
-    for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(indexed, "visit NX offset data block sections")?
-        .enumerate()
-    {
-        let Some((control, _, records)) = section.as_offset_only() else {
-            continue;
-        };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        offset_data_block_bytes_for_section(
-            ctx,
-            &mut reservation,
-            &mut blocks,
-            section_ordinal,
-            entry_offset,
-            control,
-            records,
-        )?;
-    }
-    Ok(OffsetDataBlockView {
-        blocks: Cow::Owned(blocks),
-        _reservation: Some(reservation),
-    })
+    let (_indexed, _indexed_storage) = container.indexed_om_sections(ctx)?;
+    container
+        .cached_offset_data_block_bytes()
+        .ok_or_else(|| ctx.refuse_codec_limit("NX cached offset block bytes", 0, 1))
 }
 
 /// Decode exact framed scalar fields across reconstructed sketch payloads.
@@ -7693,7 +7638,7 @@ pub(super) fn feature_sketch_payload_scalars(
             .iter()
             .map(|member| &member.data_block)
             .chain(std::iter::once(&construction.terminal_data_block));
-        let Some(joined) = JoinedPayload::from_source(ctx, ids, id_count, &blocks)? else {
+        let Some(joined) = JoinedPayload::from_source(ctx, ids, id_count, blocks)? else {
             continue;
         };
         for (ordinal, field) in ctx
@@ -7838,7 +7783,7 @@ pub(super) fn feature_sketch_payload_names(
             .iter()
             .map(|member| &member.data_block)
             .chain(std::iter::once(&construction.terminal_data_block));
-        let Some(joined) = JoinedPayload::from_source(ctx, ids, count, &blocks)? else {
+        let Some(joined) = JoinedPayload::from_source(ctx, ids, count, blocks)? else {
             continue;
         };
         let construction_payload = replace_operation_text(
@@ -9544,3 +9489,6 @@ cadmpeg_core::named_optional_field!(
     "witness_source_offset"
 );
 cadmpeg_core::named_optional_field!(deserialize_operand_data_block, String, "operand_data_block");
+
+#[cfg(test)]
+mod text_storage_tests;

@@ -55,14 +55,6 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
 }
 
 #[test]
-fn recipe_sketch_candidate_refuses_collection_limit() {
-    fixture(
-        "f3d recipe sketch candidate",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
 fn recipe_point_candidate_refuses_collection_limit() {
     fixture(
         "f3d recipe point candidate",

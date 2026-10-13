@@ -186,7 +186,7 @@ mod tests {
                     .expect("cache allocation succeeds");
             }
             let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
-            let get = |cache: &BlendSurfaceFrameCache, surface, parameter| {
+            let get = |cache: &BlendSurfaceFrameCache<'_>, surface, parameter| {
                 cache
                     .get(geometry_ctx, surface, parameter, false)
                     .expect("cache lookup fits the service profile")
@@ -239,7 +239,7 @@ mod tests {
 
             let first =
                 SurfaceId::mint("test:model:entity#boundary-surface-0").expect("identity grammar");
-            let get = |cache: &BlendSurfaceFrameCache, surface, parameter, boundary| {
+            let get = |cache: &BlendSurfaceFrameCache<'_>, surface, parameter, boundary| {
                 cache
                     .get_boundary_point(geometry_ctx, surface, parameter, boundary)
                     .expect("cache lookup fits the service profile")
@@ -268,30 +268,85 @@ mod tests {
     }
 
     #[test]
-    fn blend_frame_cache_refuses_retained_identity_at_limit() {
+    fn blend_frame_cache_refuses_live_identity_at_materialized_limit() {
         use cadmpeg_core::decode::ResourceDimension;
-
-        crate::test_support::with_decode_context_over(
+        let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
+        let frame = (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        );
+        crate::test_support::resource_refusal_at(
             &[],
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
+            ResourceDimension::MaterializedBytes,
+            "nx blend frame cache identity",
             |ctx| {
                 let budget = GeometryWorkBudget::from_context(ctx, 100);
-                let surface =
-                    SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
-                let frame = (
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    1.0,
-                );
-                let limit = BlendSurfaceFrameCache::default()
-                    .remember(&surface, 0.0, false, frame, &budget)
-                    .expect_err("frame identity exceeds retained limit");
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                assert_eq!(limit.operation, "nx blend frame cache identity");
+                Ok(BlendSurfaceFrameCache::default()
+                    .remember(&surface, 0.0, false, frame, &budget)?)
+            },
+        );
+    }
+
+    #[test]
+    fn blend_cache_eviction_and_clear_release_live_identity_storage() {
+        let surface = SurfaceId::mint("test:model:entity#blend-cache").unwrap();
+        let frame = (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        );
+        for boundary in [false, true] {
+            let capacity = if boundary {
+                MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES
+            } else {
+                MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES
+            };
+            // Copying the incoming identity overlaps the oldest live entry.
+            let peak =
+                cadmpeg_core::decode::u64_from_index((capacity + 1) * surface.as_str().len());
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_materialized_bytes = peak;
+                },
+                |ctx| {
+                    let budget = GeometryWorkBudget::from_context(ctx, 100);
+                    let mut cache = BlendSurfaceFrameCache::default();
+                    for ordinal in 0..2 * capacity {
+                        let parameter = cadmpeg_core::convert::f64_from_index(ordinal).unwrap();
+                        if boundary {
+                            cache
+                                .remember_boundary_point(&surface, parameter, 0, frame.0, &budget)
+                                .unwrap();
+                        } else {
+                            cache
+                                .remember(&surface, parameter, false, frame, &budget)
+                                .unwrap();
+                        }
+                    }
+                    cache.clear();
+                    drop(
+                        ctx.reserve_scoped(peak, "nx cleared blend cache storage probe")
+                            .unwrap(),
+                    );
+                    assert_eq!(ctx.resource_refusal(), None);
+                },
+            );
+        }
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "nx blend boundary cache identity",
+            |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                Ok(BlendSurfaceFrameCache::default()
+                    .remember_boundary_point(&surface, 0.0, 0, frame.0, &budget)?)
             },
         );
     }
@@ -475,32 +530,85 @@ mod tests {
     }
 
     #[test]
-    fn polynomial_root_sorts_refuse_work_before_returning_roots() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        for (dimension, operation) in [
-            (
-                ResourceDimension::WorkUnits,
-                "nx polynomial critical roots sort",
-            ),
-            (ResourceDimension::WorkUnits, "nx polynomial roots sort"),
-        ] {
-            crate::test_support::resource_refusal_at(&[], dimension, operation, |ctx| {
-                super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0]).map(|_| ())
-            });
-        }
+    fn polynomial_roots_need_no_work_for_a_quartic() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let roots = super::real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0])
+                    .expect("finite quartic roots");
+                assert_eq!(roots.len(), 3);
+                for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
+                    assert!((actual - expected).abs() <= 1024.0 * f64::EPSILON);
+                }
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
     }
 
     #[test]
     fn polynomial_root_sorts_need_no_scratch_for_a_quartic() {
         crate::test_support::with_decode_context_over(
             &[],
-            |policy| policy.limits.max_materialized_bytes = 0,
+            |policy| {
+                policy.limits.max_materialized_bytes = 0;
+            },
             |ctx| {
-                let roots = super::real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0])
-                    .expect("fixed-degree sorts need no scratch")
+                let roots = super::real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0])
                     .expect("finite quartic roots");
                 assert_eq!(roots.len(), 3);
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+    }
+
+    #[test]
+    fn quartic_candidate_order_preserves_signed_zeros_and_infinities() {
+        let mut roots = [f64::INFINITY, 0.0, 3.0, f64::NEG_INFINITY, -0.0, -3.0];
+        super::order_quartic_root_candidates(&mut roots);
+        assert_eq!(
+            roots.map(f64::to_bits),
+            [f64::NEG_INFINITY, -3.0, -0.0, 0.0, 3.0, f64::INFINITY].map(f64::to_bits)
+        );
+    }
+
+    #[test]
+    fn ellipse_inverse_keeps_seeded_minimum_without_input_work() {
+        let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            1.0,
+        )
+        .unwrap();
+        let geometry = cadmpeg_ir::geometry::SolvedCurveGeometry::Ellipse(ellipse);
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 0;
+            },
+            |ctx| {
+                let parameter = super::closest_periodic_analytic_curve_parameter(
+                    &geometry,
+                    Point3::new(0.0, 0.0, 0.0),
+                    Some(std::f64::consts::FRAC_PI_2),
+                )
+                .unwrap();
+                assert!((parameter - std::f64::consts::FRAC_PI_2).abs() <= 1024.0 * f64::EPSILON);
+                assert_eq!(
+                    super::closest_periodic_analytic_curve_parameter(
+                        &geometry,
+                        Point3::new(3.0, 0.0, 0.0),
+                        Some(0.0)
+                    ),
+                    Some(0.0)
+                );
+                assert_eq!(ctx.resource_refusal(), None);
             },
         );
     }
@@ -1816,18 +1924,20 @@ type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
 const MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES: usize = 512;
 const MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES: usize = 2_048;
 
-struct BlendSurfaceFrameCacheEntry {
+struct BlendSurfaceFrameCacheEntry<'ctx> {
     surface: String,
     parameter_bits: u64,
     allow_offset_contact: bool,
     frame: BlendSurfaceFrame,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-struct BlendBoundaryPointCacheEntry {
+struct BlendBoundaryPointCacheEntry<'ctx> {
     surface: String,
     parameter_bits: u64,
     boundary: usize,
     point: Point3,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 /// Bounded certificates for deterministic blend-geometry evaluations.
@@ -1835,12 +1945,12 @@ struct BlendBoundaryPointCacheEntry {
 /// Entries belong to one [`GeometryWorkBudget`] and are valid only while its
 /// model index is unchanged. Failed evaluations are not retained because a
 /// later contact seed or route may produce a valid witness.
-pub(super) struct BlendSurfaceFrameCache {
-    entries: VecDeque<BlendSurfaceFrameCacheEntry>,
-    boundary_points: VecDeque<BlendBoundaryPointCacheEntry>,
+pub(super) struct BlendSurfaceFrameCache<'ctx> {
+    entries: VecDeque<BlendSurfaceFrameCacheEntry<'ctx>>,
+    boundary_points: VecDeque<BlendBoundaryPointCacheEntry<'ctx>>,
 }
 
-impl Default for BlendSurfaceFrameCache {
+impl Default for BlendSurfaceFrameCache<'_> {
     fn default() -> Self {
         Self {
             entries: VecDeque::with_capacity(MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES),
@@ -1852,7 +1962,7 @@ impl Default for BlendSurfaceFrameCache {
 // Each cache holds at most its fixed entry bound, so a scan visits a bounded
 // number of entries. An entry's fixed fields are tested before its identity
 // text, and only an identity comparison is input-sized work.
-impl BlendSurfaceFrameCache {
+impl<'ctx> BlendSurfaceFrameCache<'ctx> {
     fn position(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1895,7 +2005,7 @@ impl BlendSurfaceFrameCache {
         parameter: f64,
         allow_offset_contact: bool,
         frame: BlendSurfaceFrame,
-        geometry_budget: &GeometryWorkBudget<'_>,
+        geometry_budget: &GeometryWorkBudget<'ctx>,
     ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
         if let Some(entry) = self
             .position(
@@ -1909,9 +2019,14 @@ impl BlendSurfaceFrameCache {
             entry.frame = frame;
             return Ok(());
         }
-        let surface = geometry_budget
+        let mut storage = geometry_budget
             .charges
-            .copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity")?;
+            .reserve_scoped_limit(0, "nx blend frame cache identity")?;
+        let surface = storage.with_storage_limit(|| {
+            geometry_budget
+                .charges
+                .copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity")
+        })?;
         geometry_budget.charges.charge_collection_items_limit(
             cadmpeg_core::decode::u64_from_index(1),
             "nx blend frame cache entries",
@@ -1920,6 +2035,7 @@ impl BlendSurfaceFrameCache {
             self.entries.pop_front();
         }
         self.entries.push_back(BlendSurfaceFrameCacheEntry {
+            _storage: storage,
             surface,
             parameter_bits: parameter.to_bits(),
             allow_offset_contact,
@@ -1970,7 +2086,7 @@ impl BlendSurfaceFrameCache {
         parameter: f64,
         boundary: usize,
         point: Point3,
-        geometry_budget: &GeometryWorkBudget<'_>,
+        geometry_budget: &GeometryWorkBudget<'ctx>,
     ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
         if let Some(entry) = self
             .boundary_position(geometry_budget.charges, surface, parameter, boundary)?
@@ -1979,9 +2095,14 @@ impl BlendSurfaceFrameCache {
             entry.point = point;
             return Ok(());
         }
-        let surface = geometry_budget
+        let mut storage = geometry_budget
             .charges
-            .copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity")?;
+            .reserve_scoped_limit(0, "nx blend boundary cache identity")?;
+        let surface = storage.with_storage_limit(|| {
+            geometry_budget
+                .charges
+                .copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity")
+        })?;
         geometry_budget.charges.charge_collection_items_limit(
             cadmpeg_core::decode::u64_from_index(1),
             "nx blend boundary cache entries",
@@ -1991,6 +2112,7 @@ impl BlendSurfaceFrameCache {
         }
         self.boundary_points
             .push_back(BlendBoundaryPointCacheEntry {
+                _storage: storage,
                 surface,
                 parameter_bits: parameter.to_bits(),
                 boundary,
@@ -5354,22 +5476,12 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
                     + (point.z - origin.z) * direction.z,
             ))
         }
-        Some(geometry @ SolvedCurveGeometry::Circle(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                geometry,
-                point,
-                seed,
-                geometry_budget,
-            )
-        }
-        Some(geometry @ SolvedCurveGeometry::Ellipse(_)) => {
-            closest_periodic_analytic_curve_parameter_with_budget(
-                geometry,
-                point,
-                seed,
-                geometry_budget,
-            )
-        }
+        Some(geometry @ SolvedCurveGeometry::Circle(_)) => Ok(
+            closest_periodic_analytic_curve_parameter(geometry, point, seed),
+        ),
+        Some(geometry @ SolvedCurveGeometry::Ellipse(_)) => Ok(
+            closest_periodic_analytic_curve_parameter(geometry, point, seed),
+        ),
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
         }
@@ -5377,14 +5489,13 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
     }
 }
 
-fn closest_periodic_analytic_curve_parameter_with_budget(
+fn closest_periodic_analytic_curve_parameter(
     geometry: &SolvedCurveGeometry,
     point: Point3,
     seed: Option<f64>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Option<f64> {
     if seed.is_some_and(|seed| !seed.is_finite()) {
-        return Ok(None);
+        return None;
     }
     let (center, axis, reference, ellipse) = match geometry {
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -5399,22 +5510,22 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             let major_direction = ellipse_curve.frame().reference().as_raw();
             (center, *axis, *major_direction, Some(ellipse_curve))
         }
-        _ => return Ok(None),
+        _ => return None,
     };
     let transverse = axis.cross(reference);
     let delta = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
     let phase = delta.dot(transverse).atan2(delta.dot(reference));
     if !phase.is_finite() {
-        return Ok(None);
+        return None;
     }
     let circle_parameter = seed.map_or(phase, |seed| {
         phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
     });
     if !circle_parameter.is_finite() {
-        return Ok(None);
+        return None;
     }
     let Some(ellipse_curve) = ellipse else {
-        return Ok(Some(circle_parameter));
+        return Some(circle_parameter);
     };
     let anchor = seed.unwrap_or(phase);
     let major_radius = ellipse_curve.major_radius().get();
@@ -5439,12 +5550,7 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
-    let Ok(roots) = real_polynomial_roots(geometry_budget.charges, &coefficients) else {
-        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-    };
-    let Some(roots) = roots else {
-        return Ok(None);
-    };
+    let roots = real_polynomial_roots(&coefficients)?;
     let parameters = roots
         .into_iter()
         .map(|root| 2.0 * root.atan())
@@ -5458,66 +5564,65 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     // the candidates, with the two ends and the anchor, have a fixed bound.
     let mut candidates = Vec::new();
     for parameter in parameters {
-        if !geometry_budget.charge() {
-            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-        }
         candidates.push((
             parameter,
             (major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y),
         ));
     }
-    Ok(
-        closest_parameter_candidates(&candidates, Some(anchor), geometry_budget)?
-            .and_then(|parameters| parameters.first().copied()),
-    )
+    let minimum_distance = candidates
+        .iter()
+        .map(|candidate| candidate.1)
+        .min_by(f64::total_cmp)?;
+    candidates
+        .iter()
+        .filter(|candidate| {
+            let scale = candidate
+                .1
+                .abs()
+                .max(minimum_distance.abs())
+                .max(f64::MIN_POSITIVE);
+            (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale
+        })
+        .map(|candidate| candidate.0)
+        .min_by(|first, second| {
+            (first - anchor)
+                .abs()
+                .total_cmp(&(second - anchor).abs())
+                .then_with(|| first.total_cmp(second))
+        })
 }
 
 /// The real roots of the quartic `coefficients`, lowest power first. A
 /// quartic states a fixed amount of work: its roots, the roots of its
 /// derivatives and their bisection steps are bounded by its degree. The
-/// context admits the root sorts.
-pub(super) fn real_polynomial_roots(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    coefficients: &[f64; 5],
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+/// root sorts need no input-sized admission.
+pub(super) fn real_polynomial_roots(coefficients: &[f64; 5]) -> Option<Vec<f64>> {
     if coefficients
         .iter()
         .any(|coefficient| !coefficient.is_finite())
     {
-        return Ok(None);
+        return None;
     }
-    let Some(mut roots) = polynomial_roots_in_unit_interval(ctx, coefficients)? else {
-        return Ok(None);
-    };
+    let mut roots = polynomial_roots_in_unit_interval(coefficients)?;
     let mut reversed = *coefficients;
     reversed.reverse();
-    let Some(reversed_roots) = polynomial_roots_in_unit_interval(ctx, &reversed)? else {
-        return Ok(None);
-    };
+    let reversed_roots = polynomial_roots_in_unit_interval(&reversed)?;
     roots.extend(
         reversed_roots
             .into_iter()
             .filter(|root| *root != 0.0)
             .map(f64::recip),
     );
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial roots sort",
-    )?;
+    order_quartic_root_candidates(&mut roots);
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Ok(Some(roots))
+    Some(roots)
 }
 
 /// The roots in `[-1, 1]` of a polynomial of at most degree four, lowest
 /// power first.
-fn polynomial_roots_in_unit_interval(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    coefficients: &[f64],
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
     let mut coefficients = coefficients.to_vec();
     while coefficients
         .last()
@@ -5526,56 +5631,41 @@ fn polynomial_roots_in_unit_interval(
         coefficients.pop();
     }
     if coefficients.is_empty() {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
-    let Some(degree) = coefficients.len().checked_sub(1) else {
-        return Ok(None);
-    };
+    let degree = coefficients.len().checked_sub(1)?;
     if degree == 0 {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
     let scale = coefficients
         .iter()
         .fold(0.0_f64, |scale, coefficient| scale.max(coefficient.abs()));
     if !scale.is_finite() || scale == 0.0 {
-        return Ok(Some(Vec::new()));
+        return Some(Vec::new());
     }
     for coefficient in &mut coefficients {
         *coefficient /= scale;
     }
     if degree == 1 {
         let root = -coefficients[0] / coefficients[1];
-        return Ok(root.is_finite().then(|| {
+        return root.is_finite().then(|| {
             if (-1.0..=1.0).contains(&root) {
                 vec![root]
             } else {
                 Vec::new()
             }
-        }));
+        });
     }
-    let Some(derivative) = coefficients
+    let derivative = coefficients
         .iter()
         .enumerate()
         .skip(1)
         .map(|(degree, coefficient)| {
             Some(*coefficient * cadmpeg_core::convert::f64_from_index(degree)?)
         })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(mut critical) = polynomial_roots_in_unit_interval(ctx, &derivative)? else {
-        return Ok(None);
-    };
-    ctx.stable_sort_by(
-        &mut critical,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial critical roots sort",
-    )?;
-    critical.dedup_by(|first, second| {
-        (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
-    });
+        .collect::<Option<Vec<_>>>()?;
+    // The recursive solve returns ordered roots under the same deduplication gate.
+    let critical = polynomial_roots_in_unit_interval(&derivative)?;
     let value = |parameter| polynomial_value(&coefficients, parameter);
     let tolerance = |parameter: f64| {
         256.0
@@ -5629,16 +5719,25 @@ fn polynomial_roots_in_unit_interval(
         }
         roots.push(lower + (upper - lower) * 0.5);
     }
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "nx polynomial roots sort",
-    )?;
+    order_quartic_root_candidates(&mut roots);
     roots.dedup_by(|first, second| {
         (*first - *second).abs() <= 256.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
     });
-    Ok(Some(roots))
+    Some(roots)
+}
+
+/// Order the quartic solver's candidate lists without allocating scratch.
+/// A degree-d interval solve adds at most one candidate per derivative root
+/// and per partition: at most 2^d - 1 candidates, or 15 for degree four.
+/// Merging the reciprocal solve states at most 30 candidates.
+fn order_quartic_root_candidates(roots: &mut [f64]) {
+    for next in 1..roots.len() {
+        let mut current = next;
+        while current > 0 && roots[current].total_cmp(&roots[current - 1]).is_lt() {
+            roots.swap(current, current - 1);
+            current -= 1;
+        }
+    }
 }
 
 fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {

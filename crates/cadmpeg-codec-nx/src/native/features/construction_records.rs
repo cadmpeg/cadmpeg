@@ -212,7 +212,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         {
             continue;
         }
-        let Some((data_blocks, block_reservation)) = copy_block_ids(
+        let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
             ctx,
             field
                 .iter()
@@ -231,10 +231,12 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+        })?
+        else {
             continue;
         };
-        drop(block_reservation);
         let Some(operation_key) = operation_key(
             ctx,
             operation_label,
@@ -243,6 +245,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:projected-curve-construction-payload#{operation_key}"),
             "NX projected curve payload identity",
@@ -287,16 +290,16 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX projected-curve string parser rows")?;
+        let values =
+            value_storage.with_storage(|| crate::om::string_values(ctx, joined.bytes(), 0))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::string_values(ctx, joined.bytes(), 0)?,
-                "visit NX projected-curve payload strings",
-            )?
+            .admit_iter(values, "visit NX projected-curve payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -313,10 +316,9 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             )?;
             let construction_payload =
                 ctx.copy_retained_text(&payload.id, "NX projected curve string payload")?;
-            let text =
-                ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
-            let value = crate::printable_string::PrintableString::new(text)
-                .map_err(CodecError::malformed)?;
+            let value = value
+                .value
+                .try_into_owned_for_decode(ctx, "NX projected curve string value")?;
             ctx.reserve_vec(&mut strings, 1, "NX projected curve strings")?;
             strings.push(FeatureProjectedCurveConstructionString {
                 id,
@@ -714,7 +716,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         else {
             continue;
         };
-        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+        let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
             ctx,
             graph
                 .iter()
@@ -733,7 +735,15 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source_array(
+                ctx,
+                data_blocks,
+                blocks,
+                source_id_storage,
+            )
+        })?
+        else {
             continue;
         };
         let Some(operation_key) = operation_key(
@@ -744,6 +754,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:surface-construction-payload#{operation_key}"),
             "NX surface construction payload identity",
@@ -842,16 +853,16 @@ pub(in crate::native) fn feature_surface_construction_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX surface string parser rows")?;
+        let values = value_storage
+            .with_storage(|| crate::om::surface_payload_strings(ctx, joined.bytes()))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::surface_payload_strings(ctx, joined.bytes())?,
-                "visit NX surface payload strings",
-            )?
+            .admit_iter(values, "visit NX surface payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -862,10 +873,9 @@ pub(in crate::native) fn feature_surface_construction_strings(
                 ctx.refuse_codec_limit("nx surface payload string ordinal", 0, u64::MAX)
             })?;
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
-            let text =
-                ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
-            let value =
-                crate::payload_text::PayloadText::new(text).map_err(CodecError::malformed)?;
+            let value = value
+                .value
+                .try_into_owned_for_decode(ctx, "NX surface payload string text")?;
             ctx.reserve_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
@@ -1994,6 +2004,7 @@ pub(in crate::native) fn feature_block_construction_payloads(
     let mut payloads = Vec::new();
     for construction in ctx.admit_iter(constructions, "build NX block construction payloads")? {
         let mut reservation = ctx.reserve_scoped(0, "NX block construction source blocks")?;
+        let mut source_text_storage = ctx.reserve_scoped(0, "NX block construction source text")?;
         let mut data_blocks = Vec::new();
         for source in construction
             .members
@@ -2001,8 +2012,11 @@ pub(in crate::native) fn feature_block_construction_payloads(
             .map(|member| member.data_block.as_str())
             .chain(std::iter::once(construction.terminal_data_block.as_str()))
         {
-            ctx.charge_work(1, "NX block construction source blocks")?;
-            let owned = ctx.copy_retained_text(source, "NX block construction source blocks")?;
+            let owned = ctx.copy_scoped_text(
+                source,
+                &mut source_text_storage,
+                "NX block construction source blocks",
+            )?;
             reservation.with_storage(|| {
                 ctx.push_vec(
                     &mut data_blocks,
@@ -2011,10 +2025,13 @@ pub(in crate::native) fn feature_block_construction_payloads(
                 )
             })?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+        })?
+        else {
             continue;
         };
-        drop(reservation);
+        let content = source_text_storage.commit_value(content)?;
         let id = replace_operation_text(
             ctx,
             &construction.id,
@@ -2054,7 +2071,7 @@ pub(in crate::native) fn feature_block_payload_scalars(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -2113,7 +2130,7 @@ pub(in crate::native) fn feature_block_payload_names(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -2703,7 +2720,7 @@ pub(in crate::native) fn data_block_object_frames(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut out = Vec::new();
     for (data_block, (bytes, source_offset)) in
-        ctx.admit_iter(&*blocks, "scan NX offset-store blocks")?
+        ctx.admit_iter(blocks, "scan NX offset-store blocks")?
     {
         for (ordinal, frame) in ctx
             .admit_iter(
@@ -2865,3 +2882,9 @@ pub(super) fn unique_offset_data_store(
     }
     Ok(Some(first))
 }
+
+#[cfg(test)]
+mod text_storage_tests;
+
+#[cfg(test)]
+mod payload_storage_tests;

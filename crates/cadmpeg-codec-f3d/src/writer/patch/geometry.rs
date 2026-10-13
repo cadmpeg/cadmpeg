@@ -399,7 +399,7 @@ fn patch_asm_geometry(
             if matches!(record.chunk(15), Some(sab::Token::True)) {
                 let mut native_curve = edit.curve.clone();
                 let writer_arena = cadmpeg_core::decode::DecodeArena::new();
-                let writer_policy = cadmpeg_core::decode::DecodePolicy::desktop();
+                let writer_policy = crate::writer::primitives::WRITING_POLICY;
                 let (writer_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
                     &[],
                     &writer_arena,

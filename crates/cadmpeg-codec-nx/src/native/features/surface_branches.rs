@@ -246,9 +246,10 @@ mod tests {
             "/Root/UG_PART/UG_PART",
             part,
         )]);
-        let container =
-            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-                .expect("composed surface branch container");
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("composed surface branch container");
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             super::feature_surface_construction_branches(
                 ctx,

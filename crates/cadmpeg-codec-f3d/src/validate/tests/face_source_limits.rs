@@ -89,7 +89,11 @@ fn source_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn face_source_member_index_refuses_collection_limit() {
-    let error = source_error(0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Face source member records",
+        |cap| Err::<(), cadmpeg_core::CodecError>(source_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Face source member records")
@@ -98,7 +102,11 @@ fn face_source_member_index_refuses_collection_limit() {
 
 #[test]
 fn face_source_carrier_index_refuses_collection_limit() {
-    let error = source_error(2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D Face source carriers",
+        |cap| Err::<(), cadmpeg_core::CodecError>(source_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Face source carriers")
@@ -107,7 +115,11 @@ fn face_source_carrier_index_refuses_collection_limit() {
 
 #[test]
 fn face_source_invalid_finding_refuses_collection_limit() {
-    let error = source_error(3, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(source_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")

@@ -208,16 +208,14 @@ mod tests {
         0xff, 0xff, 0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03,
     ];
 
-    fn lane_container(lane: &[u8]) -> container::Container<'static> {
+    fn lane_file(lane: &[u8]) -> Vec<u8> {
         let mut store = offset_only_indexed_om_section();
         store.extend_from_slice(lane);
         let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
         let end_at = index_start + 3 * 4;
         let end = u32::try_from(store.len()).expect("test store length");
         store[end_at..end_at + 4].copy_from_slice(&end.to_le_bytes());
-        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
-            .expect("lane container")
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)])
     }
 
     type Route = fn(&DecodeContext<'_>, &container::Container<'_>) -> Result<usize, CodecError>;
@@ -237,7 +235,11 @@ mod tests {
     }
 
     fn lane_refusal(lane: &[u8], route: Route, dimension: ResourceDimension) -> CodecError {
-        let container = lane_container(lane);
+        let file = lane_file(lane);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("synthetic container");
 
         let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
             ResourceDimension::CollectionItems => |policy| {
@@ -260,7 +262,11 @@ mod tests {
     fn native_compact_lane_routes_keep_resolved_frames() {
         let routes: [(_, Route); 2] = [(COUNTED, counted_count), (ABR, abr_count)];
         for (lane, route) in routes {
-            let container = lane_container(lane);
+            let file = lane_file(lane);
+            let container = crate::test_support::with_decode_context(|ctx| {
+                crate::container::scan_bytes(ctx, &file)
+            })
+            .expect("synthetic container");
             assert_eq!(
                 crate::test_support::with_decode_context(|ctx| route(ctx, &container))
                     .expect("resolved lane"),
@@ -335,7 +341,7 @@ mod tests {
         );
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
         let container =
-            crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
                 .expect("required invariant");
 
         let lanes = crate::test_support::with_decode_context(|ctx| {

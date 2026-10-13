@@ -27,10 +27,9 @@ fn boolean_native_route_refusal(
         &[],
     );
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("Boolean native container");
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("Boolean native container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::feature_boolean_operations(
             ctx,

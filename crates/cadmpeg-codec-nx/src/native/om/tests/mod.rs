@@ -166,7 +166,7 @@ fn control_class_route_refusal(
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container =
-        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .expect("control class fixture");
     let classes = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_class_references(ctx, &container)
@@ -192,7 +192,7 @@ fn data_block_reference_route_refusal(
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container =
-        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .expect("data block reference fixture");
     let record = super::ObjectRecord {
         id: "test-record".to_owned(),
@@ -228,7 +228,7 @@ fn data_block_reference_route_refusal(
     )
 }
 
-fn part_color_container() -> crate::container::Container<'static> {
+fn part_color_file() -> Vec<u8> {
     let mut table = vec![0x02, 0x80, 0xd9, 0x01];
     for ordinal in 0..=216 {
         let name = if ordinal == 0 {
@@ -274,15 +274,16 @@ fn part_color_container() -> crate::container::Container<'static> {
     let end_at = index_start + 3 * 4;
     let end = u32::try_from(section.len()).expect("test color section length");
     section[end_at..end_at + 4].copy_from_slice(&end.to_le_bytes());
-    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
-    crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
-        .expect("part color container")
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)])
 }
 
 fn part_color_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = part_color_container();
+    let file = part_color_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let (tables, definitions) =
         crate::test_support::with_decode_context(|ctx| super::part_color_tables(ctx, &container))
             .expect("part color projection");
@@ -672,7 +673,7 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
     let file =
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     assert!(
@@ -1049,7 +1050,7 @@ fn native_catalog_classifies_product_anchored_control_atomically() {
         offset_only_indexed_om_section_with_index_values(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let forms = crate::test_support::with_decode_context(|ctx| {
@@ -1092,7 +1093,7 @@ fn offset_store_class_identities_span_ordered_registries() {
     store.extend_from_slice(&size_framed_om_section());
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file))
             .expect("required invariant");
 
     let classes = crate::test_support::with_decode_context_over(
@@ -1894,3 +1895,5 @@ fn nx_object_record_handle_pair_work_loops_refuse_named_sites() {
 mod registry_search;
 
 mod column_search;
+
+mod budget_projection;
