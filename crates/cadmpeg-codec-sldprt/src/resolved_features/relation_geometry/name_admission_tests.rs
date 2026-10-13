@@ -103,7 +103,7 @@ fn declared_slot_handle_reuses_selected_reference_and_class() {
         let mut probe = None;
         assert!(declared_slot_handle_dimension_center(
             &ctx,
-            &lanes,
+            || crate::resolved_features::relation_geometry::declared_entity_handle_owner(&ctx, &lanes, &operand),
             "feature",
             &operand,
             |lane, _| {
@@ -163,7 +163,7 @@ fn declared_slot_handle_requires_class_inside_owner_marker_interval() {
         }
         let ctx = cadmpeg_test_support::service_decode_context();
         let resolved = declared_slot_handle_dimension_center(
-            &ctx, &lanes, "feature", &operand, |_, _| Ok(Some([0, 1])),
+            &ctx, || crate::resolved_features::relation_geometry::declared_entity_handle_owner(&ctx, &lanes, &operand), "feature", &operand, |_, _| Ok(Some([0, 1])),
         ).unwrap().unwrap();
         assert_eq!(resolved.0.id(), "slot");
         assert_eq!(resolved.1.id(), "center");

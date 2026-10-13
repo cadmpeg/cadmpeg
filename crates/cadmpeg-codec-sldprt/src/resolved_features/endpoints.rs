@@ -710,24 +710,22 @@ fn roster_curve_endpoint_markers_for_route<'a>(
                 }
                 Ok(endpoints)
             };
-        let first_indexed_count = match index_candidates.clone().next() {
-            Some(indices) => {
-                let (_storage, endpoints);
-                (endpoints, _storage) =
-                    ctx.with_scoped_storage(OPERATION, || resolve_indexed(indices))?;
-                endpoints.len()
-            }
-            None => 0,
-        };
+        let mut first_indexed_count = None;
         let (indexed_storage, (indexed, indexed_ambiguous));
         ((indexed, indexed_ambiguous), indexed_storage) = ctx
             .with_scoped_storage(OPERATION, || {
-                resolve_indexed_marker_candidates(ctx, index_candidates.map(resolve_indexed))
+                resolve_indexed_marker_candidates(ctx, index_candidates.map(|indices| {
+                    let endpoints = resolve_indexed(indices)?;
+                    if point_object_construction && first_indexed_count.is_none() {
+                        first_indexed_count = Some(endpoints.len());
+                    }
+                    Ok(endpoints)
+                }))
             })?;
         if indexed_ambiguous {
             return Ok(Vec::new());
         }
-        if point_object_construction && indexed.is_empty() && first_indexed_count == 1 {
+        if point_object_construction && indexed.is_empty() && first_indexed_count == Some(1) {
             return Ok(Vec::new());
         }
         if indexed.len() != 2 {

@@ -213,7 +213,7 @@ fn one_declared_circular_child_does_not_build_an_aggregate() {
     let operation = "sldprt declared entity handle pairs sort";
     let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
     let (center, radius) =
-        super::declared_entity_handle_circular_marker(&ctx, &lanes, "feature", &operand, 5.0)
+        super::declared_entity_handle_circular_marker(&ctx, || crate::resolved_features::relation_geometry::declared_entity_handle_owner(&ctx, &lanes, &operand), "feature", &operand, 5.0)
             .unwrap()
             .unwrap();
     assert!(std::ptr::eq(center, &raw const lanes[0].sketch_entities[0]));

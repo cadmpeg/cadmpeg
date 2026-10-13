@@ -69,7 +69,7 @@ fn circle_handle_classifies_literal_names_and_skips_singleton_sort() {
     let probe_arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &probe_policy).unwrap();
     let operation = "match SLDPRT circle handle class";
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         ResourceDimension::WorkUnits, operation, None,
     );
     assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
@@ -77,13 +77,23 @@ fn circle_handle_classifies_literal_names_and_skips_singleton_sort() {
         panic!("fixed-literal classification must not charge name lengths");
     };
     assert_eq!(limit.additional, 1);
-    drop(_probe);
+    drop(probe);
 
+    let CodecError::ResourceLimit(limit) =
+        crate::test_support::work_refusal_at("match SLDPRT circle handle driver", |ctx| {
+            circle_dimension_handle_driver(ctx, &relation, &input)
+        })
+    else {
+        panic!("driver visit after class visits must refuse");
+    };
+    assert_eq!(limit.additional, 1);
+
+    let work_per_call = limit.used.checked_add(limit.additional).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 32;
     policy.limits.max_collection_items = 64;
-    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_work_units = work_per_call.checked_mul(64).unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
@@ -92,15 +102,6 @@ fn circle_handle_classifies_literal_names_and_skips_singleton_sort() {
             .is_none());
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(limit) =
-        crate::test_support::work_refusal_at("match SLDPRT circle handle driver", |ctx| {
-            circle_dimension_handle_driver(ctx, &relation, &input)
-        })
-    else {
-        panic!("driver visit after class comparisons must refuse");
-    };
-    assert_eq!(limit.additional, 1);
-
     // A singleton has no sorting work. Its visits and ID comparison remain admitted.
     let mut singleton = input.clone();
     singleton.classes.clear();
