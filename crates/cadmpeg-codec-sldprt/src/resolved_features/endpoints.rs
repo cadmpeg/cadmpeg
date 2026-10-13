@@ -712,15 +712,18 @@ fn roster_curve_endpoint_markers_for_route<'a>(
             };
         let mut first_indexed_count = None;
         let (indexed_storage, (indexed, indexed_ambiguous));
-        ((indexed, indexed_ambiguous), indexed_storage) = ctx
-            .with_scoped_storage(OPERATION, || {
-                resolve_indexed_marker_candidates(ctx, index_candidates.map(|indices| {
-                    let endpoints = resolve_indexed(indices)?;
-                    if point_object_construction && first_indexed_count.is_none() {
-                        first_indexed_count = Some(endpoints.len());
-                    }
-                    Ok(endpoints)
-                }))
+        ((indexed, indexed_ambiguous), indexed_storage) =
+            ctx.with_scoped_storage(OPERATION, || {
+                resolve_indexed_marker_candidates(
+                    ctx,
+                    index_candidates.map(|indices| {
+                        let endpoints = resolve_indexed(indices)?;
+                        if point_object_construction && first_indexed_count.is_none() {
+                            first_indexed_count = Some(endpoints.len());
+                        }
+                        Ok(endpoints)
+                    }),
+                )
             })?;
         if indexed_ambiguous {
             return Ok(Vec::new());

@@ -641,7 +641,7 @@ fn declared_entity_handle_circular_carriers(
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
                 ctx,
-                || crate::resolved_features::relation_geometry::declared_entity_handle_owner(ctx, lanes, operand),
+                || super::relation_geometry::declared_entity_handle_owner(ctx, lanes, operand),
                 relation.feature_ref.as_str(),
                 operand,
                 radius,

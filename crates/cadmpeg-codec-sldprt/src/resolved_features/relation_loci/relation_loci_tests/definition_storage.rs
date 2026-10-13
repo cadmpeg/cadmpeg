@@ -250,7 +250,10 @@ fn dynamic_marker_pair_keeps_only_selected_identities() {
                 RelationMarkers::from_map(&ctx, &marker_map)
             })
             .unwrap();
-        let cached = [0, 1].map(|operand| super::super::relation_operand_marker_in(&ctx, &relation, operand, &sketch, &markers).unwrap());
+        let cached = [0, 1].map(|operand| {
+            super::super::relation_operand_marker_in(&ctx, &relation, operand, &sketch, &markers)
+                .unwrap()
+        });
         unique_dynamic_marker_point_pair(
             &ctx,
             &sketch,
@@ -335,7 +338,10 @@ fn dynamic_direct_roster_storage(duplicate_identity: bool) {
                 RelationMarkers::from_map(&ctx, &marker_map)
             })
             .unwrap();
-        let cached = [0, 1].map(|operand| super::super::relation_operand_marker_in(&ctx, &relation, operand, &sketch, &markers).unwrap());
+        let cached = [0, 1].map(|operand| {
+            super::super::relation_operand_marker_in(&ctx, &relation, operand, &sketch, &markers)
+                .unwrap()
+        });
         unique_dynamic_direct_point_roster_pair(
             &ctx,
             &relation,

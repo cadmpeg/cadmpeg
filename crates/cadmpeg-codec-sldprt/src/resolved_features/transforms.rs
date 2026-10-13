@@ -1059,7 +1059,8 @@ pub(super) fn marker_entities<'a>(
     filter: MarkerEntityFilter<'_>,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker entities";
-    let (identities, _storage) = marker_entity_ids(ctx, marker_id, markers_by_id, loci_by_marker, filter)?;
+    let (identities, _storage) =
+        marker_entity_ids(ctx, marker_id, markers_by_id, loci_by_marker, filter)?;
     let mut result = Vec::new();
     for identity in ctx.admit_iter(identities, OPERATION)? {
         let identity = copy_sketch_entity_identity(ctx, identity, OPERATION)?;
@@ -1074,10 +1075,24 @@ pub(super) fn marker_entity_ids<'a, 'loci, 'ctx>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     loci_by_marker: &'loci HashMap<String, Vec<SketchLocus>>,
     filter: MarkerEntityFilter<'_>,
-) -> Result<(Vec<&'loci SketchEntityId>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<&'loci SketchEntityId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     const OPERATION: &str = "resolve SLDPRT marker entities";
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    marker_entities_inner(ctx, &mut storage, marker_id, markers_by_id, loci_by_marker, filter, &mut HashSet::new())
+    marker_entities_inner(
+        ctx,
+        &mut storage,
+        marker_id,
+        markers_by_id,
+        loci_by_marker,
+        filter,
+        &mut HashSet::new(),
+    )
 }
 
 fn marker_entities_inner<'a, 'loci, 'ctx>(
@@ -1088,7 +1103,13 @@ fn marker_entities_inner<'a, 'loci, 'ctx>(
     loci_by_marker: &'loci HashMap<String, Vec<SketchLocus>>,
     filter: MarkerEntityFilter<'_>,
     visited: &mut HashSet<&'a str>,
-) -> Result<(Vec<&'loci SketchEntityId>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<&'loci SketchEntityId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     const OPERATION: &str = "resolve SLDPRT linked marker entities";
     let _nesting = ctx.enter_nested(OPERATION)?;
     let mut direct = None;
@@ -1097,8 +1118,15 @@ fn marker_entities_inner<'a, 'loci, 'ctx>(
         for locus in ctx.admit_iter(loci, OPERATION)? {
             let identity = locus_entity(locus);
             if let MarkerEntityFilter::Lines(entities) = filter {
-                let Some(entity) = entities.entity(ctx, identity, OPERATION)? else { continue; };
-                if !matches!(entity.geometry.definition(), SketchGeometryDefinition::Line { .. }) { continue; }
+                let Some(entity) = entities.entity(ctx, identity, OPERATION)? else {
+                    continue;
+                };
+                if !matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Line { .. }
+                ) {
+                    continue;
+                }
             }
             storage.with_storage(|| ctx.push_vec(&mut identities, identity, OPERATION))?;
         }
@@ -1118,14 +1146,31 @@ fn marker_entities_inner<'a, 'loci, 'ctx>(
             if ctx.equal(link.entity_ref.as_str(), marker_id, OPERATION)?
                 || (matches!(filter, MarkerEntityFilter::Lines(_))
                     && matches!(marker.kind(), SketchInputKind::Relation(_))
-                    && marker.local_id() == Some(u32::from(link.local_id))) { continue; }
-            let (candidates, candidate_storage) = marker_entities_inner(ctx, visited_storage, &link.entity_ref, markers_by_id, loci_by_marker, filter, visited)?;
-            if candidates.is_empty() { continue; }
+                    && marker.local_id() == Some(u32::from(link.local_id)))
+            {
+                continue;
+            }
+            let (candidates, candidate_storage) = marker_entities_inner(
+                ctx,
+                visited_storage,
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                filter,
+                visited,
+            )?;
+            if candidates.is_empty() {
+                continue;
+            }
             let Some((identities, _storage)) = selected.as_mut() else {
                 selected = Some((candidates, candidate_storage));
                 continue;
             };
-            ctx.retain_vec(identities, |identity| Ok(ctx.binary_search(&candidates, identity, OPERATION)?.is_ok()), OPERATION)?;
+            ctx.retain_vec(
+                identities,
+                |identity| Ok(ctx.binary_search(&candidates, identity, OPERATION)?.is_ok()),
+                OPERATION,
+            )?;
         }
     }
     ctx.remove_hash_set(visited, marker_id, OPERATION)?;
