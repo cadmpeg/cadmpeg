@@ -85,6 +85,9 @@ fn apply_configuration_state(
     feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::new(state.definition, outputs);
 }
 
+/// Copied feature position and its model identity for state publication.
+type PublicationSource<'features> = (usize, &'features FeatureId);
+
 fn copy_configuration_edge_features<'features>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &'features [cadmpeg_ir::features::Feature],
@@ -94,21 +97,33 @@ fn copy_configuration_edge_features<'features>(
 ) -> Result<
     (
         Vec<cadmpeg_ir::features::Feature>,
-        Vec<(usize, &'features FeatureId)>,
+        Vec<PublicationSource<'features>>,
     ),
     cadmpeg_core::CodecError,
 > {
     const OPERATION: &str = "retain SLDPRT configuration features";
     let mut copied = Vec::new();
     let mut publication = Vec::new();
-    let mut identity_storage = ctx.reserve_scoped(0, "select SLDPRT configuration edge identities")?;
+    let mut identity_storage =
+        ctx.reserve_scoped(0, "select SLDPRT configuration edge identities")?;
     let mut last_identities = HashMap::new();
     if !identity_consumers.is_empty() {
         for feature in ctx.admit_iter(features, "select SLDPRT configuration edge identities")? {
-            let Some(native) = feature.native_ref.as_deref() else { continue; };
-            if ctx.contains_hash_set(identity_consumers, native, "select SLDPRT configuration edge identities")? {
+            let Some(native) = feature.native_ref.as_deref() else {
+                continue;
+            };
+            if ctx.contains_hash_set(
+                identity_consumers,
+                native,
+                "select SLDPRT configuration edge identities",
+            )? {
                 identity_storage.with_storage(|| {
-                    ctx.insert_hash_map(&mut last_identities, native, feature, "select SLDPRT configuration edge identities")
+                    ctx.insert_hash_map(
+                        &mut last_identities,
+                        native,
+                        feature,
+                        "select SLDPRT configuration edge identities",
+                    )
                 })?;
             }
         }
@@ -137,7 +152,12 @@ fn copy_configuration_edge_features<'features>(
         });
         let identity_consumer = !applicable
             && !last_identities.is_empty()
-            && ctx.get_hash_map(&last_identities, native, "select SLDPRT configuration edge identities")?
+            && ctx
+                .get_hash_map(
+                    &last_identities,
+                    native,
+                    "select SLDPRT configuration edge identities",
+                )?
                 .is_some_and(|winner| std::ptr::eq(*winner, feature));
         if !applicable && !identity_consumer {
             continue;
@@ -175,7 +195,11 @@ fn copy_configuration_edge_features<'features>(
             apply_configuration_state(&mut feature, state);
         }
         if applicable {
-            ctx.push_vec(&mut publication, (copied.len(), source_id), "index SLDPRT supplemental publication sources")?;
+            ctx.push_vec(
+                &mut publication,
+                (copied.len(), source_id),
+                "index SLDPRT supplemental publication sources",
+            )?;
         }
         ctx.push_vec(&mut copied, feature, OPERATION)?;
     }
@@ -818,15 +842,21 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
                 Ok::<_, cadmpeg_core::CodecError>((features, publication))
             })?;
         drop((consumers, identity_consumers, consumer_storage));
-        for &(feature_index, source_id) in ctx.admit_iter(
-            &publication, "scan SLDPRT supplemental publication sources",
-        )? {
+        for &(feature_index, source_id) in
+            ctx.admit_iter(&publication, "scan SLDPRT supplemental publication sources")?
+        {
             let feature = &features[feature_index];
-            let states = ctx.get_btree_map(&staged, &configuration_index, STAGING)?
-                .map_or(&ir.model.configurations[configuration_index].feature_states,
-                    |configuration| &configuration.states);
-            let Some(state) = ctx.get_btree_map(states, &feature.id, "look up SLDPRT ordered key")?
-            else { continue; };
+            let states = ctx
+                .get_btree_map(&staged, &configuration_index, STAGING)?
+                .map_or(
+                    &ir.model.configurations[configuration_index].feature_states,
+                    |configuration| &configuration.states,
+                );
+            let Some(state) =
+                ctx.get_btree_map(states, &feature.id, "look up SLDPRT ordered key")?
+            else {
+                continue;
+            };
             let dependencies_equal = feature.dependencies.len() == state.dependencies.len()
                 && ctx.all_by(
                     feature
@@ -848,32 +878,33 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             if dependencies_equal && definition_equal {
                 continue;
             }
-        let configuration = staging_storage
-            .with_storage(|| ctx.entry_btree_map(&mut staged, configuration_index, STAGING))?;
-        let configuration = match configuration {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                let storage = ctx.reserve_scoped(0, STAGING)?;
-                entry.insert(SupplementalConfiguration {
-                    states: std::mem::take(
-                        &mut ir.model.configurations[configuration_index].feature_states,
-                    ),
-                    leases: BTreeMap::new(),
-                    storage,
-                })
-            }
-        };
+            let configuration = staging_storage
+                .with_storage(|| ctx.entry_btree_map(&mut staged, configuration_index, STAGING))?;
+            let configuration = match configuration {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let storage = ctx.reserve_scoped(0, STAGING)?;
+                    entry.insert(SupplementalConfiguration {
+                        states: std::mem::take(
+                            &mut ir.model.configurations[configuration_index].feature_states,
+                        ),
+                        leases: BTreeMap::new(),
+                        storage,
+                    })
+                }
+            };
             let Some(state) = ctx.get_mut_btree_map(
-                &mut configuration.states, &feature.id, "look up mutable SLDPRT ordered key",
-            )? else { continue; };
+                &mut configuration.states,
+                &feature.id,
+                "look up mutable SLDPRT ordered key",
+            )?
+            else {
+                continue;
+            };
             let leases = configuration
                 .storage
                 .with_storage(|| {
-                    ctx.entry_btree_map(
-                        &mut configuration.leases,
-                        source_id,
-                        STAGING,
-                    )
+                    ctx.entry_btree_map(&mut configuration.leases, source_id, STAGING)
                 })?
                 .or_default();
             if !dependencies_equal {

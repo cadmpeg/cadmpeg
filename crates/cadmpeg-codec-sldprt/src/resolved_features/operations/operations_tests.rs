@@ -1216,7 +1216,9 @@ fn configuration_operation_evidence() -> (
     let mut native = configuration_extrusion_feature();
     native.xml_tag = "Extrusion".into();
     native.kind = "Extrusion".into();
-    native.parameters.insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
+    native
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
     let mut histories = [FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1226,8 +1228,10 @@ fn configuration_operation_evidence() -> (
         features: vec![native],
     }];
     let local = crate::history::project::project_features(
-        &cadmpeg_test_support::service_decode_context(), &histories,
-    ).unwrap();
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+    )
+    .unwrap();
     histories[0].features[0].input_class = Some("moExtrusion_c".into());
     let mut lanes = split_line_limit_input().1;
     let lane = &mut lanes[0];
@@ -1265,9 +1269,20 @@ fn configuration_operation_local_veto_skips_base_name_index() {
     policy.limits.max_materialized_bytes = 128 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "bind SLDPRT extrusion operations", None,
+        ResourceDimension::WorkUnits,
+        "bind SLDPRT extrusion operations",
+        None,
     );
-    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &base_lanes, &lanes, Some(4)).unwrap();
+    inherit_configuration_operations(
+        &ctx,
+        &mut local,
+        &base,
+        &histories,
+        &base_lanes,
+        &lanes,
+        Some(4),
+    )
+    .unwrap();
     assert_eq!(local, expected);
     ctx.finish_session().unwrap();
 }
@@ -1287,9 +1302,12 @@ fn configuration_operation_empty_base_lanes_skip_history_index() {
     policy.limits.max_materialized_bytes = 128 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "index SLDPRT operation history", None,
+        ResourceDimension::WorkUnits,
+        "index SLDPRT operation history",
+        None,
     );
-    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &[], &[], Some(4)).unwrap();
+    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &[], &[], Some(4))
+        .unwrap();
     assert_eq!(local, expected);
     ctx.finish_session().unwrap();
 }
@@ -1313,7 +1331,9 @@ fn configuration_operation_unresolved_base_indexes_are_scoped() {
             let base = local.clone();
             let mut expected = local.clone();
             expected[0].evaluation.edit(|definition, _| {
-                if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition {
+                if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
+                    definition
+                {
                     *op = BooleanOp::Join;
                 }
             });
@@ -1322,9 +1342,20 @@ fn configuration_operation_unresolved_base_indexes_are_scoped() {
             policy.limits.max_retained_bytes = u64::MAX;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                ResourceDimension::RetainedBytes, operation, None,
+                ResourceDimension::RetainedBytes,
+                operation,
+                None,
             );
-            inherit_configuration_operations(&ctx, &mut local, &base, &histories, &lanes, &[], Some(4)).unwrap();
+            inherit_configuration_operations(
+                &ctx,
+                &mut local,
+                &base,
+                &histories,
+                &lanes,
+                &[],
+                Some(4),
+            )
+            .unwrap();
             assert_eq!(local, expected);
             ctx.finish_session().unwrap();
         }
@@ -1352,7 +1383,8 @@ fn configuration_operation_base_resolution_is_cached_per_identity() {
     policy.limits.max_work_units = 512 * 1024;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &lanes, &[], Some(4)).unwrap();
+    inherit_configuration_operations(&ctx, &mut local, &base, &histories, &lanes, &[], Some(4))
+        .unwrap();
     assert_eq!(local, expected);
     ctx.finish_session().unwrap();
 }
@@ -1369,7 +1401,16 @@ fn configuration_operation_without_bases_or_histories_does_not_build_indexes() {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        inherit_configuration_operations(&ctx, &mut configured, base, histories, &lanes, &[], Some(4)).unwrap();
+        inherit_configuration_operations(
+            &ctx,
+            &mut configured,
+            base,
+            histories,
+            &lanes,
+            &[],
+            Some(4),
+        )
+        .unwrap();
         assert_eq!(configured, local);
         ctx.finish_session().unwrap();
     }
