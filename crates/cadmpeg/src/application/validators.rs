@@ -118,14 +118,45 @@ mod tests {
         );
     }
 
+    /// The FreeCAD validator's own use of one dimension on an empty namespace,
+    /// read from the refusal of an oversized follow-up charge.
+    #[cfg(feature = "fcstd")]
+    fn codec_usage(ir: &CadIr, dimension: ResourceDimension) -> u64 {
+        let inputs = InputCatalog::with_builtins();
+        let codec = inputs
+            .descriptors()
+            .find_map(|descriptor| {
+                descriptor
+                    .codec()
+                    .filter(|codec| codec.id().as_str() == "fcstd")
+            })
+            .expect("FreeCAD codec is registered");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+            .expect("validation context");
+        let findings = codec.validate_native(&ctx, ir).expect("codec validation");
+        assert_eq!(findings.len(), 2);
+        let refusal = match dimension {
+            ResourceDimension::CollectionItems => ctx.charge_collection_items(u64::MAX, "probe"),
+            ResourceDimension::RetainedBytes => ctx.charge_retained(u64::MAX, "probe"),
+            _ => unreachable!("probed dimensions"),
+        };
+        let Err(CodecError::ResourceLimit(refusal)) = refusal else {
+            panic!("oversized probe refuses");
+        };
+        refusal.used
+    }
+
     #[cfg(feature = "fcstd")]
     #[test]
     fn native_report_growth_admits_each_slot_once() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
         let _ = ir.native.namespace_mut("fcstd");
-        // The empty namespace fails the physical ledger and byte coverage checks.
-        for limit in [2, 1] {
+        // The empty namespace yields two findings; appending them to the
+        // report admits one slot each beyond the codec's own items.
+        let items = codec_usage(&ir, ResourceDimension::CollectionItems) + 2;
+        for limit in [items, items - 1] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = limit;
@@ -133,7 +164,7 @@ mod tests {
             let mut findings = Vec::new();
             let result = validate_native(&ctx, &inputs, &ir, &mut findings).map(|()| findings);
             let result = ctx.finish(result);
-            if limit == 2 {
+            if limit == items {
                 assert_eq!(result.unwrap().len(), 2);
             } else {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
@@ -149,8 +180,10 @@ mod tests {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
         let _ = ir.native.namespace_mut("fcstd");
-        // The destination starts empty; amortized growth reserves four Finding slots.
-        let bytes = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Finding>());
+        // The empty destination grows to four Finding slots beyond the codec's
+        // own retained storage.
+        let bytes = codec_usage(&ir, ResourceDimension::RetainedBytes)
+            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Finding>());
         for limit in [bytes, bytes - 1] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
