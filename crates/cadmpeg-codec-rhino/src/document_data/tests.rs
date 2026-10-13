@@ -1066,7 +1066,10 @@ fn document_digest_refuses_unadmitted_byte_work() {
     let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
         panic!("hashing must preserve the work refusal");
     };
-    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(refusal.operation, "document digest");
     assert_eq!(refusal.used, 0);
     assert_eq!(refusal.additional, u64::try_from(bytes.len()).unwrap());
