@@ -39,7 +39,7 @@ fn decode_asm_binary(
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
     let width = header.width;
-    let stream = crate::dialect::record_stream_start(ctx, bytes, Family::Asm, header)?;
+    let stream = crate::dialect::record_stream_start(Family::Asm, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
             ctx,
@@ -119,7 +119,7 @@ fn decode_acis_binary(
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Decoded, CodecError> {
-    let stream = crate::dialect::record_stream_start(ctx, bytes, Family::Acis, header)?;
+    let stream = crate::dialect::record_stream_start(Family::Acis, header);
     let Some(stream) = stream else {
         return Err(unsupported_unframed(
             ctx,

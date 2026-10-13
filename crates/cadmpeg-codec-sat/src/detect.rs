@@ -187,7 +187,7 @@ pub(crate) fn inspect(
     // report the same `sat:` row and the same admission for the same bytes.
     let (matched, kernel) = match &kind {
         StreamKind::AsmBinary(header) => {
-            let stream = crate::dialect::record_stream_start(ctx, bytes, Family::Asm, header)?;
+            let stream = crate::dialect::record_stream_start(Family::Asm, header);
             header_attributes(ctx, &header.metadata, Family::Asm, &mut attributes)?;
             if header.metadata.has_history_partition() {
                 ctx.push_vec(
@@ -206,7 +206,7 @@ pub(crate) fn inspect(
             crate::dialect::layers(ctx, &evidence)?
         }
         StreamKind::AcisBinary(header) => {
-            let stream = crate::dialect::record_stream_start(ctx, bytes, Family::Acis, header)?;
+            let stream = crate::dialect::record_stream_start(Family::Acis, header);
             let evidence = StreamEvidence::Binary {
                 family: Family::Acis,
                 header,
