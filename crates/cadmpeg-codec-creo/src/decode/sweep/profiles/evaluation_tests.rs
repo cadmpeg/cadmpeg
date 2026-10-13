@@ -23,7 +23,7 @@ fn profile_sampling_propagates_evaluator_refusal() {
     .expect("line spline");
     let run = |ctx: &DecodeContext<'_>| {
         let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, &nurbs)?;
-        super::nurbs_profile_point(ctx, &mut evaluator, &nurbs, 0.5)
+        super::nurbs_profile_point(&mut evaluator, &nurbs, 0.5)
     };
     let error = crate::test_support::last_refusal_at(
         &[],

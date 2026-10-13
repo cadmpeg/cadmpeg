@@ -3,7 +3,7 @@
 
 use super::operation_record::OperationBodyInput;
 use super::scalar::PayloadScalarAtom;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,16 +52,28 @@ pub(crate) struct OperationBodyScalarTriple {
 }
 
 /// Decode complete three-scalar clauses following ordered operation body fields.
-pub(crate) fn operation_body_scalar_triples(
+pub(crate) fn operation_body_scalar_triples<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    record: OperationBodyInput<'_>,
+) -> Result<
+    (
+        Vec<OperationBodyScalarTriple>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage("NX body scalar triple scratch", || {
+        read_operation_body_scalar_triples(ctx, record)
+    })
+}
+
+fn read_operation_body_scalar_triples(
     ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
 ) -> Result<Vec<OperationBodyScalarTriple>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(record.bytes().len()),
-        "scan NX body scalar triples",
-    )?;
     let mut triples = Vec::new();
-    for (ordinal, reference) in super::operation_body_reference_candidates(record).enumerate() {
+    for (ordinal, reference) in super::operation_body_reference_candidates(ctx, record)?.enumerate()
+    {
         let parsed = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
@@ -91,43 +103,43 @@ pub(crate) fn operation_body_scalar_triples(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    fn refusal(dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) -> CodecError {
         let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00";
 
-        crate::test_support::with_decode_context_over(
-            bytes,
-            |policy| {
-                configure(policy);
-            },
-            |ctx| {
-                let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
-                super::operation_body_scalar_triples(ctx, record).unwrap_err()
-            },
-        )
+        crate::test_support::resource_refusal_at(bytes, dimension, operation, |ctx| {
+            let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
+            super::operation_body_scalar_triples(ctx, record).map(|(value, _storage)| value)
+        })
     }
 
     #[test]
     fn operation_body_scalar_triples_refuse_collection_limit() {
-        let error = refusal(|policy| policy.limits.max_collection_items = 0);
+        let error = refusal(ResourceDimension::CollectionItems, "NX body scalar triples");
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
         );
     }
 
     #[test]
-    fn operation_body_scalar_triples_refuse_retained_limit() {
-        let error = refusal(|policy| policy.limits.max_retained_bytes = 0);
+    fn operation_body_scalar_triples_refuse_scoped_limit() {
+        let error = refusal(
+            ResourceDimension::MaterializedBytes,
+            "NX body scalar triples",
+        );
         assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
         );
     }
 
     #[test]
     fn operation_body_scalar_triples_refuse_work_limit() {
-        let error = refusal(|policy| policy.limits.max_work_units = 0);
+        let error = refusal(
+            ResourceDimension::WorkUnits,
+            "NX operation body reference traversal",
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
         );

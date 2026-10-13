@@ -23,13 +23,16 @@ fn registry_search_refusal(operation: &str, creation_display: bool) {
     })
     .expect("built section caches");
     if creation_display {
-        let sections = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx))
-            .expect("creation display source sections");
-        assert!(sections.iter().any(|(entry, section)| {
-            entry.name == "/Root/FastLoad/RMFastLoad"
-                && section.record_area.is_some()
-                && !section.types.is_empty()
-        }));
+        crate::test_support::with_decode_context(|ctx| {
+            let (sections, _sections_storage) = container
+                .om_sections(ctx)
+                .expect("creation display source sections");
+            assert!(sections.iter().any(|(entry, section)| {
+                entry.name == "/Root/FastLoad/RMFastLoad"
+                    && section.record_area.is_some()
+                    && !section.types.is_empty()
+            }));
+        });
     }
     let error = crate::test_support::resource_refusal_at(
         container.data.as_ref(),

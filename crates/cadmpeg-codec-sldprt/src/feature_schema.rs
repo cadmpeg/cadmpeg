@@ -1,26 +1,20 @@
 //! Per-feature schema declarations shared across history projection, neutral
 //! synchronization, and design-loss auditing.
 //!
-//! Native enum tokens are single static tables. The read path parses them
-//! case-insensitively; the write path formats the canonical spelling.
+//! Each native enum token has one spelling table. The read path parses a token
+//! case-insensitively; the write path formats the canonical spelling. A parse
+//! compares against literal tokens only, so its work is bounded by the table.
 
 use cadmpeg_ir::features::{SurfaceContinuity, SurfaceExtension, TrimRegion};
 
-/// Native spellings for [`SurfaceContinuity`], in write-canonical form. The
-/// read path matched these case-insensitively (`contact`/`tangent`/`curvature`).
+/// Native spellings for [`SurfaceContinuity`], in write-canonical form.
 const SURFACE_CONTINUITY_TOKENS: &[(&str, SurfaceContinuity)] = &[
     ("Contact", SurfaceContinuity::Contact),
     ("Tangent", SurfaceContinuity::Tangent),
     ("Curvature", SurfaceContinuity::Curvature),
 ];
 
-/// Native spellings for the trim-surface keep region (`inside`/`outside`).
-const TRIM_REGION_TOKENS: &[(&str, TrimRegion)] = &[
-    ("Inside", TrimRegion::Inside),
-    ("Outside", TrimRegion::Outside),
-];
-
-/// Native spellings for the surface-extension method (`natural`/`linear`).
+/// Native spellings for the surface-extension method.
 const SURFACE_EXTENSION_TOKENS: &[(&str, SurfaceExtension)] = &[
     ("Natural", SurfaceExtension::Natural),
     ("Linear", SurfaceExtension::Linear),
@@ -28,11 +22,11 @@ const SURFACE_EXTENSION_TOKENS: &[(&str, SurfaceExtension)] = &[
 
 /// Parse a native token case-insensitively against a token table, returning the
 /// typed variant or `None` for an unrecognized spelling.
-fn parse_token<T: Clone>(table: &[(&'static str, T)], raw: &str) -> Option<T> {
+fn parse_token<T: Copy>(table: &[(&'static str, T)], raw: &str) -> Option<T> {
     table
         .iter()
         .find(|(token, _)| raw.eq_ignore_ascii_case(token))
-        .map(|(_, value)| value.clone())
+        .map(|(_, value)| *value)
 }
 
 /// Parse a filled-surface continuity order from its native token.
@@ -49,17 +43,24 @@ pub(crate) fn surface_continuity_token(value: SurfaceContinuity) -> &'static str
     }
 }
 
-/// Parse a trim-surface keep region from its native token.
+/// Parse a trim-surface keep region (`Inside` or `Outside`) from its native token.
 pub(crate) fn parse_trim_region(raw: &str) -> Option<TrimRegion> {
-    parse_token(TRIM_REGION_TOKENS, raw)
+    if raw.eq_ignore_ascii_case("Inside") {
+        Some(TrimRegion::Inside)
+    } else if raw.eq_ignore_ascii_case("Outside") {
+        Some(TrimRegion::Outside)
+    } else {
+        None
+    }
 }
 
 /// Canonical native token for a trim-surface keep region when representable.
 pub(crate) fn trim_region_token(value: &TrimRegion) -> Option<&'static str> {
-    TRIM_REGION_TOKENS
-        .iter()
-        .find(|(_, candidate)| candidate == value)
-        .map(|(token, _)| *token)
+    match value {
+        TrimRegion::Inside => Some("Inside"),
+        TrimRegion::Outside => Some("Outside"),
+        TrimRegion::Unresolved | TrimRegion::Cells(_) => None,
+    }
 }
 
 /// Parse a surface-extension method from its native token.

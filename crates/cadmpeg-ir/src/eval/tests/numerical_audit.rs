@@ -354,7 +354,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             .unwrap();
             assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
             assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
-            assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
+            assert!(result.acceleration.finite().unwrap().u.abs() <= 8.0 * f64::EPSILON);
         }
         let curve = PcurveGeometry::SphericalGreatCircle(
             SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
@@ -370,7 +370,8 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
         let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
         assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
         assert!(
-            (result.acceleration.unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON
+            (result.acceleration.finite().unwrap().v / expected_second - 1.0).abs()
+                <= 16.0 * f64::EPSILON
         );
     });
 }
@@ -402,7 +403,7 @@ fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
 
 #[test]
 fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
-    use super::super::{polyline_point, polyline_tangent};
+    use super::super::polyline::{polyline_point, polyline_tangent};
     use crate::features::FinitePoint3;
     use crate::scalar::FiniteReal;
     let far = [
@@ -439,8 +440,9 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     );
     let tangent = polyline_tangent(
         crate::eval::admission::EvaluationAdmission::Standard,
-        &points,
-        &wide,
+        points.len(),
+        |index| points.get(index).copied(),
+        |index| wide.get(index).copied(),
         0.0,
     )
     .unwrap();
@@ -797,25 +799,4 @@ fn raw_pcurve_evaluation_uses_the_callers_storage_and_work_limits() {
             .unwrap(),
     );
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn raw_pcurve_evaluation_preserves_a_fused_refusal_before_invalid_input() {
-    use crate::eval::{nurbs_pcurve_uv, EvaluationFailure};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = ctx
-        .charge_work_limit(1, "original raw pcurve refusal")
-        .unwrap_err();
-    assert!(
-        matches!(nurbs_pcurve_uv(&ctx, 0, &[], &[], None, f64::NAN), Err(EvaluationFailure::ResourceLimit(limit)) if limit == original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-    );
 }

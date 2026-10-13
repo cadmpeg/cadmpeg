@@ -113,7 +113,12 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
             "{section} must have one partition"
         );
     }
-    let selected = container::select_active_parasolid_site(&scan).expect("unique active solid");
+    let selected = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap()
+    .expect("unique active solid");
     assert_eq!(selected.name(), "Contents/Config-1-Partition");
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
@@ -139,12 +144,21 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
 
-    assert!(container::first_solidworks_envelope([payload.as_slice()]).is_some());
+    assert!(container::first_solidworks_envelope(
+        &cadmpeg_test_support::service_decode_context(),
+        [payload.as_slice()]
+    )
+    .unwrap()
+    .is_some());
     let patched = super::super::patch_active_configuration_xml(&payload, "New")
         .unwrap()
         .expect("the UTF-16 envelope is recognized");
-    let envelope = container::first_solidworks_envelope([patched.as_slice()])
-        .expect("the rewritten envelope remains recognizable");
+    let envelope = container::first_solidworks_envelope(
+        &cadmpeg_test_support::service_decode_context(),
+        [patched.as_slice()],
+    )
+    .unwrap()
+    .expect("the rewritten envelope remains recognizable");
     assert_eq!(envelope.sw_version.as_deref(), Some("34000"));
     assert_eq!(envelope.configuration_name.as_deref(), Some("New"));
 }
@@ -501,11 +515,22 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .blocks
         .iter()
         .any(|block| { block.section.name() == Some("Contents/Config-1-Partition") }));
-    assert_eq!(container::active_configuration_index(&scan), Some(1));
     assert_eq!(
-        container::select_active_parasolid_site(&scan)
-            .unwrap()
-            .name(),
+        container::active_configuration_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap(),
+        Some(1)
+    );
+    assert_eq!(
+        container::select_active_parasolid_site(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap()
+        .unwrap()
+        .name(),
         "Contents/Config-1-Partition"
     );
     let decoded = SldprtCodec
@@ -589,11 +614,22 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .blocks
         .iter()
         .any(|block| { block.section.name() == Some("Contents/Config-3-ResolvedFeatures") }));
-    assert_eq!(container::active_configuration_index(&scan), Some(5));
     assert_eq!(
-        container::select_active_parasolid_site(&scan)
-            .unwrap()
-            .name(),
+        container::active_configuration_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap(),
+        Some(5)
+    );
+    assert_eq!(
+        container::select_active_parasolid_site(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan
+        )
+        .unwrap()
+        .unwrap()
+        .name(),
         "Contents/Config-5-Partition"
     );
     let stale = scan
@@ -1831,141 +1867,4 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
         .contains("conflicting neutral and native SLDPRT configuration edits"));
 }
 
-#[test]
-fn semantic_writer_applies_neutral_parameter_edits() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
-
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    {
-        let mut ir_edit = decoded.ir_mut();
-        let parameter = ir_edit
-            .model
-            .parameters
-            .iter_mut()
-            .find(|parameter| parameter.name == "Depth")
-            .unwrap();
-        parameter.expression = "20mm".into();
-        parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
-    }
-
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(
-        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
-        "20mm"
-    );
-    assert_eq!(
-        regenerated
-            .ir()
-            .model
-            .parameters
-            .iter()
-            .find(|parameter| parameter.name == "Depth")
-            .unwrap()
-            .expression,
-        "20mm"
-    );
-}
-
-#[test]
-fn semantic_writer_preserves_dimension_attributes() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
-
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth" Driven="true" EquationId="D1@Boss">12mm</Dimension></Extrusion></Keywords>"#,
-    ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    {
-        let mut ir_edit = decoded.ir_mut();
-        let parameter = &mut ir_edit.model.parameters[0];
-        assert_eq!(parameter.properties["Driven"], "true");
-        assert_eq!(parameter.properties["EquationId"], "D1@Boss");
-        parameter.expression = "20mm".into();
-        parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
-    }
-
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
-    assert_eq!(feature.parameters["Depth"], "20mm");
-    assert_eq!(feature.dimension_properties["Depth"]["Driven"], "true");
-    assert_eq!(
-        feature.dimension_properties["Depth"]["EquationId"],
-        "D1@Boss"
-    );
-}
-
-#[test]
-fn semantic_writer_preserves_evaluated_equation_values() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
-
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth" Value="24mm" EquationId="D1@Boss">Width * 2</Dimension></Extrusion></Keywords>"#,
-    ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    {
-        let mut ir_edit = decoded.ir_mut();
-        let parameter = &mut ir_edit.model.parameters[0];
-        assert_eq!(parameter.expression, "Width * 2");
-        assert_eq!(
-            parameter.value,
-            Some(ParameterValue::Length(Length::new(24.0).unwrap()))
-        );
-        assert_eq!(parameter.properties["Value"], "24mm");
-        parameter.expression = "Width * 3".into();
-        parameter.value = Some(ParameterValue::Length(Length::new(36.0).unwrap()));
-    }
-
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_history_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    let parameter = &regenerated.ir().model.parameters[0];
-    assert_eq!(parameter.expression, "Width * 3");
-    assert_eq!(
-        parameter.value,
-        Some(ParameterValue::Length(Length::new(36.0).unwrap()))
-    );
-    assert_eq!(parameter.properties["Value"], "36mm");
-    assert_eq!(parameter.properties["EquationId"], "D1@Boss");
-}
+mod parameter_edits;

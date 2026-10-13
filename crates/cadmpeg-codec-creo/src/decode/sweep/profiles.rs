@@ -1288,8 +1288,7 @@ struct NurbsProfileSpan {
 }
 
 fn nurbs_profile_point(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_, '_>,
     nurbs: &NurbsCurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -1298,7 +1297,7 @@ fn nurbs_profile_point(
         require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
     ));
     let point = require_some!(cadmpeg_ir::eval::finite_or_refusal(
-        evaluator.point(ctx, parameter.get())?
+        evaluator.point(parameter.get())?
     )?);
     Ok(Some([point.x, point.y]))
 }
@@ -1330,7 +1329,7 @@ fn append_nurbs_profile_point(
 
 fn append_nurbs_profile_span(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_>,
+    evaluator: &mut cadmpeg_ir::eval::decode::NurbsPointEvaluator<'_, '_, '_>,
     nurbs: &NurbsCurve,
     span: &NurbsProfileSpan,
     points: &mut Vec<[f64; 2]>,
@@ -1349,11 +1348,11 @@ fn append_nurbs_profile_span(
     }
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
-    let middle_point = require_some!(nurbs_profile_point(ctx, evaluator, nurbs, middle)?);
+    let middle_point = require_some!(nurbs_profile_point(evaluator, nurbs, middle)?);
     let first_quarter_point =
-        require_some!(nurbs_profile_point(ctx, evaluator, nurbs, first_quarter)?);
+        require_some!(nurbs_profile_point(evaluator, nurbs, first_quarter)?);
     let third_quarter_point =
-        require_some!(nurbs_profile_point(ctx, evaluator, nurbs, third_quarter)?);
+        require_some!(nurbs_profile_point(evaluator, nurbs, third_quarter)?);
     let chord = [span.start_point, span.end_point];
     let flatness = planar_point_segment_distance(first_quarter_point, chord)
         .max(planar_point_segment_distance(middle_point, chord))
@@ -1431,7 +1430,7 @@ fn nurbs_profile_polyline<'ctx>(
     };
     let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, nurbs)?;
     let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
-    let Some(first) = nurbs_profile_point(ctx, &mut evaluator, nurbs, lower)? else {
+    let Some(first) = nurbs_profile_point(&mut evaluator, nurbs, lower)? else {
         return Ok(None);
     };
     let mut storage = ctx.reserve_scoped(0, "creo NURBS profile polyline points")?;
@@ -1450,7 +1449,7 @@ fn nurbs_profile_polyline<'ctx>(
         // Ordered knot spans share the endpoint already appended by the
         // preceding span. The first span starts at the admitted lower point.
         let start_point = require_some!(points.last().copied());
-        let end_point = require_some!(nurbs_profile_point(ctx, &mut evaluator, nurbs, end)?);
+        let end_point = require_some!(nurbs_profile_point(&mut evaluator, nurbs, end)?);
         if append_nurbs_profile_span(
             ctx,
             &mut evaluator,

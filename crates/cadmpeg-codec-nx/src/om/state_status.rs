@@ -95,32 +95,54 @@ impl<'a> OperationStateStatus<'a> {
 }
 
 pub(super) fn operation_state_opaque_lane_end_at(
+    ctx: &DecodeContext<'_>,
     lane_starts: &[usize],
     at: usize,
     end: usize,
-) -> Option<usize> {
-    let index = lane_starts.binary_search(&at).unwrap_or_else(|index| index);
-    let lane_start = *lane_starts.get(index)?;
-    let lane_end = lane_start.checked_add(2)?;
-    (lane_end <= end).then_some(lane_end)
+) -> Result<Option<usize>, CodecError> {
+    let index = ctx
+        .binary_search_by(
+            lane_starts,
+            |start| Ok(start.cmp(&at)),
+            "NX opaque state lane lookup",
+        )?
+        .unwrap_or_else(|index| index);
+    let Some(lane_end) = lane_starts
+        .get(index)
+        .and_then(|start| start.checked_add(2))
+    else {
+        return Ok(None);
+    };
+    Ok((lane_end <= end).then_some(lane_end))
 }
 
-fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+fn operation_state_opaque_payload_end(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
     const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
-    let first = *bytes.get(at)?;
+    let Some(first) = bytes.get(at) else {
+        return Ok(None);
+    };
     if !matches!(first, 0x02 | 0x1e | 0xff) {
-        return None;
+        return Ok(None);
     }
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-        return Some(at + 3);
+        return Ok(Some(at + 3));
     }
-    let search_end = end.min(at.checked_add(MAX_OPAQUE_STATUS_BYTES)?);
-    for cursor in at..search_end.checked_sub(1)? {
-        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
-            return Some(cursor + 2);
-        }
-    }
-    None
+    let Some(limit) = at.checked_add(MAX_OPAQUE_STATUS_BYTES) else {
+        return Ok(None);
+    };
+    let Some(search_end) = end.min(limit).checked_sub(1) else {
+        return Ok(None);
+    };
+    ctx.find_map(
+        at..search_end,
+        |cursor| Ok((bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11])).then_some(cursor + 2)),
+        "NX opaque status boundary search",
+    )
 }
 
 fn operation_state_link_payload(
@@ -150,54 +172,107 @@ fn operation_state_link_payload(
 }
 
 pub(super) fn operation_state_status_row_at<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &'a [u8],
     at: usize,
     end: usize,
     base_offset: usize,
     opaque_lane_starts: Option<&[usize]>,
-) -> Option<OperationStateStatus<'a>> {
-    let status_code = OperationStateIndex::read_at(bytes, at, base_offset)?.token()?;
-    let object_at = at.checked_add(status_code.raw().len())?;
-    let object_index = OperationStateIndex::read_at(bytes, object_at, base_offset)?.token()?;
-    let payload_at = object_at.checked_add(object_index.raw().len())?;
+) -> Result<Option<OperationStateStatus<'a>>, cadmpeg_core::CodecError> {
+    let Some(status_code) =
+        OperationStateIndex::read_at(bytes, at, base_offset).and_then(OperationStateIndex::token)
+    else {
+        return Ok(None);
+    };
+    let Some(object_at) = at.checked_add(status_code.raw().len()) else {
+        return Ok(None);
+    };
+    let Some(object_index) = OperationStateIndex::read_at(bytes, object_at, base_offset)
+        .and_then(OperationStateIndex::token)
+    else {
+        return Ok(None);
+    };
+    let Some(payload_at) = object_at.checked_add(object_index.raw().len()) else {
+        return Ok(None);
+    };
     if payload_at >= end {
-        return None;
+        return Ok(None);
     }
     let (payload, payload_end) = match bytes[payload_at] {
         0x3f => (StateStatusPayload::Plain, payload_at + 1),
         0x03 => {
-            let message = OperationStateMessage::read(bytes, payload_at, base_offset)?;
-            let payload_end = message.end_offset() - base_offset;
-            (StateStatusPayload::Diagnostic(message.body()), payload_end)
-        }
-        0x02 | 0x1e | 0xff => {
-            let precomputed_end = opaque_lane_starts
-                .and_then(|starts| operation_state_opaque_lane_end_at(starts, payload_at, end));
-            let payload_end = precomputed_end
-                .or_else(|| operation_state_opaque_payload_end(bytes, payload_at, end))?;
+            let Some(message) = OperationStateMessage::read(ctx, bytes, payload_at, base_offset)?
+            else {
+                return Ok(None);
+            };
             (
-                StateStatusPayload::Opaque {
-                    raw: bytes.get(payload_at..payload_end)?,
-                },
-                payload_end,
+                StateStatusPayload::Diagnostic(message.body()),
+                message.end_offset() - base_offset,
             )
         }
-        _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
+        0x02 | 0x1e | 0xff => {
+            let precomputed_end = match opaque_lane_starts {
+                Some(starts) => operation_state_opaque_lane_end_at(ctx, starts, payload_at, end)?,
+                None => None,
+            };
+            let payload_end = match precomputed_end {
+                Some(end) => end,
+                None => {
+                    let Some(end) =
+                        operation_state_opaque_payload_end(ctx, bytes, payload_at, end)?
+                    else {
+                        return Ok(None);
+                    };
+                    end
+                }
+            };
+            let Some(raw) = bytes.get(payload_at..payload_end) else {
+                return Ok(None);
+            };
+            (StateStatusPayload::Opaque { raw }, payload_end)
+        }
+        _ => {
+            let Some(payload) = operation_state_link_payload(bytes, payload_at, end, base_offset)
+            else {
+                return Ok(None);
+            };
+            payload
+        }
     };
-    base_offset.checked_add(payload_end)?;
-    (payload_end <= end).then_some(OperationStateStatus {
-        offset: base_offset.checked_add(at)?,
+    if payload_end > end || base_offset.checked_add(payload_end).is_none() {
+        return Ok(None);
+    }
+    let Some(offset) = base_offset.checked_add(at) else {
+        return Ok(None);
+    };
+    Ok(Some(OperationStateStatus {
+        offset,
         body: StateStatus {
             status_code,
             object_index,
             payload,
         },
-    })
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::operation_state_status_row_at;
+
+    #[test]
+    fn diagnostic_status_text_iteration_refusal_propagates() {
+        let bytes = [0x41, 1, 3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0];
+        let error = crate::test_support::resource_refusal_at(
+            &bytes,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX printable string syntax",
+            |ctx| operation_state_status_row_at(ctx, &bytes, 0, bytes.len(), 0, None),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "NX printable string syntax")
+        );
+    }
 
     #[test]
     fn source_status_extent_follows_payload_and_bounds_absolute_end() {
@@ -209,37 +284,74 @@ mod tests {
         ] {
             let mut bytes = vec![0x41, 1];
             bytes.extend_from_slice(payload);
-            let row = operation_state_status_row_at(&bytes, 0, bytes.len(), 100, None).unwrap();
+            let row = crate::test_support::with_decode_context(|ctx| {
+                operation_state_status_row_at(ctx, &bytes, 0, bytes.len(), 100, None)
+            })
+            .unwrap()
+            .unwrap();
             assert_eq!(row.offset(), 100);
             assert_eq!(row.end_offset(), 102 + payload.len());
-            assert!(operation_state_status_row_at(
-                &bytes,
-                0,
-                bytes.len(),
-                usize::MAX - bytes.len(),
-                None
-            )
-            .is_some());
-            assert!(operation_state_status_row_at(
-                &bytes,
-                0,
-                bytes.len(),
-                usize::MAX - bytes.len() + 1,
-                None
-            )
-            .is_none());
+            assert!(
+                crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(
+                    ctx,
+                    &bytes,
+                    0,
+                    bytes.len(),
+                    usize::MAX - bytes.len(),
+                    None
+                ))
+                .unwrap()
+                .is_some()
+            );
+            assert!(
+                crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(
+                    ctx,
+                    &bytes,
+                    0,
+                    bytes.len(),
+                    usize::MAX - bytes.len() + 1,
+                    None
+                ))
+                .unwrap()
+                .is_none()
+            );
         }
     }
 
     #[test]
     fn source_span_retains_local_positions_and_bounds_absolute_projections() {
         let bytes = [0, 0, 0x41, 1, 2, 1, 0x11, 0x41, 1, 2, 1, 0x11];
-        let span = operation_state_status_row_at(&bytes, 2, 7, 100, None).unwrap();
+        let span = crate::test_support::with_decode_context(|ctx| {
+            operation_state_status_row_at(ctx, &bytes, 2, 7, 100, None)
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!((span.offset(), span.end_offset()), (102, 107));
         assert_eq!((span.offset() - 100, span.end_offset() - 100), (2, 7));
-        let boundary = operation_state_status_row_at(&bytes, 2, 7, usize::MAX - 7, None).unwrap();
+        let boundary = crate::test_support::with_decode_context(|ctx| {
+            operation_state_status_row_at(ctx, &bytes, 2, 7, usize::MAX - 7, None)
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!(boundary.end_offset(), usize::MAX);
-        assert!(operation_state_status_row_at(&bytes, 2, 7, usize::MAX - 6, None).is_none());
-        assert!(operation_state_status_row_at(&bytes, 7, 2, 0, None).is_none());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(
+                ctx,
+                &bytes,
+                2,
+                7,
+                usize::MAX - 6,
+                None
+            ))
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            crate::test_support::with_decode_context(|ctx| operation_state_status_row_at(
+                ctx, &bytes, 7, 2, 0, None
+            ))
+            .unwrap()
+            .is_none()
+        );
     }
 }

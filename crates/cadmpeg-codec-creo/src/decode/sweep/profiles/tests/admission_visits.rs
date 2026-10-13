@@ -70,7 +70,7 @@ fn fixed_profile_routes_are_free_at_zero_budget() {
         polylines_intersect(&ctx, &[[0.0; 2]], &[[0.0; 2]; 2], 0.0, [None, None])
             .map(|value| !value),
         profile_segments_intersect(&ctx, &line, &crossing, 0.0, [None, None]),
-        nurbs_profile_point(&ctx, &mut evaluator, &linear, f64::NAN).map(|value| value.is_none()),
+        nurbs_profile_point(&mut evaluator, &linear, f64::NAN).map(|value| value.is_none()),
         nurbs_profile_polyline(&ctx, &collapsed, 0.01).map(|value| value.is_none()),
     ];
     for result in queries {
@@ -342,12 +342,12 @@ fn singular_sampling_stops_before_quarter_evaluation() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let mut evaluator = NurbsPointEvaluator::new(ctx, &curve).expect("basis");
         assert_eq!(
-            nurbs_profile_point(ctx, &mut evaluator, &curve, 0.5).expect("midpoint"),
+            nurbs_profile_point(&mut evaluator, &curve, 0.5).expect("midpoint"),
             None
         );
         for quarter in [0.25, 0.75] {
             assert_eq!(
-                nurbs_profile_point(ctx, &mut evaluator, &curve, quarter).expect("quarter"),
+                nurbs_profile_point(&mut evaluator, &curve, quarter).expect("quarter"),
                 Some([0.0; 2])
             );
         }
@@ -359,7 +359,7 @@ fn singular_sampling_stops_before_quarter_evaluation() {
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let mut evaluator = NurbsPointEvaluator::new(&ctx, &curve)?;
-            nurbs_profile_point(&ctx, &mut evaluator, &curve, 0.5)
+            nurbs_profile_point(&mut evaluator, &curve, 0.5)
         });
     crate::test_support::assert_work_boundaries(
         &[
@@ -522,7 +522,7 @@ fn profile_sampling_reuses_the_admitted_span_start() {
             let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&ctx, &curve)?;
             for parameter in [0.0, 1.0, 0.5, 0.25, 0.75] {
                 assert_eq!(
-                    nurbs_profile_point(&ctx, &mut evaluator, &curve, parameter)?,
+                    nurbs_profile_point(&mut evaluator, &curve, parameter)?,
                     Some([0.0; 2])
                 );
             }

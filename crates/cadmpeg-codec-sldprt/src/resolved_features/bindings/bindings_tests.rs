@@ -168,6 +168,10 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
     )
     .unwrap();
 
+    crate::test_support::work_refusal_at("sort SLDPRT scalar offsets", |ctx| {
+        bind_scalar_operands(ctx, std::slice::from_ref(&history), &mut [lane.clone()])
+    });
+
     assert!(lane.scalars[..3]
         .iter()
         .all(|scalar| scalar.feature_ref.as_deref() == Some("extrusion")));
@@ -534,6 +538,32 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         },
     ];
 
+    let mut duplicate_lane = lane.clone();
+    let mut duplicate = duplicate_lane.generated_surface_identities[0].clone();
+    duplicate.id = "identity-duplicate".into();
+    duplicate.ordinal = 1;
+    duplicate.offset = 170;
+    duplicate_lane.generated_surface_identities.push(duplicate);
+    let deduplicate = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut candidates = features.clone();
+        crate::resolved_features::bindings::bind_pattern_inputs(
+            ctx,
+            &mut candidates,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&duplicate_lane),
+        )
+        .map(|()| candidates)
+    };
+    let admitted_duplicates = deduplicate(&cadmpeg_test_support::service_decode_context()).unwrap();
+    assert_eq!(
+        admitted_duplicates[0].dependencies.as_slice(),
+        &[FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")]
+    );
+    assert!(matches!(admitted_duplicates[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
+            if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))]));
+    crate::test_support::work_refusal_at("deduplicate SLDPRT pattern input seeds", deduplicate);
+
     bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&history),
@@ -748,6 +778,22 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         ],
     };
 
+    let mut marker_group_lane = lane.clone();
+    marker_group_lane.sketch_entities[2] =
+        marker_group_lane.sketch_entities[2].with_test_identity(Some(2), Some(2));
+    crate::test_support::work_refusal_at("lookup SLDPRT scalar marker group", |ctx| {
+        let mut selection_history =
+            crate::resolved_features::selections::SelectionHistory::new(ctx, &[])?;
+        super::finalize_lane_bindings(
+            ctx,
+            &[],
+            &mut selection_history,
+            &mut marker_group_lane.clone(),
+        )
+    });
+    crate::test_support::work_refusal_at("scan SLDPRT indexed curve endpoints", |ctx| {
+        super::normalize_indexed_curve_entities(ctx, &mut lane.clone())
+    });
     normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane)
         .unwrap();
     bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane)
@@ -962,3 +1008,168 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         .iter()
         .all(|entity| entity.feature_ref.is_none()));
 }
+
+#[test]
+fn spatial_range_deduplication_preserves_ranges_and_refusal() {
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: [
+            (10, "moRelMgr_c"),
+            (20, "sg3DPlaneHandle"),
+            (30, "sg3DPlaneHandle"),
+            (40, "suObList"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(
+            |(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                id: format!("class-{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                name: name.into(),
+            },
+        )
+        .collect(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    assert_eq!(
+        super::spatial_relation_manager_ranges_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+        )
+        .unwrap(),
+        [(10, 40)]
+    );
+    crate::test_support::work_refusal_at("deduplicate SLDPRT spatial relation ranges", |ctx| {
+        super::spatial_relation_manager_ranges_charged(ctx, &lane)
+    });
+}
+
+#[test]
+fn duplicate_binding_votes_release_candidate_identity_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 4096;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let id = FeatureId::mint("synthetic:test:feature#duplicate-candidate").unwrap();
+    let mut storage = ctx.reserve_scoped(0, super::PATTERN_INPUTS).unwrap();
+    let mut groups = BTreeMap::new();
+    for _ in 0..512 {
+        let candidate_storage;
+        let candidate;
+        (candidate, candidate_storage) = ctx
+            .with_scoped_storage(super::PATTERN_INPUTS, || {
+                super::copy_feature_binding_id(&ctx, &id)
+            })
+            .unwrap();
+        super::push_distinct_candidate(
+            &ctx,
+            &mut storage,
+            &mut groups,
+            0,
+            (candidate, Some(candidate_storage)),
+        )
+        .unwrap();
+    }
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[&0].len(), 1);
+    assert_eq!(groups[&0][0].0, id);
+}
+
+#[test]
+fn scalar_binding_skips_dissected_offset_sort_without_feature_pair() {
+    let feature = NativeFeature {
+        id: "owner".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(7),
+        ordinal: 0,
+        name: "Owner".into(),
+        kind: "Feature".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "owner-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(7),
+            value: "Owner".into(),
+        }],
+        scalars: (0..32)
+            .map(|ordinal| FeatureInputScalar {
+                id: format!("scalar-{ordinal}"),
+                parent: "lane".into(),
+                feature_ref: None,
+                ordinal,
+                offset: u64::from(ordinal) + 1,
+                object_id: ordinal,
+                name: "absent".into(),
+                value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+                role: FeatureInputScalarRole::Native,
+                operands: Vec::new(),
+            })
+            .collect(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "sort SLDPRT scalar offsets",
+        None,
+    );
+    bind_scalar_operands(&ctx, &[history], std::slice::from_mut(&mut lane)).unwrap();
+    drop(probe);
+    assert!(lane
+        .scalars
+        .iter()
+        .all(|scalar| scalar.feature_ref.as_deref() == Some("owner")));
+}
+
+mod candidate_lifetime;
+mod spatial_ranges;

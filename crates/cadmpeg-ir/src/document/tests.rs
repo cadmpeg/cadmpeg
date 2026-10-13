@@ -17,6 +17,9 @@ use crate::{diff, CadIr};
 
 mod append;
 mod feature_parents;
+mod procedural;
+mod procedural_wire;
+mod row_field_count;
 mod unknowns;
 
 #[test]
@@ -24,6 +27,8 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
     let build = || {
         let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
         let mut model = Model::default();
+        // Existing output capacity isolates construction-identity admission.
+        model.procedural_curves.reserve(1);
         model.curves.push(Curve {
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -594,6 +599,8 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
     byte_policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
     let mut refused = base.clone();
+    // Existing output capacity isolates owner-identity admission.
+    refused.model.procedural_surfaces.reserve(1);
     let error = refused
         .model
         .add_procedural_surface(&ctx, &owner, procedural.clone())
@@ -666,6 +673,8 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     byte_policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
     let mut refused = base.clone();
+    // Existing output capacity isolates construction-identity admission.
+    refused.model.procedural_curves.reserve(1);
     let error = refused
         .model
         .add_procedural_curve(&ctx, &owner, procedural.clone())
@@ -1174,6 +1183,158 @@ fn geometry_snapshot_preserves_parent_validation_resource_refusals() {
             matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
     }
+}
+
+fn procedural_surface_model(has_construction: bool, has_row: bool) -> Model {
+    let surface_id = SurfaceId::mint("test:model:surface#scope").unwrap();
+    let construction_id = ProceduralSurfaceId::mint("test:model:construction#scope").unwrap();
+    let geometry = if has_construction {
+        SurfaceGeometry::Procedural {
+            construction: construction_id.clone(),
+            cache: None,
+        }
+    } else {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
+    };
+    let mut model = Model::default();
+    model.surfaces.push(Surface {
+        id: surface_id,
+        geometry,
+        source_object: None,
+    });
+    if has_row {
+        model.procedural_surfaces.push(ProceduralSurface::new(
+            construction_id,
+            ProceduralSurfaceDefinition::Unknown {
+                record: None,
+                cache: None,
+            },
+            None,
+        ));
+    }
+    model
+}
+
+fn procedural_curve_model(has_construction: bool, has_row: bool) -> Model {
+    let curve_id = CurveId::mint("test:model:curve#scope").unwrap();
+    let construction_id = ProceduralCurveId::mint("test:model:construction#scope").unwrap();
+    let geometry = if has_construction {
+        CurveGeometry::Procedural {
+            construction: construction_id.clone(),
+            cache: None,
+        }
+    } else {
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
+    };
+    let mut model = Model::default();
+    model.curves.push(Curve {
+        id: curve_id,
+        geometry,
+        source_object: None,
+    });
+    if has_row {
+        model.procedural_curves.push(ProceduralCurve::new(
+            construction_id,
+            ProceduralCurveDefinition::Unknown {
+                native_kind: None,
+                record: None,
+                cache: None,
+            },
+        ));
+    }
+    model
+}
+
+fn sorted_model_work(model: &Model) -> u64 {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let sorted = model.sorted(&ctx).expect("sorted model admission");
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(u64::MAX, "measure sorted work")
+    else {
+        panic!("the measurement charge must refuse");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    drop(sorted);
+    limit.used
+}
+
+fn geometry_snapshot_work(model: &Model) -> u64 {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let snapshot = model
+        .geometry_snapshot(&ctx, "probe")
+        .expect("geometry snapshot admission");
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(u64::MAX, "measure snapshot work")
+    else {
+        panic!("the measurement charge must refuse");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    drop(snapshot);
+    limit.used
+}
+
+fn sorted_model_materialized_bytes(model: &Model) -> u64 {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let sorted = model.sorted(&ctx).expect("sorted model admission");
+    let Err(CodecError::ResourceLimit(limit)) =
+        ctx.reserve_scoped(u64::MAX, "measure sorted storage")
+    else {
+        panic!("the measurement reservation must refuse");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    drop(sorted);
+    limit.used
+}
+
+#[test]
+fn procedural_owner_indexes_are_skipped_when_no_rows_use_them() {
+    let solved = procedural_surface_model(false, false);
+    let procedural = procedural_surface_model(true, false);
+    let solved_curve = procedural_curve_model(false, false);
+    let procedural_curve = procedural_curve_model(true, false);
+
+    assert_eq!(sorted_model_work(&solved), sorted_model_work(&procedural));
+    assert_eq!(
+        geometry_snapshot_work(&solved),
+        geometry_snapshot_work(&procedural)
+    );
+    assert_eq!(
+        sorted_model_work(&solved_curve),
+        sorted_model_work(&procedural_curve)
+    );
+    assert_eq!(
+        geometry_snapshot_work(&solved_curve),
+        geometry_snapshot_work(&procedural_curve)
+    );
+}
+
+#[test]
+fn sorted_model_releases_procedural_owner_scratch_after_projection() {
+    let unowned = procedural_surface_model(false, true);
+    let owned = procedural_surface_model(true, true);
+    let unowned_curve = procedural_curve_model(false, true);
+    let owned_curve = procedural_curve_model(true, true);
+
+    assert_eq!(
+        sorted_model_materialized_bytes(&unowned),
+        sorted_model_materialized_bytes(&owned),
+        "the sorted model retains its projected rows, not its temporary owner index"
+    );
+    assert_eq!(
+        sorted_model_materialized_bytes(&unowned_curve),
+        sorted_model_materialized_bytes(&owned_curve),
+        "the sorted model retains its projected rows, not its temporary owner index"
+    );
 }
 
 #[test]

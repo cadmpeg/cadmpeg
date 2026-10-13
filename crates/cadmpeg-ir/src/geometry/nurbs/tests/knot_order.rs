@@ -5,7 +5,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 #[test]
-fn strict_knot_order_admits_actual_pairs_and_observes_empty_refusals() {
+fn strict_knot_order_admits_actual_pairs() {
     for (knots, pairs, ordered) in [
         (vec![], 0, true),
         (vec![f64::NAN], 0, true),
@@ -32,9 +32,6 @@ fn strict_knot_order_admits_actual_pairs_and_observes_empty_refusals() {
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(original.used, allowance);
                 assert_eq!(original.additional, 1);
-                assert!(
-                    matches!(knots_strictly_increasing(&[], |count| ctx.charge_work(count, "test empty strict knot order")), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-                );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
                 );
