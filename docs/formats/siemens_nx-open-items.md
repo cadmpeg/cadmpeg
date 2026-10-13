@@ -419,7 +419,7 @@ as the source of an origin, axis, or normal.
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `DATUM_CSYS` construction payload represent?
 
-**Known.** `siemens_nx.md` §7.1 "A `DATUM_CSYS` payload begins" and `siemens_nx.md` §7.1 "An object-payload scalar-pair frame is" define the eight-reference construction lane, logical payload, scalar-pair framing, and feature identity.
+**Known.** `siemens_nx.md` §7.1 "A `DATUM_CSYS` payload begins", `siemens_nx.md` §7.1 "The logical payload formed by the first two resolved `DATUM_CSYS` blocks uses", `siemens_nx.md` §7.1 "An object-payload scalar-pair frame is", and `siemens_nx.md` §7.1 "A datum-coordinate-system fixed pair has one of two exact forms:" define the eight-reference construction lane, logical payload, optional numeric frames, and feature identity.
 
 **Need.** We must know one complete relation that assigns the payload scalar
 fields and pair records to a model-space origin and three orthonormal axes.
@@ -428,7 +428,9 @@ fields and pair records to a model-space origin and three orthonormal axes.
 and the first two blocks define one logical payload. Scalar fields, scalar
 pairs, fixed pairs, and descriptor lanes have separate frames and no serialized
 role relation. Column-row reuse and equal descriptor identity establish block
-or history relations only; they do not assign an origin or axis.
+or history relations only; they do not assign an origin or axis. Complete numeric
+frames can also occur outside a coordinate-system payload. The frame bytes and
+field codes alone do not select an origin coordinate or an axis component.
 
 ### OM-05. OM declaration trailing code
 
