@@ -105,20 +105,11 @@ pub(super) fn surface_block(
         usize::try_from(n_uniq_v).ok()?,
         degree_v
     )?);
-    let Some(pole_count) = n_poles_u.checked_mul(n_poles_v) else {
-        return Some(Err(ctx.refuse_codec_limit(
-            "ASM surface pole recovery",
-            MAX_RECOVERY_SURFACE_POLES,
-            u64::MAX,
-        )));
-    };
-    let pole_population = cadmpeg_core::decode::u64_from_index(pole_count);
-    if pole_population > MAX_RECOVERY_SURFACE_POLES {
-        return Some(Err(ctx.refuse_codec_limit(
-            "ASM surface pole recovery",
-            MAX_RECOVERY_SURFACE_POLES,
-            pole_population,
-        )));
+    // A larger cached grid is not recovered; the surface keeps its native
+    // carrier, as in the binary path.
+    let pole_count = n_poles_u.checked_mul(n_poles_v)?;
+    if cadmpeg_core::decode::u64_from_index(pole_count) > MAX_RECOVERY_SURFACE_POLES {
+        return None;
     }
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
@@ -864,7 +855,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_surface_pole_limit_preserves_resource_refusal() {
+    fn cached_surface_past_the_pole_limit_is_not_recovered() {
         use crate::sab::Token;
         let mut grid = vec![
             Token::Ident("nubs".into()),
@@ -886,12 +877,11 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-        let error = super::surface_block(&ctx, &grid, 0)
-            .expect("pole ceiling is a recognized cache refusal")
-            .expect_err("pole ceiling");
         assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("ASM surface pole recovery")))
+            super::surface_block(&ctx, &grid, 0).is_none(),
+            "a grid past the pole ceiling is not recovered"
         );
+        assert!(ctx.resource_refusal().is_none());
     }
 
     fn knot_block_bytes(
