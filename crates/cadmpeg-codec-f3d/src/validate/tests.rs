@@ -27,6 +27,7 @@ use crate::F3dCodec;
 mod act_limits;
 mod arithmetic;
 mod body_recipe_limits;
+mod component_occurrences;
 mod construction_group_limits;
 mod construction_identity_limits;
 mod dimension_validation_limits;
@@ -559,9 +560,9 @@ fn validation_accepts_carrier_local_component_references() {
     let findings = crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native_charged(ctx, &ir).expect("service native validation")
     });
-    assert!(!findings.iter().any(|finding| {
-        finding.message == "Fusion Design component occurrence has an invalid fixed frame"
-    }));
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.message.contains("component occurrence")));
 }
 
 #[test]
