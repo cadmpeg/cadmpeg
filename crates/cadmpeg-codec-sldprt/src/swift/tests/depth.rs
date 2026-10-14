@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{entity, reference};
 use crate::swift::{Entity, RelatedObject, MAX_DEPTH};
-use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 fn chain() -> Vec<(String, Entity)> {
@@ -22,60 +21,162 @@ fn chain() -> Vec<(String, Entity)> {
         .collect()
 }
 
-#[test]
-fn swift_reachability_depth_refuses_instead_of_false() {
-    let features = chain();
-    let index = features
+/// The chain with `F{leaf}` replaced by a cylinder whose axis is +Z through
+/// (2, 0, 0) with radius 1.
+fn chain_with_cylinder_at(leaf: usize) -> Vec<(String, Entity)> {
+    let mut features = chain();
+    let mut axis = entity("GdtAxis");
+    for (name, value) in [
+        ("I", 0.0),
+        ("J", 0.0),
+        ("K", 1.0),
+        ("X", 2.0),
+        ("Y", 0.0),
+        ("Z", 0.0),
+        ("R", 1.0),
+    ] {
+        axis.doubles.insert(name.into(), value);
+    }
+    let mut cylinder = entity("GdtCylinder");
+    cylinder.related.push(RelatedObject {
+        name: "NomCylinder".into(),
+        class: axis.class.clone(),
+        entity: axis,
+    });
+    features.get_mut(leaf).expect("leaf in the chain").1 = cylinder;
+    features
+}
+
+fn feature_index(features: &[(String, Entity)]) -> BTreeMap<&str, &Entity> {
+    features
         .iter()
         .map(|(id, entity)| (id.as_str(), entity))
-        .collect::<BTreeMap<_, _>>();
-    let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(
-        matches!(crate::swift::feature_reaches(&ctx, "F0", "absent", &index, &mut BTreeSet::new(), 0), Err(CodecError::ResourceLimit(limit)) if limit.operation == "traverse SWIFT feature reachability")
-    );
+        .collect()
 }
 
 #[test]
-fn swift_rotational_depth_refuses_instead_of_partial_contributors() {
+fn swift_reachability_depth_cap_answers_unreached() {
     let features = chain();
-    let index = features
-        .iter()
-        .map(|(id, entity)| (id.as_str(), entity))
-        .collect::<BTreeMap<_, _>>();
+    let index = feature_index(&features);
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(
-        matches!(crate::swift::collect_rotational_projections(&ctx, "F0", &index, [1.,0.,0.], &mut BTreeSet::new(), 0, &mut Vec::new()), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan SWIFT rotational features")
-    );
+    let target_at_cap = format!("F{MAX_DEPTH}");
+    assert!(crate::swift::feature_reaches(
+        &ctx,
+        "F0",
+        &target_at_cap,
+        &index,
+        &mut BTreeSet::new(),
+        0
+    )
+    .unwrap());
+    let target_past_cap = format!("F{}", MAX_DEPTH + 1);
+    assert!(!crate::swift::feature_reaches(
+        &ctx,
+        "F0",
+        &target_past_cap,
+        &index,
+        &mut BTreeSet::new(),
+        0
+    )
+    .unwrap());
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]
-fn swift_diameter_depth_refuses_instead_of_partial_contributors() {
-    let features = chain();
-    let index = features
-        .iter()
-        .map(|(id, entity)| (id.as_str(), entity))
-        .collect::<BTreeMap<_, _>>();
+fn swift_rotational_depth_cap_skips_the_contributor() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(
-        matches!(crate::swift::collect_diameter_contributors(&ctx, "F0", &index, &mut BTreeSet::new(), 0, &mut Vec::new()), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan SWIFT diameter features")
-    );
+    let within = chain_with_cylinder_at(MAX_DEPTH - 1);
+    let mut projections = Vec::new();
+    crate::swift::collect_rotational_projections(
+        &ctx,
+        "F0",
+        &feature_index(&within),
+        [1.0, 0.0, 0.0],
+        &mut BTreeSet::new(),
+        0,
+        &mut projections,
+    )
+    .unwrap();
+    assert_eq!(projections.len(), 1);
+    let beyond = chain_with_cylinder_at(MAX_DEPTH);
+    let mut projections = Vec::new();
+    crate::swift::collect_rotational_projections(
+        &ctx,
+        "F0",
+        &feature_index(&beyond),
+        [1.0, 0.0, 0.0],
+        &mut BTreeSet::new(),
+        0,
+        &mut projections,
+    )
+    .unwrap();
+    assert!(projections.is_empty());
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]
-fn swift_measurement_depth_refuses_instead_of_missing_child() {
-    let features = chain();
-    let index = features
-        .iter()
-        .map(|(id, entity)| (id.as_str(), entity))
-        .collect::<BTreeMap<_, _>>();
+fn swift_diameter_depth_cap_skips_the_contributor() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(
-        matches!(crate::swift::measurement_for_feature(&ctx, "F0", &index, &mut BTreeSet::new(), 0, |_| None), Err(CodecError::ResourceLimit(limit)) if limit.operation == "measure SWIFT feature geometry")
-    );
+    let within = chain_with_cylinder_at(MAX_DEPTH - 1);
+    let mut values = Vec::new();
+    crate::swift::collect_diameter_contributors(
+        &ctx,
+        "F0",
+        &feature_index(&within),
+        &mut BTreeSet::new(),
+        0,
+        &mut values,
+    )
+    .unwrap();
+    assert_eq!(values.len(), 1);
+    let beyond = chain_with_cylinder_at(MAX_DEPTH);
+    let mut values = Vec::new();
+    crate::swift::collect_diameter_contributors(
+        &ctx,
+        "F0",
+        &feature_index(&beyond),
+        &mut BTreeSet::new(),
+        0,
+        &mut values,
+    )
+    .unwrap();
+    assert!(values.is_empty());
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]
-fn swift_pattern_depth_refuses_instead_of_visiting_parent() {
+fn swift_measurement_depth_cap_skips_the_child() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let measure = |feature: &Entity| {
+        (!feature.related.is_empty()).then(|| cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap())
+    };
+    let within = chain_with_cylinder_at(MAX_DEPTH - 1);
+    assert!(crate::swift::measurement_for_feature(
+        &ctx,
+        "F0",
+        &feature_index(&within),
+        &mut BTreeSet::new(),
+        0,
+        measure
+    )
+    .unwrap()
+    .is_some());
+    let beyond = chain_with_cylinder_at(MAX_DEPTH);
+    assert!(crate::swift::measurement_for_feature(
+        &ctx,
+        "F0",
+        &feature_index(&beyond),
+        &mut BTreeSet::new(),
+        0,
+        measure
+    )
+    .unwrap()
+    .is_none());
+    assert!(ctx.finish_session().is_ok());
+}
+
+#[test]
+fn swift_pattern_depth_cap_visits_the_truncated_pattern() {
     let mut features = chain();
     for (id, feature) in &mut features {
         let index = id.strip_prefix('F').unwrap().parse::<usize>().unwrap();
@@ -107,9 +208,14 @@ fn swift_pattern_depth_refuses_instead_of_visiting_parent() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut visited = Vec::new();
     assert!(
-        matches!(crate::swift::visit_expanded_feature_ids(&ctx, "F0", &index, 0, &mut |id| {visited.push(id); Ok(true)}), Err(CodecError::ResourceLimit(limit)) if limit.operation == "expand SWIFT target features")
+        crate::swift::visit_expanded_feature_ids(&ctx, "F0", &index, 0, &mut |id| {
+            visited.push(id);
+            Ok(true)
+        })
+        .unwrap()
     );
-    assert!(visited.is_empty());
+    assert_eq!(visited, [format!("F{MAX_DEPTH}")]);
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]
