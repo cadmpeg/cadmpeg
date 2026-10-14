@@ -1945,8 +1945,10 @@ impl<'storage> MeshQuotient<'storage> {
                 let [left, right] = edges[edge];
                 let before = candidates.len();
                 if budget.is_some_and(|budget| !budget.charge_by(before)) {
+                    // A session refusal propagates; an exhausted local slice
+                    // leaves the quotient unprepared.
                     ctx.charge_work(0, "catia quotient domain preparation")?;
-                    return Err(ctx.refuse_codec_limit("catia quotient domain preparation", 0, 1));
+                    return Ok(None);
                 }
                 candidates.retain(|pair| {
                     (domains[left].binary_search(&pair[0]).is_ok()

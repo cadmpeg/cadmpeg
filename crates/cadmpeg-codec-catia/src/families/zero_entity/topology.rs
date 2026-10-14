@@ -145,22 +145,21 @@ fn zero_entity_oriented_occurrences(
     Ok(occurrences)
 }
 
-/// Refuse a local search ceiling without replacing a session refusal.
+/// Charge one endpoint search step.
+///
+/// Returns `false` when the local slice is used up; the search then ends
+/// without candidates. A session refusal is an error.
 fn charge_endpoint_work(
     ctx: &DecodeContext<'_>,
     budget: &WorkBudget<'_>,
-) -> Result<(), CodecError> {
+) -> Result<bool, CodecError> {
     if budget.charge() {
-        return Ok(());
+        return Ok(true);
     }
     if let Some(limit) = ctx.resource_refusal() {
         return Err(limit.into());
     }
-    let limit = cadmpeg_core::decode::u64_from_index(budget.consumed());
-    let requested = limit.checked_add(1).ok_or_else(|| {
-        ctx.refuse_codec_limit("catia_zero_endpoint_work", u64::MAX - 1, u64::MAX)
-    })?;
-    Err(ctx.refuse_codec_limit("catia_zero_endpoint_work", limit, requested))
+    Ok(false)
 }
 
 pub(crate) fn endpoint_pair_candidates(
@@ -374,7 +373,9 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                         if *other <= index {
                             continue;
                         }
-                        charge_endpoint_work(ctx, budget)?;
+                        if !charge_endpoint_work(ctx, budget)? {
+                            return Ok(None);
+                        }
                         if point.distance(endpoints[*other].2.get()) <= MODEL_POINT_TOLERANCE {
                             ctx.push_vec(
                                 &mut neighbors[index],
@@ -423,7 +424,9 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         let mut complete = true;
         for (position, left) in component.iter().enumerate() {
             for right in &component[position + 1..] {
-                charge_endpoint_work(ctx, budget)?;
+                if !charge_endpoint_work(ctx, budget)? {
+                    return Ok(None);
+                }
                 let deviation = endpoints[*left].2.distance(endpoints[*right].2.get());
                 maximum_deviation = maximum_deviation.max(deviation);
                 complete &= deviation <= MODEL_POINT_TOLERANCE;
@@ -497,8 +500,9 @@ fn endpoint_match_graph(
                                     &mut possible,
                                     other,
                                     "catia_zero_match_possible",
-                                )? {
-                                    charge_endpoint_work(ctx, budget)?;
+                                )? && !charge_endpoint_work(ctx, budget)?
+                                {
+                                    return Ok(None);
                                 }
                             }
                         }
@@ -764,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_endpoint_matching_refuses_exhausted_work() {
+    fn bounded_endpoint_matching_skips_after_exhausted_work() {
         let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
         let occurrences = [
             occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
@@ -772,12 +776,17 @@ mod tests {
         ];
         let budget = WorkBudget::new(0);
 
-        let result = crate::test_support::with_service_context(|ctx| {
-            endpoint_pair_candidates_with_budget(ctx, &occurrences, &budget)
+        let (result, refusal) = crate::test_support::with_service_context(|ctx| {
+            (
+                endpoint_pair_candidates_with_budget(ctx, &occurrences, &budget),
+                ctx.resource_refusal(),
+            )
         });
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_zero_endpoint_work" && limit.limit == 0 && limit.additional == 1));
+        assert!(result
+            .expect("local slice exhaustion is not a session refusal")
+            .is_none());
         assert!(budget.exhausted());
+        assert_eq!(refusal, None);
     }
 
     #[test]
