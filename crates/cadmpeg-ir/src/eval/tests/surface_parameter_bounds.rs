@@ -6,28 +6,20 @@ use crate::eval::RationalBezierSurfacePatch;
 use crate::math::{Point2, Point3};
 use crate::topology::IncreasingParameterInterval;
 use crate::units::FinitePoint2;
+use cadmpeg_core::decode::WorkBudget;
 
 #[test]
 fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let patch = RationalBezierSurfacePatch {
         u_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
         v_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
         u_degree: 1,
         v_degree: 1,
         controls: [[0.0, 0.0, 0.0, 1.0]; 4].to_vec(),
-        _scratch: ctx.reserve_scoped_limit(0, "test patch controls").unwrap(),
     };
     let start = FinitePoint2::new(Point2::new(-0.5, 0.0)).unwrap();
     let end = FinitePoint2::new(Point2::new(0.5, 1.0)).unwrap();
-    assert!(rational_patch_parameter_segment(
-        &cadmpeg_test_support::service_decode_context(),
-        &patch,
-        start,
-        end
-    )
-    .expect("resource allocation did not fail")
-    .is_none());
+    assert!(rational_patch_parameter_segment(&patch, start, end).is_none());
 }
 
 #[test]
@@ -86,49 +78,28 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
 }
 
 #[test]
-fn surface_segment_bound_preserves_session_and_local_refusals() {
+fn surface_segment_bound_refuses_zero_depth_and_keeps_slice_exhaustion_local() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let surface = bilinear_surface();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)];
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = nurbs_surface_parameter_segment_chord_bound(&ctx, &surface, parameters, chord)
-            .unwrap_err();
-        assert!(matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-        assert_eq!(
-            ctx.finish_session().unwrap_err().to_string(),
-            error.to_string()
-        );
-    }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error =
+        nurbs_surface_parameter_segment_chord_bound(&ctx, &surface, parameters, chord).unwrap_err();
     assert!(
-        nurbs_surface_parameter_segment_chord_bound(&ctx, &surface, parameters, chord)
-            .unwrap()
-            .is_some()
+        matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth)
     );
-    ctx.finish_session().unwrap();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let budget = ctx.work_budget(0);
+    assert_eq!(
+        ctx.finish_session().unwrap_err().to_string(),
+        error.to_string()
+    );
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let budget = WorkBudget::new(0);
     let bound = crate::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
         &ctx, &surface, parameters, chord, &budget,
     )
@@ -139,47 +110,19 @@ fn surface_segment_bound_preserves_session_and_local_refusals() {
 }
 
 #[test]
-fn surface_patch_extraction_preserves_refusals_and_scoped_output_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn surface_patches_extract_split_and_bound_the_bilinear_net() {
     let surface = bilinear_surface();
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => unreachable!("tested extraction dimensions"),
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let budget = ctx.work_budget(1_000_000);
-        let limit = crate::eval::rational_surface_patches_with_budget(&ctx, &surface, &budget)
-            .expect_err("extraction admission");
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 65536;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_recursion_depth = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let budget = ctx.work_budget(1_000_000);
-    let output = crate::eval::rational_surface_patches_with_budget(&ctx, &surface, &budget)
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let budget = WorkBudget::new(1_000_000);
+    let patches = crate::eval::rational_surface_patches_with_budget(&ctx, &surface, &budget)
         .expect("extraction")
         .expect("active patch");
-    assert_eq!(output.rows.len(), 1);
-    assert_eq!(output.rows[0].u_domain.endpoints(), [0.0, 1.0]);
-    assert_eq!(output.rows[0].v_domain.endpoints(), [0.0, 1.0]);
+    assert_eq!(patches.len(), 1);
+    let patch = &patches[0];
+    assert_eq!(patch.u_domain.endpoints(), [0.0, 1.0]);
+    assert_eq!(patch.v_domain.endpoints(), [0.0, 1.0]);
     assert_eq!(
-        output.rows[0].controls,
+        patch.controls,
         [
             [0.0, 0.0, 0.0, 1.0],
             [0.0, 1.0, 0.0, 1.0],
@@ -187,81 +130,9 @@ fn surface_patch_extraction_preserves_refusals_and_scoped_output_storage() {
             [1.0, 1.0, 0.0, 1.0],
         ]
     );
-    let bytes = output.rows.capacity() * std::mem::size_of::<RationalBezierSurfacePatch>()
-        + output
-            .rows
-            .iter()
-            .map(|patch| patch.controls.capacity() * std::mem::size_of::<[f64; 4]>())
-            .sum::<usize>();
-    let bytes = u64::try_from(bytes).expect("test allocation bytes fit");
-    let spare = ctx
-        .reserve_scoped_limit(65536 - bytes, "test surface extraction scratch released")
-        .expect("only output headers and controls remain");
-    drop(spare);
-    drop(output);
-    let reuse = ctx
-        .reserve_scoped_limit(65536, "test surface patches released")
-        .expect("all bytes reusable");
-    drop(reuse);
-    ctx.finish_session()
-        .expect("no retained extraction storage");
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let budget = cadmpeg_core::decode::WorkBudget::new(0);
-    assert!(
-        crate::eval::rational_surface_patches_with_budget(&ctx, &surface, &budget)
-            .expect("independent local exhaustion")
-            .is_none()
-    );
-    ctx.finish_session()
-        .expect("local exhaustion is not a session refusal");
-}
-
-#[test]
-fn surface_patch_split_preserves_refusals_and_both_tensor_directions() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let surface = bilinear_surface();
-    let source_ctx = cadmpeg_test_support::service_decode_context();
-    let source_budget = source_ctx.work_budget(1_000_000);
-    let source =
-        crate::eval::rational_surface_patches_with_budget(&source_ctx, &surface, &source_budget)
-            .expect("fixture extraction")
-            .expect("active patch");
     for split_u in [false, true] {
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits,
-        ] {
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                _ => unreachable!("tested split dimensions"),
-            }
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let budget = ctx.work_budget(1_000_000);
-            let limit =
-                crate::eval::split_rational_surface_patch(&ctx, &source.rows[0], split_u, &budget)
-                    .expect_err("split admission");
-            assert_eq!(limit.dimension, dimension);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 8192;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_recursion_depth = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let budget = ctx.work_budget(1_000_000);
-        let children =
-            crate::eval::split_rational_surface_patch(&ctx, &source.rows[0], split_u, &budget)
-                .expect("split")
-                .expect("divisible patch");
+        let children = crate::eval::split_rational_surface_patch(patch, split_u, &budget)
+            .expect("divisible patch");
         for (side, child) in children.iter().enumerate() {
             let range = if side == 0 { [0.0, 0.5] } else { [0.5, 1.0] };
             assert_eq!(
@@ -278,101 +149,38 @@ fn surface_patch_split_preserves_refusals_and_both_tensor_directions() {
                 assert_eq!(*control, [u[index / 2], v[index % 2], 0.0, 1.0]);
             }
         }
-        let bytes = children
-            .iter()
-            .map(|patch| patch.controls.capacity() * std::mem::size_of::<[f64; 4]>())
-            .sum::<usize>();
-        let bytes = u64::try_from(bytes).expect("test bytes fit");
-        let spare = ctx
-            .reserve_scoped_limit(8192 - bytes, "test split surface scratch released")
-            .expect("only child controls remain");
-        drop(spare);
-        drop(children);
-        let reuse = ctx
-            .reserve_scoped_limit(8192, "test split surface outputs released")
-            .expect("all bytes reusable");
-        drop(reuse);
-        ctx.finish_session().expect("no retained split storage");
     }
-}
-
-#[test]
-fn surface_distance_bounds_preserve_each_control_scan_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let surface = bilinear_surface();
-    let source_ctx = cadmpeg_test_support::service_decode_context();
-    let source_budget = source_ctx.work_budget(1_000_000);
-    let source =
-        crate::eval::rational_surface_patches_with_budget(&source_ctx, &surface, &source_budget)
-            .expect("fixture extraction")
-            .expect("active patch");
-    // One patch visit and four control visits.
-    for cap in 0..5 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let budget = ctx.work_budget(1_000_000);
-        let limit =
-            crate::eval::rational_patch_distance_bounds_with_budget(&ctx, &source.rows[0], &budget)
-                .expect_err("each visit needs work");
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 5;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let budget = ctx.work_budget(1_000_000);
-    let (lower, diameter) =
-        crate::eval::rational_patch_distance_bounds_with_budget(&ctx, &source.rows[0], &budget)
-            .expect("five visits")
-            .expect("finite hull");
+    let (lower, diameter) = crate::eval::rational_patch_distance_bounds_with_budget(patch, &budget)
+        .expect("finite hull");
     assert_eq!(lower, 0.0);
     assert!((diameter - 2.0_f64.sqrt()).abs() <= 4.0 * f64::EPSILON);
+    let exhausted = WorkBudget::new(0);
+    assert!(
+        crate::eval::rational_surface_patches_with_budget(&ctx, &surface, &exhausted)
+            .expect("independent local exhaustion")
+            .is_none()
+    );
     ctx.finish_session()
-        .expect("no scratch allocation for bounds");
+        .expect("local exhaustion is not a session refusal");
 }
 
 #[test]
-fn surface_start_search_keeps_only_output_storage_after_both_contracts() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn surface_start_search_lands_on_the_projected_parameter_for_both_contracts() {
     let surface = bilinear_surface();
+    let ctx = cadmpeg_test_support::service_decode_context();
     for tolerance in [None, Some(0.0)] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 8192;
-        policy.limits.max_retained_bytes = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let budget = ctx.work_budget(1_000_000);
+        let budget = WorkBudget::new(1_000_000);
         let point = Point3::new(0.3, 0.7, if tolerance.is_some() { 0.0 } else { 0.2 });
         let starts = crate::eval::complete_nurbs_surface_starts(
             &ctx, &surface, point, None, tolerance, &budget,
         )
-        .expect("actual scoped workspace fits")
+        .expect("no session refusal")
         .expect("surface starts");
         assert!(!starts.is_empty());
-        for start in starts.iter() {
+        for start in &starts {
             assert!((start.u - 0.3).abs() <= 64.0 * f64::EPSILON);
             assert!((start.v - 0.7).abs() <= 64.0 * f64::EPSILON);
         }
-        let bytes = u64::try_from(starts.capacity() * std::mem::size_of::<FinitePoint2>())
-            .expect("test allocation bytes fit");
-        let spare = ctx
-            .reserve_scoped_limit(8192 - bytes, "test surface start workspace released")
-            .expect("only output starts remain reserved");
-        drop(spare);
-        drop(starts);
-        let reuse = ctx
-            .reserve_scoped_limit(8192, "test surface starts released")
-            .expect("all bytes reusable");
-        drop(reuse);
-        ctx.finish_session().expect("no retained search storage");
     }
+    ctx.finish_session().unwrap();
 }

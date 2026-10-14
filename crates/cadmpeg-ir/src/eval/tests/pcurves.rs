@@ -550,7 +550,7 @@ fn an_offset_pcurve_whose_point_overflows_reports_the_non_finite_point() {
 }
 
 #[test]
-fn pcurve_tangent_preserves_each_session_refusal() {
+fn pcurve_tangent_returns_the_session_depth_refusal() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -568,50 +568,19 @@ fn pcurve_tangent_preserves_each_session_refusal() {
         .expect("fixture admission")
         .expect("rational line"),
     };
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => unreachable!("the test selects four dimensions"),
-        }
-        crate::eval::test_support::with_policy(policy, |ctx| {
-            let Err(EvaluationFailure::ResourceLimit(original)) = pcurve_tangent(ctx, &pcurve, 0.5)
-            else {
-                panic!("tangent must preserve its scratch refusal")
-            };
-            assert_eq!(original.dimension, dimension);
-            assert_eq!((original.limit, original.used), (0, 0));
-            assert!(original.additional > 0);
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            assert_eq!(
-                pcurve_tangent(ctx, &pcurve, f64::NAN),
-                Err(EvaluationFailure::ResourceLimit(original))
-            );
-        });
-    }
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
     crate::eval::test_support::with_policy(policy, |ctx| {
+        let Err(EvaluationFailure::ResourceLimit(original)) = pcurve_tangent(ctx, &pcurve, 0.5)
+        else {
+            panic!("tangent must return the depth refusal")
+        };
+        assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!((original.limit, original.used), (0, 0));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert_eq!(
-            pcurve_tangent(ctx, &pcurve, 0.5).map(crate::units::FinitePoint2::get),
-            Ok(Point2::new(1.0, 0.0))
+            pcurve_tangent(ctx, &pcurve, f64::NAN),
+            Err(EvaluationFailure::ResourceLimit(original))
         );
-        assert_eq!(
-            pcurve_tangent(ctx, &pcurve, 0.5),
-            pcurve_tangent(
-                crate::eval::admission::EvaluationAdmission::Standard,
-                &pcurve,
-                0.5
-            )
-        );
-        assert_eq!(ctx.resource_refusal(), None);
     });
 }
