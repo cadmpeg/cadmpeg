@@ -1881,18 +1881,16 @@ fn arrangement_cycle_work_admits_cubic_ring_bound() {
 }
 
 #[test]
-fn sketch_arrangement_faces_propagates_local_work_refusal() {
+fn sketch_arrangement_faces_skips_the_arrangement_when_local_work_runs_out() {
     let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
     crate::test_support::with_decode_context(|ctx| {
         let budget = ctx.work_budget(0);
-        let error =
+        let faces =
             sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
-                .err()
-                .expect("local work refusal");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "F3D arrangement cycle work" && ctx.resource_refusal() == Some(limit))
-        );
+                .expect("an exhausted local slice is not a session refusal");
+        assert!(faces.is_none());
+        assert!(budget.exhausted());
+        assert!(ctx.resource_refusal().is_none());
     });
 }
 

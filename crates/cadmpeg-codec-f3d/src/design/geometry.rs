@@ -346,6 +346,9 @@ fn sketch_arrangement_faces(
         ctx.push_vec(&mut edges, edge, "f3d arrangement edge")?;
     }
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
+    if budget.exhausted() {
+        return Ok(None);
+    }
     if edges.len() < 3 {
         return Ok(None);
     }
@@ -1074,18 +1077,12 @@ fn arrangement_retain_cycle_edges(
         // One BFS per edge scans all edges at each visited node: O(E² V).
         // The bound also admits visit initialization and retention scans.
         let work = arrangement_cycle_work(edges.len(), node_count, ctx)?;
-        let remaining = budget.remaining();
         if !budget.charge_by(work) {
-            return Err(ctx.resource_refusal().map_or_else(
-                || {
-                    ctx.refuse_codec_limit(
-                        "F3D arrangement cycle work",
-                        cadmpeg_core::decode::u64_from_index(remaining),
-                        cadmpeg_core::decode::u64_from_index(work),
-                    )
-                },
-                CodecError::ResourceLimit,
-            ));
+            // A session refusal propagates. An exhausted local slice leaves
+            // the edges as they are; the caller then projects no arrangement.
+            return ctx
+                .resource_refusal()
+                .map_or(Ok(()), |limit| Err(CodecError::ResourceLimit(limit)));
         }
         let mut keep = Vec::new();
         for (index, edge) in edges.iter().enumerate() {
