@@ -618,8 +618,7 @@ fn bind_complete_record_tables(
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return Ok(TableBindingCost::Admitted);
     };
-    let active_limit =
-        cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
+    let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
     // The framed record stream, the archived frames, and the revision archive
     // are scratch for this binding; only the per-state topology is retained.
     let mut scratch = ctx.reserve_scoped(0, "bind F3D complete history tables")?;

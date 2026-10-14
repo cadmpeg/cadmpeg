@@ -48,23 +48,13 @@ impl NativeRecordNamespace {
         record_index: u32,
         map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let source = ctx.format_scoped(
-            format_args!("{}", self.serialized_id(kind, record_index)),
-            "format ASM identity rewrite source",
-        )?;
-        let mut target = map.identity(ctx, &source.0)?;
-        let work = cadmpeg_core::decode::u64_from_index(target.len())
-            .checked_mul(3)
-            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(source.0.len())))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("split ASM identity rewrite target", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "split ASM identity rewrite target")?;
+        let source = self.serialized_id(kind, record_index).to_string();
+        let mut target = map.identity(ctx, &source)?;
+
         let (namespace, record) = target.rsplit_once(':').ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("ASM identity has no record separator")
         })?;
         let source_record = source
-            .0
             .rsplit_once(':')
             .map(|(_, record)| record)
             .ok_or_else(|| {
@@ -82,16 +72,11 @@ impl NativeRecordNamespace {
 
     pub(super) fn visit(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         kind: &str,
         record_index: u32,
         visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let source = ctx.format_scoped(
-            format_args!("{}", self.serialized_id(kind, record_index)),
-            "format ASM identity reference",
-        )?;
-        visitor(&source.0)
+        visitor(&self.serialized_id(kind, record_index).to_string())
     }
 
     pub(super) fn from_wire(id: &str, record_index: u32, kind: &str) -> Result<Self, String> {
@@ -141,7 +126,6 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 25;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let id = namespace.serialized_id("edge-continuity", 1);
