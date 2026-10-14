@@ -25,16 +25,13 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   arm. The rule discovers evaluator names from production return signatures,
   resolves function paths and imports, and tracks bound results. Common method
   names require a receiver type or constructor that identifies the evaluator.
-- Slice sort calls in functions with a borrowed `DecodeContext` use
-  `ctx.stable_sort_by` or `ctx.sort_unstable_by`. This includes typed context
-  locals and context fields accessed through `self`. The two core sort
-  implementations and test code are exempt. Functions without a context stay
-  outside this rule.
 - Loss notes use the owning loss code's `note` method.
 - Formatted malformed errors use structured codec errors.
 - Tolerances from `1e-6` through `1e-12` use named constants or statics.
-- Vector repeats use literal sizes, admitted collection lengths, or checked
-  allocation. This check recognizes syntax; it does not prove count safety.
+- Vector repeats use a literal size or the length of an existing collection.
+  For a different count, use `DecodeContext::alloc_filled` after
+  `View::counted` or `bounded_len` validates the count against the bytes it
+  describes. This check recognizes syntax; it does not prove count safety.
 - A production `let _ =` states why the value it drops has no reader. Sites
   with no reason fail.
 - Unit tests belong to their production owner. Crate-root `src/tests.rs` and
@@ -86,9 +83,11 @@ refusal branch.
 ## Checked arithmetic
 
 Production `saturating_*` calls fail with `saturating_arithmetic`. Use checked
-arithmetic. The overflow branch propagates the caller context's resource refusal
-in decode code or a typed error elsewhere. Constant expressions must preserve
-the exact value or reject the invalid constant.
+arithmetic. In decode code, the overflow branch of arithmetic over file-derived
+values returns a structured malformed error (`CodecError::malformed`) or the
+codec's parse error. A session ceiling keeps its own refusal. Elsewhere, the
+overflow branch returns a typed error. Constant expressions must preserve the
+exact value or reject the invalid constant.
 
 ## Decode context parameters
 
