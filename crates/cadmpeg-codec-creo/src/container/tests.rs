@@ -1160,7 +1160,7 @@ fn duplicate_primitive_section_namespace_is_refused() {
 }
 
 #[test]
-fn expanded_section_local_ceiling_is_a_refusal() {
+fn expanded_section_above_the_local_ceiling_stays_compressed() {
     let bytes = b"#Body\n\x1f\x9d\x10";
     let section = super::Section::scan(
         "Body".to_owned(),
@@ -1171,11 +1171,14 @@ fn expanded_section_local_ceiling_is_a_refusal() {
     )
     .expect("section extent");
     crate::decode::with_test_decode_ctx(|ctx| {
-        let error = super::expanded_sections(ctx, bytes, &[section], &mut Vec::new())
-            .expect_err("expansion ceiling");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo expanded section ceiling")
-        );
+        let mut losses = Vec::new();
+        let expanded = super::expanded_sections(ctx, bytes, &[section], &mut losses)
+            .expect("the expansion ceiling skips the section");
+        assert!(expanded.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].section_offset, 0);
+        assert!(losses[0].message.contains("256 MiB section ceiling"));
+        assert!(ctx.resource_refusal().is_none());
     });
 }
 

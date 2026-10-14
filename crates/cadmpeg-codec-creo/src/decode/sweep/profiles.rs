@@ -296,18 +296,14 @@ pub(in super::super) fn circular_pcurve(
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
     if !count.is_finite() || count > f64::from(MAX_CIRCULAR_PCURVE_SEGMENTS) {
-        let requested = cadmpeg_core::convert::truncate_f64_to_u64(count).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "creo circular pcurve segments",
-                u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
-                u64::MAX,
-            )
-        })?;
-        return Err(ctx.refuse_codec_limit(
-            "creo circular pcurve segments",
-            u64::from(MAX_CIRCULAR_PCURVE_SEGMENTS),
-            requested,
-        ));
+        refusal.note_checked(
+            ctx,
+            format_args!("creo circular pcurve record for {record}"),
+            &format_args!(
+                "the arc span needs more than {MAX_CIRCULAR_PCURVE_SEGMENTS} quarter-turn segments"
+            ),
+        );
+        return Ok(None);
     }
     let segment_count = cadmpeg_core::convert::truncate_f64_to_usize(count).ok_or_else(|| {
         ctx.refuse_codec_limit("creo circular pcurve segments", u64::MAX, u64::MAX)
@@ -1221,22 +1217,14 @@ fn append_nurbs_profile_point(
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     points: &mut Vec<[f64; 2]>,
     point: [f64; 2],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<Option<()>, cadmpeg_core::CodecError> {
+    // A profile that needs more points than the ceiling is not sampled.
     if points.len() >= MAX_NURBS_PROFILE_POINTS {
-        let requested = cadmpeg_core::decode::u64_from_index(points.len())
-            .checked_add(1)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo NURBS profile point ceiling", u64::MAX, u64::MAX)
-            })?;
-        return Err(ctx.refuse_codec_limit(
-            "creo NURBS profile point ceiling",
-            cadmpeg_core::decode::u64_from_index(MAX_NURBS_PROFILE_POINTS),
-            requested,
-        ));
+        return Ok(None);
     }
     ctx.reserve_scoped_vec(storage, points, 1, "creo NURBS profile polyline points")?;
     points.push(point);
-    Ok(())
+    Ok(Some(()))
 }
 
 fn append_nurbs_profile_span(
@@ -1255,8 +1243,7 @@ fn append_nurbs_profile_span(
     }
     let middle = span.start + (span.end - span.start) * 0.5;
     if middle == span.start || middle == span.end {
-        append_nurbs_profile_point(ctx, storage, points, span.end_point)?;
-        return Ok(Some(()));
+        return append_nurbs_profile_point(ctx, storage, points, span.end_point);
     }
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
@@ -1275,23 +1262,11 @@ fn append_nurbs_profile_span(
         return Ok(None);
     }
     if flatness <= span.tolerance {
-        append_nurbs_profile_point(ctx, storage, points, span.end_point)?;
-        return Ok(Some(()));
+        return append_nurbs_profile_point(ctx, storage, points, span.end_point);
     }
+    // A span that is not flat at the subdivision ceiling is not sampled.
     if span.depth >= MAX_DEPTH {
-        return Err(ctx.refuse_codec_limit(
-            "creo NURBS profile sampling ceiling",
-            cadmpeg_core::decode::u64_from_index(MAX_DEPTH),
-            cadmpeg_core::decode::u64_from_index(span.depth)
-                .checked_add(1)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "creo NURBS profile sampling ceiling",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
-        ));
+        return Ok(None);
     }
     if append_nurbs_profile_span(
         ctx,
@@ -1349,7 +1324,9 @@ fn nurbs_profile_polyline<'ctx>(
     };
     let mut points = Vec::new();
     let mut storage = ctx.reserve_scoped(0, "creo NURBS profile polyline points")?;
-    append_nurbs_profile_point(ctx, &mut storage, &mut points, first)?;
+    if append_nurbs_profile_point(ctx, &mut storage, &mut points, first)?.is_none() {
+        return Ok(None);
+    }
     for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
@@ -1362,8 +1339,10 @@ fn nurbs_profile_polyline<'ctx>(
         ) else {
             return Ok(None);
         };
-        if points.last().copied() != Some(start_point) {
-            append_nurbs_profile_point(ctx, &mut storage, &mut points, start_point)?;
+        if points.last().copied() != Some(start_point)
+            && append_nurbs_profile_point(ctx, &mut storage, &mut points, start_point)?.is_none()
+        {
+            return Ok(None);
         }
         if append_nurbs_profile_span(
             ctx,
