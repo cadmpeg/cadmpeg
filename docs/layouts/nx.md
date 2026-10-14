@@ -803,6 +803,22 @@ Parsed by:
 | 20 | 12 | `reserved_words` | `bytes[12]` | little | spec | h[5] = h[6] = h[7] = 0 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 32 | 4 | `terminal_offset` | `u32` | little | spec | h[8] = entry-relative terminal table offset |
 
+## `extract_face_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 31 B
+
+Relative to the start of the EXTRACT_FACE payload. Two variable-width counted relation lanes and the terminal/text suffix follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/extract_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `parameter_class_index` | `u8` | big | spec | The nonzero parameter class index is one-based in the owning OM section |
+| 1 | 4 | `discriminator` | `bytes[4]` | big | spec | marker at offset 1, the four tagged words at offsets 5 through 24, and the · value `[0, 0, 1, 0]` |
+| 5 | 20 | `tagged_words` | `bytes[20]` | big | spec | marker at offset 1, the four tagged words at offsets 5 through 24, and the |
+| 25 | 6 | `reserved` | `bytes[6]` | big | spec | six zero bytes at offset 25. Each lane is `01, count:u8, triple[count - 1]` · value `[0, 0, 0, 0, 0, 0]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

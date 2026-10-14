@@ -2217,6 +2217,26 @@ associativity controls remain unresolved. Output face ownership does not
 identify the pre-operation face selection.
 
 The `EXTRACT_FACE` operation label identifies a face-extraction construction.
+Its bounded construction prefix is `parameter-class-index, 00 00 01 00,
+(01, word:u32 BE)[4], zero[6], lane[0], lane[1], ff, terminal-index,
+zero[5], 03, text-length:u8, navigator-text, 00`.
+The nonzero parameter class index is one-based in the owning OM section
+and selects `UGS::ModlFeature::ExtractFaceParms`. The fixed prefix through
+`zero[6]` occupies 31 bytes: the class index is at offset 0, the four-byte
+marker at offset 1, the four tagged words at offsets 5 through 24, and the
+six zero bytes at offset 25. Each lane is `01, count:u8, triple[count - 1]`
+with a nonzero count. Each triple is `key:u8, left-index, right-index`.
+The two endpoints and the terminal index use required direct, compact, or
+word feature-index tokens. Zero is an index value, not a null token.
+The lanes preserve order, duplicate keys, duplicate relations, and exact
+index encodings. An empty lane has count 1; count 0 is invalid. A lane
+contains at most 254 triples. The terminal index follows the `ff` separator.
+The text length is its UTF-8 byte count plus two, with a maximum of 255.
+The terminator is outside that declared length. Four tagged words, two
+ordered lanes, terminal index, navigator text, and complete prefix span
+are retained in `feature_extract_face_construction_envelopes`.
+The lanes name construction revision relations; neither lane is a literal
+result-face or result-edge list. The following body-write relation is separate.
 When its body-write relation resolves, the result body is a sheet body. The
 selected source faces and associativity, copy, and sew controls remain
 unresolved. Result body ownership does not identify the source face selection.

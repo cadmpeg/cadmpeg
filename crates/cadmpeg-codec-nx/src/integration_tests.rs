@@ -60,6 +60,7 @@ mod assembly_placement;
 mod body_write;
 mod dialect;
 mod enlarge;
+mod extract_face;
 mod swp104;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {

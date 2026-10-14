@@ -82,6 +82,9 @@ use super::features::construction_records::{
 use super::features::enlarge::{
     feature_enlarge_construction_envelopes, FeatureEnlargeConstructionEnvelope,
 };
+use super::features::extract_face::{
+    feature_extract_face_construction_envelopes, FeatureExtractFaceConstructionEnvelope,
+};
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::surface_allocation::{
     feature_surface_construction_payloads, FeatureSurfaceConstructionPayload,
@@ -453,6 +456,8 @@ pub(in crate::native) struct FeatureRecords {
         Vec<FeatureDraftConstructionIdentityFrame>,
     pub(super) feature_draft_construction_terminal_lanes: Vec<FeatureDraftConstructionTerminalLane>,
     pub(super) feature_enlarge_construction_envelopes: Vec<FeatureEnlargeConstructionEnvelope>,
+    pub(super) feature_extract_face_construction_envelopes:
+        Vec<FeatureExtractFaceConstructionEnvelope>,
     pub(super) feature_surface_construction_references: Vec<FeatureSurfaceConstructionReference>,
     pub(super) feature_studio_post_branch_references: Vec<FeatureSurfaceConstructionReference>,
     pub(super) feature_surface_construction_payloads: Vec<FeatureSurfaceConstructionPayload>,
@@ -1196,6 +1201,8 @@ impl NativeModel {
             feature_draft_construction_terminal_lanes(ctx, container)?;
         let feature_enlarge_construction_envelopes =
             feature_enlarge_construction_envelopes(ctx, container)?;
+        let feature_extract_face_construction_envelopes =
+            feature_extract_face_construction_envelopes(ctx, container)?;
         let feature_surface_construction_references =
             feature_surface_construction_references(ctx, container)?;
         let feature_studio_post_branch_references =
@@ -1665,6 +1672,7 @@ impl NativeModel {
                 feature_draft_construction_identity_frames,
                 feature_draft_construction_terminal_lanes,
                 feature_enlarge_construction_envelopes,
+                feature_extract_face_construction_envelopes,
                 feature_surface_construction_references,
                 feature_studio_post_branch_references,
                 feature_surface_construction_payloads,

@@ -57,6 +57,7 @@ pub(crate) mod body_scalar_triple;
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 pub(crate) mod enlarge;
+pub(crate) mod extract_face;
 pub(crate) mod extrude_32;
 pub(crate) mod extrude_profile;
 pub(crate) mod simple_hole_references;

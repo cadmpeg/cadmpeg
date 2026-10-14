@@ -730,11 +730,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Question.** Which serialized faces and associativity, copy, and sew controls define an `EXTRACT_FACE` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `EXTRACT_FACE` operation label identifies a face-extraction construction." defines the family and retains its dedicated unresolved neutral definition. A resolved body-write relation retains a sheet result body.
+**Known.** `siemens_nx.md` §7.1 "The `EXTRACT_FACE` operation label identifies a face-extraction construction." defines the family and retains its dedicated unresolved neutral definition. Its bounded native prefix retains the one-based `UGS::ModlFeature::ExtractFaceParms` class selector, four tagged words, two ordered counted relation lanes, terminal index, navigator text, and complete span. A resolved body-write relation retains a sheet result body.
 
 **Need.** We must identify the complete source-face and result-control relation to construct an extract-face operation.
 
-**Conflict.** The operation label and resolved sheet result identify the family, but the operation object-index lanes and body-write relation do not assign source faces or associativity, copy, or sew controls. Result sheet ownership does not identify the authored source selection.
+**Conflict.** The operation label and resolved sheet result identify the family, but the ordered construction revision lanes and body-write relation do not assign source faces or associativity, copy, or sew controls. Lane endpoints join owner-local operation-state ordinals where the complete state table is present; neither lane is a literal result-face or result-edge list. Result sheet ownership does not identify the authored source selection.
 
 ### OM-42. `SYMBOLIC_THREAD` construction roles
 

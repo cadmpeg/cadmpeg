@@ -18,6 +18,7 @@ use construction_records::{charged_unique_offset_data_block, replace_operation_t
 pub(super) mod delete;
 pub(super) mod draft;
 pub(super) mod enlarge;
+pub(super) mod extract_face;
 pub(super) mod extrude_32;
 pub(super) mod fset;
 pub(super) mod fset_indices;

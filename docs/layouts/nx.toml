@@ -2393,3 +2393,43 @@ offset = 32
 type = "u32"
 source = "spec"
 anchor = "h[8] = entry-relative terminal table offset"
+
+[[record]]
+name = "extract_face_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/extract_face.rs"
+kind = "byte"
+section = "7.1"
+anchor = "and selects `UGS::ModlFeature::ExtractFaceParms`. The fixed prefix through"
+size = 31
+endianness = "big"
+note = "Relative to the start of the EXTRACT_FACE payload. Two variable-width counted relation lanes and the terminal/text suffix follow."
+
+[[record.field]]
+name = "parameter_class_index"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "The nonzero parameter class index is one-based in the owning OM section"
+
+[[record.field]]
+name = "discriminator"
+offset = 1
+type = "bytes[4]"
+source = "spec"
+anchor = "marker at offset 1, the four tagged words at offsets 5 through 24, and the"
+value = [0, 0, 1, 0]
+
+[[record.field]]
+name = "tagged_words"
+offset = 5
+type = "bytes[20]"
+source = "spec"
+anchor = "marker at offset 1, the four tagged words at offsets 5 through 24, and the"
+
+[[record.field]]
+name = "reserved"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes at offset 25. Each lane is `01, count:u8, triple[count - 1]`"
+value = [0, 0, 0, 0, 0, 0]
