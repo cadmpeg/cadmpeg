@@ -6,9 +6,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::decode::DecodeContext;
-use crate::CodecError;
-
 /// A character that is not whitespace.
 ///
 /// The type exists so [`NonBlankString::prefixed`] is total: a prefix of this
@@ -109,16 +106,6 @@ impl NonBlankString {
         &self.0
     }
 
-    /// Copy a previously admitted non-blank value into decoder-retained storage.
-    pub fn try_clone_for_decode(
-        &self,
-        ctx: &crate::decode::DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, crate::CodecError> {
-        let text = ctx.copy_retained_text(self.as_str(), operation)?;
-        Self::new(text).ok_or_else(|| crate::CodecError::malformed("non-blank text copy changed"))
-    }
-
     /// Consumes the value and returns the source string.
     #[must_use]
     pub fn into_string(self) -> String {
@@ -181,10 +168,6 @@ impl std::borrow::Borrow<str> for NonBlankString {
 /// states the property it could not key instead of dropping it without a word.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NamedEntryError {
-    /// The resource policy or allocator refused the operation.
-    ResourceRefusal(crate::decode::ResourceLimit),
-    /// The owning record could not be formatted.
-    FormattingRefusal,
     /// The key holds no non-whitespace character.
     Blank {
         /// The record the reader named as the owner of the property set.
@@ -202,12 +185,6 @@ pub enum NamedEntryError {
 impl std::fmt::Display for NamedEntryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ResourceRefusal(limit) => write!(
-                formatter,
-                "resource refusal during {}: {:?}",
-                limit.operation, limit.dimension
-            ),
-            Self::FormattingRefusal => formatter.write_str("cannot format named entry record"),
             Self::Blank { record } => {
                 write!(formatter, "{record} states a property with a blank key")
             }
@@ -220,15 +197,6 @@ impl std::fmt::Display for NamedEntryError {
 }
 
 impl std::error::Error for NamedEntryError {}
-
-impl NamedEntryError {
-    fn from_refusal(error: &CodecError) -> Self {
-        match error {
-            CodecError::ResourceLimit(limit) => Self::ResourceRefusal(*limit),
-            _ => Self::FormattingRefusal,
-        }
-    }
-}
 
 /// Keys a map by the entry names, and states every name it cannot key.
 ///
@@ -248,71 +216,32 @@ impl NamedEntryError {
 ///
 /// This is the route for a reader that keeps the properties it can key and
 /// reports the rest. A reader that refuses the whole set uses
-/// [`named_entries_for_decode`].
-///
-/// Keys named entries after the caller admits each new map node and refusal.
-///
-/// The caller context charges collection slots and retained storage before
-/// each vacant map node and refused-entry vector append. Refusal text and
-/// restated keys are copied after retained-byte
-/// admission. Input names and values must be admitted by their caller before
-/// they are supplied to this function.
+/// [`named_entries`].
 pub fn named_entries_reporting<V>(
-    ctx: &DecodeContext<'_>,
     record: impl std::fmt::Display,
     entries: impl IntoIterator<Item = (String, V)>,
-) -> Result<(BTreeMap<NonBlankString, V>, Vec<NamedEntryError>), CodecError> {
+) -> (BTreeMap<NonBlankString, V>, Vec<NamedEntryError>) {
     let mut kept = BTreeMap::new();
     let mut refused = Vec::new();
     for (name, value) in entries {
-        ctx.charge_work(
-            crate::decode::u64_from_index(name.len()),
-            "named entry key scan",
-        )?;
         match NonBlankString::new(name) {
             Some(key) => match kept.entry(key) {
                 std::collections::btree_map::Entry::Vacant(slot) => {
-                    ctx.admit_retained_btree_record::<NonBlankString, V>(
-                        0,
-                        "named entry map nodes",
-                    )?;
                     slot.insert(value);
                 }
                 std::collections::btree_map::Entry::Occupied(slot) => {
-                    let record = ctx
-                        .format_retained(format_args!("{record}"), "named entry refused record")?;
-                    let key = NonBlankString(
-                        ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
-                    );
-                    ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
-                    refused.push(NamedEntryError::Restated { record, key });
+                    refused.push(NamedEntryError::Restated {
+                        record: record.to_string(),
+                        key: slot.key().clone(),
+                    });
                 }
             },
-            None => {
-                let record =
-                    ctx.format_retained(format_args!("{record}"), "named entry refused record")?;
-                ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
-                refused.push(NamedEntryError::Blank { record });
-            }
+            None => refused.push(NamedEntryError::Blank {
+                record: record.to_string(),
+            }),
         }
     }
-    Ok((kept, refused))
-}
-
-/// Keys a named set through the caller's decode budget.
-///
-/// Returns the first blank or restated key, or a resource refusal.
-pub fn named_entries_for_decode<V>(
-    ctx: &DecodeContext<'_>,
-    record: impl std::fmt::Display,
-    entries: impl IntoIterator<Item = (String, V)>,
-) -> Result<BTreeMap<NonBlankString, V>, NamedEntryError> {
-    let (kept, refused) = named_entries_reporting(ctx, record, entries)
-        .map_err(|error| NamedEntryError::from_refusal(&error))?;
-    match refused.into_iter().next() {
-        Some(error) => Err(error),
-        None => Ok(kept),
-    }
+    (kept, refused)
 }
 
 /// Keys a map by the entry names, refusing a name that is blank or restated.
@@ -328,11 +257,11 @@ pub fn named_entries<V>(
     record: impl std::fmt::Display,
     entries: impl IntoIterator<Item = (String, V)>,
 ) -> Result<BTreeMap<NonBlankString, V>, NamedEntryError> {
-    let arena = crate::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &crate::decode::DecodePolicy::default())
-            .map_err(|error| NamedEntryError::from_refusal(&error))?;
-    named_entries_for_decode(&ctx, record, entries)
+    let (kept, refused) = named_entries_reporting(record, entries);
+    match refused.into_iter().next() {
+        Some(error) => Err(error),
+        None => Ok(kept),
+    }
 }
 
 /// Builds a [`NonBlankString`] from a `&'static str` constant.
@@ -402,29 +331,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        named_entries, named_entries_for_decode, named_entries_reporting, NamedEntryError,
-        NonBlankString, NonWhitespaceChar,
+        named_entries, named_entries_reporting, NamedEntryError, NonBlankString, NonWhitespaceChar,
     };
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    fn checked_reporting(
-        entries: Vec<(String, i32)>,
-        collection_limit: u64,
-        retained_limit: u64,
-    ) -> Result<
-        (
-            std::collections::BTreeMap<NonBlankString, i32>,
-            Vec<NamedEntryError>,
-        ),
-        crate::CodecError,
-    > {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_limit;
-        policy.limits.max_retained_bytes = retained_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        named_entries_reporting(&ctx, "f", entries)
-    }
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
@@ -506,16 +414,13 @@ mod tests {
 
     #[test]
     fn a_blank_key_is_named_and_the_other_properties_survive() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let entries = [
             ("width".to_owned(), "10"),
             ("   ".to_owned(), "dropped"),
             ("depth".to_owned(), "4"),
         ];
 
-        let (kept, refused) = named_entries_reporting(&ctx, "feature 7", entries.clone()).unwrap();
+        let (kept, refused) = named_entries_reporting("feature 7", entries.clone());
         assert_eq!(refused.len(), 1);
         assert!(
             matches!(&refused[0], super::NamedEntryError::Blank { record } if record == "feature 7")
@@ -535,16 +440,13 @@ mod tests {
 
     #[test]
     fn a_restated_key_is_named_and_its_second_value_is_not_kept() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let entries = [
             ("k".to_owned(), "first"),
             ("k".to_owned(), "second"),
             ("depth".to_owned(), "4"),
         ];
 
-        let (kept, refused) = named_entries_reporting(&ctx, "feature 7", entries.clone()).unwrap();
+        let (kept, refused) = named_entries_reporting("feature 7", entries.clone());
         assert_eq!(kept.len(), 2);
         assert_eq!(kept.get("k"), Some(&"first"));
         assert_eq!(refused.len(), 1);
@@ -566,46 +468,29 @@ mod tests {
 
     #[test]
     fn keys_that_all_name_something_are_kept_whole() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let entries = [("width".to_owned(), "10"), ("depth".to_owned(), "4")];
 
         let kept = named_entries("feature 7", entries.clone()).unwrap();
         assert_eq!(kept.len(), 2);
-        assert!(named_entries_reporting(&ctx, "feature 7", entries)
-            .unwrap()
-            .1
-            .is_empty());
+        assert!(named_entries_reporting("feature 7", entries).1.is_empty());
     }
 
     #[test]
-    fn checked_named_entries_keep_order_and_first_value() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    fn named_entries_keep_order_and_first_value() {
         let entries = vec![
             ("width".to_owned(), 1),
             ("width".to_owned(), 2),
             ("depth".to_owned(), 3),
         ];
-        let (kept, refused) = checked_reporting(entries.clone(), 10, 10_000).unwrap();
+        let (kept, refused) = named_entries_reporting("f", entries);
         assert_eq!(kept.get("width"), Some(&1));
         assert_eq!(
             kept.keys().map(NonBlankString::as_str).collect::<Vec<_>>(),
             ["depth", "width"]
         );
-        assert_eq!(
-            refused,
-            named_entries_reporting(&ctx, "f", entries).unwrap().1
-        );
-
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(refused.len(), 1);
         assert!(matches!(
-            named_entries_for_decode(&ctx, "f", [(" ".to_owned(), 1)])
-                .map_err(crate::CodecError::from),
+            named_entries("f", [(" ".to_owned(), 1)]).map_err(crate::CodecError::from),
             Err(crate::CodecError::Malformed(_))
         ));
     }

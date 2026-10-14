@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Scoped DEFLATE output for detection.
+//! Bounded DEFLATE output for detection.
 
-use super::{u64_from_index, DecodeContext, ScopedReservation, View};
+use super::{DecodeContext, View};
 use crate::CodecError;
 use flate2::{Decompress, FlushDecompress, Status};
 
@@ -13,21 +13,15 @@ impl DecodeContext<'_> {
         source: View<'_>,
         cap: usize,
         zlib: bool,
-    ) -> Result<Option<(Vec<u8>, ScopedReservation<'_>)>, CodecError> {
-        self.charge_work(
-            u64_from_index(source.window().len()),
-            "probe compressed input",
-        )?;
-        // miniz_oxide uses a 32 KiB dictionary and fixed Huffman tables. This
-        // 256 KiB bound includes the state and table storage for one decoder.
-        let _workspace = self.reserve_scoped(256 * 1024, "DEFLATE probe workspace")?;
+    ) -> Result<Option<Vec<u8>>, CodecError> {
+        if let Some(limit) = self.resource_refusal() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
         let mut decoder = Decompress::new(zlib);
-        let mut storage = self.reserve_scoped(0, "DEFLATE probe output")?;
         let mut output = Vec::new();
         let mut chunk = [0_u8; 1024];
         let mut offset = 0;
         loop {
-            self.charge_work(u64_from_index(chunk.len()), "DEFLATE probe step")?;
             let before_in = decoder.total_in();
             let before_out = decoder.total_out();
             let Ok(status) = decoder.decompress(
@@ -48,18 +42,10 @@ impl DecodeContext<'_> {
             {
                 return Ok(None);
             }
-            self.charge_work(u64_from_index(produced), "DEFLATE probe copy")?;
-            self.reserve_scoped_vec(&mut storage, &mut output, produced, "DEFLATE probe output")?;
             output.extend_from_slice(&chunk[..produced]);
-            if status == Status::StreamEnd {
-                return Ok(Some((output, storage)));
-            }
-            if consumed == 0 && produced == 0 {
-                return Ok(Some((output, storage)));
+            if status == Status::StreamEnd || (consumed == 0 && produced == 0) {
+                return Ok(Some(output));
             }
         }
     }
 }
-
-#[cfg(test)]
-mod tests {}
