@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::analytic::equations::{ConeEquation, PlaneEquation};
-use crate::decode::feature_history::round::{
-    chamfer_constant_distance, equal_distance_chamfer_setback,
-};
+use crate::decode::feature_history::round::equal_distance_chamfer_setback;
 use cadmpeg_ir::document::CadIr;
 
 #[test]
@@ -171,71 +169,5 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
             914
         ),
         None
-    );
-}
-
-fn chamfer_limit_error(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let scan = chamfer_scan();
-    let ir = CadIr::empty();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = chamfer_constant_distance(
-        &ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        914,
-    )
-    .expect_err("chamfer witnesses exceed the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn chamfer_cone_witnesses_refuse_collection_limit() {
-    chamfer_limit_error(0, "creo chamfer cone witnesses");
-}
-
-#[test]
-fn chamfer_support_plane_ids_refuse_collection_limit() {
-    chamfer_limit_error(4, "creo chamfer support plane IDs");
-}
-
-#[test]
-fn chamfer_support_planes_refuse_collection_limit() {
-    chamfer_limit_error(5, "creo chamfer support planes");
-}
-
-#[test]
-fn chamfer_feature_definition_propagates_cone_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let scan = chamfer_scan();
-    let ir = CadIr::empty();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = crate::decode::feature_history::draft::schema_feature_definition(
-        &ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        914,
-        Some(crate::feature::schema::SchemaClass::Chamfer),
-        "Chamfer",
-    )
-    .expect_err("chamfer feature keeps the resource refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo chamfer cone witnesses"),
-        "{error:?}"
     );
 }

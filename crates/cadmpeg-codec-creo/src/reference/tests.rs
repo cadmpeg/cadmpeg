@@ -24,43 +24,10 @@ use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 
 mod resource_limits;
 
-fn with_reference_ctx<T>(
-    bytes: &[u8],
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("reference input is admitted");
-    run(&ctx).expect("reference collection is admitted")
-}
-
-fn lines(payload: &[u8]) -> Vec<super::ReferenceLine> {
-    with_reference_ctx(payload, |ctx| super::lines(ctx, payload))
-}
-
-fn line3d_lines(payload: &[u8]) -> Vec<super::ReferenceLine> {
-    with_reference_ctx(payload, |ctx| super::line3d_lines(ctx, payload))
-}
-
-fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
-    with_reference_ctx(payload, |ctx| super::named_conics(ctx, payload))
-}
+const ADMITTED: &str = "reference collection is admitted";
 
 fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
-    with_reference_ctx(payload, |ctx| super::positional_conics(ctx, payload))
-}
-
-fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
-    with_reference_ctx(&[], |ctx| super::ellipse_carriers(ctx, conics))
-}
-
-fn arc_z_fields(
-    body: &[u8],
-    cache: &ScalarCache,
-    entity_id: u32,
-) -> Option<super::ReferenceCircle> {
-    with_reference_ctx(body, |ctx| super::arc_z_fields(ctx, body, cache, entity_id))
+    super::positional_conics(payload).expect(ADMITTED)
 }
 
 #[test]
@@ -70,7 +37,7 @@ fn decodes_complete_positional_line_rows() {
             \x18\xdf\x1d\x84\xe8\xb0\xed\x7b\x2d\x19\x87\x25\xdc\x17\x53\xfa\
             \x18\x2d\x43\x23\xb0\x9d\x16\x1d\xaf\x2d\x19\x87\x25\xdc\x17\x53\xfa\xe3\
             \xe0\x00entity(text)\0";
-    let decoded = lines(payload);
+    let decoded = super::lines(payload);
     let [line] = decoded.as_slice() else {
         panic!("one line");
     };
@@ -90,7 +57,7 @@ fn diameter_arc_center_uses_finite_midpoint_for_large_endpoints() {
         body.extend_from_slice(&value.to_be_bytes());
     }
 
-    let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 7)
+    let circle = super::arc_z_fields(&body, &ScalarCache::from_section(&body), 7)
         .expect("diameter-compressed circle");
     assert_eq!(
         <[f64; 3]>::from(circle.center().get()),
@@ -114,7 +81,7 @@ fn decodes_named_conic_fields_without_classifying_the_conic() {
             \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
             \xf2\xf7\x0e\xe3";
 
-    let decoded = named_conics(payload);
+    let decoded = super::named_conics(payload);
     let [conic] = decoded.as_slice() else {
         panic!("one conic");
     };
@@ -154,7 +121,7 @@ fn named_conic_withholds_duplicate_optional_parameter_fields() {
             \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
             \xf2\xf7\x0e\xe3";
 
-    assert!(named_conics(payload).is_empty());
+    assert!(super::named_conics(payload).is_empty());
 }
 
 #[test]
@@ -167,7 +134,7 @@ fn named_conic_opposite_parameter_requires_a_start_parameter() {
             \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
             \xf2\xf7\x0e\xe3";
 
-    assert!(named_conics(payload).is_empty());
+    assert!(super::named_conics(payload).is_empty());
 }
 
 #[test]
@@ -180,7 +147,7 @@ fn named_conic_ignores_field_header_bytes_inside_an_ieee_coordinate() {
             \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
             \xf2\xf7\x0e\xe3";
 
-    assert_eq!(named_conics(payload).len(), 1);
+    assert_eq!(super::named_conics(payload).len(), 1);
 }
 
 #[test]
@@ -194,7 +161,7 @@ fn named_conic_local_system_ignores_a_terminator_inside_an_ieee_coordinate() {
             \x32\xf2\xf7\0\0\0\0\0\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\x0f\
             \xf2\xf7\x0e\xe3";
 
-    let decoded = named_conics(payload);
+    let decoded = super::named_conics(payload);
     let [conic] = decoded.as_slice() else {
         panic!("one conic")
     };
@@ -211,7 +178,7 @@ fn named_conic_withholds_an_ambiguous_local_system_boundary() {
             \xe0\x02c1\0\x43\xf0\x00\xe0\x02c2\0\xe4\
             \xe0\x02local_sys\0\xf9\x04\x03\xaa\xf2\xf7\xbb\xf2\xf7\x0e\xe3";
 
-    assert!(named_conics(payload).is_empty());
+    assert!(super::named_conics(payload).is_empty());
 }
 
 #[test]
@@ -319,7 +286,7 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
     };
 
     assert_eq!(
-        ellipse_carriers(std::slice::from_ref(&conic)),
+        super::ellipse_carriers(std::slice::from_ref(&conic)),
         [ReferenceEllipse::try_new(
             7,
             cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 2.0, 4.0,))
@@ -339,7 +306,7 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
     let mut invalid_frame = invalid.local_system.expect("complete local system").get();
     invalid_frame[3] = 1.0;
     invalid.local_system = cadmpeg_ir::units::FiniteVector::new(invalid_frame);
-    assert!(ellipse_carriers(&[invalid]).is_empty());
+    assert!(super::ellipse_carriers(&[invalid]).is_empty());
 
     let diagonal = (100.0_f64 / 29.0).sqrt();
     let ambiguous = ReferenceConic {
@@ -352,14 +319,14 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
             .expect("finite end"),
         ..conic
     };
-    assert!(ellipse_carriers(&[ambiguous]).is_empty());
+    assert!(super::ellipse_carriers(&[ambiguous]).is_empty());
 }
 
 #[test]
 fn withholds_incomplete_coordinate_suffix() {
     let payload =
         b"ent_list(line)\0\xe0\x00entity(line)\0\xf6\xe2\x02\x18\xe3\xe0\x00entity(text)\0";
-    assert!(lines(payload).is_empty());
+    assert!(super::lines(payload).is_empty());
 }
 
 #[test]
@@ -372,7 +339,7 @@ fn decodes_signed_coordinate_dictionary_line_rows() {
             \x18\x41\x93\x8a\x07\xa0\xe6\xf8\x55\x8c\x3e\x32\xfb\x7f\x13\x0b\
             \x18\x93\x27\x14\x0f\x41\xcd\xf1\x8c\x3e\x32\xfb\x7f\x13\x0b\
             \xe0\x00entity(text)\0";
-    assert_eq!(lines(payload).len(), 1);
+    assert_eq!(super::lines(payload).len(), 1);
 }
 
 #[test]
@@ -389,7 +356,7 @@ fn scalar_suffix_withholds_competing_start_offsets() {
 fn decodes_line3d_with_matching_original_length() {
     let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
             \x0f\x0f\x0f\xe4\x0f\x0f\xe4";
-    let decoded = line3d_lines(payload);
+    let decoded = super::line3d_lines(payload);
     let [line] = decoded.as_slice() else {
         panic!("one line3d");
     };
@@ -410,7 +377,7 @@ fn line3d_row_uses_its_complete_block_bound() {
     payload.extend(std::iter::repeat_n(0, 385));
     payload.extend_from_slice(b"\x0f\x0f\x0f\xe4\x0f\x0f\xe4");
 
-    assert_eq!(line3d_lines(&payload).len(), 1);
+    assert_eq!(super::line3d_lines(&payload).len(), 1);
 }
 
 #[test]
@@ -418,7 +385,7 @@ fn decodes_line3d_with_positive_full_width_coordinates() {
     let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
             \x0f\x0f\x32\xb3\xa2\x70\xe5\xa0\x3f\xfa\
             \xe4\x0f\x32\xb3\xa2\x70\xe5\xa0\x3f\xfa\xe4";
-    let decoded = line3d_lines(payload);
+    let decoded = super::line3d_lines(payload);
     let [line] = decoded.as_slice() else {
         panic!("one line3d");
     };
@@ -430,18 +397,18 @@ fn decodes_line3d_with_positive_full_width_coordinates() {
 fn withholds_line3d_with_inconsistent_original_length() {
     let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\
             \x0f\x0f\x0f\xe4\x0f\x0f\x0e";
-    assert!(line3d_lines(payload).is_empty());
+    assert!(super::line3d_lines(payload).is_empty());
 }
 
 #[test]
 fn withholds_line3d_with_unbounded_original_length() {
     let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
             \x0f\x0f\x0f\xe4\x0f\x0f\xed\x7f\xf0\x00\x00\x00\x00\x00\x00";
-    assert!(line3d_lines(payload).is_empty());
+    assert!(super::line3d_lines(payload).is_empty());
     let mut bounded = payload.to_vec();
     let length = bounded.len() - 8;
     bounded[length..].copy_from_slice(&1.0_f64.to_be_bytes());
-    assert_eq!(line3d_lines(&bounded).len(), 1);
+    assert_eq!(super::line3d_lines(&bounded).len(), 1);
 }
 
 #[test]
@@ -464,7 +431,8 @@ fn line3d_withholds_competing_scalar_runs() {
 #[test]
 fn decodes_arc_z_diameter_rows() {
     let body = b"\x01\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
-    let circle = arc_z_fields(body, &ScalarCache::from_section(body), 7).expect("diameter row");
+    let circle =
+        super::arc_z_fields(body, &ScalarCache::from_section(body), 7).expect("diameter row");
     assert_eq!(circle.entity_id, 7);
     assert_eq!(<[f64; 3]>::from(circle.center().get()), [0.0; 3]);
     assert_eq!(circle.radius().get(), 1.0);
@@ -477,7 +445,8 @@ fn decodes_arc_z_explicit_center_rows() {
     let body = b"\x01\x2f\x0c\x00\x2f\x24\x00\x48\x10\x00\
             \x2f\x00\x00\x2f\x16\x00\x2f\x24\x00\x48\x10\x00\
             \x2f\x0c\x00\x2f\x20\x00\x48\x10\x00";
-    let circle = arc_z_fields(body, &ScalarCache::from_section(body), 8).expect("quarter arc");
+    let circle =
+        super::arc_z_fields(body, &ScalarCache::from_section(body), 8).expect("quarter arc");
     assert_eq!(<[f64; 3]>::from(circle.center().get()), [3.5, 10.0, -4.0]);
     assert_eq!(circle.radius().get(), 2.0);
     assert_eq!(<[f64; 3]>::from(circle.start().get()), [5.5, 10.0, -4.0]);
@@ -492,7 +461,7 @@ fn decodes_arc_z_positive_full_width_coordinate_rows() {
             \x9b\xa7\x3d\x24\xb6\x7b\x09\x48\x3e\x00\
             \x9f\x6b\xf0\x6f\x95\x50\xb9\xa0\xff\x43\xd5\xa5\xa5\x6c";
     let cache = ScalarCache::from_section(body);
-    let circle = arc_z_fields(body, &cache, 9).expect("general arc");
+    let circle = super::arc_z_fields(body, &cache, 9).expect("general arc");
     assert_eq!(circle.center().get().x, -30.0);
     assert_eq!(circle.start().get().x, -30.0);
     assert_eq!(circle.end().get().x, -30.0);
@@ -517,7 +486,7 @@ fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
     body.extend_from_slice(&one);
     body.extend_from_slice(&zero);
 
-    let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 10)
+    let circle = super::arc_z_fields(&body, &ScalarCache::from_section(&body), 10)
         .expect("tabulated-cylinder first-coordinate lane circle");
     assert_eq!(<[f64; 3]>::from(circle.center().get()), [-2.0, 0.0, 0.0]);
     assert_eq!(<[f64; 3]>::from(circle.start().get()), [-3.0, 0.0, 0.0]);
@@ -538,7 +507,7 @@ fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
 fn arc_z_withholds_competing_diameter_runs() {
     let body = b"\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
 
-    assert!(arc_z_fields(body, &ScalarCache::from_section(body), 7).is_none());
+    assert!(super::arc_z_fields(body, &ScalarCache::from_section(body), 7).is_none());
 }
 
 #[test]

@@ -335,15 +335,11 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     data.extend_from_slice(&compressed);
 
     let scan = container::scan_bytes_ok(data);
-    let classification =
-        crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
-            .expect("dialect classification admitted");
+    let classification = crate::dialect::classify(&scan).expect("dialect classification admitted");
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
-    let summary =
-        crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
-            .expect("container summary admitted");
+    let summary = container::summarize(&scan, classification);
     let cadmpeg_core::container::EntryStorage::Compressed {
         method,
         stored,
@@ -369,41 +365,6 @@ fn scan_reads_namespace_counts() {
     let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.census.srf_array_count, Some(5));
     assert_eq!(scan.framing.census.crv_array_count, Some(12));
-}
-
-#[test]
-fn geometry_array_census_overflow_error_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let entry = b"srf_array\0\xf8\xbf\xff";
-    let count = (u32::MAX / 16_383) + 1;
-    let mut region =
-        Vec::with_capacity(entry.len() * usize::try_from(count).expect("fixture index fits usize"));
-    for _ in 0..count {
-        region.extend_from_slice(entry);
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_work_units = u64::MAX;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::super::read_array_count(&ctx, &region, b"srf_array")
-        .expect_err("sum exceeds the 32-bit census");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo geometry array census error")
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::MAX;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    {
-        let error = super::super::read_array_count(&ctx, &region, b"srf_array")
-            .expect_err("sum exceeds the 32-bit census");
-        assert!(error.to_string().contains("32-bit census"));
-    }
 }
 
 #[test]
@@ -747,120 +708,23 @@ fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
         .expect("section extent");
     assert_eq!(scanned.region, data.as_slice());
 
-    let selected = crate::decode::with_test_decode_ctx(|ctx| {
-        super::super::model_geometry_sections(ctx, std::slice::from_ref(&scanned))
-    })
-    .expect("one model geometry section is admitted");
+    let selected = { super::super::model_geometry_sections(std::slice::from_ref(&scanned)) };
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].section.name(), "VisibGeom");
     assert_eq!(selected[0].region, data.as_slice());
 }
 
-fn model_geometry_section_with_limits(
-    collection_items: u64,
-    retained_bytes: u64,
-) -> Result<usize, cadmpeg_core::CodecError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let data = b"#VisibGeom\nsrf_array\0";
-    let scanned = container::Section::scan("VisibGeom".to_string(), 0, data.len(), None, data)
-        .expect("section extent");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_items;
-    policy.limits.max_retained_bytes = retained_bytes;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(data, &arena, &policy).expect("root input is admitted");
-    Ok(super::super::model_geometry_sections(&ctx, &[scanned])?.len())
-}
-
 #[test]
-fn model_geometry_section_vec_refuses_before_growth() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    assert_eq!(
-        model_geometry_section_with_limits(
-            1,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| model_geometry_section_with_limits(u64::MAX, cap)
-            )
-        )
-        .expect("one section admitted"),
-        1
-    );
-    let error = model_geometry_section_with_limits(
-        0,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            None,
-            |cap| model_geometry_section_with_limits(u64::MAX, cap),
-        ),
-    )
-    .expect_err("one selected section requires a vector item");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo model geometry sections"
-    ));
-}
-
-#[test]
-fn copied_section_name_refuses_before_retained_text_growth() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let error = model_geometry_section_with_limits(
-        1,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo copied section names"),
-            |cap| model_geometry_section_with_limits(1, cap),
-        ),
-    )
-    .expect_err("section name needs retained bytes");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "creo copied section names"
-    ));
-}
-
-#[test]
-fn nonvisible_geometry_section_refuses_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn nonvisible_geometry_sections_select_novis_sections() {
     let data = b"nonvisible";
     let scanned = container::Section::scan("NovisGeom".to_string(), 0, data.len(), None, data)
         .expect("section extent");
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(data, &arena, &policy).expect("root input is admitted");
-        super::super::nonvisible_geometry_sections(&ctx, std::slice::from_ref(&scanned))
-    };
-    assert_eq!(run(1).expect("one nonvisible section admitted").len(), 1);
-    let error = run(0).expect_err("one section requires an output Vec item");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo nonvisible geometry sections"
-    ));
+    let sections = super::super::nonvisible_geometry_sections(std::slice::from_ref(&scanned));
+    assert_eq!(sections.len(), 1);
 }
 
 #[test]
-fn loop_array_section_sources_refuse_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn loop_array_sections_take_each_section_source() {
     for (name, data, source) in [
         ("VisibGeom", b"model".as_slice(), 0),
         ("NovisGeom", b"nonvisible".as_slice(), 1),
@@ -868,28 +732,14 @@ fn loop_array_section_sources_refuse_before_vec_growth() {
     ] {
         let scanned = container::Section::scan(name.to_string(), 0, data.len(), None, data)
             .expect("section extent");
-        let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)
-                .expect("root input is admitted");
-            let sections = std::slice::from_ref(&scanned);
-            let (model, nonvisible, all) = match source {
-                0 => (sections, &[][..], &[][..]),
-                1 => (&[][..], sections, &[][..]),
-                _ => (&[][..], &[][..], sections),
-            };
-            super::super::loop_array_sections(&ctx, model, nonvisible, all)
+        let sections = std::slice::from_ref(&scanned);
+        let (model, nonvisible, all) = match source {
+            0 => (sections, &[][..], &[][..]),
+            1 => (&[][..], sections, &[][..]),
+            _ => (&[][..], &[][..], sections),
         };
-        assert_eq!(run(1).expect("one loop section admitted").len(), 1);
-        let error = run(0).expect_err("one loop section requires an output Vec item");
-        assert!(matches!(
-            error,
-            CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "creo loop array sections"
-        ));
+        let selected = super::super::loop_array_sections(model, nonvisible, all);
+        assert_eq!(selected.len(), 1);
     }
 }
 
@@ -915,43 +765,14 @@ fn loop_array_aggregate_fixture() -> Vec<u8> {
     payload
 }
 
-fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+#[test]
+fn loop_array_scan_collects_one_aggregate_record() {
     let payload = loop_array_aggregate_fixture();
     let scanned =
         container::Section::scan("VisibGeom".to_string(), 0, payload.len(), None, &payload)
             .expect("loop array section extent");
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-            .expect("loop array input admitted");
-        super::super::loop_array_scan(&ctx, std::slice::from_ref(&scanned))
-    };
-    assert_eq!(
-        run(u64::MAX)
-            .expect("service loop array aggregate")
-            .records
-            .len(),
-        1
-    );
-    let error = run(limit).expect_err("loop array aggregate exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn loop_array_aggregate_frame_refuses_before_growth() {
-    assert_loop_array_aggregate_refusal(3, "creo loop array aggregate frames");
-}
-
-#[test]
-fn loop_array_aggregate_record_refuses_before_growth() {
-    assert_loop_array_aggregate_refusal(4, "creo loop array aggregate records");
+    let scan = super::super::loop_array_scan(std::slice::from_ref(&scanned));
+    assert_eq!(scan.records.len(), 1);
 }
 
 #[test]
@@ -1022,25 +843,6 @@ fn a_section_region_is_absent_from_a_slice_shorter_than_the_section() {
     assert_eq!(
         container::section_region(&data[..section.end()], section),
         Some(&data[section.offset()..section.end()])
-    );
-}
-
-#[test]
-fn legacy_framing_box_refuses_its_retained_slot() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let framing = super::super::LegacyAsciiFraming {
-        schema: "6".into(),
-        product_release: None,
-        banner_offset: 0,
-        object_offset: 0,
-        persistence: crate::legacy::Persistence::default(),
-    };
-    assert!(
-        matches!(super::super::identify_layout(&ctx, &[], &[], Some(framing)), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo legacy framing box")
     );
 }
 

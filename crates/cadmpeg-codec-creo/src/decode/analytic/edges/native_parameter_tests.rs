@@ -682,9 +682,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
 }
 
 #[test]
-fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
+fn analytic_nurbs_endpoints_of_a_degree_sixteen_spline() {
     // Degree 16 needs a heap basis; lower degrees evaluate inline.
     let mut knots = vec![0.0; 17];
     knots.extend(vec![1.0; 17]);
@@ -701,18 +699,11 @@ fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
     .expect("fixture constructor admission")
     .expect("degree-16 spline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(
-        matches!(super::nonperiodic_nurbs_endpoint_points(&ctx, &geometry), Err(CodecError::ResourceLimit(limit)) if limit.operation == "IR B-spline basis")
-    );
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        super::nonperiodic_nurbs_endpoint_points(&ctx, &geometry).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::nonperiodic_nurbs_endpoint_points(ctx, &geometry)
+        })
+        .expect("service resources"),
         Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     );
 }

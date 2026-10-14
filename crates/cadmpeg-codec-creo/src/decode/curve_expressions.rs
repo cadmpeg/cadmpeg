@@ -26,18 +26,12 @@ use crate::container::ContainerScan;
 use super::coverage::source_section;
 use super::native::annotate;
 
-pub(super) fn curve_expression_record_id(
-    ctx: &DecodeContext<'_>,
-    record: &crate::curve::CurveExpressionRecord,
-) -> Result<String, CodecError> {
-    ctx.format_retained(
-        format_args!(
-            "creo:depdb:curve_expression#{}-{}-{}",
-            if record.backup { "backup" } else { "active" },
-            record.entity_id,
-            record.offset
-        ),
-        "creo curve expression record id",
+pub(super) fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
+    format!(
+        "creo:depdb:curve_expression#{}-{}-{}",
+        if record.backup { "backup" } else { "active" },
+        record.entity_id,
+        record.offset
     )
 }
 
@@ -173,17 +167,11 @@ fn expression_dependency_reaches(
         "creo curve-expression visited dependencies",
     )?;
     while let Some(index) = pending.pop() {
-        ctx.charge_work(1, "walk Creo curve-expression dependencies")?;
         if index == target {
             return Ok(true);
         }
         if !visited[index] {
             visited[index] = true;
-            ctx.reserve_vec(
-                &mut pending,
-                dependencies[index].len(),
-                "creo curve-expression pending dependencies",
-            )?;
             pending.extend(dependencies[index].iter().copied());
         }
     }
@@ -202,10 +190,7 @@ fn curve_expression_parameter_order(
     )?;
     for (row, assignment) in dependencies.iter_mut().zip(&record.assignments) {
         for name in &assignment.dependencies {
-            let (mut key, _reservation) = ctx.format_scoped(
-                format_args!("{name}"),
-                "creo curve-expression ordering lookup",
-            )?;
+            let mut key = name.clone();
             key.make_ascii_lowercase();
             let Some(&index) = unique_assignment_indices.get(&key) else {
                 continue;
@@ -213,7 +198,6 @@ fn curve_expression_parameter_order(
             if row.contains(&index) {
                 continue;
             }
-            ctx.reserve_vec(row, 1, "creo curve-expression dependency indices")?;
             row.push(index);
         }
     }
@@ -221,11 +205,7 @@ fn curve_expression_parameter_order(
     for (consumer, dependency_indices) in dependencies.iter().enumerate() {
         for &dependency in dependency_indices {
             if expression_dependency_reaches(ctx, &dependencies, dependency, consumer)? {
-                ctx.insert_hash_set(
-                    &mut cyclic_edges,
-                    (consumer, dependency),
-                    "creo curve-expression cyclic edges",
-                )?;
+                cyclic_edges.insert((consumer, dependency));
             }
         }
     }
@@ -261,15 +241,13 @@ fn curve_expression_parameter_order(
 }
 
 fn curve_expression_parameter_names(
-    ctx: &DecodeContext<'_>,
     assignments: &[crate::curve::CurveExpressionAssignment],
 ) -> Result<Vec<Option<String>>, CodecError> {
     let mut counts = BTreeMap::new();
     for assignment in assignments {
         if let Some((name, _)) = assignment.parameter_target() {
-            let mut key = ctx.copy_retained_text(name, "creo curve-expression name key")?;
+            let mut key = name.to_owned();
             key.make_ascii_lowercase();
-            ctx.admit_btree_entry(&counts, &key, "creo curve-expression unique names")?;
             match counts.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(1usize);
@@ -284,19 +262,17 @@ fn curve_expression_parameter_names(
     let mut names = Vec::new();
     for assignment in assignments {
         let name = if let Some((name, _)) = assignment.parameter_target() {
-            let mut key = ctx.copy_retained_text(name, "creo curve-expression occurrence key")?;
+            let mut key = name.to_owned();
             key.make_ascii_lowercase();
             if counts[&key] == 1 {
-                Some(ctx.copy_retained_text(name, "creo curve-expression parameter name")?)
+                Some(name.to_owned())
             } else {
-                ctx.admit_btree_entry(&occurrences, &key, "creo curve-expression occurrences")?;
                 let occurrence = match occurrences.entry(key) {
                     std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 };
                 *occurrence += 1;
-                let mut output =
-                    ctx.copy_retained_text(name, "creo curve-expression parameter name")?;
+                let mut output = name.to_owned();
                 let mut digits = [0u8; 20];
                 let mut value = *occurrence;
                 let mut width = 0;
@@ -312,11 +288,6 @@ fn curve_expression_parameter_names(
                         break;
                     }
                 }
-                ctx.try_reserve_retained_text(
-                    &mut output,
-                    width + 1,
-                    "creo curve-expression parameter suffix",
-                )?;
                 output.push('#');
                 for &digit in digits[..width].iter().rev() {
                     output.push(char::from(b'0' + digit));
@@ -326,7 +297,6 @@ fn curve_expression_parameter_names(
         } else {
             None
         };
-        ctx.reserve_vec(&mut names, 1, "creo curve-expression parameter name slots")?;
         names.push(name);
     }
     Ok(names)
@@ -339,9 +309,8 @@ struct AssignmentIndices {
 }
 
 fn curve_expression_assignment_indices(
-    ctx: &DecodeContext<'_>,
     record: &crate::curve::CurveExpressionRecord,
-) -> Result<AssignmentIndices, CodecError> {
+) -> AssignmentIndices {
     let mut by_name = BTreeMap::<String, Option<usize>>::new();
     for (ordinal, assignment) in record.assignments.iter().enumerate() {
         if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
@@ -350,9 +319,8 @@ fn curve_expression_assignment_indices(
         let Some((name, _)) = assignment.parameter_target() else {
             continue;
         };
-        let mut key = ctx.copy_retained_text(name, "creo curve-expression assignment key")?;
+        let mut key = name.to_owned();
         key.make_ascii_lowercase();
-        ctx.admit_btree_entry(&by_name, &key, "creo curve-expression assignment indices")?;
         match by_name.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(Some(ordinal));
@@ -365,90 +333,40 @@ fn curve_expression_assignment_indices(
     let mut unique = BTreeMap::new();
     for (name, index) in &by_name {
         if let Some(index) = index {
-            let key = ctx.copy_retained_text(name, "creo curve-expression unique key")?;
-            ctx.insert_btree_map(
-                &mut unique,
-                key,
-                *index,
-                "creo curve-expression unique indices",
-            )?;
+            let key = name.to_owned();
+            unique.insert(key, *index);
         }
     }
-    Ok(AssignmentIndices { by_name, unique })
+    AssignmentIndices { by_name, unique }
 }
 
 fn curve_expression_emitted_ordinals(
-    ctx: &DecodeContext<'_>,
     record: &crate::curve::CurveExpressionRecord,
     parameter_ordinals: &[u32],
 ) -> Result<BTreeMap<usize, u32>, CodecError> {
-    let count = record
-        .assignments
-        .iter()
-        .filter(|assignment| assignment.parameter_target().is_some())
-        .count();
     let mut indices = Vec::new();
-    ctx.reserve_vec(&mut indices, count, "creo curve-expression emitted indices")?;
     for (index, assignment) in record.assignments.iter().enumerate() {
         if assignment.parameter_target().is_some() {
             indices.push(index);
         }
     }
-    ctx.stable_sort_by(
-        indices.as_mut_slice(),
-        |left, right| parameter_ordinals[*left].cmp(&parameter_ordinals[*right]),
-        |_| std::mem::size_of::<u32>(),
-        "creo curve expression emitted ordinals indices ordering",
-    )?;
+    indices
+        .as_mut_slice()
+        .sort_by(|left, right| parameter_ordinals[*left].cmp(&parameter_ordinals[*right]));
     let mut emitted = BTreeMap::new();
     for (ordinal, index) in indices.into_iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("curve expression parameter ordinal exceeds u32"))?;
-        ctx.insert_btree_map(
-            &mut emitted,
-            index,
-            ordinal,
-            "creo curve-expression emitted ordinals",
-        )?;
+        emitted.insert(index, ordinal);
     }
     Ok(emitted)
 }
 
-fn joined_dependency_names(
-    ctx: &DecodeContext<'_>,
-    names: &[String],
-    include: impl Fn(&str) -> Result<bool, CodecError>,
-    operation: &'static str,
-) -> Result<Option<String>, CodecError> {
-    let mut count = 0usize;
-    let mut bytes = 0usize;
-    for name in names {
-        if include(name)? {
-            bytes = bytes.checked_add(name.len()).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    operation,
-                    cadmpeg_core::decode::u64_from_index(usize::MAX),
-                    u64::MAX,
-                )
-            })?;
-            count += 1;
-        }
-    }
-    if count == 0 {
-        return Ok(None);
-    }
-    bytes = bytes.checked_add(count - 1).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            operation,
-            cadmpeg_core::decode::u64_from_index(usize::MAX),
-            u64::MAX,
-        )
-    })?;
+fn joined_dependency_names(names: &[String], include: impl Fn(&str) -> bool) -> Option<String> {
     let mut joined = String::new();
-    ctx.try_reserve_retained_text(&mut joined, bytes, operation)?;
     let mut emitted = false;
     for name in names {
-        if include(name)? {
+        if include(name) {
             if emitted {
                 joined.push(',');
             }
@@ -456,83 +374,38 @@ fn joined_dependency_names(
             emitted = true;
         }
     }
-    Ok(Some(joined))
+    emitted.then_some(joined)
 }
 
 fn insert_curve_expression_property(
-    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<String, String>,
     name: &'static str,
     value: String,
-) -> Result<(), CodecError> {
-    let key = ctx.copy_retained_text(name, "creo curve-expression property key")?;
-    ctx.insert_btree_map(
-        properties,
-        key,
-        value,
-        "creo curve-expression property nodes",
-    )?;
-    Ok(())
+) {
+    let key = name.to_owned();
+    properties.insert(key, value);
 }
 
-fn join_cyclic_dependency_names(
-    ctx: &DecodeContext<'_>,
-    names: &[&str],
-) -> Result<String, CodecError> {
-    let bytes = names
-        .iter()
-        .try_fold(0usize, |total, name| total.checked_add(name.len()))
-        .and_then(|total| total.checked_add(if names.is_empty() { 0 } else { names.len() - 1 }))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "creo curve-expression cyclic dependency text",
-                cadmpeg_core::decode::u64_from_index(usize::MAX),
-                u64::MAX,
-            )
-        })?;
+fn join_cyclic_dependency_names(names: &[&str]) -> String {
     let mut joined = String::new();
-    ctx.try_reserve_retained_text(
-        &mut joined,
-        bytes,
-        "creo curve-expression cyclic dependency text",
-    )?;
     for (index, name) in names.iter().enumerate() {
         if index > 0 {
             joined.push(',');
         }
         joined.push_str(name);
     }
-    Ok(joined)
+    joined
 }
 
-fn curve_expression_source_text(
-    ctx: &DecodeContext<'_>,
-    lines: &[crate::curve::CurveExpressionLine],
-) -> Result<String, CodecError> {
-    let bytes = lines
-        .iter()
-        .try_fold(0usize, |total, line| total.checked_add(line.text.len()))
-        .and_then(|total| total.checked_add(if lines.is_empty() { 0 } else { lines.len() - 1 }))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "creo curve-expression feature source text",
-                cadmpeg_core::decode::u64_from_index(usize::MAX),
-                u64::MAX,
-            )
-        })?;
+fn curve_expression_source_text(lines: &[crate::curve::CurveExpressionLine]) -> String {
     let mut text = String::new();
-    ctx.try_reserve_retained_text(
-        &mut text,
-        bytes,
-        "creo curve-expression feature source text",
-    )?;
     for (index, line) in lines.iter().enumerate() {
         if index > 0 {
             text.push('\n');
         }
         text.push_str(&line.text);
     }
-    Ok(text)
+    text
 }
 
 fn curve_expression_properties(
@@ -553,197 +426,115 @@ fn curve_expression_properties(
             "curve expression assignment has no parameter target",
         ));
     };
-    let external_dependencies = joined_dependency_names(
-        ctx,
-        &assignment.dependencies,
-        |name| {
-            let (mut key, _reservation) = ctx.format_scoped(
-                format_args!("{name}"),
-                "creo curve-expression external lookup",
-            )?;
-            key.make_ascii_lowercase();
-            Ok(key != "t"
-                && !assignment_indices_by_name.contains_key(&key)
-                && !dimension_parameters.contains_key(&key))
-        },
-        "creo curve-expression external dependency text",
-    )?;
-    let ambiguous_dependencies = joined_dependency_names(
-        ctx,
-        &assignment.dependencies,
-        |name| {
-            let (mut key, _reservation) = ctx.format_scoped(
-                format_args!("{name}"),
-                "creo curve-expression ambiguous lookup",
-            )?;
-            key.make_ascii_lowercase();
-            Ok(matches!(assignment_indices_by_name.get(&key), Some(None)))
-        },
-        "creo curve-expression ambiguous dependency text",
-    )?;
-    let intrinsic_dependencies = joined_dependency_names(
-        ctx,
-        &assignment.dependencies,
-        |name| Ok(name.eq_ignore_ascii_case("t")),
-        "creo curve-expression intrinsic dependency text",
-    )?;
+    let external_dependencies = joined_dependency_names(&assignment.dependencies, |name| {
+        let key = name.to_ascii_lowercase();
+        key != "t"
+            && !assignment_indices_by_name.contains_key(&key)
+            && !dimension_parameters.contains_key(&key)
+    });
+    let ambiguous_dependencies = joined_dependency_names(&assignment.dependencies, |name| {
+        let key = name.to_ascii_lowercase();
+        matches!(assignment_indices_by_name.get(&key), Some(None))
+    });
+    let intrinsic_dependencies = joined_dependency_names(&assignment.dependencies, |name| {
+        name.eq_ignore_ascii_case("t")
+    });
     let mut properties = BTreeMap::new();
     if let Some(value) = external_dependencies {
-        insert_curve_expression_property(ctx, &mut properties, "external_dependencies", value)?;
+        insert_curve_expression_property(&mut properties, "external_dependencies", value);
     }
     if let Some(value) = ambiguous_dependencies {
-        insert_curve_expression_property(ctx, &mut properties, "ambiguous_dependencies", value)?;
+        insert_curve_expression_property(&mut properties, "ambiguous_dependencies", value);
     }
     insert_curve_expression_property(
-        ctx,
         &mut properties,
         "source_assignment_ordinal",
-        ctx.format_retained(
-            format_args!("{assignment_ordinal}"),
-            "creo curve-expression source ordinal value",
-        )?,
-    )?;
+        format!("{assignment_ordinal}"),
+    );
     insert_curve_expression_property(
-        ctx,
         &mut properties,
         "activation",
-        ctx.copy_retained_text(
-            assignment.activation.token(),
-            "creo curve-expression activation value",
-        )?,
-    )?;
+        assignment.activation.token().to_owned(),
+    );
     if let Some(unit) = declared_unit {
-        let unit = ctx.copy_retained_text(unit, "creo curve-expression declared unit")?;
-        insert_curve_expression_property(ctx, &mut properties, "declared_unit", unit)?;
+        let unit = unit.to_owned();
+        insert_curve_expression_property(&mut properties, "declared_unit", unit);
     }
     if let Some(crate::curve::CurveExpressionValue::Quantity(quantity)) = &assignment.value {
         insert_curve_expression_property(
-            ctx,
             &mut properties,
             "evaluated_canonical_value",
-            ctx.format_retained(
-                format_args!("{}", quantity.value()),
-                "creo curve-expression canonical value",
-            )?,
-        )?;
+            format!("{}", quantity.value()),
+        );
         insert_curve_expression_property(
-            ctx,
             &mut properties,
             "evaluated_dimension",
-            ctx.format_retained(
-                format_args!(
-                    "length:{},mass:{},time:{},angle:{},temperature:{}",
-                    quantity.powers()[0],
-                    quantity.powers()[1],
-                    quantity.powers()[2],
-                    quantity.powers()[3],
-                    quantity.powers()[4]
-                ),
-                "creo curve-expression dimension value",
-            )?,
-        )?;
+            format!(
+                "length:{},mass:{},time:{},angle:{},temperature:{}",
+                quantity.powers()[0],
+                quantity.powers()[1],
+                quantity.powers()[2],
+                quantity.powers()[3],
+                quantity.powers()[4]
+            ),
+        );
     }
     if parameter_name != assignment_name {
-        let source_name =
-            ctx.copy_retained_text(assignment_name, "creo curve-expression source name")?;
-        insert_curve_expression_property(ctx, &mut properties, "source_name", source_name)?;
+        let source_name = assignment_name.to_owned();
+        insert_curve_expression_property(&mut properties, "source_name", source_name);
     }
     if let Some(value) = intrinsic_dependencies {
-        insert_curve_expression_property(ctx, &mut properties, "independent_variables", value)?;
+        insert_curve_expression_property(&mut properties, "independent_variables", value);
     }
     let mut cyclic_dependencies = Vec::new();
     for name in &assignment.dependencies {
-        let (mut key, _reservation) = ctx.format_scoped(
-            format_args!("{name}"),
-            "creo curve-expression cyclic lookup",
-        )?;
+        let mut key = name.clone();
         key.make_ascii_lowercase();
         if unique_assignment_indices
             .get(&key)
             .is_some_and(|dependency| cyclic_edges.contains(&(assignment_ordinal, *dependency)))
         {
-            ctx.reserve_vec(
-                &mut cyclic_dependencies,
-                1,
-                "creo curve-expression cyclic dependency names",
-            )?;
             cyclic_dependencies.push(name.as_str());
         }
     }
-    ctx.sort_unstable_by(
-        &mut cyclic_dependencies,
-        Ord::cmp,
-        |item| item.len(),
-        "creo curve-expression cyclic dependency name sort",
-    )?;
+    cyclic_dependencies.sort_unstable_by(Ord::cmp);
     cyclic_dependencies.dedup();
     if !cyclic_dependencies.is_empty() {
-        let value = join_cyclic_dependency_names(ctx, &cyclic_dependencies)?;
-        insert_curve_expression_property(ctx, &mut properties, "cyclic_dependencies", value)?;
+        let value = join_cyclic_dependency_names(&cyclic_dependencies);
+        insert_curve_expression_property(&mut properties, "cyclic_dependencies", value);
     }
     cadmpeg_core::text::named_entries_for_decode(ctx, parameter_id.as_str(), properties)
         .map_err(Into::into)
 }
 
 fn native_curve_expression_definition(
-    ctx: &DecodeContext<'_>,
     entity_id: u32,
     assignment_count: usize,
 ) -> Result<IrFeatureDefinition, CodecError> {
     let mut parameters = BTreeMap::new();
-    let kind = ctx
-        .copy_retained_text("CurveFromEquation", "creo curve-expression native kind")?
-        .into();
-    let entity_value = ctx.format_retained(
-        format_args!("{entity_id}"),
-        "creo curve-expression native entity value",
-    )?;
-    let assignment_value = ctx.format_retained(
-        format_args!("{assignment_count}"),
-        "creo curve-expression native assignment count",
-    )?;
-    let entity_key = cadmpeg_core::text::NonBlankString::new(
-        ctx.copy_retained_text("entity_id", "creo curve-expression native entity key")?,
-    )
-    .ok_or_else(|| CodecError::malformed("native entity key is blank"))?;
-    ctx.insert_btree_map(
-        &mut parameters,
-        entity_key,
-        entity_value,
-        "creo curve-expression native parameters",
-    )?;
-    let assignment_key = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(
-        "assignment_count",
-        "creo curve-expression native assignment key",
-    )?)
-    .ok_or_else(|| CodecError::malformed("native assignment key is blank"))?;
-    ctx.insert_btree_map(
-        &mut parameters,
-        assignment_key,
-        assignment_value,
-        "creo curve-expression native parameters",
-    )?;
+    let kind = "CurveFromEquation".to_owned().into();
+    let entity_value = format!("{entity_id}");
+    let assignment_value = format!("{assignment_count}");
+    let entity_key = cadmpeg_core::text::NonBlankString::new("entity_id".to_owned())
+        .ok_or_else(|| CodecError::malformed("native entity key is blank"))?;
+    parameters.insert(entity_key, entity_value);
+    let assignment_key = cadmpeg_core::text::NonBlankString::new("assignment_count".to_owned())
+        .ok_or_else(|| CodecError::malformed("native assignment key is blank"))?;
+    parameters.insert(assignment_key, assignment_value);
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
         kind,
         parameters,
     }))
 }
 
-fn curve_expression_feature_labels(
-    ctx: &DecodeContext<'_>,
-    entity_id: u32,
-) -> Result<(String, String), CodecError> {
-    Ok((
-        ctx.format_retained(
-            format_args!("Curve Equation {entity_id}"),
-            "creo curve-expression feature name",
-        )?,
-        ctx.copy_retained_text("crv_fr_eqn", "creo curve-expression feature source tag")?,
-    ))
+fn curve_expression_feature_labels(entity_id: u32) -> (String, String) {
+    (
+        format!("Curve Equation {entity_id}"),
+        "crv_fr_eqn".to_owned(),
+    )
 }
 
 fn curve_expression_parameter_dependencies(
-    ctx: &DecodeContext<'_>,
     record: &crate::curve::CurveExpressionRecord,
     assignment_ordinal: usize,
     assignment_indices_by_name: &BTreeMap<String, Option<usize>>,
@@ -756,10 +547,7 @@ fn curve_expression_parameter_dependencies(
     let mut dependencies = Vec::new();
     let mut dimension_dependencies = Vec::new();
     for name in &assignment.dependencies {
-        let (mut key, _key_reservation) = ctx.format_scoped(
-            format_args!("{name}"),
-            "creo curve-expression dependency key",
-        )?;
+        let mut key = name.clone();
         key.make_ascii_lowercase();
         if let Some(&dependency) = unique_assignment_indices.get(&key) {
             if cyclic_edges.contains(&(assignment_ordinal, dependency))
@@ -767,21 +555,10 @@ fn curve_expression_parameter_dependencies(
             {
                 continue;
             }
-            ctx.insert_btree_set(
-                &mut seen,
-                dependency,
-                "creo curve-expression seen dependencies",
-            )?;
-            ctx.reserve_vec(
-                &mut dependencies,
-                1,
-                "creo curve-expression parameter dependencies",
-            )?;
+            seen.insert(dependency);
             dependencies.push(crate::identity::compose_checked::<ParameterId>(
-                ctx,
                 &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
                 format_args!("{}-{}-{dependency}", record.entity_id, record.offset),
-                "creo curve-expression dependency identity",
             )?);
         }
         if assignment_indices_by_name.contains_key(&key) {
@@ -793,23 +570,10 @@ fn curve_expression_parameter_dependencies(
         if dependencies.contains(parameter) || dimension_dependencies.contains(&parameter) {
             continue;
         }
-        ctx.reserve_vec(
-            &mut dimension_dependencies,
-            1,
-            "creo curve-expression dimension candidates",
-        )?;
         dimension_dependencies.push(parameter);
     }
     for parameter in dimension_dependencies {
-        ctx.reserve_vec(
-            &mut dependencies,
-            1,
-            "creo curve-expression dimension dependencies",
-        )?;
-        let copied = ctx.copy_retained_text(
-            parameter.as_str(),
-            "creo curve-expression dimension parameter id",
-        )?;
+        let copied = parameter.as_str().to_owned();
         let copied = ParameterId::try_from(copied).map_err(|_| {
             CodecError::malformed("curve expression dimension parameter id is invalid")
         })?;
@@ -841,18 +605,16 @@ pub(super) fn transfer_curve_expression_features(
         .filter(|record| !record.backup)
         .enumerate()
     {
-        let source_section = source_section(ctx, scan, record.offset)?;
+        let source_section = source_section(scan, record.offset);
         let ordinal = ordinal_base + cadmpeg_core::decode::u64_from_index(expression_ordinal);
         let feature_id = crate::identity::compose_checked::<IrFeatureId>(
-            ctx,
             &crate::identity::DEPDB_CURVE_EXPRESSION_FEATURE,
             format_args!("{}-{}", record.entity_id, record.offset),
-            "creo curve-expression feature identity",
         )?;
         let AssignmentIndices {
             by_name: assignment_indices_by_name,
             unique: unique_assignment_indices,
-        } = curve_expression_assignment_indices(ctx, record)?;
+        } = curve_expression_assignment_indices(record);
         let Some(CurveExpressionParameterOrder {
             ordinals: parameter_ordinals,
             cyclic_edges,
@@ -860,14 +622,9 @@ pub(super) fn transfer_curve_expression_features(
         else {
             continue;
         };
-        let parameter_names = curve_expression_parameter_names(ctx, &record.assignments)?;
-        let emitted_ordinals = curve_expression_emitted_ordinals(ctx, record, &parameter_ordinals)?;
+        let parameter_names = curve_expression_parameter_names(&record.assignments)?;
+        let emitted_ordinals = curve_expression_emitted_ordinals(record, &parameter_ordinals)?;
         let mut source_content = Vec::new();
-        ctx.reserve_vec(
-            &mut source_content,
-            emitted_ordinals.len(),
-            "creo curve-expression source content",
-        )?;
         let parameter_start = ir.model.parameters.len();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             let Some((_assignment_name, _declared_unit)) = assignment.parameter_target() else {
@@ -880,25 +637,19 @@ pub(super) fn transfer_curve_expression_features(
                 .get(assignment_ordinal)
                 .and_then(Option::as_ref)
             else {
-                return Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-                    format_args!(
-                        "curve expression record {} assignment {} has no parameter name",
-                        record.entity_id, assignment_ordinal
-                    ),
-                    "creo curve-expression missing name error",
-                )?));
+                return Err(cadmpeg_core::CodecError::malformed(format!(
+                    "curve expression record {} assignment {} has no parameter name",
+                    record.entity_id, assignment_ordinal
+                )));
             };
             let parameter_id = crate::identity::compose_checked::<ParameterId>(
-                ctx,
                 &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
                 format_args!(
                     "{}-{}-{assignment_ordinal}",
                     record.entity_id, record.offset
                 ),
-                "creo curve-expression parameter identity",
             )?;
             let dependencies = curve_expression_parameter_dependencies(
-                ctx,
                 record,
                 assignment_ordinal,
                 &assignment_indices_by_name,
@@ -916,18 +667,9 @@ pub(super) fn transfer_curve_expression_features(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model parameters")?;
-            for prior_members in 0..dependencies.len() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(prior_members),
-                    "validate Creo curve-expression dependency uniqueness",
-                )?;
-            }
             let value = match assignment.value.as_ref() {
                 Some(crate::curve::CurveExpressionValue::String(value)) => {
-                    Some(ParameterValue::String(ctx.copy_retained_text(
-                        value,
-                        "creo curve-expression parameter string value",
-                    )?))
+                    Some(ParameterValue::String(value.to_owned()))
                 }
                 other => other.and_then(|value| match value {
                     crate::curve::CurveExpressionValue::Number(value) => {
@@ -946,28 +688,13 @@ pub(super) fn transfer_curve_expression_features(
                 }),
             };
             source_carriers.admit_parameter(
-                ctx,
                 ir,
                 DesignParameter {
-                    id: crate::identity::copy_checked_id(
-                        ctx,
-                        parameter_id.as_str(),
-                        "creo curve-expression IR parameter ID copy",
-                    )?,
-                    owner: Some(crate::identity::copy_checked_id(
-                        ctx,
-                        feature_id.as_str(),
-                        "creo curve-expression owner ID copy",
-                    )?),
+                    id: crate::identity::copy_checked_id(parameter_id.as_str())?,
+                    owner: Some(crate::identity::copy_checked_id(feature_id.as_str())?),
                     ordinal,
-                    name: ctx.copy_retained_text(
-                        parameter_name,
-                        "creo curve-expression IR parameter name",
-                    )?,
-                    expression: ctx.copy_retained_text(
-                        &assignment.expression,
-                        "creo curve-expression IR expression",
-                    )?,
+                    name: parameter_name.to_owned(),
+                    expression: assignment.expression.clone(),
                     display: None,
                     value,
                     dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
@@ -977,16 +704,12 @@ pub(super) fn transfer_curve_expression_features(
                     .map_err(cadmpeg_core::CodecError::from)?,
                     properties: BTreeMap::new(),
                     pmi: None,
-                    native_ref: Some(curve_expression_record_id(ctx, record)?),
+                    native_ref: Some(curve_expression_record_id(record)),
                 },
             )?;
             transferred_parameter_count += 1;
             source_content.push(FeatureSourceContent::Parameter(
-                crate::identity::copy_checked_id(
-                    ctx,
-                    parameter_id.as_str(),
-                    "creo curve-expression source parameter ID copy",
-                )?,
+                crate::identity::copy_checked_id(parameter_id.as_str())?,
             ));
         }
         let mut parameter_index = parameter_start;
@@ -1027,16 +750,12 @@ pub(super) fn transfer_curve_expression_features(
                 });
         if let Some(procedural_definition) = placed_helix {
             let curve_id = crate::identity::compose_checked::<CurveId>(
-                ctx,
                 &crate::identity::DEPDB_CURVE_EXPRESSION_CURVE,
                 format_args!("{}-{}", record.entity_id, record.offset),
-                "creo curve-expression curve identity",
             )?;
             let procedural_id = crate::identity::compose_checked::<ProceduralCurveId>(
-                ctx,
                 &crate::identity::DEPDB_CURVE_EXPRESSION_HELIX,
                 format_args!("{}-{}", record.entity_id, record.offset),
-                "creo curve-expression procedural identity",
             )?;
             annotate(
                 ctx,
@@ -1062,11 +781,7 @@ pub(super) fn transfer_curve_expression_features(
                 ir,
                 Curve {
                     parameter_range: None,
-                    id: crate::identity::copy_checked_id(
-                        ctx,
-                        curve_id.as_str(),
-                        "creo curve-expression IR curve ID copy",
-                    )?,
+                    id: crate::identity::copy_checked_id(curve_id.as_str())?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
                 },
@@ -1081,7 +796,7 @@ pub(super) fn transfer_curve_expression_features(
         let axis_definition = if let Some(definition) = neutral_helix {
             Some(definition)
         } else if let Some(helix) = helix {
-            let axis_id = curve_expression_record_id(ctx, record)?;
+            let axis_id = curve_expression_record_id(record);
             (|| {
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
@@ -1100,7 +815,7 @@ pub(super) fn transfer_curve_expression_features(
         let definition = if let Some(definition) = axis_definition {
             definition
         } else {
-            native_curve_expression_definition(ctx, record.entity_id, record.assignments.len())?
+            native_curve_expression_definition(record.entity_id, record.assignments.len())?
         };
         annotate(
             ctx,
@@ -1112,7 +827,7 @@ pub(super) fn transfer_curve_expression_features(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
-        let (name, source_tag) = curve_expression_feature_labels(ctx, record.entity_id)?;
+        let (name, source_tag) = curve_expression_feature_labels(record.entity_id);
         source_carriers.admit_feature(
             ctx,
             ir,
@@ -1124,7 +839,7 @@ pub(super) fn transfer_curve_expression_features(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some(source_tag),
-                source_text: Some(curve_expression_source_text(ctx, &record.lines)?),
+                source_text: Some(curve_expression_source_text(&record.lines)),
                 source_content: cadmpeg_ir::features::FeatureContent::new(
                     source_content,
                     ctx,
@@ -1133,7 +848,7 @@ pub(super) fn transfer_curve_expression_features(
                 .map_err(cadmpeg_core::CodecError::from)?,
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
-                native_ref: Some(curve_expression_record_id(ctx, record)?),
+                native_ref: Some(curve_expression_record_id(record)),
             },
         )?;
     }

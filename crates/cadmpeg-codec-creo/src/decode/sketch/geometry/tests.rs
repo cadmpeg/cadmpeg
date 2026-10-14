@@ -2,7 +2,6 @@
 
 use super::{saved_section_arc, saved_section_arc_carrier, section_arc_geometry, BTreeMap};
 use crate::feature::definitions::{FeatureSegment, FeatureSegmentKind};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
@@ -63,89 +62,15 @@ fn saved_profile_collections_preserve_circle_and_line_order() {
 }
 
 #[test]
-fn saved_profile_entity_identity_refuses_retained_limit() {
-    let (sketch, geometries) = saved_profile_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::saved_profile_chains(&ctx, &sketch, &geometries)
-        .expect_err("sketch entity identity exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo sketch entity identity"
-            && resource.dimension == ResourceDimension::RetainedBytes)
+fn saved_profile_entity_identity_matches_the_unchecked_identity() {
+    let (sketch, _) = saved_profile_fixture();
+    let checked = crate::decode::sketch_ids::sketch_entity_id_admitted(&sketch, 30);
+    assert_eq!(
+        checked,
+        crate::decode::sketch_ids::sketch_entity_id(&sketch, 30)
     );
-    crate::decode::with_test_decode_ctx(|ctx| {
-        let checked = crate::decode::sketch_ids::sketch_entity_id_admitted(ctx, &sketch, 30)
-            .expect("identity resources");
-        assert_eq!(
-            checked,
-            crate::decode::sketch_ids::sketch_entity_id(&sketch, 30)
-        );
-    });
 }
 
-fn saved_profile_refuses_at_collection_boundary(operation: &'static str) {
-    let mut last_refusal = None;
-    for limit in 0..128 {
-        let (sketch, geometries) = saved_profile_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        match super::saved_profile_chains(&ctx, &sketch, &geometries) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation =>
-            {
-                return
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                last_refusal = Some((limit, resource.dimension, resource.operation));
-            }
-            Err(error) => panic!("unexpected saved-profile error at {limit}: {error:?}"),
-            Ok(_) => panic!("saved profile succeeded before the named {operation} refusal"),
-        }
-    }
-    panic!("the named {operation} boundary was not reached; last refusal: {last_refusal:?}");
-}
-
-macro_rules! saved_profile_collection_limit_test {
-    ($name:ident, $operation:literal) => {
-        #[test]
-        fn $name() {
-            saved_profile_refuses_at_collection_boundary($operation);
-        }
-    };
-}
-
-saved_profile_collection_limit_test!(
-    saved_circular_profile_uses_refuse_collection_limit,
-    "creo saved circular profile uses"
-);
-saved_profile_collection_limit_test!(
-    saved_profile_rows_refuse_collection_limit,
-    "creo saved profile rows"
-);
-saved_profile_collection_limit_test!(
-    saved_profile_endpoint_rows_refuse_collection_limit,
-    "creo saved profile endpoint rows"
-);
-saved_profile_collection_limit_test!(
-    saved_profile_remaining_nodes_refuse_collection_limit,
-    "creo saved profile remaining nodes"
-);
-saved_profile_collection_limit_test!(
-    saved_profile_visited_nodes_refuse_collection_limit,
-    "creo saved profile visited nodes"
-);
-saved_profile_collection_limit_test!(
-    saved_profile_uses_refuse_collection_limit,
-    "creo saved profile uses"
-);
 #[test]
 fn numerical_ranges_section_arc_radius_agreement_has_no_length_floor() {
     let segment = FeatureSegment {

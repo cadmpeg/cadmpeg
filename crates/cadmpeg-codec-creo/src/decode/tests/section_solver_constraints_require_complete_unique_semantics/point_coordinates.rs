@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{declared_solver_rows, synchronize_segment_count, synchronize_skamp_count};
-use super::fixtures::{
-    base_definition, section_line_fixed_coordinate, section_skamp_point_on_line,
-};
+use super::fixtures::base_definition;
 use crate::decode::records::sketch_section_point_records;
 use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
-use crate::decode::sketch::skamp::unique_section_skamp_segment;
+use crate::decode::sketch::skamp::{
+    section_line_fixed_coordinate, section_skamp_point_on_line, unique_section_skamp_segment,
+};
 use crate::feature::definitions::test_support::{append_points, with_points};
 use crate::feature::definitions::{ScalarLane, VariableType};
 use std::collections::BTreeMap;
@@ -288,13 +288,10 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         .expect("test section solve")
         .contains_key(&2)
     );
-    let conflicting_record = crate::decode::with_test_decode_ctx(|ctx| {
-        sketch_section_point_records(ctx, &conflicting_definition)
-    })
-    .expect("section point records admitted")
-    .into_iter()
-    .find(|point| point.point_id == 2)
-    .expect("conflicting point record");
+    let conflicting_record = { sketch_section_point_records(&conflicting_definition) }
+        .into_iter()
+        .find(|point| point.point_id == 2)
+        .expect("conflicting point record");
     let conflicting_record = serde_json::to_value(conflicting_record).expect("point record");
     assert_eq!(conflicting_record["state"], "conflicting");
     assert_eq!(
