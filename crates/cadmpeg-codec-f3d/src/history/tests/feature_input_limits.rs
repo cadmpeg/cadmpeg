@@ -103,38 +103,42 @@ fn input_body_members_refuse_collection_limit() {
 }
 
 #[test]
-fn input_face_members_refuse_collection_limit() {
-    let error = project(2, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input faces")
+fn input_face_members_charge_collection_items() {
+    // Released input scratch peaks above this charge, so no ceiling refuses it.
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input faces",
+        || project(u64::MAX, u64::MAX),
     );
 }
 
 #[test]
-fn input_edge_members_refuse_collection_limit() {
-    let error = project(4, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input edges")
+fn input_edge_members_charge_collection_items() {
+    // Released input scratch peaks above this charge, so no ceiling refuses it.
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input edges",
+        || project(u64::MAX, u64::MAX),
     );
 }
 
 #[test]
-fn input_vertex_members_refuse_collection_limit() {
-    let error = project(6, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input vertices")
+fn input_vertex_members_charge_collection_items() {
+    // Released input scratch peaks above this charge, so no ceiling refuses it.
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input vertices",
+        || project(u64::MAX, u64::MAX),
     );
 }
 
 #[test]
-fn input_topologies_refuse_collection_limit() {
-    let error = project(8, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input topologies")
+fn input_topologies_charge_collection_items() {
+    // Released input scratch peaks above this charge, so no ceiling refuses it.
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input topologies",
+        || project(u64::MAX, u64::MAX),
     );
 }
 

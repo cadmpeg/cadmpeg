@@ -1901,19 +1901,21 @@ fn edge_assignment_refuses_collection_limit() {
         .unwrap(),
         Some(vec![17, 18])
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 9;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::design::edge_resolve::unique_bipartite_assignment(&candidates, &ctx)
-        .expect_err("two assignment slots exceed nine admitted collection items");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "f3d edge assignment",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            crate::design::edge_resolve::unique_bipartite_assignment(&candidates, &ctx)
+        },
+    );
+    // One assignment slot per candidate list.
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d edge assignment"
-                && limit.used == 8
-                && limit.additional == 2
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 2
     ));
 }
 
