@@ -23,70 +23,6 @@ pub(crate) fn assert_retained_refusal_at<T>(
     );
 }
 
-pub(crate) fn assert_collection_refusal_at<T>(
-    input: &[u8],
-    operation: &str,
-    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems,
-        operation,
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
-                .expect("test input is within the root limit");
-            decode(&ctx)
-        },
-    );
-}
-
-/// Decode `bytes` under the default policy and assert that it charges collection
-/// items under `operation`.
-pub(crate) fn assert_codec_charged(bytes: &[u8], operation: &str) {
-    use cadmpeg_ir::Codec as _;
-    cadmpeg_test_support::refusal::assert_charged(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        operation,
-        || {
-            crate::FcstdCodec
-                .decode(
-                    &mut std::io::Cursor::new(bytes),
-                    &cadmpeg_ir::DecodeOptions::default(),
-                )
-                .map_err(|failure| match failure {
-                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
-                    other => panic!("{operation}: expected a codec result: {other:?}"),
-                })
-        },
-    );
-}
-
-pub(crate) fn materialized_refusal_at<T>(
-    operation: &str,
-    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
-) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes,
-        operation,
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("test input is within the root limit");
-            let result = decode(&ctx);
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            }
-            result
-        },
-    )
-}
-
 pub(crate) fn validate_native(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
@@ -115,8 +51,5 @@ pub(crate) fn entry_record(
     references: Vec<String>,
     data: Vec<u8>,
 ) -> crate::native::EntryRecord {
-    with_service_context(&[], |ctx| {
-        crate::native::EntryRecord::new(ctx, id, name, role, references, data)
-            .expect("valid entry fixture")
-    })
+    crate::native::EntryRecord::new(id, name, role, references, data).expect("valid entry fixture")
 }

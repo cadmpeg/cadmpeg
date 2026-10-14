@@ -111,33 +111,22 @@ const TEXTURE: Uuid = Uuid::from_canonical([
 const MAX_DIMSTYLE_EXTRA_FIELDS: usize = 1 << 16;
 
 fn push_presentation_loss(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     code: RhinoLossCode,
     message: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "Rhino presentation losses")?;
-    losses.push(crate::wire::admitted_loss(
-        ctx,
-        code,
-        message,
-        "Rhino presentation loss text",
-    )?);
-    Ok(())
+) {
+    losses.push(code.note(message));
 }
 
 fn push_opaque_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     opaque_records: &mut Vec<OpaqueRecord>,
     table_typecode: u32,
     record: &Record,
-) -> Result<(), CodecError> {
-    ctx.reserve_vec(opaque_records, 1, "Rhino opaque presentation records")?;
+) {
     opaque_records.push(OpaqueRecord {
         table_typecode,
         record: record.clone(),
     });
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -530,15 +519,14 @@ struct DimensionControlEntries(Vec<(String, serde_json::Value)>);
 impl DimensionControlEntries {
     fn insert_with(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         name: &'static str,
         value: impl FnOnce() -> Result<serde_json::Value, FramingError>,
     ) -> Result<(), FramingError> {
         match self.0.binary_search_by(|(key, _)| key.as_str().cmp(name)) {
             Ok(index) => self.0[index].1 = value()?,
             Err(index) => {
-                let key = ctx.copy_retained_text(name, "Rhino dimension control key")?;
-                ctx.reserve_vec(&mut self.0, 1, "Rhino dimension controls")?;
+                let key = name.to_owned();
+
                 self.0.insert(index, (key, value()?));
             }
         }
@@ -942,65 +930,34 @@ struct ShutLiningCurveRecord {
     is_bump: bool,
 }
 
-fn mesh_modifiers_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    modifiers: &crate::mesh_modifiers::MeshModifiers,
-) -> Result<MeshModifiersRecord, CodecError> {
-    Ok(MeshModifiersRecord {
-        displacement: modifiers
-            .displacement
-            .as_ref()
-            .map(|value| displacement_record(ctx, value))
-            .transpose()?,
+fn mesh_modifiers_record(modifiers: &crate::mesh_modifiers::MeshModifiers) -> MeshModifiersRecord {
+    MeshModifiersRecord {
+        displacement: modifiers.displacement.as_ref().map(displacement_record),
         edge_softening: modifiers.edge_softening.as_ref().map(edge_softening_record),
         thickening: modifiers.thickening.as_ref().map(thickening_record),
         curve_piping: modifiers.curve_piping.as_ref().map(curve_piping_record),
-        shut_lining: modifiers
-            .shut_lining
-            .as_ref()
-            .map(|value| shut_lining_record(ctx, value))
-            .transpose()?,
-    })
+        shut_lining: modifiers.shut_lining.as_ref().map(shut_lining_record),
+    }
 }
 
 fn displacement_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     displacement: &crate::mesh_modifiers::DisplacementModifier,
-) -> Result<DisplacementRecord, CodecError> {
-    let mut sub_items = ctx.collection_vec(
-        displacement.sub_items.len(),
-        "Rhino projected displacement sub-items",
-    )?;
+) -> DisplacementRecord {
+    let mut sub_items = Vec::new();
     for item in &displacement.sub_items {
         sub_items.push(DisplacementSubItemRecord {
             face_index: item.face_index,
             on: item.on,
-            texture: item
-                .texture
-                .map(|uuid| {
-                    ctx.format_retained(
-                        format_args!("{uuid}"),
-                        "Rhino projected displacement sub-item texture UUID",
-                    )
-                })
-                .transpose()?,
+            texture: item.texture.map(|uuid| format!("{uuid}")),
             channel: item.channel,
             black_point: item.black_point,
             white_point: item.white_point,
         });
     }
-    Ok(DisplacementRecord {
+    DisplacementRecord {
         xml_version: displacement.xml_version,
         on: displacement.on,
-        texture: displacement
-            .texture
-            .map(|uuid| {
-                ctx.format_retained(
-                    format_args!("{uuid}"),
-                    "Rhino projected displacement texture UUID",
-                )
-            })
-            .transpose()?,
+        texture: displacement.texture.map(|uuid| format!("{uuid}")),
         channel: displacement.channel,
         black_point: displacement.black_point,
         white_point: displacement.white_point,
@@ -1016,7 +973,7 @@ fn displacement_record(
         sub_object_count: displacement.sub_object_count,
         sweep_resolution_formula: displacement.sweep_resolution_formula,
         sub_items,
-    })
+    }
 }
 
 fn edge_softening_record(
@@ -1054,25 +1011,11 @@ fn curve_piping_record(
     }
 }
 
-fn shut_lining_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    shut_lining: &crate::mesh_modifiers::ShutLiningModifier,
-) -> Result<ShutLiningRecord, CodecError> {
-    let mut curves = ctx.collection_vec(
-        shut_lining.curves.len(),
-        "Rhino projected shut-lining curves",
-    )?;
+fn shut_lining_record(shut_lining: &crate::mesh_modifiers::ShutLiningModifier) -> ShutLiningRecord {
+    let mut curves = Vec::new();
     for curve in &shut_lining.curves {
         curves.push(ShutLiningCurveRecord {
-            uuid: curve
-                .uuid
-                .map(|uuid| {
-                    ctx.format_retained(
-                        format_args!("{uuid}"),
-                        "Rhino projected shut-lining curve UUID",
-                    )
-                })
-                .transpose()?,
+            uuid: curve.uuid.map(|uuid| format!("{uuid}")),
             radius: curve.radius,
             profile: curve.profile,
             enabled: curve.enabled,
@@ -1080,12 +1023,12 @@ fn shut_lining_record(
             is_bump: curve.is_bump,
         });
     }
-    Ok(ShutLiningRecord {
+    ShutLiningRecord {
         xml_version: shut_lining.xml_version,
         on: shut_lining.on,
         options: shut_lining.options.clone(),
         curves,
-    })
+    }
 }
 
 impl Serialize for settings::LayerPerViewportSettings {
@@ -1257,15 +1200,12 @@ struct UserStringRecord {
     value: String,
 }
 
-fn user_string_records(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    entries: Vec<(String, String)>,
-) -> Result<Vec<UserStringRecord>, CodecError> {
-    let mut records = ctx.collection_vec(entries.len(), "Rhino projected user-string entries")?;
+fn user_string_records(entries: Vec<(String, String)>) -> Vec<UserStringRecord> {
+    let mut records = Vec::new();
     for (key, value) in entries {
         records.push(UserStringRecord { key, value });
     }
-    Ok(records)
+    records
 }
 
 fn read_user_string_records(
@@ -1281,15 +1221,14 @@ fn read_user_string_records(
         return Ok(Vec::new());
     };
     match parse_user_string_list(ctx, data, payload_range, archive) {
-        Ok(entries) => user_string_records(ctx, entries),
+        Ok(entries) => Ok(user_string_records(entries)),
         Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
             push_presentation_loss(
-                ctx,
                 losses,
                 RhinoLossCode::ObjectDecodeDiagnostic,
                 format_args!("{label} at offset {source_offset} could not be transferred: {error}"),
-            )?;
+            );
             Ok(Vec::new())
         }
     }
@@ -1363,7 +1302,6 @@ fn object_attributes_presentation(
         uuid: source_uuid,
     } = source;
     let rendering = match rendering_attributes(
-        ctx,
         data,
         attributes.rendering_range.clone(),
         archive,
@@ -1372,9 +1310,9 @@ fn object_attributes_presentation(
         Ok(rendering) => rendering,
         Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
-            push_presentation_loss(ctx, losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+            push_presentation_loss( losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                 "object rendering attributes at offset {source_offset} could not be transferred: {error}"
-            ))?;
+            ));
             RenderingAttributesPresentation::default()
         }
     };
@@ -1387,48 +1325,25 @@ fn object_attributes_presentation(
         source_offset,
         losses,
     )?;
-    let name = ctx.copy_retained_text(&attributes.name, "Rhino projected object name")?;
-    let url = ctx.copy_retained_text(&attributes.url, "Rhino projected object URL")?;
-    let mut group_indexes =
-        ctx.collection_vec(attributes.groups.len(), "Rhino projected object groups")?;
+    let name = attributes.name.clone();
+    let url = attributes.url.clone();
+    let mut group_indexes = Vec::new();
     group_indexes.extend_from_slice(&attributes.groups);
-    let mut display_materials = ctx.collection_vec(
-        attributes.display_materials.len(),
-        "Rhino projected display materials",
-    )?;
+    let mut display_materials = Vec::new();
     for (viewport, material) in &attributes.display_materials {
-        display_materials.push([
-            ctx.format_retained(
-                format_args!("{viewport}"),
-                "Rhino projected display viewport UUID",
-            )?,
-            ctx.format_retained(
-                format_args!("{material}"),
-                "Rhino projected display material UUID",
-            )?,
-        ]);
+        display_materials.push([format!("{viewport}"), format!("{material}")]);
     }
     let viewport_uuid = if attributes.viewport_id.is_nil() {
         None
     } else {
-        Some(ctx.format_retained(
-            format_args!("{}", attributes.viewport_id),
-            "Rhino projected active viewport UUID",
-        )?)
+        Some(format!("{}", attributes.viewport_id))
     };
-    let mut clipping_plane_uuids = ctx.collection_vec(
-        attributes.clipping_plane_ids.len(),
-        "Rhino projected clipping plane UUIDs",
-    )?;
+    let mut clipping_plane_uuids = Vec::new();
     for id in &attributes.clipping_plane_ids {
-        clipping_plane_uuids.push(ctx.format_retained(
-            format_args!("{id}"),
-            "Rhino projected clipping plane UUID text",
-        )?);
+        clipping_plane_uuids.push(format!("{id}"));
     }
     Ok(ObjectAttributesPresentation {
-        source_uuid: ctx
-            .format_retained(format_args!("{source_uuid}"), "Rhino projected source UUID")?,
+        source_uuid: format!("{source_uuid}"),
         name,
         url,
         layer_index: attributes.layer_index,
@@ -1473,8 +1388,7 @@ fn object_attributes_presentation(
         mesh_modifiers: attributes
             .mesh_modifiers
             .as_ref()
-            .map(|value| mesh_modifiers_record(ctx, value))
-            .transpose()?,
+            .map(mesh_modifiers_record),
     })
 }
 
@@ -1741,10 +1655,7 @@ fn classify_rdk_material_payload(
     if xml.last() == Some(&0) {
         return Ok(RdkMaterialPayload::CallbackOwned);
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(xml.len()),
-        "validate Rhino RDK XML UTF-8",
-    )?;
+
     let xml = std::str::from_utf8(xml).map_err(|_| {
         FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
     })?;
@@ -1845,7 +1756,6 @@ fn rdk_material_userdata_requires_opaque(
 }
 
 fn wide_string(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1866,7 +1776,7 @@ fn wide_string(
             let text = std::str::from_utf8(bytes).map_err(|_| {
                 FramingError::structural(value.position(), "wide string is not UTF-8")
             })?;
-            ctx.copy_retained_text(text, "Rhino wide string")?
+            text.to_owned()
         }
         _ => {
             return Err(FramingError::structural(
@@ -1880,13 +1790,12 @@ fn wide_string(
 }
 
 fn class_data(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let class = parse_class_wrapper(ctx, data, record.body(), archive, &mut Diagnostics::new())?;
+    let class = parse_class_wrapper(data, record.body(), archive, &mut Diagnostics::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -1897,7 +1806,6 @@ fn class_data(
 }
 
 fn class_data_prefix(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1905,7 +1813,6 @@ fn class_data_prefix(
 ) -> Result<Range<usize>, FramingError> {
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let class = parse_class_wrapper(
-        ctx,
         data,
         wrapper.header_start..wrapper.next_offset(),
         archive,
@@ -1930,7 +1837,7 @@ fn parse_light_record_attributes(
 ) -> Result<Option<LightAttributesRecord>, FramingError> {
     let mut warnings = Diagnostics::new();
     // discarded-value: the class prefix is checked and skipped; ? states the refusal and its range has no reader
-    let _ = class_data_prefix(ctx, data, record, archive, LIGHT)?;
+    let _ = class_data_prefix(data, record, archive, LIGHT)?;
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let mut offset = wrapper.next_offset();
     let mut attributes_chunk = None;
@@ -2008,7 +1915,7 @@ fn parse_light_record_attributes(
         .transpose()?;
     let attributes_userdata = attributes_userdata_body_range
         .as_ref()
-        .map(|range| parse_attribute_userdata(ctx, data, range.clone(), archive, &mut warnings))
+        .map(|range| parse_attribute_userdata(data, range.clone(), archive, &mut warnings))
         .transpose()?
         .unwrap_or_default();
     let mut userdata_requires_opaque = false;
@@ -2040,18 +1947,14 @@ fn parse_light_record_attributes(
         let child = attributes
             .as_ref()
             .and_then(|value| value.rendering_range.clone());
-        let direct = direct_checksum_ranges(ctx, &item.body(), child.as_slice())?;
+        let direct = direct_checksum_ranges(&item.body(), child.as_slice())?;
         if let ChecksumStatus::Mismatch { expected, actual } =
-            verify_checksum_ranges(ctx, data, item, &direct)?
+            verify_checksum_ranges(data, item, &direct)?
         {
-            warnings.push_coded_admitted(
-                ctx,
-                RhinoLossCode::IntegrityFailure,
-                format_args!(
-                    "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
-                    item.header_start, item.typecode
-                ),
-            )?;
+            warnings.push_coded(RhinoLossCode::IntegrityFailure, format_args!(
+                "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
+                item.header_start, item.typecode
+            ));
         }
     }
     let Some(attributes) = attributes.as_mut() else {
@@ -2081,7 +1984,6 @@ fn parse_light_record_attributes(
     .map_err(FramingError::from)?;
     for warning in warnings {
         push_presentation_loss(
-            ctx,
             losses,
             warning
                 .code
@@ -2090,7 +1992,7 @@ fn parse_light_record_attributes(
                 "light record attributes at offset {}: {}",
                 record.range.start, warning.message
             ),
-        )?;
+        );
     }
     Ok(Some(LightAttributesRecord {
         source_offset: cadmpeg_core::decode::u64_from_index(
@@ -2104,19 +2006,13 @@ fn parse_light_record_attributes(
 }
 
 fn class_data_with_userdata(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<(Range<usize>, Vec<UserdataDescriptor>), FramingError> {
-    let (class, userdata) = parse_class_wrapper_with_userdata(
-        ctx,
-        data,
-        record.body(),
-        archive,
-        &mut Diagnostics::new(),
-    )?;
+    let (class, userdata) =
+        parse_class_wrapper_with_userdata(data, record.body(), archive, &mut Diagnostics::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -2135,29 +2031,18 @@ fn optional_malformed<T>(value: Result<T, FramingError>) -> Result<Option<T>, Co
 }
 
 fn append_file_reference_diagnostics(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     diagnostics: Diagnostics,
     source_offset: usize,
-) -> Result<(), FramingError> {
+) {
     for diagnostic in diagnostics {
         let code = diagnostic.code.unwrap_or(RhinoLossCode::IntegrityFailure);
-        ctx.reserve_vec(losses, 1, "Rhino texture file-reference losses")
-            .map_err(crate::chunks::FramingError::from)?;
-        let loss = crate::wire::admitted_loss(
-            ctx,
-            code,
-            format_args!(
-                "texture file reference at offset {}: {}",
-                source_offset, diagnostic.message
-            ),
-            "Rhino texture file-reference loss text",
-        )?;
-        ctx.charge_retained(5, "Rhino texture file-reference provenance format")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index("PRESENTATION/TEXTURE/FILE_REFERENCE".len()),
-            "Rhino texture file-reference provenance tag",
-        )?;
+
+        let loss = code.note(format_args!(
+            "texture file reference at offset {}: {}",
+            source_offset, diagnostic.message
+        ));
+
         losses.push(
             loss.with_provenance(
                 SourceProvenance::root(
@@ -2168,7 +2053,6 @@ fn append_file_reference_diagnostics(
             ),
         );
     }
-    Ok(())
 }
 
 fn parse_texture(
@@ -2188,7 +2072,7 @@ fn parse_texture(
     }
     let id = uuid(&mut reader)?;
     let mapping_channel_id = reader.u32()?;
-    let legacy_file_path = crate::settings::utf16_deferred(ctx, &mut reader)?;
+    let legacy_file_path = crate::settings::utf16_deferred(&mut reader)?;
     let enabled = reader.bool()?;
     let texture_type = reader.u32()?;
     let mode = reader.u32()?;
@@ -2232,34 +2116,21 @@ fn parse_texture(
                 if matches!(error, FramingError::Resource(_)) {
                     return Err(error);
                 }
-                append_file_reference_diagnostics(ctx, losses, diagnostics, source_offset)?;
+                append_file_reference_diagnostics(losses, diagnostics, source_offset);
                 return Err(error);
             }
         };
-        append_file_reference_diagnostics(ctx, losses, diagnostics, value.source_range.start)?;
+        append_file_reference_diagnostics(losses, diagnostics, value.source_range.start);
         Some(TextureFileReference {
             full_path: value.full_path,
             relative_path: value.relative_path,
             referenced_byte_count: value.content_hash.byte_count,
             hash_time: value.content_hash.hash_time,
             content_time: value.content_hash.content_time,
-            name_sha1: hex(
-                ctx,
-                &value.content_hash.name_sha1,
-                "Rhino texture name SHA-1",
-            )?,
-            content_sha1: hex(
-                ctx,
-                &value.content_hash.content_sha1,
-                "Rhino texture content SHA-1",
-            )?,
+            name_sha1: hex(&value.content_hash.name_sha1),
+            content_sha1: hex(&value.content_hash.content_sha1),
             path_status: value.path_status,
-            embedded_file_uuid: value
-                .embedded_file_id
-                .map(|id| {
-                    ctx.format_retained(format_args!("{id}"), "Rhino texture embedded-file UUID")
-                })
-                .transpose()?,
+            embedded_file_uuid: value.embedded_file_id.map(|id| format!("{id}")),
         })
     } else {
         None
@@ -2269,9 +2140,7 @@ fn parse_texture(
     reader.skip_remaining()?;
     Ok(TextureRecord {
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
-        source_uuid: (!id.is_nil())
-            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino texture source UUID"))
-            .transpose()?,
+        source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         mapping_channel_id,
         legacy_file_path,
         enabled,
@@ -2283,14 +2152,7 @@ fn parse_texture(
         uvw_transform,
         border_color: (border_color).into(),
         transparent_color: (transparent_color).into(),
-        transparency_texture_uuid: (!transparency.is_nil())
-            .then(|| {
-                ctx.format_retained(
-                    format_args!("{transparency}"),
-                    "Rhino texture transparency UUID",
-                )
-            })
-            .transpose()?,
+        transparency_texture_uuid: (!transparency.is_nil()).then(|| format!("{transparency}")),
         bump_scale,
         alpha_blend,
         rgb_blend_constant: (rgb_blend_constant).into(),
@@ -2332,9 +2194,7 @@ fn texture_array(
             "texture count exceeds limit",
         ));
     }
-    let mut textures = ctx
-        .collection_vec(count, "Rhino material textures")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut textures = Vec::new();
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short() {
@@ -2344,7 +2204,6 @@ fn texture_array(
             ));
         }
         let class = parse_class_wrapper(
-            ctx,
             data,
             object.header_start..object.next_offset(),
             archive,
@@ -2497,15 +2356,11 @@ fn parse_v2_v3_material(
     if let Some(texture) =
         parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bitmap)?
     {
-        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures")
-            .map_err(crate::chunks::FramingError::from)?;
         textures.push(texture);
     }
     if let Some(texture) =
         parse_v2_v3_texture(ctx, &mut reader, source_offset, LegacyTextureKind::Bump)?
     {
-        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures")
-            .map_err(crate::chunks::FramingError::from)?;
         textures.push(texture);
     }
     if let Some(texture) = parse_v2_v3_texture(
@@ -2514,14 +2369,12 @@ fn parse_v2_v3_material(
         source_offset,
         LegacyTextureKind::Environment,
     )? {
-        ctx.reserve_vec(&mut textures, 1, "Rhino V2/V3 material textures")
-            .map_err(crate::chunks::FramingError::from)?;
         textures.push(texture);
     }
 
     let archive_index = reader.i32()?;
     let plugin = uuid(&mut reader)?;
-    crate::settings::utf16_deferred(ctx, &mut reader)?;
+    crate::settings::utf16_deferred(&mut reader)?;
     let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino V2/V3 material name")?;
     let (id, reflection, transparent, index_of_refraction) = if minor >= 1 {
         (
@@ -2541,23 +2394,15 @@ fn parse_v2_v3_material(
     reader.skip_remaining()?;
     Ok(MaterialRecord {
         id: if id.is_nil() {
-            ctx.format_retained(
-                format_args!("rhino:presentation:material#record-{source_offset}"),
-                "Rhino material ID",
-            )?
+            format!("rhino:presentation:material#record-{source_offset}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:material#{id}"),
-                "Rhino material ID",
-            )?
+            format!("rhino:presentation:material#{id}")
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: Some(archive_index),
-        source_uuid: (!id.is_nil())
-            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino material source UUID"))
-            .transpose()?,
+        source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name,
-        plugin_uuid: ctx.format_retained(format_args!("{plugin}"), "Rhino material plugin UUID")?,
+        plugin_uuid: format!("{plugin}"),
         ambient: (ambient).into(),
         diffuse: (diffuse).into(),
         emission: (emission).into(),
@@ -2661,14 +2506,7 @@ fn parse_material(
         if writer_version.is_some_and(|version| version < 200_912_010) {
             transparent = diffuse;
         } else if writer_version.is_none() && diffuse != transparent {
-            ctx.reserve_vec(losses, 1, "Rhino material writer-stamp losses")
-                .map_err(crate::chunks::FramingError::from)?;
-            losses.push(crate::wire::admitted_loss(
-                ctx,
-                RhinoLossCode::SourceWriterStampUnverified,
-                format_args!("legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp"),
-                "Rhino material writer-stamp loss text",
-            )?);
+            losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format_args!("legacy material at offset {source_offset} kept its stored transparent color instead of the pre-2009 diffuse substitution because the archive has no writer-version stamp")));
         }
     }
     let index_of_refraction = read_finite(&mut reader, "index of refraction")?;
@@ -2677,7 +2515,7 @@ fn parse_material(
     let transparency = read_finite(&mut reader, "transparency")?;
     let textures = texture_array(ctx, data, &mut reader, archive, losses)?;
     if !modern && minor >= 1 {
-        crate::settings::utf16_deferred(ctx, &mut reader)?;
+        crate::settings::utf16_deferred(&mut reader)?;
     }
     if minor >= 2 || modern {
         let count = reader.i32()?;
@@ -2723,28 +2561,15 @@ fn parse_material(
     reader.skip_remaining()?;
     Ok(MaterialRecord {
         id: if component.id.is_nil() {
-            ctx.format_retained(
-                format_args!("rhino:presentation:material#record-{source_offset}"),
-                "Rhino material ID",
-            )?
+            format!("rhino:presentation:material#record-{source_offset}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:material#{}", component.id),
-                "Rhino material ID",
-            )?
+            format!("rhino:presentation:material#{}", component.id)
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
-        source_uuid: (!component.id.is_nil())
-            .then(|| {
-                ctx.format_retained(
-                    format_args!("{}", component.id),
-                    "Rhino material source UUID",
-                )
-            })
-            .transpose()?,
+        source_uuid: (!component.id.is_nil()).then(|| format!("{}", component.id)),
         name: component.name,
-        plugin_uuid: ctx.format_retained(format_args!("{plugin}"), "Rhino material plugin UUID")?,
+        plugin_uuid: format!("{plugin}"),
         ambient: (ambient).into(),
         diffuse: (diffuse).into(),
         emission: (emission).into(),
@@ -2759,10 +2584,7 @@ fn parse_material(
         shareable,
         disable_lighting,
         fresnel: MaterialFresnelSlot(fresnel),
-        rdk_instance_uuid: rdk
-            .filter(|id| !id.is_nil())
-            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino material RDK UUID"))
-            .transpose()?,
+        rdk_instance_uuid: rdk.filter(|id| !id.is_nil()).map(|id| format!("{id}")),
         diffuse_texture_alpha_transparency: alpha,
         physically_based,
     })
@@ -2793,21 +2615,13 @@ fn parse_group(
     let id = id.filter(|id| !id.is_nil());
     Ok(GroupRecord {
         id: if let Some(id) = id {
-            ctx.format_retained(
-                format_args!("rhino:presentation:group#{id}"),
-                "Rhino group ID",
-            )?
+            format!("rhino:presentation:group#{id}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:group#index-{index}"),
-                "Rhino group ID",
-            )?
+            format!("rhino:presentation:group#index-{index}")
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: index,
-        source_uuid: id
-            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino group source UUID"))
-            .transpose()?,
+        source_uuid: id.map(|id| format!("{id}")),
         name,
         links: Vec::new(),
     })
@@ -2816,27 +2630,19 @@ fn parse_group(
 /// Makes source identities unique when the archive repeats a group UUID or
 /// archive index. The serialized identity remains in `source_uuid` and
 /// `archive_index`; the suffix identifies the particular source record.
-fn disambiguate_group_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    groups: &mut [GroupRecord],
-) -> Result<usize, CodecError> {
+fn disambiguate_group_ids(groups: &mut [GroupRecord]) -> usize {
     let mut counts = HashMap::<&str, usize>::new();
-    let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
+
     for group in groups.iter() {
         if let Some(count) = counts.get_mut(group.id.as_str()) {
             *count += 1;
         } else {
-            workspace
-                .with_storage(|| ctx.reserve_map(&mut counts, 1, "Rhino group identity counts"))?;
             counts.insert(group.id.as_str(), 1);
         }
     }
     let mut duplicate_indices = Vec::new();
     for (order, group) in groups.iter().enumerate() {
         if counts.get(group.id.as_str()).copied() != Some(1) {
-            workspace.with_storage(|| {
-                ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")
-            })?;
             duplicate_indices.push(order);
         }
     }
@@ -2844,15 +2650,12 @@ fn disambiguate_group_ids(
     let changed = duplicate_indices.len();
     for order in duplicate_indices {
         let group = &mut groups[order];
-        group.id = ctx.format_retained(
-            format_args!(
-                "{}-source-offset-{:016x}-record-{order:06}",
-                group.id, group.source_offset
-            ),
-            "Rhino disambiguated group ID",
-        )?;
+        group.id = format!(
+            "{}-source-offset-{:016x}-record-{order:06}",
+            group.id, group.source_offset
+        );
     }
-    Ok(changed)
+    changed
 }
 
 fn parse_light(
@@ -2912,27 +2715,18 @@ fn parse_light(
     }
     let mut links = Vec::new();
     if let Some(order) = link_order {
-        let link = ctx.format_retained(
-            format_args!("rhino:object:record#{order:06}"),
-            "Rhino light object link",
-        )?;
-        ctx.reserve_vec(&mut links, 1, "Rhino light links")?;
+        let link = format!("rhino:object:record#{order:06}");
+
         links.push(link);
     }
     Ok(LightRecord {
         id: if id.is_nil() {
-            ctx.format_retained(
-                format_args!("rhino:presentation:light#record-{source_offset}"),
-                "Rhino light ID",
-            )?
+            format!("rhino:presentation:light#record-{source_offset}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:light#{id}"),
-                "Rhino light ID",
-            )?
+            format!("rhino:presentation:light#{id}")
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
-        source_uuid: ctx.format_retained(format_args!("{id}"), "Rhino light source UUID")?,
+        source_uuid: format!("{id}"),
         archive_index: index,
         name,
         enabled,
@@ -2957,8 +2751,6 @@ fn parse_light(
 }
 
 fn push_light(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     lights: &mut Vec<LightRecord>,
     indexes: &mut HashMap<Uuid, usize>,
     mut light: LightRecord,
@@ -2966,29 +2758,18 @@ fn push_light(
     let source_id = parse_uuid_text(&light.source_uuid)
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
     if !source_id.is_nil() {
-        if indexes.contains_key(&source_id) {
-            light.id = ctx.format_retained(
-                format_args!("{}-offset-{}", light.id, light.source_offset),
-                "Rhino duplicate light ID",
-            )?;
+        if let std::collections::hash_map::Entry::Vacant(e) = indexes.entry(source_id) {
+            e.insert(lights.len());
         } else {
-            workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                Uuid,
-                usize,
-            )>()))?;
-            ctx.reserve_map(indexes, 1, "Rhino light identity index")?;
-            indexes.insert(source_id, lights.len());
+            light.id = format!("{}-offset-{}", light.id, light.source_offset);
         }
     }
-    ctx.reserve_vec(lights, 1, "Rhino lights")?;
+
     lights.push(light);
     Ok(())
 }
 
-fn segments(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reader: &mut BoundedReader<'_>,
-) -> Result<Vec<SourceLinetypeSegment>, FramingError> {
+fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<SourceLinetypeSegment>, FramingError> {
     let count = reader.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -2997,9 +2778,7 @@ fn segments(
         1 << 16,
         reader.position(),
     )?;
-    let mut values = ctx
-        .collection_vec(bytes / 12, "Rhino linetype segments")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut values = Vec::new();
     for _ in 0..bytes / 12 {
         let length = read_finite(reader, "linetype segment length")?;
         values.push(SourceLinetypeSegment {
@@ -3028,7 +2807,7 @@ fn parse_linetype(
     let (component, values) = if version.0 == 1 && version.1 >= 0 {
         let index = reader.i32()?;
         let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino legacy linetype name")?;
-        let values = segments(ctx, &mut reader)?;
+        let values = segments(&mut reader)?;
         let id = if version.1 >= 1 {
             uuid(&mut reader)?
         } else {
@@ -3044,7 +2823,7 @@ fn parse_linetype(
         )
     } else if version.0 == 2 && version.1 >= 0 {
         let component = component(ctx, data, &mut reader, archive)?;
-        let values = segments(ctx, &mut reader)?;
+        let values = segments(&mut reader)?;
         let mut item = if version.1 >= 1 { reader.u8()? } else { 0 };
         if item == 1 {
             cap = reader.u8()?;
@@ -3072,8 +2851,7 @@ fn parse_linetype(
                     1 << 16,
                     reader.position(),
                 )?;
-                ctx.reserve_vec(&mut taper, bytes / 16, "Rhino linetype taper points")
-                    .map_err(crate::chunks::FramingError::from)?;
+
                 let mut invalid = false;
                 for _ in 0..bytes / 16 {
                     let first = reader.f64()?;
@@ -3106,9 +2884,7 @@ fn parse_linetype(
     // An unknown or out-of-order extension has no generic width. The source
     // reader consumes its identifier and leaves a bounded suffix.
     reader.skip_remaining()?;
-    let mut segments = ctx
-        .collection_vec(values.len(), "Rhino projected linetype segments")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut segments = Vec::new();
     for segment in values {
         let length_millimeters = if always {
             let scale = pattern_document_scale(binding)?;
@@ -3129,21 +2905,13 @@ fn parse_linetype(
     let id = component.id;
     Ok(LinetypeRecord {
         id: if id.is_nil() {
-            ctx.format_retained(
-                format_args!("rhino:presentation:linetype#record-{source_offset}"),
-                "Rhino linetype ID",
-            )?
+            format!("rhino:presentation:linetype#record-{source_offset}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:linetype#{id}"),
-                "Rhino linetype ID",
-            )?
+            format!("rhino:presentation:linetype#{id}")
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
-        source_uuid: (!id.is_nil())
-            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino linetype source UUID"))
-            .transpose()?,
+        source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name: component.name,
         segments,
         line_cap: cap,
@@ -3155,10 +2923,7 @@ fn parse_linetype(
     })
 }
 
-fn hatch_line_v5(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reader: &mut BoundedReader<'_>,
-) -> Result<SourceHatchLine, FramingError> {
+fn hatch_line_v5(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, FramingError> {
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
         return Err(FramingError::structural(
@@ -3166,13 +2931,10 @@ fn hatch_line_v5(
             "hatch-line version is unsupported",
         ));
     }
-    hatch_line_fields(ctx, reader)
+    hatch_line_fields(reader)
 }
 
-fn hatch_line_fields(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    reader: &mut BoundedReader<'_>,
-) -> Result<SourceHatchLine, FramingError> {
+fn hatch_line_fields(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, FramingError> {
     let angle_radians = read_finite(reader, "hatch-line angle")?;
     let base = [
         read_finite(reader, "hatch-line base")?,
@@ -3190,9 +2952,7 @@ fn hatch_line_fields(
         1 << 16,
         reader.position(),
     )?;
-    let mut dashes = ctx
-        .collection_vec(bytes / 8, "Rhino hatch line dashes")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut dashes = Vec::new();
     for _ in 0..bytes / 8 {
         dashes.push(read_finite(reader, "hatch dash")?);
     }
@@ -3278,9 +3038,7 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = ctx
-            .collection_vec(count, "Rhino modern hatch lines")
-            .map_err(crate::chunks::FramingError::from)?;
+        let mut lines = Vec::new();
         for _ in 0..count {
             let line = chunk_at(
                 data,
@@ -3298,7 +3056,7 @@ fn parse_hatch_pattern(
                 )
                 .into());
             }
-            lines.push(hatch_line_fields(ctx, &mut payload)?);
+            lines.push(hatch_line_fields(&mut payload)?);
             payload.skip_remaining()?;
             line_reader.skip(line.next_offset() - line_reader.position())?;
         }
@@ -3338,11 +3096,9 @@ fn parse_hatch_pattern(
             )
             .into());
         }
-        let mut lines = ctx
-            .collection_vec(count, "Rhino legacy hatch lines")
-            .map_err(crate::chunks::FramingError::from)?;
+        let mut lines = Vec::new();
         for _ in 0..count {
-            lines.push(hatch_line_v5(ctx, &mut reader)?);
+            lines.push(hatch_line_v5(&mut reader)?);
         }
         let id = if packed & 0x0f >= 2 {
             uuid(&mut reader)?
@@ -3365,9 +3121,7 @@ fn parse_hatch_pattern(
         Vec::new()
     } else {
         let scale = hatch_pattern_scale(distance_settings, binding)?;
-        let mut projected = ctx
-            .collection_vec(lines.len(), "Rhino projected hatch lines")
-            .map_err(crate::chunks::FramingError::from)?;
+        let mut projected = Vec::new();
         for line in lines {
             projected.push(line.into_millimeters(scale, source_offset)?);
         }
@@ -3375,23 +3129,13 @@ fn parse_hatch_pattern(
     };
     Ok(HatchPatternRecord {
         id: if component.id.is_nil() {
-            ctx.format_retained(
-                format_args!("rhino:presentation:hatch_pattern#record-{source_offset}"),
-                "Rhino hatch ID",
-            )?
+            format!("rhino:presentation:hatch_pattern#record-{source_offset}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:hatch_pattern#{}", component.id),
-                "Rhino hatch ID",
-            )?
+            format!("rhino:presentation:hatch_pattern#{}", component.id)
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
-        source_uuid: (!component.id.is_nil())
-            .then(|| {
-                ctx.format_retained(format_args!("{}", component.id), "Rhino hatch source UUID")
-            })
-            .transpose()?,
+        source_uuid: (!component.id.is_nil()).then(|| format!("{}", component.id)),
         name: component.name,
         fill_type,
         description,
@@ -3412,7 +3156,6 @@ fn scaled_length(
 }
 
 fn named_child(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -3429,12 +3172,11 @@ fn named_child(
     Ok(serde_json::json!({
         "offset": offset,
         "byte_len": chunk.next_offset() - offset,
-        "sha256": hex(ctx, &cadmpeg_ir::hash::sha256(&data[offset..chunk.next_offset()]), "Rhino dimension child SHA-256")?,
+        "sha256": hex(&cadmpeg_ir::hash::sha256(&data[offset..chunk.next_offset()])),
     }))
 }
 
 fn dimension_style_controls(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -3444,7 +3186,7 @@ fn dimension_style_controls(
     let mut values = DimensionControlEntries::default();
     macro_rules! put {
         ($name:literal, $value:expr) => {{
-            values.insert_with(ctx, $name, || Ok(serde_json::json!($value)))?;
+            values.insert_with($name, || Ok(serde_json::json!($value)))?;
         }};
     }
     put!("legacy_override_parent_count", reader.u32()?);
@@ -3458,15 +3200,11 @@ fn dimension_style_controls(
             1 << 16,
             reader.position() - 4,
         )?;
-        let mut bits = ctx
-            .collection_vec(count, "Rhino dimension override bits")
-            .map_err(crate::chunks::FramingError::from)?;
+        let mut bits = Vec::new();
         for bit in reader.take(count)? {
             bits.push(serde_json::Value::from(*bit));
         }
-        values.insert_with(ctx, "field_override_bits", || {
-            Ok(serde_json::Value::Array(bits))
-        })?;
+        values.insert_with("field_override_bits", || Ok(serde_json::Value::Array(bits)))?;
     }
     put!("tolerance_format", reader.u32()?);
     put!("tolerance_resolution", reader.i32()?);
@@ -3488,12 +3226,7 @@ fn dimension_style_controls(
     let source = uuid(reader)?;
     put!(
         "source_dimension_style_uuid",
-        (!source.is_nil())
-            .then(|| ctx.format_retained(
-                format_args!("{source}"),
-                "Rhino dimension control source UUID"
-            ))
-            .transpose()?
+        (!source.is_nil()).then(|| format!("{source}"))
     );
     put!("color_sources", reader.array::<4>()?);
     put!(
@@ -3562,18 +3295,9 @@ fn dimension_style_controls(
     put!(
         "arrow_block_uuids",
         [
-            ctx.format_retained(
-                format_args!("{}", uuid(reader)?),
-                "Rhino dimension arrow UUID"
-            )?,
-            ctx.format_retained(
-                format_args!("{}", uuid(reader)?),
-                "Rhino dimension arrow UUID"
-            )?,
-            ctx.format_retained(
-                format_args!("{}", uuid(reader)?),
-                "Rhino dimension arrow UUID"
-            )?
+            format!("{}", uuid(reader)?),
+            format!("{}", uuid(reader)?),
+            format!("{}", uuid(reader)?)
         ]
     );
     if minor >= 1 {
@@ -3595,17 +3319,14 @@ fn dimension_style_controls(
         put!("obsolete_leader_horizontal_alignment", reader.u32()?);
         put!("draw_forward", reader.bool()?);
         put!("signed_ordinate", reader.bool()?);
-        put!("scale_value", named_child(ctx, data, reader, archive)?);
+        put!("scale_value", named_child(data, reader, archive)?);
         put!("unit_system", reader.u32()?);
     }
     if minor >= 2 {
-        put!(
-            "font_characteristics",
-            named_child(ctx, data, reader, archive)?
-        );
+        put!("font_characteristics", named_child(data, reader, archive)?);
     }
     if minor >= 3 {
-        put!("text_mask", named_child(ctx, data, reader, archive)?);
+        put!("text_mask", named_child(data, reader, archive)?);
     }
     if minor >= 4 {
         for name in [
@@ -3622,7 +3343,7 @@ fn dimension_style_controls(
             "dimension_text_angle_style",
             "radial_text_angle_style",
         ] {
-            values.insert_with(ctx, name, || Ok(serde_json::json!(reader.u32()?)))?;
+            values.insert_with(name, || Ok(serde_json::json!(reader.u32()?)))?;
         }
         put!("text_underlined", reader.bool()?);
     }
@@ -3656,7 +3377,6 @@ fn dimension_style_controls(
 }
 
 fn parse_v5_dimension_style_extra(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
@@ -3679,9 +3399,7 @@ fn parse_v5_dimension_style_extra(
         MAX_DIMSTYLE_EXTRA_FIELDS,
         count_offset,
     )?;
-    let mut valid_fields = ctx
-        .collection_vec(byte_count, "Rhino V5 dimension valid fields")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut valid_fields = Vec::new();
     for value in reader.take(byte_count)? {
         valid_fields.push(*value != 0);
     }
@@ -3708,14 +3426,7 @@ fn parse_v5_dimension_style_extra(
     };
     reader.skip_remaining()?;
     Ok(V5DimensionStyleExtraRecord {
-        parent_style_uuid: (!parent_style_uuid.is_nil())
-            .then(|| {
-                ctx.format_retained(
-                    format_args!("{parent_style_uuid}"),
-                    "Rhino V5 dimension parent UUID",
-                )
-            })
-            .transpose()?,
+        parent_style_uuid: (!parent_style_uuid.is_nil()).then(|| format!("{parent_style_uuid}")),
         valid_fields,
         tolerance_style,
         tolerance_resolution,
@@ -3728,14 +3439,7 @@ fn parse_v5_dimension_style_extra(
         mask_color: (mask_color).into(),
         dimension_scale,
         dimension_scale_source,
-        source_style_uuid: (!source_style_uuid.is_nil())
-            .then(|| {
-                ctx.format_retained(
-                    format_args!("{source_style_uuid}"),
-                    "Rhino V5 dimension source UUID",
-                )
-            })
-            .transpose()?,
+        source_style_uuid: (!source_style_uuid.is_nil()).then(|| format!("{source_style_uuid}")),
     })
 }
 
@@ -3779,13 +3483,11 @@ fn parse_v5_dimension_style(
         scale.value()
     };
     let mut controls = DimensionControlEntries::default();
-    controls.insert_with(ctx, "v5_version", || {
+    controls.insert_with("v5_version", || {
         Ok(serde_json::json!({ "major": major, "minor": minor }))
     })?;
-    controls.insert_with(ctx, "v5_arrow_type", || Ok(serde_json::json!(arrow_type)))?;
-    controls.insert_with(ctx, "v5_angular_units", || {
-        Ok(serde_json::json!(angular_units))
-    })?;
+    controls.insert_with("v5_arrow_type", || Ok(serde_json::json!(arrow_type)))?;
+    controls.insert_with("v5_angular_units", || Ok(serde_json::json!(angular_units)))?;
     let (
         length_factor,
         alternate_enabled,
@@ -3819,16 +3521,14 @@ fn parse_v5_dimension_style(
             "Rhino V5 dimension alternate suffix",
         )?;
         let unused = reader.u32()?;
-        controls.insert_with(ctx, "v5_length_factor", || {
-            Ok(serde_json::json!(length_factor))
-        })?;
-        controls.insert_with(ctx, "v5_alternate_angle_format", || {
+        controls.insert_with("v5_length_factor", || Ok(serde_json::json!(length_factor)))?;
+        controls.insert_with("v5_alternate_angle_format", || {
             Ok(serde_json::json!(alternate_angle_format))
         })?;
-        controls.insert_with(ctx, "v5_alternate_angle_resolution", || {
+        controls.insert_with("v5_alternate_angle_resolution", || {
             Ok(serde_json::json!(alternate_angle_resolution))
         })?;
-        controls.insert_with(ctx, "v5_unused", || Ok(serde_json::json!(unused)))?;
+        controls.insert_with("v5_unused", || Ok(serde_json::json!(unused)))?;
         (
             length_factor,
             alternate_enabled,
@@ -3879,26 +3579,18 @@ fn parse_v5_dimension_style(
         (scale.value(), 0, false, false)
     };
     reader.skip_remaining()?;
-    controls.insert_with(ctx, "v5_leader_arrow_type", || {
+    controls.insert_with("v5_leader_arrow_type", || {
         Ok(serde_json::json!(leader_arrow_type))
     })?;
     Ok(DimensionStyleRecord {
         id: if id.is_nil() {
-            ctx.format_retained(
-                format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
-                "Rhino dimension style ID",
-            )?
+            format!("rhino:presentation:dimension_style#record-{source_offset}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:dimension_style#{id}"),
-                "Rhino dimension style ID",
-            )?
+            format!("rhino:presentation:dimension_style#{id}")
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: Some(archive_index),
-        source_uuid: (!id.is_nil())
-            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino dimension style source UUID"))
-            .transpose()?,
+        source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name,
         extension_line_extension_mm,
         extension_line_offset_mm,
@@ -3975,29 +3667,16 @@ fn parse_dimension_style(
     let suppress_extension_line_1 = reader.bool()?;
     let suppress_extension_line_2 = reader.bool()?;
     let parent = uuid(&mut reader)?;
-    let controls = dimension_style_controls(ctx, data, &mut reader, archive, scale, version.1)?;
+    let controls = dimension_style_controls(data, &mut reader, archive, scale, version.1)?;
     Ok(DimensionStyleRecord {
         id: if component.id.is_nil() {
-            ctx.format_retained(
-                format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
-                "Rhino dimension style ID",
-            )?
+            format!("rhino:presentation:dimension_style#record-{source_offset}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:dimension_style#{}", component.id),
-                "Rhino dimension style ID",
-            )?
+            format!("rhino:presentation:dimension_style#{}", component.id)
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: component.index,
-        source_uuid: (!component.id.is_nil())
-            .then(|| {
-                ctx.format_retained(
-                    format_args!("{}", component.id),
-                    "Rhino dimension style source UUID",
-                )
-            })
-            .transpose()?,
+        source_uuid: (!component.id.is_nil()).then(|| format!("{}", component.id)),
         name: component.name,
         extension_line_extension_mm,
         extension_line_offset_mm,
@@ -4025,11 +3704,7 @@ fn parse_dimension_style(
         suppress_extension_line_1,
         suppress_extension_line_2,
         details: DimensionStyleDetails::Modern {
-            parent_style_uuid: (!parent.is_nil())
-                .then(|| {
-                    ctx.format_retained(format_args!("{parent}"), "Rhino dimension parent UUID")
-                })
-                .transpose()?,
+            parent_style_uuid: (!parent.is_nil()).then(|| format!("{parent}")),
             controls,
         },
     })
@@ -4133,20 +3808,12 @@ fn parse_embedded_image(
     let source_uuid = source_uuid.filter(|id| !id.is_nil());
     Ok(EmbeddedImageRecord {
         id: if let Some(id) = source_uuid {
-            ctx.format_retained(
-                format_args!("rhino:presentation:image#{id}"),
-                "Rhino image ID",
-            )?
+            format!("rhino:presentation:image#{id}")
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:image#record-{source_offset}"),
-                "Rhino image ID",
-            )?
+            format!("rhino:presentation:image#record-{source_offset}")
         },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
-        source_uuid: source_uuid
-            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino image source UUID"))
-            .transpose()?,
+        source_uuid: source_uuid.map(|id| format!("{id}")),
         name,
         file_path,
         image_crc32,
@@ -4154,11 +3821,7 @@ fn parse_embedded_image(
         uncompressed_byte_len,
         buffer_offset: cadmpeg_core::decode::u64_from_index(buffer_offset),
         buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer_end - buffer_offset),
-        buffer_sha256: hex(
-            ctx,
-            &cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end]),
-            "Rhino image SHA-256",
-        )?,
+        buffer_sha256: hex(&cadmpeg_ir::hash::sha256(&data[buffer_offset..buffer_end])),
     })
 }
 
@@ -4288,15 +3951,9 @@ fn parse_windows_bitmap(
     reader.skip_remaining()?;
     let buffer = &data[pixel_buffer_offset..pixel_buffer_end];
     Ok(WindowsBitmapRecord {
-        id: ctx.format_retained(
-            format_args!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
-            "Rhino Windows bitmap ID",
-        )?,
+        id: format!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
-        class_uuid: ctx.format_retained(
-            format_args!("{class_uuid}"),
-            "Rhino Windows bitmap class UUID",
-        )?,
+        class_uuid: format!("{class_uuid}"),
         file_path,
         header_size,
         width_pixels,
@@ -4312,11 +3969,7 @@ fn parse_windows_bitmap(
         important_colors,
         pixel_buffer_offset: cadmpeg_core::decode::u64_from_index(pixel_buffer_offset),
         pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer.len()),
-        pixel_buffer_sha256: hex(
-            ctx,
-            &cadmpeg_ir::hash::sha256(buffer),
-            "Rhino Windows bitmap SHA-256",
-        )?,
+        pixel_buffer_sha256: hex(&cadmpeg_ir::hash::sha256(buffer)),
     })
 }
 
@@ -4365,7 +4018,7 @@ fn parse_texture_mapping(
     } else {
         let mut warnings = Diagnostics::new();
         let (value, userdata) =
-            parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
+            parse_class_wrapper_with_userdata(data, object.range(), archive, &mut warnings)?;
         let cache_requires_opaque =
             userdata
                 .iter()
@@ -4375,13 +4028,7 @@ fn parse_texture_mapping(
                         && value.item_uuid == MAPPING_CRC_CACHE
                         && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
                 });
-        (
-            Some(ctx.format_retained(
-                format_args!("{}", value.class_uuid),
-                "Rhino texture mapping primitive UUID",
-            )?),
-            cache_requires_opaque,
-        )
+        (Some(format!("{}", value.class_uuid)), cache_requires_opaque)
     };
     reader.skip(object.next_offset() - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
@@ -4390,22 +4037,12 @@ fn parse_texture_mapping(
     Ok(ParsedTextureMapping {
         value: TextureMappingRecord {
             id: if id.is_nil() {
-                ctx.format_retained(
-                    format_args!("rhino:presentation:texture_mapping#record-{source_offset}"),
-                    "Rhino texture mapping ID",
-                )?
+                format!("rhino:presentation:texture_mapping#record-{source_offset}")
             } else {
-                ctx.format_retained(
-                    format_args!("rhino:presentation:texture_mapping#{id}"),
-                    "Rhino texture mapping ID",
-                )?
+                format!("rhino:presentation:texture_mapping#{id}")
             },
             source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
-            source_uuid: (!id.is_nil())
-                .then(|| {
-                    ctx.format_retained(format_args!("{id}"), "Rhino texture mapping source UUID")
-                })
-                .transpose()?,
+            source_uuid: (!id.is_nil()).then(|| format!("{id}")),
             name,
             mapping_type,
             projection,
@@ -4420,7 +4057,6 @@ fn parse_texture_mapping(
 }
 
 fn parse_rendering_mapping_channel(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     start: usize,
     end: usize,
@@ -4460,10 +4096,7 @@ fn parse_rendering_mapping_channel(
         RenderingMappingChannel {
             mapping_channel_id,
             mapping_uuid: if retain_uuid {
-                ctx.format_retained(
-                    format_args!("{mapping_uuid}"),
-                    "Rhino rendering channel UUID",
-                )?
+                format!("{mapping_uuid}")
             } else {
                 String::new()
             },
@@ -4474,7 +4107,6 @@ fn parse_rendering_mapping_channel(
 }
 
 fn rendering_attributes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     range: Option<Range<usize>>,
     archive: ArchiveVersion,
@@ -4502,9 +4134,7 @@ fn rendering_attributes(
             reader.position() - 4,
         )?;
         let mut presentation = RenderingAttributesPresentation {
-            materials: ctx
-                .collection_vec(material_count, "Rhino projected rendering materials")
-                .map_err(crate::chunks::FramingError::from)?,
+            materials: Vec::new(),
             ..RenderingAttributesPresentation::default()
         };
         for _ in 0..material_count {
@@ -4525,15 +4155,9 @@ fn rendering_attributes(
                     ));
                 }
                 let plugin = uuid(&mut value)?;
-                let plugin_uuid = ctx.format_retained(
-                    format_args!("{plugin}"),
-                    "Rhino rendering material plugin UUID",
-                )?;
+                let plugin_uuid = format!("{plugin}");
                 let front = uuid(&mut value)?;
-                let front_material_uuid = ctx.format_retained(
-                    format_args!("{front}"),
-                    "Rhino rendering front material UUID",
-                )?;
+                let front_material_uuid = format!("{front}");
                 let obsolete_mapping_count = checked_count_bytes(
                     value.i32()?,
                     1,
@@ -4543,7 +4167,6 @@ fn rendering_attributes(
                 )?;
                 for _ in 0..obsolete_mapping_count {
                     let (_, next_offset) = parse_rendering_mapping_channel(
-                        ctx,
                         data,
                         value.position(),
                         value.end(),
@@ -4557,14 +4180,7 @@ fn rendering_attributes(
                     let source = value.u8()?;
                     value.skip(3)?;
                     Some(RenderingMaterialBackFace {
-                        back_material_uuid: (!id.is_nil())
-                            .then(|| {
-                                ctx.format_retained(
-                                    format_args!("{id}"),
-                                    "Rhino rendering back material UUID",
-                                )
-                            })
-                            .transpose()?,
+                        back_material_uuid: (!id.is_nil()).then(|| format!("{id}")),
                         material_source: source,
                     })
                 } else {
@@ -4588,9 +4204,7 @@ fn rendering_attributes(
                 1 << 16,
                 reader.position() - 4,
             )?;
-            presentation.mappings = ctx
-                .collection_vec(mapping_count, "Rhino projected rendering mappings")
-                .map_err(crate::chunks::FramingError::from)?;
+            presentation.mappings = Vec::new();
             for _ in 0..mapping_count {
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -4608,10 +4222,7 @@ fn rendering_attributes(
                     ));
                 }
                 let plugin = uuid(&mut value)?;
-                let plugin_uuid = ctx.format_retained(
-                    format_args!("{plugin}"),
-                    "Rhino rendering mapping plugin UUID",
-                )?;
+                let plugin_uuid = format!("{plugin}");
                 let channel_count = checked_count_bytes(
                     value.i32()?,
                     1,
@@ -4619,12 +4230,9 @@ fn rendering_attributes(
                     1 << 16,
                     value.position() - 4,
                 )?;
-                let mut channels = ctx
-                    .collection_vec(channel_count, "Rhino projected rendering channels")
-                    .map_err(crate::chunks::FramingError::from)?;
+                let mut channels = Vec::new();
                 for _ in 0..channel_count {
                     let (channel, next_offset) = parse_rendering_mapping_channel(
-                        ctx,
                         data,
                         value.position(),
                         value.end(),
@@ -4685,7 +4293,7 @@ fn parse_font(
     }
     let mut font = FontRecord {
         characteristics: value.u32()?,
-        windows_logfont_name: wide_string(ctx, data, &mut value, archive)?,
+        windows_logfont_name: wide_string(data, &mut value, archive)?,
         postscript_name: crate::settings::utf16_retained(
             ctx,
             &mut value,
@@ -4804,25 +4412,17 @@ fn parse_text_style(
         let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
-            ctx.copy_retained_text(&description, "Rhino legacy PostScript name")?
+            description.clone()
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
-                ctx.reserve_vec(losses, 1, "Rhino text style writer-stamp losses")
-                    .map_err(crate::chunks::FramingError::from)?;
-                losses.push(crate::wire::admitted_loss(
-                    ctx,
-                    RhinoLossCode::SourceWriterStampUnverified,
-                    format_args!("legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp"),
-                    "Rhino text style writer-stamp loss text",
-                )?);
+                losses.push(RhinoLossCode::SourceWriterStampUnverified.note(format_args!("legacy text style at offset {source_offset} dropped the PostScript font name \"{description}\" because the archive has no writer-version stamp")));
             }
             String::new()
         };
         let mut font = FontRecord {
             windows_logfont_name,
             postscript_name,
-            obsolete_description: ctx
-                .copy_retained_text(&description, "Rhino legacy font description")?,
+            obsolete_description: description.clone(),
             ..FontRecord::default()
         };
         if packed & 0x0f >= 1 {
@@ -4847,16 +4447,11 @@ fn parse_text_style(
         };
         reader.skip_remaining()?;
         return Ok(TextStyleRecord {
-            id: ctx.format_retained(
-                format_args!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
-                "Rhino text style ID",
-            )?,
+            id: format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
             source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
             archive_index: Some(index),
-            source_uuid: (!id.is_nil())
-                .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
-                .transpose()?,
-            name: ctx.copy_retained_text(&description, "Rhino text style name")?,
+            source_uuid: (!id.is_nil()).then(|| format!("{id}")),
+            name: description.clone(),
             font_description: description,
             font,
         });
@@ -4893,32 +4488,17 @@ fn parse_text_style(
     Ok(TextStyleRecord {
         id: if id.is_nil() {
             index.map_or_else(
-                || {
-                    ctx.format_retained(
-                        format_args!("rhino:presentation:text_style#offset-{source_offset}"),
-                        "Rhino text style ID",
-                    )
-                },
+                || format!("rhino:presentation:text_style#offset-{source_offset}"),
                 |index| {
-                    ctx.format_retained(
-                        format_args!(
-                            "rhino:presentation:text_style#index-{index}-offset-{source_offset}"
-                        ),
-                        "Rhino text style ID",
-                    )
+                    format!("rhino:presentation:text_style#index-{index}-offset-{source_offset}")
                 },
             )
         } else {
-            ctx.format_retained(
-                format_args!("rhino:presentation:text_style#{id}"),
-                "Rhino text style ID",
-            )
-        }?,
+            format!("rhino:presentation:text_style#{id}")
+        },
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         archive_index: index,
-        source_uuid: (!id.is_nil())
-            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
-            .transpose()?,
+        source_uuid: (!id.is_nil()).then(|| format!("{id}")),
         name,
         font_description,
         font,
@@ -4927,21 +4507,19 @@ fn parse_text_style(
 
 /// Results of transferring table-owned presentation records.
 fn retain_unbound_presentation_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     opaque_records: &mut Vec<OpaqueRecord>,
     table_typecode: u32,
     record: &Record,
     binding: UnitBinding,
     kind: &str,
-) -> Result<(), CodecError> {
-    push_presentation_loss(ctx, losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+) {
+    push_presentation_loss( losses, RhinoLossCode::PresentationRecordDropped, format_args!(
         "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
         record.range.start,
         binding.label()
-    ))?;
-    push_opaque_record(ctx, opaque_records, table_typecode, record)?;
-    Ok(())
+    ));
+    push_opaque_record(opaque_records, table_typecode, record);
 }
 
 pub(crate) fn install(
@@ -4955,7 +4533,7 @@ pub(crate) fn install(
     let mut materials = Vec::new();
     let mut lights = Vec::new();
     let mut light_indexes = HashMap::new();
-    let mut light_index_workspace = ctx.reserve_scoped(0, "Rhino light identity workspace")?;
+
     let mut linetypes = Vec::new();
     let mut hatch_patterns = Vec::new();
     let mut dimension_styles = Vec::new();
@@ -4966,7 +4544,7 @@ pub(crate) fn install(
     let mut layers = Vec::new();
     let mut object_presentation = Vec::new();
     let mut object_id_counts = HashMap::<Uuid, usize>::new();
-    let mut object_count_workspace = ctx.reserve_scoped(0, "Rhino object identity workspace")?;
+
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
     for object in &scan.objects {
@@ -4974,10 +4552,6 @@ pub(crate) fn install(
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
                 *count += 1;
             } else {
-                object_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(Uuid, usize)>(),
-                ))?;
-                ctx.reserve_map(&mut object_id_counts, 1, "Rhino object identity counts")?;
                 object_id_counts.insert(identity.object_id, 1);
             }
         }
@@ -5000,11 +4574,10 @@ pub(crate) fn install(
             let mut parsed = false;
             if table_type == GROUP_TABLE {
                 if let Some(range) =
-                    optional_malformed(class_data(ctx, scan.data, record, scan.archive, GROUP))?
+                    optional_malformed(class_data(scan.data, record, scan.archive, GROUP))?
                 {
                     match parse_group(ctx, scan.data, range, record.range.start) {
                         Ok(group) => {
-                            ctx.reserve_vec(&mut groups, 1, "Rhino groups")?;
                             groups.push(group);
                             parsed = true;
                         }
@@ -5016,7 +4589,6 @@ pub(crate) fn install(
                 }
             } else if table_type == MATERIAL_TABLE {
                 if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
-                    ctx,
                     scan.data,
                     record,
                     scan.archive,
@@ -5027,10 +4599,10 @@ pub(crate) fn install(
                         legacy_rdk_material_instance_id(ctx, scan.data, &userdata)?;
                     if rdk_material_userdata_requires_opaque(ctx, scan.data, &userdata)? {
                         material_requires_opaque = true;
-                        push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                        push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                             "RDK material userdata at offset {} could not be transferred: callback-owned or unsupported payload",
                             record.range.start
-                        ))?;
+                        ));
                     }
                     let physically_based = if let Some(value) = userdata
                         .iter()
@@ -5049,10 +4621,10 @@ pub(crate) fn install(
                             Ok(material) => Some(material),
                             Err(error) => {
                                 material_requires_opaque = true;
-                                push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                                push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                                     "physically based material userdata at offset {} could not be transferred: {error}",
                                     record.range.start
-                                ))?;
+                                ));
                                 None
                             }
                         }
@@ -5073,24 +4645,13 @@ pub(crate) fn install(
                     ) {
                         Ok(mut material) => {
                             if let Some(instance_id) = legacy_rdk_instance_id {
-                                material.plugin_uuid = ctx.format_retained(
-                                    format_args!("{UNIVERSAL_RENDER_ENGINE}"),
-                                    "Rhino material render-engine UUID",
-                                )?;
-                                material.rdk_instance_uuid = Some(ctx.format_retained(
-                                    format_args!("{instance_id}"),
-                                    "Rhino material instance UUID",
-                                )?);
+                                material.plugin_uuid = format!("{UNIVERSAL_RENDER_ENGINE}");
+                                material.rdk_instance_uuid = Some(format!("{instance_id}"));
                             }
-                            ctx.reserve_vec(&mut materials, 1, "Rhino materials")?;
+
                             materials.push(material);
                             if material_requires_opaque {
-                                push_opaque_record(
-                                    ctx,
-                                    &mut opaque_records,
-                                    table.typecode,
-                                    record,
-                                )?;
+                                push_opaque_record(&mut opaque_records, table.typecode, record);
                             }
                             parsed = true;
                         }
@@ -5103,23 +4664,18 @@ pub(crate) fn install(
             } else if table_type == LIGHT_TABLE {
                 let Some(scale) = physical_scale else {
                     retain_unbound_presentation_record(
-                        ctx,
                         &mut losses,
                         &mut opaque_records,
                         table.typecode,
                         record,
                         binding,
                         "light",
-                    )?;
+                    );
                     continue;
                 };
-                if let Some(range) = optional_malformed(class_data_prefix(
-                    ctx,
-                    scan.data,
-                    record,
-                    scan.archive,
-                    LIGHT,
-                ))? {
+                if let Some(range) =
+                    optional_malformed(class_data_prefix(scan.data, record, scan.archive, LIGHT))?
+                {
                     if let Some(mut light) = optional_malformed(parse_light(
                         ctx,
                         scan.data,
@@ -5140,11 +4696,10 @@ pub(crate) fn install(
                                 if let Some(value) = attributes {
                                     if value.userdata_requires_opaque {
                                         push_opaque_record(
-                                            ctx,
                                             &mut opaque_records,
                                             table.typecode,
                                             record,
-                                        )?;
+                                        );
                                     }
                                     light.attributes = Some(value);
                                 }
@@ -5153,31 +4708,20 @@ pub(crate) fn install(
                                 return Err(CodecError::ResourceLimit(limit));
                             }
                             Err(error) => {
-                                push_presentation_loss(ctx, &mut losses, RhinoLossCode::ObjectAttributesDegraded, format_args!(
+                                push_presentation_loss( &mut losses, RhinoLossCode::ObjectAttributesDegraded, format_args!(
                                         "light attributes at offset {} could not be transferred: {error}",
                                         record.range.start
-                                    ))?;
-                                push_opaque_record(
-                                    ctx,
-                                    &mut opaque_records,
-                                    table.typecode,
-                                    record,
-                                )?;
+                                    ));
+                                push_opaque_record(&mut opaque_records, table.typecode, record);
                             }
                         }
-                        push_light(
-                            ctx,
-                            &mut light_index_workspace,
-                            &mut lights,
-                            &mut light_indexes,
-                            light,
-                        )?;
+                        push_light(&mut lights, &mut light_indexes, light)?;
                         parsed = true;
                     }
                 }
             } else if table_type == LINETYPE_TABLE {
                 if let Some(range) =
-                    optional_malformed(class_data(ctx, scan.data, record, scan.archive, LINETYPE))?
+                    optional_malformed(class_data(scan.data, record, scan.archive, LINETYPE))?
                 {
                     match parse_linetype(
                         ctx,
@@ -5188,30 +4732,25 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => {
-                            ctx.reserve_vec(&mut linetypes, 1, "Rhino linetypes")?;
                             linetypes.push(value);
                         }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                                 "linetype record at offset {} was retained as complete source: {error}",
                                 record.range.start,
-                            ))?;
-                            push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                            ));
+                            push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
                     parsed = true;
                 }
             } else if table_type == HATCH_PATTERN_TABLE {
-                if let Some(range) = optional_malformed(class_data(
-                    ctx,
-                    scan.data,
-                    record,
-                    scan.archive,
-                    HATCH_PATTERN,
-                ))? {
+                if let Some(range) =
+                    optional_malformed(class_data(scan.data, record, scan.archive, HATCH_PATTERN))?
+                {
                     match parse_hatch_pattern(
                         ctx,
                         scan.data,
@@ -5221,18 +4760,17 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => {
-                            ctx.reserve_vec(&mut hatch_patterns, 1, "Rhino hatch patterns")?;
                             hatch_patterns.push(value);
                         }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                                 "hatch pattern record at offset {} was retained as complete source: {error}",
                                 record.range.start,
-                            ))?;
-                            push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                            ));
+                            push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
                     parsed = true;
@@ -5240,20 +4778,18 @@ pub(crate) fn install(
             } else if table_type == DIMSTYLE_TABLE {
                 let Some(scale) = physical_scale else {
                     retain_unbound_presentation_record(
-                        ctx,
                         &mut losses,
                         &mut opaque_records,
                         table.typecode,
                         record,
                         binding,
                         "dimension style",
-                    )?;
+                    );
                     continue;
                 };
                 if scan.archive.value() < 60 {
                     let mut extra_requires_opaque = false;
                     if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
-                        ctx,
                         scan.data,
                         record,
                         scan.archive,
@@ -5269,7 +4805,6 @@ pub(crate) fn install(
                                 });
                         let extra = match extra {
                             Some(value) => match parse_v5_dimension_style_extra(
-                                ctx,
                                 scan.data,
                                 value,
                                 scan.archive,
@@ -5281,10 +4816,10 @@ pub(crate) fn install(
                                 }
                                 Err(error) => {
                                     extra_requires_opaque = true;
-                                    push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                                    push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                                             "V5 dimension-style userdata at offset {} could not be transferred: {error}",
                                             record.range.start
-                                        ))?;
+                                        ));
                                     None
                                 }
                             },
@@ -5298,21 +4833,15 @@ pub(crate) fn install(
                             record.range.start,
                             extra,
                         ))? {
-                            ctx.reserve_vec(&mut dimension_styles, 1, "Rhino dimension styles")?;
                             dimension_styles.push(value);
                             if extra_requires_opaque {
-                                push_opaque_record(
-                                    ctx,
-                                    &mut opaque_records,
-                                    table.typecode,
-                                    record,
-                                )?;
+                                push_opaque_record(&mut opaque_records, table.typecode, record);
                             }
                             parsed = true;
                         }
                     }
                 } else if let Some(range) =
-                    optional_malformed(class_data(ctx, scan.data, record, scan.archive, DIMSTYLE))?
+                    optional_malformed(class_data(scan.data, record, scan.archive, DIMSTYLE))?
                 {
                     match parse_dimension_style(
                         ctx,
@@ -5323,7 +4852,6 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => {
-                            ctx.reserve_vec(&mut dimension_styles, 1, "Rhino dimension styles")?;
                             dimension_styles.push(value);
                             parsed = true;
                         }
@@ -5335,7 +4863,6 @@ pub(crate) fn install(
                 }
             } else if table_type == BITMAP_TABLE {
                 if let Some(range) = optional_malformed(class_data(
-                    ctx,
                     scan.data,
                     record,
                     scan.archive,
@@ -5348,12 +4875,10 @@ pub(crate) fn install(
                         scan.archive,
                         record.range.start,
                     ))? {
-                        ctx.reserve_vec(&mut images, 1, "Rhino images")?;
                         images.push(value);
                         parsed = true;
                     }
                 } else if let Some(class) = optional_malformed(parse_class_wrapper(
-                    ctx,
                     scan.data,
                     record.body(),
                     scan.archive,
@@ -5368,7 +4893,6 @@ pub(crate) fn install(
                             scan.archive,
                             record.range.start,
                         ))? {
-                            ctx.reserve_vec(&mut windows_bitmaps, 1, "Rhino Windows bitmaps")?;
                             windows_bitmaps.push(value);
                             parsed = true;
                         }
@@ -5376,7 +4900,6 @@ pub(crate) fn install(
                 }
             } else if table_type == TEXTURE_MAPPING_TABLE {
                 if let Some(range) = optional_malformed(class_data(
-                    ctx,
                     scan.data,
                     record,
                     scan.archive,
@@ -5389,31 +4912,25 @@ pub(crate) fn install(
                         scan.archive,
                         record.range.start,
                     ))? {
-                        ctx.reserve_vec(&mut texture_mappings, 1, "Rhino texture mappings")?;
                         texture_mappings.push(value.value);
                         if value.cache_requires_opaque {
                             push_presentation_loss(
-                                ctx,
                                 &mut losses,
                                 RhinoLossCode::PresentationRecordDropped,
                                 format_args!(
                                 "MappingCRCCache userdata at offset {} could not be transferred",
                                 record.range.start
                             ),
-                            )?;
-                            push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                            );
+                            push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                         parsed = true;
                     }
                 }
             } else if table_type == FONT_TABLE {
-                if let Some(range) = optional_malformed(class_data(
-                    ctx,
-                    scan.data,
-                    record,
-                    scan.archive,
-                    TEXT_STYLE,
-                ))? {
+                if let Some(range) =
+                    optional_malformed(class_data(scan.data, record, scan.archive, TEXT_STYLE))?
+                {
                     match parse_text_style(
                         ctx,
                         scan.data,
@@ -5438,7 +4955,6 @@ pub(crate) fn install(
                         &mut losses,
                     ) {
                         Ok(value) => {
-                            ctx.reserve_vec(&mut text_styles, 1, "Rhino text styles")?;
                             text_styles.push(value);
                             parsed = true;
                         }
@@ -5451,38 +4967,28 @@ pub(crate) fn install(
             }
             if recognized && !parsed {
                 push_presentation_loss(
-                    ctx,
                     &mut losses,
                     RhinoLossCode::PresentationRecordDropped,
                     format_args!(
                         "record at offset {} in table {table_type:#x} could not be transferred",
                         record.range.start
                     ),
-                )?;
-                push_opaque_record(ctx, &mut opaque_records, table.typecode, record)?;
+                );
+                push_opaque_record(&mut opaque_records, table.typecode, record);
             }
         }
     }
     let mut group_members = HashMap::<i32, Vec<String>>::new();
-    let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
+
     for (source_order, object) in scan.objects.iter().enumerate() {
         let Some(object) = object.framed() else {
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
             for group in &attributes.groups {
-                if !group_members.contains_key(group) {
-                    group_member_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<(i32, Vec<String>)>(),
-                    ))?;
-                    ctx.reserve_map(&mut group_members, 1, "Rhino group member keys")?;
-                }
                 let members = group_members.entry(*group).or_default();
-                ctx.reserve_vec(members, 1, "Rhino group member links")?;
-                members.push(ctx.format_retained(
-                    format_args!("rhino:object:record#{source_order:06}"),
-                    "Rhino group member link",
-                )?);
+
+                members.push(format!("rhino:object:record#{source_order:06}"));
             }
         }
         if object.class_uuid == LIGHT {
@@ -5495,34 +5001,27 @@ pub(crate) fn install(
                     object.range.start,
                     Some(source_order),
                 ) {
-                    Ok(light) => push_light(
-                        ctx,
-                        &mut light_index_workspace,
-                        &mut lights,
-                        &mut light_indexes,
-                        light,
-                    )?,
+                    Ok(light) => push_light(&mut lights, &mut light_indexes, light)?,
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
                         push_presentation_loss(
-                            ctx,
                             &mut losses,
                             RhinoLossCode::PresentationRecordDropped,
                             format_args!(
                                 "light object at offset {} could not be transferred: {error}",
                                 object.range.start
                             ),
-                        )?;
+                        );
                     }
                 }
             } else {
-                push_presentation_loss(ctx, &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                     "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
                     object.range.start,
                     binding.label()
-                ))?;
+                ));
             }
         }
         if let Some(attributes) = object.attributes.parsed() {
@@ -5540,29 +5039,16 @@ pub(crate) fn install(
                 },
                 &mut losses,
             )?;
-            let mut links = ctx.collection_vec(1, "Rhino object presentation links")?;
-            links.push(ctx.format_retained(
-                format_args!("rhino:object:record#{source_order:06}"),
-                "Rhino object presentation link",
-            )?);
-            ctx.reserve_vec(
-                &mut object_presentation,
-                1,
-                "Rhino object presentation records",
-            )?;
+            let mut links = Vec::new();
+            links.push(format!("rhino:object:record#{source_order:06}"));
+
             object_presentation.push(ObjectPresentationRecord {
                 id: if identity.object_id.is_nil()
                     || object_id_counts.get(&identity.object_id).copied() != Some(1)
                 {
-                    ctx.format_retained(
-                        format_args!("rhino:presentation:object#record-{source_order:06}"),
-                        "Rhino object presentation ID",
-                    )?
+                    format!("rhino:presentation:object#record-{source_order:06}")
                 } else {
-                    ctx.format_retained(
-                        format_args!("rhino:presentation:object#{}", identity.object_id),
-                        "Rhino object presentation ID",
-                    )?
+                    format!("rhino:presentation:object#{}", identity.object_id)
                 },
                 source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                 attributes: attributes_presentation,
@@ -5571,23 +5057,18 @@ pub(crate) fn install(
         }
     }
     let mut layer_id_counts = HashMap::<Uuid, usize>::new();
-    let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
+
     for layer in &scan.metadata.layers {
         if let Some(id) = layer.id {
             if let Some(count) = layer_id_counts.get_mut(&id) {
                 *count += 1;
             } else {
-                layer_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(Uuid, usize)>(),
-                ))?;
-                ctx.reserve_map(&mut layer_id_counts, 1, "Rhino layer identity counts")?;
                 layer_id_counts.insert(id, 1);
             }
         }
     }
     for layer in &scan.metadata.layers {
         let rendering = match rendering_attributes(
-            ctx,
             scan.data,
             layer.rendering_range.clone(),
             scan.archive,
@@ -5597,61 +5078,40 @@ pub(crate) fn install(
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 push_presentation_loss(
-                    ctx,
                     &mut losses,
                     RhinoLossCode::PresentationRecordDropped,
                     format_args!(
                         "layer rendering attributes at offset {} could not be transferred: {error}",
                         layer.source.range.start
                     ),
-                )?;
+                );
                 RenderingAttributesPresentation::default()
             }
         };
-        let mut per_viewport_settings = ctx.collection_vec(
-            layer.per_viewport_settings.len(),
-            "Rhino layer presentation viewport settings",
-        )?;
+        let mut per_viewport_settings = Vec::new();
         per_viewport_settings.extend_from_slice(&layer.per_viewport_settings);
-        ctx.reserve_vec(&mut layers, 1, "Rhino layer presentation records")?;
+
         layers.push(LayerPresentationRecord {
             id: if let Some(id) = layer
                 .id
                 .filter(|id| layer_id_counts.get(id).copied() == Some(1))
             {
-                ctx.format_retained(
-                    format_args!("rhino:presentation:layer#{id}"),
-                    "Rhino layer presentation ID",
-                )?
+                format!("rhino:presentation:layer#{id}")
             } else {
-                ctx.format_retained(
-                    format_args!(
-                        "rhino:presentation:layer#index-{}-offset-{}",
-                        layer.index, layer.source.range.start
-                    ),
-                    "Rhino layer presentation ID",
-                )?
+                format!(
+                    "rhino:presentation:layer#index-{}-offset-{}",
+                    layer.index, layer.source.range.start
+                )
             },
             source_offset: cadmpeg_core::decode::u64_from_index(layer.source.range.start),
             archive_index: layer.index,
-            source_uuid: layer
-                .id
-                .map(|id| {
-                    ctx.format_retained(
-                        format_args!("{id}"),
-                        "Rhino layer presentation source UUID",
-                    )
-                })
-                .transpose()?,
+            source_uuid: layer.id.map(|id| format!("{id}")),
             hierarchy: LayerHierarchySlot(layer.hierarchy),
-            name: ctx.copy_retained_text(&layer.name, "Rhino layer presentation name")?,
+            name: layer.name.clone(),
             description: layer
                 .description
                 .as_deref()
-                .map(|description| {
-                    ctx.copy_retained_text(description, "Rhino layer presentation description")
-                })
-                .transpose()?,
+                .map(std::borrow::ToOwned::to_owned),
             iges_level: layer.iges_level,
             visible: layer.visible,
             locked: layer.locked,
@@ -5662,13 +5122,7 @@ pub(crate) fn install(
             display_material_uuid: layer
                 .display_material_id
                 .filter(|id| !id.is_nil())
-                .map(|id| {
-                    ctx.format_retained(
-                        format_args!("{id}"),
-                        "Rhino layer presentation display material UUID",
-                    )
-                })
-                .transpose()?,
+                .map(|id| format!("{id}")),
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
             visible_in_new_details: layer.visible_in_new_details,
             rendering_materials: rendering.materials,
@@ -5676,15 +5130,11 @@ pub(crate) fn install(
         });
     }
     let mut group_index_counts = Vec::<(i32, usize)>::new();
-    let mut group_index_workspace = ctx.reserve_scoped(0, "Rhino group index workspace")?;
+
     for group in &groups {
         match group_index_counts.binary_search_by_key(&group.archive_index, |(index, _)| *index) {
             Ok(position) => group_index_counts[position].1 += 1,
             Err(position) => {
-                group_index_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(i32, usize)>(),
-                ))?;
-                ctx.reserve_vec(&mut group_index_counts, 1, "Rhino group index counts")?;
                 group_index_counts.insert(position, (group.archive_index, 1));
             }
         }
@@ -5692,20 +5142,19 @@ pub(crate) fn install(
     for (index, count) in &group_index_counts {
         if *count > 1 {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 RhinoLossCode::PresentationRecordDropped,
                 format_args!(
                     "group index {index} occurs {count} times; ambiguous member links were dropped"
                 ),
-            )?;
+            );
         }
     }
-    let disambiguated_group_count = disambiguate_group_ids(ctx, &mut groups)?;
+    let disambiguated_group_count = disambiguate_group_ids(&mut groups);
     if disambiguated_group_count != 0 {
-        push_presentation_loss(ctx, &mut losses, RhinoLossCode::DuplicateRecordResolved, format_args!(
+        push_presentation_loss( &mut losses, RhinoLossCode::DuplicateRecordResolved, format_args!(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"
-        ))?;
+        ));
     }
     for group in &mut groups {
         group.links = if group_index_counts
@@ -5720,12 +5169,7 @@ pub(crate) fn install(
         } else {
             Vec::new()
         };
-        ctx.stable_sort_by(
-            &mut group.links,
-            Ord::cmp,
-            std::string::String::len,
-            "Rhino group link sort",
-        )?;
+        group.links.sort_by(Ord::cmp);
     }
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "groups", &groups)?;

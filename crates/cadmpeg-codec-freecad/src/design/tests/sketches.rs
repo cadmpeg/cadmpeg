@@ -11,87 +11,7 @@ use std::io::Cursor;
 const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
 
 #[test]
-fn counted_sketch_records_refuse_at_caller_limit() {
-    let xml = roxmltree::Document::parse(
-        "<Property><GeometryList count=\"1\"><Geometry/></GeometryList></Property>",
-    )
-    .expect("valid geometry XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::super::direct_counted_records(
-        &ctx, &xml, "GeometryList", "Geometry", "geometry",
-    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "fcstd counted sketch records"));
-}
-
-#[test]
-fn external_geometry_reference_refuses_at_retained_limit() {
-    let xml = roxmltree::Document::parse("<Geometry ref=\"Part.Face1\"/>")
-        .expect("valid external geometry XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(
-        matches!(super::super::external_geometry_metadata(&ctx, xml.root_element(), 3),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd external geometry reference")
-    );
-}
-
-#[test]
-fn sketch_carrier_attributes_refuse_at_caller_limit() {
-    let xml = roxmltree::Document::parse("<Line StartX=\"1\"/>").expect("valid sketch carrier XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(
-        matches!(super::super::sketch_attributes(&ctx, Some(xml.root_element())),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd sketch carrier attributes")
-    );
-}
-
-#[test]
-fn constraint_integer_list_refuses_at_caller_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::super::split_ints(&ctx, "1 2"),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd constraint integer list"));
-}
-
-#[test]
-fn constraint_attribute_refuses_at_retained_limit() {
-    let xml =
-        roxmltree::Document::parse("<Constraint Name=\"width\"/>").expect("valid constraint XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(
-        matches!(super::super::nonempty_attr(&ctx, xml.root_element(), "Name"),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd constraint attribute")
-    );
-}
-
-#[test]
 fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
     let mut attributes = std::collections::BTreeMap::from([
         ("CenterX".to_owned(), "1".to_owned()),
         ("CenterY".to_owned(), "2".to_owned()),
@@ -100,7 +20,7 @@ fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
         ("StartAngle".to_owned(), "0.2".to_owned()),
         ("EndAngle".to_owned(), "1.2".to_owned()),
     ]);
-    let arc = super::super::sketch_geometry(&ctx, "ArcOfCircle", &attributes).expect("finite arc");
+    let arc = super::super::sketch_geometry("ArcOfCircle", &attributes).expect("finite arc");
     assert!(
         matches!(arc.definition(), cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
         center,
@@ -114,27 +34,11 @@ fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
     );
 
     attributes.insert("CenterX".to_owned(), "NaN".to_owned());
-    let native =
-        super::super::sketch_geometry(&ctx, "ArcOfCircle", &attributes).expect("native arc");
+    let native = super::super::sketch_geometry("ArcOfCircle", &attributes).expect("native arc");
     assert!(matches!(
         native.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
     ));
-}
-
-#[test]
-fn native_sketch_geometry_refuses_at_retained_limit() {
-    crate::test_support::assert_retained_refusal_at(
-        &[],
-        "fcstd native sketch geometry kind",
-        |ctx| {
-            super::super::sketch_geometry(
-                ctx,
-                "UnknownGeometry",
-                &std::collections::BTreeMap::default(),
-            )
-        },
-    );
 }
 
 #[test]
@@ -221,59 +125,6 @@ fn rejects_malformed_sketch_record_counts() {
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
     ));
-}
-
-#[test]
-fn x64_profile_construction_refuses_exhausted_work_on_decode() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
-<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
-<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1">
-<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
-</GeometryList></Property>
-</Properties></Object></ObjectData></Document>"#;
-    let bytes = archive(document);
-    FcstdCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("service profile admits the sketch");
-
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_work_units = 0;
-    for _ in 0..8192 {
-        let error = FcstdCodec
-            .decode(&mut Cursor::new(&bytes), &options)
-            .expect_err("profile construction must charge work");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected work refusal: {error:?}")
-        };
-        assert_eq!(
-            limit.dimension,
-            cadmpeg_core::decode::ResourceDimension::WorkUnits
-        );
-        let threshold = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("work threshold fits");
-        if limit.operation.starts_with("FCStd profile ") {
-            options.policy.limits.max_work_units = threshold - 1;
-            let exact = FcstdCodec
-                .decode(&mut Cursor::new(&bytes), &options)
-                .expect_err("one below profile work must refuse");
-            assert!(
-                matches!(exact,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref found))
-                    if found.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && found.operation == limit.operation
-                        && found.used + found.additional == threshold),
-                "{exact:?}"
-            );
-            return;
-        }
-        options.policy.limits.max_work_units = threshold;
-    }
-    panic!("profile work admission was not reached");
 }
 
 #[test]
