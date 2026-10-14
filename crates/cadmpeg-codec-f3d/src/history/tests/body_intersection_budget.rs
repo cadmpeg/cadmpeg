@@ -42,7 +42,11 @@ fn historical_body_closure_refuses_collection_limit() {
 
 #[test]
 fn affected_topology_bodies_refuse_collection_limit() {
-    let error = intersection_error(4);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D affected topology bodies",
+        |cap| Err::<(), cadmpeg_core::CodecError>(intersection_error(cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D affected topology bodies")

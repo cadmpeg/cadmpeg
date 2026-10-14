@@ -94,11 +94,16 @@ fn assert_analytic_refusal(bytes: &[u8], operation: &str, retained: bool) {
 }
 
 #[test]
-fn analytic_surface_indexes_and_losses_refuse_limits() {
+fn analytic_surface_indexes_charge_and_losses_refuse_limits() {
     let valid = pointer_defined_surface_file(190, 0);
+    // Released decode scratch peaks above the index charges.
     for operation in [
         "iges analytic-surface parameter index",
         "iges analytic-surface directory index",
+    ] {
+        crate::test_support::decode_charges_collection(&valid, operation);
+    }
+    for operation in [
         "iges analytic-surface slots",
         "iges analytic-surface decoded sequences",
     ] {

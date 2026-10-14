@@ -37,7 +37,7 @@ fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimensio
 }
 
 #[test]
-fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
+fn csg_boolean_terms_and_validation_nodes_charge_collection_items() {
     let primitive = primitive_solids_file();
     assert_csg_refusal(
         &primitive,
@@ -45,13 +45,14 @@ fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
         ResourceDimension::CollectionItems,
     );
     let boolean = procedural_and_boolean_solids_file();
+    // Released decode scratch peaks above these charges.
     for operation in [
         "iges Boolean postfix terms",
         "iges Boolean definition nodes",
         "iges boolean validation path",
         "iges boolean validity memo",
     ] {
-        assert_csg_refusal(&boolean, operation, ResourceDimension::CollectionItems);
+        crate::test_support::decode_charges_collection(&boolean, operation);
     }
     assert_csg_refusal(
         &boolean,

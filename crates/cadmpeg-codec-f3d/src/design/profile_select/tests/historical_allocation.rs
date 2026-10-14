@@ -219,7 +219,7 @@ fn ordered_selected_region_refuses_collection_limit() {
     ));
 }
 
-fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained: bool) {
+fn merge_fixture_selection(policy: &DecodePolicy, region: bool) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
 
     let sketch = empty_sketch().id;
@@ -248,33 +248,29 @@ fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained
             .unwrap(),
         )
     };
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            if retained {
-                ResourceDimension::RetainedBytes
-            } else {
-                ResourceDimension::CollectionItems
-            },
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if retained {
-                    policy.limits.max_retained_bytes = cap;
-                } else {
-                    policy.limits.max_collection_items = cap;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                super::super::merge_resolved_profile_selections(
-                    &sketch,
-                    std::slice::from_ref(&selection),
-                    &ctx,
-                )
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
-    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    super::super::merge_resolved_profile_selections(&sketch, std::slice::from_ref(&selection), &ctx)
+        .map(|_| ())
+}
+
+fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained: bool) {
+    let dimension = if retained {
+        ResourceDimension::RetainedBytes
+    } else {
+        ResourceDimension::CollectionItems
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        merge_fixture_selection(&policy, region)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
@@ -288,8 +284,13 @@ fn merged_region_hole_refuses_collection_limit() {
 }
 
 #[test]
-fn merged_selected_region_refuses_collection_limit() {
-    assert_merged_profile_refusal("f3d merged selected region", true, false);
+fn merged_selected_region_charges_collection_items() {
+    // Released hole scratch peaks above the region charge.
+    cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "f3d merged selected region",
+        || merge_fixture_selection(&DecodePolicy::service(), true),
+    );
 }
 
 #[test]
@@ -396,7 +397,7 @@ fn resolved_member_profile_refuses_collection_limit() {
     ));
 }
 
-fn assert_boundary_region_refusal(operation: &'static str) {
+fn resolve_boundary_region(policy: &DecodePolicy) -> Result<(), CodecError> {
     use super::super::ResolvedProfileSelection;
 
     let member = historical_point_member();
@@ -412,23 +413,28 @@ fn assert_boundary_region_refusal(operation: &'static str) {
         Some(ResolvedProfileSelection::Regions(vec![region])),
         Some(ResolvedProfileSelection::Loops(vec![0])),
     ];
-    for limit in 0..8 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::region_with_boundary_selection_members(
-            &[&member, &member],
-            &sketch,
-            &selections,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected boundary region refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no boundary region refusal at {operation}");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    super::super::region_with_boundary_selection_members(
+        &[&member, &member],
+        &sketch,
+        &selections,
+        &ctx,
+    )
+    .map(|_| ())
+}
+
+fn assert_boundary_region_refusal(operation: &'static str) {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            resolve_boundary_region(&policy)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -437,8 +443,13 @@ fn historical_boundary_region_hole_refuses_collection_limit() {
 }
 
 #[test]
-fn historical_boundary_region_refuses_collection_limit() {
-    assert_boundary_region_refusal("f3d historical boundary region");
+fn historical_boundary_region_charges_collection_items() {
+    // Released hole scratch peaks above the region charge.
+    cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "f3d historical boundary region",
+        || resolve_boundary_region(&DecodePolicy::service()),
+    );
 }
 
 fn assert_fallback_point_refusal(operation: &'static str) {
@@ -835,47 +846,46 @@ fn deleted_carrier_face_refuses_collection_limit() {
     assert_deleted_carrier_refusal("f3d deleted carrier family face");
 }
 
-fn assert_inserted_selection_refusal(operation: &'static str, region: bool) {
+fn resolve_inserted_selection(policy: &DecodePolicy, region: bool) -> Result<(), CodecError> {
     use super::super::ResolvedProfileSelection;
 
     let sketch = empty_sketch();
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let selections = if region {
-            let region = cadmpeg_ir::features::SketchProfileRegion::loops(
-                0,
-                vec![1],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("fixture loop-region admission")
-            .unwrap();
-            vec![
-                Some(ResolvedProfileSelection::Regions(vec![region])),
-                Some(ResolvedProfileSelection::Loops(vec![0])),
-                Some(ResolvedProfileSelection::Loops(vec![1])),
-            ]
-        } else {
-            vec![
-                Some(ResolvedProfileSelection::Loops(vec![0])),
-                Some(ResolvedProfileSelection::Loops(vec![1])),
-            ]
-        };
-        match super::super::transition_inserted_profile_selection(
-            &sketch,
-            &[],
-            0.000_001,
-            selections,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected inserted selection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no inserted selection refusal at {operation}");
+    let selections = if region {
+        let region = cadmpeg_ir::features::SketchProfileRegion::loops(
+            0,
+            vec![1],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("fixture loop-region admission")
+        .unwrap();
+        vec![
+            Some(ResolvedProfileSelection::Regions(vec![region])),
+            Some(ResolvedProfileSelection::Loops(vec![0])),
+            Some(ResolvedProfileSelection::Loops(vec![1])),
+        ]
+    } else {
+        vec![
+            Some(ResolvedProfileSelection::Loops(vec![0])),
+            Some(ResolvedProfileSelection::Loops(vec![1])),
+        ]
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    super::super::transition_inserted_profile_selection(&sketch, &[], 0.000_001, selections, &ctx)
+        .map(|_| ())
+}
+
+fn assert_inserted_selection_refusal(operation: &'static str, region: bool) {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            resolve_inserted_selection(&policy, region)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -889,8 +899,13 @@ fn inserted_transition_hole_refuses_collection_limit() {
 }
 
 #[test]
-fn inserted_transition_region_refuses_collection_limit() {
-    assert_inserted_selection_refusal("f3d inserted transition region", true);
+fn inserted_transition_region_charges_collection_items() {
+    // Released hole scratch peaks above the region charge.
+    cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "f3d inserted transition region",
+        || resolve_inserted_selection(&DecodePolicy::service(), true),
+    );
 }
 
 #[test]

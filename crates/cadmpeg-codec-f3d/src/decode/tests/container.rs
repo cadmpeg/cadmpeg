@@ -481,7 +481,7 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
 }
 
 #[test]
-fn text_brep_parts_refuse_the_last_collection_item() {
+fn text_brep_parts_charge_collection_items() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let stream = concat!(
@@ -504,30 +504,16 @@ fn text_brep_parts_refuse_the_last_collection_item() {
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
-    let decode_with_limit = |limit| {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        crate::decode::try_decode_text_model(&limited, &scan)
-    };
-    let mut admitted = 10_000;
-    assert!(decode_with_limit(admitted).unwrap().is_some());
-    let mut refused = 0;
-    while admitted - refused > 1 {
-        let candidate = refused + (admitted - refused) / 2;
-        match decode_with_limit(candidate) {
-            Ok(Some(_)) => admitted = candidate,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => refused = candidate,
-            _ => panic!("unexpected text B-rep limit result"),
-        }
-    }
-    let Err(error) = decode_with_limit(refused) else {
-        panic!("the item below the admission boundary must be refused");
-    };
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D text B-rep parts")
+    // Released text B-rep scratch peaks above the parts charge.
+    let model = cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D text B-rep parts",
+        || {
+            let (decode, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            crate::decode::try_decode_text_model(&decode, &scan).map(|model| model.is_some())
+        },
     );
+    assert!(model);
 }
 
 #[test]
