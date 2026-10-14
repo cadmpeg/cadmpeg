@@ -1,0 +1,231 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "17",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_definitions": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "rmfastload_physical_storages": [
+            {
+              "boundaries": [
+                0,
+                112,
+                120,
+                132
+              ],
+              "boundary_source_offset": 157,
+              "byte_len": 174,
+              "header_source_offset": 121,
+              "header_words": [
+                3,
+                7,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                132
+              ],
+              "id": "nx:rmfastload:physical-storage#0000000000",
+              "physical_spans": [
+                {
+                  "byte_len": 112,
+                  "sha256": "6a4441a1fd4254d5e7b4a526fdebd174081149909108518ce4dd52353c4c634d",
+                  "source_offset": 80
+                },
+                {
+                  "byte_len": 8,
+                  "sha256": "f86e5d761fad6ec0e9ab3196f73eb1c5a9e9fca61e75a07e50a28f05d6253c82",
+                  "source_offset": 192
+                },
+                {
+                  "byte_len": 12,
+                  "sha256": "1acd855e4657b0c3f4e203d3452dbfd1cf66eff0101b0ac539f0570f06990f9c",
+                  "source_offset": 200
+                }
+              ],
+              "sha256": "e632a479a01db344a7f10b6daa505c11763d9f232dce8b7826b5d0c6cca9f4d9",
+              "source_entry": "/Root/FastLoad/RMFastLoad",
+              "source_offset": 80,
+              "table_count_source_offset": 173,
+              "table_words": [
+                1,
+                17,
+                99
+              ],
+              "terminal_preamble": "000000000000000000000000",
+              "terminal_rows": [
+                {
+                  "source_offset": 224,
+                  "tokens": [
+                    "01",
+                    "8000",
+                    "a00000"
+                  ]
+                },
+                {
+                  "source_offset": 233,
+                  "tokens": [
+                    "c0000000",
+                    "01",
+                    "02"
+                  ]
+                }
+              ],
+              "terminal_trailer": "ffffffffffffffffffffffff"
+            }
+          ]
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "1",
+          "file_size": "268",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "254",
+          "header_entry_count": "1",
+          "jpeg_preview_count": "0",
+          "partition_streams": "0",
+          "plain_streams": "0"
+        },
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr"
+            }
+          }
+        }
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr"
+          }
+        }
+      },
+      "losses": [
+        {
+          "code": {
+            "code": "geometry.not-transferred",
+            "kind": "geometry_not_transferred",
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
+          "severity": "blocking"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: file tag 0, footer offset 254, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "NX object model: 1 size-framed section(s), 0 class declaration(s), 0 field declaration(s)"
+      ],
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
+    },
+    "source_fidelity": {
+      "annotations": {}
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "80",
+          "region": "HEADER"
+        },
+        "compression": "none",
+        "name": "/Root/FastLoad/RMFastLoad",
+        "role": "active-body-index",
+        "size": {
+          "form": "exact",
+          "size": 174
+        }
+      }
+    ],
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr"
+        }
+      }
+    },
+    "notes": [
+      "SPLMSSTR container: file tag 0, footer offset 254, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "NX object model: 1 size-framed section(s), 0 class declaration(s), 0 field declaration(s)"
+    ]
+  }
+}

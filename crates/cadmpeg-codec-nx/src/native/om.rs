@@ -1182,6 +1182,11 @@ pub(super) struct ClassDefinition {
 }
 
 impl ClassDefinition {
+    /// Test ownership in one exact framed source section, without ordinal inference.
+    pub(in crate::native) fn belongs_to_section(&self, entry: &str, offset: u64) -> bool {
+        self.source_entry == entry && self.section_offset == offset
+    }
+
     fn registry_layout(&self) -> Option<crate::om::registry::ClassRegistryLayout> {
         if self.registry_suffix.len() > 16 {
             return None;

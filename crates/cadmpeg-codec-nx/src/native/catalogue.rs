@@ -3973,6 +3973,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "rmfastload_physical_storages",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.rmfastload_physical_storages, r, ns),
+        len: |m| m.om.rmfastload_physical_storages.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "rmfastload_object_ids",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,

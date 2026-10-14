@@ -376,6 +376,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "rm_creation_display_data_relations",
     "rmfastload_object_id_tables",
     "rmfastload_object_ids",
+    "rmfastload_physical_storages",
     "saved_toggle_entries",
     "saved_toggle_streams",
     "segment_body_bindings",
@@ -388,7 +389,7 @@ const KNOWN_ARENAS: &[&str] = &[
 ];
 
 /// Minimum distinct arenas the golden fixtures must collectively populate.
-const ARENA_COVERAGE_FLOOR: usize = 125;
+const ARENA_COVERAGE_FLOOR: usize = 126;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
@@ -497,6 +498,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         assembly_with_external_paths(),
     ));
     f.push(("rmfastload_prt", rmfastload_prt()));
+    f.push((
+        "rmfastload_physical_storage",
+        crate::test_support::rmfastload::prt(),
+    ));
     f.push((
         "prt_with_two_bodies_and_rmfastload",
         prt_with_two_bodies_and_rmfastload(),
@@ -1085,7 +1090,7 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 258, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 259, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()

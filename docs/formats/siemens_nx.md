@@ -348,7 +348,7 @@ an unresolved input slot remains absent without reordering the other slots.
 | Stream                                    | Role                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------ |
 | `/Root/UG_PART/UG_PART`                   | canonical part payload: OM sections + Parasolid partition/deltas/plain streams |
-| `/Root/FastLoad/RMFastLoad`               | fast-load object-id table → active-body membership (NX OM per-class form)      |
+| `/Root/FastLoad/RMFastLoad`               | physical column storage and fast-load object-id membership                     |
 | `/Root/FastLoad/Structure`                | fast-load structure stream                                                     |
 | `/Root/FastLoad/JT`                       | preview/JT mesh and metadata                                                   |
 | `/Root/UG_PART/DisplayJT`                 | indexed embedded JT display-model documents                                    |
@@ -1584,6 +1584,43 @@ An offset-store block may carry a counted block-index lane `01, declared_count:u
 Contiguous offset-store column storage may carry an `ABR` reference lane `11, slot[16], 02 11 41 42 52 ff 03`. Each ordered slot is a nullable compact block index: `ff` is null and non-null values use the direct and extended forms. Every non-null value addresses the same offset-only store's control-plus-column block ordinal. The lane is retained only when all sixteen slots and the complete literal terminator are present and every non-null target exists. It retains decoded slots, exact serialized tokens, and source offsets. Physical data-block boundaries do not constrain the lane.
 
 Contiguous offset-store column storage may also carry a self-framed index row `2d 02 0b, first:compact_index, 93 8a, flag:u8, index[4], 00 47 04 04 01 c0 44 04 00`, where `flag` is `03` or `07` and every compact index is non-null. Each member of the four-index lane addresses the same offset-only store's control-plus-column block ordinal. The row retains the unresolved leading index, ordered block lane, exact serialized index tokens, flag, token offsets, block containing its opening byte, and opening offset within that block without assigning operand, object, class, or block-ownership roles. A null or out-of-range block index, other lane arity, other flag, changed discriminator, or incomplete terminator rejects the candidate atomically. Physical data-block boundaries do not constrain the row.
+
+`RMFastLoad` uses entry-relative physical column storage. Its compact terminal
+envelope is `ff ff ff ff 00 00 00 00 payload_len:u32 BE`, with
+`payload_len + 12` equal to the directory-entry size. Bytes `+12..+16` are
+`OM 01 01`. An opaque fifteen-byte prefix follows. At `+31`, a `u32 LE`
+length bounds the platform bytes. A second `u32 LE` length bounds the source
+filename bytes. Nine `u32 LE` header words follow those strings:
+
+```text
+h[0] = physical_span_count
+h[1] = opaque word
+h[2] = 0
+h[3] = ordered class-registry count
+h[4] = terminal triple-row count
+h[5] = h[6] = h[7] = 0
+h[8] = entry-relative terminal table offset
+```
+
+Exactly one adjacent structure satisfies the header's physical span count:
+`boundary[N+1]:u32 LE, N:u32 LE, table_word[N]:u32 LE`, where `N = h[0]`.
+The first boundary is zero, the second is nonzero, all boundaries are
+monotone, and the last boundary is at most `h[8]`. The complete arrays follow the header and precede
+the terminal table. Boundary values are relative to the directory-entry
+start. Adjacent boundaries delimit physical spans, including the initial
+control span. They do not delimit class-owned entities. One complete product
+string or logical row can cross a span boundary. Parse a logical row over
+the joined storage and retain its physical offsets.
+
+At `h[8]`, the terminal table is an opaque twelve-byte preamble, exactly
+`h[4]` triple rows, and an opaque twelve-byte trailer ending at the entry end.
+A triple row is `05 00, token[0], token[1], token[2], 4e`. Each token retains
+its exact bytes. A `00..7f` leader occupies one byte; `80..8f` occupies two;
+`a0..af` occupies three; `c0` occupies four. The terminal count, physical span
+ordinal, and token positions do not select a class declaration. A class
+binding requires an independently validated selector in the complete logical
+row. Table words become active membership identities only through the
+separate membership-table admission.
 
 The `RMFastLoad` record area carries creation-display relations selected by the section-local class registry entry named `UGS::RM_creation_display_data`. A relation uses one complete self-framed index, linked-index, or target-index row. The selecting class ordinal is the fourth post-flag index of an index row or the third post-marker index of a linked-index or target-index row. The relation retains the registered class definition, row form, ordered decoded indices, exact compact-index tokens, flags, modes, discriminators, and absolute token offsets. In linked-index and target-index rows, the target index is the zero-based ordinal of a member in the section's counted object-ID table; an in-range target retains that member identity. The leading index retains its serialized role only. This framing does not assign a topology kind, display value, color-table index, or inheritance rule.
 

@@ -190,6 +190,7 @@ use super::parasolid::{
     ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
 };
+use super::rmfastload_storage::RmFastLoadStorage;
 use super::segments::{
     segment_body_bindings, segment_body_lineage_statuses, segment_index_rows, segment_om_links,
     segment_stream_links, SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow,
@@ -521,6 +522,7 @@ pub(in crate::native) struct OmRecords {
     pub(super) object_records: Vec<ObjectRecord>,
     pub(super) rmfastload_object_id_tables: Vec<RmFastLoadObjectIdTable>,
     pub(super) rmfastload_object_ids: Vec<RmFastLoadObjectId>,
+    pub(super) rmfastload_physical_storages: Vec<RmFastLoadStorage>,
     pub(super) data_blocks: Vec<DataBlock>,
     pub(super) data_block_control_forms: Vec<DataBlockControlForm>,
     pub(super) data_block_control_values: Vec<DataBlockControlValue>,
@@ -1355,6 +1357,8 @@ impl NativeModel {
         let expression_declarations = expression_declarations(ctx, container)?;
         let expressions = expressions(ctx, container, &expression_declarations)?;
         let classes = class_definitions(ctx, container)?;
+        let rmfastload_physical_storages =
+            super::rmfastload_storage::collect(ctx, container, &classes)?;
         let fields = field_definitions(ctx, container)?;
         let object_records = object_records(ctx, container)?;
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
@@ -1724,6 +1728,7 @@ impl NativeModel {
                 object_records,
                 rmfastload_object_id_tables,
                 rmfastload_object_ids,
+                rmfastload_physical_storages,
                 data_blocks,
                 data_block_control_forms,
                 data_block_control_values,

@@ -49,6 +49,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) mod compact;
+pub(crate) mod rmfastload;
 use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};

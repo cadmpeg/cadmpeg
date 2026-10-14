@@ -696,14 +696,6 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Note.** Create controlled native variants that change one continuity setting, add one section, add one guide, or reverse one string independently. Query the authored section and guide collectors before save. Compare the complete operation and allocation. Body-write relations select outputs; incomplete output topology and an empty interchange sibling supply no input-ownership witness.
 
-### OM-29. `RMFastLoad` class records
-
-**Question.** What is the per-class entity-record grammar in `RMFastLoad` outside its object-ID membership table?
-
-**Known.** `siemens_nx.md` §2.1 "| `/Root/FastLoad/RMFastLoad`" and `siemens_nx.md` §2.3 "`/Root/FastLoad/Structure` begins with the twelve-byte envelope" define the fast-load object-ID table and the bounded structure stream. The per-class entity-record grammar outside the membership table remains unresolved.
-
-**Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
-
 ### OM-37. Final field declaration in a pointerless OM section
 
 **Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?
@@ -932,16 +924,23 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded block and payload lanes do not assign unique input, objective, or result-mode roles.
 
-### OM-60. `RMFastLoad` membership table location
+### OM-60. `RMFastLoad` physical words and active membership
 
-**Question.** Which field gives the position of the `RMFastLoad` active object-id table?
+**Question.** Which complete physical word arrays carry active topology membership when the membership-table admission does not select them?
 
-**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the table as a little-endian count word followed by exactly that many ordered identity words, and states that FACE, EDGE, and VERTEX identities share the space. It does not give the position of the table.
+**Known.** `siemens_nx.md` §7.1 locates the complete physical boundary and word arrays from the header span count and unique monotone boundary structure. §7.2 defines the separately admitted count-and-identity table and its shared FACE, EDGE, and VERTEX identity space. Physical framing alone does not assign active status to a table word.
 
-**Need.** Identify the table position field and the rule that distinguishes the membership table from an earlier plausible candidate span. The current decoder accepts any unsigned 32-bit count whose complete sequence of four-byte identities ends at a parsed modern product record. It has no fixed numeric count range. This location rule supplies the input to the membership decision in OM-33.
+**Need.** A discriminating membership relation for complete physical arrays without an admitted product-adjacent identity table, including the rule for empty or inactive sets.
 
-**Note.** `crates/cadmpeg-codec-nx/src/container.rs` takes the first complete count-and-identity span after the `UGS::Solid::Topol` marker whose suffix parses as a modern product record. An earlier plausible span can win before the membership table. The first-candidate rule has no independent location witness.
+**Conflict.** The physical span count locates storage; it does not identify a topology kind or establish active membership. A product boundary and a topology registry declaration constrain the admitted identity table but do not assign semantics to every complete physical array.
 
+### OM-61. `RMFastLoad` opaque storage roles
+
+**Question.** What do header word `h[1]` and the terminal triple tokens, preamble, and trailer encode?
+
+**Known.** `siemens_nx.md` §7.1 "`RMFastLoad` uses entry-relative physical column storage." defines the unique boundary array and complete terminal triple table. Boundaries can split complete product strings and logical rows. The terminal and class-registry counts are independent; none of the three token positions supplies a universal section-local class selector.
+
+**Need.** Identify independently discriminated logical fields and their native identity relations. Preserve opaque bytes until a complete row supplies the required selector or relation.
 
 ## 3. Assembly and material data
 

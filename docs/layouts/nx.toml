@@ -2286,3 +2286,110 @@ type = "bytes[5]"
 source = "spec"
 anchor = "a7 01 66 32 03"
 value = [167, 1, 102, 50, 3]
+
+[[record]]
+name = "rmfastload_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/rmfastload.rs"
+kind = "byte"
+section = "7.1"
+anchor = "`RMFastLoad` uses entry-relative physical column storage."
+size = 35
+note = "Entry-relative. The platform bytes begin after the length word. Their length and the following filename length determine the nine-word header start."
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "envelope is `ff ff ff ff 00 00 00 00 payload_len:u32 BE`"
+value = [255, 255, 255, 255, 0, 0, 0, 0]
+
+[[record.field]]
+name = "payload_len"
+offset = 8
+type = "u32"
+endianness = "big"
+source = "spec"
+anchor = "`payload_len + 12` equal to the directory-entry size"
+
+[[record.field]]
+name = "marker"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "Bytes `+12..+16` are"
+value = [79, 77, 1, 1]
+
+[[record.gap]]
+offset = 16
+size = 15
+note = "Opaque prefix bytes."
+
+[[record.field]]
+name = "platform_length"
+offset = 31
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "At `+31`, a `u32 LE`"
+
+[[record]]
+name = "rmfastload_header"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/rmfastload.rs"
+kind = "byte"
+section = "7.1"
+anchor = "Nine `u32 LE` header words follow those strings:"
+size = 36
+endianness = "little"
+note = "Offsets are relative to the first byte after both length-prefixed strings."
+
+[[record.field]]
+name = "physical_span_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "h[0] = physical_span_count"
+
+[[record.field]]
+name = "opaque_word"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "h[1] = opaque word"
+
+[[record.field]]
+name = "reserved_word"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "h[2] = 0"
+value = 0
+
+[[record.field]]
+name = "class_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "h[3] = ordered class-registry count"
+
+[[record.field]]
+name = "terminal_row_count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "h[4] = terminal triple-row count"
+
+[[record.field]]
+name = "reserved_words"
+offset = 20
+type = "bytes[12]"
+source = "spec"
+anchor = "h[5] = h[6] = h[7] = 0"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "terminal_offset"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "h[8] = entry-relative terminal table offset"

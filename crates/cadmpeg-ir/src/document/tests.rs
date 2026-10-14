@@ -800,6 +800,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
         (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
         (Some(serde_json::Value::String("14".into())), "Some(\"14\")"),
         (Some(serde_json::Value::String("15".into())), "Some(\"15\")"),
+        (Some(serde_json::Value::String("16".into())), "Some(\"16\")"),
         (None, "None"),
         (Some(serde_json::Value::Number(1.into())), "None"),
     ] {

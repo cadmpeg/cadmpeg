@@ -570,3 +570,35 @@ pub(crate) mod named_construction_name_prefix {
     /// Stated value of `magic` (`bytes[5]`). Spec §7.1.
     pub(crate) const MAGIC_VALUE: [u8; 5] = [0xa7, 0x01, 0x66, 0x32, 0x03];
 }
+
+/// Byte offsets for the `rmfastload_prefix` record.
+///
+/// Spec §7.1. Record length 35 B.
+///
+/// ```text
+/// Entry-relative. The platform bytes begin after the length word. Their length and the following filename length determine the nine-word header start.
+/// ```
+pub(crate) mod rmfastload_prefix {
+    /// Stated value of `signature` (`bytes[8]`). Spec §7.1.
+    pub(crate) const SIGNATURE_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `payload_len` (`u32`, big-endian). Spec §7.1.
+    pub(crate) const PAYLOAD_LEN: usize = 8;
+    /// Offset of `marker` (`bytes[4]`). Spec §7.1.
+    pub(crate) const MARKER: usize = 12;
+    /// Stated value of `marker` (`bytes[4]`). Spec §7.1.
+    pub(crate) const MARKER_VALUE: [u8; 4] = [0x4f, 0x4d, 0x01, 0x01];
+    /// Offset of `platform_length` (`u32`, little-endian). Spec §7.1.
+    pub(crate) const PLATFORM_LENGTH: usize = 31;
+}
+
+/// Byte offsets for the `rmfastload_header` record.
+///
+/// Spec §7.1. Record length 36 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after both length-prefixed strings.
+/// ```
+pub(crate) mod rmfastload_header {
+    /// Record length in bytes. Spec §7.1.
+    pub(crate) const LEN: usize = 36;
+}

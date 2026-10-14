@@ -764,6 +764,45 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 5 | `magic` | `bytes[5]` | big | spec | a7 01 66 32 03 · value `[167, 1, 102, 50, 3]` |
 
+## `rmfastload_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 35 B
+
+Entry-relative. The platform bytes begin after the length word. Their length and the following filename length determine the nine-word header start.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/rmfastload.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `signature` | `bytes[8]` | — | spec | envelope is `ff ff ff ff 00 00 00 00 payload_len:u32 BE` · value `[255, 255, 255, 255, 0, 0, 0, 0]` |
+| 8 | 4 | `payload_len` | `u32` | big | spec | `payload_len + 12` equal to the directory-entry size |
+| 12 | 4 | `marker` | `bytes[4]` | — | spec | Bytes `+12..+16` are · value `[79, 77, 1, 1]` |
+| 31 | 4 | `platform_length` | `u32` | little | spec | At `+31`, a `u32 LE` |
+
+Unstated regions:
+
+- `16..31` (15 B): Opaque prefix bytes.
+
+## `rmfastload_header`
+
+Spec §7.1 · layout: byte offsets · size: 36 B
+
+Offsets are relative to the first byte after both length-prefixed strings.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/rmfastload.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `physical_span_count` | `u32` | little | spec | h[0] = physical_span_count |
+| 4 | 4 | `opaque_word` | `u32` | little | spec | h[1] = opaque word |
+| 8 | 4 | `reserved_word` | `u32` | little | spec | h[2] = 0 · value `0` |
+| 12 | 4 | `class_count` | `u32` | little | spec | h[3] = ordered class-registry count |
+| 16 | 4 | `terminal_row_count` | `u32` | little | spec | h[4] = terminal triple-row count |
+| 20 | 12 | `reserved_words` | `bytes[12]` | little | spec | h[5] = h[6] = h[7] = 0 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 32 | 4 | `terminal_offset` | `u32` | little | spec | h[8] = entry-relative terminal table offset |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
