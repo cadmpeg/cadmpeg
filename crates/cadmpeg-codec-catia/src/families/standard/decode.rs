@@ -5212,7 +5212,8 @@ fn standard_limit_curve_bindings(
                 }
                 Err(
                     cadmpeg_ir::eval::EvaluationFailure::NoValue
-                    | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_),
+                    | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+                    | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted,
                 ) => continue,
             };
             let mut checked_surface = false;

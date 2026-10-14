@@ -585,6 +585,7 @@ pub(super) fn decoded_surface_point_inner_with_budget(
         }) {
         Ok(point) => Ok(Some(point.get())),
         Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
+        Err(EvaluationFailure::WorkExhausted) => Ok(None),
         Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
         Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
             index,
@@ -627,6 +628,7 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
     match evaluated {
         Ok(point) => Ok(Some(point.get())),
         Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
+        Err(EvaluationFailure::WorkExhausted) => Ok(None),
         Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
         Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
             index,

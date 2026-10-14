@@ -83,7 +83,7 @@ fn repeated_inline_basis_and_derivatives_do_not_admit_collections() {
                 assert!(second.iter().sum::<f64>().abs() < f64::EPSILON * 4096.0);
                 assert_eq!(&*scaled.first, &*first);
                 assert_eq!(&*scaled.second, &*second);
-                scratch.finish(()).unwrap();
+                scratch.unless_refused().unwrap();
             }
         }
         assert!(
@@ -105,7 +105,10 @@ fn basis_above_inline_support_keeps_collection_admission() {
     let result = with_policy(policy, |ctx| {
         let scratch = crate::eval::decode::Scratch::new(ctx);
         let result = super::bspline_basis(&scratch, &knots, degree, degree, 0.5);
-        scratch.finish(result).map_err(CodecError::from)
+        scratch
+            .unless_refused()
+            .map(|()| result)
+            .map_err(|refusal| CodecError::from(refusal.into_limit()))
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(resource))
         if resource.operation == "IR B-spline basis"));
@@ -122,7 +125,10 @@ fn inline_quartic_basis_keeps_fill_and_recurrence_work() {
         let result = with_policy(policy, |ctx| {
             let scratch = crate::eval::decode::Scratch::new(ctx);
             let basis = super::bspline_basis(&scratch, &knots, 4, 4, 0.5);
-            scratch.finish(basis).map_err(CodecError::from)
+            scratch
+                .unless_refused()
+                .map(|()| basis)
+                .map_err(|refusal| CodecError::from(refusal.into_limit()))
         });
         if cap == 19 {
             assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
@@ -166,7 +172,10 @@ fn admitted_derivative_arithmetic_refuses_each_work_loop() {
                 )
                 .map(|_| ()),
             };
-            scratch.finish(result).map_err(CodecError::from)
+            scratch
+                .unless_refused()
+                .map(|()| result)
+                .map_err(|refusal| CodecError::from(refusal.into_limit()))
         });
         assert!(
             matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == operation)
@@ -183,7 +192,9 @@ fn knot_span_search_preserves_each_comparison_refusal() {
         policy.limits.max_work_units = cap;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let limit = super::bspline_span(&ctx, &knots, 1, 8, 1.5).expect_err("search comparison");
+        let limit = super::bspline_span(&ctx, &knots, 1, 8, 1.5)
+            .expect_err("search comparison")
+            .into_limit();
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "IR B-spline span search");
         assert!(
@@ -215,7 +226,8 @@ fn basis_recurrence_preserves_each_write_and_blend_refusal() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut values = [0.0; 3];
         let limit = super::fill_bspline_basis(&ctx, &knots, 2, 2, 0.5, &mut values)
-            .expect_err("each recurrence operation requires admission");
+            .expect_err("each recurrence operation requires admission")
+            .into_limit();
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "IR B-spline basis work");
         assert!(
@@ -250,7 +262,7 @@ fn finite_basis_inspection_preserves_refusals_and_stops_at_first_nonfinite() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let scratch = Scratch::new(&ctx);
         assert_eq!(super::all_finite(&scratch, &[0.25, 0.5, 0.25]), None);
-        let limit = scratch.refused().expect("inspection refusal");
+        let limit = scratch.refused().expect("inspection refusal").into_limit();
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "IR B-spline finite basis inspection");
         drop(scratch);
@@ -314,21 +326,21 @@ fn basis_leaf_boundaries_preserve_original_fused_refusal() {
     ] {
         assert_eq!(
             super::bspline_span(&ctx, knots, degree, count, parameter),
-            Err(original)
+            Err(original.into())
         );
     }
     for degree in [0, 1, usize::MAX] {
         let mut values = [0.0; 2];
         assert_eq!(
             super::fill_bspline_basis(&ctx, &[], degree, 0, 0.0, &mut values),
-            Err(original)
+            Err(original.into())
         );
         assert_eq!(values, [0.0; 2]);
     }
     let scratch = Scratch::new(&ctx);
     for values in [&[][..], &[1.0][..], &[0.25, 0.75][..], &[f64::NAN][..]] {
         assert_eq!(super::all_finite(&scratch, values), None);
-        assert_eq!(scratch.refused(), Some(original));
+        assert_eq!(scratch.refused(), Some(original.into()));
     }
     drop(scratch);
     assert!(

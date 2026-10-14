@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
+use super::admission::EvaluationRefusal;
 use super::decode;
 use crate::features::FinitePoint3;
 use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::scalar::FiniteReal;
-use cadmpeg_core::decode::ResourceLimit;
 
 /// Cloneable pole traversal. Admission precedes each input-dependent advance.
 #[derive(Clone)]
@@ -38,7 +38,7 @@ impl Homogeneous {
     pub(super) fn sum(
         scratch: &decode::Scratch<'_, '_>,
         terms: impl Iterator<Item = Option<([f64; 2], f64, FinitePoint3)>> + Clone,
-    ) -> Result<Option<Self>, ResourceLimit> {
+    ) -> Result<Option<Self>, EvaluationRefusal> {
         let input_sized = terms.size_hint().1.is_none_or(|count| count > 2);
         let terms = SumTerms {
             terms,
@@ -92,7 +92,7 @@ impl Homogeneous {
     pub(super) fn weights(
         scratch: &decode::Scratch<'_, '_>,
         values: &[Self],
-    ) -> Result<Option<Vec<f64>>, ResourceLimit> {
+    ) -> Result<Option<Vec<f64>>, EvaluationRefusal> {
         let result = (|| {
             scratch.work(0, "IR homogeneous weight inspection")?;
             for value in values {
