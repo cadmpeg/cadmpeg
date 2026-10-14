@@ -49,6 +49,10 @@ loss_codes! {
     DirectoryMetadataUnreadable => "directory.metadata-unreadable",
     /// A readable display field violates a source rule without changing geometry.
     DirectoryMetadataNoncanonical => "directory.metadata-noncanonical",
+    /// Product-occurrence expansion stopped at the configured output limit.
+    OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
+    /// Product-occurrence expansion stopped at the configured nesting-depth limit.
+    OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
@@ -146,7 +150,9 @@ impl IgesLossCode {
                 Severity::Blocking
             }
             Self::ProceduralReduced => Severity::Info,
-            Self::OccurrenceRootInferenceBlocked
+            Self::OccurrenceExpansionOutputTruncated
+            | Self::OccurrenceExpansionDepthTruncated
+            | Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
@@ -195,9 +201,10 @@ impl IgesLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
-            Self::OccurrenceRootInferenceBlocked | Self::OccurrencePlacementMalformed => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::OccurrenceExpansionOutputTruncated
+            | Self::OccurrenceExpansionDepthTruncated
+            | Self::OccurrenceRootInferenceBlocked
+            | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
@@ -286,6 +293,8 @@ mod tests {
             [
                 "directory.metadata-unreadable",
                 "directory.metadata-noncanonical",
+                "occurrence.expansion-output-truncated",
+                "occurrence.expansion-depth-truncated",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
                 "entity.retained-unprojected",
