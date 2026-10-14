@@ -328,7 +328,7 @@ fn read_i32(bytes: &[u8], offset: usize, name: &str) -> Result<i32, CodecError> 
 #[cfg(test)]
 mod tests {
     use cadmpeg_container::compound::CompoundSnapshot;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::{
         decode_kernel_carrier, parse_carrier, select_active_carrier, ActiveCarrier,
@@ -339,109 +339,10 @@ mod tests {
     use cadmpeg_core::decode::View;
     use cadmpeg_core::CodecError;
 
-    fn header_copy_fixture() -> cadmpeg_asm::kernel_header::BinaryHeader {
-        cadmpeg_asm::kernel_header::BinaryHeader {
-            width: cadmpeg_asm::kernel_header::RefWidth::Eight,
-            metadata: cadmpeg_asm::kernel_header::KernelHeader {
-                save_format_version: Some(700),
-                entity_count: Some(12),
-                flags: Some(3),
-                product_family: Some("family".to_owned()),
-                product_version: Some("version".to_owned()),
-                save_date: Some("date".to_owned()),
-                scale: Some(2.0),
-                linear: Some(0.125),
-                angular: Some(0.25),
-            },
-        }
-    }
-
     #[test]
-    fn kernel_header_copy_charges_each_string_once_and_preserves_metadata() {
-        let header = header_copy_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 17;
-        policy.limits.max_work_units = 17;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
-        assert_eq!(
-            super::copy_kernel_header(&ctx, &header, "header copy test")
-                .expect("header strings fit exact byte and work admission"),
-            header
-        );
-        assert!(matches!(ctx.charge_retained(1, "after header copy"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 17));
-    }
-
-    #[test]
-    fn kernel_header_copy_refuses_retained_limit_before_copy() {
-        let header = header_copy_fixture();
-        for retained in [0, 16] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = retained;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
-            assert!(
-                matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "header copy test")
-            );
-        }
-    }
-
-    #[test]
-    fn kernel_header_copy_refuses_work_before_copy() {
-        let header = header_copy_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
-        assert!(
-            matches!(super::copy_kernel_header(&ctx, &header, "header copy test"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 6
-                    && limit.operation == "header copy test")
-        );
-    }
-
-    #[test]
-    fn kernel_header_copy_preserves_absent_and_empty_strings_without_charges() {
-        let mut header = header_copy_fixture();
-        header.metadata.product_family = None;
-        header.metadata.product_version = Some(String::new());
-        header.metadata.save_date = None;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root context");
-        assert_eq!(
-            super::copy_kernel_header(&ctx, &header, "header copy test")
-                .expect("empty header strings need no admission"),
-            header
-        );
-    }
-
-    #[test]
-    fn parsed_kernel_header_refuses_retained_limit_before_product_copy() {
+    fn parsed_kernel_header_carrier_parses() {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("Inventor".len()) - 1;
-        let (limited, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            parse_carrier(&limited, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain kernel header product string"
-        ));
         let (service, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("service context");
@@ -457,35 +358,9 @@ mod tests {
     }
 
     #[test]
-    fn parsed_kernel_header_refuses_collection_limit_before_box() {
-        let bytes = carrier_fixture(&empty_asm_fixture(), 23);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (limited, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            parse_carrier(&limited, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "box Inventor parsed kernel header"
-        ));
-    }
-
-    #[test]
-    fn absent_kernel_header_detail_refuses_retained_limit_before_copy() {
+    fn absent_kernel_header_detail_is_retained() {
         let bytes = carrier_fixture(b"ASM BinaryFile9", 23);
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (limited, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            parse_carrier(&limited, view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor absent kernel header detail"
-        ));
         let (service, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("service context");
@@ -507,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn active_carrier_scans_refuse_work_limit_before_record_search() {
+    fn active_carrier_is_selected_from_the_part_fixture() {
         let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
         let arena = DecodeArena::new();
         let (setup_ctx, root) =
@@ -519,66 +394,6 @@ mod tests {
             select_active_carrier(&setup_ctx, &inventory.segments, &DocumentKind::Part)
                 .expect("service admission"),
             ActiveCarrierState::Selected(_)
-        ));
-
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Inventor kernel carrier segments"
-        ));
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(inventory.segments.len());
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Inventor typed kernel carrier records"
-        ));
-    }
-
-    #[test]
-    fn selected_carrier_token_refuses_retained_limit_before_copy() {
-        let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
-        let arena = DecodeArena::new();
-        let (setup_ctx, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("carrier fixture context");
-        let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
-        let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
-        let ActiveCarrierState::Selected(carrier) =
-            select_active_carrier(&setup_ctx, &inventory.segments, &DocumentKind::Part)
-                .expect("service admission")
-        else {
-            panic!("selected carrier fixture");
-        };
-        let mut policy = DecodePolicy::service();
-        let header = carrier.header.as_ref().expect("parsed carrier header");
-        let header_strings = [
-            &header.metadata.product_family,
-            &header.metadata.product_version,
-            &header.metadata.save_date,
-        ]
-        .into_iter()
-        .flatten()
-        .map(String::len)
-        .sum::<usize>();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            header_strings + carrier.segment_token.as_str().len() - 1,
-        );
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor selected carrier token"
         ));
     }
 
@@ -674,149 +489,6 @@ mod tests {
         );
         assert!(decoded.brep.bodies.is_empty());
         assert!(decoded.brep.unknowns.is_empty());
-    }
-
-    fn kernel_retained_refusal(
-        bytes: &[u8],
-        carrier: &ActiveCarrier<'_>,
-        operation: &'static str,
-    ) -> u64 {
-        let arena = DecodeArena::new();
-        let header = carrier.header.as_ref().expect("parsed kernel header");
-        let mut cap = 0;
-        for _ in 0..128 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, _) =
-                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
-            match decode_kernel_carrier(&limited, carrier, header) {
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes =>
-                {
-                    let needed = limit
-                        .used
-                        .checked_add(limit.additional)
-                        .expect("fixture charge fits u64");
-                    if limit.operation == operation {
-                        assert_eq!(limit.limit, cap);
-                        return needed;
-                    }
-                    assert!(needed > cap, "fixture advances to its next retained charge");
-                    cap = needed;
-                }
-                Ok(_) => panic!("kernel copy {operation} did not refuse"),
-                Err(error) => panic!("kernel copy {operation} failed elsewhere: {error}"),
-            }
-        }
-        panic!("kernel copy {operation} was not reached");
-    }
-
-    #[test]
-    fn decoded_kernel_metadata_borrow_uses_only_the_owned_header_copy() {
-        let bytes = carrier_fixture(&empty_asm_fixture(), 23);
-        let arena = DecodeArena::new();
-        let (service, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
-        let carrier = parse_carrier(
-            &service,
-            view,
-            &cadmpeg_ir::identity_key!("token"),
-            7,
-            100,
-            23,
-        )
-        .expect("carrier parses");
-        let header = carrier.header.as_ref().expect("header");
-        let needed =
-            kernel_retained_refusal(&bytes, &carrier, "copy Inventor decoded kernel header");
-        // The first refusal includes the family; the owned header also retains these fields.
-        let remaining = [&header.metadata.product_version, &header.metadata.save_date]
-            .into_iter()
-            .flatten()
-            .map(|value| cadmpeg_core::decode::u64_from_index(value.len()))
-            .sum::<u64>();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = needed + remaining;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        let decoded = decode_kernel_carrier(&limited, &carrier, header)
-            .expect("borrowed metadata needs no distinct retained copy");
-        assert_eq!(
-            decoded.header.metadata.product_family,
-            header.metadata.product_family
-        );
-        assert!(matches!(
-            limited.charge_retained(1, "prove the owned header exhausts admission"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-        ));
-        assert!(decode_test_carrier(&service, &carrier).is_ok());
-    }
-
-    #[test]
-    fn decoded_kernel_stream_name_refuses_retained_limit_before_format() {
-        let bytes = carrier_fixture(&empty_asm_fixture(), 23);
-        let arena = DecodeArena::new();
-        let (service, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
-        let carrier = parse_carrier(
-            &service,
-            view,
-            &cadmpeg_ir::identity_key!("token"),
-            7,
-            100,
-            23,
-        )
-        .expect("carrier parses");
-        let needed = kernel_retained_refusal(
-            &bytes,
-            &carrier,
-            "retain Inventor kernel carrier stream name",
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = needed - 1;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            decode_kernel_carrier(&limited, &carrier, carrier.header.as_ref().expect("header")),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor kernel carrier stream name"
-        ));
-        assert!(decode_test_carrier(&service, &carrier).is_ok());
-    }
-
-    #[test]
-    fn decoded_kernel_header_refuses_retained_limit_before_clone() {
-        let bytes = carrier_fixture(&empty_asm_fixture(), 23);
-        let arena = DecodeArena::new();
-        let (service, view) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("service context");
-        let carrier = parse_carrier(
-            &service,
-            view,
-            &cadmpeg_ir::identity_key!("token"),
-            7,
-            100,
-            23,
-        )
-        .expect("carrier parses");
-        let needed =
-            kernel_retained_refusal(&bytes, &carrier, "copy Inventor decoded kernel header");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = needed - 1;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            decode_kernel_carrier(&limited, &carrier, carrier.header.as_ref().expect("header")),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "copy Inventor decoded kernel header"
-        ));
-        assert!(decode_test_carrier(&service, &carrier).is_ok());
     }
 
     #[test]

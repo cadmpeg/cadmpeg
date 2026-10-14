@@ -689,13 +689,12 @@ impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
 mod tests {
     use super::{content_header, reference_list, Cursor};
     use crate::test_support::truncation::displayed_truncation;
-    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
 
     #[test]
-    fn pmdc_utf16_local_ceiling_refuses_resources_for_complete_payload() {
+    fn pmdc_utf16_local_ceiling_is_malformed_for_complete_payload() {
         let units = 1_048_577_u32;
         let mut bytes = units.to_le_bytes().to_vec();
         bytes.extend(std::iter::repeat_n(
@@ -708,9 +707,9 @@ mod tests {
         let error = Cursor::new(root)
             .utf16(&ctx, "name")
             .expect_err("local string ceiling");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.operation == "Inventor PmDc UTF-16 code units"
-                && limit.limit == 1_048_576 && Some(limit) == ctx.resource_refusal()));
+        assert!(matches!(&error, CodecError::Malformed(detail)
+            if detail.contains("UTF-16 length 1048577 exceeds 1048576")));
+        assert!(ctx.resource_refusal().is_none());
         let truncated = units.to_le_bytes();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&truncated, &arena, &DecodePolicy::service())
@@ -766,14 +765,14 @@ mod tests {
     }
 
     #[test]
-    fn pmdc_counted_lists_prove_extent_before_admission() {
+    fn pmdc_counted_lists_prove_extent() {
         for marker in [2_u16, 8] {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(&marker.to_le_bytes());
             bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
             bytes.extend_from_slice(&1_000_000_u32.to_le_bytes());
             bytes.extend_from_slice(if marker == 8 { &[0; 4] } else { &[0; 8] });
-            crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
+            crate::test_support::test_fixtures::parse(&bytes, |_, root| {
                 assert!(matches!(
                     reference_list(&mut Cursor::new(root), marker, "test"),
                     Err(CodecError::Malformed(_))
@@ -783,55 +782,31 @@ mod tests {
                     Err(CodecError::Malformed(_))
                 ));
             });
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-            assert!(matches!(
-                reference_list(&ctx, &mut Cursor::new(root), marker, "test"),
-                Err(CodecError::Malformed(_))
-            ));
-            assert!(matches!(
-                super::u32_list(&ctx, &mut Cursor::new(root), marker, "test"),
-                Err(CodecError::Malformed(_))
-            ));
         }
     }
 
     #[test]
-    fn pmdc_counted_lists_admit_retained_storage() {
+    fn pmdc_counted_lists_read_one_entry() {
         let bytes = [
             2_u8, 0, 0, 0x30, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
         ];
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
-        assert!(
-            matches!(reference_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("test context");
+        assert_eq!(
+            reference_list(&mut Cursor::new(root), 2, "test")
+                .expect("one reference")
+                .references()
+                .len(),
+            1
         );
-        assert!(
-            matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
-        );
+        assert!(super::u32_list(&mut Cursor::new(root), 2, "test").is_ok());
     }
 
     #[test]
-    fn pmdc_utf16_refuses_exact_utf8_retained_limit_before_decode() {
+    fn pmdc_utf16_decodes() {
         let bytes = [1_u8, 0, 0, 0, 0xac, 0x20];
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("PmDc string fits input cap");
-        assert!(matches!(
-            Cursor::new(root).utf16(&ctx, "name"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc string"
-        ));
-
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("PmDc string fits service policy");
         assert_eq!(
@@ -839,22 +814,6 @@ mod tests {
                 .utf16(&ctx, "name")
                 .expect("valid PmDc string"),
             "€"
-        );
-    }
-
-    #[test]
-    fn pmdc_utf16_needs_no_materialized_code_units() {
-        let bytes = [1_u8, 0, 0, 0, b'A', 0];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("PmDc string fits input cap");
-        assert_eq!(
-            Cursor::new(root)
-                .utf16(&ctx, "name")
-                .expect("direct UTF-16 decode needs no temporary storage"),
-            "A"
         );
     }
 
@@ -928,9 +887,9 @@ mod tests {
         bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
         let arena = DecodeArena::new();
         let text = match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
-            Ok((ctx, root)) => {
+            Ok((_, root)) => {
                 let mut cursor = Cursor::new(root);
-                displayed_truncation(reference_list(&ctx, &mut cursor, 8, "sketch entity array"))
+                displayed_truncation(reference_list(&mut cursor, 8, "sketch entity array"))
             }
             Err(error) => error.to_string(),
         };

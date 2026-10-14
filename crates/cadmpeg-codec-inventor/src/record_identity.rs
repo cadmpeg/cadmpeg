@@ -236,12 +236,7 @@ mod tests {
         let record = super::Located::new(
             Payload { value: 7 },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             1,
         );
         assert_native_limit(
