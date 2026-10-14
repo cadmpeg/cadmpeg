@@ -104,10 +104,11 @@ fn native_writer_refuses_before_serializing_later_field() {
         }
     }
 
+    // A record's value tree is temporary storage: the record keeps the text
+    // rendered from it.
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>()) + 1;
+    policy.limits.max_materialized_bytes = 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let visits = Cell::new(0);
     let record = Record {
@@ -121,7 +122,7 @@ fn native_writer_refuses_before_serializing_later_field() {
     assert_eq!(visits.get(), 0);
     assert!(matches!(cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
+            if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "serialize native record"));
 
     let (service, _) =
@@ -135,15 +136,25 @@ fn native_writer_refuses_before_serializing_later_field() {
     assert_eq!(stored[0].field("payload"), Some(serde_json::json!("later")));
 }
 
-#[test]
-fn native_arena_sort_scratch_refuses_materialized_limit_before_stable_sort() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let records = [
+/// Two equal identities, one that sorts first, and enough later records that
+/// the sort permutation outweighs one record's temporary value tree.
+fn sort_fixture() -> Vec<serde_json::Value> {
+    let mut records = vec![
         serde_json::json!({"id":"test:native:record#same","ordinal":1}),
         serde_json::json!({"id":"test:native:record#same","ordinal":2}),
         serde_json::json!({"id":"test:native:record#first","ordinal":3}),
     ];
+    records.extend((4..256).map(|ordinal| {
+        serde_json::json!({"id": format!("test:native:record#z{ordinal:03}"), "ordinal": ordinal})
+    }));
+    records
+}
+
+#[test]
+fn native_arena_sort_scratch_refuses_materialized_limit_before_stable_sort() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let records = sort_fixture();
     let scratch = u64::try_from(records.len() * std::mem::size_of::<usize>()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -625,7 +636,7 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     let wire = serde_json::to_value(&document).unwrap();
     let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
     let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
-    assert_eq!(record.fields(), &fields);
+    assert_eq!(record.fields(), fields);
     assert_eq!(record.field("nested"), Some(nested));
     assert_eq!(record.field("missing"), None);
     assert_eq!(record.field("id"), None);
@@ -707,6 +718,28 @@ fn a_field_nested_past_the_native_bound_never_enters_a_record() {
             .to_string()
             .contains(&format!("nests deeper than {MAX_NATIVE_NESTING_DEPTH}")),
         "{error}"
+    );
+}
+
+#[test]
+fn stored_text_reads_back_a_field_nested_to_the_native_bound() {
+    use crate::native::MAX_NATIVE_NESTING_DEPTH;
+
+    let id = "test:native:record#deep";
+    let mut nested = serde_json::json!(7);
+    for _ in 0..MAX_NATIVE_NESTING_DEPTH {
+        nested = serde_json::Value::Array(vec![nested]);
+    }
+    let record = NativeRecord::new(
+        crate::ids::Identity::new(id).unwrap(),
+        serde_json::Map::from_iter([("nested".to_owned(), nested.clone())]),
+    )
+    .unwrap();
+    assert_eq!(record.field("nested"), Some(nested.clone()));
+    assert_eq!(record.fields()["nested"], nested);
+    assert_eq!(
+        serde_json::to_value(&record).unwrap(),
+        serde_json::json!({"id": id, "nested": nested})
     );
 }
 
@@ -1217,11 +1250,7 @@ fn native_json_writer_has_no_storage_charge() {
 #[test]
 fn native_sort_uses_only_index_permutation_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let records = [
-        serde_json::json!({"id":"test:native:record#same","ordinal":1}),
-        serde_json::json!({"id":"test:native:record#same","ordinal":2}),
-        serde_json::json!({"id":"test:native:record#first","ordinal":3}),
-    ];
+    let records = sort_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes =
@@ -1430,7 +1459,7 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
 }
 
 #[test]
-fn native_field_copy_preserves_bits_and_borrowed_storage() {
+fn native_field_copy_preserves_bits() {
     let record = NativeRecord::new(
         crate::ids::Identity::new("test:native:record#fields").unwrap(),
         serde_json::from_value(serde_json::json!({
@@ -1442,14 +1471,9 @@ fn native_field_copy_preserves_bits_and_borrowed_storage() {
         .unwrap(),
     )
     .unwrap();
-    assert!(std::ptr::eq(record.fields(), record.fields()));
     let ctx = super::test_ctx();
     let copied = record.copy_fields(&ctx).unwrap();
-    assert_eq!(&copied, record.fields());
-    assert_ne!(
-        copied["text"].as_str().unwrap().as_ptr(),
-        record.fields()["text"].as_str().unwrap().as_ptr()
-    );
+    assert_eq!(copied, record.fields());
     assert_eq!(copied["unsigned"].as_u64(), Some(u64::MAX));
     assert_eq!(
         copied["negative_zero"].as_f64().unwrap().to_bits(),
