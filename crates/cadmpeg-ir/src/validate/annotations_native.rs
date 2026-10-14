@@ -180,21 +180,14 @@ fn native_field_path_resolves(
     if first == "id" {
         return Ok(components.next().is_none());
     }
-    let mut value = None;
-    for (key, field) in record.fields() {
-        ctx.charge_work(1, "annotation native field map scan")?;
-        ctx.charge_work(
-            u64_from_index(first.len()),
-            "annotation native field comparison",
-        )?;
-        if key == first {
-            value = Some(field);
-            break;
-        }
-    }
-    let Some(mut value) = value else {
+    ctx.charge_work(
+        u64_from_index(record.text_len()),
+        "annotation native field map scan",
+    )?;
+    let Some(field) = record.field(first) else {
         return Ok(false);
     };
+    let mut value = &field;
     for component in components {
         ctx.charge_work(1, "annotation native field path node")?;
         value = match value {
@@ -509,7 +502,7 @@ pub(super) fn check_native_links(
                 let NativeEntity::Product(record) = entity else {
                     for target in entity.links(ctx)? {
                         let target = target?;
-                        if !all_targets.contains(ctx, target)? {
+                        if !all_targets.contains(ctx, &target)? {
                             super::record_finding(
                                 ctx,
                                 findings,
@@ -522,10 +515,11 @@ pub(super) fn check_native_links(
                     }
                     continue;
                 };
-                for _ in 0..=record.fields().len() {
-                    ctx.charge_work(6, "native link field lookup")?;
-                }
-                let Some(value) = record.fields().get("links") else {
+                ctx.charge_work(
+                    u64_from_index(record.text_len()),
+                    "native link field lookup",
+                )?;
+                let Some(value) = record.field("links") else {
                     continue;
                 };
                 ctx.charge_work(

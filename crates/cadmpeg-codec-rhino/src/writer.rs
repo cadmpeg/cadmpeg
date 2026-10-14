@@ -789,7 +789,7 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
 }
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let fields = record.fields();
+    let fields = &record.fields();
     json_i64(fields, "archive_index") == Some(0)
         && json_i64(fields, "linetype_index") == Some(-1)
         && json_i64(fields, "material_index") == Some(-1)
@@ -801,7 +801,7 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let fields = record.fields();
+    let fields = &record.fields();
     json_i64(fields, "layer_index") == Some(0)
         && json_i64(fields, "material_index") == Some(-1)
         && json_i64(fields, "linetype_index") == Some(-1)

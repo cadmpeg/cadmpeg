@@ -48,6 +48,29 @@ pub(super) fn check_carrier_reachability(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ir = view.ir;
+    // NativeLinks reports malformed link fields. Read each source link here so
+    // one malformed record cannot erase reachability from the other records.
+    // The links are collected first: a product record parses them from its
+    // text, and the identity sets below borrow them.
+    let mut unknown_links = Vec::new();
+    view.visit(
+        |work| ctx.charge_work(u64_from_index(work), "carrier native arena scan"),
+        |_, arena, records| {
+            ctx.charge_work(
+                u64_from_index(arena.len()),
+                "carrier native arena comparison",
+            )?;
+            if arena == "unknowns" {
+                for record in records.records() {
+                    ctx.charge_work(1, "carrier reference scan")?;
+                    for link in record.links(ctx)? {
+                        ctx.push_vec(&mut unknown_links, link?, "collect carrier native links")?;
+                    }
+                }
+            }
+            Ok(())
+        },
+    )?;
     let mut surfaces = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut curves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut pcurves = BorrowedIdentities::build(ctx, |_| Ok(()))?;
@@ -888,28 +911,11 @@ pub(super) fn check_carrier_reachability(
             ProceduralCurveDefinition::Unknown { .. } => {}
         }
     }
-    // NativeLinks reports malformed link fields. Read each source link here so
-    // one malformed record cannot erase reachability from the other records.
-    view.visit(
-        |work| ctx.charge_work(u64_from_index(work), "carrier native arena scan"),
-        |_, arena, records| {
-            ctx.charge_work(
-                u64_from_index(arena.len()),
-                "carrier native arena comparison",
-            )?;
-            if arena == "unknowns" {
-                for record in records.records() {
-                    ctx.charge_work(1, "carrier reference scan")?;
-                    for link in record.links(ctx)? {
-                        let link = link?;
-                        surfaces.insert_unique(link, ())?;
-                        curves.insert_unique(link, ())?;
-                    }
-                }
-            }
-            Ok(())
-        },
-    )?;
+    for link in &unknown_links {
+        ctx.charge_work(1, "carrier reference scan")?;
+        surfaces.insert_unique(link.as_ref(), ())?;
+        curves.insert_unique(link.as_ref(), ())?;
+    }
     let composite_segments = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves {
             ctx.charge_work(1, "carrier reference scan")?;
