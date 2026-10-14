@@ -136,10 +136,6 @@ pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String, C
     let ctx = DecodeContext::new(&arena, &policy, false);
     let mut bytes = Vec::new();
     ctx.complete_input(&mut file, &mut bytes)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "validate text input UTF-8",
-    )?;
     let text =
         String::from_utf8(bytes).map_err(|_| CodecError::Malformed("input is not UTF-8".into()))?;
     ctx.finish_session()?;
@@ -581,11 +577,9 @@ mod tests {
             DecodeContext::from_root_bytes(&cli_prefix, &arena, &DecodePolicy::default())
                 .expect("root");
         let catalog = InputCatalog::with_builtins();
-        let mut candidates = Vec::new();
-        let _storage = catalog
-            .candidates(&ctx, root, &mut candidates)
-            .expect("candidates");
-        let cli_candidates = candidates
+        let cli_candidates = catalog
+            .candidates(&ctx, root)
+            .expect("candidates")
             .into_iter()
             .map(|(codec, confidence)| (codec.id(), confidence))
             .collect::<Vec<_>>();
