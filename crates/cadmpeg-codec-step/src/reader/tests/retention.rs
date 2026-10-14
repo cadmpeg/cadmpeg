@@ -5,42 +5,15 @@ use std::collections::HashSet;
 use std::fmt::Write;
 
 #[test]
-fn claim_handoffs_reuse_admitted_storage_and_preserve_the_union() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1000;
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let source = ctx
-            .collect_hash_set(0..1000, "fixture claims")
-            .expect("admitted source");
-        let mut target = HashSet::new();
-        crate::reader::merge_claims(&mut target, source, ctx, "test claim merge")
-            .expect("owned storage transfers without a second allocation");
-        assert_eq!(target.len(), 1000);
-    });
-    policy.limits.max_collection_items = 4;
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let mut target = ctx
-            .collect_hash_set([2], "fixture claims")
-            .expect("admitted target");
-        let source = ctx
-            .collect_hash_set([1, 2, 3], "fixture claims")
-            .expect("admitted source");
-        crate::reader::merge_claims(&mut target, source, ctx, "test claim merge")
-            .expect("overlapping larger storage transfers without growth");
-        assert_eq!(target, HashSet::from([1, 2, 3]));
-    });
-    policy.limits.max_collection_items = 2;
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let mut target = ctx
-            .collect_hash_set([1], "fixture claims")
-            .expect("admitted target");
-        let source = ctx
-            .collect_hash_set([2], "fixture claims")
-            .expect("admitted source");
-        assert!(
-            matches!(crate::reader::merge_claims(&mut target, source, ctx, "test claim merge"), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems && limit.operation == "test claim merge")
-        );
-    });
+fn claim_handoffs_preserve_the_union() {
+    let source = (0..1000).collect::<HashSet<_>>();
+    let mut target = HashSet::new();
+    crate::reader::merge_claims(&mut target, source);
+    assert_eq!(target.len(), 1000);
+
+    let mut target = HashSet::from([2]);
+    crate::reader::merge_claims(&mut target, HashSet::from([1, 2, 3]));
+    assert_eq!(target, HashSet::from([1, 2, 3]));
 }
 
 #[test]
@@ -55,12 +28,9 @@ fn retention_reference_index_stores_no_unrelated_record_ids() {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("bounded reference cycle");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     crate::test_support::with_policy_context(source.as_bytes(), &policy, |_, ctx| {
-        let carriers =
-            crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), ctx)
-                .expect("empty geometry index");
+        let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty());
         let references = crate::reader::referenced_record_ids(
             &exchange,
             &cadmpeg_ir::CadIr::empty(),
@@ -85,8 +55,7 @@ fn retention_reference_index_keeps_point_curve_and_surface_uses() {
         Ok::<_, cadmpeg_core::CodecError>((ir, carriers, geometry))
     })
     .expect("decoded carriers");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     crate::test_support::with_policy_context(source, &policy, |_, ctx| {
         let references =
             crate::reader::referenced_record_ids(&exchange, &ir, &geometry.claims, &carriers, ctx)
@@ -109,12 +78,8 @@ fn retention_reference_index_reuses_transferred_carrier_ownership() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("carrier references");
-    let carriers = crate::test_support::with_service_context(source, |_, ctx| {
-        crate::reader::index::CarrierIndex::from_ir(ir, ctx)
-    })
-    .expect("existing carrier index");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    let carriers = { crate::reader::index::CarrierIndex::from_ir(ir) };
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     crate::test_support::with_policy_context(source, &policy, |_, ctx| {
         let references = crate::reader::referenced_record_ids(
             &exchange,
@@ -141,9 +106,8 @@ fn record_closure_streams_repeated_roots_and_a_reference_cycle() {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("bounded cycle");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     // Sixteen allocated membership blocks and one reusable pending slot.
-    policy.limits.max_collection_items = 17;
     crate::test_support::with_policy_context(source.as_bytes(), &policy, |_, ctx| {
         let closure = crate::reader::record_closure(1..=1000, &exchange, ctx)
             .expect("each source record is queued once");
@@ -161,9 +125,8 @@ fn record_closure_keeps_nested_references_and_reuses_admitted_pending_slots() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("nested reference graph");
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     // One membership block and four maximum-live pending slots.
-    policy.limits.max_collection_items = 5;
     crate::test_support::with_policy_context(source, &policy, |_, ctx| {
         let closure = crate::reader::record_closure([1, 1, 5], &exchange, ctx)
             .expect("nested graph closes with reused storage");

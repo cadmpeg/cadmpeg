@@ -7,7 +7,7 @@ use cadmpeg_core::{
     decode::{DecodeContext, View},
     CodecError,
 };
-use cadmpeg_ir::{report::loss::LossNote, unknown::UnknownRecord};
+use cadmpeg_ir::unknown::UnknownRecord;
 
 fn noncanonical(entry: &EntryRecord) -> bool {
     entry.uses_utf8_name_encoding()
@@ -20,24 +20,16 @@ fn noncanonical(entry: &EntryRecord) -> bool {
 }
 
 pub(crate) fn losses(
-    ctx: &DecodeContext<'_>,
     archive: &ArchiveSnapshot<'_>,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> std::vec::Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = Vec::new();
     for entry in archive.entries() {
-        ctx.charge_work(1, "STEP ZIP profile declarations")?;
         if noncanonical(entry) {
-            let message = ctx.format_retained(format_args!(
-                "ZIP member {:?} has noncanonical filename, compression, encryption or local framing; retained its declaration while decoding the required root", entry.name),
-                "STEP ZIP recovery diagnostic")?;
-            ctx.push_vec(
-                &mut losses,
-                StepLossCode::ContainerMemberNoncanonical.note(message),
-                "STEP ZIP recovery losses",
-            )?;
+            let message = format!("ZIP member {:?} has noncanonical filename, compression, encryption or local framing; retained its declaration while decoding the required root", entry.name);
+            losses.push(StepLossCode::ContainerMemberNoncanonical.note(message));
         }
     }
-    Ok(losses)
+    losses
 }
 
 pub(crate) fn retain(
@@ -62,16 +54,13 @@ pub(crate) fn retain(
             })?)
             .ok_or_else(|| CodecError::malformed("ZIP declaration end is outside source"))?;
         let id = ids::zip_declaration(range.start);
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id.as_str().len()),
-            "STEP ZIP declaration identity",
+
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "STEP ZIP retained declaration",
         )?;
-        let bytes = ctx.copy_retained(bytes, "STEP ZIP retained declaration")?;
-        ctx.push_vec(
-            &mut records,
-            UnknownRecord::retained(id, range.start, bytes, Vec::new()),
-            "STEP ZIP retained declarations",
-        )?;
+        let bytes = bytes.to_vec();
+        records.push(UnknownRecord::retained(id, range.start, bytes, Vec::new()));
     }
     decoded
         .source_fidelity
