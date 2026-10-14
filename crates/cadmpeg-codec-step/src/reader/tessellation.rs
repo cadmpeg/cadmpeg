@@ -613,9 +613,17 @@ impl TessellationItemAssociator<'_, '_, '_> {
 fn distinct_placement_count(placements: &[Transform]) -> usize {
     placements
         .iter()
-        .enumerate()
-        .filter(|(index, placement)| !placements[..*index].contains(placement))
-        .count()
+        .map(|placement| placement_key(*placement))
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+/// Transform coefficients are finite, so two transforms compare equal exactly
+/// when their coefficient bits match after negative zero folds into zero.
+fn placement_key(placement: Transform) -> [[u64; 4]; 3] {
+    placement
+        .affine_rows()
+        .map(|row| row.map(|value| (value + 0.0).to_bits()))
 }
 
 fn distinct_placement(placements: &[Transform]) -> Option<Transform> {

@@ -83,8 +83,6 @@ fn no_admitted_relation_reports_no_admission_warning() {
 
 #[test]
 fn pcurve_warning_retains_exact_text_without_intermediate_buffers() {
-    {
-        let note = pcurve_admission_note(&admissions(1)).expect("warning fits");
-        assert_eq!(note.message, "a finite endpoint and locus witness admits 1 pcurve relation(s); global model-space point-set equality and direction are unproved: curve #0 on surface #100 at coedge use #200");
-    };
+    let note = pcurve_admission_note(&admissions(1)).expect("warning fits");
+    assert_eq!(note.message, "a finite endpoint and locus witness admits 1 pcurve relation(s); global model-space point-set equality and direction are unproved: curve #0 on surface #100 at coedge use #200");
 }
