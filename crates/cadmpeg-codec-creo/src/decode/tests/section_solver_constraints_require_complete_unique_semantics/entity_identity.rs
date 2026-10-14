@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{declared_solver_rows, section_skamp_constraints, synchronize_skamp_count};
-use super::fixtures::{base_definition, resolved_section_reference_line_geometry};
+use super::fixtures::base_definition;
 use crate::decode::sketch::coordinates::resolved_section_points;
 use crate::decode::sketch::geometry::{
-    section_centered_line_geometry, section_point_row_geometry, section_reference_line_geometry,
+    resolved_section_reference_line_geometry, section_centered_line_geometry,
+    section_point_row_geometry, section_reference_line_geometry,
 };
 use crate::decode::sketch::skamp::section_skamp_selected_point_id;
 use crate::decode::sketch_transfer::identity::{
@@ -53,8 +54,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
             offset: 95,
         }];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entities(ctx, &solver_only))
-            .expect("service solver-only entities"),
+        solver_only_section_entities(&solver_only),
         BTreeMap::from([(99, 95)])
     );
     let mut whole_entity_tangent = definition.clone();
@@ -290,10 +290,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
             duplicate_line,
         ));
-    let unique_ids = crate::decode::with_test_decode_ctx(|ctx| {
-        unique_section_segment_external_ids(ctx, &duplicate_entity)
-    })
-    .expect("service unique identities");
+    let unique_ids = { unique_section_segment_external_ids(&duplicate_entity) };
     assert!(!unique_ids.contains(&12));
     assert_eq!(
         section_segment_identity_suffix(
@@ -342,19 +339,8 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         .insert(crate::feature::segment_rows::SegmentRow::Opaque(
             opaque_segment.clone(),
         ));
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(
-            ctx,
-            &opaque_entity
-        ))
-        .expect("service unique identities")
-        .contains(&99)
-    );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &opaque_entity))
-            .expect("service section identities")
-            .contains(&99)
-    );
+    assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
+    assert!(section_entity_external_ids(&opaque_entity).contains(&99));
 
     let mut opaque_point = definition.clone();
     opaque_point
@@ -400,37 +386,23 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     );
     assert!(section_skamp_is_point(&opaque_point, &opaque_point_item));
     assert!(matches!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
-            ctx, refusal,
-            &opaque_point,
-            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::definitions::FeatureSkampItem {
+        section_skamp_locus(&opaque_point, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"), &crate::feature::definitions::FeatureSkampItem {
                 sense: 4,
                 ..opaque_point_item.clone()
-            },
-        )),
+            }),
         Some(SketchLocus::Entity(entity)) if entity.as_str().ends_with(":99")
     ));
     assert!(matches!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_midpoint(
-            ctx, refusal,
-            &opaque_point,
-            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::definitions::FeatureSkampItem {
+        section_skamp_midpoint(&opaque_point, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"), &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
-            },
-            &opaque_point_item,
-            None,
-        )),
+            }, &opaque_point_item, None),
         Some((SketchLocus::Entity(entity), target))
             if entity.as_str().ends_with(":99") && target.as_str().ends_with(":12")
     ));
     assert_eq!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| {
+        {
             section_skamp_midpoint(
-                ctx,
-                refusal,
                 &opaque_point,
                 &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
                 &opaque_point_item,
@@ -448,7 +420,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                     .expect("valid test fixture"),
                 )])),
             )
-        }),
+        },
         None
     );
     let centered_line = crate::feature::definitions::FeatureCenteredLineSegment {
@@ -650,15 +622,10 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
     };
     assert!(section_skamp_is_line(&opaque_line, &opaque_line_item));
     assert!(matches!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
-            ctx, refusal,
-            &opaque_line,
-            &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::definitions::FeatureSkampItem {
+        section_skamp_locus(&opaque_line, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"), &crate::feature::definitions::FeatureSkampItem {
                 sense: 2,
                 ..opaque_line_item
-            },
-        )),
+            }),
         Some(SketchLocus::Start(entity)) if entity.as_str().ends_with(":100")
     ));
     let mut solver_only_point_midpoint = opaque_line.clone();
@@ -956,28 +923,7 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                 ..opaque_segment
             },
         ));
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(
-            ctx,
-            &opaque_collision
-        ))
-        .expect("service unique identities")
-        .contains(&12)
-    );
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| ambiguous_section_segment_external_ids(
-            ctx,
-            &opaque_collision
-        ))
-        .expect("service ambiguous identities")
-        .contains(&12)
-    );
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(
-            ctx,
-            &opaque_collision
-        ))
-        .expect("service section identities")
-        .contains(&12)
-    );
+    assert!(!unique_section_segment_external_ids(&opaque_collision).contains(&12));
+    assert!(ambiguous_section_segment_external_ids(&opaque_collision).contains(&12));
+    assert!(!section_entity_external_ids(&opaque_collision).contains(&12));
 }

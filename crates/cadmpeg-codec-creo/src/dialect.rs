@@ -86,12 +86,9 @@ impl DialectClassification {
     }
 
     /// The loss charged exactly for the recovered variant.
-    pub(crate) fn loss(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
+    pub(crate) fn loss(&self) -> Option<LossNote> {
         let ClassificationState::Recovered { cause, .. } = &self.0 else {
-            return Ok(None);
+            return None;
         };
         let cause = match cause {
             UnknownLayout::DepdbRootMissing => {
@@ -105,13 +102,10 @@ impl DialectClassification {
                  #P_OBJECT frame"
             }
         };
-        Ok(Some(CreoLossCode::SourceDialectUnverified.note(ctx.format_retained(
-            format_args!(
-                "{cause}. This decode ran the layout-independent path only, so every ND, DEPDB, and \
-                 legacy ASCII decode gate was skipped"
-            ),
-            "creo unverified dialect loss text",
-        )?)))
+        Some(CreoLossCode::SourceDialectUnverified.note(format!(
+            "{cause}. This decode ran the layout-independent path only, so every ND, DEPDB, and \
+         legacy ASCII decode gate was skipped"
+        )))
     }
 }
 
@@ -147,37 +141,28 @@ impl Layout {
 /// `creo:nd`, `creo:depdb`, or the residual row itself as a grammar would assert
 /// a substitution that did not happen.
 pub(crate) fn classify(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<DialectClassification, cadmpeg_core::CodecError> {
     let declared_key = |name: &'static str| {
-        cadmpeg_core::text::NonBlankString::new(
-            ctx.copy_retained_text(name, "creo declared dialect key")?,
-        )
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("declared dialect key is blank"))
+        cadmpeg_core::text::NonBlankString::new(name.to_owned())
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("declared dialect key is blank"))
     };
     let layout = &scan.framing.layout;
     let mut declared = BTreeMap::new();
-    ctx.insert_btree_map(
-        &mut declared,
+    declared.insert(
         declared_key(DECLARED_VERSION_LINE)?,
-        ctx.copy_retained_text(&scan.framing.version_line, "creo declared version line")?,
-        "creo declared dialect nodes",
-    )?;
+        scan.framing.version_line.clone(),
+    );
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
-        ctx.insert_btree_map(
-            &mut declared,
+        declared.insert(
             declared_key(DECLARED_LEGACY_ASCII_SCHEMA)?,
-            ctx.copy_retained_text(&legacy.schema, "creo declared legacy schema")?,
-            "creo declared dialect nodes",
-        )?;
+            legacy.schema.clone(),
+        );
         if let Some(release) = &legacy.product_release {
-            ctx.insert_btree_map(
-                &mut declared,
+            declared.insert(
                 declared_key(DECLARED_LEGACY_ASCII_PRODUCT_RELEASE)?,
-                ctx.copy_retained_text(release, "creo declared product release")?,
-                "creo declared dialect nodes",
-            )?;
+                release.to_owned(),
+            );
         }
     }
     Ok(match layout {

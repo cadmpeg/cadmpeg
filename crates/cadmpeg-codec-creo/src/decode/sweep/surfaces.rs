@@ -48,14 +48,11 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::BTreeSet;
 
 fn push_saved_spline_loss(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     message: impl std::fmt::Display,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(format_args!("{message}"), "creo saved spline loss text")?;
-    ctx.reserve_vec(losses, 1, "creo saved spline losses")?;
+) {
+    let message = format!("{message}");
     losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(message));
-    Ok(())
 }
 
 pub(in super::super) fn revolved_section_surface(
@@ -234,19 +231,14 @@ pub(in super::super) fn placed_section_geometry_curve(
 }
 
 pub(in super::super) fn placed_sketch_curve_ref(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: Option<&crate::placement::FeatureSectionTransform>,
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
     geometry: &SketchGeometry,
-) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(transform) = transform else {
-        return Ok(None);
-    };
-    if placed_section_geometry_curve(transform, geometry).is_none() {
-        return Ok(None);
-    }
-    sketch_section_curve_id_admitted(ctx, sketch, suffix).map(Some)
+) -> Option<String> {
+    let transform = transform?;
+    placed_section_geometry_curve(transform, geometry)?;
+    Some(sketch_section_curve_id_admitted(sketch, suffix))
 }
 
 fn unique_feature_surface_row(
@@ -270,17 +262,16 @@ pub(in super::super) fn transfer_saved_spline_curves(
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )?
+        )
         .is_none()
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -292,45 +283,35 @@ pub(in super::super) fn transfer_saved_spline_curves(
         {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
-                let records = refusal.take_records_checked()?;
+                let records = refusal.take_records();
                 if records.is_empty() {
                     push_saved_spline_loss(
-                        ctx,
                         losses,
                         format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve.",
                             spline.offset
                         ),
-                    )?;
+                    );
                 } else {
                     push_saved_spline_loss(
-                        ctx,
                         losses,
                         format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve: {}",
                             spline.offset,
                             JoinedLaneRecords(&records)
                         ),
-                    )?;
+                    );
                 }
                 continue;
             };
-            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
-                ctx.format_scoped(
-                    format_args!("{entity_id}"),
-                    "creo saved spline identity suffix",
-                )?
+            let suffix = if let Some(entity_id) = spline.entity_id {
+                format!("{entity_id}")
             } else {
-                ctx.format_scoped(
-                    format_args!("offset{}", spline.offset),
-                    "creo saved spline identity suffix",
-                )?
+                format!("offset{}", spline.offset)
             };
             let curve_id = crate::identity::compose_checked::<CurveId>(
-                ctx,
                 &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
                 format_args!("{}:{suffix}", definition.identity.id()),
-                "creo saved spline curve identity",
             )?;
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
@@ -358,11 +339,9 @@ pub(in super::super) fn transfer_saved_spline_curves(
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: crate::identity::source_object_id_checked(
-                            ctx,
-                            format_args!("FeatDefs:saved_spline#{suffix}"),
-                            "creo source object identity",
-                        )?,
+                        object_id: crate::identity::source_object_id_checked(format_args!(
+                            "FeatDefs:saved_spline#{suffix}"
+                        ))?,
                         name: None,
                         color: None,
                         visible: None,
@@ -437,20 +416,8 @@ pub(in super::super) fn revolved_nurbs_surface(
             .pole_rows()
             .weight_at(index)
             .map_or(1.0, |weight| weight);
-        ctx.reserve_vec(&mut control_points, 1, "creo revolved NURBS pole rows")?;
-        ctx.reserve_vec(&mut weights, 1, "creo revolved NURBS weight rows")?;
         let mut point_row = Vec::new();
         let mut weight_row = Vec::new();
-        ctx.reserve_vec(
-            &mut point_row,
-            angular_poles.len(),
-            "creo revolved NURBS poles",
-        )?;
-        ctx.reserve_vec(
-            &mut weight_row,
-            angular_weights.len(),
-            "creo revolved NURBS weights",
-        )?;
         for ([radial_scale, tangent_scale], angular_weight) in
             angular_poles.into_iter().zip(angular_weights)
         {
@@ -465,11 +432,6 @@ pub(in super::super) fn revolved_nurbs_surface(
         weights.push(weight_row);
     }
     let mut u_knots = Vec::new();
-    ctx.reserve_vec(
-        &mut u_knots,
-        directrix.knots().as_slice().len(),
-        "creo revolved NURBS u knots",
-    )?;
     u_knots.extend_from_slice(directrix.knots().as_slice());
     let angular_knots = [
         0.0,
@@ -486,11 +448,6 @@ pub(in super::super) fn revolved_nurbs_surface(
         std::f64::consts::TAU,
     ];
     let mut v_knots = Vec::new();
-    ctx.reserve_vec(
-        &mut v_knots,
-        angular_knots.len(),
-        "creo revolved NURBS v knots",
-    )?;
     v_knots.extend(angular_knots);
     match NurbsSurface::from_lanes(
         ctx,
@@ -501,8 +458,7 @@ pub(in super::super) fn revolved_nurbs_surface(
     )? {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note_checked(
-                ctx,
+            refusal.note(
                 format_args!("creo revolved NURBS surface record for {record}"),
                 &error,
             );
@@ -589,17 +545,16 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
         if unique_feature_section_transform(
-            ctx,
             &scan.features.section_transforms,
             transform.definition_id,
             transform.offset,
-        )?
+        )
         .is_none()
         {
             continue;
         }
         let Some(definition) =
-            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
@@ -613,13 +568,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             continue;
         };
         let points = resolved_section_points(ctx, definition)?;
-        let solved = extrusion_solved_segment_ids(ctx, definition)?;
-        for segment in complete_section_segment_rows(ctx, definition)?
+        let solved = extrusion_solved_segment_ids(definition);
+        for segment in complete_section_segment_rows(definition)
             .iter()
             .filter(|segment| solved.contains(&segment.external_id))
         {
             let Some(section_geometry) =
-                resolved_section_segment_geometry(ctx, definition, &points, segment)?
+                resolved_section_segment_geometry(definition, &points, segment)
             else {
                 continue;
             };
@@ -636,10 +591,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 surface_id,
-                "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
@@ -663,11 +616,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: crate::identity::source_object_id_checked(
-                            ctx,
-                            format_args!("VisibGeom:{surface_id}"),
-                            "creo source object identity",
-                        )?,
+                        object_id: crate::identity::source_object_id_checked(format_args!(
+                            "VisibGeom:{surface_id}"
+                        ))?,
                         name: None,
                         color: None,
                         visible: None,
@@ -707,10 +658,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             }
             let id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 native_surface_id,
-                "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
@@ -734,11 +683,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: crate::identity::source_object_id_checked(
-                            ctx,
-                            format_args!("VisibGeom:{native_surface_id}"),
-                            "creo source object identity",
-                        )?,
+                        object_id: crate::identity::source_object_id_checked(format_args!(
+                            "VisibGeom:{native_surface_id}"
+                        ))?,
                         name: None,
                         color: None,
                         visible: None,
@@ -774,7 +721,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .then_some((surface_id, internal_id, spline))
             });
         let Some(span) =
-            resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
+            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)?
         else {
             continue;
         };
@@ -785,26 +732,24 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         for (native_surface_id, internal_id, spline) in splines {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
-                let records = refusal.take_records_checked()?;
+                let records = refusal.take_records();
                 if records.is_empty() {
                     push_saved_spline_loss(
-                        ctx,
                         losses,
                         format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve.",
                             spline.offset
                         ),
-                    )?;
+                    );
                 } else {
                     push_saved_spline_loss(
-                        ctx,
                         losses,
                         format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve: {}",
                             spline.offset,
                             JoinedLaneRecords(&records)
                         ),
-                    )?;
+                    );
                 }
                 continue;
             };
@@ -826,11 +771,11 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &mut refusal,
             )?
             else {
-                for record in refusal.take_records_checked()? {
-                    push_saved_spline_loss(ctx, losses, format_args!(
+                for record in refusal.take_records() {
+                    push_saved_spline_loss(losses, format_args!(
                         "Extruded section spline at offset {} states no surface carrier: {record}",
                         spline.offset
-                    ))?;
+                    ));
                 }
                 continue;
             };
@@ -840,10 +785,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .zip(directrix.knots().last())
                 .map(|(lower, upper)| (*lower, *upper));
             let curve_id = crate::identity::compose_checked::<CurveId>(
-                ctx,
                 &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
                 format_args!("{feature_id}:{internal_id}"),
-                "creo extrusion directrix identity",
             )?;
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(
@@ -867,11 +810,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         source_object: Some(SourceObjectAssociation {
                             geometry_role: None,
                             format: cadmpeg_ir::CodecFormat::Creo,
-                            object_id: crate::identity::source_object_id_checked(
-                                ctx,
-                                format_args!("FeatDefs:saved_spline#{internal_id}"),
-                                "creo source object identity",
-                            )?,
+                            object_id: crate::identity::source_object_id_checked(format_args!(
+                                "FeatDefs:saved_spline#{internal_id}"
+                            ))?,
                             name: None,
                             color: None,
                             visible: None,
@@ -882,19 +823,15 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 )?;
             }
             let surface_id = crate::identity::compose_checked::<SurfaceId>(
-                ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 native_surface_id,
-                "creo extrusion surface identity",
             )?;
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
             let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
-                ctx,
                 &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
                 format_args!("{feature_id}:{internal_id}"),
-                "creo extrusion construction identity",
             )?;
             annotate(
                 ctx,
@@ -925,11 +862,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: crate::identity::source_object_id_checked(
-                            ctx,
-                            format_args!("VisibGeom:{native_surface_id}"),
-                            "creo source object identity",
-                        )?,
+                        object_id: crate::identity::source_object_id_checked(format_args!(
+                            "VisibGeom:{native_surface_id}"
+                        ))?,
                         name: None,
                         color: None,
                         visible: None,
@@ -940,13 +875,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             )?;
             let Some((lower_knot, upper_knot)) = directrix_range else {
                 push_saved_spline_loss(
-                    ctx,
                     losses,
                     format_args!(
                     "Extrusion directrix for feature {feature_id} at offset {} has no knot range",
                     spline.offset
                 ),
-                )?;
+                );
                 continue;
             };
             source_carriers.admit_procedural_surface(
@@ -976,9 +910,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
 }
 
 fn extrusion_solved_segment_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+) -> BTreeSet<u32> {
     let mut solved = BTreeSet::new();
     for id in definition
         .trim_entities
@@ -986,9 +919,9 @@ fn extrusion_solved_segment_ids(
         .flat_map(|trim_entities| &trim_entities.rows)
         .filter_map(|row| trim_segment_id(definition, row))
     {
-        ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
+        solved.insert(id);
     }
-    Ok(solved)
+    solved
 }
 
 #[cfg(test)]

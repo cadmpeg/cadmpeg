@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::section_segment_intersection_carrier;
-use super::resolved_section_segment_geometry;
 use crate::decode::sketch::coordinates::{
     resolved_section_points, saved_section_coordinate_witnesses,
 };
+use crate::decode::sketch::geometry::resolved_section_segment_geometry;
 use crate::decode::sketch::geometry::{
     saved_section_arc, saved_section_arc_carrier, saved_section_segment_point_coordinates,
     SectionArcCarrier,
@@ -104,24 +104,8 @@ fn saved_arc_joins_through_order_table() {
         .collect(),
         offset: 0,
     });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test input admitted");
-    assert!(
-        matches!(saved_section_coordinate_witnesses(&limited_ctx, &witness_definition, &BTreeSet::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo saved section coordinate witnesses")
-    );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| saved_section_coordinate_witnesses(
-            ctx,
-            &witness_definition,
-            &BTreeSet::new()
-        ))
-        .expect("saved witnesses admitted"),
+        saved_section_coordinate_witnesses(&witness_definition, &BTreeSet::new()),
         vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0])]
     );
     let mut coordinate_definition = definition.clone();
@@ -312,7 +296,11 @@ fn saved_arc_joins_through_order_table() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
-            resolved_trim_vertex_coordinates(ctx, &trimmed, &BTreeMap::new(), &radii)
+            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                &trimmed,
+                &BTreeMap::new(),
+                &radii,
+            ))
         })
         .expect("test section geometry"),
         BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
@@ -347,7 +335,11 @@ fn saved_arc_joins_through_order_table() {
         crate::decode::with_test_decode_ctx(|ctx| {
             let radii =
                 crate::decode::sketch::radii::resolved_section_radii(ctx, &conflicting_vertex)?;
-            resolved_trim_vertex_coordinates(ctx, &conflicting_vertex, &BTreeMap::new(), &radii)
+            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                &conflicting_vertex,
+                &BTreeMap::new(),
+                &radii,
+            ))
         })
         .expect("test section geometry"),
         BTreeMap::from([(2, [-2.0, 0.0])])
@@ -395,7 +387,11 @@ fn saved_arc_joins_through_order_table() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
-            resolved_trim_vertex_coordinates(ctx, &trimmed, &BTreeMap::new(), &radii)
+            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                &trimmed,
+                &BTreeMap::new(),
+                &radii,
+            ))
         })
         .expect("test section geometry"),
         BTreeMap::from([(2, [-2.0, 0.0])])

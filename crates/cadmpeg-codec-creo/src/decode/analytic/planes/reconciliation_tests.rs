@@ -11,26 +11,12 @@ use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
 use crate::vecmath::dot;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-
-fn topology_bound_plane_service(
-    points: impl IntoIterator<Item = [f64; 3]>,
-) -> Option<PlaneEquation> {
-    crate::decode::with_test_decode_ctx(|ctx| topology_bound_plane(ctx, points))
-        .expect("service topology plane")
-}
-
-fn analytic_curve_plane_service(geometry: &CurveGeometry) -> Option<PlaneEquation> {
-    crate::decode::with_test_decode_ctx(|ctx| analytic_curve_plane(ctx, geometry))
-        .expect("service analytic curve plane")
-}
 
 fn one_positional_plane_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
@@ -44,182 +30,11 @@ fn one_positional_plane_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn positional_plane_limit_error(limit: u64, surface: bool) -> CodecError {
-    let scan = one_positional_plane_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    if surface {
-        crate::decode::analytic::planes::placed_plane_surfaces(&ctx, &scan)
-            .expect_err("plane surface exceeds collection limit")
-    } else {
-        crate::decode::analytic::planes::placed_planes(&ctx, &scan)
-            .expect_err("plane exceeds collection limit")
-    }
-}
-
-fn candidate_limit_error(scan: &crate::container::ContainerScan<'_>, limit: u64) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    plane_candidates(&ctx, scan)
-        .err()
-        .expect("plane candidates exceed collection limit")
-}
-
-fn one_held_plane_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.planes.envelopes.push(PlaneEnvelopeRecord {
-        surface_id: 7,
-        body: Vec::new(),
-        envelope: PlaneEnvelope::Standard {
-            bounds_2d: [[None; 2]; 2],
-            corners_3d: [
-                [Some(-1.0), Some(0.0), Some(1.0)],
-                [Some(1.0), Some(0.0), Some(-1.0)],
-            ],
-        },
-        corner_coordinate_equal: [Some(false), Some(true), Some(false)],
-        scalar_tokens: Vec::new(),
-        row_offset: 1,
-        offset: 2,
-    });
-    scan
-}
-
-#[test]
-fn held_plane_group_node_refuses_collection_limit() {
-    let error = candidate_limit_error(&one_held_plane_scan(), 0);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo held plane group nodes"));
-}
-
-#[test]
-fn held_plane_equation_refuses_collection_limit() {
-    let error = candidate_limit_error(&one_held_plane_scan(), 1);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo held plane equations"));
-}
-
-#[test]
-fn agreed_held_plane_node_refuses_collection_limit() {
-    let error = candidate_limit_error(&one_held_plane_scan(), 2);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo agreed held plane nodes"));
-}
-
-#[test]
-fn local_plane_chart_id_node_refuses_collection_limit() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.planes.local_systems.push(PlaneLocalSystem {
-        surface_id: 7,
-        body: Vec::new(),
-        slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0].map(Some),
-        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
-        classification: LocalSystemClassification::Simple,
-        row_offset: 1,
-        offset: 2,
-    });
-    let error = candidate_limit_error(&scan, 2);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo local plane chart ID nodes"));
-}
-
-#[test]
-fn matrix_plane_frame_id_node_refuses_collection_limit() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.planes.local_systems.push(PlaneLocalSystem {
-        surface_id: 7,
-        body: Vec::new(),
-        slots: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0].map(Some),
-        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
-        classification: LocalSystemClassification::Unclassified,
-        row_offset: 1,
-        offset: 2,
-    });
-    let error = candidate_limit_error(&scan, 0);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo matrix plane frame ID nodes"));
-}
-
-fn held_plane_with_frame_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = one_held_plane_scan();
-    scan.planes.local_systems.push(PlaneLocalSystem {
-        surface_id: 7,
-        body: Vec::new(),
-        slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0].map(Some),
-        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
-        classification: LocalSystemClassification::Simple,
-        row_offset: 1,
-        offset: 3,
-    });
-    scan
-}
-
-#[test]
-fn frame_bound_outline_node_refuses_collection_limit() {
-    let error = candidate_limit_error(&held_plane_with_frame_scan(), 3);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo frame-bound outline nodes"));
-}
-
-#[test]
-fn frame_bound_outline_vector_refuses_collection_limit() {
-    let error = candidate_limit_error(&held_plane_with_frame_scan(), 4);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo frame-bound outlines"));
-}
-
-#[test]
-fn positional_plane_candidate_vector_refuses_collection_limit() {
-    let error = positional_plane_limit_error(0, false);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo plane candidates"));
-}
-
-#[test]
-fn positional_plane_candidate_node_refuses_collection_limit() {
-    let error = positional_plane_limit_error(1, false);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo plane candidate nodes"));
-}
-
-#[test]
-fn placed_plane_node_refuses_collection_limit() {
-    let error = positional_plane_limit_error(2, false);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo placed plane nodes"));
-}
-
-#[test]
-fn placed_plane_surface_node_refuses_collection_limit() {
-    let error = positional_plane_limit_error(2, true);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo placed plane surface nodes"));
-}
-
 #[test]
 fn positional_plane_admission_preserves_service_geometry() {
     let scan = one_positional_plane_scan();
-    let plane = crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::analytic::planes::placed_planes(ctx, &scan)
-    })
-    .expect("service plane admitted");
+    let plane =
+        { crate::decode::analytic::planes::placed_planes(&scan) }.expect("service plane admitted");
     assert_eq!(
         plane.get(&7).map(|plane| plane.origin),
         Some([0.0, 0.0, 1.0])
@@ -296,7 +111,7 @@ fn nurbs_curve(
 
 #[test]
 fn topology_boundary_points_define_one_plane() {
-    let plane = topology_bound_plane_service([
+    let plane = topology_bound_plane([
         [4.0, 0.0, 2.0],
         [1.0, 3.0, 2.0],
         [1.0, 0.0, 2.0],
@@ -307,8 +122,8 @@ fn topology_boundary_points_define_one_plane() {
     assert_eq!(plane.origin, [1.0, 0.0, 2.0]);
     assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
 
-    assert!(topology_bound_plane_service([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]).is_none());
-    assert!(topology_bound_plane_service([
+    assert!(topology_bound_plane([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]).is_none());
+    assert!(topology_bound_plane([
         [0.0, 0.0, 0.0],
         [1.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
@@ -318,24 +133,8 @@ fn topology_boundary_points_define_one_plane() {
 }
 
 #[test]
-fn topology_bound_plane_refuses_candidate_point_vector() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let Err(error) =
-        topology_bound_plane(&ctx, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    else {
-        panic!("one topology point exceeds collection limit")
-    };
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo topology plane candidate points"));
-}
-
-#[test]
 fn analytic_conic_boundary_defines_its_plane() {
-    let plane = analytic_curve_plane_service(&CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+    let plane = analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(3.0, 4.0, 5.0),
             Vector3::new(0.0, 0.0, -2.0)
@@ -350,7 +149,7 @@ fn analytic_conic_boundary_defines_its_plane() {
     assert_eq!(plane.origin, [3.0, 4.0, 5.0]);
     assert_eq!(plane.normal, [0.0, 0.0, -1.0]);
     assert!(
-        analytic_curve_plane_service(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
@@ -373,7 +172,7 @@ fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
         ],
         None,
     );
-    let plane = analytic_curve_plane_service(&planar).expect("planar NURBS boundary");
+    let plane = analytic_curve_plane(&planar).expect("planar NURBS boundary");
     assert_eq!(plane.origin[2], 2.0);
     assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
 
@@ -388,7 +187,7 @@ fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
         ],
         None,
     );
-    assert!(analytic_curve_plane_service(&nonplanar).is_none());
+    assert!(analytic_curve_plane(&nonplanar).is_none());
 
     let line = nurbs_curve(
         1,
@@ -414,94 +213,13 @@ fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
 }
 
 #[test]
-fn analytic_nurbs_plane_refuses_control_point_vector() {
-    let geometry = nurbs_curve(
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 0.0, 2.0),
-            Point3::new(1.0, 0.0, 2.0),
-            Point3::new(1.0, 1.0, 2.0),
-        ],
-        None,
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let Err(error) = analytic_curve_plane(&ctx, &geometry) else {
-        panic!("one NURBS control point exceeds collection limit")
-    };
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo topology plane candidate points"));
-}
-
-#[test]
 fn every_solved_boundary_vertex_must_lie_on_the_analytic_plane() {
     let plane = PlaneEquation {
         origin: [0.0, 0.0, 2.0],
         normal: [0.0, 0.0, 1.0],
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        agreed_topology_bound_plane(ctx, [[3.0, 4.0, 2.0]], [plane], [])
-    })
-    .expect("service boundary plane")
-    .is_some());
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        agreed_topology_bound_plane(ctx, [[3.0, 4.0, 3.0]], [plane], [])
-    })
-    .expect("service boundary plane")
-    .is_none());
-}
-
-fn boundary_plane_collection_error(limit: u64) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    match agreed_topology_bound_plane(
-        &ctx,
-        [[0.0, 0.0, 0.0]],
-        [PlaneEquation {
-            origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 0.0, 1.0],
-        }],
-        [BoundaryLine {
-            origin: [0.0, 0.0, 0.0],
-            direction: [1.0, 0.0, 0.0],
-        }],
-    ) {
-        Ok(_) => panic!("one boundary plane exceeds collection limit"),
-        Err(error) => error,
-    }
-}
-
-fn assert_boundary_plane_refusal(limit: u64, operation: &'static str) {
-    let error = boundary_plane_collection_error(limit);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn agreed_topology_plane_refuses_boundary_point_vector() {
-    assert_boundary_plane_refusal(0, "creo plane boundary points");
-}
-
-#[test]
-fn agreed_topology_plane_refuses_boundary_line_vector() {
-    assert_boundary_plane_refusal(1, "creo plane boundary lines");
-}
-
-#[test]
-fn agreed_topology_plane_refuses_candidate_point_copy() {
-    assert_boundary_plane_refusal(2, "creo topology plane candidate points");
-}
-
-#[test]
-fn agreed_topology_plane_refuses_candidate_vector() {
-    assert_boundary_plane_refusal(3, "creo plane boundary candidates");
+    assert!(agreed_topology_bound_plane([[3.0, 4.0, 2.0]], [plane], []).is_some());
+    assert!(agreed_topology_bound_plane([[3.0, 4.0, 3.0]], [plane], []).is_none());
 }
 
 #[test]
@@ -897,17 +615,11 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
         row_offset: 10,
         offset: 30,
     });
-    scan.planes.outlines = crate::decode::with_test_decode_ctx(|ctx| {
-        crate::surface::placed_outline_planes(
-            ctx,
-            &scan.planes.envelopes,
-            &scan.planes.local_systems,
-        )
-    })
-    .expect("service outline planes");
+    scan.planes.outlines = {
+        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems)
+    };
 
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
-        .expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
     let candidates = candidates.get(&42).expect("plane candidates");
     let (plane, u_axis, _) =
         agreed_plane_surface(candidates).expect("frame-selected outline plane");
@@ -966,17 +678,11 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
         row_offset: 10,
         offset: 30,
     });
-    scan.planes.outlines = crate::decode::with_test_decode_ctx(|ctx| {
-        crate::surface::placed_outline_planes(
-            ctx,
-            &scan.planes.envelopes,
-            &scan.planes.local_systems,
-        )
-    })
-    .expect("service outline planes");
+    scan.planes.outlines = {
+        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems)
+    };
 
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
-        .expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
     let candidates = candidates.get(&42).expect("plane candidates");
     let (plane, u_axis, _) = agreed_plane_surface(candidates).expect("matrix frame plane");
     assert_eq!(plane.normal, [component, 0.0, component]);
@@ -1078,8 +784,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
         offset: 60,
     });
 
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
-        .expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
     let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
         panic!("one tangent branch must be selected");
     };
@@ -1347,8 +1052,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
         offset: 60,
     });
 
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
-        .expect("service plane candidates admitted");
+    let candidates = plane_candidates(&scan).expect("service plane candidates admitted");
     let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
         panic!("the reference-tangent branch must be selected");
     };

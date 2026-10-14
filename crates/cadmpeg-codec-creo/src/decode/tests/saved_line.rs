@@ -6,11 +6,12 @@ use super::{
     section_skamp_constraints,
 };
 use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
-use crate::decode::sketch::geometry::resolved_section_segment_geometry as resolved_section_segment_geometry_admitted;
-use crate::decode::sketch::geometry::saved_section_missing_line_geometry as saved_section_missing_line_geometry_admitted;
 use crate::decode::sketch::geometry::{
     is_full_circle_geometry, saved_profile_chains, saved_section_circle_values,
     saved_section_entity_geometry, saved_section_line_geometry,
+};
+use crate::decode::sketch::geometry::{
+    resolved_section_segment_geometry, saved_section_missing_line_geometry,
 };
 
 use crate::decode::sketch::radii::{resolved_section_radii, trim_segment_id};
@@ -41,26 +42,6 @@ use cadmpeg_ir::sketches::{
     SketchId,
 };
 use std::collections::{BTreeMap, BTreeSet};
-
-fn saved_section_missing_line_geometry(
-    definition: &crate::feature::definitions::FeatureDefinition,
-) -> Option<(usize, SketchGeometry)> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        saved_section_missing_line_geometry_admitted(ctx, definition)
-    })
-    .expect("test missing-line admission")
-}
-
-fn resolved_section_segment_geometry(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        resolved_section_segment_geometry_admitted(ctx, definition, points, segment)
-    })
-    .expect("test segment admission")
-}
 
 #[test]
 fn saved_line_joins_through_order_table() {
@@ -145,8 +126,7 @@ fn saved_line_joins_through_order_table() {
     )
     .is_none());
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &definition))
-            .expect("service section identities"),
+        section_entity_external_ids(&definition),
         BTreeSet::from([42])
     );
     assert_eq!(
@@ -230,8 +210,7 @@ fn saved_line_joins_through_order_table() {
     )
     .is_none());
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &incomplete))
-            .expect("service section identities"),
+        section_entity_external_ids(&incomplete),
         BTreeSet::from([42])
     );
     assert!(
@@ -253,7 +232,7 @@ fn saved_line_joins_through_order_table() {
                 .as_ref()
                 .expect("saved section")
                 .entities[0],
-            &unique_saved_section_internal_ids(ctx, &incomplete)?,
+            &unique_saved_section_internal_ids(&incomplete),
             &BTreeSet::new(),
         )
     })
@@ -303,16 +282,8 @@ fn saved_line_joins_through_order_table() {
     assert_eq!(
         saved_section_external_id(
             definition.order_table.as_ref().expect("order table"),
-            &crate::decode::with_test_decode_ctx(|ctx| unique_saved_section_internal_ids(
-                ctx,
-                &definition
-            ))
-            .expect("service saved identities"),
-            &crate::decode::with_test_decode_ctx(|ctx| ambiguous_section_segment_external_ids(
-                ctx,
-                &definition
-            ))
-            .expect("service ambiguous identities"),
+            &unique_saved_section_internal_ids(&definition),
+            &ambiguous_section_segment_external_ids(&definition),
             3,
         ),
         Some(42)
@@ -499,13 +470,11 @@ fn saved_line_joins_through_order_table() {
         operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
     }));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
-            ctx,
+        relation_incidence_entities(
             &constrained,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-            7,
-        ))
-        .expect("service incidence admission"),
+            7
+        ),
         vec![
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
@@ -822,31 +791,23 @@ fn saved_line_joins_through_order_table() {
         .expect("relations")
         .skamps()[0]
         .items[1];
-    assert!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| {
-            section_skamp_point_locus(
-                ctx,
-                refusal,
-                &solver_families,
-                &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-                point_item,
-            )
-        })
-        .is_some()
-    );
-    assert!(
-        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| {
-            section_skamp_incidence_locus(
-                ctx,
-                refusal,
-                &solver_families,
-                &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-                line_item,
-                Some(&solver_geometry),
-            )
-        })
-        .is_some()
-    );
+    assert!({
+        section_skamp_point_locus(
+            &solver_families,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+            point_item,
+        )
+    }
+    .is_some());
+    assert!({
+        section_skamp_incidence_locus(
+            &solver_families,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+            line_item,
+            Some(&solver_geometry),
+        )
+    }
+    .is_some());
     assert!(
         matches!(
             solver_constraints[0].0.definition.kind(),
@@ -1009,16 +970,12 @@ fn saved_line_joins_through_order_table() {
         .header_mut()
         .expect("skamp header")
         .declared_count = 2;
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
-            ctx,
-            &duplicate_incidence,
-            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-            7,
-        ))
-        .expect("service incidence admission")
-        .is_empty()
-    );
+    assert!(relation_incidence_entities(
+        &duplicate_incidence,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+        7
+    )
+    .is_empty());
     constrained
         .relations
         .as_mut()
@@ -1028,24 +985,18 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp table")
         .rows_mut()[0]
         .status = 34;
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
-            ctx,
-            &constrained,
-            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-            7,
-        ))
-        .expect("service incidence admission")
-        .is_empty()
-    );
+    assert!(relation_incidence_entities(
+        &constrained,
+        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+        7
+    )
+    .is_empty());
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| joined_relation_incidence_entities(
-            ctx,
+        joined_relation_incidence_entities(
             &constrained,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-            7,
-        ))
-        .expect("service joined incidence admission"),
+            7
+        ),
         vec![
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
@@ -1513,32 +1464,6 @@ fn generated_saved_geometry_forms_closed_profiles() {
         .iter()
         .flatten()
         .all(|entity| !entity.entity.as_str().ends_with(":20")));
-}
-
-#[test]
-fn saved_profile_mates_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(0.0, 0.0),
-        end: Point2::new(1.0, 0.0),
-    })
-    .expect("valid test geometry");
-    let geometries = [(1, geometry)];
-    let sketch = SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    let error = saved_profile_chains(&ctx, &sketch, &geometries)
-        .expect_err("one endpoint row exceeds the collection limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo saved profile endpoint mates"
-    ));
 }
 
 #[test]
