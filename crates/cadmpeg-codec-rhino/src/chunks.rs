@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino 3DM headers, chunks, checksums, and bounded readers.
 
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::fmt;
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::View;
 
 use crate::layout::file_header;
 use crate::layout::token;
@@ -199,13 +199,10 @@ impl fmt::Display for FramingError {
 impl std::error::Error for FramingError {}
 
 /// Parses the exact 32-byte file header.
-pub(crate) fn parse_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Header, FramingError> {
+pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
     const MAX_HEADER_SEARCH: usize = 33_554_432 + MAGIC.len();
     let search_end = bytes.len().min(MAX_HEADER_SEARCH);
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(search_end),
-        "Rhino header magic scan",
-    )?;
+
     let start_offset = bytes[..search_end]
         .windows(MAGIC.len())
         .position(|window| window == MAGIC)
@@ -664,33 +661,27 @@ pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
 
 /// Checks a chunk and records an integrity diagnostic for a checksum mismatch.
 pub(crate) fn warn_checksum(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     label: &str,
     warnings: &mut crate::loss::Diagnostics,
 ) -> Result<(), FramingError> {
     if matches!(
-        verify_checksum(ctx, data, chunk)?,
+        verify_checksum(data, chunk)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded_admitted(
-            ctx,
+        warnings.push_coded(
             crate::loss::RhinoLossCode::IntegrityFailure,
             format_args!("{label} CRC mismatch at offset {}", chunk.header_start),
-        )?;
+        );
     }
     Ok(())
 }
 
 /// Verifies a parsed chunk's checksum without changing its recoverable boundary.
-pub(crate) fn verify_checksum(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    chunk: &Chunk,
-) -> Result<ChecksumStatus, FramingError> {
+pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumStatus, FramingError> {
     let body = chunk.body();
-    verify_checksum_ranges(ctx, bytes, chunk, std::iter::once(Ok(body)))
+    verify_checksum_ranges(bytes, chunk, std::iter::once(body))
 }
 
 /// Verifies a chunk checksum over its direct byte ranges.
@@ -698,13 +689,12 @@ pub(crate) fn verify_checksum(
 /// Container checksums exclude complete nested chunks. Callers pass the
 /// ordered ranges written directly at the container's nesting level.
 pub(crate) fn verify_checksum_ranges<I, R>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     chunk: &Chunk,
     ranges: I,
 ) -> Result<ChecksumStatus, FramingError>
 where
-    I: Clone + IntoIterator<Item = Result<R, FramingError>>,
+    I: Clone + IntoIterator<Item = R>,
     R: Borrow<std::ops::Range<usize>>,
 {
     let ChunkBody::Long {
@@ -724,8 +714,6 @@ where
         needed: kind.width(),
     })?;
     for range in ranges.clone() {
-        let range = range?;
-        ctx.charge_work(1, "Rhino checksum range validation")?;
         let range = range.borrow();
         if range.start < body.start || range.end > body.end || range.start > range.end {
             return Err(FramingError::structural(
@@ -742,15 +730,11 @@ where
             })?);
             let mut crc = 1;
             for range in ranges {
-                let range = range?;
                 let range = range.borrow();
                 let data = bytes.get(range.clone()).ok_or_else(|| {
                     FramingError::structural(range.start, "checksum range escapes input")
                 })?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(data.len()),
-                    "Rhino chunk checksum bytes",
-                )?;
+
                 crc = crc16(crc, data);
             }
             let expected = u32::from(crc);
@@ -767,15 +751,11 @@ where
             })?;
             let mut hasher = crc32fast::Hasher::new();
             for range in ranges {
-                let range = range?;
                 let range = range.borrow();
                 let data = bytes.get(range.clone()).ok_or_else(|| {
                     FramingError::structural(range.start, "checksum range escapes input")
                 })?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(data.len()),
-                    "Rhino chunk checksum bytes",
-                )?;
+
                 hasher.update(data);
             }
             let expected = hasher.finalize();
@@ -788,34 +768,14 @@ where
     }
 }
 
-/// Ordered child ranges, with a live reservation for temporary storage.
-enum ChecksumChildren<'a> {
-    Borrowed(&'a [std::ops::Range<usize>]),
-    Temporary {
-        values: Vec<std::ops::Range<usize>>,
-        _reservation: ScopedReservation<'a>,
-    },
-}
-
-impl ChecksumChildren<'_> {
-    fn as_slice(&self) -> &[std::ops::Range<usize>] {
-        match self {
-            Self::Borrowed(values) => values,
-            Self::Temporary { values, .. } => values,
-        }
-    }
-}
-
-/// Validated parent-level checksum bytes with admitted child ordering.
+/// Validated parent-level checksum bytes with ordered child ranges.
 pub(crate) struct DirectChecksumRanges<'a> {
-    ctx: &'a DecodeContext<'a>,
     body: std::ops::Range<usize>,
-    children: ChecksumChildren<'a>,
+    children: Cow<'a, [std::ops::Range<usize>]>,
 }
 
 #[derive(Clone)]
 pub(crate) struct DirectChecksumRangeIter<'a> {
-    ctx: &'a DecodeContext<'a>,
     children: std::slice::Iter<'a, std::ops::Range<usize>>,
     cursor: usize,
     end: usize,
@@ -823,37 +783,31 @@ pub(crate) struct DirectChecksumRangeIter<'a> {
 }
 
 impl Iterator for DirectChecksumRangeIter<'_> {
-    type Item = Result<std::ops::Range<usize>, FramingError>;
+    type Item = std::ops::Range<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.complete {
             return None;
         }
-        while !self.children.as_slice().is_empty() {
-            if let Err(error) = self.ctx.charge_work(1, "Rhino checksum child traversal") {
-                self.complete = true;
-                return Some(Err(error.into()));
-            }
-            let child = self.children.next()?;
+        for child in self.children.by_ref() {
             let start = self.cursor;
             self.cursor = child.end;
             if start < child.start {
-                return Some(Ok(start..child.start));
+                return Some(start..child.start);
             }
         }
         self.complete = true;
-        (self.cursor < self.end).then_some(Ok(self.cursor..self.end))
+        (self.cursor < self.end).then_some(self.cursor..self.end)
     }
 }
 
 impl<'a> IntoIterator for &'a DirectChecksumRanges<'_> {
-    type Item = Result<std::ops::Range<usize>, FramingError>;
+    type Item = std::ops::Range<usize>;
     type IntoIter = DirectChecksumRangeIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         DirectChecksumRangeIter {
-            ctx: self.ctx,
-            children: self.children.as_slice().iter(),
+            children: self.children.iter(),
             cursor: self.body.start,
             end: self.body.end,
             complete: false,
@@ -863,46 +817,18 @@ impl<'a> IntoIterator for &'a DirectChecksumRanges<'_> {
 
 /// Returns the parent-level byte ranges after complete child chunks are removed.
 pub(crate) fn direct_checksum_ranges<'a>(
-    ctx: &'a DecodeContext<'a>,
     body: &std::ops::Range<usize>,
     children: &'a [std::ops::Range<usize>],
 ) -> Result<DirectChecksumRanges<'a>, FramingError> {
-    let mut pairs = children.windows(2);
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(pairs.len()),
-        "Rhino checksum child order scan",
-    )?;
-    let children = if pairs.all(|pair| pair[0].start <= pair[1].start) {
-        ChecksumChildren::Borrowed(children)
+    let children = if children.is_sorted_by_key(|child| child.start) {
+        Cow::Borrowed(children)
     } else {
-        let mut values = Vec::new();
-        let reservation = ctx
-            .reserve_temporary_vec(
-                &mut values,
-                children.len(),
-                "Rhino checksum child ordering copy",
-            )
-            .map_err(FramingError::Resource)?;
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(children.len()),
-            "Rhino checksum child ordering copy",
-        )
-        .map_err(FramingError::Resource)?;
-        values.extend_from_slice(children);
-        ctx.stable_sort_by(
-            &mut values,
-            |left, right| left.start.cmp(&right.start),
-            |_| 0,
-            "Rhino checksum child ordering sort",
-        )?;
-        ChecksumChildren::Temporary {
-            values,
-            _reservation: reservation,
-        }
+        let mut values = children.to_vec();
+        values.sort_by_key(|child| child.start);
+        Cow::Owned(values)
     };
     let mut cursor = body.start;
-    for child in children.as_slice() {
-        ctx.charge_work(1, "Rhino checksum child validation")?;
+    for child in children.iter() {
         if child.start < cursor || child.end < child.start || child.end > body.end {
             return Err(FramingError::Structural {
                 offset: child.start,
@@ -912,7 +838,6 @@ pub(crate) fn direct_checksum_ranges<'a>(
         cursor = child.end;
     }
     Ok(DirectChecksumRanges {
-        ctx,
         body: body.clone(),
         children,
     })
@@ -920,7 +845,6 @@ pub(crate) fn direct_checksum_ranges<'a>(
 
 /// Frames complete nested chunks through a short zero class-end marker.
 pub(crate) fn checksum_children_through_class_end(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
@@ -944,8 +868,7 @@ pub(crate) fn checksum_children_through_class_end(
                 value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
             });
         }
-        ctx.reserve_vec(&mut children, 1, "Rhino class-end checksum children")
-            .map_err(crate::chunks::FramingError::from)?;
+
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {
@@ -1014,7 +937,7 @@ mod direct_range_tests {
         let arena = DecodeArena::new();
         let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         let children = [30..40, 15..20];
-        let direct = direct_checksum_ranges(&ctx, &(10..50), &children).expect("valid nesting");
+        let direct = direct_checksum_ranges(&(10..50), &children).expect("valid nesting");
         assert_eq!(
             (&direct)
                 .into_iter()
@@ -1029,7 +952,7 @@ mod direct_range_tests {
         let arena = DecodeArena::new();
         let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &[15..30, 20..40]),
+            direct_checksum_ranges(&(10..50), &[15..30, 20..40]),
             Err(FramingError::Structural { .. })
         ));
     }
@@ -1041,7 +964,7 @@ mod direct_range_tests {
         policy.limits.max_work_units = 0;
         let ctx = DecodeContext::new(&arena, &policy, false);
         assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &[15..20, 30..40]),
+            direct_checksum_ranges( &(10..50), &[15..20, 30..40]),
             Err(FramingError::Resource(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "Rhino checksum child order scan"
@@ -1057,7 +980,7 @@ mod direct_range_tests {
         policy.limits.max_work_units = 1;
         let ctx = DecodeContext::new(&arena, &policy, false);
         assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &[15..20, 30..40]),
+            direct_checksum_ranges( &(10..50), &[15..20, 30..40]),
             Err(FramingError::Resource(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "Rhino checksum child validation"
@@ -1074,7 +997,7 @@ mod direct_range_tests {
         let ctx = DecodeContext::new(&arena, &policy, false);
         let children = [30..40, 15..20];
         assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &children),
+            direct_checksum_ranges( &(10..50), &children),
             Err(FramingError::Resource(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "Rhino checksum child ordering sort"
@@ -1090,7 +1013,7 @@ mod direct_range_tests {
         policy.limits.max_work_units = 1;
         let ctx = DecodeContext::new(&arena, &policy, false);
         assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &[30..40, 15..20]),
+            direct_checksum_ranges( &(10..50), &[30..40, 15..20]),
             Err(FramingError::Resource(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "Rhino checksum child ordering copy"
@@ -1105,7 +1028,7 @@ mod direct_range_tests {
         policy.limits.max_materialized_bytes = 0;
         let ctx = DecodeContext::new(&arena, &policy, false);
         assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &[30..40, 15..20]),
+            direct_checksum_ranges( &(10..50), &[30..40, 15..20]),
             Err(FramingError::Resource(limit))
                 if limit.dimension == ResourceDimension::MaterializedBytes
                     && Some(limit) == ctx.resource_refusal()
@@ -1119,7 +1042,7 @@ mod direct_range_tests {
         policy.limits.max_collection_items = 0;
         let ctx = DecodeContext::new(&arena, &policy, false);
         assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &[30..40, 15..20]),
+            direct_checksum_ranges( &(10..50), &[30..40, 15..20]),
             Err(FramingError::Resource(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && Some(limit) == ctx.resource_refusal()
@@ -1134,7 +1057,7 @@ mod direct_range_tests {
         policy.limits.max_collection_items = 0;
         let ctx = DecodeContext::new(&arena, &policy, false);
         let children = [15..20, 30..40];
-        let direct = direct_checksum_ranges(&ctx, &(10..50), &children).expect("borrowed children");
+        let direct = direct_checksum_ranges(&(10..50), &children).expect("borrowed children");
         assert_eq!(
             (&direct)
                 .into_iter()
@@ -1149,7 +1072,7 @@ mod direct_range_tests {
         let arena = DecodeArena::new();
         let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         let children = [30..40, 15..15, 15..20];
-        let direct = direct_checksum_ranges(&ctx, &(10..50), &children).expect("valid empty child");
+        let direct = direct_checksum_ranges(&(10..50), &children).expect("valid empty child");
         assert_eq!(
             (&direct)
                 .into_iter()
@@ -1170,7 +1093,7 @@ mod direct_range_tests {
         policy.limits.max_collection_items = 2;
         let ctx = DecodeContext::new(&arena, &policy, false);
         let children = [30..40, 15..20];
-        let direct = direct_checksum_ranges(&ctx, &(10..50), &children).expect("scoped ordering");
+        let direct = direct_checksum_ranges(&(10..50), &children).expect("scoped ordering");
         assert_eq!(
             (&direct)
                 .into_iter()
@@ -1192,8 +1115,7 @@ mod direct_range_tests {
         policy.limits.max_work_units = 2 + 3;
         let ctx = DecodeContext::new(&arena, &policy, false);
         let children = [10..15, 15..20, 20..25];
-        let direct =
-            direct_checksum_ranges(&ctx, &(10..25), &children).expect("admitted construction");
+        let direct = direct_checksum_ranges(&(10..25), &children).expect("admitted construction");
         let mut iter = (&direct).into_iter();
         assert!(
             matches!(iter.next(), Some(Err(FramingError::Resource(limit)))
@@ -1212,8 +1134,7 @@ mod direct_range_tests {
         policy.limits.max_work_units = 2 + 3 + 3;
         let ctx = DecodeContext::new(&arena, &policy, false);
         let children = [10..15, 15..20, 20..25];
-        let direct =
-            direct_checksum_ranges(&ctx, &(10..25), &children).expect("admitted construction");
+        let direct = direct_checksum_ranges(&(10..25), &children).expect("admitted construction");
         assert_eq!((&direct).into_iter().next(), None);
         assert!(matches!(ctx.charge_work(1, "after checksum traversal"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.used == 8));
@@ -1225,8 +1146,7 @@ mod direct_range_tests {
         policy.limits.max_work_units = work;
         let ctx = DecodeContext::new(&arena, &policy, false);
         let children = [0..4, 4..8];
-        let direct =
-            direct_checksum_ranges(&ctx, &(0..8), &children).expect("admitted construction");
+        let direct = direct_checksum_ranges(&(0..8), &children).expect("admitted construction");
         let chunk = Chunk {
             header_start: 0,
             typecode: TCODE_CRC,
@@ -1240,12 +1160,10 @@ mod direct_range_tests {
             ChecksumKind::Crc16 => bytes.extend(1u16.to_le_bytes()),
             ChecksumKind::Crc32 => bytes.extend(crc32fast::hash(&[]).to_le_bytes()),
         }
-        assert!(
-            matches!(verify_checksum_ranges(&ctx, &bytes, &chunk, &direct),
+        assert!(matches!(verify_checksum_ranges( &bytes, &chunk, &direct),
             Err(FramingError::Resource(limit))
                 if limit.operation == "Rhino checksum child traversal"
-                    && limit.used == work && Some(limit) == ctx.resource_refusal())
-        );
+                    && limit.used == work && Some(limit) == ctx.resource_refusal()));
     }
 
     #[test]
@@ -1270,7 +1188,7 @@ mod direct_range_tests {
         let arena = DecodeArena::new();
         let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         let children = [2..4, 6..8];
-        let direct = direct_checksum_ranges(&ctx, &(0..10), &children).expect("valid children");
+        let direct = direct_checksum_ranges(&(0..10), &children).expect("valid children");
         let chunk = Chunk {
             header_start: 0,
             typecode: TCODE_CRC,
@@ -1282,7 +1200,7 @@ mod direct_range_tests {
         let mut bytes: Vec<u8> = (0..10).collect();
         bytes.extend(crc32fast::hash(&[0, 1, 4, 5, 8, 9]).to_le_bytes());
         assert_eq!(
-            verify_checksum_ranges(&ctx, &bytes, &chunk, &direct),
+            verify_checksum_ranges(&bytes, &chunk, &direct),
             Ok(ChecksumStatus::Valid)
         );
     }

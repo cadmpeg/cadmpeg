@@ -72,7 +72,7 @@ fn embedded_linetype_checksum_children_refuse_collection_limit() {
     let bytes = embedded_linetype_with_model_attributes(archive);
     let error = with_embedded_collection_limit(&bytes, 0, |ctx| {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("linetype bounds");
-        settings::parse_direct_linetype(ctx, &bytes, &mut reader, archive, &mut Diagnostics::new())
+        settings::parse_direct_linetype(&bytes, &mut reader, archive, &mut Diagnostics::new())
             .expect_err("linetype child exceeds zero collection items")
     });
     assert!(
@@ -80,14 +80,8 @@ fn embedded_linetype_checksum_children_refuse_collection_limit() {
         if refusal.operation == "Rhino embedded linetype checksum children")
     );
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("linetype bounds");
-    settings::parse_direct_linetype(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &mut reader,
-        archive,
-        &mut Diagnostics::new(),
-    )
-    .expect("service profile admits linetype child");
+    settings::parse_direct_linetype(&bytes, &mut reader, archive, &mut Diagnostics::new())
+        .expect("service profile admits linetype child");
 }
 
 #[test]
@@ -96,28 +90,16 @@ fn embedded_section_style_first_checksum_child_refuses_collection_limit() {
     let bytes = embedded_section_style_with_model_attributes(archive, false);
     let error = with_embedded_collection_limit(&bytes, 0, |ctx| {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-        settings::parse_direct_section_style(
-            ctx,
-            &bytes,
-            &mut reader,
-            archive,
-            &mut Diagnostics::new(),
-        )
-        .expect_err("first section-style child exceeds zero collection items")
+        settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
+            .expect_err("first section-style child exceeds zero collection items")
     });
     assert!(
         matches!(error, crate::chunks::FramingError::Resource(refusal)
         if refusal.operation == "Rhino embedded section-style checksum children")
     );
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-    settings::parse_direct_section_style(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &mut reader,
-        archive,
-        &mut Diagnostics::new(),
-    )
-    .expect("service profile admits section-style child");
+    settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
+        .expect("service profile admits section-style child");
 }
 
 #[test]
@@ -126,28 +108,16 @@ fn embedded_section_style_nested_checksum_child_refuses_collection_limit() {
     let bytes = embedded_section_style_with_model_attributes(archive, true);
     let error = with_embedded_collection_limit(&bytes, 1, |ctx| {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-        settings::parse_direct_section_style(
-            ctx,
-            &bytes,
-            &mut reader,
-            archive,
-            &mut Diagnostics::new(),
-        )
-        .expect_err("nested section-style child exceeds one collection item")
+        settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
+            .expect_err("nested section-style child exceeds one collection item")
     });
     assert!(
         matches!(error, crate::chunks::FramingError::Resource(refusal)
         if refusal.operation == "Rhino embedded section-style checksum children")
     );
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-    settings::parse_direct_section_style(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        &mut reader,
-        archive,
-        &mut Diagnostics::new(),
-    )
-    .expect("service profile admits nested section-style child");
+    settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
+        .expect("service profile admits nested section-style child");
 }
 
 #[test]
@@ -259,14 +229,13 @@ fn layer_extension_entries_refuse_cumulative_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("test input fits the service profile");
     assert_eq!(
-        settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
+        settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
             .expect("first layer entry fits the limit")
             .len(),
         1
     );
-    let refusal =
-        settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
-            .expect_err("second layer entry exceeds the cumulative limit");
+    let refusal = settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
+        .expect_err("second layer entry exceeds the cumulative limit");
     assert!(
         matches!(refusal, crate::chunks::FramingError::Resource(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -277,7 +246,7 @@ fn layer_extension_entries_refuse_cumulative_collection_limit() {
         .expect("test input fits the service profile");
     for _ in 0..2 {
         assert_eq!(
-            settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
+            settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
                 .expect("service profile admits both layer entries")
                 .len(),
             1
@@ -411,7 +380,6 @@ fn rendering_attributes_parse_object_mapping_and_future_suffix() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
     let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V8,
@@ -467,7 +435,6 @@ fn rendering_attributes_accept_nonempty_obsolete_material_mapping_channels() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded rendering chunk");
     let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         archive,
@@ -498,14 +465,8 @@ fn future_linetype_extension_stops_at_unknown_code() {
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
     let mut warnings = Diagnostics::new();
-    let descriptor = settings::parse_direct_linetype(
-        &cadmpeg_test_support::service_decode_context(),
-        &chunk,
-        &mut reader,
-        archive,
-        &mut warnings,
-    )
-    .expect("future linetype code is bounded by the anonymous chunk");
+    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("future linetype code is bounded by the anonymous chunk");
     assert_eq!(descriptor.version, (2, 4));
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty());
@@ -533,14 +494,8 @@ fn embedded_linetype_accepts_unset_and_future_segment_tags() {
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
     let mut warnings = Diagnostics::new();
-    let descriptor = settings::parse_direct_linetype(
-        &cadmpeg_test_support::service_decode_context(),
-        &chunk,
-        &mut reader,
-        archive,
-        &mut warnings,
-    )
-    .expect("documented unset and future segment tags are admitted");
+    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("documented unset and future segment tags are admitted");
     assert_eq!(descriptor.version, (2, 4));
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -563,14 +518,8 @@ fn legacy_embedded_linetype_accepts_unset_and_future_segment_tags() {
     let chunk = crc_chunk(archive, 0x4000_8000, &body);
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded legacy linetype");
     let mut warnings = Diagnostics::new();
-    let descriptor = settings::parse_direct_linetype(
-        &cadmpeg_test_support::service_decode_context(),
-        &chunk,
-        &mut reader,
-        archive,
-        &mut warnings,
-    )
-    .expect("legacy documented segment tags are admitted");
+    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("legacy documented segment tags are admitted");
     assert_eq!(descriptor.version, (1, 1));
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -599,14 +548,8 @@ fn linetype_out_of_order_id_leaves_value_at_boundary() {
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
     let mut warnings = Diagnostics::new();
-    settings::parse_direct_linetype(
-        &cadmpeg_test_support::service_decode_context(),
-        &chunk,
-        &mut reader,
-        archive,
-        &mut warnings,
-    )
-    .expect("source ordered cascade leaves out-of-order value bounded");
+    settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("source ordered cascade leaves out-of-order value bounded");
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty());
 }
@@ -629,14 +572,9 @@ fn future_section_style_extension_stops_at_unknown_code() {
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
     let mut warnings = Diagnostics::new();
-    let descriptor = settings::parse_direct_section_style(
-        &cadmpeg_test_support::service_decode_context(),
-        &chunk,
-        &mut reader,
-        archive,
-        &mut warnings,
-    )
-    .expect("future section-style code is bounded by the anonymous chunk");
+    let descriptor =
+        settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
+            .expect("future section-style code is bounded by the anonymous chunk");
     assert_eq!(descriptor.version, (1, 4));
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty());
@@ -664,14 +602,8 @@ fn section_style_out_of_order_id_leaves_value_at_boundary() {
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
     let mut warnings = Diagnostics::new();
-    settings::parse_direct_section_style(
-        &cadmpeg_test_support::service_decode_context(),
-        &chunk,
-        &mut reader,
-        archive,
-        &mut warnings,
-    )
-    .expect("source ordered cascade leaves out-of-order value bounded");
+    settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
+        .expect("source ordered cascade leaves out-of-order value bounded");
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty());
 }

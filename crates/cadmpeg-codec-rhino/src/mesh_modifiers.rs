@@ -304,7 +304,6 @@ pub(crate) fn parse_attribute_userdata(
 
     let displacement = if let Some(descriptor) = displacement_descriptor {
         optional_modifier(
-            ctx,
             warnings,
             parse_displacement(ctx, bytes, descriptor.payload_range.clone(), archive),
             "displacement",
@@ -315,7 +314,6 @@ pub(crate) fn parse_attribute_userdata(
     };
     let edge_softening = if let Some(descriptor) = edge_softening_descriptor {
         optional_modifier(
-            ctx,
             warnings,
             parse_edge_softening(ctx, bytes, descriptor.payload_range.clone()),
             "edge-softening",
@@ -326,7 +324,6 @@ pub(crate) fn parse_attribute_userdata(
     };
     let thickening = if let Some(descriptor) = thickening_descriptor {
         optional_modifier(
-            ctx,
             warnings,
             parse_thickening(ctx, bytes, descriptor.payload_range.clone()),
             "thickening",
@@ -337,7 +334,6 @@ pub(crate) fn parse_attribute_userdata(
     };
     let curve_piping = if let Some(descriptor) = curve_piping_descriptor {
         optional_modifier(
-            ctx,
             warnings,
             parse_curve_piping(ctx, bytes, descriptor.payload_range.clone()),
             "curve-piping",
@@ -348,7 +344,6 @@ pub(crate) fn parse_attribute_userdata(
     };
     let shut_lining = if let Some(descriptor) = shut_lining_descriptor {
         optional_modifier(
-            ctx,
             warnings,
             parse_shut_lining(ctx, bytes, descriptor.payload_range.clone()),
             "shut-lining",
@@ -372,7 +367,6 @@ pub(crate) fn parse_attribute_userdata(
 }
 
 fn optional_modifier<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     warnings: &mut Diagnostics,
     parsed: Result<T, FramingError>,
     label: &str,
@@ -382,10 +376,9 @@ fn optional_modifier<T>(
         Ok(value) => Ok(Some(value)),
         Err(error @ FramingError::Resource(_)) => Err(error),
         Err(error) => {
-            warnings.push_admitted(
-                ctx,
-                format_args!("{label} userdata at {offset} dropped: {error}"),
-            )?;
+            warnings.push(format_args!(
+                "{label} userdata at {offset} dropped: {error}"
+            ));
             Ok(None)
         }
     }
@@ -412,7 +405,7 @@ fn parse_displacement(
     payload_range: std::ops::Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
-    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_xml(ctx, &xml, xml_version, archive)
 }
 
@@ -421,7 +414,7 @@ fn parse_edge_softening(
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<EdgeSofteningModifier, FramingError> {
-    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_edge_softening_xml(ctx, &xml, xml_version)
 }
 
@@ -430,7 +423,7 @@ fn parse_thickening(
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ThickeningModifier, FramingError> {
-    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_thickening_xml(ctx, &xml, xml_version)
 }
 
@@ -439,7 +432,7 @@ fn parse_curve_piping(
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<CurvePipingModifier, FramingError> {
-    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_curve_piping_xml(ctx, &xml, xml_version)
 }
 
@@ -448,21 +441,21 @@ fn parse_shut_lining(
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
 ) -> Result<ShutLiningModifier, FramingError> {
-    let (_text_reservation, xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
+    let (xml_version, xml) = parse_xml_userdata(ctx, bytes, payload_range)?;
     parse_shut_lining_xml(ctx, &xml, xml_version)
 }
 
-fn parse_xml_userdata<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+fn parse_xml_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: std::ops::Range<usize>,
-) -> Result<(cadmpeg_core::decode::ScopedReservation<'ctx>, i32, String), FramingError> {
+) -> Result<(i32, String), FramingError> {
     let mut reader = BoundedReader::new(bytes, payload_range.start, payload_range.end)?;
     let xml_version = reader.i32()?;
-    let (xml, reservation) = match xml_version {
+    let xml = match xml_version {
         1 => {
             let bytes = settings::utf16_payload(&mut reader)?;
-            ctx.utf16le_scoped_text(
+            ctx.utf16le_text(
                 bytes,
                 bytes.len() / 2,
                 false,
@@ -492,15 +485,10 @@ fn parse_xml_userdata<'ctx>(
                 ));
             }
             let raw = reader.take(length)?;
-            let work = cadmpeg_core::decode::u64_from_index(raw.len())
-                .checked_mul(3)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("Rhino mesh modifier XML text", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(work, "Rhino mesh modifier XML text")?;
+
             let text = std::str::from_utf8(raw)
                 .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?;
-            ctx.format_scoped(format_args!("{text}"), "Rhino mesh modifier XML text")?
+            text.to_owned()
         }
         version => {
             return Err(FramingError::structural(
@@ -510,7 +498,7 @@ fn parse_xml_userdata<'ctx>(
         }
     };
     reader.skip_remaining()?;
-    Ok((reservation, xml_version, xml))
+    Ok((xml_version, xml))
 }
 
 fn parse_xml(
@@ -542,13 +530,11 @@ fn parse_xml(
     })?;
     let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")?
         .unwrap_or_else(|| i32::from(archive.value() < 60));
-    let sub_items = ctx.try_collect_retained_with(
-        displacement
-            .children()
-            .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB)),
-        "Rhino displacement sub-items",
-        parse_sub_item,
-    )?;
+    let sub_items = displacement
+        .children()
+        .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB))
+        .map(parse_sub_item)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(DisplacementModifier {
         xml_version,
         on: field_bool(displacement, "on", false)?,

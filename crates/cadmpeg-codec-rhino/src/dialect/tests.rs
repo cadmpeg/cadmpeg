@@ -84,7 +84,7 @@ fn the_totality_row_records_no_substituted_declared_strategy() {
             &Admission::Residual,
             "archive word {word}"
         );
-        let note = admission_loss(&cadmpeg_test_support::service_decode_context(), &matched)
+        let note = admission_loss(&matched)
             .expect("service profile admits loss")
             .expect("an unverified admission charges its loss");
         assert_eq!(
@@ -107,7 +107,7 @@ fn residual_dialect_loss_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = admission_loss(&ctx, &classify_word(49))
+    let error = admission_loss(&classify_word(49))
         .expect_err("unverified dialect loss exceeds retained limit");
     assert!(matches!(
         error,
@@ -120,23 +120,18 @@ fn residual_dialect_loss_refuses_retained_limit() {
 fn archive_word_5_is_admitted_on_its_declared_narrow_chunk_grammar() {
     let matched = classify_word(5);
     assert_eq!(matched.admission(), &Admission::Admitted);
-    assert!(
-        admission_loss(&cadmpeg_test_support::service_decode_context(), &matched)
-            .expect("service profile admits classification")
-            .is_none()
-    );
+    assert!(admission_loss(&matched)
+        .expect("service profile admits classification")
+        .is_none());
 }
 
 #[test]
 fn verified_rows_charge_no_admission_loss() {
     for (word, _) in ENUMERATED {
         assert!(
-            admission_loss(
-                &cadmpeg_test_support::service_decode_context(),
-                &classify_word(*word)
-            )
-            .expect("service profile admits classification")
-            .is_none(),
+            admission_loss(&classify_word(*word))
+                .expect("service profile admits classification")
+                .is_none(),
             "archive word {word}: verified rows do not charge a dialect loss"
         );
     }

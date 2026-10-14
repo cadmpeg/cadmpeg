@@ -53,12 +53,10 @@ fn plane_pcurve_lookup_set_refuses_collection_limit() {
 fn embedded_brep_snapshot_refuses_retained_limit() {
     let model = cadmpeg_ir::document::Model::default();
     let semantic = cadmpeg_test_support::service_decode_context();
-    let expected = crate::wire::admitted_json(
-        &semantic,
+    let expected = crate::wire::json(
         &model
             .geometry_snapshot(&semantic, "brep")
             .expect("snapshot admission"),
-        "Rhino embedded Brep JSON",
     )
     .expect("service profile admits snapshot");
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -66,12 +64,10 @@ fn embedded_brep_snapshot_refuses_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).expect("test size fits");
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let refusal = crate::wire::admitted_json(
-        &ctx,
+    let refusal = crate::wire::json(
         &model
             .geometry_snapshot(&ctx, "brep")
             .expect("snapshot admission"),
-        "Rhino embedded Brep JSON",
     )
     .expect_err("snapshot text exceeds retained limit");
     assert!(matches!(
@@ -1238,12 +1234,7 @@ fn reused_brep_c2_curve_refuses_before_the_second_copy() {
 fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
     let mut staged = BrepDraft::default();
     staged
-        .mesh_cache_slot_dropped(
-            &cadmpeg_test_support::service_decode_context(),
-            "render",
-            2,
-            &"payload is truncated",
-        )
+        .mesh_cache_slot_dropped("render", 2, &"payload is truncated")
         .expect("service profile admits cache warning");
     assert_eq!(
         staged

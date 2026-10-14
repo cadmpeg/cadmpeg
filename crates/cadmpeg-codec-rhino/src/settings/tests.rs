@@ -42,7 +42,7 @@ fn parse_test_extensions(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("test input fits the service profile");
-    settings::parse_layer_extensions(&ctx, payload, descriptor, archive, parent_id)
+    settings::parse_layer_extensions(payload, descriptor, archive, parent_id)
 }
 
 /// Header and checksum bytes surrounding a fixture table body.
@@ -168,7 +168,7 @@ fn deferred_utf16_refuses_work_before_validation_without_retaining() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-    assert!(matches!(settings::utf16_deferred(&ctx, &mut reader),
+    assert!(matches!(settings::utf16_deferred( &mut reader),
         Err(crate::chunks::FramingError::Resource(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
@@ -611,13 +611,7 @@ fn parses_plugin_list_entries_and_bounded_future_minors() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8135, body);
-    settings::parse_plugin_list(
-        &cadmpeg_test_support::service_decode_context(),
-        &data,
-        &record,
-        archive,
-    )
-    .expect("plugin list");
+    settings::parse_plugin_list(&data, &record, archive).expect("plugin list");
 }
 
 #[test]
@@ -1113,7 +1107,6 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let (data, record) = metadata_record(0x2000_8050, class);
     let mut wrapper_warnings = Diagnostics::new();
     let (class_descriptor, userdata) = crate::objects::parse_class_wrapper_with_userdata(
-        &cadmpeg_test_support::service_decode_context(),
         &data,
         record.body(),
         archive,
@@ -1667,12 +1660,8 @@ fn duplicate_layer_parent_uuid_is_reported_as_ambiguous() {
     metadata.layers.push(duplicate);
 
     let mut warnings = Diagnostics::new();
-    super::report_layer_parent_references(
-        &cadmpeg_test_support::service_decode_context(),
-        &metadata.layers,
-        &mut warnings,
-    )
-    .expect("parent count map fits service profile");
+    super::report_layer_parent_references(&metadata.layers, &mut warnings)
+        .expect("parent count map fits service profile");
 
     assert!(
         warnings.iter().any(|warning| {
@@ -1697,21 +1686,16 @@ fn missing_layer_parent_diagnostic_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let refusal =
-        super::report_layer_parent_references(&ctx, &metadata.layers, &mut Diagnostics::new())
-            .expect_err("one missing-parent warning exceeds zero collection items");
+    let refusal = super::report_layer_parent_references(&metadata.layers, &mut Diagnostics::new())
+        .expect_err("one missing-parent warning exceeds zero collection items");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino diagnostics"
     ));
     let mut warnings = Diagnostics::new();
-    super::report_layer_parent_references(
-        &cadmpeg_test_support::service_decode_context(),
-        &metadata.layers,
-        &mut warnings,
-    )
-    .expect("service profile admits warning");
+    super::report_layer_parent_references(&metadata.layers, &mut warnings)
+        .expect("service profile admits warning");
     assert_eq!(warnings.iter().count(), 1);
 }
 
@@ -1828,7 +1812,6 @@ fn rendering_attributes_accept_layer_future_minor_suffix() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
     let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V8,
@@ -1897,7 +1880,6 @@ fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("rendering chunk");
         let mut warnings = Diagnostics::new();
         let result = settings::parse_rendering_attributes(
-            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &mut reader,
             ArchiveVersion::V8,

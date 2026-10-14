@@ -112,7 +112,7 @@ fn group_identity_workspace_refuses_materialized_limit() {
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+    let error = crate::presentation::disambiguate_group_ids(&mut duplicate_groups())
         .expect_err("identity workspace exceeds materialized limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
@@ -126,7 +126,7 @@ fn group_identity_count_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+    let error = crate::presentation::disambiguate_group_ids(&mut duplicate_groups())
         .expect_err("identity map exceeds collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino group identity counts")
@@ -140,7 +140,7 @@ fn duplicate_group_indices_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+    let error = crate::presentation::disambiguate_group_ids(&mut duplicate_groups())
         .expect_err("duplicate indices exceed collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino duplicate group indices")
@@ -155,7 +155,7 @@ fn disambiguated_group_id_refuses_retained_limit() {
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root admitted");
-        crate::presentation::disambiguate_group_ids(&ctx, &mut duplicate_groups())
+        crate::presentation::disambiguate_group_ids(&mut duplicate_groups())
             .expect_err("disambiguated ID exceeds retained limit")
     };
     let error = run(crate::test_support::retained_limit_at(
@@ -585,7 +585,6 @@ fn rendering_mapping_refusal(limit: u64) -> FramingError {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("rendering root admitted");
     crate::presentation::rendering_attributes(
-        &ctx,
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,
@@ -631,7 +630,6 @@ fn rendering_material_refusal(limit: u64) -> FramingError {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("rendering root admitted");
     crate::presentation::rendering_attributes(
-        &ctx,
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,
@@ -681,7 +679,6 @@ fn v5_dimension_extra_refusal(collection_limit: u64, retained_limit: u64) -> Fra
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("dimension extra root admitted");
     crate::presentation::parse_v5_dimension_style_extra(
-        &ctx,
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
@@ -916,7 +913,6 @@ fn dimension_child_digest_refuses_retained_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("child root admitted");
     let error = crate::presentation::named_child(
-        &ctx,
         &bytes,
         &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("child bounds"),
         ArchiveVersion::V8,
@@ -926,7 +922,6 @@ fn dimension_child_digest_refuses_retained_limit() {
         matches!(error, FramingError::Resource(refusal) if refusal.operation == "Rhino dimension child SHA-256")
     );
     let admitted = crate::presentation::named_child(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("child bounds"),
         ArchiveVersion::V8,
@@ -979,7 +974,6 @@ fn presentation_install_scan() -> &'static crate::container::Scan<'static> {
             .expect("group table retained");
         let group_record = group_table.records.first().expect("group record retained");
         let group_range = crate::presentation::class_data(
-            &cadmpeg_test_support::service_decode_context(),
             scan.data,
             group_record,
             archive,
@@ -1584,7 +1578,6 @@ fn presentation_loss_refuses_collection_and_note_copy_limits() {
         .expect("empty root admitted");
     let mut losses = Vec::new();
     let error = crate::presentation::push_presentation_loss(
-        &ctx,
         &mut losses,
         crate::loss::RhinoLossCode::PresentationRecordDropped,
         format_args!("dropped"),
@@ -1605,7 +1598,6 @@ fn presentation_loss_refuses_collection_and_note_copy_limits() {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root");
             match crate::presentation::push_presentation_loss(
-                &ctx,
                 &mut Vec::new(),
                 crate::loss::RhinoLossCode::PresentationRecordDropped,
                 format_args!("dropped"),
@@ -1619,7 +1611,6 @@ fn presentation_loss_refuses_collection_and_note_copy_limits() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let error = crate::presentation::push_presentation_loss(
-        &ctx,
         &mut losses,
         crate::loss::RhinoLossCode::PresentationRecordDropped,
         format_args!("dropped"),
@@ -1633,7 +1624,6 @@ fn presentation_loss_refuses_collection_and_note_copy_limits() {
     assert!(losses.is_empty());
     let ctx = cadmpeg_test_support::service_decode_context();
     crate::presentation::push_presentation_loss(
-        &ctx,
         &mut losses,
         crate::loss::RhinoLossCode::PresentationRecordDropped,
         format_args!("dropped"),
@@ -1653,7 +1643,6 @@ fn unbound_presentation_record_refuses_opaque_collection_limit() {
     let mut losses = Vec::new();
     let mut opaque = Vec::new();
     let error = crate::presentation::retain_unbound_presentation_record(
-        &ctx,
         &mut losses,
         &mut opaque,
         0x1000_0012,
@@ -1670,7 +1659,6 @@ fn unbound_presentation_record_refuses_opaque_collection_limit() {
     assert!(opaque.is_empty());
     let ctx = cadmpeg_test_support::service_decode_context();
     crate::presentation::retain_unbound_presentation_record(
-        &ctx,
         &mut Vec::new(),
         &mut opaque,
         0x1000_0012,

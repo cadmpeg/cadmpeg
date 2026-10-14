@@ -312,7 +312,6 @@ pub(crate) fn annotation(
             let wrapper = chunk_at(data, overrides.position(), overrides.end(), archive, false)?;
             let mut warnings = Diagnostics::new();
             parse_class_wrapper(
-                ctx,
                 data,
                 overrides.position()..wrapper.next_offset(),
                 archive,
@@ -433,9 +432,7 @@ fn legacy_annotation_fields(
         .ok_or_else(|| {
             FramingError::structural(point_count_offset, "invalid legacy annotation point count")
         })?;
-    let mut points = ctx
-        .collection_vec(point_count, "Rhino legacy annotation points")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut points = Vec::new();
     for _ in 0..point_count {
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
@@ -469,7 +466,7 @@ fn legacy_annotation_fields(
     let user_text = if !direct_legacy && minor >= 2 {
         utf16_retained(ctx, annotation, "Rhino legacy annotation user text")?
     } else {
-        ctx.copy_retained_text(&rich_text, "Rhino legacy annotation user text")?
+        rich_text.clone()
     };
     let dimstyle_index = if !direct_legacy && minor >= 3 {
         let text_style_index = annotation.i32()?;
@@ -617,9 +614,7 @@ pub(crate) fn v2_annotation_direct(
         1 << 20,
         point_count_offset,
     )?;
-    let mut points = ctx
-        .collection_vec(point_bytes / 16, "Rhino V2 annotation points")
-        .map_err(crate::chunks::FramingError::from)?;
+    let mut points = Vec::new();
     for _ in 0..point_bytes / 16 {
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
@@ -648,19 +643,14 @@ pub(crate) fn v2_annotation_direct(
 }
 
 /// Applies the source conversion's user-text selection and trimming rule.
-pub(crate) fn v2_effective_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    annotation: &V2Annotation,
-) -> Result<String, cadmpeg_core::CodecError> {
+pub(crate) fn v2_effective_text(annotation: &V2Annotation) -> String {
     let text = if annotation.user_text.is_empty() {
         &annotation.default_text
     } else {
         &annotation.user_text
     };
-    ctx.copy_retained_text(
-        text.trim_matches(|character: char| character.is_whitespace() || character.is_control()),
-        "Rhino V2 effective text",
-    )
+    text.trim_matches(|character: char| character.is_whitespace() || character.is_control())
+        .to_owned()
 }
 
 enum LegacyDimensionFields {
@@ -1051,7 +1041,7 @@ fn decode_v2(
     Ok(Dimension {
         source_range: range,
         annotation_type: modern_annotation_type(kind),
-        rich_text: v2_effective_text(ctx, &annotation)?,
+        rich_text: v2_effective_text(&annotation),
         user_text: annotation.user_text,
         family: DimensionFamily::V2 {
             default_text: annotation.default_text,
@@ -1425,16 +1415,15 @@ pub(crate) fn apply_userdata(
 /// Returns the annotation and the codes for every reference the annotation could
 /// not carry.
 fn insert_dimension_property(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     key: &'static str,
     value: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let key = ctx.copy_retained_text(key, "Rhino dimension parameter key")?;
+    let key = key.to_owned();
     let key = cadmpeg_core::text::NonBlankString::new(key)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension key is blank"))?;
-    let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
-    ctx.insert_btree_map(parameters, key, value, "Rhino dimension parameter entries")?;
+    let value = value.to_string();
+    parameters.insert(key, value);
     Ok(())
 }
 
@@ -1467,7 +1456,6 @@ impl fmt::Display for SemicolonPoints<'_> {
 }
 
 pub(crate) fn project(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     dimension: &Dimension,
     key: &str,
     name: Option<&str>,
@@ -1507,7 +1495,7 @@ pub(crate) fn project(
     {
         macro_rules! put {
             ($key:expr, $value:expr) => {
-                insert_dimension_property(ctx, &mut parameters, $key, $value)
+                insert_dimension_property(&mut parameters, $key, $value)
             };
         }
         put!("measurement", format_args!("{}", dimension.measurement))?;
@@ -1690,7 +1678,7 @@ pub(crate) fn project(
         }
     }
     if let Some(name) = name {
-        insert_dimension_property(ctx, &mut parameters, "object_name", format_args!("{name}"))?;
+        insert_dimension_property(&mut parameters, "object_name", format_args!("{name}"))?;
     }
 
     // Model-space text point via the dimension plane (stored UV, not world xyz).
@@ -1715,25 +1703,19 @@ pub(crate) fn project(
         match id {
             None => Ok(()),
             Some(id) if id.is_nil() => {
-                let role = ctx.copy_retained_text(role, "Rhino dimension reference key")?;
+                let role = role.to_owned();
                 let role = cadmpeg_core::text::NonBlankString::new(role).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
                         "generated dimension reference role is blank",
                     )
                 })?;
-                let mut selections =
-                    ctx.collection_vec(1, "Rhino dimension reference selections")?;
-                selections.push(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
-                ctx.insert_btree_map(
-                    &mut references,
+                references.insert(
                     role,
-                    selections,
-                    "Rhino dimension reference entries",
-                )?;
+                    vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
+                );
                 Ok(())
             }
             Some(_) => {
-                ctx.reserve_vec(&mut unresolved, 1, "Rhino unresolved dimension references")?;
                 unresolved.push(code);
                 Ok(())
             }
@@ -1762,47 +1744,35 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(
-        ctx.copy_retained_text(key, "Rhino dimension identity key")?,
-    )
-    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
-    let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
-        format_args!("rhino:dimension:annotation#{}", key.as_str()),
-        "Rhino dimension annotation identity",
-    )?)
-    .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key.to_owned())
+        .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let annotation_id =
+        SemanticAnnotationId::try_from(format!("rhino:dimension:annotation#{}", key.as_str()))
+            .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {
-        ctx.reserve_vec(&mut text, 1, "Rhino dimension annotation text")?;
-        text.push(
-            ctx.copy_retained_text(&dimension.user_text, "Rhino dimension annotation text copy")?,
-        );
+        text.push(dimension.user_text.clone());
     }
     let annotation = SemanticAnnotation {
         id: annotation_id,
-        object: ctx.copy_retained_text(object, "Rhino dimension annotation object")?,
+        object: object.to_owned(),
         kind: SemanticAnnotationKind::Dimension,
-        runtime_type: ctx.copy_retained_text(runtime_type, "Rhino dimension runtime type")?,
+        runtime_type: runtime_type.to_owned(),
         order,
         text,
         references,
         value: Some(value),
-        format: (!dimension.rich_text.is_empty())
-            .then(|| ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension format text"))
-            .transpose()?,
+        format: (!dimension.rich_text.is_empty()).then(|| dimension.rich_text.clone()),
         position,
         parameters,
         assets: Vec::new(),
-        native_ref: ctx.copy_retained_text(object, "Rhino dimension native reference")?,
+        native_ref: object.to_owned(),
     };
     Ok((annotation, unresolved))
 }
 
 /// Serializes one decoded dimension without source-record identity.
-pub(crate) fn semantic_json(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    dimension: &Dimension,
-) -> Result<String, cadmpeg_core::CodecError> {
+pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_core::CodecError> {
     struct DimensionJson<'a>(&'a cadmpeg_ir::semantic_annotations::SemanticAnnotation);
     impl serde::Serialize for DimensionJson<'_> {
         fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -1818,12 +1788,8 @@ pub(crate) fn semantic_json(
             map.end()
         }
     }
-    let (annotation, _) = project(ctx, dimension, "embedded-history-dimension", None, "", 0)?;
-    crate::wire::admitted_canonical_json(
-        ctx,
-        &DimensionJson(&annotation),
-        "Rhino dimension semantic JSON",
-    )
+    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0)?;
+    crate::wire::canonical_json(&DimensionJson(&annotation))
 }
 
 #[cfg(test)]
@@ -2000,7 +1966,7 @@ pub(crate) mod tests {
         })
         .expect("V2 annotation admitted");
         let error = with_retained_limit(&bytes, 0, |ctx| {
-            v2_effective_text(ctx, &annotation).expect_err("effective copy exceeds retained limit")
+            v2_effective_text(&annotation).expect_err("effective copy exceeds retained limit")
         });
         assert!(matches!(
             error,
@@ -2295,8 +2261,7 @@ pub(crate) mod tests {
         assert!(!annotation.user_positioned_text);
         assert_eq!(reader.remaining(), 2);
         assert_eq!(
-            v2_effective_text(&cadmpeg_test_support::service_decode_context(), &annotation)
-                .expect("effective V2 text"),
+            v2_effective_text(&annotation).expect("effective V2 text"),
             "user <>"
         );
     }
@@ -2722,7 +2687,7 @@ pub(crate) mod tests {
         )
         .expect("valid linear dimension");
         let refusal = with_collection_limit(&[], 0, |ctx| {
-            super::project(ctx, &dimension, "test", None, "", 0)
+            super::project(&dimension, "test", None, "", 0)
                 .expect_err("first parameter exceeds zero items")
         });
         assert!(matches!(
@@ -2731,9 +2696,8 @@ pub(crate) mod tests {
                 if limit.operation == "Rhino dimension parameter entries"
         ));
         let ctx = cadmpeg_test_support::service_decode_context();
-        let (annotation, _) =
-            super::project(&ctx, &dimension, "embedded-history-dimension", None, "", 0)
-                .expect("service profile admits projection");
+        let (annotation, _) = super::project(&dimension, "embedded-history-dimension", None, "", 0)
+            .expect("service profile admits projection");
         let baseline = serde_json::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,

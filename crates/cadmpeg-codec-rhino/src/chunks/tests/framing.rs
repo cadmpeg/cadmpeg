@@ -39,7 +39,6 @@ fn class_end_checksum_children_refuse_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("root bytes admitted");
     let error = checksum_children_through_class_end(
-        &ctx,
         &bytes,
         0..bytes.len(),
         archive,
@@ -53,7 +52,6 @@ fn class_end_checksum_children_refuse_collection_limit() {
     ));
     let service = cadmpeg_test_support::service_decode_context();
     let ranges = checksum_children_through_class_end(
-        &service,
         &bytes,
         0..bytes.len(),
         archive,
@@ -77,7 +75,7 @@ fn class_end_checksum_children_ceiling_is_a_framing_error_without_fusing() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
     let error =
-        checksum_children_through_class_end(&ctx, &bytes, 0..bytes.len(), archive, "class stream")
+        checksum_children_through_class_end(&bytes, 0..bytes.len(), archive, "class stream")
             .expect_err("child ceiling rejects the class-end slot");
     assert!(
         matches!(error, FramingError::InvalidLength { offset, value }
@@ -101,7 +99,7 @@ fn class_end_checksum_children_accept_the_ceiling() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
     let ranges =
-        checksum_children_through_class_end(&ctx, &bytes, 0..bytes.len(), archive, "class stream")
+        checksum_children_through_class_end(&bytes, 0..bytes.len(), archive, "class stream")
             .expect("class end is within the child ceiling");
     assert_eq!(ranges.len(), cap);
     assert_eq!(ranges.first(), Some(&(0..child.len())));
@@ -151,44 +149,28 @@ fn parses_exact_header_and_scope() {
         ("80", ArchiveVersion::V8),
         ("90", ArchiveVersion::V9),
     ] {
-        let parsed = parse_header(
-            &cadmpeg_test_support::service_decode_context(),
-            &header(text),
-        )
-        .expect("valid header");
+        let parsed = parse_header(&header(text)).expect("valid header");
         assert_eq!(parsed.archive_version, expected);
     }
-    assert!(parse_header(
-        &cadmpeg_test_support::service_decode_context(),
-        &header("0")
-    )
-    .is_err());
+    assert!(parse_header(&header("0")).is_err());
     let mut invalid = header("50");
     invalid[file_header::ARCHIVE_VERSION] = b'0';
     assert!(matches!(
-        parse_header(&cadmpeg_test_support::service_decode_context(), &invalid),
+        parse_header(&invalid),
         Err(FramingError::InvalidHeader)
     ));
     invalid = header("50");
     invalid[31] = b' ';
     assert!(matches!(
-        parse_header(&cadmpeg_test_support::service_decode_context(), &invalid),
+        parse_header(&invalid),
         Err(FramingError::InvalidHeader)
     ));
-    assert!(parse_header(
-        &cadmpeg_test_support::service_decode_context(),
-        &header("1234567")
-    )
-    .is_ok());
-    assert!(parse_header(
-        &cadmpeg_test_support::service_decode_context(),
-        &header("12345678")
-    )
-    .is_ok());
+    assert!(parse_header(&header("1234567")).is_ok());
+    assert!(parse_header(&header("12345678")).is_ok());
     let mut embedded = vec![0x5a; 127];
     embedded.extend(header("80"));
     assert_eq!(
-        parse_header(&cadmpeg_test_support::service_decode_context(), &embedded)
+        parse_header(&embedded)
             .expect("embedded archive")
             .start_offset,
         127
@@ -209,7 +191,7 @@ fn header_magic_scan_refuses_work_before_search() {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
         assert!(
-            matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+            matches!(parse_header( &bytes), Err(FramingError::Resource(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "Rhino header magic scan"
                 && limit.used == 0 && limit.additional == scan_work
@@ -228,11 +210,11 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
     policy.limits.max_work_units = scan_work;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
-    let parsed = parse_header(&ctx, &bytes).expect("one scan fits the allowance");
+    let parsed = parse_header(&bytes).expect("one scan fits the allowance");
     assert_eq!(parsed.start_offset, 4096);
     assert_eq!(parsed.archive_version, ArchiveVersion::V8);
     assert!(
-        matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
+        matches!(parse_header( &bytes), Err(FramingError::Resource(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "Rhino header magic scan"
             && limit.used == scan_work && limit.additional == scan_work
@@ -323,21 +305,10 @@ fn verifies_crc_vectors_and_recoverable_mismatch() {
     bytes.extend(crc32fast::hash(body).to_le_bytes());
     let chunk =
         chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V2, false).expect("required invariant");
-    assert_eq!(
-        verify_checksum(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &chunk
-        ),
-        Ok(ChecksumStatus::Valid)
-    );
+    assert_eq!(verify_checksum(&bytes, &chunk), Ok(ChecksumStatus::Valid));
     *bytes.last_mut().expect("required invariant") ^= 1;
     assert!(matches!(
-        verify_checksum(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &chunk
-        ),
+        verify_checksum(&bytes, &chunk),
         Ok(ChecksumStatus::Mismatch { .. })
     ));
 
@@ -519,7 +490,7 @@ fn checksum_direct_bytes_refuse_before_hashing() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = verify_checksum(&ctx, &bytes, &chunk);
+    let result = verify_checksum(&bytes, &chunk);
     assert!(matches!(result, Err(FramingError::Resource(limit))
         if limit.operation == "Rhino chunk checksum bytes" && limit.used == 1 && limit.additional == 4));
 }

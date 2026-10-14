@@ -285,7 +285,6 @@ fn anonymous(
 }
 
 fn parse_v5_text_extra(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
@@ -303,14 +302,7 @@ fn parse_v5_text_extra(
     })?;
     reader.skip_remaining()?;
     Ok(V5TextExtraRecord {
-        parent_text_uuid: (!parent_text_uuid.is_nil())
-            .then(|| {
-                ctx.format_retained(
-                    format_args!("{parent_text_uuid}"),
-                    "Rhino V5 text parent UUID",
-                )
-            })
-            .transpose()?,
+        parent_text_uuid: (!parent_text_uuid.is_nil()).then(|| format!("{parent_text_uuid}")),
         draw_mask,
         mask_color_source,
         mask_color: (mask_color).into(),
@@ -368,9 +360,7 @@ fn decode_annotation(
             1 << 20,
             outer.position(),
         )?;
-        points = ctx
-            .collection_vec(bytes / 16, "Rhino modern annotation leader points")
-            .map_err(crate::chunks::FramingError::from)?;
+        points = Vec::new();
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
             let point = cadmpeg_ir::units::FiniteVector::new(point).ok_or_else(|| {
@@ -602,71 +592,46 @@ fn decode_v2_annotation_arrow(
     Ok((tail, head))
 }
 
-fn source_key(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    identity: &crate::objects::SourceIdentity,
-    source_order: usize,
-) -> Result<String, CodecError> {
+fn source_key(identity: &crate::objects::SourceIdentity, source_order: usize) -> String {
     let Some((_, key)) = identity.source_id.rsplit_once('#') else {
-        return ctx.format_retained(
-            format_args!("record-{source_order:06}"),
-            "Rhino annotation source key",
-        );
+        return format!("record-{source_order:06}");
     };
-    ctx.copy_retained_text(key, "Rhino annotation source key")
+    key.to_owned()
 }
 
 fn record_identity(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     identity: &crate::objects::SourceIdentity,
     source_order: usize,
     admitted_key: Option<String>,
-) -> Result<(Vec<String>, String, String), CodecError> {
-    let mut links = ctx.collection_vec(1, "Rhino annotation links")?;
+) -> (
+    std::vec::Vec<std::string::String>,
+    std::string::String,
+    std::string::String,
+) {
+    let mut links = Vec::new();
     let key = match admitted_key {
         Some(key) => key,
-        None => source_key(ctx, identity, source_order)?,
+        None => source_key(identity, source_order),
     };
-    links.push(ctx.format_retained(
-        format_args!("rhino:object:record#{source_order:06}"),
-        "Rhino annotation object link",
-    )?);
-    Ok((
-        links,
-        key,
-        ctx.format_retained(
-            format_args!("{}", identity.object_id),
-            "Rhino annotation object UUID",
-        )?,
-    ))
+    links.push(format!("rhino:object:record#{source_order:06}"));
+    (links, key, format!("{}", identity.object_id))
 }
 
 fn annotation_record_dropped(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     source_id: &str,
     source_offset: usize,
     class_uuid: Uuid,
     error: impl std::fmt::Display,
-) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "Rhino annotation loss notes")?;
-    let loss = crate::wire::admitted_loss(
-        ctx,
-        RhinoLossCode::AnnotationRecordDropped,
-        format_args!("annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"),
-        "Rhino annotation loss text",
-    )?;
-    let tag = ctx.format_retained(
-        format_args!("ANNOTATION/source={source_id}/class={class_uuid}"),
-        "Rhino annotation loss tag",
-    )?;
+) {
+    let loss = RhinoLossCode::AnnotationRecordDropped.note(format_args!("annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"));
+    let tag = format!("ANNOTATION/source={source_id}/class={class_uuid}");
     losses.push(
         loss.with_provenance(
             SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(source_offset))
                 .with_tag(tag),
         ),
     );
-    Ok(())
 }
 
 /// Projects every supported general annotation into stable native records.
@@ -690,17 +655,16 @@ pub(crate) fn install(
         let identity = &object.identity;
         let Some(scale) = binding.neutral_scale() else {
             annotation_record_dropped(
-                ctx,
                 &mut losses,
                 &identity.source_id,
                 object.range.start,
                 object.class_uuid,
                 format_args!("no physical millimetre binding ({})", binding.label()),
-            )?;
+            );
             continue;
         };
         let mut v2_key = if matches!(&class, AnnotationClass::V2) {
-            Some(source_key(ctx, identity, source_order)?)
+            Some(source_key(identity, source_order))
         } else {
             None
         };
@@ -717,22 +681,16 @@ pub(crate) fn install(
                     userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
                 })
             {
-                match parse_v5_text_extra(ctx, scan.data, extra, scan.archive) {
+                match parse_v5_text_extra(scan.data, extra, scan.archive) {
                     Ok(value) => v5_text_extra = Some(value),
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        ctx.reserve_vec(&mut losses, 1, "Rhino annotation loss notes")?;
-                        losses.push(crate::wire::admitted_loss(
-                            ctx,
-                            RhinoLossCode::AnnotationUserdataDropped,
-                            format_args!(
-                                "V5 text-extra userdata at offset {} could not be transferred: {error}",
-                                extra.range.start
-                            ),
-                            "Rhino annotation userdata loss text",
-                        )?);
+                        losses.push(RhinoLossCode::AnnotationUserdataDropped.note(format_args!(
+                            "V5 text-extra userdata at offset {} could not be transferred: {error}",
+                            extra.range.start
+                        )));
                     }
                 }
             }
@@ -753,24 +711,20 @@ pub(crate) fn install(
                     }
                     Err(error) => {
                         annotation_record_dropped(
-                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        )?;
+                        );
                         continue;
                     }
                 };
-                ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")?;
+
                 let (links, key, source_uuid) =
-                    record_identity(ctx, identity, source_order, v2_key.take())?;
+                    record_identity(identity, source_order, v2_key.take());
                 annotations.push(AnnotationRecord {
-                    id: ctx.format_retained(
-                        format_args!("rhino:document:annotation#{key}"),
-                        "Rhino annotation ID",
-                    )?,
+                    id: format!("rhino:document:annotation#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     kind: if leader {
@@ -785,13 +739,7 @@ pub(crate) fn install(
                     plane_z_axis: value.plane.zaxis,
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: (!value.dimstyle_id.is_nil())
-                        .then(|| {
-                            ctx.format_retained(
-                                format_args!("{}", value.dimstyle_id),
-                                "Rhino annotation dimstyle UUID",
-                            )
-                        })
-                        .transpose()?,
+                        .then(|| format!("{}", value.dimstyle_id)),
                     annotation_type: value.kind,
                     text_rectangle_width: value.text_rectangle_width,
                     text_rotation_radians: value.text_rotation_radians,
@@ -827,32 +775,27 @@ pub(crate) fn install(
                     }
                     Err(error) => {
                         annotation_record_dropped(
-                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        )?;
+                        );
                         continue;
                     }
                 };
-                let mut leader_points = ctx
-                    .collection_vec(value.points.len(), "Rhino legacy leader projection points")?;
+                let mut leader_points = Vec::new();
                 leader_points.extend(
                     value
                         .points
                         .into_iter()
                         .map(cadmpeg_ir::units::FiniteVector::finite_components),
                 );
-                ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")?;
+
                 let (links, key, source_uuid) =
-                    record_identity(ctx, identity, source_order, v2_key.take())?;
+                    record_identity(identity, source_order, v2_key.take());
                 annotations.push(AnnotationRecord {
-                    id: ctx.format_retained(
-                        format_args!("rhino:document:annotation#{key}"),
-                        "Rhino annotation ID",
-                    )?,
+                    id: format!("rhino:document:annotation#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     kind: if leader {
@@ -902,13 +845,12 @@ pub(crate) fn install(
                     }
                     Err(error) => {
                         annotation_record_dropped(
-                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        )?;
+                        );
                         continue;
                     }
                 };
@@ -925,12 +867,9 @@ pub(crate) fn install(
                 } else {
                     AnnotationKind::Annotation
                 };
-                let rich_text = crate::dimensions::v2_effective_text(ctx, &value.base)?;
+                let rich_text = crate::dimensions::v2_effective_text(&value.base);
                 let leader_points = if is_leader {
-                    let mut points = ctx.collection_vec(
-                        value.base.points.len(),
-                        "Rhino V2 leader projection points",
-                    )?;
+                    let mut points = Vec::new();
                     points.extend(
                         value
                             .base
@@ -942,14 +881,11 @@ pub(crate) fn install(
                 } else {
                     Vec::new()
                 };
-                ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")?;
+
                 let (links, key, source_uuid) =
-                    record_identity(ctx, identity, source_order, v2_key.take())?;
+                    record_identity(identity, source_order, v2_key.take());
                 annotations.push(AnnotationRecord {
-                    id: ctx.format_retained(
-                        format_args!("rhino:document:annotation#{key}"),
-                        "Rhino annotation ID",
-                    )?,
+                    id: format!("rhino:document:annotation#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     kind,
@@ -994,24 +930,20 @@ pub(crate) fn install(
                     }
                     Err(error) => {
                         annotation_record_dropped(
-                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        )?;
+                        );
                         continue;
                     }
                 };
-                ctx.reserve_vec(&mut dots, 1, "Rhino native text dots")?;
+
                 let (links, key, source_uuid) =
-                    record_identity(ctx, identity, source_order, v2_key.take())?;
+                    record_identity(identity, source_order, v2_key.take());
                 dots.push(TextDotRecord {
-                    id: ctx.format_retained(
-                        format_args!("rhino:document:text_dot#{key}"),
-                        "Rhino text dot ID",
-                    )?,
+                    id: format!("rhino:document:text_dot#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     data,
@@ -1027,24 +959,20 @@ pub(crate) fn install(
                     Ok(value) => value,
                     Err(error) => {
                         annotation_record_dropped(
-                            ctx,
                             &mut losses,
                             &identity.source_id,
                             object.range.start,
                             object.class_uuid,
                             error,
-                        )?;
+                        );
                         continue;
                     }
                 };
-                ctx.reserve_vec(&mut arrows, 1, "Rhino native annotation arrows")?;
+
                 let (links, key, source_uuid) =
-                    record_identity(ctx, identity, source_order, v2_key.take())?;
+                    record_identity(identity, source_order, v2_key.take());
                 arrows.push(AnnotationArrowRecord {
-                    id: ctx.format_retained(
-                        format_args!("rhino:document:annotation_arrow#{key}"),
-                        "Rhino annotation arrow ID",
-                    )?,
+                    id: format!("rhino:document:annotation_arrow#{key}"),
                     source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                     source_uuid,
                     tail,
@@ -1274,7 +1202,7 @@ mod tests {
             payload_range: 0..bytes.len(),
         };
         let error = with_retained_limit(&bytes, 0, |ctx| {
-            parse_v5_text_extra(ctx, &bytes, &descriptor, ArchiveVersion::V8)
+            parse_v5_text_extra(&bytes, &descriptor, ArchiveVersion::V8)
                 .expect_err("parent UUID exceeds retained limit")
         });
         assert!(matches!(
@@ -1891,7 +1819,6 @@ mod tests {
             crate::test_support::retained_limit_at("Rhino annotation loss text", 1, |cap| {
                 match with_retained_limit(&[], cap, |ctx| {
                     super::annotation_record_dropped(
-                        ctx,
                         &mut Vec::new(),
                         "fixture",
                         0,
@@ -1906,7 +1833,6 @@ mod tests {
             }),
             |ctx| {
                 super::annotation_record_dropped(
-                    ctx,
                     &mut Vec::new(),
                     "fixture",
                     0,
@@ -2391,13 +2317,8 @@ mod tests {
             save_context: None,
             payload_range: 0..bytes.len(),
         };
-        let value = parse_v5_text_extra(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &descriptor,
-            ArchiveVersion::V8,
-        )
-        .expect("valid V5 text extra");
+        let value = parse_v5_text_extra(&bytes, &descriptor, ArchiveVersion::V8)
+            .expect("valid V5 text extra");
         assert_eq!(value.parent_text_uuid, Some(parent.to_string()));
         assert!(value.draw_mask);
         assert_eq!(value.mask_color_source, 1);
