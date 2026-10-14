@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{scan_with_objects, CandidateError, DecodeContext};
+use super::{scan_with_objects, with_expand, CandidateError, DecodeContext};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
     use cadmpeg_ir::report::{
@@ -108,5 +110,32 @@ fn candidate_source_link_grammar_failure_preserves_admission_classification() {
             cadmpeg_ir::NativeUnknownRecord::try_from(&context.session.unknowns()[0]).unwrap_err();
         assert_eq!(message, expected.to_string());
         assert_eq!(context.session.document(), &before);
+    });
+}
+
+#[test]
+fn rejected_candidate_leaves_annotations_unchanged() {
+    let scan = scan_with_objects(&[]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand).unwrap();
+        let mut annotations = AnnotationBuilder::new();
+        annotations
+            .exactness(
+                &cadmpeg_test_support::service_decode_context(),
+                "rhino:test:point#candidate",
+                Exactness::Derived,
+            )
+            .unwrap();
+        context.annotations = annotations.build();
+        let original = context.annotations.clone();
+        let result = context.validate_candidate_fallible(|_, annotations| {
+            assert_eq!(annotations.base(), &original);
+            assert!(annotations.annotations().exactness().is_empty());
+            Err::<(), CodecError>(CodecError::malformed("candidate rejected"))
+        });
+        assert!(
+            matches!(result, Err(CandidateError::Codec(CodecError::Malformed(ref message))) if message == "candidate rejected")
+        );
+        assert_eq!(context.annotations, original);
     });
 }
