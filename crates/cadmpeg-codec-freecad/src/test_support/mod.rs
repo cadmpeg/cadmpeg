@@ -43,6 +43,27 @@ pub(crate) fn assert_collection_refusal_at<T>(
     );
 }
 
+/// Decode `bytes` under the default policy and assert that it charges collection
+/// items under `operation`.
+pub(crate) fn assert_codec_charged(bytes: &[u8], operation: &str) {
+    use cadmpeg_ir::Codec as _;
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        || {
+            crate::FcstdCodec
+                .decode(
+                    &mut std::io::Cursor::new(bytes),
+                    &cadmpeg_ir::DecodeOptions::default(),
+                )
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("{operation}: expected a codec result: {other:?}"),
+                })
+        },
+    );
+}
+
 pub(crate) fn materialized_refusal_at<T>(
     operation: &str,
     decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,

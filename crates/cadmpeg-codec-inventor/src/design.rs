@@ -1983,7 +1983,7 @@ mod tests {
     }
 
     #[test]
-    fn parameter_dependencies_refuse_collection_limit_before_distinct_members_creation() {
+    fn parameter_dependencies_charge_collection_items() {
         let token = cadmpeg_ir::identity_key!("segment");
         let base = Located::new(
             PmDcUnitPayload {
@@ -2137,28 +2137,15 @@ mod tests {
             units: vec![base, unit],
             issues: Vec::new(),
         };
-        let mut limited_policy = DecodePolicy::service();
-        // Three two-record indexes use six slots and no second table.
-        limited_policy.limits.max_collection_items = 25
-            - cadmpeg_core::decode::u64_from_index(
-                inventory.expressions.len() + inventory.units.len() + inventory.parameters.len(),
-            );
-        let limited_arena = DecodeArena::new();
-        let (limited_ctx, _) = DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
-            .expect("empty fixture view");
-        let mut limited_entities = 0;
-        assert!(matches!(
-            project_parameters(&limited_ctx, &inventory, &mut limited_entities),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "collect Inventor parameter dependencies"
-        ));
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty fixture view");
         let mut admitted_entities = 0;
-        let (parameters, unresolved) =
-            project_parameters(&ctx, &inventory, &mut admitted_entities).expect("projection");
+        let (parameters, unresolved) = cadmpeg_test_support::refusal::assert_charged(
+            ResourceDimension::CollectionItems,
+            "collect Inventor parameter dependencies",
+            || project_parameters(&ctx, &inventory, &mut admitted_entities),
+        );
         assert_eq!(unresolved, 0);
         assert_eq!(parameters[0].expression, "24 in");
         assert_eq!(parameters[1].expression, "width");
@@ -2791,24 +2778,14 @@ mod tests {
     }
 
     #[test]
-    fn expression_dependency_ids_refuse_collection_limit_before_push() {
-        assert_eq!(
-            render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1)
-                .expect("graph is admitted")
-                .expect("graph is closed")
-                .1
-                .len(),
-            1
-        );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 6;
-        assert!(matches!(
-            render_graph(&policy, vec![reference_leaf()], 1),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "collect Inventor expression dependency ids"
-                    && limit.used == 6
-        ));
+    fn expression_dependency_ids_charge_collection_items() {
+        let rendered = cadmpeg_test_support::refusal::assert_charged(
+            ResourceDimension::CollectionItems,
+            "collect Inventor expression dependency ids",
+            || render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1),
+        )
+        .expect("graph is closed");
+        assert_eq!(rendered.1.len(), 1);
     }
 
     #[test]
