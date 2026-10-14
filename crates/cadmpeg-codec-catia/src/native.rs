@@ -8948,22 +8948,26 @@ mod consolidated_analytic_limit_tests {
     }
 
     #[test]
-    fn native_revolution_refuses_profile_map_output_and_id_limits() {
+    fn native_revolution_charges_profile_map_and_refuses_output_and_id_limits() {
+        use cadmpeg_core::decode::ResourceDimension;
+
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(2, |ctx| {
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             consolidated_revolutions(ctx, &bytes, &records, &[])
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_revolution_profile_index"));
-        let limited = crate::test_support::with_collection_limit(3, |ctx| {
-            consolidated_revolutions(ctx, &bytes, &records, &[])
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_revolutions"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_revolutions(ctx, &bytes, &records, &[])
-        });
+        };
+        // Released scope scratch peaks above the profile map.
+        cadmpeg_test_support::refusal::assert_charged(
+            ResourceDimension::CollectionItems,
+            "catia_native_revolution_profile_index",
+            || crate::test_support::with_service_context(decode),
+        );
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "catia_native_revolutions",
+            |cap| crate::test_support::with_collection_limit(cap, decode),
+        );
+        let limited = crate::test_support::with_retained_limit(0, decode);
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_revolution_id"));
     }
