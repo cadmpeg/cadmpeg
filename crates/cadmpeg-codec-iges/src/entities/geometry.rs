@@ -127,9 +127,9 @@ pub(super) fn plane_coordinates(
     };
     let u_axis = normal.cross(reference).unit()?;
     let v_axis = normal.cross(u_axis).unit()?;
-    let coordinates = (0..points.len())
-        .map(|index| {
-            let point = points[index];
+    let coordinates = points
+        .iter()
+        .map(|point| {
             let displacement = point.vector_from(plane.0);
             [displacement.dot(u_axis), displacement.dot(v_axis)]
         })
