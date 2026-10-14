@@ -1251,15 +1251,9 @@ fn timeline_frame_rejects_invalid_source_spans() {
                 .to_string();
         assert!(error.contains(diagnostic), "{field}: {error}");
     }
-    let empty = crate::records::entity_header::DesignTimelineFrame::new(
-        crate::records::admission::RecordAdmission::Admitted,
-        200,
-        44,
-        220,
-        240,
-        Vec::new(),
-    )
-    .unwrap();
+    let empty =
+        crate::records::entity_header::DesignTimelineFrame::new(200, 44, 220, 240, Vec::new())
+            .unwrap();
     assert!(empty.items().is_empty());
 }
 
@@ -1347,12 +1341,7 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     )
     .unwrap();
     let mut resolved = unresolved.clone();
-    resolved
-        .resolve(
-            &cadmpeg_test_support::service_decode_context(),
-            |record_index| SketchRelationOperand::Record { record_index },
-        )
-        .unwrap();
+    resolved.resolve(|record_index| SketchRelationOperand::Record { record_index });
     for (row, (index, offset, ordinal)) in resolved.iter().zip([(1, 25, 3), (2, 40, 5)]) {
         assert_eq!(row.reference.record_index(), index);
         assert_eq!(
@@ -1375,12 +1364,7 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     )
     .unwrap();
     let mut resolved_return = unresolved_return.clone();
-    resolved_return
-        .resolve(
-            &cadmpeg_test_support::service_decode_context(),
-            |record_index| SketchRelationOperand::Record { record_index },
-        )
-        .unwrap();
+    resolved_return.resolve(|record_index| SketchRelationOperand::Record { record_index });
     assert!(SketchRelationReturnMembers::try_from(vec![
         unresolved_return[0].clone(),
         resolved_return[1].clone()
@@ -1393,29 +1377,19 @@ fn sketch_relation_runs_reject_partial_resolution_and_preserve_atomic_binding() 
     .is_err());
     let mut interrupted = unresolved.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        interrupted
-            .resolve(
-                &cadmpeg_test_support::service_decode_context(),
-                |record_index| {
-                    assert_ne!(record_index, 2, "interrupt the second resolution");
-                    SketchRelationOperand::Record { record_index }
-                },
-            )
-            .unwrap();
+        interrupted.resolve(|record_index| {
+            assert_ne!(record_index, 2, "interrupt the second resolution");
+            SketchRelationOperand::Record { record_index }
+        });
     }));
     assert!(result.is_err());
     assert_eq!(interrupted, unresolved);
     let mut interrupted_return = unresolved_return.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        interrupted_return
-            .resolve(
-                &cadmpeg_test_support::service_decode_context(),
-                |record_index| {
-                    assert_ne!(record_index, 1, "interrupt the second resolution");
-                    SketchRelationOperand::Record { record_index }
-                },
-            )
-            .unwrap();
+        interrupted_return.resolve(|record_index| {
+            assert_ne!(record_index, 1, "interrupt the second resolution");
+            SketchRelationOperand::Record { record_index }
+        });
     }));
     assert!(result.is_err());
     assert_eq!(interrupted_return, unresolved_return);

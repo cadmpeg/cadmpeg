@@ -2,12 +2,12 @@
 use super::{
     neutral_sketch_id, neutral_spatial_sketch_id, project_dimension_constraints,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignParameterCompanion, DesignSketchPlacement, Point2, Point3,
-    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition, SketchPoint, SpatialSketch,
+    DesignParameterCompanion, DesignSketchPlacement, Point2, SketchConstraintDefinitionInput,
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchPoint,
+    SpatialSketch,
 };
-use cadmpeg_core::decode::ResourceDimension;
-fn fixture(operation: &'static str, dimension: ResourceDimension) {
+#[test]
+fn spatial_distance_projects_vertical_distance_and_skips_spatial_sketches() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
@@ -231,26 +231,6 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         profiles: Vec::new(),
         native_ref: Some(placement.id.clone()),
     };
-    let spatial_entities = points
-        .iter()
-        .map(|point| {
-            cadmpeg_ir::sketches::SpatialSketchEntity::new(
-                cadmpeg_ir::sketches::SpatialSketchEntityId::mint(format!(
-                    "synthetic:test:id#spatial-point-{}",
-                    point.record_index
-                ))
-                .unwrap(),
-                spatial_sketch.id.clone(),
-                cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
-                    cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point {
-                        position: Point3::new(0.0, point.coordinates().v, 0.0),
-                    },
-                )
-                .unwrap(),
-            )
-            .with_native_ref(Some(point.id.clone()))
-        })
-        .collect::<Vec<_>>();
     assert!(project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -269,59 +249,4 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         std::slice::from_ref(&spatial_sketch),
     )
     .is_empty());
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::project_spatial_dimension_constraints(
-            ctx,
-            &crate::design::dimensions::DimensionConstraintInputs {
-                placements: std::slice::from_ref(&placement),
-                parameters: std::slice::from_ref(&parameter),
-                owners: std::slice::from_ref(&owner),
-                pairs: std::slice::from_ref(&pair),
-                groups: std::slice::from_ref(&group),
-                annotation_frames: &[],
-                null_pairs: &[],
-                companions: std::slice::from_ref(&companion),
-                recipe_records: &[],
-                points: &points,
-                curves: &[],
-                entities: &[],
-            },
-            std::slice::from_ref(&spatial_sketch),
-            &spatial_entities,
-            0.0,
-        )
-        .map(|_| ())
-    });
-}
-
-#[test]
-fn spatial_distance_locus_refuses_collection_limit() {
-    fixture(
-        "f3d spatial distance locus",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn spatial_distance_first_id_refuses_retained_limit() {
-    fixture(
-        "f3d spatial distance first id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn spatial_distance_second_id_refuses_retained_limit() {
-    fixture(
-        "f3d spatial distance second id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn spatial_distance_parameter_id_refuses_retained_limit() {
-    fixture(
-        "f3d spatial distance parameter id",
-        ResourceDimension::RetainedBytes,
-    );
 }

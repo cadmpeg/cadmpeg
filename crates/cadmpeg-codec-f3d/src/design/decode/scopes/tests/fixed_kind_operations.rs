@@ -4,8 +4,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::fixed_parameters::{
-    exact_fixed_chamfer_parameters,
-    exact_fixed_fillet_parameters as exact_fixed_fillet_parameters_with_ctx,
+    exact_fixed_chamfer_parameters, exact_fixed_fillet_parameters,
 };
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
 use crate::records::feature::direct_face::DesignDraftOperation;
@@ -26,79 +25,6 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-
-fn exact_fixed_fillet_parameters(
-    bytes: &[u8],
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
-    scope: &DesignParameterScope,
-) -> Option<DesignFixedFilletParameters> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    exact_fixed_fillet_parameters_with_ctx(&ctx, bytes, records, scope).unwrap()
-}
-
-#[test]
-fn fixed_fillet_refuses_scalar_group_and_intermediate_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut bytes = Vec::new();
-    for (record_index, ordinal, value) in [
-        (77u32, 0u8, 1.0f64),
-        (78, 1, 0.5),
-        (79, 2, 0.75),
-        (87, 3, 0.4),
-        (88, 4, 0.2),
-    ] {
-        let mut scalar = vec![0; 104];
-        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
-        scalar[4..7].copy_from_slice(b"277");
-        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
-        scalar[24] = 1;
-        scalar[25..29].copy_from_slice(&42u32.to_le_bytes());
-        scalar[35] = ordinal;
-        scalar[40..48].copy_from_slice(&value.to_le_bytes());
-        scalar.extend_from_slice(&3u32.to_le_bytes());
-        scalar.extend_from_slice(b"261");
-        scalar.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&scalar);
-    }
-    let mut scope = DesignParameterScope::empty(
-        "f3d:scope#fixed-fillet-limit",
-        crate::records::feature::scope::DesignFeatureKind::Fillet,
-        42,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![77, 78, 79, 87, 88]);
-            draft.frame_length = 200;
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    for (limit, operation) in [
-        (0, "f3d fixed Fillet scalar lanes"),
-        (5, "f3d fixed Fillet groups"),
-        (6, "f3d fixed Fillet intermediate rows"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = exact_fixed_fillet_parameters_with_ctx(&ctx, &bytes, &records, &scope);
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ));
-    }
-}
 
 pub(super) fn continue_fixed_kind_operations(
     bytes: Vec<u8>,
@@ -956,18 +882,14 @@ fn fixed_kind_edge_and_revolve_operations(
             DesignOperandRole::ROLE_0X21,
         );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::project_fixed_revolve_with_entities(
-                decode_ctx,
-                &revolve_scope,
-                &[revolve_profile, revolve_axis],
-                &[],
-                &[],
-                &[],
-                (&[], &[]),
-            )
-        })
-        .unwrap(),
+        crate::design::feature_project::project_fixed_revolve_with_entities(
+            &revolve_scope,
+            &[revolve_profile, revolve_axis],
+            &[],
+            &[],
+            &[],
+            (&[], &[]),
+        ),
         None
     );
 
@@ -1088,22 +1010,18 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap(),
         ),
     };
-    let projected = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_revolve_with_entities(
-            decode_ctx,
-            &indexed_revolve_scope,
-            &[
-                indexed_profile.clone(),
-                indexed_axis.clone(),
-                indexed_bodies.clone(),
-            ],
-            &[],
-            std::slice::from_ref(&axis_selection),
-            &[],
-            (&[axis_placement], &[axis_curve]),
-        )
-    })
-    .unwrap();
+    let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
+        &indexed_revolve_scope,
+        &[
+            indexed_profile.clone(),
+            indexed_axis.clone(),
+            indexed_bodies.clone(),
+        ],
+        &[],
+        std::slice::from_ref(&axis_selection),
+        &[],
+        (&[axis_placement], &[axis_curve]),
+    );
     assert!(matches!(
         projected,
         Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1131,9 +1049,8 @@ fn fixed_kind_edge_and_revolve_operations(
             face_slot: 40,
         },
     ];
-    let historical_definition = crate::test_support::with_decode_context(|decode_ctx| {
+    let historical_definition =
         crate::design::feature_project::project_fixed_revolve_with_entities(
-            decode_ctx,
             &indexed_revolve_scope,
             &[
                 indexed_profile.clone(),
@@ -1145,9 +1062,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             (&[], &[]),
         )
-    })
-    .unwrap()
-    .unwrap();
+        .unwrap();
     assert!(matches!(
         historical_definition,
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1254,22 +1169,18 @@ fn fixed_kind_edge_and_revolve_operations(
             next_byte_offset: 200,
         })
         .unwrap();
-    let face_axis_definition = crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::project_fixed_revolve_with_entities(
-            decode_ctx,
-            &indexed_revolve_scope,
-            &[
-                indexed_profile.clone(),
-                indexed_axis.clone(),
-                indexed_bodies,
-            ],
-            &[],
-            &[],
-            std::slice::from_ref(&face_axis_operand),
-            (&[], &[]),
-        )
-    })
-    .unwrap()
+    let face_axis_definition = crate::design::feature_project::project_fixed_revolve_with_entities(
+        &indexed_revolve_scope,
+        &[
+            indexed_profile.clone(),
+            indexed_axis.clone(),
+            indexed_bodies,
+        ],
+        &[],
+        &[],
+        std::slice::from_ref(&face_axis_operand),
+        (&[], &[]),
+    )
     .expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(

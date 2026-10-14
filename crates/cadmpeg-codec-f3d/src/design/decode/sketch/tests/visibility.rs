@@ -145,23 +145,3 @@ fn sketch_visibility_accepts_settled_container_header() {
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert!(visibilities[0].1.visible);
 }
-
-#[test]
-fn sketch_visibility_output_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, metadata) = visibility_stream();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 7;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
-        &ctx, &bytes, &metadata,
-    )
-    .expect_err("collection limit must refuse decoded visibility");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d sketch visibility records")
-    );
-}

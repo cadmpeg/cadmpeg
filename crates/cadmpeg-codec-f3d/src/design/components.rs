@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::decode::ScopedReservation;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
@@ -17,36 +16,21 @@ use crate::records::feature::{
 
 /// Project components and occurrences proven by local component history operations.
 pub(crate) fn project_local_components(
-    ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), cadmpeg_core::CodecError> {
-    let mut lookup_storage = ctx.reserve_scoped(0, "f3d component lookup storage")?;
     let mut components = BTreeMap::new();
     let mut occurrences = BTreeMap::new();
     let mut native_by_guid = BTreeMap::new();
     for occurrence in native_occurrences {
-        lookup_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-            let mut key = ctx.copy_retained_text(
-                occurrence.occurrence_guid.as_str(),
-                "f3d component native occurrence key",
-            )?;
-            key.make_ascii_lowercase();
-            ctx.admit_btree_entry(
-                &native_by_guid,
-                &key,
-                "f3d component native occurrence index",
-            )?;
-            match native_by_guid.entry(key) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(occurrence));
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    *entry.get_mut() = None;
-                }
+        match native_by_guid.entry(occurrence.occurrence_guid.as_str().to_ascii_lowercase()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Some(occurrence));
             }
-            Ok(())
-        })?;
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+        }
     }
 
     for scope in scopes {
@@ -60,20 +44,13 @@ pub(crate) fn project_local_components(
                 let Some(guid) = path.occurrence_guids().first() else {
                     continue;
                 };
-                let (key, reservation) = temporary_lowercase_component_key(
-                    ctx,
-                    guid.value.as_str(),
-                    "f3d component assembly occurrence lookup",
-                )?;
+                let key = guid.value.as_str().to_ascii_lowercase();
                 let root = native_by_guid.get(&key).copied().flatten();
-                drop(key);
-                drop(reservation);
                 let Some(root) = root else {
                     continue;
                 };
                 project_occurrence(
-                    ctx,
-                    (&mut lookup_storage, &mut components),
+                    &mut components,
                     &mut occurrences,
                     &native_by_guid,
                     &root.component_guid,
@@ -92,8 +69,7 @@ pub(crate) fn project_local_components(
         }
         if let Some(operation) = scope.copy_paste_component_operation() {
             project_occurrence(
-                ctx,
-                (&mut lookup_storage, &mut components),
+                &mut components,
                 &mut occurrences,
                 &native_by_guid,
                 &operation.component_guid,
@@ -101,8 +77,7 @@ pub(crate) fn project_local_components(
                 operation.source_transform,
             )?;
             project_occurrence(
-                ctx,
-                (&mut lookup_storage, &mut components),
+                &mut components,
                 &mut occurrences,
                 &native_by_guid,
                 &operation.component_guid,
@@ -112,8 +87,7 @@ pub(crate) fn project_local_components(
         }
         if let Some(construction) = scope.derived_instance_construction() {
             project_occurrence(
-                ctx,
-                (&mut lookup_storage, &mut components),
+                &mut components,
                 &mut occurrences,
                 &native_by_guid,
                 &construction.component_guid,
@@ -135,8 +109,7 @@ pub(crate) fn project_local_components(
         };
         for occurrence in std::iter::once(seed).chain(generated) {
             project_occurrence(
-                ctx,
-                (&mut lookup_storage, &mut components),
+                &mut components,
                 &mut occurrences,
                 &native_by_guid,
                 component_guid,
@@ -146,28 +119,14 @@ pub(crate) fn project_local_components(
         }
     }
 
-    let mut occurrence_output = Vec::new();
-    ctx.reserve_vec(
-        &mut occurrence_output,
-        occurrences.len(),
-        "f3d component occurrence output",
-    )?;
-    occurrence_output.extend(occurrences.into_values());
-    let mut occurrences = occurrence_output;
+    let mut occurrences = occurrences.into_values().collect::<Vec<_>>();
     for (ordinal, occurrence) in occurrences.iter_mut().enumerate() {
         occurrence.ordinal = u32::try_from(ordinal).map_err(|_| {
             cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32")
         })?;
     }
 
-    let mut component_output = Vec::new();
-    ctx.reserve_vec(
-        &mut component_output,
-        components.len(),
-        "f3d component output",
-    )?;
-    component_output.extend(components.into_values());
-    Ok((component_output, occurrences))
+    Ok((components.into_values().collect(), occurrences))
 }
 
 /// Project a proven local occurrence into a `DerivedInstance` feature.
@@ -235,15 +194,11 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             continue;
         }
 
-        ctx.reserve_vec(&mut occurrences, 1, "f3d unresolved component occurrence")?;
-        let occurrence_id =
-            crate::design::identity::neutral_component_insert_occurrence_id(ctx, scope)?;
+        let occurrence_id = crate::design::identity::neutral_component_insert_occurrence_id(scope)?;
         let feature_occurrence_id = occurrence_id
             .try_clone_for_decode(ctx, "f3d unresolved component feature occurrence id")?;
-        let name =
-            ctx.copy_retained_text(&construction.neutron_role, "f3d unresolved component name")?;
-        let native_ref =
-            ctx.copy_retained_text(&scope.id, "f3d unresolved component native reference")?;
+        let name = construction.neutron_role.clone();
+        let native_ref = scope.id.clone();
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
@@ -277,56 +232,26 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
     Ok(occurrences)
 }
 
-fn temporary_lowercase_component_key<'a>(
-    ctx: &'a DecodeContext<'_>,
-    source: &str,
-    operation: &'static str,
-) -> Result<(String, ScopedReservation<'a>), cadmpeg_core::CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, operation)?;
-    let mut key = ctx.copy_scoped_text(source, &mut reservation, operation)?;
-    key.make_ascii_lowercase();
-    Ok((key, reservation))
-}
-
 fn project_occurrence(
-    ctx: &DecodeContext<'_>,
-    component_storage: (
-        &mut ScopedReservation<'_>,
-        &mut BTreeMap<String, ProductDefinition>,
-    ),
+    components: &mut BTreeMap<String, ProductDefinition>,
     occurrences: &mut BTreeMap<String, Occurrence>,
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
     component_guid: &crate::records::mesh::DesignRelaxedGuidText,
     occurrence_guid: &crate::records::mesh::DesignRelaxedGuidText,
     transform: impl Into<[[f64; 4]; 4]>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (lookup_storage, components) = component_storage;
     let component_id = crate::ids::neutral_component_id(component_guid);
     let transform = neutral_transform(transform)?;
-    project_component(ctx, lookup_storage, components, component_guid)?;
+    project_component(components, component_guid);
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     if !occurrences.contains_key(occurrence_id.as_str()) {
-        let key = lookup_storage.with_storage(|| -> Result<String, cadmpeg_core::CodecError> {
-            let key =
-                ctx.copy_retained_text(occurrence_id.as_str(), "f3d component occurrence map key")?;
-            ctx.admit_btree_entry(occurrences, &key, "f3d component occurrence map entry")?;
-            Ok(key)
-        })?;
-        let (native_key, reservation) = temporary_lowercase_component_key(
-            ctx,
-            occurrence_guid.as_str(),
-            "f3d component native occurrence lookup",
-        )?;
+        let key = occurrence_id.as_str().to_owned();
+        let native_key = occurrence_guid.as_str().to_ascii_lowercase();
         let native_ref = native_by_guid
             .get(&native_key)
             .copied()
             .flatten()
-            .map(|occurrence| {
-                ctx.copy_retained_text(&occurrence.id, "f3d component occurrence native reference")
-            })
-            .transpose()?;
-        drop(native_key);
-        drop(reservation);
+            .map(|occurrence| occurrence.id.clone());
         occurrences.insert(
             key,
             Occurrence {
@@ -350,19 +275,12 @@ fn project_occurrence(
 }
 
 fn project_component(
-    ctx: &DecodeContext<'_>,
-    lookup_storage: &mut ScopedReservation<'_>,
     components: &mut BTreeMap<String, ProductDefinition>,
     component_guid: &crate::records::mesh::DesignRelaxedGuidText,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let component_id = crate::ids::neutral_component_id(component_guid);
     if !components.contains_key(component_id.as_str()) {
-        let key = lookup_storage.with_storage(|| -> Result<String, cadmpeg_core::CodecError> {
-            let key =
-                ctx.copy_retained_text(component_id.as_str(), "f3d component definition map key")?;
-            ctx.admit_btree_entry(components, &key, "f3d component definition map entry")?;
-            Ok(key)
-        })?;
+        let key = component_id.as_str().to_owned();
         components.insert(
             key,
             ProductDefinition {
@@ -378,7 +296,6 @@ fn project_component(
             },
         );
     }
-    Ok(())
 }
 
 /// A millimetre placement projected from source centimetres.
@@ -412,7 +329,7 @@ mod tests {
         },
         scope::DesignParameterScope,
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::products::PrototypeReference;
 
@@ -432,358 +349,6 @@ mod tests {
                 [0.0, 0.0, 1.0, 37.5],
                 [0.0, 0.0, 0.0, 1.0],
             ]
-        );
-    }
-
-    fn one_component_fixture() -> (DesignParameterScope, DesignComponentOccurrence) {
-        const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
-        const OCCURRENCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-        let mut scope = DesignParameterScope::empty(
-            "f3d:synthetic:design-parameter-scope#1",
-            crate::records::feature::scope::DesignFeatureKind::DerivedInstance,
-            1,
-        );
-        if let crate::records::feature::scope::DesignScopePayloadMut::DerivedInstance(slot) =
-            scope.payload_mut()
-        {
-            *slot = Some(DesignDerivedInstanceConstruction {
-                reference_record_index: 2,
-                relation_record_index: 3,
-                carrier_record_index: 4,
-                component_guid: COMPONENT.to_owned().try_into().unwrap(),
-                occurrence_guid: OCCURRENCE.to_owned().try_into().unwrap(),
-                transform: identity_matrix().try_into().unwrap(),
-                transform_offset: 0,
-            });
-        }
-        let occurrence = DesignComponentOccurrence::try_new(
-            crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
-                id: "f3d:synthetic:design-component-occurrence#4".into(),
-                class_tag: crate::records::references::DesignClassTag::try_from("380".to_owned())
-                    .unwrap(),
-                record_index: 4,
-                byte_offset: 0,
-                component_record_index: 2,
-                component_guid: COMPONENT.to_owned().try_into().unwrap(),
-                occurrence_guid: OCCURRENCE.to_owned().try_into().unwrap(),
-                placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
-            },
-        )
-        .unwrap();
-        (scope, occurrence)
-    }
-
-    fn one_component_refusal(maximum: u64) -> cadmpeg_core::CodecError {
-        let (scope, occurrence) = one_component_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = maximum;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::project_local_components(&ctx, &[scope], &[occurrence])
-            .expect_err("one component exceeds the selected collection limit")
-    }
-
-    fn one_component_byte_refusal(
-        retained_limit: u64,
-        materialized_limit: u64,
-    ) -> cadmpeg_core::CodecError {
-        let (scope, occurrence) = one_component_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = retained_limit;
-        policy.limits.max_materialized_bytes = materialized_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::project_local_components(&ctx, &[scope], &[occurrence])
-            .expect_err("one component exceeds the selected byte limit")
-    }
-
-    #[test]
-    fn component_native_key_refuses_materialized_limit() {
-        let error = one_component_byte_refusal(u64::MAX, 35);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "f3d component native occurrence key")
-        );
-    }
-
-    #[test]
-    fn component_native_key_refuses_retained_limit() {
-        let (scope, occurrence) = one_component_fixture();
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::MaterializedBytes,
-            "f3d component native occurrence key",
-            0,
-            |ctx| {
-                super::project_local_components(
-                    ctx,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&occurrence),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
- if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "f3d component native occurrence key")
-        );
-    }
-
-    #[test]
-    fn component_definition_key_refuses_retained_limit() {
-        let (scope, occurrence) = one_component_fixture();
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::MaterializedBytes,
-            "f3d component definition map key",
-            0,
-            |ctx| {
-                super::project_local_components(
-                    ctx,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&occurrence),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
- if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "f3d component definition map key")
-        );
-    }
-
-    #[test]
-    fn component_occurrence_key_refuses_retained_limit() {
-        let (scope, occurrence) = one_component_fixture();
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::MaterializedBytes,
-            "f3d component occurrence map key",
-            0,
-            |ctx| {
-                super::project_local_components(
-                    ctx,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&occurrence),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
- if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "f3d component occurrence map key")
-        );
-    }
-
-    #[test]
-    fn component_native_reference_refuses_retained_limit() {
-        let (scope, occurrence) = one_component_fixture();
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::RetainedBytes,
-            "f3d component occurrence native reference",
-            0,
-            |ctx| {
-                super::project_local_components(
-                    ctx,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&occurrence),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
- if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "f3d component occurrence native reference")
-        );
-    }
-
-    #[test]
-    fn component_occurrence_lookup_refuses_materialized_limit() {
-        let (_, occurrence) = one_component_fixture();
-        let mut native_by_guid = std::collections::BTreeMap::new();
-        native_by_guid.insert(
-            occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
-            Some(&occurrence),
-        );
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::MaterializedBytes,
-            "f3d component native occurrence lookup",
-            0,
-            |ctx| {
-                let mut lookup_storage = ctx.reserve_scoped(0, "f3d component lookup storage")?;
-                super::project_occurrence(
-                    ctx,
-                    (&mut lookup_storage, &mut std::collections::BTreeMap::new()),
-                    &mut std::collections::BTreeMap::new(),
-                    &native_by_guid,
-                    &occurrence.component_guid,
-                    &occurrence.occurrence_guid,
-                    identity_matrix(),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "f3d component native occurrence lookup")
-        );
-    }
-
-    #[test]
-    fn native_occurrence_index_refuses_collection_limit() {
-        let error = one_component_refusal(0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d component native occurrence index")
-        );
-    }
-
-    #[test]
-    fn component_definition_map_refuses_collection_limit() {
-        let error = one_component_refusal(1);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d component definition map entry")
-        );
-    }
-
-    #[test]
-    fn component_occurrence_map_refuses_collection_limit() {
-        let error = one_component_refusal(2);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d component occurrence map entry")
-        );
-    }
-
-    #[test]
-    fn component_occurrence_output_refuses_collection_limit() {
-        let error = one_component_refusal(3);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d component occurrence output")
-        );
-    }
-
-    #[test]
-    fn component_definition_output_refuses_collection_limit() {
-        let error = one_component_refusal(4);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d component output")
-        );
-    }
-
-    fn unresolved_component_fixture() -> (DesignParameterScope, Feature) {
-        let mut scope = DesignParameterScope::empty(
-            "f3d:synthetic:design-parameter-scope#7",
-            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
-            7,
-        );
-        if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
-            scope.payload_mut()
-        {
-            *slot = Some(
-                crate::records::feature::assembly_features::DesignComponentInsertConstruction {
-                    relation_record_index: 8,
-                    carrier_record_index: 9,
-                    occurrence_identity: None,
-                    neutron_role: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),
-                    neutron_role_offset: 0,
-                    placement: None,
-                },
-            );
-        }
-        let feature = Feature {
-            id: FeatureId::mint("f3d:model:feature#component-insert").unwrap(),
-            ordinal: 0,
-            name: None,
-            suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: std::collections::BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: "ComponentInsert".into(),
-                    parameters: std::collections::BTreeMap::new(),
-                }),
-            ),
-            native_ref: Some(scope.id.clone()),
-        };
-        (scope, feature)
-    }
-
-    #[test]
-    fn unresolved_component_occurrence_refuses_collection_limit() {
-        let (scope, feature) = unresolved_component_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_unresolved_component_insert_occurrences(
-            &ctx,
-            &mut [feature],
-            &[scope],
-            0,
-        )
-        .expect_err("one unresolved occurrence needs one collection item");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d unresolved component occurrence")
-        );
-    }
-
-    fn unresolved_component_retained_refusal(maximum: u64) -> cadmpeg_core::CodecError {
-        let (scope, feature) = unresolved_component_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = maximum;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::project_unresolved_component_insert_occurrences(&ctx, &mut [feature], &[scope], 0)
-            .expect_err("unresolved component text exceeds the retained limit")
-    }
-
-    #[test]
-    fn unresolved_component_feature_id_refuses_retained_limit() {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "f3d unresolved component feature occurrence id",
-            |cap| Err::<(), cadmpeg_core::CodecError>(unresolved_component_retained_refusal(cap)),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d unresolved component feature occurrence id")
-        );
-    }
-
-    #[test]
-    fn unresolved_component_name_refuses_retained_limit() {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "f3d unresolved component name",
-            |cap| Err::<(), cadmpeg_core::CodecError>(unresolved_component_retained_refusal(cap)),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d unresolved component name")
-        );
-    }
-
-    #[test]
-    fn unresolved_component_native_reference_refuses_retained_limit() {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "f3d unresolved component native reference",
-            |cap| Err::<(), cadmpeg_core::CodecError>(unresolved_component_retained_refusal(cap)),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d unresolved component native reference")
         );
     }
 
@@ -835,11 +400,8 @@ mod tests {
             });
         }
 
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let (definitions, occurrences) =
-            super::project_local_components(&ctx, &[scope], &native_occurrences).unwrap();
+            super::project_local_components(&[scope], &native_occurrences).unwrap();
 
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 2);
@@ -889,11 +451,8 @@ mod tests {
             },
         )
         .unwrap();
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
         let (definitions, occurrences) =
-            super::project_local_components(&ctx, &[scope.clone()], &[native_occurrence]).unwrap();
+            super::project_local_components(&[scope.clone()], &[native_occurrence]).unwrap();
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 1);
         assert_eq!(

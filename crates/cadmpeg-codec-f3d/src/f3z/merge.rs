@@ -29,9 +29,7 @@ pub(super) fn merge_archive(
 ) -> Result<usize, CodecError> {
     let table = xref_table_from_ir(ctx, ir)?;
 
-    let mut stack = Vec::new();
-    ctx.reserve_vec(&mut stack, 1, "seed F3Z merge stack")?;
-    stack.push(model_root);
+    let stack = vec![model_root];
     MergeSession {
         ctx,
         scan,
@@ -44,40 +42,35 @@ pub(super) fn merge_archive(
 /// Reassigns only repeated sibling ordinals after independent document graphs
 /// have been combined.
 pub(super) fn make_sibling_ordinals_unique(
-    ctx: &DecodeContext<'_>,
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
 ) -> Result<(), CodecError> {
     use std::collections::{HashMap, HashSet};
 
-    let mut used = HashMap::<Option<&cadmpeg_ir::ids::OccurrenceId>, HashSet<u32>>::new();
+    // Every ordinal below a parent's floor is in use, so the search for the
+    // smallest free ordinal resumes there and each parent's search is linear
+    // over the whole pass.
+    let mut used = HashMap::<Option<&cadmpeg_ir::ids::OccurrenceId>, (HashSet<u32>, u64)>::new();
     for occurrence in occurrences {
-        ctx.charge_work(1, "index F3Z sibling ordinals")?;
         let parent = match &occurrence.parent {
             cadmpeg_ir::products::OccurrenceParent::Root {} => None,
             cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => Some(occurrence),
         };
-        if !used.contains_key(&parent) {
-            ctx.reserve_map(&mut used, 1, "index F3Z sibling parents")?;
-        }
-        let siblings = used.entry(parent).or_default();
+        let (siblings, floor) = used.entry(parent).or_default();
         let ordinal = if siblings.contains(&occurrence.ordinal) {
-            let mut free = None;
-            for candidate in 0..=u32::MAX {
-                ctx.charge_work(1, "find F3Z sibling ordinal")?;
-                if !siblings.contains(&candidate) {
-                    free = Some(candidate);
-                    break;
-                }
-            }
-            free.ok_or_else(|| {
-                CodecError::malformed(
-                    "F3Z sibling occurrence population exhausts the u32 ordinal space",
-                )
-            })?
+            let free = (*floor..=u64::from(u32::MAX))
+                .filter_map(|candidate| u32::try_from(candidate).ok())
+                .find(|candidate| !siblings.contains(candidate))
+                .ok_or_else(|| {
+                    CodecError::malformed(
+                        "F3Z sibling occurrence population exhausts the u32 ordinal space",
+                    )
+                })?;
+            *floor = u64::from(free) + 1;
+            free
         } else {
             occurrence.ordinal
         };
-        ctx.insert_hash_set(siblings, ordinal, "index F3Z sibling ordinals")?;
+        siblings.insert(ordinal);
         occurrence.ordinal = ordinal;
     }
     Ok(())
@@ -96,10 +89,9 @@ fn xref_table_from_ir(
             Ok(records) => Ok(records),
             Err(error) => match CodecError::from(error) {
                 error @ CodecError::ResourceLimit(_) => Err(error),
-                CodecError::Malformed(message) => Err(CodecError::Malformed(ctx.format_retained(
-                    format_args!("invalid F3D native data: {message}"),
-                    "report invalid F3D native data",
-                )?)),
+                CodecError::Malformed(message) => Err(CodecError::Malformed(format!(
+                    "invalid F3D native data: {message}"
+                ))),
                 error => Err(error),
             },
         }
@@ -134,23 +126,13 @@ impl MergeSession<'_, '_> {
     ) -> Result<usize, CodecError> {
         let mut merged = 0usize;
         for reference in &table.references {
-            let occurrence = occurrence_key(self.ctx, reference)?;
+            let occurrence = occurrence_key(reference);
             let label = xref::design_for(table, reference)
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
                 });
             let mut cycle = false;
             for path in &self.stack {
-                let work = cadmpeg_core::decode::u64_from_index(path.len())
-                    .checked_add(1)
-                    .ok_or_else(|| {
-                        self.ctx.refuse_codec_limit(
-                            "match F3Z reference cycle",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                self.ctx.charge_work(work, "match F3Z reference cycle")?;
                 if path == reference.relative_path.as_str() {
                     cycle = true;
                     break;
@@ -158,37 +140,26 @@ impl MergeSession<'_, '_> {
             }
             if cycle {
                 super::push_loss(
-                    self.ctx,
                     &mut parent_report.losses,
                     F3dLossCode::XrefCycle,
                     format_args!(
                         "xref {label}: reference cycle through {}; the occurrence was not resolved",
                         reference.relative_path
                     ),
-                )?;
+                );
                 continue;
             }
             let Some(member) = self.archive.members.get(reference.relative_path.as_str()) else {
                 if self.scan.entry_view(&reference.relative_path).is_some() {
-                    super::push_loss(
-                        self.ctx,
-                        &mut parent_report.losses,
-                        F3dLossCode::XrefMemberUndecoded,
-                        format_args!(
+                    super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
-                        ),
-                    )?;
+                        ));
                 } else {
-                    super::push_loss(
-                        self.ctx,
-                        &mut parent_report.losses,
-                        F3dLossCode::XrefMemberMissing,
-                        format_args!(
+                    super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberMissing, format_args!(
                             "xref {label}: member {} is not present in the archive; the occurrence was not resolved",
                             reference.relative_path
-                        ),
-                    )?;
+                        ));
                 }
                 continue;
             };
@@ -206,15 +177,10 @@ impl MergeSession<'_, '_> {
                 Ok(component) => component.into_decoded(),
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    super::push_loss(
-                        self.ctx,
-                        &mut parent_report.losses,
-                        F3dLossCode::XrefMemberUndecoded,
-                        format_args!(
+                    super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
-                        ),
-                    )?;
+                        ));
                     continue;
                 }
             };
@@ -224,12 +190,7 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            self.ctx.push_formatted_retained(
-                &mut self.stack,
-                format_args!("{}", reference.relative_path),
-                "grow F3Z merge stack",
-                "retain F3Z merge stack path",
-            )?;
+            self.stack.push(format!("{}", reference.relative_path));
             let descendants = self.merge(
                 &mut component_ir,
                 &mut component_report,
@@ -238,9 +199,9 @@ impl MergeSession<'_, '_> {
             )?;
             self.stack.pop();
             if let Some(transform) = reference.transform {
-                apply_occurrence_transform(self.ctx, &mut component_ir.model, transform)?;
+                apply_occurrence_transform(&mut component_ir.model, transform)?;
             }
-            append_feature_history(self.ctx, &parent_ir.model, &mut component_ir.model)?;
+            append_feature_history(&parent_ir.model, &mut component_ir.model)?;
             let occurrence_start = parent_ir.model.occurrences.len();
             let mut scope = OccurrenceScope {
                 ctx: self.ctx,
@@ -253,7 +214,6 @@ impl MergeSession<'_, '_> {
                 "F3Z rewritten model arenas",
             )?;
             reparent_component_roots(
-                self.ctx,
                 &mut parent_ir.model.occurrences[occurrence_start..],
                 &crate::ids::neutral_xref_occurrence_id(
                     reference.ordinal,
@@ -275,25 +235,18 @@ impl MergeSession<'_, '_> {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
             }
             for loss in &mut component_report.losses {
-                loss.message = self.ctx.format_retained(
-                    format_args!("xref {label}: {}", loss.message),
-                    "prefix F3Z component loss",
-                )?;
+                loss.message = format!("xref {label}: {}", loss.message);
             }
-            self.ctx.append_vec(
-                &mut parent_report.losses,
-                &mut { component_report.losses },
-                "append F3Z report losses",
-            )?;
+            parent_report.losses.append(&mut component_report.losses);
             let placement = if reference.transform.is_some() {
                 "Design occurrence transform"
             } else {
                 "identity placement"
             };
-            self.ctx.push_formatted_retained(&mut parent_report.notes, format_args!(
+            parent_report.notes.push(format!(
                     "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested occurrence(s))",
                     reference.relative_path
-                ), "collect F3Z report notes", "retain F3Z report note")?;
+                ));
         }
         Ok(merged)
     }
@@ -303,7 +256,6 @@ impl MergeSession<'_, '_> {
 /// occurrence that owns that member. Child occurrence parents already carry
 /// the member-local hierarchy and are left unchanged.
 fn reparent_component_roots(
-    ctx: &DecodeContext<'_>,
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
     parent: &cadmpeg_ir::ids::OccurrenceId,
 ) -> Result<(), CodecError> {
@@ -312,11 +264,8 @@ fn reparent_component_roots(
             occurrence.parent,
             cadmpeg_ir::products::OccurrenceParent::Root {}
         ) {
-            let parent_id = String::from_utf8(ctx.copy_retained(
-                parent.as_str().as_bytes(),
-                "copy F3Z parent occurrence identity",
-            )?)
-            .map_err(CodecError::malformed)?;
+            let parent_id = String::from_utf8(parent.as_str().as_bytes().to_vec())
+                .map_err(CodecError::malformed)?;
             occurrence.parent = cadmpeg_ir::products::OccurrenceParent::Occurrence {
                 occurrence: cadmpeg_ir::ids::OccurrenceId::mint(parent_id)
                     .map_err(CodecError::malformed)?,
@@ -327,15 +276,7 @@ fn reparent_component_roots(
 }
 
 /// Places one component's feature history after the histories already merged.
-fn append_feature_history(
-    ctx: &DecodeContext<'_>,
-    parent: &Model,
-    component: &mut Model,
-) -> Result<(), CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(component.features.len()),
-        "scan F3Z component feature ordinals",
-    )?;
+fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), CodecError> {
     let Some(component_minimum) = component
         .features
         .iter()
@@ -344,10 +285,7 @@ fn append_feature_history(
     else {
         return Ok(());
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(parent.features.len()),
-        "scan F3Z parent feature ordinals",
-    )?;
+
     let next = parent
         .features
         .iter()
@@ -358,10 +296,7 @@ fn append_feature_history(
                 CodecError::Malformed("merged F3Z feature ordinal exceeds u64::MAX".into())
             })
         })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(component.features.len()),
-        "rewrite F3Z feature ordinals",
-    )?;
+
     for feature in &mut component.features {
         feature.ordinal = feature
             .ordinal
@@ -383,28 +318,26 @@ fn rescope_fidelity(
     annotations
         .map_ids(
             ctx,
-            |id| match rescope_charged(ctx, id, occurrence)? {
+            |id| match rescope_charged(id, occurrence) {
                 Some(id) => Ok(id),
-                None => ctx.format_retained(format_args!("{id}"), "copy F3Z annotation identity"),
+                None => Ok(id.to_string()),
             },
             "index remapped annotation identities",
         )?
         .map_err(CodecError::from)?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
-    let owner = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
-        format_args!("f3d:xref/{}/", EscapedOccurrenceComponent(occurrence)),
-        "retain F3Z fidelity owner",
-    )?)
+    let owner = cadmpeg_ir::StreamName::try_from(format!(
+        "f3d:xref/{}/",
+        EscapedOccurrenceComponent(occurrence)
+    ))
     .map_err(CodecError::malformed)?;
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
     for (id, provenance) in provenance {
-        let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
-            format_args!("{}{}", owner.as_str(), provenance.stream()),
-            "retain F3Z provenance stream",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let stream =
+            cadmpeg_ir::StreamName::try_from(format!("{}{}", owner.as_str(), provenance.stream()))
+                .map_err(CodecError::malformed)?;
         let stream = StreamHandle::new(ctx, stream, "allocate annotation stream handle")?;
         builder.note(
             ctx,
@@ -416,40 +349,32 @@ fn rescope_fidelity(
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
     for (id, record) in records {
-        let id_text = match rescope_charged(ctx, id.as_str(), occurrence)? {
+        let id_text = match rescope_charged(id.as_str(), occurrence) {
             Some(id) => id,
             None => {
-                ctx.format_retained(format_args!("{id}"), "copy F3Z retained record identity")?
+                format!("{id}")
             }
         };
         let id = UnknownId::mint(id_text).map_err(|error| {
             CodecError::malformed(format_args!("F3Z retained record {id}: {error}"))
         })?;
-        let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
-            format_args!("{}{}", owner.as_str(), record.stream()),
-            "retain F3Z record stream",
-        )?)
-        .map_err(CodecError::malformed)?;
-        ctx.charge_collection_items(1, "collect F3Z rescoped retained records")?;
+        let stream =
+            cadmpeg_ir::StreamName::try_from(format!("{}{}", owner.as_str(), record.stream()))
+                .map_err(CodecError::malformed)?;
+
         rescoped.insert_retained_record(id, record.with_owner(stream))?;
     }
     Ok(rescoped)
 }
 
-fn occurrence_key(
-    ctx: &DecodeContext<'_>,
-    reference: &XrefReference,
-) -> Result<String, CodecError> {
+fn occurrence_key(reference: &XrefReference) -> String {
     let role = EscapedOccurrenceComponent(&reference.neutron_role);
     // `occurrence_ordinal` restarts for each Redirections reference. Keep the
     // source reference ordinal in the scope so two admitted rows carrying the
     // same role cannot merge their model or fidelity identities.
-    ctx.format_retained(
-        format_args!(
-            "role-{role}/reference-{}/occurrence-{}",
-            reference.ordinal, reference.occurrence_ordinal
-        ),
-        "retain F3Z occurrence key",
+    format!(
+        "role-{role}/reference-{}/occurrence-{}",
+        reference.ordinal, reference.occurrence_ordinal
     )
 }
 
@@ -472,7 +397,6 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
 }
 
 fn apply_occurrence_transform(
-    ctx: &DecodeContext<'_>,
     model: &mut Model,
     transform: crate::records::xref::XrefPlacementTransform,
 ) -> Result<(), CodecError> {
@@ -486,12 +410,7 @@ fn apply_occurrence_transform(
             "F3Z occurrence translation is not a finite affine transform"
         ))
     })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(model.bodies.len())
-            .checked_mul(48)
-            .ok_or_else(|| ctx.refuse_codec_limit("compose F3Z body transforms", 0, u64::MAX))?,
-        "compose F3Z body transforms",
-    )?;
+
     for body in &mut model.bodies {
         body.transform = Some(match body.transform {
             Some(local) => compose_transforms(occurrence, local)?,
@@ -513,19 +432,9 @@ fn compose_transforms(
     })
 }
 
-fn rescope_charged(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    occurrence: &str,
-) -> Result<Option<String>, CodecError> {
+fn rescope_charged(text: &str, occurrence: &str) -> Option<String> {
     text.strip_prefix("f3d:")
-        .map(|rest| {
-            ctx.format_retained(
-                format_args!("f3d:xref/{occurrence}/{rest}"),
-                "rescope F3Z identity",
-            )
-        })
-        .transpose()
+        .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
 }
 
 /// Rewrites every `f3d:` identity in one model entity into occurrence scope.
@@ -545,11 +454,9 @@ impl EntityRewrite for OccurrenceScope<'_, '_> {
             self.ctx,
             "rewrite F3Z model identity",
             entity,
-            |id: &str| match rescope_charged(self.ctx, id, self.occurrence)? {
+            |id: &str| match rescope_charged(id, self.occurrence) {
                 Some(rewritten) => Ok(rewritten),
-                None => self
-                    .ctx
-                    .copy_retained_text(id, "copy F3Z unchanged identity"),
+                None => Ok(id.to_owned()),
             },
         )
     }
@@ -578,7 +485,7 @@ fn extend_native(
             continue;
         }
         let arena = target.arenas_mut().entry(name.to_string()).or_default();
-        ctx.reserve_vec(arena, records.len(), "append F3Z native records")?;
+
         for record in records {
             arena.push(rescope_record(ctx, &record, name, occurrence)?);
         }
@@ -595,10 +502,7 @@ fn rescope_record(
 ) -> Result<NativeRecord, CodecError> {
     let mut fields = typed_fields(ctx, record, arena, occurrence)?;
     rescope_native_reference_fields(ctx, arena, &mut fields, occurrence)?;
-    let id = rescope_charged(ctx, record.id(), occurrence)?.map_or_else(
-        || ctx.format_retained(format_args!("{}", record.id()), "copy F3Z native identity"),
-        Ok,
-    )?;
+    let id = rescope_charged(record.id(), occurrence).unwrap_or_else(|| record.id().to_string());
     NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?,
         fields,
@@ -621,11 +525,9 @@ fn typed_fields(
 ) -> Result<Map<String, Value>, CodecError> {
     macro_rules! typed {
         ($type:path) => {
-            record.rewrite_fields::<$type, _>(ctx, |id| {
-                match rescope_charged(ctx, id, occurrence)? {
-                    Some(rewritten) => Ok(rewritten),
-                    None => ctx.copy_retained_text(id, "copy F3Z unchanged native identity"),
-                }
+            record.rewrite_fields::<$type, _>(ctx, |id| match rescope_charged(id, occurrence) {
+                Some(rewritten) => Ok(rewritten),
+                None => Ok(id.to_owned()),
             })?
         };
     }
@@ -699,7 +601,7 @@ fn rescope_native_reference_fields(
     };
     for field in direct_fields {
         if let Some(value) = fields.get_mut(*field) {
-            scope_identity_value(ctx, value, occurrence)?;
+            scope_identity_value(value, occurrence);
         }
     }
 
@@ -739,21 +641,17 @@ fn rescope_native_reference_fields(
     Ok(())
 }
 
-fn scope_identity_value(
-    ctx: &DecodeContext<'_>,
-    value: &mut Value,
-    occurrence: &str,
-) -> Result<(), CodecError> {
+fn scope_identity_value(value: &mut Value, occurrence: &str) {
     match value {
         Value::String(text) => {
-            if let Some(rescoped) = rescope_charged(ctx, text, occurrence)? {
+            if let Some(rescoped) = rescope_charged(text, occurrence) {
                 *text = rescoped;
             }
         }
         Value::Array(items) => {
             for item in items {
                 if let Value::String(text) = item {
-                    if let Some(rescoped) = rescope_charged(ctx, text, occurrence)? {
+                    if let Some(rescoped) = rescope_charged(text, occurrence) {
                         *text = rescoped;
                     }
                 }
@@ -763,14 +661,13 @@ fn scope_identity_value(
         // typed identity and all other members are its discriminator/value.
         Value::Object(fields) => {
             if let Some(Value::String(text)) = fields.get_mut("id") {
-                if let Some(rescoped) = rescope_charged(ctx, text, occurrence)? {
+                if let Some(rescoped) = rescope_charged(text, occurrence) {
                     *text = rescoped;
                 }
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
-    Ok(())
 }
 
 fn scope_named_fields(
@@ -781,9 +678,8 @@ fn scope_named_fields(
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("walk F3Z native identity fields")?;
     for (name, value) in fields {
-        ctx.charge_work(1, "inspect F3Z native identity field")?;
         if names.contains(&name.as_str()) {
-            scope_identity_value(ctx, value, occurrence)?;
+            scope_identity_value(value, occurrence);
         } else {
             scope_named_values(ctx, value, names, occurrence)?;
         }
@@ -815,151 +711,8 @@ mod tests {
     mod fidelity;
     mod occurrence;
 
-    use super::{
-        apply_occurrence_transform, compose_transforms, make_sibling_ordinals_unique,
-        merge_archive, xref_table_from_ir,
-    };
+    use super::{apply_occurrence_transform, compose_transforms};
     use cadmpeg_ir::document::Model;
-
-    fn root_occurrence(id: &str, ordinal: u32) -> cadmpeg_ir::products::Occurrence {
-        cadmpeg_ir::products::Occurrence {
-            id: cadmpeg_ir::ids::OccurrenceId::mint(id).unwrap(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
-            parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-            ordinal,
-            transform: cadmpeg_ir::transform::Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        }
-    }
-
-    #[test]
-    fn f3z_merge_stack_refuses_collection_limit() {
-        let bytes = crate::test_support::zip_test::synthetic_f3d(false);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let normal_policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (normal, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &normal_policy)
-                .unwrap();
-        let scan = crate::container::scan(&normal, root).unwrap();
-        let archive = super::ArchiveSession {
-            members: std::collections::BTreeMap::new(),
-            layers: cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone()),
-            losses: Vec::new(),
-        };
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (limited, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        let mut report = cadmpeg_ir::codec::DecodeBody::new(
-            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-        );
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        let error = merge_archive(
-            &limited,
-            &scan,
-            &archive,
-            "root.f3d".into(),
-            &mut ir,
-            &mut report,
-            &mut fidelity,
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "seed F3Z merge stack")
-        );
-    }
-
-    #[test]
-    fn f3z_sibling_parent_index_refuses_collection_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut occurrences = [root_occurrence("f3d:model:occurrence#0", 0)];
-        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3Z sibling parents")
-        );
-    }
-
-    #[test]
-    fn f3z_sibling_ordinal_index_refuses_collection_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut occurrences = [root_occurrence("f3d:model:occurrence#0", 0)];
-        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index F3Z sibling ordinals")
-        );
-    }
-
-    #[test]
-    fn f3z_sibling_reassignment_refuses_work_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut occurrences = [
-            root_occurrence("f3d:model:occurrence#0", 0),
-            root_occurrence("f3d:model:occurrence#1", 0),
-        ];
-        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "find F3Z sibling ordinal")
-        );
-    }
-
-    #[test]
-    fn f3z_xref_native_reload_refuses_collection_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let normal_policy = cadmpeg_core::decode::DecodePolicy::default();
-        let normal =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &normal_policy)
-                .unwrap()
-                .0;
-        let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.native
-            .namespace_mut("f3d")
-            .set_arena(
-                &normal,
-                "xref_designs",
-                &[crate::records::xref::XrefDesign {
-                    id: "f3d:xref:design#0".into(),
-                    ordinal: 0,
-                    file_version: 1,
-                    target_file_name: "part.f3d".to_owned().try_into().unwrap(),
-                    display_name: "Part".into(),
-                    lineage_urn: "lineage".into(),
-                    version_urn: "version".into(),
-                }],
-            )
-            .unwrap();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let limited = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .unwrap()
-            .0;
-        let error = xref_table_from_ir(&limited, &ir).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "load typed native record")
-        );
-    }
 
     #[test]
     fn occurrence_translation_overflow_is_rejected() {
@@ -970,10 +723,7 @@ mod tests {
         ];
         let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
         let source = crate::records::xref::XrefPlacementTransform::try_from(source.rows()).unwrap();
-        let error = crate::test_support::with_decode_context(|ctx| {
-            apply_occurrence_transform(ctx, &mut Model::default(), source)
-        })
-        .unwrap_err();
+        let error = apply_occurrence_transform(&mut Model::default(), source).unwrap_err();
         assert!(error
             .to_string()
             .contains("F3Z occurrence translation is not a finite affine transform"));

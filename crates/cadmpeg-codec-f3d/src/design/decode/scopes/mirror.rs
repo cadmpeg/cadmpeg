@@ -2,7 +2,6 @@
 //! Exact mirror scopes and mirror construction binding.
 
 use crate::bytes::lp_utf16_bounded_charged;
-use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
@@ -255,9 +254,6 @@ pub(crate) fn bind_mirror_constructions(
             continue;
         };
         let key = (stream, header.record_index);
-        if !headers_by_record.contains_key(&key) {
-            ctx.reserve_map(&mut headers_by_record, 1, "f3d Mirror record headers")?;
-        }
         headers_by_record.insert(key, header);
     }
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
@@ -268,9 +264,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(stream) = native_stream(&scopes[index].id) else {
             continue;
         };
-        let (_stream_reservation, stream) = ctx
-            .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
-            .map(|(text, reservation)| (reservation, text))?;
+        let stream = stream.to_owned();
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -386,12 +380,6 @@ pub(crate) fn bind_mirror_constructions(
             }
             _ => None,
         };
-        ctx.charge_work(
-            u64_from_index(owners.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit("f3d Mirror owner search work", 0, 1))?,
-            "f3d Mirror owner search",
-        )?;
         let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
         let count = unique_match(owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream.as_str())

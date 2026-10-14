@@ -6,9 +6,6 @@
     clippy::uninlined_format_args
 )]
 
-mod atomic_limits;
-mod frame_relations;
-mod limits;
 mod linear;
 mod offset;
 mod offset_binding;
@@ -28,7 +25,7 @@ fn project_dimension_constraints(
             1.0e-6,
         )
     })
-    .expect("resource allocation did not fail")
+    .expect("dimension projection")
 }
 
 fn project_spatial_dimension_constraints(
@@ -45,36 +42,43 @@ fn project_spatial_dimension_constraints(
             1.0e-6,
         )
     })
-    .expect("resource allocation did not fail")
+    .expect("dimension projection")
 }
 
 mod numerical_ranges;
 mod parameter_iteration;
 
-fn assert_dimension_refusal(
-    operation: &'static str,
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
-) {
-    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, run);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == dimension && limit.operation == operation)
-    );
-}
-
-mod spatial_parallel_limits;
-
-mod spatial_carrier_limits;
-
-mod spatial_repeated_limits;
-
-mod spatial_reflection_limits;
-
-mod null_locus_limits;
-
-mod two_locus_limits;
-
-mod nurbs_containment_limits;
-
 mod relation_kind_limits;
+
+#[test]
+fn planar_dimension_output_keeps_unplaced_constraints() {
+    let constraint = cadmpeg_ir::sketches::SketchConstraint {
+        id: cadmpeg_ir::sketches::SketchConstraintId::mint(
+            "synthetic:test:id#dimension-limit-constraint",
+        )
+        .unwrap(),
+        sketch: cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#dimension-limit-sketch")
+            .unwrap(),
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled {},
+        )
+        .unwrap(),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    };
+    let output = crate::design::dimensions::retain_planar_dimension_constraints(
+        &[],
+        &[],
+        vec![constraint.clone()],
+    )
+    .unwrap();
+    assert_eq!(output, [constraint]);
+}

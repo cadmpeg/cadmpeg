@@ -12,53 +12,6 @@ fn native() -> crate::native::F3dNative {
     }
 }
 
-fn scope_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
-    crate::test_support::with_decode_context(|service_ctx| {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        policy.limits.max_retained_bytes = max_retained;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
-    })
-}
-
-#[test]
-fn parameter_scope_index_refuses_collection_limit() {
-    let error = scope_error(0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D parameter scope records")
-    );
-}
-
-#[test]
-fn parameter_scope_finding_refuses_collection_limit() {
-    let error = scope_error(1, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings")
-    );
-}
-
-#[test]
-fn parameter_scope_entity_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain F3D validation entity",
-        |cap| Err::<(), cadmpeg_core::CodecError>(scope_error(u64::MAX, cap)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity")
-    );
-}
-
 #[test]
 fn invalid_parameter_scope_preserves_finding() {
     crate::test_support::with_decode_context(|service_ctx| {

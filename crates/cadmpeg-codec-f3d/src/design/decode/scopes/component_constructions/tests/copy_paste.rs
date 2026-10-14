@@ -90,25 +90,6 @@ fn copy_paste_matrices_keep_their_source_locations() {
             ),
         ];
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        for limit in [0, 36, 72] {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            crate::test_support::with_decode_policy(&policy, |ctx| {
-                let error = exact_copy_paste_component_operation(
-                    ctx,
-                    &bytes,
-                    &records,
-                    &scope,
-                    &occurrences,
-                )
-                .unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                    if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && failure.operation == "retain F3D construction GUID")
-                );
-            });
-        }
         let operation = crate::test_support::with_decode_context(|ctx| {
             exact_copy_paste_component_operation(ctx, &bytes, &records, &scope, &occurrences)
         })

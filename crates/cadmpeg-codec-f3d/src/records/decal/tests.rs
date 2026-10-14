@@ -57,7 +57,7 @@ fn decal_image_native_retained_limit_refuses_before_record_clone() {
 
     let image = decal_image_fixture();
     let arena_name = "design_decal_images";
-    let needed = serde_json::to_vec(&image).unwrap().len() + arena_name.len();
+    let needed = serde_json::to_vec(&image).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;

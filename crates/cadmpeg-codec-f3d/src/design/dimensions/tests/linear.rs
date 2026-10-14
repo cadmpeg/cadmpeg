@@ -1406,20 +1406,4 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     );
 }
 
-mod refusal_directional_point_dimension;
-
-mod refusal_symmetric_parallel_line;
-
-mod refusal_repeated_linear_dimension;
-
-mod refusal_exact_counted_dimension_relation;
-
-mod refusal_tangent_radius;
-
-mod refusal_tangent_entity_distance;
-
-mod refusal_explicit_linear;
-
-mod refusal_presentation;
-
 mod refusal_spatial_distance;

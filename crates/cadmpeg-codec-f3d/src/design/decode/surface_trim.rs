@@ -146,25 +146,10 @@ fn exact_surface_trim_operation(
     ) = parsed_prefix?;
 
     let mut cell_entries = Vec::new();
-    ctx.reserve_vec(
-        &mut cell_entries,
-        cell_count_usize,
-        "f3d surface-trim cell entries",
-    )?;
 
     let mut cell_record_indices = HashSet::new();
-    ctx.reserve_set(
-        &mut cell_record_indices,
-        cell_count_usize,
-        "f3d surface-trim cell record indices",
-    )?;
 
     let mut cell_ordinals = HashSet::new();
-    ctx.reserve_set(
-        &mut cell_ordinals,
-        cell_count_usize,
-        "f3d surface-trim cell ordinals",
-    )?;
     let parsed = (|| {
         for ordinal in 0..cell_count_usize {
             let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
@@ -249,15 +234,9 @@ pub(crate) fn decode_surface_trim_operations(
             "f3d surface-trim operation identifier",
         )?;
 
-        ctx.reserve_vec(&mut out, 1, "f3d surface-trim operations")?;
         out.push(operation);
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |left, right| left.id.cmp(&right.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design surface_trim 1",
-    )?;
+    out.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(out)
 }
 

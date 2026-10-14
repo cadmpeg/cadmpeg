@@ -12,255 +12,17 @@ use super::{
     contiguous_i32_program, indexed_record_containing, parse_dimension_annotation_frame,
     parse_dimension_presentation_frame, recipe_record_prefix,
 };
-use crate::design::decode::parameters::parse_design_parameter_record;
-
-use crate::design::test_support::{parameter_record, push_genesis_block, push_reference};
-use crate::records::{parameters::DesignParameterOwner, sketch_links::PersistentSubentityTag};
+use crate::design::test_support::{push_genesis_block, push_reference};
+use crate::records::sketch_links::PersistentSubentityTag;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
-
-#[test]
-fn recipe_reference_candidate_vectors_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let targets = [
-        (
-            AttributeTarget::Face(FaceId::mint("test:model:face#one").unwrap()),
-            1,
-        ),
-        (
-            AttributeTarget::Edge(EdgeId::mint("test:model:edge#one").unwrap()),
-            1,
-        ),
-        (
-            AttributeTarget::Face(FaceId::mint("test:model:face#two").unwrap()),
-            2,
-        ),
-        (
-            AttributeTarget::Edge(EdgeId::mint("test:model:edge#two").unwrap()),
-            2,
-        ),
-    ];
-    for (target, selector) in targets {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut reference = crate::records::dimensions::DesignRecipeReference {
-            selector: 1,
-            selector_offset: 0,
-            token: "13".into(),
-            token_offset: 0,
-            design_reference: 331,
-            design_reference_offset: 0,
-            candidate_faces: Vec::new(),
-            candidate_edges: Vec::new(),
-            alternate_selector_faces: Vec::new(),
-            alternate_selector_edges: Vec::new(),
-        };
-        let tag = PersistentSubentityTag {
-            id: "matching".into(),
-            target,
-            selector,
-            token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
-            design_references: vec![331],
-            ordinal: 0,
-        };
-        assert!(matches!(
-            super::bind_recipe_reference_candidates_charged(
-                &ctx, &mut reference, &[tag], None,
-            ),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "f3d recipe reference candidate"
-        ));
-    }
-}
-use cadmpeg_ir::math::Point2;
 
 use std::collections::{HashMap, HashSet};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
-fn recipe_program_words_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        contiguous_i32_program(&ctx, &1i32.to_le_bytes(), 0, 4),
-        Some(Err(CodecError::ResourceLimit(failure)))
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d recipe program words"
-    ));
-}
-
-#[test]
-fn recipe_prefix_copies_refuse_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let mut bytes = vec![0; 11];
-    bytes.extend_from_slice(&[7, 8, 9]);
-    bytes.extend_from_slice(&16u32.to_le_bytes());
-    let family_name_offset = bytes.len();
-    bytes.extend_from_slice(b"edge_recipe_data");
-    let (_, prefix) = recipe_record_prefix(&bytes, 0, family_name_offset, 16).unwrap();
-    for operation in [
-        "f3d dimension recipe prefix",
-        "f3d recipe operand prefix",
-        "f3d face operand prefix",
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 2;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            ctx.copy_retained(prefix, operation),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation
-        ));
-    }
-}
-
-#[test]
-fn dimension_recipe_edge_id_refuses_collection_and_retained_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let id = "f3d:Design/BulkStream.dat:edge-operand#100";
-    for (collection_limit, retained_limit, dimension, operation) in [
-        (
-            0,
-            u64::MAX,
-            ResourceDimension::CollectionItems,
-            "f3d dimension recipe edge IDs",
-        ),
-        (
-            u64::MAX,
-            u64::try_from(id.len() - 1).unwrap(),
-            ResourceDimension::RetainedBytes,
-            "f3d dimension recipe edge ID text",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = collection_limit;
-        policy.limits.max_retained_bytes = retained_limit;
-        let refusal_cap =
-            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut ids = Vec::new();
-                ctx.push_formatted_retained(
-                    &mut ids,
-                    format_args!("{}", id),
-                    "f3d dimension recipe edge IDs",
-                    "f3d dimension recipe edge ID text",
-                )
-            }) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                error => panic!("unexpected refusal: {error:?}"),
-            };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let refusal_cap =
-            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut ids = Vec::new();
-                ctx.push_formatted_retained(
-                    &mut ids,
-                    format_args!("{}", id),
-                    "f3d dimension recipe edge IDs",
-                    "f3d dimension recipe edge ID text",
-                )
-            }) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                error => panic!("unexpected refusal: {error:?}"),
-            };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ids = Vec::new();
-        assert!(matches!(
-            ctx.push_formatted_retained(&mut ids, format_args!("{}", id), "f3d dimension recipe edge IDs", "f3d dimension recipe edge ID text"),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation
-        ));
-        assert!(ids.is_empty());
-    }
-}
-
-#[test]
 fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bytes = vec![0xaa; 5];
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"415");
@@ -285,17 +47,10 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     );
     assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
     assert_eq!(
-        contiguous_i32_program(&ctx, &[u8::MAX; 8], 0, 8)
-            .transpose()
-            .unwrap(),
+        contiguous_i32_program(&[u8::MAX; 8], 0, 8),
         Some(vec![-1, -1])
     );
-    assert_eq!(
-        contiguous_i32_program(&ctx, &[0; 7], 0, 7)
-            .transpose()
-            .unwrap(),
-        None
-    );
+    assert_eq!(contiguous_i32_program(&[0; 7], 0, 7), None);
 
     let mut framed = vec![0; 11];
     framed.extend_from_slice(&[7, 8, 9]);
@@ -311,28 +66,6 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
         recipe_record_prefix(&framed, 0, family_name_offset, 16),
         None
     );
-}
-
-fn recipe_reference_limit(
-    prefix: &[u8],
-    collection_limit: u64,
-    retained_limit: u64,
-    operation: &str,
-) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::decode::dimension_frames::decode_recipe_references_charged(
-            &ctx, prefix, 0,
-        ),
-        Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-    ));
 }
 
 #[test]
@@ -356,9 +89,6 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
         .len(),
         1
     );
-    recipe_reference_limit(&prefix, u64::MAX, 0, "f3d recipe reference token");
-    recipe_reference_limit(&prefix, 0, u64::MAX, "f3d recipe operand references");
-    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe standard references");
 }
 
 #[test]
@@ -388,8 +118,6 @@ fn paired_recipe_references_refuse_operand_and_flattened_runs() {
         .len(),
         2
     );
-    recipe_reference_limit(&prefix, 2, u64::MAX, "f3d recipe paired operands");
-    recipe_reference_limit(&prefix, 4, u64::MAX, "f3d recipe paired references");
 }
 
 #[test]
@@ -416,7 +144,6 @@ fn grouped_recipe_references_refuse_output_run() {
         .len(),
         4
     );
-    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe grouped references");
 }
 
 #[test]
@@ -1076,137 +803,6 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     .expect("admitted scope-prefix frame");
     assert_eq!(leading.companion_record_index, None);
     assert_eq!(leading.governing_owner_record_index, 390);
-
-    for (items, retained, operation) in [
-        (2, u64::MAX, "f3d dimension annotation operands"),
-        (3, u64::MAX, "f3d dimension annotation return members"),
-        (u64::MAX, 2, "f3d dimension annotation bytes"),
-    ] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = items;
-        policy.limits.max_retained_bytes = retained;
-        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                ((parse_dimension_annotation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    Some(383),
-                    &HashMap::from([(390, 391)]),
-                    &HashSet::from([354, 376]),
-                    &HashSet::from([201]),
-                ))
-                .transpose())
-                .map(|_| ())
-            },
-        ) {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-            error => panic!("unexpected refusal: {error:?}"),
-        };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                ((parse_dimension_annotation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    Some(383),
-                    &HashMap::from([(390, 391)]),
-                    &HashSet::from([354, 376]),
-                    &HashSet::from([201]),
-                ))
-                .transpose())
-                .map(|_| ())
-            },
-        ) {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-            error => panic!("unexpected refusal: {error:?}"),
-        };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            parse_dimension_annotation_frame(
-                &ctx, &bytes, 0, Some(383), &HashMap::from([(390, 391)]),
-                &HashSet::from([354, 376]), &HashSet::from([201]),
-            ),
-            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
-                if failure.operation == operation
-        ));
-    }
 }
 
 #[test]
@@ -1236,7 +832,6 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     bytes.extend_from_slice(&[0; 35]);
 
     let frame = parse_dimension_presentation_frame(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
@@ -1244,8 +839,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         &HashSet::from([270]),
         &HashSet::from([281]),
     )
-    .expect("direct dimension presentation frame")
-    .expect("admitted presentation frame");
+    .expect("direct dimension presentation frame");
     assert_eq!(frame.class_tag.as_str(), "314");
     assert_eq!(frame.record_index, 332);
     assert_eq!(frame.frame_length, u64_from_index(paired_offset));
@@ -1259,152 +853,18 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     assert_eq!(frame.owner_reference, 270);
 
     assert!(parse_dimension_presentation_frame(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
         &HashSet::from([306]),
         &HashSet::from([270]),
-        &HashSet::from([281]),
+        &HashSet::from([281])
     )
     .is_none());
-
-    for (items, retained, operation) in [
-        (1, u64::MAX, "f3d dimension presentation operands"),
-        (u64::MAX, 2, "f3d dimension presentation bytes"),
-    ] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = items;
-        policy.limits.max_retained_bytes = retained;
-        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                ((parse_dimension_presentation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    super::DIMENSION_PRESENTATION_TYPE_GUID,
-                    &HashSet::from([306, 331]),
-                    &HashSet::from([270]),
-                    &HashSet::from([281]),
-                ))
-                .transpose())
-                .map(|_| ())
-            },
-        ) {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-            error => panic!("unexpected refusal: {error:?}"),
-        };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                ((parse_dimension_presentation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    super::DIMENSION_PRESENTATION_TYPE_GUID,
-                    &HashSet::from([306, 331]),
-                    &HashSet::from([270]),
-                    &HashSet::from([281]),
-                ))
-                .transpose())
-                .map(|_| ())
-            },
-        ) {
-            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-            error => panic!("unexpected refusal: {error:?}"),
-        };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            parse_dimension_presentation_frame(
-                &ctx, &bytes, 0, super::DIMENSION_PRESENTATION_TYPE_GUID,
-                &HashSet::from([306, 331]), &HashSet::from([270]),
-                &HashSet::from([281]),
-            ),
-            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
-                if failure.operation == operation
-        ));
-    }
 }
 
 #[test]
 fn companion_interval_refuses_foreign_scope_member_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
         0,
@@ -1454,27 +914,7 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
         class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 70,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let refusal = super::companion_owned_interval(
-        &limited,
-        &companion,
-        std::iter::empty(),
-        &[],
-        &[scope.clone()],
-        std::slice::from_ref(&header),
-        100,
-    );
-    assert!(matches!(
-        refusal,
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d companion foreign scope members"
-    ));
     let admitted = super::companion_owned_interval(
-        &cadmpeg_test_support::service_decode_context(),
         &companion,
         std::iter::empty(),
         &[],
@@ -1482,12 +922,11 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
         &[header],
         100,
     );
-    assert_eq!(admitted.unwrap(), Some((58, 70)));
+    assert_eq!(admitted, Some((58, 70)));
 }
 
 #[test]
 fn dimension_annotation_interval_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
@@ -1520,17 +959,6 @@ fn dimension_annotation_interval_refuses_collection_limit() {
             points: &[],
             curves: &[],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refusal = super::decode_dimension_annotation_frames(&limited, &inputs, &[]);
-        assert!(matches!(
-            refusal,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d dimension annotation intervals"
-        ));
         let admitted = super::decode_dimension_annotation_frames(
             &cadmpeg_test_support::service_decode_context(),
             &inputs,
@@ -1540,297 +968,5 @@ fn dimension_annotation_interval_refuses_collection_limit() {
         assert!(admitted.is_empty());
     });
 }
-
-#[test]
-fn dimension_annotation_stream_scan_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::io::{Cursor, Write};
-    use zip::CompressionMethod;
-
-    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let companion = crate::records::parameters::DesignParameterCompanion::unbound(
-        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
-        0,
-        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        11,
-        10,
-        std::num::NonZeroU64::MIN,
-        42,
-    );
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(STREAM, stored).unwrap();
-    zip.write_all(&[0; 58]).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let companions = [companion.clone(), companion];
-        let inputs = super::DimensionDecodeInputs {
-            scan,
-            placements: &[],
-            parameters: &[],
-            owners: &[],
-            companions: &companions,
-            scopes: &[],
-            headers: &[],
-            points: &[],
-            curves: &[],
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::decode_dimension_annotation_frames(&ctx, &inputs, &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::WorkUnits
-                    && failure.operation == "f3d dimension annotation stream scan"
-        ));
-    });
-}
-
-#[test]
-fn dimension_recipe_indexes_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::io::{Cursor, Write};
-    use zip::CompressionMethod;
-
-    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let mut stream_bytes = Vec::new();
-    stream_bytes.extend_from_slice(&3u32.to_le_bytes());
-    stream_bytes.extend_from_slice(b"415");
-    stream_bytes.extend_from_slice(&40u32.to_le_bytes());
-    stream_bytes.extend_from_slice(&[0; 10]);
-    stream_bytes.extend_from_slice(&16u32.to_le_bytes());
-    let recipe_byte_offset = u64::try_from(stream_bytes.len()).unwrap();
-    stream_bytes.extend_from_slice(b"edge_recipe_data");
-    stream_bytes.extend_from_slice(&0i32.to_le_bytes());
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(STREAM, stored).unwrap();
-    zip.write_all(&stream_bytes).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let mut parameter = parse_design_parameter_record(&parameter_record(
-            Some(300),
-            "40 mm",
-            "Linear Dimension-3",
-            Some("mm"),
-            "d3",
-            4.0,
-        ))
-        .unwrap();
-        parameter.id = format!("{}:design-parameter#301", crate::ids::native_scope(STREAM));
-        parameter.record_index = 301;
-        let owner =
-            DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
-                id: format!(
-                    "{}:design-parameter-owner#300",
-                    crate::ids::native_scope(STREAM)
-                ),
-                byte_offset: 0,
-                frame_length: 104,
-                class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
-                    .unwrap(),
-                record_index: 300,
-                scope_record_index: 10,
-                local_ordinal: 0,
-                evaluated_value: 4.0,
-                evaluated_value_offset: 40,
-                parameter_record_index: 301,
-                owned_ordinal: 3,
-                variant: Some(0),
-                companion_record_index: 302,
-            })
-            .unwrap();
-        let recipe = crate::records::recipes::ConstructionRecipe {
-            id: format!("{}:construction-recipe#1", crate::ids::native_scope(STREAM)),
-            byte_offset: recipe_byte_offset,
-            kind: crate::records::recipes::ConstructionRecipeKind::Edge,
-            design: None,
-            recipe_index: 0,
-            record_index: None,
-        };
-        for (parameters, owners, recipes, limit, operation) in [
-            (
-                std::slice::from_ref(&parameter),
-                &[][..],
-                &[][..],
-                0,
-                "f3d dimension recipe parameter index",
-            ),
-            (
-                std::slice::from_ref(&parameter),
-                std::slice::from_ref(&owner),
-                &[][..],
-                1,
-                "f3d dimension recipe owners",
-            ),
-            (
-                &[][..],
-                &[][..],
-                std::slice::from_ref(&recipe),
-                0,
-                "f3d dimension recipe index",
-            ),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let refusal = super::decode_dimension_recipe_records(
-                &ctx,
-                scan,
-                parameters,
-                owners,
-                &[],
-                recipes,
-            );
-            assert!(matches!(
-                refusal,
-                Err(CodecError::ResourceLimit(failure))
-                    if failure.dimension == ResourceDimension::CollectionItems
-                        && failure.operation == operation
-            ));
-        }
-        let companion = crate::records::parameters::DesignParameterCompanion::unbound(
-            format!(
-                "{}:parameter-companion#302",
-                crate::ids::native_scope(STREAM)
-            ),
-            0,
-            crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
-            302,
-            300,
-            std::num::NonZeroU64::MIN,
-            42,
-        )
-        .bound(crate::records::parameters::DesignCompanionPayload::new(
-            0,
-            u64::try_from(stream_bytes.len()).unwrap(),
-            vec![recipe.id.clone()],
-        ));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refusal = super::decode_dimension_recipe_records(
-            &ctx,
-            scan,
-            std::slice::from_ref(&parameter),
-            std::slice::from_ref(&owner),
-            std::slice::from_ref(&companion),
-            std::slice::from_ref(&recipe),
-        );
-        assert!(matches!(
-            refusal,
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d dimension recipe records"
-        ));
-    });
-}
-
-#[test]
-fn dimension_locus_lookup_collections_refuse_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(300),
-        "40 mm",
-        "Linear Dimension-3",
-        Some("mm"),
-        "d3",
-        4.0,
-    ))
-    .unwrap();
-    parameter.id = "f3d:Design/BulkStream.dat:design-parameter#301".into();
-    parameter.record_index = 301;
-    let parameters = [parameter];
-    let owner =
-        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
-            id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
-            byte_offset: 0,
-            frame_length: 104,
-            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
-                .unwrap(),
-            record_index: 300,
-            scope_record_index: 10,
-            local_ordinal: 0,
-            evaluated_value: 4.0,
-            evaluated_value_offset: 40,
-            parameter_record_index: 301,
-            owned_ordinal: 3,
-            variant: Some(0),
-            companion_record_index: 302,
-        })
-        .unwrap();
-    let parameter_index = super::dimension_parameter_index(
-        &cadmpeg_test_support::service_decode_context(),
-        &parameters,
-        "f3d dimension locus parameter index",
-    )
-    .unwrap();
-    let point = crate::records::sketch_geometry::SketchPoint::try_from(
-        crate::records::sketch_geometry::SketchPointDraft {
-            id: "f3d:Design/BulkStream.dat:sketch-point#0".into(),
-            record_index: 20,
-            owner_reference: None,
-            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
-                .unwrap(),
-            byte_offset: 0,
-            coordinate_offset: 89,
-            companion: crate::records::sketch_geometry::SketchPointCompanion {
-                incident_curves: Vec::new(),
-            },
-            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
-                20,
-                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
-                None,
-                0.0,
-            ),
-            paired_reference: 0,
-            coordinates: Point2::new(1.0, 2.0),
-        },
-    )
-    .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let refusal =
-        super::dimension_parameter_index(&ctx, &parameters, "f3d dimension locus parameter index");
-    assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d dimension locus parameter index"));
-    let companion_arena = DecodeArena::new();
-    let (companion_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &companion_arena, &policy).unwrap();
-    let refusal = super::dimension_companion_keys(
-        &companion_ctx,
-        std::slice::from_ref(&owner),
-        &parameter_index,
-        "f3d dimension locus companions",
-    );
-    assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d dimension locus companions"));
-    let geometry_arena = DecodeArena::new();
-    let (geometry_ctx, _) = DecodeContext::from_root_bytes(&[], &geometry_arena, &policy).unwrap();
-    let refusal = super::dimension_geometry_indices(
-        &geometry_ctx,
-        "f3d:Design/BulkStream.dat",
-        std::slice::from_ref(&point),
-        &[],
-    );
-    assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
-        if failure.dimension == ResourceDimension::CollectionItems
-            && failure.operation == "f3d dimension geometry indices"));
-}
-
-mod companion_limits;
 
 mod loci;

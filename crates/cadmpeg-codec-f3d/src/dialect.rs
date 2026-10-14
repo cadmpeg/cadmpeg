@@ -132,23 +132,18 @@ impl F3dDialect {
     /// constant it compared against. Reaching here means the `3-2-0-0` layout
     /// parsed the whole manifest, so the version decides only which row names
     /// that reading: its own, or the recovery row.
-    pub(crate) fn classify_document(
-        ctx: &DecodeContext<'_>,
-        version: Option<&str>,
-    ) -> Result<DialectMatch, CodecError> {
-        const OPERATION: &str = "classify F3D manifest dialect";
+    pub(crate) fn classify_document(version: Option<&str>) -> DialectMatch {
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION);
         if let Some(version) = version {
-            ctx.admit_btree_entry(&declared, &key, OPERATION)?;
-            declared.insert(key, ctx.copy_retained_text(version, OPERATION)?);
+            declared.insert(key, version.to_owned());
         }
         let dialect = if version == Some(TOP_LEVEL_MANIFEST_VERSION) {
             Self::Manifest3200
         } else {
             Self::Unknown
         };
-        Ok(dialect.matched(declared))
+        dialect.matched(declared)
     }
 
     /// Classifies a multi-document F3Z archive from its root-level `*.f3d`
@@ -157,19 +152,11 @@ impl F3dDialect {
     /// The row declares a filename-presence discriminant and no version, so a
     /// document that reaches here was read with exactly the strategy its row
     /// declares: [`Admission::Admitted`].
-    pub(crate) fn classify_f3z(
-        ctx: &DecodeContext<'_>,
-        root_document_members: &[&str],
-    ) -> Result<DialectMatch, CodecError> {
-        const OPERATION: &str = "classify F3Z root document members";
+    pub(crate) fn classify_f3z(root_document_members: &[&str]) -> DialectMatch {
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS);
-        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
-        declared.insert(
-            key,
-            ctx.join_retained(root_document_members, MEMBER_SEPARATOR, OPERATION)?,
-        );
-        Ok(Self::F3zMultiDocument.matched(declared))
+        declared.insert(key, root_document_members.join(MEMBER_SEPARATOR));
+        Self::F3zMultiDocument.matched(declared)
     }
 
     /// The one [`DialectMatch`] construction path in this codec, so a
@@ -211,13 +198,10 @@ pub(crate) fn classify_layers(
                 }
             }
         {
-            ctx.reserve_vec(&mut losses, 1, "collect F3D dialect collision losses")?;
             let format = rejected.format();
             let instance = rejected.instance().unwrap_or("unidentified");
             losses.push(F3dLossCode::DialectLayerCollision.note(
-                ctx.format_retained(format_args!(
-                        "the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"
-                    ), "retain F3D dialect collision loss")?,
+                format!("the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"),
             ));
         }
         Ok(())
@@ -262,38 +246,28 @@ pub(crate) fn classify_layers(
 }
 
 /// Dialect-derived losses implied by a report's final classified layers.
-pub(crate) fn dialect_losses(
-    ctx: &DecodeContext<'_>,
-    layers: &DialectLayers,
-) -> Result<Vec<LossNote>, CodecError> {
+pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
     let mut losses = Vec::new();
     for matched in layers.iter().filter(|matched| matched.format() == FORMAT) {
-        if let Some(loss) = dialect_loss(ctx, matched)? {
-            ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
+        if let Some(loss) = dialect_loss(matched) {
+            losses.push(loss);
         }
     }
     for matched in layers
         .iter()
         .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
     {
-        if let Some(loss) = kernel_dialect_loss(ctx, matched)? {
-            ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
+        if let Some(loss) = kernel_dialect_loss(matched) {
+            losses.push(loss);
         }
     }
-    Ok(losses)
+    losses
 }
 
-fn archive_loss_text(
-    ctx: &DecodeContext<'_>,
-    matched: &DialectMatch,
-    body: impl fmt::Display,
-) -> Result<String, CodecError> {
-    let operation = "retain F3D dialect recovery loss";
+fn archive_loss_text(matched: &DialectMatch, body: impl fmt::Display) -> String {
     match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
-        Some(member) => {
-            ctx.format_retained(format_args!("archive member {member}: {body}"), operation)
-        }
-        None => ctx.format_retained(format_args!("{body}"), operation),
+        Some(member) => format!("archive member {member}: {body}"),
+        None => format!("{body}"),
     }
 }
 
@@ -332,18 +306,15 @@ impl fmt::Display for ManifestRecovery<'_> {
 /// Returns a loss exactly for an unverified or residual admission. This reads
 /// the admission rather than reclassifying, so the note and reported state
 /// come from one value.
-fn dialect_loss(
-    ctx: &DecodeContext<'_>,
-    matched: &DialectMatch,
-) -> Result<Option<LossNote>, CodecError> {
+fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     if matches!(
         matched.admission(),
         Admission::Admitted | Admission::Refused
     ) {
-        return Ok(None);
+        return None;
     }
-    let message = archive_loss_text(ctx, matched, ManifestRecovery(matched))?;
-    Ok(Some(F3dLossCode::SourceDialectUnverified.note(message)))
+    let message = archive_loss_text(matched, ManifestRecovery(matched));
+    Some(F3dLossCode::SourceDialectUnverified.note(message))
 }
 
 struct KernelRecovery<'a> {
@@ -383,39 +354,32 @@ impl fmt::Display for KernelRecovery<'_> {
 }
 
 /// The recovery loss a kernel layer charges, if it recovered.
-fn kernel_dialect_loss(
-    ctx: &DecodeContext<'_>,
-    matched: &DialectMatch,
-) -> Result<Option<LossNote>, CodecError> {
+fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Refused => {
             let carrier = matched
                 .declared()
                 .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
                 .map_or("an unnamed carrier", String::as_str);
-            let message = archive_loss_text(
-                ctx,
-                matched,
-                format_args!(
+            let message = archive_loss_text(matched, format_args!(
                     "kernel carrier {carrier} could not be framed for dialect inspection; its retained \
                      source bytes remain available"
-                ),
-            )?;
-            return Ok(Some(F3dLossCode::KernelCarrierUnparseable.note(message)));
+                ));
+            return Some(F3dLossCode::KernelCarrierUnparseable.note(message));
         }
         Admission::Admitted | Admission::Unverified { .. } | Admission::Residual => {}
     }
     if matched.format() != cadmpeg_asm::dialect::FORMAT
         || matches!(matched.admission(), Admission::Admitted)
     {
-        return Ok(None);
+        return None;
     }
     let carrier = matched
         .declared()
         .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
         .map_or("an unnamed carrier", String::as_str);
-    let message = archive_loss_text(ctx, matched, KernelRecovery { matched, carrier })?;
-    Ok(Some(F3dLossCode::KernelDialectUnverified.note(message)))
+    let message = archive_loss_text(matched, KernelRecovery { matched, carrier });
+    Some(F3dLossCode::KernelDialectUnverified.note(message))
 }
 
 #[cfg(test)]

@@ -1217,10 +1217,7 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
         .expect("test projection has a synthetic exact timeline")
     });
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            unresolved_parameter_expression_dependency_count(decode_ctx, &native, &projected)
-        })
-        .unwrap(),
+        unresolved_parameter_expression_dependency_count(&native, &projected),
         0
     );
 
@@ -1231,112 +1228,11 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
         .dependencies
         .clear();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            unresolved_parameter_expression_dependency_count(decode_ctx, &native, &projected)
-        })
-        .unwrap(),
+        unresolved_parameter_expression_dependency_count(&native, &projected),
         1
     );
 }
 
-fn assert_expression_audit_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let parameter = |stream: &str, record_index, expression: &str, name: &str| {
-        let mut parameter = parse_design_parameter_record(&parameter_record(
-            None,
-            expression,
-            "User Parameter",
-            Some("mm"),
-            name,
-            1.0,
-        ))
-        .expect("generated parameter");
-        parameter.id = format!("f3d:{stream}:parameter#{record_index}");
-        parameter.record_index = record_index;
-        parameter.source_ordinal = record_index;
-        parameter
-    };
-    let native = vec![
-        parameter("A", 1, "1 mm", "Width"),
-        parameter("A", 2, "Width + External", "Half"),
-        parameter("B", 1, "1 mm", "External"),
-    ];
-    let (_, projected) = crate::test_support::with_decode_context(|ctx| {
-        let scopes = &[];
-        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native,
-                scopes,
-                timelines: &timelines,
-                ..Default::default()
-            },
-        )
-        .expect("test projection has a synthetic exact timeline")
-    });
-    let mut found = false;
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            unresolved_parameter_expression_dependency_count(&ctx, &native, &projected),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems
-        ) {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no collection limit reached {operation}");
-}
-
-#[test]
-fn expression_native_parameter_index_refuses_collection_limit() {
-    assert_expression_audit_limit("f3d expression native parameter index");
-}
-
-#[test]
-fn expression_neutral_parameter_index_refuses_collection_limit() {
-    assert_expression_audit_limit("f3d expression neutral parameter index");
-}
-
-#[test]
-fn expression_stream_index_refuses_collection_limit() {
-    assert_expression_audit_limit("f3d expression stream index");
-}
-
-#[test]
-fn expression_stream_name_refuses_collection_limit() {
-    assert_expression_audit_limit("f3d expression stream name");
-}
-
-#[test]
-fn expression_dependency_name_refuses_collection_limit() {
-    assert_expression_audit_limit("f3d expression dependency name");
-}
-
-#[test]
-fn expression_identifier_refuses_collection_limit() {
-    assert_expression_audit_limit("f3d expression identifier");
-}
-
-mod refusal_recipe_linear_dimension_candidates;
-
 mod refusal_recipe_dimension_candidate_entities;
 
 mod refusal_recipe_extension_point_dimension;
-
-mod refusal_unique_parallel_line;
-
-mod refusal_unique_point_line;
-
-mod refusal_owner_scoped_parallel_line_set;
-
-mod refusal_concentric_circle;

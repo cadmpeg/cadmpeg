@@ -94,34 +94,6 @@ fn occurrence_and_stream_boundaries_cannot_alias() {
 }
 
 #[test]
-fn source_rescoping_refuses_annotation_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index remapped annotation identities")
-    );
-}
-
-#[test]
-fn source_rescoping_refuses_identity_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "rescope F3Z identity")
-    );
-}
-
-#[test]
 fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(
@@ -152,50 +124,6 @@ fn source_rescoping_preserves_absent_provenance_tag() {
 }
 
 #[test]
-fn source_rescoping_refuses_fidelity_owner_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rescope_fidelity(&ctx, SourceFidelity::default(), "part").unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3Z fidelity owner")
-    );
-}
-
-#[test]
-fn source_rescoping_refuses_retained_record_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let (_, records) = source("member").into_parts();
-    let mut input = SourceFidelity::default();
-    for (id, record) in records {
-        input.insert_retained_record(id, record).unwrap();
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = rescope_fidelity(&ctx, input, "part").unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3Z rescoped retained records")
-    );
-}
-
-#[test]
-fn source_rescoping_charges_provenance_stream_handles() {
-    // Released rescoping scratch peaks above the stream-handle charge.
-    let source = source("member");
-    cadmpeg_test_support::refusal::assert_charged(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "allocate annotation stream handle",
-        || crate::test_support::with_decode_context(|ctx| rescope_fidelity(ctx, source, "part")),
-    );
-}
-
-#[test]
 fn fidelity_append_charged_preserves_source_metadata() {
     let mut charged = SourceFidelity::default();
     charged
@@ -212,85 +140,4 @@ fn fidelity_append_charged_preserves_source_metadata() {
         )
         .unwrap();
     assert_eq!(charged, plain);
-}
-
-#[test]
-fn fidelity_append_refuses_provenance_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut builder = AnnotationBuilder::new();
-    let stream = StreamHandle::new(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap(),
-        "fixture stream handle",
-    )
-    .unwrap();
-    builder
-        .note(
-            &cadmpeg_test_support::service_decode_context(),
-            ID,
-            &stream,
-            7,
-            None,
-        )
-        .unwrap();
-    let other = SourceFidelity::with_annotations(builder.build());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let expected = other.clone();
-    let mut target = SourceFidelity::default();
-    target.append(&ctx, other).unwrap();
-    assert_eq!(target, expected);
-}
-
-#[test]
-fn fidelity_append_refuses_retained_record_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let (_, records) = source("member").into_parts();
-    let mut other = SourceFidelity::default();
-    for (id, record) in records {
-        other.insert_retained_record(id, record).unwrap();
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let expected = other.clone();
-    let mut target = SourceFidelity::default();
-    target.append(&ctx, other).unwrap();
-    assert_eq!(target, expected);
-}
-
-#[test]
-fn fidelity_append_refuses_new_destination_nodes_without_mutation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    for records in [false, true] {
-        let mut target = rescope_fidelity(
-            &cadmpeg_test_support::service_decode_context(),
-            source("left"),
-            "left",
-        )
-        .unwrap();
-        let mut incoming = source("right");
-        if !records {
-            target = SourceFidelity::with_annotations(target.annotations);
-            incoming = SourceFidelity::with_annotations(incoming.annotations);
-        }
-        let before = target.clone();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = target.append(&ctx, incoming).unwrap_err();
-        let operation = if records {
-            "append source records"
-        } else {
-            "append source provenance"
-        };
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
-        );
-        assert_eq!(target, before);
-    }
 }

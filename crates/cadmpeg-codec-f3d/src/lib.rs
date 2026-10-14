@@ -180,19 +180,8 @@ impl CodecBackend for F3dCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len().min(ZIP_MAGIC.len())),
-            "detect ZIP magic",
-        )?;
         if !prefix.starts_with(ZIP_MAGIC) {
             if cadmpeg_container::ArchiveSnapshot::has_footer(ctx, prefix)? {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(prefix.len())
-                        * cadmpeg_core::decode::u64_from_index(
-                            container::DETECT_MARKERS.len() + container::F3Z_DETECT_MARKERS.len(),
-                        ),
-                    "detect Fusion central names",
-                )?;
                 match cadmpeg_container::ArchiveSnapshot::contains_matching_name(
                     ctx,
                     cadmpeg_core::decode::View::over_retained(prefix),
@@ -214,10 +203,6 @@ impl CodecBackend for F3dCodec {
             .iter()
             .chain(container::F3Z_DETECT_MARKERS)
         {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(prefix.len()),
-                "detect Fusion marker",
-            )?;
             if contains(prefix, marker) {
                 return Ok(Confidence::High);
             }

@@ -164,44 +164,6 @@ fn circular_pattern_seed_role_selects_body_or_face() {
     }
 }
 
-fn assert_circular_seed_refusal(role: DesignOperandRole, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let scope = circular_scope();
-    let seed_group = group(10, 20, role);
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let arena = DecodeArena::new();
-
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_circular_pattern(&ctx, &scope, std::slice::from_ref(&seed_group), &[]))
-                    .map(|_| ())
-            },
-        );
-        assert!(
-            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation)
-        );
-    }
-}
-
-#[test]
-fn circular_body_seed_id_refuses_retained_limit() {
-    assert_circular_seed_refusal(DesignOperandRole::BODIES_B, "f3d circular body seed id");
-}
-
-#[test]
-fn circular_face_seed_id_refuses_retained_limit() {
-    assert_circular_seed_refusal(DesignOperandRole::BODIES_A, "f3d circular face seed id");
-}
-
 fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed) {
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
     else {
@@ -252,63 +214,4 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
             "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
         )),
     );
-}
-
-fn assert_rectangular_seed_refusal(role: DesignOperandRole, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let scope = rectangular_scope();
-    let seed_group = group(10, 20, role);
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let arena = DecodeArena::new();
-
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_rectangular_pattern_scalars(
-                    &ctx,
-                    &scope,
-                    std::slice::from_ref(&seed_group),
-                    &[],
-                ))
-                .map(|_| ())
-            },
-        );
-        assert!(
-            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation)
-        );
-    }
-}
-
-#[test]
-fn rectangular_face_seed_id_refuses_retained_limit() {
-    assert_rectangular_seed_refusal(DesignOperandRole::BODIES_A, "f3d rectangular face seed id");
-}
-
-#[test]
-fn rectangular_body_seed_id_refuses_retained_limit() {
-    assert_rectangular_seed_refusal(DesignOperandRole::BODIES_B, "f3d rectangular body seed id");
-}
-
-#[test]
-fn rectangular_pattern_seed_output_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let scope = rectangular_scope();
-    let seed_group = group(10, 20, DesignOperandRole::BODIES_B);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(project_rectangular_pattern_scalars(&ctx, &scope,
-        std::slice::from_ref(&seed_group), &[]), Err(CodecError::ResourceLimit(failure))
-        if failure.dimension == ResourceDimension::CollectionItems && failure.operation == "f3d rectangular pattern seeds"));
 }
