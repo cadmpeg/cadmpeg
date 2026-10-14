@@ -158,19 +158,19 @@ fn datum_fixed_pair_preserves_values_and_raw_values_wire() {
 }
 
 #[test]
-fn q155_lanes_reject_mismatched_values_and_unknown_markers() {
-    let pattern = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5],"markers":"30","raw_values":["40000000000000"],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
+fn binary64_lanes_reject_mismatched_values_and_unknown_markers() {
+    let pattern = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[32.0],"raw_values":["3040000000000000"],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
     let draft = pattern.replace("construction_payload", "graph_payload");
     for (key, value) in [
         ("values", serde_json::json!([0.25])),
-        ("markers", serde_json::json!("31")),
+        ("raw_values", serde_json::json!(["3140000000000000"])),
     ] {
         let mut invalid: serde_json::Value = serde_json::from_str(pattern).unwrap();
         invalid[key] = value.clone();
-        assert!(serde_json::from_value::<FeaturePatternConstructionFixedLane>(invalid).is_err());
+        assert!(serde_json::from_value::<FeaturePatternConstructionBinary64Lane>(invalid).is_err());
         let mut invalid: serde_json::Value = serde_json::from_str(&draft).unwrap();
         invalid[key] = value;
-        assert!(serde_json::from_value::<FeatureDraftConstructionFixedLane>(invalid).is_err());
+        assert!(serde_json::from_value::<FeatureDraftConstructionBinary64Lane>(invalid).is_err());
     }
 }
 
@@ -242,16 +242,16 @@ fn sketch_scalar_run_derives_payload_positions_across_split_source_blocks() {
 
 #[test]
 fn draft_and_pattern_runs_reject_payload_gaps_and_empty_atoms() {
-    let fixed = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,27],"source_offset":100,"value_source_offsets":[118,900]}"#;
+    let fixed = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[2.0,-32.0],"raw_values":["3000000000000000","b040000000000000"],"payload_offset":0,"value_payload_offsets":[18,27],"source_offset":100,"value_source_offsets":[118,900]}"#;
     assert!(
-        serde_json::from_str::<FeaturePatternConstructionFixedLane>(fixed)
+        serde_json::from_str::<FeaturePatternConstructionBinary64Lane>(fixed)
             .unwrap_err()
             .to_string()
             .contains("value_payload_offsets")
     );
     let draft_fixed = fixed.replace("construction_payload", "graph_payload");
     assert!(
-        serde_json::from_str::<FeatureDraftConstructionFixedLane>(&draft_fixed)
+        serde_json::from_str::<FeatureDraftConstructionBinary64Lane>(&draft_fixed)
             .unwrap_err()
             .to_string()
             .contains("value_payload_offsets")
@@ -396,8 +396,8 @@ fn operation_body_reference_lane_rejects_unknown_branch() {
 }
 
 use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
-use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionBinary64Lane;
 
-use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionBinary64Lane;
 
 use crate::native::features::test_support::check_lane_wire;

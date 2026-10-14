@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed scalar frames with contiguous, derived payload positions.
 
-use super::fixed::Q155Atom;
 use super::nonempty::NonEmpty;
-use super::scalar::{ShiftedBinary32, ShiftedScalar};
+use super::scalar::{ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 
 pub(crate) trait AtomWidth {
     fn width(&self) -> u64;
@@ -21,7 +20,7 @@ impl AtomWidth for ShiftedBinary32 {
     }
 }
 
-impl AtomWidth for Q155Atom {
+impl AtomWidth for ShiftedBinary64 {
     fn width(&self) -> u64 {
         8
     }

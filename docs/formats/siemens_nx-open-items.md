@@ -646,6 +646,11 @@ face or feature set assigns either group a selection role. Compact values that e
 
 **Known.** `siemens_nx.md` §7.1 "The `DRAFT` operation payload begins" and `siemens_nx.md` §7.1 "The same payload contains exactly one four-reference construction graph." define the leading index lane, four-reference graph, terminal lanes, scalar encodings, store resolution, and exact boundaries.
 
+The eighteen-byte `25 25 41` discriminator frames complete shifted-IEEE
+binary64 atoms. Its `30` and `b0` markers carry the sign and exponent;
+physical block boundaries do not delimit an atom. This encoding establishes
+numeric values without assigning coordinate space, units, or draft roles.
+
 **Need.** We must know the roles to construct a neutral draft operation.
 
 **Conflict.** The leading lane, four-reference graph, identity frames,

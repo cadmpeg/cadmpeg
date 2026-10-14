@@ -110,11 +110,16 @@ fn draft_construction_binary32_lanes(
     })
     .unwrap()
 }
-fn draft_construction_fixed_lanes(
+fn draft_construction_binary64_lanes(
     bytes: &[u8],
-) -> Vec<crate::om::scalar_run::FramedScalarRun<crate::om::fixed::Q155LaneFrame, ()>> {
+) -> Vec<
+    crate::om::scalar_run::FramedScalarRun<
+        crate::om::discriminators::ConstructionBinary64Frame,
+        (),
+    >,
+> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::om::draft_construction_fixed_lanes(ctx, bytes)
+        crate::om::construction_binary64_lanes(ctx, bytes)
     })
     .unwrap()
 }
@@ -143,7 +148,7 @@ fn draft_scalar_lane_refusal(
         },
         |ctx| {
             if fixed {
-                crate::om::draft_construction_fixed_lanes(ctx, &bytes).unwrap_err()
+                crate::om::construction_binary64_lanes(ctx, &bytes).unwrap_err()
             } else {
                 crate::om::draft_construction_binary32_lanes(ctx, &bytes).unwrap_err()
             }
@@ -1393,7 +1398,7 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
 }
 
 #[test]
-fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
+fn om_draft_binary64_lanes_require_complete_discriminator_atoms_and_terminator() {
     let discriminator = [
         0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
         0x00, 0x01, 0x00,
@@ -1403,20 +1408,20 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
     bytes.extend_from_slice(&[0xb0, 0xc0, 0, 0, 0, 0, 0, 0]);
     bytes.push(0);
-    let lanes = draft_construction_fixed_lanes(&bytes);
+    let lanes = draft_construction_binary64_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset(), 1);
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, atom, ())| atom.scalar.value())
+            .map(|(_, atom, ())| atom.value().get())
             .collect::<Vec<_>>(),
-        [0.5, -0.5]
+        [32.0, -8192.0]
     );
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, atom, ())| atom.marker.byte())
+            .map(|(_, atom, ())| atom.raw()[0])
             .collect::<Vec<_>>(),
         [0x30, 0xb0]
     );
@@ -1429,10 +1434,30 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     );
 
     bytes.pop();
-    assert!(draft_construction_fixed_lanes(&bytes).is_empty());
+    assert!(draft_construction_binary64_lanes(&bytes).is_empty());
     bytes.truncate(22);
-    assert!(draft_construction_fixed_lanes(&bytes).is_empty());
-    assert!(draft_construction_fixed_lanes(&discriminator).is_empty());
+    assert!(draft_construction_binary64_lanes(&bytes).is_empty());
+    assert!(draft_construction_binary64_lanes(&discriminator).is_empty());
+}
+
+#[test]
+fn construction_binary64_sign_is_part_of_the_complete_atom() {
+    let mut bytes = crate::om::discriminators::ConstructionBinary64Frame::DISCRIMINATOR.to_vec();
+    // The decoded IEEE encodings are 404000... and c04000...: +32 and -32.
+    bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xb0, 0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0);
+    let lanes = draft_construction_binary64_lanes(&bytes);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(
+        lanes[0]
+            .iter()
+            .map(|(_, atom, ())| atom.value().get())
+            .collect::<Vec<_>>(),
+        [32.0, -32.0]
+    );
+    bytes[18] = 0x31;
+    assert!(draft_construction_binary64_lanes(&bytes).is_empty());
 }
 
 #[test]

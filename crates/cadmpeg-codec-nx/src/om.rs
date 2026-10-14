@@ -71,7 +71,8 @@ use scalar_run::FramedScalarRun;
 pub(crate) mod sketch_scalar;
 use sketch_scalar::{SketchMixedScalars, SketchScalarLaneForm, SketchScaledAtom};
 pub(crate) mod fixed;
-use fixed::{Q155Atom, Q155LaneFrame, Q155Marker, Q155};
+use discriminators::ConstructionBinary64Frame;
+use fixed::Q155;
 pub(crate) mod nonempty;
 pub(crate) mod state_index;
 pub(crate) mod state_slot_lane;
@@ -2892,41 +2893,35 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
     Ok(pairs)
 }
 
-/// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
-pub(crate) fn draft_construction_fixed_lanes(
+/// Decode every complete shifted-binary64 lane in a reconstructed draft graph payload.
+pub(crate) fn construction_binary64_lanes(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<FramedScalarRun<Q155LaneFrame, ()>>, CodecError> {
+) -> Result<Vec<FramedScalarRun<ConstructionBinary64Frame, ()>>, CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan NX draft fixed lanes",
+        "scan NX construction binary64 lanes",
     )?;
     let mut lanes = Vec::new();
     for (offset, window) in bytes
-        .windows(Q155LaneFrame::DISCRIMINATOR.len())
+        .windows(ConstructionBinary64Frame::DISCRIMINATOR.len())
         .enumerate()
     {
-        if window != Q155LaneFrame::DISCRIMINATOR {
+        if window != ConstructionBinary64Frame::DISCRIMINATOR {
             continue;
         }
-        let mut at = offset + Q155LaneFrame::DISCRIMINATOR.len();
+        let mut at = offset + ConstructionBinary64Frame::DISCRIMINATOR.len();
         let mut values = Vec::new();
         let complete = loop {
-            ctx.charge_work(1, "scan NX draft fixed atoms")?;
-            let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) else {
+            ctx.charge_work(1, "scan NX construction binary64 atoms")?;
+            let Some(0x30 | 0xb0) = bytes.get(at) else {
                 break bytes.get(at) == Some(&0x00);
             };
-            let Some(raw) = bytes
-                .get(at + 1..at + 8)
-                .and_then(|raw| raw.try_into().ok())
-            else {
+            let Some(scalar) = bytes.get(at..at + 8).and_then(ShiftedBinary64::read) else {
                 break false;
             };
-            let Some(scalar) = Q155::from_raw(raw) else {
-                break false;
-            };
-            ctx.reserve_vec(&mut values, 1, "NX draft fixed atoms")?;
-            values.push((Q155Atom { marker, scalar }, ()));
+            ctx.reserve_vec(&mut values, 1, "NX construction binary64 atoms")?;
+            values.push((scalar, ()));
             at += 8;
         };
         if !complete {
@@ -2936,13 +2931,13 @@ pub(crate) fn draft_construction_fixed_lanes(
             continue;
         };
         let Ok(lane) = FramedScalarRun::new(
-            Q155LaneFrame,
+            ConstructionBinary64Frame,
             cadmpeg_core::decode::u64_from_index(offset),
             values,
         ) else {
             continue;
         };
-        ctx.reserve_vec(&mut lanes, 1, "NX draft fixed lanes")?;
+        ctx.reserve_vec(&mut lanes, 1, "NX construction binary64 lanes")?;
         lanes.push(lane);
     }
     Ok(lanes)

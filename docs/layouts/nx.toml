@@ -34,6 +34,24 @@ anchor = "| Small index | `uint16` BE, 2 bytes |"
 # --- §2 SPLMSSTR container --------------------------------------------------
 
 [[record]]
+name = "construction_binary64_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om.rs"
+kind = "byte"
+section = "7.1"
+anchor = "The draft construction graph payload contains zero or more shifted-IEEE binary64 lanes."
+size = 18
+endianness = "big"
+note = "One or more eight-byte shifted binary64 atoms and a zero terminator follow. Physical block boundaries do not delimit an atom."
+
+[[record.field]]
+name = "discriminator"
+offset = 0
+type = "bytes[18]"
+source = "spec"
+anchor = "A lane is `25 25 41 00 04 01 07 01 c0 45 10 00 80 86 02 00 01 00, atom+, 00`"
+value = [37, 37, 65, 0, 4, 1, 7, 1, 192, 69, 16, 0, 128, 134, 2, 0, 1, 0]
+
+[[record]]
 name = "assembly_placement_prefix"
 parsed_by = "crates/cadmpeg-codec-nx/src/native/assembly_placement.rs"
 kind = "byte"

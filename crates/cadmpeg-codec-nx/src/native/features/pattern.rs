@@ -21,10 +21,7 @@ use super::FeaturePatternKind;
 use crate::om::scalar_run::FramedScalarRun;
 use serde::Deserialize;
 
-use crate::om::fixed::Q155Atom;
-use crate::om::fixed::Q155LaneFrame;
-use crate::om::fixed::Q155Marker;
-use crate::om::fixed::Q155;
+use crate::om::discriminators::ConstructionBinary64Frame;
 use crate::om::nonempty::NonEmpty;
 use crate::om::pattern::PatternRow;
 use crate::om::pattern::PatternRows;
@@ -201,10 +198,10 @@ pub(in crate::native) struct FeaturePatternConstructionString {
     source_offset: u64,
 }
 
-/// Complete signed Q1.55 lane in a reconstructed pattern payload.
+/// Complete shifted-binary64 lane in a reconstructed pattern payload.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "FeaturePatternConstructionFixedLaneWire")]
-pub(in crate::native) struct FeaturePatternConstructionFixedLane {
+#[serde(try_from = "FeaturePatternConstructionBinary64LaneWire")]
+pub(in crate::native) struct FeaturePatternConstructionBinary64Lane {
     /// Globally unique lane identity.
     pub(in crate::native) id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
@@ -214,13 +211,13 @@ pub(in crate::native) struct FeaturePatternConstructionFixedLane {
     /// Zero-based lane order within the payload.
     pub(in crate::native) ordinal: u32,
     /// Framed scalar run with absolute source locations.
-    lane: FramedScalarRun<Q155LaneFrame, u64>,
+    lane: FramedScalarRun<ConstructionBinary64Frame, u64>,
     /// Absolute source offset of the fixed discriminator.
     source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
-struct FeaturePatternConstructionFixedLaneWire {
+struct FeaturePatternConstructionBinary64LaneWire {
     /// Globally unique lane identity.
     id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
@@ -229,12 +226,10 @@ struct FeaturePatternConstructionFixedLaneWire {
     construction_payload: String,
     /// Zero-based lane order within the payload.
     ordinal: u32,
-    /// Ordered dimensionless Q1.55 values.
+    /// Ordered finite shifted-binary64 values.
     values: Vec<f64>,
-    /// Exact atom markers in value order.
-    markers: NativeBytes<Vec<u8>>,
-    /// Exact seven-byte two's-complement payloads.
-    raw_values: Vec<NativeBytes<[u8; 7]>>,
+    /// Exact eight-byte shifted-binary64 atoms.
+    raw_values: Vec<NativeBytes<[u8; 8]>>,
     /// Payload-relative offset of the fixed discriminator.
     payload_offset: u64,
     /// Payload-relative offsets of the atom markers.
@@ -246,8 +241,8 @@ struct FeaturePatternConstructionFixedLaneWire {
 }
 
 #[cfg(test)]
-impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFixedLaneWire {
-    fn from(record: FeaturePatternConstructionFixedLane) -> Self {
+impl From<FeaturePatternConstructionBinary64Lane> for FeaturePatternConstructionBinary64LaneWire {
+    fn from(record: FeaturePatternConstructionBinary64Lane) -> Self {
         Self {
             id: record.id,
             operation_label: record.operation_label,
@@ -256,18 +251,12 @@ impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFix
             values: record
                 .lane
                 .iter()
-                .map(|(_, atom, _)| atom.scalar.value())
+                .map(|(_, atom, _)| atom.value().get())
                 .collect(),
-            markers: (record
-                .lane
-                .iter()
-                .map(|(_, atom, _)| atom.marker.byte())
-                .collect::<Vec<_>>())
-            .into(),
             raw_values: record
                 .lane
                 .iter()
-                .map(|(_, atom, _)| atom.scalar.raw())
+                .map(|(_, atom, _)| atom.raw())
                 .map(Into::into)
                 .collect(),
             payload_offset: record.lane.offset(),
@@ -278,46 +267,44 @@ impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFix
     }
 }
 
-impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstructionFixedLane {
+impl TryFrom<FeaturePatternConstructionBinary64LaneWire>
+    for FeaturePatternConstructionBinary64Lane
+{
     type Error = String;
-    fn try_from(wire: FeaturePatternConstructionFixedLaneWire) -> Result<Self, Self::Error> {
+    fn try_from(wire: FeaturePatternConstructionBinary64LaneWire) -> Result<Self, Self::Error> {
         let count = wire.values.len();
-        if wire.markers.len() != count
-            || wire.raw_values.len() != count
+        if wire.raw_values.len() != count
             || wire.value_payload_offsets.len() != count
             || wire.value_source_offsets.len() != count
         {
             return Err(
-                "FeaturePatternConstructionFixedLane scalar columns must have equal lengths".into(),
+                "FeaturePatternConstructionBinary64Lane scalar columns must have equal lengths"
+                    .into(),
             );
         }
         let values = wire
             .values
             .into_iter()
-            .zip(wire.markers)
             .zip(wire.raw_values)
             .zip(wire.value_source_offsets)
-            .map(|(((value, marker), raw), source)| {
+            .map(|((value, raw), source)| {
                 Ok((
-                    Q155Atom {
-                        marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
-                        scalar: Q155::from_wire(value, *raw)?,
-                    },
+                    ConstructionBinary64Frame::atom_from_wire(value, *raw)?,
                     source,
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
         let lane = FramedScalarRun::new(
-            Q155LaneFrame,
+            ConstructionBinary64Frame,
             wire.payload_offset,
-            NonEmpty::from_admitted_vec(values).ok_or("values must contain a Q1.55 atom")?,
+            NonEmpty::from_admitted_vec(values).ok_or("values must contain a binary64 atom")?,
         )?;
         if !lane
             .iter()
             .map(|(offset, _, _)| offset)
             .eq(wire.value_payload_offsets)
         {
-            return Err("value_payload_offsets must follow the contiguous Q1.55 atoms".into());
+            return Err("value_payload_offsets must follow the contiguous binary64 atoms".into());
         }
         Ok(Self {
             id: wire.id,
@@ -1271,12 +1258,12 @@ pub(in crate::native) fn feature_pattern_construction_strings(
     Ok(strings)
 }
 
-/// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
-pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
+/// Decode complete shifted-binary64 lanes from reconstructed pattern payloads.
+pub(in crate::native) fn feature_pattern_construction_binary64_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeaturePatternConstructionFixedLane>, cadmpeg_core::CodecError> {
+) -> Result<Vec<FeaturePatternConstructionBinary64Lane>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut lanes = Vec::new();
     for payload in payloads {
@@ -1284,7 +1271,7 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
         else {
             continue;
         };
-        for (ordinal, lane) in crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?
+        for (ordinal, lane) in crate::om::construction_binary64_lanes(ctx, joined.bytes())?
             .into_iter()
             .enumerate()
         {
@@ -1298,14 +1285,14 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
                 continue;
             };
             let ordinal_u32 = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX pattern fixed lane ordinal", 0, 1))?;
-            let id = format_feature_child_id(ctx, &payload.id, "-fixed-lane-", ordinal)?;
+                .map_err(|_| ctx.refuse_codec_limit("NX pattern binary64 lane ordinal", 0, 1))?;
+            let id = format_feature_child_id(ctx, &payload.id, "-binary64-lane-", ordinal)?;
             let operation_label =
-                ctx.copy_retained_text(&payload.operation_label, "NX pattern fixed lane label")?;
+                ctx.copy_retained_text(&payload.operation_label, "NX pattern binary64 lane label")?;
             let construction_payload =
-                ctx.copy_retained_text(&payload.id, "NX pattern fixed lane payload")?;
-            ctx.reserve_vec(&mut lanes, 1, "NX pattern construction fixed lanes")?;
-            lanes.push(FeaturePatternConstructionFixedLane {
+                ctx.copy_retained_text(&payload.id, "NX pattern binary64 lane payload")?;
+            ctx.reserve_vec(&mut lanes, 1, "NX pattern construction binary64 lanes")?;
+            lanes.push(FeaturePatternConstructionBinary64Lane {
                 id,
                 operation_label,
                 construction_payload,

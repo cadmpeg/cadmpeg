@@ -3319,18 +3319,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_pattern_construction_fixed_lanes",
+        arena: "feature_pattern_construction_binary64_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
         emit: |ctx, m, r, ns| {
             emit_arena(
                 ctx,
-                &m.features.feature_pattern_construction_fixed_lanes,
+                &m.features.feature_pattern_construction_binary64_lanes,
                 r,
                 ns,
             )
         },
-        len: |m| m.features.feature_pattern_construction_fixed_lanes.len(),
+        len: |m| m.features.feature_pattern_construction_binary64_lanes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -3447,18 +3447,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_draft_construction_fixed_lanes",
+        arena: "feature_draft_construction_binary64_lanes",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
         emit: |ctx, m, r, ns| {
             emit_arena(
                 ctx,
-                &m.features.feature_draft_construction_fixed_lanes,
+                &m.features.feature_draft_construction_binary64_lanes,
                 r,
                 ns,
             )
         },
-        len: |m| m.features.feature_draft_construction_fixed_lanes.len(),
+        len: |m| m.features.feature_draft_construction_binary64_lanes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

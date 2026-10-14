@@ -52,6 +52,19 @@ record states which lane it is in.
 | `134` | B_CURVE | 23 B | logical fixed record length | §4.1 |
 | `137` | SP_CURVE | variable | 33 bytes plus escape and large-index shifts | §4.1 |
 
+## `construction_binary64_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 18 B
+
+One or more eight-byte shifted binary64 atoms and a zero terminator follow. Physical block boundaries do not delimit an atom.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 18 | `discriminator` | `bytes[18]` | big | spec | A lane is `25 25 41 00 04 01 07 01 c0 45 10 00 80 86 02 00 01 00, atom+, 00` · value `[37, 37, 65, 0, 4, 1, 7, 1, 192, 69, 16, 0, 128, 134, 2, 0, 1, 0]` |
+
 ## `assembly_placement_prefix`
 
 Spec §2.3 · layout: byte offsets · size: 6 B

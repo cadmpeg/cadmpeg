@@ -1864,8 +1864,9 @@ fn attach_feature_operations(
         features.feature_pattern_counted_reference_lanes.as_slice();
     let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
     let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
-    let pattern_construction_fixed_lanes =
-        features.feature_pattern_construction_fixed_lanes.as_slice();
+    let pattern_construction_binary64_lanes = features
+        .feature_pattern_construction_binary64_lanes
+        .as_slice();
     let pattern_transform_lanes = features.feature_pattern_transform_lanes.as_slice();
     let multi_instance_output_lanes = features.feature_multi_instance_output_lanes.as_slice();
     let identical_instance_output_lanes =
@@ -1879,7 +1880,9 @@ fn attach_feature_operations(
     let draft_construction_graph_payloads = features
         .feature_draft_construction_graph_payloads
         .as_slice();
-    let draft_construction_fixed_lanes = features.feature_draft_construction_fixed_lanes.as_slice();
+    let draft_construction_binary64_lanes = features
+        .feature_draft_construction_binary64_lanes
+        .as_slice();
     let draft_construction_binary32_lanes = features
         .feature_draft_construction_binary32_lanes
         .as_slice();
@@ -2359,10 +2362,10 @@ fn attach_feature_operations(
         "NX operation record index",
     )?;
     let (
-        pattern_construction_fixed_lanes_by_operation,
-        _pattern_construction_fixed_lanes_by_operation_reservation,
+        pattern_construction_binary64_lanes_by_operation,
+        _pattern_construction_binary64_lanes_by_operation_reservation,
     ) = ctx.collect_scoped_btree_groups(
-        pattern_construction_fixed_lanes
+        pattern_construction_binary64_lanes
             .iter()
             .map(|lane| (lane.operation_label.as_str(), lane)),
         "NX operation record index",
@@ -2447,10 +2450,10 @@ fn attach_feature_operations(
         "NX operation record index",
     )?;
     let (
-        draft_construction_fixed_lanes_by_operation,
-        _draft_construction_fixed_lanes_by_operation_reservation,
+        draft_construction_binary64_lanes_by_operation,
+        _draft_construction_binary64_lanes_by_operation_reservation,
     ) = ctx.collect_scoped_btree_groups(
-        draft_construction_fixed_lanes
+        draft_construction_binary64_lanes
             .iter()
             .map(|lane| (lane.operation_label.as_str(), lane)),
         "NX operation record index",
@@ -4380,7 +4383,7 @@ fn attach_feature_operations(
                 format_args!("{}", value.id),
             )?;
         }
-        for lane in pattern_construction_fixed_lanes_by_operation
+        for lane in pattern_construction_binary64_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
@@ -4388,7 +4391,7 @@ fn attach_feature_operations(
             insert_source_property(
                 ctx,
                 &mut source_properties,
-                format_args!("pattern_construction_fixed_lane.{}", lane.ordinal),
+                format_args!("pattern_construction_binary64_lane.{}", lane.ordinal),
                 format_args!("{}", lane.id),
             )?;
         }
@@ -4512,7 +4515,7 @@ fn attach_feature_operations(
                 format_args!("{}", payload.id),
             )?;
         }
-        for lane in draft_construction_fixed_lanes_by_operation
+        for lane in draft_construction_binary64_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
@@ -4520,7 +4523,7 @@ fn attach_feature_operations(
             insert_source_property(
                 ctx,
                 &mut source_properties,
-                format_args!("draft_construction_fixed_lane.{}", lane.ordinal),
+                format_args!("draft_construction_binary64_lane.{}", lane.ordinal),
                 format_args!("{}", lane.id),
             )?;
         }

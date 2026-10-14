@@ -2,7 +2,7 @@
 
 use super::{
     FeatureIdenticalInstanceOutputLane, FeatureMultiInstanceOutputLane,
-    FeaturePatternConstructionFixedLane, FeaturePatternTransformLane,
+    FeaturePatternConstructionBinary64Lane, FeaturePatternTransformLane,
 };
 
 use crate::native::features::test_support::check_lane_wire;
@@ -343,7 +343,7 @@ fn pattern_content_refusal(
                 .map(|values| values.len())
             }
             PatternContentRoute::Fixed => {
-                crate::native::features::pattern::feature_pattern_construction_fixed_lanes(
+                crate::native::features::pattern::feature_pattern_construction_binary64_lanes(
                     ctx, &container, payloads,
                 )
                 .map(|values| values.len())
@@ -434,11 +434,10 @@ pattern_content_limit_tests!(
 
 #[test]
 fn pattern_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeaturePatternConstructionFixedLane>(
-        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
+    check_lane_wire::<FeaturePatternConstructionBinary64Lane>(
+        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[2.0,-32.0],"raw_values":["3000000000000000","b040000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
         &[
             "values",
-            "markers",
             "raw_values",
             "value_payload_offsets",
             "value_source_offsets",

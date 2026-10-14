@@ -798,6 +798,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
         (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
+        (Some(serde_json::Value::String("14".into())), "Some(\"14\")"),
         (None, "None"),
         (Some(serde_json::Value::Number(1.into())), "None"),
     ] {

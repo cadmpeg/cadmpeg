@@ -19,7 +19,7 @@ use crate::native::features::construction_records::feature_surface_construction_
 use crate::native::features::construction_records::feature_swp104_leading_branches;
 use crate::native::features::construction_records::feature_thru_curve_construction_envelopes;
 use crate::native::features::draft::feature_draft_construction_binary32_lanes;
-use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_binary64_lanes;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
 use crate::native::features::draft::feature_draft_construction_graph_strings;
 use crate::native::features::draft::feature_draft_construction_identity_frames;
@@ -1251,7 +1251,7 @@ fn draft_fixed_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let (container, payload) = draft_graph_fixture_with_content(&draft_fixed_bytes());
     let lanes = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_fixed_lanes(ctx, &container, std::slice::from_ref(&payload))
+        feature_draft_construction_binary64_lanes(ctx, &container, std::slice::from_ref(&payload))
     })
     .expect("admitted draft fixed lane");
     assert_eq!(lanes.len(), 1);
@@ -1262,7 +1262,7 @@ fn draft_fixed_route_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_draft_construction_fixed_lanes(ctx, &container, &[payload])
+            feature_draft_construction_binary64_lanes(ctx, &container, &[payload])
                 .expect_err("draft fixed lane resource limit")
         },
     )

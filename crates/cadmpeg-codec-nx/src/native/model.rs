@@ -6,7 +6,7 @@
 //! inconsistent owners before attachment.
 
 use crate::native::features::draft::feature_draft_construction_binary32_lanes;
-use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_binary64_lanes;
 use crate::native::features::draft::feature_draft_construction_graph_payloads;
 use crate::native::features::draft::feature_draft_construction_graph_strings;
 use crate::native::features::draft::feature_draft_construction_identity_frames;
@@ -15,7 +15,7 @@ use crate::native::features::draft::feature_draft_construction_payloads;
 use crate::native::features::draft::feature_draft_construction_references;
 use crate::native::features::draft::feature_draft_construction_terminal_lanes;
 use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
-use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionBinary64Lane;
 use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
 use crate::native::features::draft::FeatureDraftConstructionGraphString;
 use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
@@ -27,7 +27,7 @@ use crate::native::features::named_target::{
 };
 use crate::native::features::pattern::feature_identical_instance_output_lanes;
 use crate::native::features::pattern::feature_multi_instance_output_lanes;
-use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
+use crate::native::features::pattern::feature_pattern_construction_binary64_lanes;
 use crate::native::features::pattern::feature_pattern_construction_payloads;
 use crate::native::features::pattern::feature_pattern_construction_strings;
 use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
@@ -35,7 +35,7 @@ use crate::native::features::pattern::feature_pattern_references;
 use crate::native::features::pattern::feature_pattern_transform_lanes;
 use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
 use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
-use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionBinary64Lane;
 use crate::native::features::pattern::FeaturePatternConstructionString;
 use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
 use crate::native::features::pattern::FeaturePatternReference;
@@ -428,7 +428,8 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_pattern_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(super) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
     pub(super) feature_construction_named_targets: Vec<FeatureConstructionNamedTarget>,
-    pub(super) feature_pattern_construction_fixed_lanes: Vec<FeaturePatternConstructionFixedLane>,
+    pub(super) feature_pattern_construction_binary64_lanes:
+        Vec<FeaturePatternConstructionBinary64Lane>,
     pub(super) feature_pattern_transform_lanes: Vec<FeaturePatternTransformLane>,
     pub(super) feature_multi_instance_output_lanes: Vec<FeatureMultiInstanceOutputLane>,
     pub(super) feature_identical_instance_output_lanes: Vec<FeatureIdenticalInstanceOutputLane>,
@@ -438,7 +439,7 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_draft_construction_index_lanes: Vec<FeatureDraftConstructionIndexLane>,
     pub(super) feature_draft_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(super) feature_draft_construction_graph_payloads: Vec<FeatureDraftConstructionGraphPayload>,
-    pub(super) feature_draft_construction_fixed_lanes: Vec<FeatureDraftConstructionFixedLane>,
+    pub(super) feature_draft_construction_binary64_lanes: Vec<FeatureDraftConstructionBinary64Lane>,
     pub(super) feature_draft_construction_binary32_lanes: Vec<FeatureDraftConstructionBinary32Lane>,
     pub(super) feature_draft_construction_graph_strings: Vec<FeatureDraftConstructionGraphString>,
     pub(super) feature_draft_construction_identity_frames:
@@ -1127,11 +1128,12 @@ impl NativeModel {
             container,
             &feature_pattern_construction_payloads,
         )?;
-        let feature_pattern_construction_fixed_lanes = feature_pattern_construction_fixed_lanes(
-            ctx,
-            container,
-            &feature_pattern_construction_payloads,
-        )?;
+        let feature_pattern_construction_binary64_lanes =
+            feature_pattern_construction_binary64_lanes(
+                ctx,
+                container,
+                &feature_pattern_construction_payloads,
+            )?;
         let feature_pattern_transform_lanes = feature_pattern_transform_lanes(ctx, container)?;
         let feature_multi_instance_output_lanes =
             feature_multi_instance_output_lanes(ctx, container)?;
@@ -1159,7 +1161,7 @@ impl NativeModel {
             &feature_draft_construction_index_lanes,
             &feature_draft_construction_references,
         )?;
-        let feature_draft_construction_fixed_lanes = feature_draft_construction_fixed_lanes(
+        let feature_draft_construction_binary64_lanes = feature_draft_construction_binary64_lanes(
             ctx,
             container,
             &feature_draft_construction_graph_payloads,
@@ -1628,7 +1630,7 @@ impl NativeModel {
                 feature_pattern_construction_payloads,
                 feature_pattern_construction_strings,
                 feature_construction_named_targets,
-                feature_pattern_construction_fixed_lanes,
+                feature_pattern_construction_binary64_lanes,
                 feature_pattern_transform_lanes,
                 feature_multi_instance_output_lanes,
                 feature_identical_instance_output_lanes,
@@ -1638,7 +1640,7 @@ impl NativeModel {
                 feature_draft_construction_index_lanes,
                 feature_draft_construction_payloads,
                 feature_draft_construction_graph_payloads,
-                feature_draft_construction_fixed_lanes,
+                feature_draft_construction_binary64_lanes,
                 feature_draft_construction_binary32_lanes,
                 feature_draft_construction_graph_strings,
                 feature_draft_construction_identity_frames,
