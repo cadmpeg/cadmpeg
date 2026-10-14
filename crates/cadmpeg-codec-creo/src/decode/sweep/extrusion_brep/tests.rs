@@ -302,8 +302,7 @@ fn extrusion_cap_past_the_segment_bound_skips_only_that_extrusion() {
     assert!(ctx.finish_session().is_ok());
 }
 
-fn rejected_extrusion(
-) -> Result<crate::decode::surfaces::brep::BrepTransferDiagnostics, cadmpeg_core::CodecError> {
+fn rejected_extrusion() -> crate::decode::surfaces::brep::BrepTransferDiagnostics {
     let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
     let records = [
         "first refused lane".to_string(),
@@ -318,12 +317,12 @@ fn rejected_extrusion(
             JoinedLaneRecords(&records)
         ),
     );
-    Ok(diagnostics)
+    diagnostics
 }
 
 #[test]
 fn extrusion_rejection_preserves_joined_reason_order() {
-    let diagnostics = rejected_extrusion().expect("rejection recorded");
+    let diagnostics = rejected_extrusion();
     assert_eq!(
         diagnostics.rejected_extrusion_bodies[0].1,
         "refused extrusion side lanes: first refused lane; second refused lane"

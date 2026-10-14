@@ -746,21 +746,15 @@ fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> 
 pub(in crate::decode) fn saved_section_missing_line_geometry(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Option<(usize, SketchGeometry)> {
-    let Some(order) = definition.order_table.as_ref() else {
-        return None;
-    };
+    let order = definition.order_table.as_ref()?;
     if !order.is_complete() {
         return None;
     }
-    let Some(segments) = definition.segments.as_ref() else {
-        return None;
-    };
+    let segments = definition.segments.as_ref()?;
     if !segments.is_complete() {
         return None;
     }
-    let Some(trim) = definition.trim_entities.as_ref() else {
-        return None;
-    };
+    let trim = definition.trim_entities.as_ref()?;
     if !trim.has_complete_bucket_frame() || !trim.has_unique_external_ids() {
         return None;
     }
@@ -772,23 +766,17 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     {
         trimmed_external_ids.insert(id);
     }
-    let Some(missing) =
+    let missing =
         crate::decode::uniqueness::exactly_one(segments.rows.ordinary().filter(|candidate| {
             matches!(
                 candidate.kind,
                 crate::feature::definitions::FeatureSegmentKind::Line(_)
             ) && order.internal_id(candidate.external_id).is_none()
                 && trimmed_external_ids.contains(&candidate.external_id)
-        }))
-    else {
-        return None;
-    };
-    let Some(fixed_coordinate) = missing
+        }))?;
+    let fixed_coordinate = missing
         .vertical_horizontal
-        .and_then(SectionAxis::from_selector)
-    else {
-        return None;
-    };
+        .and_then(SectionAxis::from_selector)?;
 
     let mut geometries = Vec::new();
     for entity in semantic_saved_section_entities(definition) {
