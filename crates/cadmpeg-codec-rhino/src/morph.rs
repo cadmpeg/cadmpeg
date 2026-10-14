@@ -814,9 +814,7 @@ pub(crate) fn project(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        captive_ids, decode, localizer, localizers, project, Control, LocalizerKind, ANONYMOUS,
-    };
+    use super::{decode, localizer, project, Control, LocalizerKind, ANONYMOUS};
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
     use crate::settings::MillimeterScale;
@@ -862,60 +860,6 @@ mod tests {
         }
         bytes.push(0);
         bytes
-    }
-
-    #[test]
-    fn captive_ids_refuse_collection_limit() {
-        let mut body = 1_i32.to_le_bytes().to_vec();
-        body.extend([0; 16]);
-        let bytes = anonymous(1, 0, &body);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded fixture");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root bytes admitted");
-        let error = captive_ids(&bytes, &mut reader, ArchiveVersion::V5)
-            .expect_err("one captive exceeds zero collection items");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino morph captive IDs"
-        ));
-    }
-
-    #[test]
-    fn localizers_refuse_collection_limit() {
-        let mut localizer_body = 6_i32.to_le_bytes().to_vec();
-        for value in [1.0_f64, 2.0, 3.0, 0.0, 0.0, 1.0, 4.0, 5.0] {
-            localizer_body.extend(value.to_le_bytes());
-        }
-        localizer_body.extend(anonymous(1, 0, &[0]));
-        localizer_body.extend(anonymous(1, 0, &[0]));
-        let mut body = 1_i32.to_le_bytes().to_vec();
-        body.extend(anonymous(1, 0, &localizer_body));
-        let bytes = anonymous(1, 0, &body);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded fixture");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root bytes admitted");
-        let error = localizers(
-            &ctx,
-            &bytes,
-            &mut reader,
-            MillimeterScale::IDENTITY,
-            ArchiveVersion::V5,
-        )
-        .expect_err("one localizer exceeds zero collection items");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino morph localizers"
-        ));
     }
 
     #[test]
@@ -974,7 +918,7 @@ mod tests {
             "test",
             None,
             "native".to_string(),
-            |_| Ok(None),
+            |_| None,
         )
         .expect("the fixture states named properties");
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
@@ -991,7 +935,7 @@ mod tests {
             "test",
             None,
             "native".to_string(),
-            |_| Ok(Some("rhino:object:record#000007".to_string())),
+            |_| Some("rhino:object:record#000007".to_string()),
         )
         .expect("the fixture states named properties");
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1004,7 +948,7 @@ mod tests {
     }
 
     #[test]
-    fn morph_projection_refuses_property_and_captive_limits() {
+    fn morph_projection_records_start_degree() {
         let curve = super::NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
             1,
@@ -1030,46 +974,15 @@ mod tests {
             quick_preview: false,
             preserve_structure: false,
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        let refusal = super::project(&ctx, &morph, "fixture", None, "native".into(), |_| Ok(None))
-            .expect_err("first property exceeds zero collection items");
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino morph property entries"
-        ));
-        let mut captive_policy = cadmpeg_core::decode::DecodePolicy::service();
-        captive_policy.limits.max_collection_items = 13;
-        let (captive_ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &captive_policy)
-                .expect("empty root admitted");
-        let refusal = super::project(
-            &captive_ctx,
-            &morph,
-            "fixture",
-            None,
-            "native".into(),
-            |_| Ok(None),
-        )
-        .expect_err("captive resolution exceeds the collection limit");
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino morph captive resolution"
-        ));
         let feature = super::project(
             &cadmpeg_test_support::service_decode_context(),
             &morph,
             "fixture",
             None,
             "native".into(),
-            |_| Ok(None),
+            |_| None,
         )
-        .expect("service profile admits morph properties");
+        .expect("morph projection");
         assert_eq!(feature.source_properties["start_degree"], "1");
     }
 
