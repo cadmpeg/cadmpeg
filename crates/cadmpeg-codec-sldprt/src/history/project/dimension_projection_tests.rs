@@ -380,7 +380,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         .content
         .push(FeatureContent::Dimension("localized distance".into()));
     assert!(matches!(
-        project_chamfer(&cadmpeg_test_support::service_decode_context(), &distance).unwrap(),
+        project_chamfer(&distance),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
@@ -401,7 +401,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         "localized second distance".into(),
     ));
     assert!(matches!(
-        project_chamfer(&cadmpeg_test_support::service_decode_context(), &distance).unwrap(),
+        project_chamfer(&distance),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),

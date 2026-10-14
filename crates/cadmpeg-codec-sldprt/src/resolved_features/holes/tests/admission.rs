@@ -22,53 +22,6 @@ fn topology(surfaces: &[Surface]) -> HoleTopology<'_> {
 }
 
 #[test]
-fn hole_position_axes_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
-        .unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT hole position features"));
-}
-
-#[test]
-fn hole_position_axes_refuse_work_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
-        .unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT hole position features"));
-}
-
-#[test]
-fn hole_position_axes_refuse_retained_limit() {
-    let mut feature = model_hole();
-    feature
-        .evaluation
-        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: SketchFeatureBinding::Planar(Some(
-                SketchId::mint("synthetic:test:id#position").unwrap(),
-            )),
-        }));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        u64::try_from(feature.native_ref.as_ref().unwrap().len()).unwrap() - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_hole_axes(&ctx, &mut [feature], &[], &topology(&[]), &[], &[]).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "index SLDPRT hole position features"));
-}
-
-#[test]
 fn hole_position_axes_refuse_nesting_limit() {
     let mut history = native_history();
     let mut position = history.features[0].clone();
@@ -129,7 +82,7 @@ fn hole_position_axes_refuse_nesting_limit() {
 }
 
 #[test]
-fn bore_backed_position_projection_refuses_retained_limit() {
+fn bore_backed_position_projection_projects_one_point_sketch() {
     use crate::resolved_features::holes::project_bore_backed_position_sketches;
     use cadmpeg_ir::features::holes::HolePlacement;
     use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3};
@@ -182,21 +135,17 @@ fn bore_backed_position_projection_refuses_retained_limit() {
         source_object: None,
     }];
     let input = [hole, position];
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut features = input.clone();
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     project_bore_backed_position_sketches(
-        &ctx,
         &mut features,
         &mut sketches,
         &mut entities,
         &surfaces,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
     let expected = SketchId::mint("sldprt:model:sketch#bore:lane:1").unwrap();
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].id, expected);
@@ -209,26 +158,5 @@ fn bore_backed_position_projection_refuses_retained_limit() {
     );
     assert!(
         matches!(features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(id)) }) if id == &expected)
-    );
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(expected.as_str().len()).unwrap() - 1;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_bore_backed_position_sketches(
-        &limited,
-        &mut input.clone(),
-        &mut Vec::new(),
-        &mut Vec::new(),
-        &surfaces,
-        &[history],
-        &[lane],
-    )
-    .unwrap_err();
-    assert!(
-        matches!(&error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "project SLDPRT bore backed position sketches"
-            && limit.limit == u64::try_from(expected.as_str().len()).unwrap() - 1
-            && limit.used + limit.additional == u64::try_from(expected.as_str().len()).unwrap()),
-        "{error:?}"
     );
 }

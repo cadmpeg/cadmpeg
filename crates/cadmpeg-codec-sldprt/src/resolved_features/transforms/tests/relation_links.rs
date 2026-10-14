@@ -48,12 +48,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     ]);
 
     assert_eq!(
-        relation_owner_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &relation,
-            &markers
-        )
-        .unwrap(),
+        relation_owner_markers(&relation, &markers),
         vec![&owner, &point]
     );
     let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
@@ -105,12 +100,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     );
     let markers = HashMap::from([(relation.id(), &relation)]);
 
-    assert!(!marker_owns_constraint(
-        &cadmpeg_test_support::service_decode_context(),
-        &relation,
-        &markers
-    )
-    .unwrap());
+    assert!(!marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition(
             &cadmpeg_test_support::service_decode_context(),
@@ -143,12 +133,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     );
     let markers = HashMap::from([(relation.id(), &relation), (collision.id(), &collision)]);
 
-    assert!(!marker_owns_constraint(
-        &cadmpeg_test_support::service_decode_context(),
-        &relation,
-        &markers
-    )
-    .unwrap());
+    assert!(!marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition(
             &cadmpeg_test_support::service_decode_context(),
@@ -208,12 +193,7 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     .with_native_ref(Some(second.id().to_string()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
 
-    assert!(marker_owns_constraint(
-        &cadmpeg_test_support::service_decode_context(),
-        &relation,
-        &markers
-    )
-    .unwrap());
+    assert!(marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
             &cadmpeg_test_support::service_decode_context(),
@@ -642,13 +622,7 @@ fn resolved_wrong_family_relation_is_inactive() {
         .unwrap(),
     )];
 
-    assert!(marker_relation_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
-        &relation,
-        &definition,
-        &entities
-    )
-    .unwrap());
+    assert!(marker_relation_is_inactive(&relation, &definition, &entities).unwrap());
 }
 
 #[test]
@@ -679,20 +653,11 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
     let coincident = point(ids[1].clone(), Point2::new(1.0, 2.0));
     let distinct = point(ids[1].clone(), Point2::new(1.0, 3.0));
 
-    assert!(!marker_relation_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
-        &relation,
-        &definition,
-        &[first.clone(), coincident],
-    )
-    .unwrap());
-    assert!(marker_relation_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
-        &relation,
-        &definition,
-        &[first, distinct],
-    )
-    .unwrap());
+    assert!(
+        !marker_relation_is_inactive(&relation, &definition, &[first.clone(), coincident],)
+            .unwrap()
+    );
+    assert!(marker_relation_is_inactive(&relation, &definition, &[first, distinct],).unwrap());
 }
 
 #[test]
@@ -732,21 +697,18 @@ fn horizontal_relation_requires_one_line_or_two_points() {
     );
 
     assert!(marker_relation_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![point.id().clone()]),
         std::slice::from_ref(&point),
     )
     .unwrap());
     assert!(!marker_relation_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![line.id().clone()]),
         std::slice::from_ref(&line),
     )
     .unwrap());
     assert!(!marker_relation_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![
             point.id().clone(),
@@ -765,7 +727,6 @@ fn horizontal_relation_requires_one_line_or_two_points() {
     )
     .unwrap());
     assert!(marker_relation_is_inactive(
-        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &SketchConstraintDefinitionInput::Native {
             native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4")

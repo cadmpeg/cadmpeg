@@ -1,9 +1,9 @@
-use super::{assert_owned_loci_refusal, planar_fixture, project_relation_bindings};
+use super::{planar_fixture, project_relation_bindings};
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily, SketchInputEntity,
     SketchInputKind,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     DesignParameter, DistinctMembers, FeatureDefinition, FeatureEvaluation, FeatureOperation,
@@ -98,23 +98,6 @@ fn project_compact_operand_markers_with_policy(policy: &DecodePolicy) -> Result<
 }
 
 #[test]
-fn planar_compact_operand_markers_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_compact_operand_markers_with_policy,
-    );
-}
-#[test]
-fn planar_compact_operand_markers_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_compact_operand_markers_with_policy,
-    );
-}
-#[test]
-fn planar_compact_operand_markers_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_compact_operand_markers_with_policy,
-    );
+fn planar_compact_operand_markers_succeeds() {
+    project_compact_operand_markers_with_policy(&DecodePolicy::service()).unwrap();
 }

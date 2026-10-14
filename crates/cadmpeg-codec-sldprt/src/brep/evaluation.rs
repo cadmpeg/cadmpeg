@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Caller admission for stored carrier evaluation scratch.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -82,41 +82,7 @@ pub(crate) fn surface_point(
     )?)
 }
 
-pub(super) fn charge_nurbs_isocurve_comparison(
-    ctx: &DecodeContext<'_>,
-    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-    curve: &NurbsCurve,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "compare SLDPRT NURBS isocurve";
-    let work = u64_from_index(surface.u_count())
-        .checked_mul(u64_from_index(surface.v_count()))
-        .and_then(|count| count.checked_add(u64_from_index(curve.pole_count())))
-        .and_then(|count| count.checked_add(u64_from_index(surface.u_knots().len())))
-        .and_then(|count| count.checked_add(u64_from_index(surface.v_knots().len())))
-        .and_then(|count| count.checked_add(u64_from_index(curve.knots().len())))
-        .and_then(|count| count.checked_mul(512))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)
-}
-
-const SURFACE_SOLVER_LOCAL_WORK: u64 = 1_000_000;
-
-fn surface_solver_budget<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-    operation: &'static str,
-) -> Result<cadmpeg_core::decode::WorkBudget<'ctx>, CodecError> {
-    // One normalized evaluator unit also pays for fixed arithmetic and a
-    // complete scan of both knot vectors. Its local ceiling stays unchanged.
-    let scale = 64_u64
-        .checked_add(u64_from_index(surface.u_knots().len()))
-        .and_then(|scale| scale.checked_add(u64_from_index(surface.v_knots().len())))
-        .and_then(std::num::NonZeroU64::new)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    Ok(ctx
-        .work_budget(SURFACE_SOLVER_LOCAL_WORK)
-        .with_session_work_scale(scale))
-}
+const SURFACE_SOLVER_LOCAL_WORK: usize = 1_000_000;
 
 pub(super) fn nurbs_surface_parameter_within_tolerance(
     ctx: &DecodeContext<'_>,
@@ -125,13 +91,10 @@ pub(super) fn nurbs_surface_parameter_within_tolerance(
     seed: Option<cadmpeg_ir::math::Point2>,
     tolerance: f64,
 ) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
-    const OPERATION: &str = "invert SLDPRT NURBS surface globally";
-    let budget = surface_solver_budget(ctx, surface, OPERATION)?;
+    let budget = WorkBudget::new(SURFACE_SOLVER_LOCAL_WORK);
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
         ctx, surface, point, seed, tolerance, &budget,
     );
-    // A zero charge observes the session's original sticky refusal.
-    ctx.charge_work(0, OPERATION)?;
     // Local exhaustion leaves the inversion unsolved; the caller skips the
     // derived pcurve.
     if budget.exhausted() {
@@ -146,35 +109,10 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
     parameters: [cadmpeg_ir::math::Point2; 2],
     chord: [cadmpeg_ir::math::Point3; 2],
 ) -> Result<Option<f64>, CodecError> {
-    const OPERATION: &str = "certify SLDPRT NURBS surface chord";
-    let budget = surface_solver_budget(ctx, surface, OPERATION)?;
-    let u = u64::from(surface.u_degree())
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let v = u64::from(surface.v_degree())
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let patches = u64_from_index(surface.u_count())
-        .checked_mul(u64_from_index(surface.v_count()))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let splits = patches
-        .checked_mul(4)
-        .and_then(|count| count.checked_add(2))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    // Restricting each tensor-product line costs at most its squared support
-    // times the combined degrees. IR admits split scans and sorting.
-    let work = u
-        .checked_mul(v)
-        .and_then(|support| support.checked_mul(support))
-        .and_then(|work| work.checked_mul(u.checked_add(v)?))
-        .and_then(|work| work.checked_mul(64))
-        .and_then(|work| work.checked_mul(splits))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
+    let budget = WorkBudget::new(SURFACE_SOLVER_LOCAL_WORK);
     let result = cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
         ctx, surface, parameters, chord, &budget,
     );
-    ctx.charge_work(0, OPERATION)?;
     // Local exhaustion leaves the chord uncertified; the caller skips the
     // derived pcurve.
     if budget.exhausted() {
@@ -185,62 +123,9 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget};
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use cadmpeg_ir::math::Point3;
-
-    #[test]
-    fn stored_surface_helpers_preserve_actual_admission_refusal() {
-        // Degree 16 needs a heap basis; lower degrees evaluate inline.
-        let mut knots = vec![0.0; 17];
-        knots.extend(vec![1.0; 17]);
-        let surface = NurbsSurface::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            NurbsSurfaceAxis::new(16, knots.clone(), false),
-            NurbsSurfaceAxis::new(16, knots, false),
-            NurbsSurfaceLanes::new(
-                (0..17)
-                    .map(|u| {
-                        (0..17)
-                            .map(|v| Point3::new(f64::from(u) / 16.0, f64::from(v) / 16.0, 0.0))
-                            .collect()
-                    })
-                    .collect(),
-                None,
-            ),
-            false,
-        )
-        .expect("fixture admission")
-        .expect("degree-16 plane");
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                _ => unreachable!("three scratch dimensions"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let CodecError::ResourceLimit(original) =
-                super::nurbs_surface_partials(&ctx, &surface, 0.5, 0.5).unwrap_err()
-            else {
-                panic!("the partial helper must preserve its scratch refusal")
-            };
-            assert_eq!(original.dimension, dimension);
-            assert_eq!((original.limit, original.used), (0, 0));
-            assert!(original.additional > 0);
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(
-                matches!(super::nurbs_surface_parameter_near_point(&ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None), Err(CodecError::ResourceLimit(limit)) if limit == original)
-            );
-        }
-    }
 
     /// A dense wavy cubic patch grid whose global inversion of an off-surface
     /// point needs more than the local solver slice.
@@ -272,22 +157,14 @@ mod tests {
         .expect("dense cubic surface")
     }
 
-    fn unbounded_work_policy() -> DecodePolicy {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::MAX / 2;
-        policy.limits.max_materialized_bytes = u64::MAX / 2;
-        policy.limits.max_collection_items = u64::MAX / 2;
-        policy
-    }
-
     #[test]
     fn surface_inversion_skips_when_the_local_solver_slice_is_exhausted() {
         let surface = dense_wavy_surface();
         let point = Point3::new(40.5, 40.5, 50.0);
         let arena = DecodeArena::new();
-        let policy = unbounded_work_policy();
+        let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let budget = super::surface_solver_budget(&ctx, &surface, "fixture").unwrap();
+        let budget = WorkBudget::new(super::SURFACE_SOLVER_LOCAL_WORK);
         let solved = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
             &ctx, &surface, point, None, 1.0e-3, &budget,
         );

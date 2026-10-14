@@ -10,13 +10,6 @@ use std::collections::BTreeMap;
 
 #[test]
 fn component_path_type_identities_name_ordered_features() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let feature = |id: &str, source_id: &str| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -49,46 +42,35 @@ fn component_path_type_identities_name_ordered_features() {
         },
     ];
     assert_eq!(
-        component_path_features(&ctx, &components, &[feature("producer", "42")]).unwrap(),
+        component_path_features(&components, &[feature("producer", "42")]),
         vec!["producer"]
     );
     assert_eq!(
         component_path_features(
-            &ctx,
             &components,
             &[feature("first", "42"), feature("second", "42")]
-        )
-        .unwrap(),
+        ),
         Vec::<String>::new()
     );
     let mut mixed = components;
     mixed[1].type_signature[4..8].copy_from_slice(&43u32.to_le_bytes());
     assert_eq!(
-        component_path_features(
-            &ctx,
-            &mixed,
-            &[feature("producer", "42"), feature("other", "43")]
-        )
-        .unwrap(),
+        component_path_features(&mixed, &[feature("producer", "42"), feature("other", "43")]),
         vec!["producer", "other"]
     );
     assert_eq!(
         component_path_terminal_feature(
-            &ctx,
             &mixed,
             &[feature("producer", "42"), feature("other", "43")]
-        )
-        .unwrap(),
+        ),
         Some("other".into())
     );
     assert_eq!(
         surface_selection_producer_features(
-            &ctx,
             &mixed,
             Some("explicit"),
             &[feature("producer", "42"), feature("other", "43")]
-        )
-        .unwrap(),
+        ),
         ["producer", "other", "explicit"]
     );
     mixed.push(FeatureInputComponentPathEntry {
@@ -102,11 +84,9 @@ fn component_path_type_identities_name_ordered_features() {
     });
     assert_eq!(
         component_path_terminal_feature(
-            &ctx,
             &mixed,
             &[feature("producer", "42"), feature("other", "43")]
-        )
-        .unwrap(),
+        ),
         Some("other".into())
     );
 
@@ -124,8 +104,7 @@ fn component_path_type_identities_name_ordered_features() {
     let other = feature("other", "43");
     let history = [&producer, &other, &owner];
     let (component, preceding) =
-        component_path_feature(&ctx, &mixed, &history, "mirror", ComponentPathEnd::Trailing)
-            .unwrap()
+        component_path_feature(&mixed, &history, "mirror", ComponentPathEnd::Trailing)
             .expect("required invariant");
     assert_eq!(preceding.id, "other");
     assert_eq!(component.local_id, Some(1));
@@ -149,7 +128,7 @@ fn component_path_type_identities_name_ordered_features() {
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        component_path_input_features(&ctx, &path, &[prior, consumer, future], "consumer").unwrap(),
+        component_path_input_features(&path, &[prior, consumer, future], "consumer"),
         ["prior"]
     );
 }

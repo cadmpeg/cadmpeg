@@ -106,13 +106,6 @@ fn compact_edge_selection_accepts_counted_u16_ids() {
 
 #[test]
 fn compact_surface_selection_ends_with_its_entry_signature() {
-    let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &face_path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let mut payload = Vec::new();
     payload.extend(6u32.to_le_bytes());
     payload.extend([0x04, 0x02, 0, 0]);
@@ -130,9 +123,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
         }
     }
     payload.extend([0; 24]);
-    let components = compact_surface_selection_at(&face_path_ctx, &payload, 12)
-        .unwrap()
-        .expect("required invariant");
+    let components = compact_surface_selection_at(&payload, 12).expect("required invariant");
     assert_eq!(
         components
             .iter()
@@ -154,8 +145,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     );
     payload[12 + 18 + 24 + 4] ^= 1;
     assert_eq!(
-        compact_surface_selection_at(&face_path_ctx, &payload, 12)
-            .unwrap()
+        compact_surface_selection_at(&payload, 12)
             .expect("required invariant")
             .iter()
             .map(|component| component.local_id)
@@ -164,8 +154,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     );
     payload[4] = 0x06;
     assert_eq!(
-        compact_surface_selection_at(&face_path_ctx, &payload, 12)
-            .unwrap()
+        compact_surface_selection_at(&payload, 12)
             .expect("nonzero selector subtype")
             .first()
             .and_then(|component| component.local_id),
@@ -173,8 +162,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     );
     payload[4] = 0x7f;
     assert_eq!(
-        compact_surface_selection_at(&face_path_ctx, &payload, 12)
-            .unwrap()
+        compact_surface_selection_at(&payload, 12)
             .expect("lane-local selector subtype")
             .first()
             .and_then(|component| component.local_id),
@@ -576,14 +564,6 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
 
 #[test]
 fn sketch_surface_component_path_has_two_implicit_root_slots() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = Vec::new();
     payload.extend(5u32.to_le_bytes());
@@ -602,8 +582,7 @@ fn sketch_surface_component_path_has_two_implicit_root_slots() {
     }
 
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
+        compact_sketch_surface_component_path_at(&payload, marker)
             .expect("required invariant")
             .iter()
             .map(|component| component.local_id)
@@ -614,14 +593,6 @@ fn sketch_surface_component_path_has_two_implicit_root_slots() {
 
 #[test]
 fn sketch_surface_component_path_accepts_a_slot_cell_between_entries() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = Vec::new();
     payload.extend(5u32.to_le_bytes());
@@ -642,8 +613,7 @@ fn sketch_surface_component_path_accepts_a_slot_cell_between_entries() {
     }
 
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
+        compact_sketch_surface_component_path_at(&payload, marker)
             .expect("required invariant")
             .iter()
             .map(|component| component.local_id)
@@ -654,8 +624,7 @@ fn sketch_surface_component_path_accepts_a_slot_cell_between_entries() {
     let slot = marker + 18 + 20 + 4 + 20;
     payload[slot..slot + 6].fill(0);
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
+        compact_sketch_surface_component_path_at(&payload, marker)
             .expect("required invariant")
             .iter()
             .map(|component| component.local_id)
@@ -665,22 +634,13 @@ fn sketch_surface_component_path_accepts_a_slot_cell_between_entries() {
 
     payload[slot..slot + 2].fill(0xff);
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
+        compact_sketch_surface_component_path_at(&payload, marker),
         None
     );
 }
 
 #[test]
 fn legacy_sketch_surface_component_path_requires_its_ownership_trailer() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = Vec::new();
     payload.extend(5u32.to_le_bytes());
@@ -708,8 +668,7 @@ fn legacy_sketch_surface_component_path_requires_its_ownership_trailer() {
     payload.extend([0; 12]);
 
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
+        compact_sketch_surface_component_path_at(&payload, marker)
             .expect("required invariant")
             .iter()
             .map(|component| component.local_id)
@@ -719,8 +678,7 @@ fn legacy_sketch_surface_component_path_requires_its_ownership_trailer() {
 
     payload[trailer + 28..trailer + 32].fill(0);
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
+        compact_sketch_surface_component_path_at(&payload, marker),
         None
     );
 
@@ -732,16 +690,11 @@ fn legacy_sketch_surface_component_path_requires_its_ownership_trailer() {
     payload.extend(0u32.to_le_bytes());
     payload.extend(135u32.to_le_bytes());
     payload.extend([0; 12]);
-    assert!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
-            .is_some()
-    );
+    assert!(compact_sketch_surface_component_path_at(&payload, marker).is_some());
 
     payload[trailer..trailer + 4].fill(0);
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
+        compact_sketch_surface_component_path_at(&payload, marker),
         None
     );
 
@@ -751,30 +704,17 @@ fn legacy_sketch_surface_component_path_requires_its_ownership_trailer() {
     payload.extend(0u32.to_le_bytes());
     payload.extend(135u32.to_le_bytes());
     payload.extend([0; 12]);
-    assert!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
-            .is_some()
-    );
+    assert!(compact_sketch_surface_component_path_at(&payload, marker).is_some());
 
     payload[trailer + 16..trailer + 20].fill(0);
     assert_eq!(
-        compact_sketch_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
+        compact_sketch_surface_component_path_at(&payload, marker),
         None
     );
 }
 
 #[test]
 fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -807,9 +747,7 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
     }
     payload.extend([0; 32]);
 
-    let path = mirror_pattern_component_path_at(&path_ctx, &payload, marker)
-        .expect("component path resource admission")
-        .expect("required invariant");
+    let path = mirror_pattern_component_path_at(&payload, marker).expect("required invariant");
     assert_eq!(path.len(), 3);
     assert_eq!(path.last().expect("required invariant").local_id, Some(3));
     assert_eq!(
@@ -819,18 +757,13 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
 
     payload[..4].copy_from_slice(&5u32.to_le_bytes());
     assert_eq!(
-        mirror_pattern_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
+        mirror_pattern_component_path_at(&payload, marker)
             .expect("two root slots")
             .len(),
         3
     );
     payload[4] = 1;
-    assert!(
-        mirror_pattern_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
-            .is_none()
-    );
+    assert!(mirror_pattern_component_path_at(&payload, marker).is_none());
 
     for (count, separator) in [
         (3u32, &[][..]),
@@ -854,8 +787,7 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
         mixed.extend([0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
         mixed.extend(3u32.to_le_bytes());
         assert_eq!(
-            mirror_pattern_component_path_at(&path_ctx, &mixed, marker)
-                .expect("component path resource admission")
+            mirror_pattern_component_path_at(&mixed, marker)
                 .expect("mixed mirror path")
                 .len(),
             3
@@ -865,33 +797,13 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
 
 #[test]
 fn mirror_pattern_path_refuses_out_of_range_markers() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     for marker in [0, 7, usize::MAX] {
-        assert_eq!(
-            mirror_pattern_component_path_at(&path_ctx, &[0; 32], marker)
-                .expect("component path resource admission"),
-            None
-        );
+        assert_eq!(mirror_pattern_component_path_at(&[0; 32], marker), None);
     }
 }
 
 #[test]
 fn mirror_pattern_path_honors_full_count_before_following_path_data() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -911,9 +823,7 @@ fn mirror_pattern_path_honors_full_count_before_following_path_data() {
     payload.extend([0; 2]);
     append_component(&mut payload, 0x81a5, 18, 4);
 
-    let path = mirror_pattern_component_path_at(&path_ctx, &payload, marker)
-        .expect("component path resource admission")
-        .expect("full count path");
+    let path = mirror_pattern_component_path_at(&payload, marker).expect("full count path");
     assert_eq!(
         path.iter()
             .map(|component| component.local_id)
@@ -924,14 +834,6 @@ fn mirror_pattern_path_honors_full_count_before_following_path_data() {
 
 #[test]
 fn component_vector_cell_count_includes_interleaved_path_slots() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker];
     payload[..4].copy_from_slice(&7u32.to_le_bytes());
@@ -949,28 +851,13 @@ fn component_vector_cell_count_includes_interleaved_path_slots() {
         }
     }
 
-    let path = component_vector_path_at(
-        &path_ctx,
-        &payload,
-        marker,
-        "decode SLDPRT component vector path",
-    )
-    .expect("component path resource admission")
-    .expect("interleaved path slots");
+    let path = component_vector_path_at(&payload, marker).expect("interleaved path slots");
     assert_eq!(path.len(), 4);
     assert_eq!(path.last().expect("terminal component").local_id, Some(4));
 }
 
 #[test]
 fn component_vector_preserves_identifierless_lineage_hops() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker];
     payload[..4].copy_from_slice(&5u32.to_le_bytes());
@@ -991,14 +878,7 @@ fn component_vector_preserves_identifierless_lineage_hops() {
     payload.extend(16u32.to_le_bytes());
     payload.extend([0; 24]);
 
-    let path = component_vector_path_at(
-        &path_ctx,
-        &payload,
-        marker,
-        "decode SLDPRT component vector path",
-    )
-    .expect("component path resource admission")
-    .expect("lineage path");
+    let path = component_vector_path_at(&payload, marker).expect("lineage path");
     assert_eq!(path.len(), 3);
     assert_eq!(path[0].instance, Some(0x8675));
     assert_eq!(path[0].local_id, None);
@@ -1010,13 +890,6 @@ fn component_vector_preserves_identifierless_lineage_hops() {
 
 #[test]
 fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
-    let candidates_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (candidates_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &candidates_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let mut payload = Vec::new();
     let append_vector = |payload: &mut Vec<u8>, selector: u8, source: u32, terminal: u32| {
         payload.extend(7u32.to_le_bytes());
@@ -1041,8 +914,7 @@ fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
     append_vector(&mut payload, 4, 218, 12);
     payload.extend([0; 4]);
 
-    let candidates =
-        planar_surface_selection_candidates(&candidates_ctx, &payload, 0, payload.len()).unwrap();
+    let candidates = planar_surface_selection_candidates(&payload, 0, payload.len());
     assert_eq!(candidates.len(), 2);
     assert_eq!(candidates[0].1.len(), 4);
     assert_eq!(
@@ -1064,30 +936,18 @@ fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
 
     payload[4] = 0x7f;
     assert_eq!(
-        planar_surface_selection_candidates(&candidates_ctx, &payload, 0, payload.len())
-            .unwrap()
-            .len(),
+        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
         2
     );
     payload[5] = 3;
     assert_eq!(
-        planar_surface_selection_candidates(&candidates_ctx, &payload, 0, payload.len())
-            .unwrap()
-            .len(),
+        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
         1
     );
 }
 
 #[test]
 fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
     let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -1109,9 +969,7 @@ fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
     payload.extend([0x34, 0x80, 1, 0, 56, 0, 0, 0, 2, 0, 0, 0]);
     payload.extend(4u32.to_le_bytes());
 
-    let path = counted_surface_component_path_at(&path_ctx, &payload, marker)
-        .expect("component path resource admission")
-        .expect("required invariant");
+    let path = counted_surface_component_path_at(&payload, marker).expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[0].instance, Some(0x803e));
     assert_eq!(path[0].local_id, Some(9));
@@ -1122,18 +980,13 @@ fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
 
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
-        counted_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
+        counted_surface_component_path_at(&payload, marker)
             .expect("one root slot")
             .len(),
         2
     );
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
-    assert!(
-        counted_surface_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
-            .is_none()
-    );
+    assert!(counted_surface_component_path_at(&payload, marker).is_none());
 }
 
 #[test]
@@ -1358,13 +1211,6 @@ fn face_reference_plane_accepts_a_component_face_path() {
 
 #[test]
 fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let prefix = [0x54, 0x81, 0x56, 0x01];
     let signature = |source: u32, identity: u32| {
         let mut signature = [0; 12];
@@ -1381,9 +1227,7 @@ fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
     payload.extend(signature(10, 2));
     payload.extend(7u32.to_le_bytes());
 
-    let path = inline_surface_reference_at(&ctx, &payload, 4)
-        .unwrap()
-        .expect("required invariant");
+    let path = inline_surface_reference_at(&payload, 4).expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[0].instance, Some(0x8157));
     assert_eq!(path[0].local_id, None);
@@ -1490,13 +1334,6 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
 
 #[test]
 fn generated_surface_identities_are_producer_outputs() {
-    let identity_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &identity_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let class_name = "moWzdHoleSurfIdRep_c";
     let prefix = [0xc3, 0x80, 0xc5, 0x00];
     let mut payload = CLASS_MARKER.to_vec();
@@ -1540,7 +1377,7 @@ fn generated_surface_identities_are_producer_outputs() {
         sketch_entities: Vec::new(),
     };
 
-    let identities = generated_surface_identities(&identity_ctx, &lane).unwrap();
+    let identities = generated_surface_identities(&lane).unwrap();
 
     assert_eq!(identities.len(), 2, "{identities:#?}");
     assert!(identities.iter().all(|identity| {
@@ -1554,13 +1391,6 @@ fn generated_surface_identities_are_producer_outputs() {
 
 #[test]
 fn idless_history_features_use_unique_feature_input_object_sources() {
-    let history_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (history_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &history_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let feature = Feature {
         id: "producer".into(),
         parent: "history".into(),
@@ -1611,7 +1441,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
     };
 
     let ambiguous_history = history.clone();
-    let resolved = history_features_with_object_sources(&history_ctx, &[history], &lane).unwrap();
+    let resolved = history_features_with_object_sources(&[history], &lane);
 
     assert_eq!(resolved[0].source_id, FeatureSource::from_value(233));
 
@@ -1623,8 +1453,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
         object_id: ObjectId::from_value(234),
         value: "Producer".into(),
     });
-    let ambiguous =
-        history_features_with_object_sources(&history_ctx, &[ambiguous_history], &lane).unwrap();
+    let ambiguous = history_features_with_object_sources(&[ambiguous_history], &lane);
     assert_eq!(ambiguous[0].source_id, None);
 }
 

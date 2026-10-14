@@ -4,8 +4,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::container::make_block;
@@ -34,92 +33,6 @@ fn metadata_from_nameless_block_keeps_annotation_owner() {
         .provenance
         .values()
         .any(|provenance| provenance.stream() == "block@8"));
-}
-
-#[test]
-fn metadata_annotation_route_refuses_retained_text() {
-    let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
-    let mut source = outer_header();
-    source.extend(make_block(0x43, "", payload));
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let error = super::attributes(&ctx, &scan, &mut annotations)
-        .expect_err("metadata annotation requires retained text");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes));
-}
-
-#[test]
-fn metadata_annotation_route_refuses_collection_growth() {
-    let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
-    let mut source = outer_header();
-    source.extend(make_block(0x43, "", payload));
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let error = super::attributes(&ctx, &scan, &mut annotations)
-        .expect_err("metadata attributes require collection admission");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems));
-}
-
-#[test]
-fn metadata_annotation_route_refuses_work_at_minimum_admission() {
-    let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
-    let mut source = outer_header();
-    source.extend(make_block(0x43, "", payload));
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let run = |policy: &DecodePolicy| {
-        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, policy).unwrap();
-        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-        super::attributes(&ctx, &scan, &mut annotations).map(|attributes| (attributes, annotations))
-    };
-    let expected = run(&DecodePolicy::service()).unwrap();
-    assert!(!expected.0.is_empty());
-    assert!(!expected.1.provenance.is_empty());
-    let admitted = |policy: &DecodePolicy| match run(policy) {
-        Ok(actual) => {
-            assert_eq!(actual, expected);
-            true
-        }
-        Err(CodecError::ResourceLimit(limit)) => {
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            false
-        }
-        Err(error) => panic!("unexpected metadata annotation error: {error}"),
-    };
-    let mut policy = DecodePolicy::service();
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        policy.limits.max_work_units = upper;
-        if admitted(&policy) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        policy.limits.max_work_units = middle;
-        if admitted(&policy) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    policy.limits.max_work_units = upper;
-    assert!(admitted(&policy));
-    policy.limits.max_work_units = upper - 1;
-    assert!(!admitted(&policy));
 }
 
 #[test]
@@ -417,32 +330,20 @@ fn a_reference_plane_origin_that_overflows_in_millimetres_is_not_admitted() {
     );
 }
 
-fn replacement_unit_source() -> (Vec<u8>, usize) {
+fn replacement_unit_source() -> Vec<u8> {
     let mut payload = b"moLengthUserUnits_c".to_vec();
     payload.extend_from_slice(&[0xff, 0xfe, 0xff, 2, 0, 0xd8]);
-    let length = payload.len();
     let mut source = outer_header();
     source.extend(make_block(0x43, "SWObjects", &payload));
-    (source, length)
+    source
 }
 
 #[test]
-fn unit_name_replacement_refuses_exact_retained_limit() {
-    let (source, _) = replacement_unit_source();
+fn unit_name_replacement_decodes_replacement_character() {
+    let source = replacement_unit_source();
     let scan = crate::test_support::container::scan(&source);
     let section = scan.sections().next().expect("unit-name section");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(
-        matches!(super::scan_length_user_units(&ctx, section, &mut Vec::new(), &mut cadmpeg_ir::annotations::Annotations::default()), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0 && limit.additional == 3 && limit.operation == "retain SLDPRT linear unit name")
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 86;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut attributes = Vec::new();
     super::scan_length_user_units(
         &ctx,
@@ -454,20 +355,5 @@ fn unit_name_replacement_refuses_exact_retained_limit() {
     assert_eq!(
         attributes[0].values,
         vec![cadmpeg_ir::attributes::AttributeValue::String("�".into())]
-    );
-}
-
-#[test]
-fn unit_name_replacement_refuses_work_before_validation() {
-    let (source, length) = replacement_unit_source();
-    let scan = crate::test_support::container::scan(&source);
-    let section = scan.sections().next().expect("unit-name section");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::try_from(length).expect("payload length");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(
-        matches!(super::scan_length_user_units(&ctx, section, &mut Vec::new(), &mut cadmpeg_ir::annotations::Annotations::default()), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "validate SLDPRT linear unit name")
     );
 }

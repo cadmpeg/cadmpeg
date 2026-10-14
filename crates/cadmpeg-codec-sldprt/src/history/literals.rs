@@ -390,14 +390,10 @@ mod direction_tests {
 #[cfg(test)]
 mod literal_tests {
     use super::{format_length_mm, LengthLiteral};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::scalar::Length;
 
     #[test]
     fn length_literal_keeps_decimal_and_scientific_boundaries() {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for (value, expected) in [
             (0.0, "0mm"),
             (-0.0, "-0mm"),
@@ -408,14 +404,7 @@ mod literal_tests {
         ] {
             let length = Length::new(value).unwrap();
             assert_eq!(format_length_mm(length), expected);
-            assert_eq!(
-                &ctx.format_retained(
-                    format_args!("{}", LengthLiteral(length)),
-                    "test length literal"
-                )
-                .unwrap(),
-                expected
-            );
+            assert_eq!(LengthLiteral(length).to_string(), expected);
         }
     }
 }

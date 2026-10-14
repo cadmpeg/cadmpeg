@@ -108,16 +108,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     .with_native_ref(Some(corner.id().to_string()))];
 
     assert_eq!(
-        doubled_profile_distance_loci(
-            &cadmpeg_test_support::service_decode_context(),
-            &relation,
-            (0, 1),
-            &sketch,
-            &parameter,
-            &entities,
-            &markers,
-        )
-        .unwrap(),
+        doubled_profile_distance_loci(&relation, (0, 1), &sketch, &parameter, &entities, &markers,),
         Some((
             SketchLocus::Start(line_id.clone()),
             SketchLocus::End(line_id.clone()),
@@ -130,15 +121,13 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         doubled_profile_distance_loci(
-            &cadmpeg_test_support::service_decode_context(),
             &relation,
             (0, 1),
             &sketch,
             &parameter,
             &entities,
             &markers_without_handle,
-        )
-        .unwrap(),
+        ),
         None
     );
 }
@@ -330,13 +319,11 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
 
     assert_eq!(
         relation_operand_marker(
-            &cadmpeg_test_support::service_decode_context(),
             &relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        )
-        .unwrap(),
+        ),
         Some("point")
     );
     let mut constrained_operand = relation.operands[0].clone();
@@ -347,24 +334,20 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     };
     assert_eq!(
         relation_operand_marker(
-            &cadmpeg_test_support::service_decode_context(),
             &constrained_relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        )
-        .unwrap(),
+        ),
         Some("constrained-point")
     );
     assert_eq!(
         relation_operand_marker(
-            &cadmpeg_test_support::service_decode_context(),
             &relation,
             0,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &markers
-        )
-        .unwrap(),
+        ),
         Some("stored-marker")
     );
 }
@@ -846,14 +829,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         arc("a1", "p1", "p2"),
     ];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-8).unwrap();
+    resolve_connected_marker_arcs(&mut entities, 1.0e-8);
 
     for entity in &entities[3..] {
         assert!(matches!(*entity.geometry.definition(),
@@ -871,7 +847,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
                 .expect("nonempty source identity"),
         );
     }
-    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-8).unwrap();
+    resolve_connected_marker_arcs(&mut entities, 1.0e-8);
     assert!(entities[3..].iter().all(|entity| matches!(
         *entity.geometry.definition(),
         SketchGeometryDefinition::Arc { .. }
@@ -891,12 +867,12 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         .with_native_ref(Some("line".into()))
         .with_endpoint_refs(vec!["p2".into(), "p0".into()]),
     );
-    assert_eq!(closed_marker_profiles(&ctx, &entities).unwrap()[0].len(), 3);
+    assert_eq!(closed_marker_profiles(&entities)[0].len(), 3);
     entities
         .last_mut()
         .expect("required invariant")
         .construction = true;
-    assert!(closed_marker_profiles(&ctx, &entities).unwrap().is_empty());
+    assert!(closed_marker_profiles(&entities).is_empty());
     entities.push(
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
@@ -910,7 +886,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         .with_native_ref(Some("circle".into())),
     );
     assert_eq!(
-        closed_marker_profiles(&ctx, &entities).unwrap(),
+        closed_marker_profiles(&entities),
         vec![vec![SketchEntityUse {
             entity: SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
             reversed: false,

@@ -5,7 +5,6 @@ use super::project_feature_model;
 use crate::history::tests::feature;
 use crate::records::{FeatureContent, FeatureHistory};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 fn history() -> FeatureHistory {
@@ -19,18 +18,6 @@ fn history() -> FeatureHistory {
         configurations: Vec::new(),
         features: vec![source],
     }
-}
-
-#[test]
-fn feature_content_projection_route_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"content", &arena, &policy).unwrap();
-    assert!(matches!(
-        project_feature_model(&ctx, &[history()]),
-        Err(CodecError::ResourceLimit(_))
-    ));
 }
 
 #[test]

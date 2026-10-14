@@ -156,35 +156,6 @@ fn parse_root_with_service(payload: &[u8]) -> Option<Entity> {
     parse_unique_root(&ctx, payload).expect("SWIFT root fits service budget")
 }
 
-#[test]
-fn swift_annotations_refuse_retained_stream_limit() {
-    let root = Entity {
-        class: crate::swift::ROOT_CLASS.into(),
-        ..Entity::default()
-    };
-    let mut payload = Vec::new();
-    encode_entity(&root, &mut payload);
-    let mut source = crate::test_support::container::synthetic_sldprt();
-    source.extend(crate::test_support::container::make_block(
-        0x40,
-        "SWIFT/Schema",
-        &payload,
-    ));
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(root.class.len()).expect("fixture length");
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let Err(CodecError::ResourceLimit(limit)) =
-        crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
-    else {
-        panic!("expected retained refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-}
-
 fn swift_rendered_annotation_limit_error(
     set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
 ) -> CodecError {
@@ -210,36 +181,6 @@ fn swift_rendered_annotation_limit_error(
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
         .expect_err("SWIFT annotations must refuse")
-}
-
-#[test]
-fn swift_annotations_refuse_work_limit() {
-    let CodecError::ResourceLimit(limit) =
-        swift_rendered_annotation_limit_error(|limits| limits.max_work_units = 0)
-    else {
-        panic!("expected work refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-}
-
-#[test]
-fn swift_annotations_refuse_scoped_limit() {
-    let CodecError::ResourceLimit(limit) =
-        swift_rendered_annotation_limit_error(|limits| limits.max_materialized_bytes = 0)
-    else {
-        panic!("expected scoped refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-}
-
-#[test]
-fn swift_annotations_refuse_collection_limit() {
-    let CodecError::ResourceLimit(limit) =
-        swift_rendered_annotation_limit_error(|limits| limits.max_collection_items = 0)
-    else {
-        panic!("expected collection refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 
 #[test]
@@ -484,53 +425,27 @@ fn duplicate_swift_annotation_reference_ids_refuse_before_projection() {
 
 #[test]
 fn swift_roster_constructor_rejects_duplicate_ids_and_wrong_bindings() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let reference = super::reference("A42", "GdtFlatness");
     let entity = super::entity("GdtFlatness");
     assert!(matches!(
         ObjectSection::new(
-            &ctx,
             vec![reference.clone(), reference.clone()],
             vec![entity.clone(), entity.clone()]
         ),
         Err(CodecError::Malformed(_))
     ));
     assert!(matches!(
-        ObjectSection::new(
-            &ctx,
-            vec![reference.clone()],
-            vec![super::entity("GdtDatum")]
-        ),
+        ObjectSection::new(vec![reference.clone()], vec![super::entity("GdtDatum")]),
         Ok(None)
     ));
     assert!(matches!(
-        ObjectSection::new(&ctx, vec![], vec![entity.clone()]),
+        ObjectSection::new(vec![], vec![entity.clone()]),
         Ok(None)
     ));
-    assert!(ObjectSection::new(&ctx, vec![reference], vec![entity])
+    assert!(ObjectSection::new(vec![reference], vec![entity])
         .unwrap()
         .is_some());
-    assert!(ObjectSection::new(&ctx, vec![], vec![]).unwrap().is_some());
-}
-
-#[test]
-fn swift_roster_identity_admission_preserves_resource_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = ObjectSection::new(
-        &ctx,
-        vec![super::reference("A42", "GdtFlatness")],
-        vec![super::entity("GdtFlatness")],
-    )
-    .unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("identity admission refusal");
-    };
-    assert_eq!(limit.operation, "admit distinct SWIFT object references");
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(ObjectSection::new(vec![], vec![]).unwrap().is_some());
 }
 
 fn source_with_swift_annotation(annotation: Entity) -> Vec<u8> {

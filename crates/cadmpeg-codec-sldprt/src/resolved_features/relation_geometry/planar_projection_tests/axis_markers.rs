@@ -2,7 +2,7 @@ use super::{assert_owned_loci_refusal, planar_fixture, project_relation_bindings
 use crate::records::{
     SketchInputEntity, SketchInputKind, SketchInputLink, SketchInputLinks, SketchRelationKind,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
@@ -100,30 +100,6 @@ fn project_nested_axis_markers_with_policy(policy: &DecodePolicy) -> Result<(), 
 }
 
 #[test]
-fn planar_nested_axis_markers_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_nested_axis_markers_with_policy,
-    );
-}
-#[test]
-fn planar_nested_axis_markers_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_nested_axis_markers_with_policy,
-    );
-}
-#[test]
-fn planar_nested_axis_markers_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_nested_axis_markers_with_policy,
-    );
-}
-#[test]
 fn planar_nested_axis_markers_refuse_nesting_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RecursionDepth,
-        project_nested_axis_markers_with_policy,
-    );
+    assert_owned_loci_refusal(project_nested_axis_markers_with_policy);
 }

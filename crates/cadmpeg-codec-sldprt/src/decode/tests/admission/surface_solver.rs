@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -62,9 +61,10 @@ fn intersection_surface_source() -> Vec<u8> {
     crate::test_support::container::sldprt_with_body(&body)
 }
 
-fn assert_surface_solver_route_limit(dimension: ResourceDimension) {
+#[test]
+fn geometry_surface_solver_derives_intersection_pcurve() {
     let source = intersection_surface_source();
-    let mut options = DecodeOptions {
+    let options = DecodeOptions {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
@@ -82,58 +82,4 @@ fn assert_surface_solver_route_limit(dimension: ResourceDimension) {
             .and_then(|note| note.tag.as_deref())
             == Some("derived_intersection_nurbs_uv")
     }));
-    let expected = decoded.ir().clone();
-    let set_limit = |options: &mut DecodeOptions, limit| match dimension {
-        ResourceDimension::MaterializedBytes => {
-            options.policy.limits.max_materialized_bytes = limit;
-        }
-        ResourceDimension::WorkUnits => options.policy.limits.max_work_units = limit,
-        _ => panic!("unexpected surface-solver route dimension"),
-    };
-    let run = |options: &DecodeOptions| match crate::SldprtCodec
-        .decode(&mut Cursor::new(&source), options)
-    {
-        Ok(decoded) => {
-            assert_eq!(decoded.ir(), &expected);
-            true
-        }
-        Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-            assert_eq!(limit.dimension, dimension);
-            false
-        }
-        Err(error) => panic!("unexpected surface-solver route failure: {error}"),
-    };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        set_limit(&mut options, upper);
-        if run(&options) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        set_limit(&mut options, middle);
-        if run(&options) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    set_limit(&mut options, upper);
-    assert!(run(&options));
-    set_limit(&mut options, upper - 1);
-    assert!(!run(&options));
-}
-
-#[test]
-fn geometry_surface_solver_route_refuses_scoped_limit() {
-    assert_surface_solver_route_limit(ResourceDimension::MaterializedBytes);
-}
-
-#[test]
-fn geometry_surface_solver_route_refuses_work_limit() {
-    assert_surface_solver_route_limit(ResourceDimension::WorkUnits);
 }
