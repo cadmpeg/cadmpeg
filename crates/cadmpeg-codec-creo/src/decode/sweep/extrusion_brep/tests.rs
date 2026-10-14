@@ -233,10 +233,11 @@ fn closed_extrusion_reaches_brep_admission() {
 }
 
 #[test]
-fn extrusion_cap_past_the_segment_bound_skips_only_that_extrusion() {
+fn extrusion_cap_of_an_arc_stored_with_extra_turns_traces_one_sweep() {
     use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition};
-    // A half turn plus 30_000 full turns needs 120_002 quarter-turn cap
-    // segments, past the 100_000 segment bound of a circular pcurve.
+    // A half turn plus 30_000 full turns sweeps the same half turn as the
+    // profile area and the edge curves, so the cap stays within two
+    // quarter-turn segments and the extrusion transfers.
     let (scan, mut ir) = admitted_extrusion_fixture();
     let entity = &ir.model.sketch_entities[2];
     let arc = SketchEntity::new(
@@ -266,18 +267,10 @@ fn extrusion_cap_past_the_segment_bound_skips_only_that_extrusion() {
         &mut diagnostics,
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .expect("a refused cap skips the extrusion");
-    assert_eq!(count, 0);
-    assert!(ir.model.bodies.is_empty());
-    assert!(ir.model.faces.is_empty());
-    assert!(ir.model.coedges.is_empty());
-    assert_eq!(diagnostics.rejected_extrusion_bodies.len(), 1);
-    let reason = &diagnostics.rejected_extrusion_bodies[0].1;
-    assert!(
-        reason.starts_with("refused extrusion cap lanes: ")
-            && reason.contains("extrusion feature 7 profile entity 2 cap"),
-        "{reason}"
-    );
+    .expect("admitted transfer");
+    assert_eq!(count, 1);
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert!(diagnostics.rejected_extrusion_bodies.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
     assert!(ctx.finish_session().is_ok());
 }
