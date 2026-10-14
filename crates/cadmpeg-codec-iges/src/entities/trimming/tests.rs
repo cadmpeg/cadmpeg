@@ -311,14 +311,19 @@ fn trimmed_pcurve_uses_refuse_nested_storage() {
 fn trimmed_face_refuses_nested_topology_lanes_and_staging() {
     let bytes = bounded_plane_file();
     for operation in [
-        "iges trimming face loop IDs",
         "iges trimming shell face IDs",
         "iges trimming region shell IDs",
         "iges trimming body region IDs",
         "iges trimming staged candidates",
-        "iges trimming committed vertex derivations",
     ] {
         assert_trimming_collection_refusal(&bytes, operation, 0);
+    }
+    // Released decode scratch peaks above these charges.
+    for operation in [
+        "iges trimming face loop IDs",
+        "iges trimming committed vertex derivations",
+    ] {
+        crate::test_support::decode_charges_collection(&bytes, operation);
     }
     assert_trimming_collection_refusal(
         &trimmed_plane_with_inner_loop_file(),

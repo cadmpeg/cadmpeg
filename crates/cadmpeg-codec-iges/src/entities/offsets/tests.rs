@@ -74,11 +74,9 @@ fn offset_identity_copies_refuse_before_retaining_text() {
 }
 
 #[test]
-fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
+fn offset_projection_charges_controls_and_knots_and_refuses_neutral_slots() {
     let linear = linear_offset_line_file(1);
     for operation in [
-        "iges linear-offset controls",
-        "iges linear-offset knots",
         "iges offset neutral point slots",
         "iges offset neutral vertex slots",
         "iges offset neutral curve slots",
@@ -88,34 +86,33 @@ fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
     ] {
         assert_offset_collection_refusal(&linear, operation);
     }
+    // Released decode scratch peaks above the control, knot, and source slot charges.
+    for operation in ["iges linear-offset controls", "iges linear-offset knots"] {
+        crate::test_support::decode_charges_collection(&linear, operation);
+    }
     let function = function_offset_line_file();
     for operation in [
         "iges function-offset controls",
         "iges function-offset knots",
     ] {
-        assert_offset_collection_refusal(&function, operation);
+        crate::test_support::decode_charges_collection(&function, operation);
     }
     let placed = placed_uniform_offset_line_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
-    assert_offset_collection_refusal(&placed, "iges offset source curve slots");
+    crate::test_support::decode_charges_collection(&placed, "iges offset source curve slots");
 }
 
 #[test]
 fn offset_nurbs_pole_admission_refuses_before_copy() {
-    for (bytes, operation) in [
-        (
-            linear_offset_line_file(1),
-            "iges linear-offset admitted controls",
-        ),
-        (
-            function_offset_line_file(),
-            "iges function-offset admitted controls",
-        ),
-    ] {
-        assert_offset_collection_refusal(&bytes, operation);
-        IgesCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
-    }
+    let linear = linear_offset_line_file(1);
+    assert_offset_collection_refusal(&linear, "iges linear-offset admitted controls");
+    IgesCodec
+        .decode(&mut Cursor::new(linear), &DecodeOptions::default())
+        .unwrap();
+    // Released decode scratch peaks above the function-offset charge.
+    crate::test_support::decode_charges_collection(
+        &function_offset_line_file(),
+        "iges function-offset admitted controls",
+    );
 }
 
 #[test]
