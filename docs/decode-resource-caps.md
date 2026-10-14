@@ -47,6 +47,13 @@ leaves no valid decode of mandatory data. A caller that calls
 `refuse_codec_limit` and then returns a skip result still fails the decode,
 because the fuse is set.
 
+Every byte, item, and work dimension has an input-proportional allowance:
+the smaller of the policy ceiling and a base plus a per-input-byte amount.
+The constants are in `crates/cadmpeg-core/src/decode/policy.rs`. A codec cap
+that takes `min` with a policy dimension takes it with the allowance
+(`DecodeContext::collection_items_allowance`, `work_allowance`), not with the
+raw ceiling.
+
 Storage charged inside a storage scope is live. A scope's reservation holds
 materialized bytes and collection items and releases both when it drops; a
 commit keeps the items and moves the bytes to retained storage. Charge a
@@ -205,7 +212,7 @@ format-side named cap stays as the local slice and is taken as `min` with
 the matching `ResourceLimits` field.
 
 - IGES product occurrences charge collection items and use `enter_nested`.
-  Output and depth take `min` with `max_collection_items` /
+  Output and depth take `min` with the collection-item allowance /
   `max_recursion_depth`. Type-124 chains and composite flattening use
   `enter_nested`.
 - STEP parse records, parameters, anchors, and REFERENCE materialization

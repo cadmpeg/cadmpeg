@@ -5899,7 +5899,7 @@ fn clamped_bezier_knots(
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
+                ctx.collection_items_allowance(),
                 u64::MAX,
                 "FreeCAD Bezier knots",
             ),
@@ -5909,7 +5909,7 @@ fn clamped_bezier_knots(
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
+                ctx.collection_items_allowance(),
                 u64::MAX,
                 "FreeCAD Bezier knots",
             ),

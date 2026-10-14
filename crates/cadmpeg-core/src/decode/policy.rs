@@ -41,13 +41,16 @@ pub struct ResourceLimits {
     /// Maximum admitted semantic or native entities.
     #[serde(default = "default_max_entities")]
     pub max_entities: u64,
-    /// Maximum admitted items across decoded collections.
+    /// Maximum collection items held at one time: session-retained items
+    /// plus items in live storage scopes. The session allowance is the
+    /// smaller of this ceiling and an input-proportional allowance.
     #[serde(default = "default_max_collection_items")]
     pub max_collection_items: u64,
     /// Maximum active recursive nesting depth.
     #[serde(default = "default_max_recursion_depth")]
     pub max_recursion_depth: u64,
-    /// Maximum cumulative algorithm work units.
+    /// Maximum cumulative algorithm work units. The session allowance is the
+    /// smaller of this ceiling and an input-proportional allowance.
     #[serde(default = "default_max_work_units")]
     pub max_work_units: u64,
 }
@@ -62,9 +65,9 @@ impl ResourceLimits {
             max_materialized_bytes: 4 * GIB,
             max_retained_bytes: 4 * GIB,
             max_entities: 64_000_000,
-            max_collection_items: 16_000_000,
+            max_collection_items: 1 << 30,
             max_recursion_depth: 256,
-            max_work_units: 4_000_000_000,
+            max_work_units: 1 << 40,
         }
     }
 
@@ -142,6 +145,10 @@ pub(super) const MATERIALIZED_BASE: u64 = 16 * MIB;
 pub(super) const MATERIALIZED_PER_INPUT_BYTE: u64 = 1000;
 pub(super) const RETAINED_BASE: u64 = 16 * MIB;
 pub(super) const RETAINED_PER_INPUT_BYTE: u64 = 1000;
+pub(super) const COLLECTION_ITEMS_BASE: u64 = 16_000_000;
+pub(super) const COLLECTION_ITEMS_PER_INPUT_BYTE: u64 = 16;
+pub(super) const WORK_UNITS_BASE: u64 = 4_000_000_000;
+pub(super) const WORK_UNITS_PER_INPUT_BYTE: u64 = 4096;
 
 const fn default_max_materialized_bytes() -> u64 {
     ResourceLimits::desktop().max_materialized_bytes
@@ -182,9 +189,9 @@ mod tests {
         assert_eq!(d.max_materialized_bytes, 4 * GIB);
         assert_eq!(d.max_retained_bytes, 4 * GIB);
         assert_eq!(d.max_entities, 64_000_000);
-        assert_eq!(d.max_collection_items, 16_000_000);
+        assert_eq!(d.max_collection_items, 1 << 30);
         assert_eq!(d.max_recursion_depth, 256);
-        assert_eq!(d.max_work_units, 4_000_000_000);
+        assert_eq!(d.max_work_units, 1 << 40);
     }
 
     #[test]
