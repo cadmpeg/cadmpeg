@@ -27,14 +27,10 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
     );
     catia_test_context!(service_ctx);
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
-    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
-        &service_ctx,
-        &choices,
-        2,
-        &[[0, 1], [2, 3]],
-    )
-    .expect("service resource budget")
-    .expect("initial quotient");
+    let quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
+            .expect("initial quotient");
     let advance = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(10_000);
         crate::solve::incidence::advance_compact_boundary_domains(
@@ -100,14 +96,10 @@ fn compact_boundary_advance_refuses_nested_ordered_alternative_copies() {
     }]);
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     catia_test_context!(service_ctx);
-    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
-        &service_ctx,
-        &choices,
-        2,
-        &[[0, 1], [2, 3]],
-    )
-    .expect("service resource budget")
-    .expect("initial quotient");
+    let quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
+            .expect("initial quotient");
     let run = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(10_000);
         crate::solve::incidence::advance_compact_boundary_domains(
@@ -176,14 +168,10 @@ fn compact_boundary_advance_charges_existing_oriented_edges() {
     );
     catia_test_context!(service_ctx);
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
-    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
-        &service_ctx,
-        &choices,
-        2,
-        &[[0, 1], [2, 3]],
-    )
-    .expect("service resource budget")
-    .expect("initial quotient");
+    let quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
+            .expect("service resource budget")
+            .expect("initial quotient");
     let initial = vec![(quotient, HashSet::from([0]))];
     // Released scope scratch peaks above the oriented copy.
     let complete = cadmpeg_test_support::refusal::assert_charged(
@@ -327,14 +315,9 @@ fn incidence_components_reuse_independent_solution_domains() {
 fn incidence_components_include_fixed_incidence_chains() {
     catia_test_context!(ctx);
     let choices = vec![vec![[0, 0], [0, 1]], vec![[2, 2], [2, 3]], vec![[0, 2]]];
-    let components = crate::solve::incidence::incidence_choice_components(
-        &ctx,
-        &choices,
-        &[[0, 0]; 3],
-        None,
-        None,
-    )
-    .expect("service resource budget");
+    let components =
+        crate::solve::incidence::incidence_choice_components(&choices, &[[0, 0]; 3], None, None)
+            .expect("service resource budget");
 
     assert_eq!(components, vec![vec![0, 1]]);
 }
@@ -399,10 +382,10 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
     let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
     let edge_faces = [[0, 0], [1, 1]];
     let mut quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1))
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(0, 1))
         .expect("service merge")
         .expect("first closed edge");
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 2, 3))
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(2, 3))
         .expect("service merge")
         .expect("second closed edge");
 
@@ -452,7 +435,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
     let mut quotient = MeshQuotient::new(domains);
     for edge in 0..choices.len() {
         crate::test_support::with_service_context(|ctx| {
-            quotient.merge_charged(ctx, edge * 2, edge * 2 + 1)
+            quotient.merge_charged(edge * 2, edge * 2 + 1)
         })
         .expect("service merge")
         .expect("closed edge");

@@ -118,7 +118,7 @@ fn incidence_degree_adjustment_refuses_before_undo_and_point_growth() {
         let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, |ctx| {
-                super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
+                super::super::adjust_incidence_degrees(&mut degrees, &[[0, 1]], 0, [2, 3])
             }),
             Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
@@ -126,7 +126,7 @@ fn incidence_degree_adjustment_refuses_before_undo_and_point_growth() {
     }
     let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
     let undo = crate::test_support::with_service_context(|ctx| {
-        super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
+        super::super::adjust_incidence_degrees(&mut degrees, &[[0, 1]], 0, [2, 3])
     })
     .expect("service resource budget");
     assert_eq!(undo.entries.len(), 4);
@@ -149,7 +149,7 @@ fn deferred_cycle_assignment_refuses_each_inner_collection_limit() {
     let incidence = [(0, false), (1, false)];
     let missing = HashSet::new();
     let run = |ctx: &DecodeContext<'_>| {
-        super::super::deferred_boundary_cycle_matches(ctx, &mesh, &incidence, &missing)
+        super::super::deferred_boundary_cycle_matches(&mesh, &incidence, &missing)
     };
     assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
     let mut refused = HashSet::new();
@@ -246,7 +246,7 @@ fn incidence_component_graph_refuses_each_collection_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     assert_eq!(
-        incidence_choice_components(&ctx, &choices, &edge_faces, Some(&domains), Some(&quotient))
+        incidence_choice_components(&choices, &edge_faces, Some(&domains), Some(&quotient))
             .expect("service resource budget"),
         vec![vec![0, 1], vec![2]],
     );
@@ -258,13 +258,7 @@ fn incidence_component_graph_refuses_each_collection_limit() {
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits input limit");
-        match incidence_choice_components(
-            &ctx,
-            &choices,
-            &edge_faces,
-            Some(&domains),
-            Some(&quotient),
-        ) {
+        match incidence_choice_components(&choices, &edge_faces, Some(&domains), Some(&quotient)) {
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                 operations.insert(limit.operation);
@@ -299,7 +293,7 @@ fn incidence_component_coupling_refuses_each_collection_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
     assert_eq!(
-        join_incidence_components_by_coupling(&ctx, components.clone(), &active)
+        join_incidence_components_by_coupling(components.clone(), &active)
             .expect("service resource budget"),
         expected,
     );
@@ -311,7 +305,7 @@ fn incidence_component_coupling_refuses_each_collection_limit() {
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits input limit");
-        match join_incidence_components_by_coupling(&ctx, components.clone(), &active) {
+        match join_incidence_components_by_coupling(components.clone(), &active) {
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                 operations.insert(limit.operation);

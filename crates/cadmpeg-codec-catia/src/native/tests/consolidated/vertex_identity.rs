@@ -404,7 +404,7 @@ fn cone_face_followed_by_spanning_parameter_point_terminates() {
         [[0..split, split..bytes.len()]],
     );
     let faces = crate::test_support::with_service_context(|ctx| {
-        crate::native::consolidated_cone_faces(ctx, &bytes, &records, &[]).expect("service decode")
+        crate::native::consolidated_cone_faces(&bytes, &records, &[]).expect("service decode")
     });
     assert_eq!(faces.len(), 1);
     assert!(faces[0].parameter_points.is_empty());
@@ -444,7 +444,6 @@ fn owner_chart_alias_binding_refuses_retained_limit() {
         .expect("owner chart fixture fits the input limit");
     assert!(matches!(
         super::super::super::projection::resolve_owner_chart_support_aliases(
-            &ctx,
             &mut packets,
             &native.alias_rows
         ),
@@ -465,7 +464,6 @@ fn owner_chart_alias_index_refuses_collection_limit() {
         .expect("owner chart fixture fits the input limit");
     assert!(matches!(
         super::super::super::projection::resolve_owner_chart_support_aliases(
-            &ctx,
             &mut packets,
             &native.alias_rows
         ),

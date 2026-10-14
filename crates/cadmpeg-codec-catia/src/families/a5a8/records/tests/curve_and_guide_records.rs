@@ -50,7 +50,7 @@ fn consolidated_curve_parser_reads_width2_frame() {
     let curves = parsed_a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| curves[0].knots(ctx))
+        crate::test_support::with_service_context(|ctx| curves[0].knots())
             .expect("service resource budget")
             .len(),
         2
@@ -65,7 +65,7 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits input limit");
     let curves = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(ctx, &a5_guide_curve_stream())
+        crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream())
             .expect("service decode")
     });
     assert_eq!(curves.len(), 1);
@@ -79,7 +79,6 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
         .collect::<Vec<_>>();
     let derivatives = vec![[0.0; 3]; 2];
     let (knots, controls) = crate::nurbs::quintic_jet_bspline(
-        &ctx,
         curves[0].degree,
         &curves[0].knots(&ctx).expect("service resource budget"),
         &points,
@@ -104,7 +103,7 @@ fn guide_curve_parser_refuses_nonunit_site_direction() {
     let mut bytes = a5_guide_curve_stream();
     bytes[52..60].copy_from_slice(&le_f64(2.0));
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(ctx, &bytes).expect("service decode")
+        crate::families::a5a8::records::a5_guide_curves(&bytes).expect("service decode")
     })
     .is_empty());
 }
@@ -113,13 +112,13 @@ fn guide_curve_parser_refuses_nonunit_site_direction() {
 fn a5_guide_sites_refuse_collection_limit_before_materialization() {
     let bytes = a5_guide_curve_stream();
     let limited = crate::test_support::with_collection_limit(1, |ctx| {
-        crate::families::a5a8::records::a5_guide_curves(ctx, &bytes)
+        crate::families::a5a8::records::a5_guide_curves(&bytes)
     });
     assert!(matches!(limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_a5_guide_sites"));
     let curves = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(ctx, &bytes)
+        crate::families::a5a8::records::a5_guide_curves(&bytes)
     })
     .expect("service collection budget");
     assert_eq!(curves.len(), 1);
@@ -129,15 +128,12 @@ fn a5_guide_sites_refuse_collection_limit_before_materialization() {
 #[test]
 fn guide_curve_parser_accepts_frame_bounded_site_count() {
     let curves = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(
-            ctx,
-            &a5_guide_curve_stream_with_count(4097),
-        )
-        .expect("service decode")
+        crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream_with_count(4097))
+            .expect("service decode")
     });
     assert_eq!(curves.len(), 1);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| curves[0].knots(ctx))
+        crate::test_support::with_service_context(|ctx| curves[0].knots())
             .expect("service resource budget")
             .len(),
         4097
@@ -152,8 +148,7 @@ fn guide_curve_parser_rejects_nonfinite_jet_channels() {
         bytes[offset..offset + 8].copy_from_slice(&le_f64(f64::NAN));
         assert!(
             crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a5_guide_curves(ctx, &bytes)
-                    .expect("service decode")
+                crate::families::a5a8::records::a5_guide_curves(&bytes).expect("service decode")
             })
             .is_empty(),
             "offset {offset}"
@@ -163,8 +158,7 @@ fn guide_curve_parser_rejects_nonfinite_jet_channels() {
     let mut repeated_knot = a5_guide_curve_stream();
     repeated_knot[20..28].copy_from_slice(&le_f64(0.0));
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(ctx, &repeated_knot)
-            .expect("service decode")
+        crate::families::a5a8::records::a5_guide_curves(&repeated_knot).expect("service decode")
     })
     .is_empty());
 }
@@ -204,7 +198,7 @@ fn a8_freeform_curves_refuse_collection_limit_before_retention() {
 fn assert_a8_freeform_collection_refusal(limit: u64, operation: &'static str) {
     let bytes = a8_freeform_curve_stream();
     let result = crate::test_support::with_collection_limit(limit, |ctx| {
-        crate::families::a5a8::records::a8_freeform_curves(ctx, &bytes)
+        crate::families::a5a8::records::a8_freeform_curves(&bytes)
     });
     assert!(matches!(result,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -272,7 +266,7 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let records = crate::wire::records::consolidated_records(&freeform);
     let one_shot = parsed_a5_freeform_curves(&freeform);
     let indexed = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_freeform_curves_from_records(ctx, &freeform, &records)
+        crate::families::a5a8::records::a5_freeform_curves_from_records(&freeform, &records)
             .expect("service decode")
     });
     assert_eq!(one_shot.len(), indexed.len());
@@ -285,10 +279,10 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let guide = a5_guide_curve_stream();
     let records = crate::wire::records::consolidated_records(&guide);
     let one_shot = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(ctx, &guide).expect("service decode")
+        crate::families::a5a8::records::a5_guide_curves(&guide).expect("service decode")
     });
     let indexed = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves_from_records(ctx, &guide, &records)
+        crate::families::a5a8::records::a5_guide_curves_from_records(&guide, &records)
             .expect("service decode")
     });
     assert_eq!(one_shot.len(), indexed.len());

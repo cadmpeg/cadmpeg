@@ -34,7 +34,7 @@ fn incidence_factor_checkpoint_refuses_nested_mask_copies() {
             factors_by_edge: Vec::new(),
             active: Some(vec![vec![1u64, 2u64]]),
         };
-        factors.refine_edges(ctx, &[])
+        factors.refine_edges(&[])
     };
     crate::test_support::with_service_context(|ctx| {
         assert!(matches!(
@@ -530,7 +530,7 @@ fn incidence_component_caches_implicit_frontier_support() {
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &choices, 2, &[[0, 1], [0, 1]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
             .expect("service resource budget")
             .expect("initial quotient");
     let coordinate_domains = quotient
@@ -590,7 +590,7 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
     let face_edges = vec![vec![0, 1]];
     let coordinate_domains = crate::test_support::with_service_context(|ctx| {
         let mut quotient =
-            crate::solve::mesh_quotient::initial_mesh_quotient(ctx, &choices, 2, &[[0, 1], [0, 1]])
+            crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
                 .expect("service budget")
                 .expect("initial quotient");
         quotient
@@ -751,14 +751,10 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
     let choices = vec![vec![[0, 0]], Vec::new()];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
-    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
-        &ctx,
-        &choices,
-        2,
-        &[[10, 10], [11, 12]],
-    )
-    .expect("service resource budget")
-    .expect("initial quotient");
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[10, 10], [11, 12]])
+            .expect("service resource budget")
+            .expect("initial quotient");
     let coordinate_domains = quotient
         .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
         .expect("service resource budget")

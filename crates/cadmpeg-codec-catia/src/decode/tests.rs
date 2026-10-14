@@ -75,7 +75,7 @@ fn service_modeling_scope(
     graphs: &[CatiaObjectGraph],
 ) -> super::ModelingGraphScope {
     crate::test_support::with_service_context(|ctx| {
-        modeling_graph_scope(ctx, has_outer_declarations, graphs)
+        modeling_graph_scope(has_outer_declarations, graphs)
     })
     .expect("service budget admits modeling scope")
 }
@@ -99,7 +99,7 @@ fn modeling_scope_includes_only_the_declared_part_graph() {
 fn modeling_scope_refuses_retained_graph_identity_limit() {
     let graphs = vec![graph("part-graph", "part", "CATPrtCont")];
     let limited =
-        crate::test_support::with_retained_limit(0, |ctx| modeling_graph_scope(ctx, true, &graphs));
+        crate::test_support::with_retained_limit(0, |ctx| modeling_graph_scope(true, &graphs));
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -303,14 +303,12 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
             )
         };
         crate::nurbs::note_refusal(
-            ctx,
             short_weight_lane()?,
             refusal,
             "e5 NURBS surface record at byte 16",
         )?;
         // The second refusal ends the route after both notes have been retained.
         let second = crate::nurbs::note_refusal(
-            ctx,
             short_weight_lane()?,
             refusal,
             "e5 NURBS pcurve record at byte 96",
@@ -349,10 +347,8 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         _scan: &crate::container::ContainerScan,
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<Option<crate::families::FamilyOutput>, cadmpeg_core::CodecError> {
-        ctx.charge_collection_items(7, "build test NURBS lanes")?;
         let output = (|| {
             match crate::nurbs::note_refusal(
-                ctx,
                 match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     ctx,
                     1,

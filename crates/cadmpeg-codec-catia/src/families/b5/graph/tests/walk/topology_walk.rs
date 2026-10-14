@@ -54,13 +54,13 @@ fn record_walk_retains_opaque_a8_surface_nodes() {
     assert_eq!(records[0].object_id, 7);
     assert_eq!(records[0].payload, [1, 2, 3]);
     let limited =
-        crate::test_support::with_retained_limit(2, |ctx| surface_node(ctx, &records[0], None));
+        crate::test_support::with_retained_limit(2, |ctx| surface_node(&records[0], None));
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_surface_node_payload")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| { surface_node(ctx, &records[0], None) })
+        crate::test_support::with_service_context(|ctx| { surface_node(&records[0], None) })
             .expect("service budget"),
         Some(B5Surface::Unknown {
             family: 0xa8,
@@ -254,7 +254,7 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
     bytes.extend_from_slice(&standard.object_id.to_le_bytes());
     bytes.extend_from_slice(&standard.payload);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| { edge_vertex_references(ctx, &bytes) })
+        crate::test_support::with_service_context(|ctx| { edge_vertex_references(&bytes) })
             .expect("service budget"),
         BTreeMap::from([(17, [15, 21])])
     );
@@ -295,7 +295,7 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            graph.referenced_edge_vertex_references(ctx)
+            graph.referenced_edge_vertex_references()
         })
         .expect("service budget"),
         Some(BTreeMap::from([(301, [10, 11])]))
@@ -304,7 +304,7 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
     graph.complete = false;
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            graph.referenced_edge_vertex_references(ctx)
+            graph.referenced_edge_vertex_references()
         })
         .expect("service budget"),
         None
@@ -344,32 +344,30 @@ fn b5_topology_reference_helpers_refuse_caller_limits() {
     );
     crate::test_support::test_b5::append_b5_record(&mut reference_bytes, 0x5f, 19, &[0x81, 0x89]);
     let frames = crate::test_support::with_service_context(|ctx| {
-        collect_object_stream_frames(ctx, &reference_bytes)
+        collect_object_stream_frames(&reference_bytes)
     })
     .expect("service budget");
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        graph.referenced_edge_vertex_references(ctx)
+        graph.referenced_edge_vertex_references()
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_referenced_edge_vertices")
     );
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        face_loop_owner_counts(ctx, &graph.faces)
-    });
+    let limited =
+        crate::test_support::with_collection_limit(0, |ctx| face_loop_owner_counts(&graph.faces));
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_face_loop_owners")
     );
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        edge_vertex_references(ctx, &reference_bytes)
-    });
+    let limited =
+        crate::test_support::with_retained_limit(0, |ctx| edge_vertex_references(&reference_bytes));
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_edge_vertex_record_payload")
     );
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        face_surface_references_from_frames(ctx, &reference_bytes, &frames)
+        face_surface_references_from_frames(&reference_bytes, &frames)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -377,7 +375,7 @@ fn b5_topology_reference_helpers_refuse_caller_limits() {
     );
     let edge_ids = std::collections::HashSet::from([17]);
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        edge_support_pcurve_references_from_frames(ctx, &reference_bytes, &edge_ids, &frames)
+        edge_support_pcurve_references_from_frames(&reference_bytes, &edge_ids, &frames)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -385,21 +383,21 @@ fn b5_topology_reference_helpers_refuse_caller_limits() {
     );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            edge_vertex_references(ctx, &reference_bytes)
+            edge_vertex_references(&reference_bytes)
         })
         .expect("service budget"),
         BTreeMap::from([(17, [15, 21])])
     );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            face_surface_references_from_frames(ctx, &reference_bytes, &frames)
+            face_surface_references_from_frames(&reference_bytes, &frames)
         })
         .expect("service budget"),
         [(19, 9)]
     );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            edge_support_pcurve_references_from_frames(ctx, &reference_bytes, &edge_ids, &frames)
+            edge_support_pcurve_references_from_frames(&reference_bytes, &edge_ids, &frames)
         })
         .expect("service budget"),
         BTreeMap::from([(17, [9, 10])])
@@ -425,11 +423,9 @@ fn duplicate_face_loop_ownership_does_not_close_the_graph() {
     assert_eq!(graph.loops.len(), 1);
     assert!(!graph.complete);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            face_loop_owner_counts(ctx, &graph.faces)
-        })
-        .expect("service budget")
-        .get(&400),
+        crate::test_support::with_service_context(|ctx| { face_loop_owner_counts(&graph.faces) })
+            .expect("service budget")
+            .get(&400),
         Some(&2)
     );
 }
@@ -528,7 +524,6 @@ fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             implicit_pcurve_bindings(
-                ctx,
                 &records,
                 &by_id,
                 &BTreeMap::new(),
@@ -549,16 +544,13 @@ fn parameter_incidence_retains_aligned_compact_controls() {
     payload.extend_from_slice(&2.5f64.to_le_bytes());
     payload.push(0x2d);
     let incidence = crate::test_support::with_service_context(|ctx| {
-        parameter_incidence(
-            ctx,
-            &B5Record {
-                offset: 0,
-                family: 0xb5,
-                class: 0x06,
-                object_id: 17,
-                payload,
-            },
-        )
+        parameter_incidence(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x06,
+            object_id: 17,
+            payload,
+        })
     })
     .expect("service budget")
     .expect("parameter incidence");
@@ -608,7 +600,7 @@ fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
         (4, "catia_b5_typed_parameter_incidences"),
     ] {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
+            typed_parameter_incidences_from_records(std::slice::from_ref(&parameter))
         });
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -620,7 +612,7 @@ fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
         (2, "catia_b5_typed_vertex_incidence_rosters"),
     ] {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
+            typed_vertex_incidence_rosters_from_records(std::slice::from_ref(&roster))
         });
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -629,7 +621,7 @@ fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
     }
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
+            typed_parameter_incidences_from_records(std::slice::from_ref(&parameter))
         })
         .expect("service budget")[&17]
             .lanes
@@ -638,7 +630,7 @@ fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
     );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
+            typed_vertex_incidence_rosters_from_records(std::slice::from_ref(&roster))
         })
         .expect("service budget")[&18],
         [9, 10]
@@ -689,7 +681,6 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             implicit_pcurve_bindings(
-                ctx,
                 &records,
                 &by_id,
                 &BTreeMap::new(),

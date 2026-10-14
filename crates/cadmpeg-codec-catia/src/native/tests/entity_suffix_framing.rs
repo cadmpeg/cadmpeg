@@ -7,7 +7,7 @@ use super::super::{
 };
 
 fn framing(bytes: &[u8]) -> Option<CatiaEntitySuffixFraming> {
-    crate::test_support::with_service_context(|ctx| entity_suffix_framing(ctx, bytes))
+    crate::test_support::with_service_context(|ctx| entity_suffix_framing(bytes))
         .expect("test suffix fits the service profile")
 }
 
@@ -17,13 +17,13 @@ fn fixed_suffix_payload_refuses_retained_and_collection_limits() {
         0xfe, 0xf6, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ];
     let retained =
-        crate::test_support::with_retained_limit(15, |ctx| entity_suffix_framing(ctx, &suffix));
+        crate::test_support::with_retained_limit(15, |ctx| entity_suffix_framing(&suffix));
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_fixed_suffix_payload")
     );
     let collection =
-        crate::test_support::with_collection_limit(15, |ctx| entity_suffix_framing(ctx, &suffix));
+        crate::test_support::with_collection_limit(15, |ctx| entity_suffix_framing(&suffix));
     assert!(
         matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_fixed_suffix_payload")

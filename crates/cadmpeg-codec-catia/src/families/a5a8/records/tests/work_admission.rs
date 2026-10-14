@@ -69,14 +69,12 @@ fn a5_nurbs_knots_refuse_scan_and_expansion_work() {
 #[test]
 fn a8_frame_scanning_refuses_work_before_empty_result() {
     let bytes = [0; 32];
-    let result = crate::test_support::with_work_limit(0, |ctx| {
-        super::super::a8_freeform_curves(ctx, &bytes)
-    });
+    let result =
+        crate::test_support::with_work_limit(0, |ctx| super::super::a8_freeform_curves(&bytes));
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_a8_frame_scan"));
-    let result = crate::test_support::with_work_limit(0, |ctx| {
-        super::super::object_stream_pcurves(ctx, &bytes)
-    });
+    let result =
+        crate::test_support::with_work_limit(0, |ctx| super::super::object_stream_pcurves(&bytes));
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_object_stream_frame_scan"));
 }
@@ -112,7 +110,7 @@ fn a5_nurbs_preflight_and_materialization_refuse_caller_work() {
 fn a5_guide_preflight_and_materialization_refuse_caller_work() {
     let bytes = crate::test_support::test_a5a8::a5_guide_curve_stream();
     require_work_operations(
-        |ctx| super::super::a5_guide_curves(ctx, &bytes),
+        |ctx| super::super::a5_guide_curves(&bytes),
         &[
             "catia_a5_guide_record_scan",
             "catia_a5_guide_knot_scan",
@@ -120,7 +118,7 @@ fn a5_guide_preflight_and_materialization_refuse_caller_work() {
         ],
     );
     let curve =
-        crate::test_support::with_service_context(|ctx| super::super::a5_guide_curves(ctx, &bytes))
+        crate::test_support::with_service_context(|ctx| super::super::a5_guide_curves(&bytes))
             .expect("service parse")
             .pop()
             .expect("one guide");
@@ -131,19 +129,18 @@ fn a5_guide_preflight_and_materialization_refuse_caller_work() {
 fn a5_jet_preflight_materialization_and_projection_refuse_caller_work() {
     let bytes = crate::test_support::test_a5a8::a5_freeform_curve_stream();
     require_work_operations(
-        |ctx| super::super::a5_freeform_curves(ctx, &bytes),
+        |ctx| super::super::a5_freeform_curves(&bytes),
         &[
             "catia_a5_jet_record_scan",
             "catia_a5_jet_preflight",
             "catia_a5_jet_materialization",
         ],
     );
-    let curve = crate::test_support::with_service_context(|ctx| {
-        super::super::a5_freeform_curves(ctx, &bytes)
-    })
-    .expect("service parse")
-    .pop()
-    .expect("one jet");
+    let curve =
+        crate::test_support::with_service_context(|ctx| super::super::a5_freeform_curves(&bytes))
+            .expect("service parse")
+            .pop()
+            .expect("one jet");
     require_work_operations(
         |ctx| {
             super::super::rolling_ball_limit_curve(
@@ -165,19 +162,18 @@ fn a5_jet_preflight_materialization_and_projection_refuse_caller_work() {
 fn a8_jet_preflight_materialization_and_projection_refuse_caller_work() {
     let bytes = crate::test_support::test_a5a8::a8_freeform_curve_stream();
     require_work_operations(
-        |ctx| super::super::a8_freeform_curves(ctx, &bytes),
+        |ctx| super::super::a8_freeform_curves(&bytes),
         &[
             "catia_a8_frame_scan",
             "catia_a8_jet_preflight",
             "catia_a8_jet_materialization",
         ],
     );
-    let curve = crate::test_support::with_service_context(|ctx| {
-        super::super::a8_freeform_curves(ctx, &bytes)
-    })
-    .expect("service parse")
-    .pop()
-    .expect("one jet");
+    let curve =
+        crate::test_support::with_service_context(|ctx| super::super::a8_freeform_curves(&bytes))
+            .expect("service parse")
+            .pop()
+            .expect("one jet");
     require_work_operations(
         |ctx| curve.multiplicities(ctx),
         &["catia_a8_jet_multiplicity_projection"],
@@ -192,7 +188,7 @@ fn a8_jet_preflight_materialization_and_projection_refuse_caller_work() {
 fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_work() {
     let bytes = crate::test_support::test_a5a8::a8_pcurve_stream();
     require_work_operations(
-        |ctx| super::super::object_stream_pcurves(ctx, &bytes),
+        |ctx| super::super::object_stream_pcurves(&bytes),
         &[
             "catia_object_stream_frame_scan",
             "catia_object_stream_pcurve_preflight",
@@ -200,16 +196,13 @@ fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_w
         ],
     );
     let curve = crate::test_support::with_service_context(|ctx| {
-        super::super::object_stream_pcurves(ctx, &bytes)
+        super::super::object_stream_pcurves(&bytes)
     })
     .expect("service parse")
     .pop()
     .expect("one pcurve");
     require_work_operations(|ctx| curve.knots(ctx), &["catia_a8_pcurve_knot_projection"]);
-    require_work_operations(
-        |ctx| curve.bspline(ctx),
-        &["catia_a8_pcurve_jet_projection"],
-    );
+    require_work_operations(|ctx| curve.bspline(), &["catia_a8_pcurve_jet_projection"]);
 }
 
 #[test]
@@ -258,7 +251,7 @@ fn external_grid_inspection_and_materialization_preserve_work_refusals() {
         .next()
         .expect("one A8 surface frame");
     let header = crate::test_support::with_service_context(|ctx| {
-        super::super::parse_a8_surface_header(ctx, &bytes, frame)
+        super::super::parse_a8_surface_header(&bytes, frame)
     })
     .expect("service header")
     .expect("complete header")
@@ -280,7 +273,7 @@ fn external_grid_inspection_and_materialization_preserve_work_refusals() {
         ],
     );
     require_work_operations(
-        |ctx| super::super::a8_external_grid_ranges(ctx, &bytes),
+        |ctx| super::super::a8_external_grid_ranges(&bytes),
         &[
             "catia_a8_lane_preflight",
             "catia_a8_external_grid_candidate_scan",
@@ -296,7 +289,7 @@ fn mirrored_weight_program_refuses_seed_and_copy_work() {
     }
     bytes.push(0x02);
     require_work_operations(
-        |ctx| super::super::a5_weights(ctx, &bytes, &mut 0, 2, 4, bytes.len()),
+        |ctx| super::super::a5_weights(&bytes, &mut 0, 2, 4, bytes.len()),
         &[
             "catia_a5_weight_row_scan",
             "catia_a5_weight_seed_scan",
@@ -305,7 +298,7 @@ fn mirrored_weight_program_refuses_seed_and_copy_work() {
         ],
     );
     let weights = crate::test_support::with_service_context(|ctx| {
-        super::super::a5_weights(ctx, &bytes, &mut 0, 2, 4, bytes.len())
+        super::super::a5_weights(&bytes, &mut 0, 2, 4, bytes.len())
     })
     .expect("service weights")
     .expect("complete mirrored grid");
@@ -325,7 +318,7 @@ fn explicit_weight_program_refuses_lane_read_work() {
         bytes.extend_from_slice(&weight.to_le_bytes());
     }
     require_work_operations(
-        |ctx| super::super::a5_weights(ctx, &bytes, &mut 0, 2, 2, bytes.len()),
+        |ctx| super::super::a5_weights(&bytes, &mut 0, 2, 2, bytes.len()),
         &["catia_a5_explicit_weight_materialization"],
     );
 }
@@ -357,7 +350,7 @@ fn external_rational_grid_inspection_and_weight_copy_refuse_caller_work() {
         .next()
         .expect("one surface frame");
     let header = crate::test_support::with_service_context(|ctx| {
-        super::super::parse_a8_surface_header(ctx, &bytes, frame)
+        super::super::parse_a8_surface_header(&bytes, frame)
     })
     .expect("service header")
     .expect("complete header")

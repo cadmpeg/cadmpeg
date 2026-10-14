@@ -396,14 +396,14 @@ fn principal_plane_declaration_list_refuses_collection_limit() {
     let record = object_record("plane-record", None, None, None, None, None);
     let records = HashMap::from([(record.id.as_str(), &record)]);
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::principal_plane_candidate(ctx, &object, &records)
+        super::principal_plane_candidate(&object, &records)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_principal_plane_declarations")
     );
     let service = crate::test_support::with_service_context(|ctx| {
-        super::principal_plane_candidate(ctx, &object, &records)
+        super::principal_plane_candidate(&object, &records)
     })
     .expect("service profile admits declaration scan");
     assert!(service.is_none());
@@ -609,7 +609,6 @@ fn native_operation_owned_object_rows_refuse_collection_limit() {
     let operation_ids = HashSet::new();
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
         super::native_operation_definition_properties(
-            ctx,
             &object,
             &records,
             &entities,
@@ -623,7 +622,6 @@ fn native_operation_owned_object_rows_refuse_collection_limit() {
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::native_operation_definition_properties(
-            ctx,
             &object,
             &records,
             &entities,
@@ -645,7 +643,7 @@ fn native_operation_property_values_refuse_retained_limit() {
     };
     let prefix = cadmpeg_core::nonblank_literal!("catia_definition_value_0");
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::insert_schema_value_properties(ctx, &mut BTreeMap::new(), &prefix, &value)
+        super::insert_schema_value_properties(&mut BTreeMap::new(), &prefix, &value)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -653,7 +651,7 @@ fn native_operation_property_values_refuse_retained_limit() {
     );
     let properties = crate::test_support::with_service_context(|ctx| {
         let mut properties = BTreeMap::new();
-        super::insert_schema_value_properties(ctx, &mut properties, &prefix, &value)
+        super::insert_schema_value_properties(&mut properties, &prefix, &value)
             .expect("service profile admits operation properties");
         properties
     });
@@ -675,7 +673,6 @@ fn native_operation_property_values_refuse_retained_limit() {
 fn native_sweep_unresolved_references_refuse_retained_limit() {
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
         super::native_operation_definition(
-            ctx,
             super::NativeOperationClass::SweepThickThin1,
             "synthetic:test:object#sweep",
         )
@@ -686,7 +683,6 @@ fn native_sweep_unresolved_references_refuse_retained_limit() {
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::native_operation_definition(
-            ctx,
             super::NativeOperationClass::SweepThickThin1,
             "synthetic:test:object#sweep",
         )
@@ -1839,7 +1835,6 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         ir.model.parameters[0].owner,
         Some(cadmpeg_ir::features::FeatureId::from(
             crate::test_support::with_service_context(|ctx| crate::ids::neutral_history_id(
-                ctx,
                 &native.design_objects[0].id,
                 &cadmpeg_ir::identity_component!("feature")
             ))

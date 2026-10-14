@@ -59,20 +59,19 @@ fn copied_value_fields_refuse_nested_retained_and_outer_collection_limits() {
         offset: 0,
     }];
     let retained =
-        crate::test_support::with_retained_limit(1, |ctx| super::copy_fields_charged(ctx, &fields));
+        crate::test_support::with_retained_limit(1, |ctx| super::copy_fields_charged(&fields));
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_value_inline_bytes")
     );
-    let collection = crate::test_support::with_collection_limit(2, |ctx| {
-        super::copy_fields_charged(ctx, &fields)
-    });
+    let collection =
+        crate::test_support::with_collection_limit(2, |ctx| super::copy_fields_charged(&fields));
     assert!(
         matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_value_fields")
     );
     let copied =
-        crate::test_support::with_service_context(|ctx| super::copy_fields_charged(ctx, &fields))
+        crate::test_support::with_service_context(|ctx| super::copy_fields_charged(&fields))
             .expect("service profile admits nested value field");
     assert_eq!(copied, fields);
 }

@@ -52,13 +52,13 @@ use crate::CatiaCodec;
 
 fn parsed_a5_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5FreeformCurve> {
     crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_freeform_curves(ctx, data).expect("service decode")
+        crate::families::a5a8::records::a5_freeform_curves(data).expect("service decode")
     })
 }
 
 fn parsed_a8_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8FreeformCurve> {
     crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_freeform_curves(ctx, data).expect("service decode")
+        crate::families::a5a8::records::a8_freeform_curves(data).expect("service decode")
     })
 }
 
@@ -70,7 +70,7 @@ fn parsed_a8_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurv
 
 fn parsed_object_stream_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurve> {
     crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::object_stream_pcurves(ctx, data).expect("service decode")
+        crate::families::a5a8::records::object_stream_pcurves(data).expect("service decode")
     })
 }
 
@@ -114,7 +114,6 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     .is_empty());
     let header = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_header_from_object_frame(
-            ctx,
             &bytes,
             inner_start,
             inner_end,
@@ -125,10 +124,10 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     .expect("selected nested surface header");
     assert_eq!(
         (
-            crate::test_support::with_service_context(|ctx| header.u_count(ctx))
+            crate::test_support::with_service_context(|ctx| header.u_count())
                 .expect("pole count admission")
                 .expect("fixture U lattice has a valid pole count"),
-            crate::test_support::with_service_context(|ctx| header.v_count(ctx))
+            crate::test_support::with_service_context(|ctx| header.v_count())
                 .expect("pole count admission")
                 .expect("fixture V lattice has a valid pole count")
         ),
@@ -308,7 +307,7 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
         .try_into()
         .expect("one inline-tail surface");
         let [header] = crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            crate::families::a5a8::records::a8_surface_headers(&bytes)
                 .expect("frame scan admission")
                 .collect::<Result<Vec<_>, _>>()
                 .expect("service decode")
@@ -329,7 +328,7 @@ fn a8_elided_surface_requires_the_fixed_zero_continuation() {
     bytes[tail_start + 71..tail_start + 79].copy_from_slice(&le_f64(2.0));
 
     let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -387,7 +386,7 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
         );
         assert_eq!(
             crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+                crate::families::a5a8::records::a8_surface_headers(&bytes)
                     .expect("frame scan admission")
                     .collect::<Result<Vec<_>, _>>()
                     .expect("service decode")
@@ -435,7 +434,7 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
         );
         assert!(
             crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+                crate::families::a5a8::records::a8_surface_headers(&bytes)
                     .expect("frame scan admission")
                     .collect::<Result<Vec<_>, _>>()
                     .expect("service decode")
@@ -460,7 +459,7 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
     })
     .is_empty());
     let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -470,10 +469,10 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
     assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
     assert_eq!(
         (
-            crate::test_support::with_service_context(|ctx| headers[0].u_count(ctx))
+            crate::test_support::with_service_context(|ctx| headers[0].u_count())
                 .expect("pole count admission")
                 .expect("fixture U lattice has a valid pole count"),
-            crate::test_support::with_service_context(|ctx| headers[0].v_count(ctx))
+            crate::test_support::with_service_context(|ctx| headers[0].v_count())
                 .expect("pole count admission")
                 .expect("fixture V lattice has a valid pole count")
         ),
@@ -491,7 +490,7 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
 fn copied_a8_surface_header_refuses_each_knot_lane_limit() {
     let bytes = a8_surface_stream();
     let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
     })
@@ -505,14 +504,14 @@ fn copied_a8_surface_header_refuses_each_knot_lane_limit() {
         (6, "catia_a8_copied_multiplicities"),
     ] {
         let limited =
-            crate::test_support::with_collection_limit(limit, |ctx| header.copy_charged(ctx));
+            crate::test_support::with_collection_limit(limit, |ctx| header.copy_charged());
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == operation)
         );
     }
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| header.copy_charged(ctx))
+        crate::test_support::with_service_context(|ctx| header.copy_charged())
             .expect("service budget"),
         header
     );
@@ -531,7 +530,7 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
     })
     .is_empty());
     let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -546,7 +545,7 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
 #[test]
 fn a8_surface_header_retains_an_inline_parameter_tail() {
     let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &a8_inline_tail_surface_stream())
+        crate::families::a5a8::records::a8_surface_headers(&a8_inline_tail_surface_stream())
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -565,7 +564,7 @@ fn a8_surface_header_rejects_an_incomplete_elided_program() {
     let mut bytes = a8_elided_surface_stream();
     bytes[59 + 44] = 1;
     let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -598,7 +597,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
     bytes[3..7].copy_from_slice(&new_payload_len.to_le_bytes());
 
     let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -612,7 +611,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
 
     bytes[a8_end + 3] = 250;
     let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -639,7 +638,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let bytes = a8_elided_surface_stream();
 
     let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -682,13 +681,13 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
 fn a8_external_grid_range_refuses_collection_limit_before_retention() {
     let bytes = a8_elided_surface_stream();
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::a5a8::records::a8_external_grid_ranges(ctx, &bytes)
+        crate::families::a5a8::records::a8_external_grid_ranges(&bytes)
     });
     assert!(matches!(limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_a8_external_grid_ranges"));
     let ranges = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_external_grid_ranges(ctx, &bytes)
+        crate::families::a5a8::records::a8_external_grid_ranges(&bytes)
     })
     .expect("service collection budget");
     assert_eq!(ranges.len(), 1);
@@ -700,7 +699,7 @@ fn a8_external_grid_range_refuses_collection_limit_before_retention() {
 fn a8_external_grid_poles_refuse_collection_limit_before_materialization() {
     let bytes = a8_elided_surface_stream();
     let [header] = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -765,7 +764,6 @@ fn a8_header_lanes_refuse_collection_limits_before_materialization() {
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             crate::families::a5a8::records::a8_surface_header_from_object_frame(
-                ctx,
                 &bytes,
                 0,
                 bytes.len(),
@@ -778,7 +776,6 @@ fn a8_header_lanes_refuse_collection_limits_before_materialization() {
     }
     let header = crate::test_support::with_service_context(|ctx| {
         crate::families::a5a8::records::a8_surface_header_from_object_frame(
-            ctx,
             &bytes,
             0,
             bytes.len(),
@@ -804,7 +801,7 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
     let mut bytes = first;
     bytes.extend(second);
     let headers = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+        crate::families::a5a8::records::a8_surface_headers(&bytes)
             .expect("frame scan admission")
             .collect::<Result<Vec<_>, _>>()
             .expect("service decode")
@@ -958,7 +955,7 @@ fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
     let pcurves = parsed_a8_pcurves(&a8_pcurve_stream_with_count(8193));
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| pcurves[0].knots(ctx))
+        crate::test_support::with_service_context(|ctx| pcurves[0].knots())
             .expect("service resource budget")
             .len(),
         8193
@@ -970,7 +967,7 @@ fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
 fn object_stream_pcurve_sites_refuse_collection_limit_before_materialization() {
     let bytes = a8_pcurve_stream();
     let result = crate::test_support::with_collection_limit(1, |ctx| {
-        crate::families::a5a8::records::object_stream_pcurves(ctx, &bytes)
+        crate::families::a5a8::records::object_stream_pcurves(&bytes)
     });
     assert!(matches!(result,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -996,7 +993,7 @@ fn a8_pcurve_collection_refuses_before_retention() {
 fn object_stream_pcurve_collection_refuses_before_retention() {
     let bytes = a8_pcurve_stream();
     let result = crate::test_support::with_collection_limit(2, |ctx| {
-        crate::families::a5a8::records::object_stream_pcurves(ctx, &bytes)
+        crate::families::a5a8::records::object_stream_pcurves(&bytes)
     });
     assert!(matches!(result,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1552,7 +1549,7 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     let mut at = 0;
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 4, 4, bytes.len())
+            crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len())
                 .expect("service decode")
         })
         .map(|weights| weights
@@ -1657,7 +1654,7 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     let mut at = 0;
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 4, 4, bytes.len())
+            crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len())
                 .expect("service decode")
         })
         .map(|weights| weights
@@ -1675,7 +1672,7 @@ fn a5_explicit_weights_refuse_collection_limit_before_materialization() {
     bytes.extend([1.0, 2.0, 3.0, 4.0].into_iter().flat_map(le_f64));
     let limited = crate::test_support::with_collection_limit(3, |ctx| {
         let mut at = 0;
-        crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 2, 2, bytes.len())
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 2, 2, bytes.len())
     });
     assert!(matches!(limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1689,7 +1686,7 @@ fn a5_weight_program_does_not_cross_frame_boundary() {
     bytes.extend([0u8; 8]);
     let mut at = 0;
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_weights(ctx, &bytes, &mut at, 2, 2, 1 + 3 * 8)
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 2, 2, 1 + 3 * 8)
             .expect("service decode")
     })
     .is_none());
@@ -1717,7 +1714,7 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[0].header_token, u32::from(header_token));
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| curves[0].knots(ctx))
+            crate::test_support::with_service_context(|ctx| curves[0].knots())
                 .expect("service resource budget"),
             vec![0.0, 1.0]
         );
@@ -1746,7 +1743,7 @@ fn a5_freeform_curves_refuse_collection_limit_before_retention() {
 fn assert_a5_freeform_collection_refusal(limit: u64, operation: &'static str) {
     let bytes = a5_freeform_curve_stream();
     let result = crate::test_support::with_collection_limit(limit, |ctx| {
-        crate::families::a5a8::records::a5_freeform_curves(ctx, &bytes)
+        crate::families::a5a8::records::a5_freeform_curves(&bytes)
     });
     assert!(matches!(result,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1786,7 +1783,7 @@ fn a5_curve_parser_accepts_frame_bounded_continuation() {
         .try_into()
         .expect("one rolling-ball jet");
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| curve.knots(ctx))
+        crate::test_support::with_service_context(|ctx| curve.knots())
             .expect("service resource budget"),
         [0.0, 1.0]
     );
@@ -1798,7 +1795,7 @@ fn a5_curve_parser_accepts_frame_bounded_site_count() {
     let curves = parsed_a5_freeform_curves(&a5_freeform_curve_stream_with_count(4097));
     assert_eq!(curves.len(), 1);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| curves[0].knots(ctx))
+        crate::test_support::with_service_context(|ctx| curves[0].knots())
             .expect("service resource budget")
             .len(),
         4097
@@ -1889,7 +1886,7 @@ fn a8_pcurve_bspline_refuses_nested_jet_allocations() {
     let [jet] = parsed_a8_pcurves(&a8_pcurve_stream())
         .try_into()
         .expect("one A8 pcurve jet");
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.bspline(ctx);
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.bspline();
     assert!(crate::test_support::with_service_context(run)
         .expect("service resource budget")
         .is_some());

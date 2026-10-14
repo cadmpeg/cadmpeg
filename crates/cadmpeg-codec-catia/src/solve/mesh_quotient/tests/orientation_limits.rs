@@ -57,11 +57,10 @@ fn quotient_edge_domains_refuse_materialized_limit_before_declining() {
             .into(),
     );
     assert!(!quotient
-        .edge_domains_viable(&service_ctx, &[vec![[2, 3]]])
+        .edge_domains_viable(&[vec![[2, 3]]])
         .expect("service resource budget"));
 
-    let Err(CodecError::ResourceLimit(error)) =
-        quotient.edge_domains_viable(&limited_ctx, &[vec![[2, 3]]])
+    let Err(CodecError::ResourceLimit(error)) = quotient.edge_domains_viable(&[vec![[2, 3]]])
     else {
         panic!("edge domain allocation must refuse the limit");
     };
@@ -126,23 +125,13 @@ fn label_directions_refuse_collection_limit_before_declining() {
             .into(),
     );
     assert!(quotient
-        .merge_label_directions_in_place(
-            &service_ctx,
-            &assignment,
-            &[vec![false]],
-            &[Some(false)],
-            None,
-        )
+        .merge_label_directions_in_place(&assignment, &[vec![false]], &[Some(false)], None)
         .expect("service resource budget")
         .is_none());
 
-    let Err(CodecError::ResourceLimit(error)) = quotient.merge_label_directions_in_place(
-        &limited_ctx,
-        &assignment,
-        &[vec![false]],
-        &[Some(false)],
-        None,
-    ) else {
+    let Err(CodecError::ResourceLimit(error)) =
+        quotient.merge_label_directions_in_place(&assignment, &[vec![false]], &[Some(false)], None)
+    else {
         panic!("label direction allocation must refuse the limit");
     };
     assert_eq!(error.dimension, ResourceDimension::CollectionItems);

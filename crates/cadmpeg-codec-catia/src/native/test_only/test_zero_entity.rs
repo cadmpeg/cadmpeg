@@ -452,7 +452,6 @@ pub(super) fn validate_zero_entity_endpoint_locus_candidates(
     let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
     let expected = crate::test_support::with_service_context(|ctx| {
         zero_entity_endpoint_locus_candidates(
-            ctx,
             crate::families::zero_entity::topology::endpoint_locus_candidates(ctx, &derived_pairs)?,
         )
     })

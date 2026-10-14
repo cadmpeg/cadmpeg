@@ -35,7 +35,7 @@ fn merge_curve_plan(
     candidate: CurvePlan,
 ) {
     crate::test_support::with_service_context(|ctx| {
-        super::super::edges::merge_curve_plan(ctx, plans, conflicts, edge, candidate)
+        super::super::edges::merge_curve_plan(plans, conflicts, edge, candidate)
     })
     .expect("service budget");
 }
@@ -1014,7 +1014,6 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
     let mut conflicts = HashSet::new();
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::edges::merge_curve_plan(
-            ctx,
             &mut HashMap::new(),
             &mut HashSet::new(),
             4,
@@ -1325,7 +1324,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         .expect("service decode")
         .is_some());
     assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
-    let senses = graph.loops[&3].edge_senses(&ctx).expect("service budget");
+    let senses = graph.loops[&3].edge_senses().expect("service budget");
     assert!(
         orient_loop_members(&ctx, &graph, BTreeMap::from([(3, senses)]))
             .expect("service decode")

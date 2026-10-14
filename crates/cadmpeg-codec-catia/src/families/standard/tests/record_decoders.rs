@@ -403,7 +403,7 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(topology.faces[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert_eq!(topology.vertex_points().len(), 4);
-    let table_ports = crate::solve::missing_edge::fbb_global_edge_port_identities(&ctx, &bytes)
+    let table_ports = crate::solve::missing_edge::fbb_global_edge_port_identities(&bytes)
         .expect("service resource budget")
         .expect("global FBB handle ports");
     assert_eq!(table_ports[0][1], table_ports[1][0]);
@@ -477,12 +477,12 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
         .expect("fixture fits the input limit");
     let bytes = fbb_only_quad_topology_stream();
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_edge_count(&ctx, &bytes)
+        crate::families::standard::fbb::fbb_only_edge_count(&bytes)
             .expect("service resource budget"),
         Some(4)
     );
     assert_eq!(
-        crate::families::standard::fbb::fbb_only_vertex_points(&ctx, &bytes)
+        crate::families::standard::fbb::fbb_only_vertex_points(&bytes)
             .expect("service resource budget")
             .expect("counted FBB-only vertices")
             .len(),
@@ -706,7 +706,7 @@ fn standard_vertex_roster_preserves_native_identity_order() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            crate::families::standard::records::standard_vertex_roster(ctx, &bytes, 3)
+            crate::families::standard::records::standard_vertex_roster(&bytes, 3)
         })
         .expect("service resource budget"),
         Some(vec![0x01_0203, 0x01_0206, 0x01_0209])
@@ -822,7 +822,7 @@ fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
     }
 
     let layout = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::fbb::parse_trim_record_layout(ctx, &bytes, 0, 3)
+        crate::families::standard::fbb::parse_trim_record_layout(&bytes, 0, 3)
     })
     .expect("service resource budget")
     .expect("three-byte packet layout");
@@ -831,7 +831,7 @@ fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
     assert_eq!(layout.end, bytes.len());
 
     let record = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::fbb::parse_trim_record(ctx, &bytes, 0, 3)
+        crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
     })
     .expect("service resource budget")
     .expect("three-byte packet");
@@ -852,7 +852,7 @@ fn standard_two_strip_packet_treats_ff_length_as_raw_u8_at_three_byte_width() {
     }
 
     let record = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::fbb::parse_trim_record(ctx, &bytes, 0, 3)
+        crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
     })
     .expect("service resource budget")
     .expect("raw 0xff strip length");
@@ -1021,7 +1021,7 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     bytes.extend_from_slice(&[0x60, 1, 0, 0, 0x00, 0x02, 0x00, 0x33, 0x36, 0, 1]);
 
     let records = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::standard_surface_records(ctx, &bytes, 2)
+        crate::families::standard::records::standard_surface_records(&bytes, 2)
     })
     .expect("service resource budget")
     .expect("surface roster");
@@ -1111,7 +1111,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let populations = vec![population(2, 3, 100), population(2, 3, 200)];
 
     let pairs = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &populations)
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)
     })
     .expect("service resource budget")
     .expect("source-ordered population relation");
@@ -1133,27 +1133,22 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let mut mismatched = populations.clone();
     mismatched[1] = population(2, 2, 200);
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &mismatched)
+        crate::families::standard::records::pair_standard_populations(&layouts, &mismatched)
     })
     .expect("service resource budget")
     .is_none());
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(
-            ctx,
-            &layouts[..1],
-            &populations,
-        )
+        crate::families::standard::records::pair_standard_populations(&layouts[..1], &populations)
     })
     .expect("service resource budget")
     .is_none());
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &[], &[])
+        crate::families::standard::records::pair_standard_populations(&[], &[])
     })
     .expect("service resource budget")
     .is_none());
     let one = crate::test_support::with_service_context(|ctx| {
         crate::families::standard::records::pair_standard_populations(
-            ctx,
             &layouts[..1],
             &populations[..1],
         )
@@ -1188,7 +1183,7 @@ fn source_order_population_pair_copies_refuse_at_each_collection_boundary() {
     let layouts = [layout(0), layout(100)];
     let populations = [population(), population()];
     let result = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &populations)
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)
     })
     .expect("service resource budget")
     .expect("matched populations");
@@ -1196,11 +1191,7 @@ fn source_order_population_pair_copies_refuse_at_each_collection_boundary() {
     let mut operations = std::collections::HashSet::new();
     for limit in 0..5 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::records::pair_standard_populations(
-                ctx,
-                &layouts,
-                &populations,
-            )
+            crate::families::standard::records::pair_standard_populations(&layouts, &populations)
         });
         let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
             panic!("expected resource refusal");
@@ -1237,7 +1228,7 @@ fn standard_surface_roster_rejects_payload_freeform_collisions() {
     bytes.push(0x60);
 
     let records = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::standard_surface_records(ctx, &bytes, 2)
+        crate::families::standard::records::standard_surface_records(&bytes, 2)
     })
     .expect("service resource budget")
     .expect("surface roster");
@@ -1268,7 +1259,7 @@ fn standard_surface_roster_rejects_multiple_complete_chains() {
     bytes.push(0x60);
 
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::standard_surface_records(ctx, &bytes, 2)
+        crate::families::standard::records::standard_surface_records(&bytes, 2)
     })
     .expect("service resource budget")
     .is_none());
@@ -1277,7 +1268,7 @@ fn standard_surface_roster_rejects_multiple_complete_chains() {
 #[test]
 fn standard_surface_roster_rejects_zero_faces() {
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::standard_surface_records(ctx, &[0x60], 0)
+        crate::families::standard::records::standard_surface_records(&[0x60], 0)
     })
     .expect("service resource budget")
     .is_none());
@@ -1296,7 +1287,7 @@ fn standard_surface_roster_does_not_stop_at_a_record_tag_byte() {
     bytes.push(0x60);
 
     let records = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::standard_surface_records(ctx, &bytes, 2)
+        crate::families::standard::records::standard_surface_records(&bytes, 2)
     })
     .expect("service resource budget")
     .expect("two-record roster");
@@ -1336,7 +1327,7 @@ fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
         ),
     ]);
     let planes = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+        crate::families::standard::records::plane_params(&bytes, &normals)
     })
     .expect("service resource budget");
 
@@ -1384,14 +1375,14 @@ fn plane_parameter_target_sets_and_rows_refuse_before_growth() {
         crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
     )]);
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+        crate::families::standard::records::plane_params(&bytes, &normals)
     })
     .expect("service resource budget")
     .is_empty());
     let mut operations = std::collections::HashSet::new();
     for limit in 0..4 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+            crate::families::standard::records::plane_params(&bytes, &normals)
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
             operations.insert(refusal.operation);
@@ -1467,7 +1458,7 @@ fn plane_bounds_withhold_duplicates_and_excessive_containment_error() {
     ]);
 
     let planes = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+        crate::families::standard::records::plane_params(&bytes, &normals)
     })
     .expect("service resource budget");
 
@@ -1873,7 +1864,6 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
         .collect::<Vec<_>>();
     crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::apply_standard_native_edge_faces(
-            ctx,
             &mut edge_faces,
             &supports,
             &records,
@@ -1894,7 +1884,6 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
     ));
     crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::apply_standard_native_edge_faces(
-            ctx,
             &mut ambiguous,
             &supports,
             &repeated_records,
@@ -1931,7 +1920,6 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
 
     crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::apply_standard_native_edge_faces(
-            ctx,
             &mut edge_faces,
             &supports,
             &records,
