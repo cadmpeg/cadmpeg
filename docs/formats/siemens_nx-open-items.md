@@ -592,30 +592,23 @@ face or feature set assigns either group a selection role. Compact values that e
 
 ### OM-20. Pattern-row selector roles
 
-**Question.** What does each compact selector in a counted pattern row select?
+**Question.** Which owning-pattern relation maps a compact row key to an instance, and what do keys outside ordinary instance numbering mean?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and §7.1 "`Pattern Feature` payloads contain at most one counted reference lane." define selector framing, non-null requirements, row ordinals, counted references, and exact tokens.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." defines exact unsigned compact keys and explicit row ordinals. The same-section row class is `UGS::ModlUtils::PatternInstance`. Ordinary keys can number repeated instances from two with the master numbered one. The separate counted reference lane retains its own ordered object indices.
 
-**Need.** We must know the roles to bind each row to its seed or transform operand.
+**Need.** Identify the owning-pattern key domain and serialized key-to-instance relation before assigning seed, transform, or output operands. Establish the interpretation of zero and extended keys without converting the compact-index field to a signed integer or importing the two public API index domains.
 
-**Conflict.** A row selector is a non-null compact value retained with its
-row ordinal and token offset. The counted reference lane has its own ordered
-object indices, but no serialized equality or ownership field joins either
-lane to a construction-graph reference, seed, or transform operand.
+**Conflict.** Compact keys can differ from row ordinal plus one and recur in distinct operation-owned lanes. Numeric equality with a data-block, OM object, operation, or fast-load identity does not establish a typed reference. No serialized relation joins the counted reference lane to these keys or binds either lane to construction-graph roles.
 
 ### OM-21. `Multi Instance Output` roles
 
-**Question.** What does each selector group and trailing reference in a `Multi Instance Output` lane mean?
+**Question.** Which serialized relations bind source-topology tags, target-label indices, and master-to-instance map handles to concrete output geometry?
 
-**Known.** `siemens_nx.md` §7.1 "`Multi Instance Output` payloads contain at most one counted output lane" defines the ordered lane framing and retains its exact selectors and references.
+**Known.** `siemens_nx.md` §7.1 "`Multi Instance Output` payloads contain at most one counted output lane" defines exact rows and token retention. The following class-index and instance-map rules identify a topology-tracking table, source-topology tags, target-label indices, complete repeated-instance ordinal groups, and ordered instance-map handles. The table's reserved count slot is separate from the master instance.
 
-**Need.** We must know the roles to relate pattern instances to their output bodies or geometry.
+**Need.** Resolve the source-tag and target-label namespaces, the map-owned handle namespace, and a serialized handle-to-instance ordinal relation before mapping each pattern instance to bodies or geometry.
 
-**Conflict.** The lane provides selector values, serialized instance and row
-ordinals, an instance count, and trailing object references. These fields are
-bound only by row order and count invariants; no relation identifies a
-selector target, an output-body namespace, or the geometry represented by a
-trailing reference.
+**Conflict.** A source-topology tag is not a demonstrated Parasolid FACE identity. Target-label indices do not identify final FACE order. A map handle has no serialized ordinal byte and is not resolved by numeric equality with an OM block, fast-load object, feature operation, body identity, body-image index, GROUP node, or partition-local XMT identity. Creator and face-relation attributes establish feature-local topology populations without joining individual table rows to faces.
 
 ### OM-22. Equal pattern and profile labels
 

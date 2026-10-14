@@ -361,7 +361,7 @@ struct FeaturePatternTransformLaneWire {
     row_schema_index: NonZeroU8,
     /// Row byte layout selected by the terminal mode.
     layout: FeaturePatternTransformLayout,
-    /// Count including the implicit seed row.
+    /// Count equal to the explicit row count plus one.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     declared_count: usize,
     /// Scalar encodings selected independently in row order.
@@ -536,7 +536,7 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
 
     fn try_from(wire: FeaturePatternTransformLaneWire) -> Result<Self, Self::Error> {
         if wire.declared_count != wire.selectors.len() + 1 {
-            return Err("declared_count must equal the row count plus the implicit seed".into());
+            return Err("declared_count must equal the row count plus one".into());
         }
         let width = match wire.layout {
             FeaturePatternTransformLayout::ScalarRows => 1,
@@ -648,23 +648,23 @@ struct FeatureMultiInstanceOutputLaneWire {
     id: String,
     /// Owning `Multi Instance Output` operation label.
     operation_label: String,
-    /// Count including the implicit seed row.
+    /// Count equal to the explicit row count plus one.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     declared_count: usize,
-    /// Ordered non-null compact selectors.
+    /// Ordered non-null source-topology tags.
     selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
+    /// Exact compact-index source-topology tag tokens in row order.
     raw_selectors: Vec<NativeBytes<Vec<u8>>>,
     /// Ordered serialized instance ordinals.
     ordinals: NativeBytes<Vec<u8>>,
-    /// Ordered serialized row indices.
+    /// Ordered target-label indices in the tracking table.
     row_indices: Vec<usize>,
-    /// Count including the implicit seed instance.
+    /// Total instance count, one greater than the instance-map handle count.
     #[serde(deserialize_with = "deserialize_reference_lane_count")]
     instance_count: usize,
-    /// Ordered non-null trailing object indices.
+    /// Ordered non-null instance-map handles; no geometry target is assigned.
     trailing_object_indices: Vec<u32>,
-    /// Exact trailing object-index tokens in row order.
+    /// Exact instance-map handle tokens in map order.
     raw_trailing_object_indices: Vec<NativeBytes<Vec<u8>>>,
     /// Absolute source offset of the opening `25 01, count` field.
     source_offset: u64,
@@ -731,7 +731,7 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
     type Error = String;
     fn try_from(wire: FeatureMultiInstanceOutputLaneWire) -> Result<Self, Self::Error> {
         if wire.declared_count != wire.selectors.len() + 1 {
-            return Err("declared_count must equal the row count plus the implicit seed".into());
+            return Err("declared_count must equal the row count plus one".into());
         }
         if wire
             .row_indices
@@ -742,10 +742,7 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
             return Err("row_indices must enumerate rows from two".into());
         }
         if wire.instance_count != wire.trailing_object_indices.len() + 1 {
-            return Err(
-                "instance_count must equal the trailing reference count plus the implicit seed"
-                    .into(),
-            );
+            return Err("instance_count must equal the trailing reference count plus one".into());
         }
         if wire.raw_selectors.len() != wire.selectors.len()
             || wire.ordinals.len() != wire.selectors.len()
@@ -889,7 +886,7 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
             return Err("row_schema_indices must follow count_schema_index consecutively".into());
         }
         if wire.declared_count != wire.selectors.len() + 1 {
-            return Err("declared_count must equal the row count plus the implicit seed".into());
+            return Err("declared_count must equal the row count plus one".into());
         }
         if wire.raw_selectors.len() != wire.selectors.len()
             || wire.selector_source_offsets.len() != wire.selectors.len()
