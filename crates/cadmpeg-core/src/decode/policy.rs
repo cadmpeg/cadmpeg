@@ -145,10 +145,6 @@ pub(super) const MATERIALIZED_BASE: u64 = 16 * MIB;
 pub(super) const MATERIALIZED_PER_INPUT_BYTE: u64 = 1000;
 pub(super) const RETAINED_BASE: u64 = 16 * MIB;
 pub(super) const RETAINED_PER_INPUT_BYTE: u64 = 1000;
-pub(super) const COLLECTION_ITEMS_BASE: u64 = 16_000_000;
-pub(super) const COLLECTION_ITEMS_PER_INPUT_BYTE: u64 = 16;
-pub(super) const WORK_UNITS_BASE: u64 = 4_000_000_000;
-pub(super) const WORK_UNITS_PER_INPUT_BYTE: u64 = 4096;
 
 const fn default_max_materialized_bytes() -> u64 {
     ResourceLimits::desktop().max_materialized_bytes

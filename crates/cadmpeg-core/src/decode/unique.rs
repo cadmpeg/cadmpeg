@@ -68,8 +68,7 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use crate::CodecError;
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     #[test]
     fn unique_index_removes_all_duplicate_occurrences_in_one_table() {
@@ -104,28 +103,5 @@ mod tests {
             .unique_index([(7_u32, 7)], |_| Ok(4), "unique test")
             .expect("one table slot");
         assert_eq!(table.get(&7), Some(&Some(7)));
-    }
-
-    #[test]
-    fn unique_index_propagates_slot_workspace_and_key_work_refusals() {
-        for dimension in [
-            ResourceDimension::CollectionItems,
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 3,
-                _ => panic!("test dimension"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-            assert!(
-                matches!(ctx.unique_index([("long key", 1)], |key| Ok(super::u64_from_index(key.len())), "unique test"),
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-            );
-        }
     }
 }

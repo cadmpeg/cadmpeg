@@ -166,7 +166,7 @@ pub(crate) fn endpoint_pair_candidates(
     ctx: &DecodeContext<'_>,
     occurrences: &[ZeroEntityOrientedOccurrence],
 ) -> Result<Vec<ZeroEntityEndpointPairCandidate>, CodecError> {
-    let budget = ctx.work_budget(ctx.work_allowance());
+    let budget = ctx.work_budget(u64::MAX);
     Ok(endpoint_pair_candidates_with_budget(ctx, occurrences, &budget)?.unwrap_or_default())
 }
 
@@ -317,7 +317,7 @@ pub(crate) fn endpoint_locus_candidates(
     ctx: &DecodeContext<'_>,
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
 ) -> Result<Vec<ZeroEntityEndpointLocusCandidate>, CodecError> {
-    let budget = ctx.work_budget(ctx.work_allowance());
+    let budget = ctx.work_budget(u64::MAX);
     Ok(endpoint_locus_candidates_with_budget(ctx, endpoint_pairs, &budget)?.unwrap_or_default())
 }
 

@@ -2621,11 +2621,6 @@ impl From<CodecError> for ResolveError {
     }
 }
 
-fn collection_cap(budget: &DecodeContext<'_>, format_cap: usize) -> usize {
-    usize::try_from(budget.collection_items_allowance())
-        .map_or(format_cap, |policy| policy.min(format_cap))
-}
-
 fn recursion_cap(budget: &DecodeContext<'_>, format_cap: usize) -> usize {
     usize::try_from(budget.policy().limits.max_recursion_depth)
         .map_or(format_cap, |policy| policy.min(format_cap))
@@ -2651,7 +2646,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             storage: budget.reserve_scoped(0, "step_anchor_resolver_storage")?,
             anchors,
             memo: BTreeMap::new(),
-            remaining_nodes: collection_cap(budget, Self::MAX_EXPANDED_NODES),
+            remaining_nodes: Self::MAX_EXPANDED_NODES,
             budget,
         })
     }
@@ -2679,8 +2674,8 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         self.budget
             .refuse_codec_limit(
                 "step_anchor_output_node_limit",
-                u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES)),
-                u64_from_index(collection_cap(self.budget, Self::MAX_EXPANDED_NODES) + 1),
+                u64_from_index(Self::MAX_EXPANDED_NODES),
+                u64_from_index(Self::MAX_EXPANDED_NODES + 1),
             )
             .into()
     }
@@ -2888,7 +2883,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             bindings,
             anchors,
             stack: Vec::new(),
-            remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
+            remaining_nodes: Self::MAX_MATERIALIZED_NODES,
             budget,
         })
     }
@@ -3030,8 +3025,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             self.remaining_nodes = self.remaining_nodes.checked_sub(1).ok_or_else(|| {
                 self.budget.refuse_codec_limit(
                     "step_reference_output_node_limit",
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1),
+                    u64_from_index(Self::MAX_MATERIALIZED_NODES),
+                    u64_from_index(Self::MAX_MATERIALIZED_NODES + 1),
                 )
             })?;
         }

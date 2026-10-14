@@ -498,31 +498,6 @@ mod tests {
     }
 
     #[test]
-    fn joint_identity_grammar_scans_refuse_at_small_work_allowance() {
-        crate::test_support::with_service_context(&[], |ctx| {
-            ctx.charge_work(ctx.work_allowance() - 60, "reserve joint identity work")
-                .expect("leave a small allowance");
-            let error = JointRecord::try_new(
-                ctx,
-                "fcstd:native:joint#Joint".to_owned(),
-                "fcstd:native:object#Joint".to_owned(),
-                JointBody::Grounded {
-                    reference: None,
-                    placement: super::FiniteFrame::default(),
-                },
-                BTreeMap::new(),
-            )
-            .expect_err("grammar scans exceed allowance");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "FCStd joint identity admission"
-                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && Some(limit) == ctx.resource_refusal())
-            );
-        });
-    }
-
-    #[test]
     fn checked_joint_parameter_map_refuses_at_caller_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();

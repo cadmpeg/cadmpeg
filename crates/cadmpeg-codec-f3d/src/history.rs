@@ -181,7 +181,6 @@ pub(crate) fn decode(
     bytes: &[u8],
     stream: &str,
     width: RefWidth,
-    limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
@@ -287,8 +286,7 @@ pub(crate) fn decode(
     bind_snapshot_revision_ids(ctx, &mut states)?;
     bind_historical_entity_versions(ctx, &mut states)?;
     let record_table_binding_budget_exceeded =
-        bind_complete_record_tables(ctx, &mut states, bytes, width, limits)?
-            == TableBindingCost::Exceeded;
+        bind_complete_record_tables(ctx, &mut states, bytes, width)? == TableBindingCost::Exceeded;
     if states.is_empty() {
         return Ok(None);
     }
@@ -572,28 +570,14 @@ fn bind_historical_entity_versions(
     Ok(())
 }
 
-/// Historical topology caches retain normalized records, topology entities,
-/// incidence links, and geometry measurements while Design projection runs.
-/// This conservative per-entry bound checks that temporary cache against the
-/// caller's materialization policy. A binding that exceeds either limit is
-/// skipped before the topology cache is built.
-// One live entity can retain its 16-byte version pair, one 8-byte family slot,
-// one 48-byte coedge link (the largest topology link), one 56-byte curve-axis
-// measurement (the largest geometry measurement), one 8-byte ownership member,
-// and one 32-byte relation allocation. The remaining 24 bytes cover the parent
-// vector allocation and alignment. Mutually exclusive entity families make
-// this an upper bound, not an average observed size.
-const HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY: u64 = 192;
-/// Conservative work charge for decoding one record in one historical state.
-/// A state snapshot traverses the record table repeatedly to build topology,
-/// incidence, and carrier projections; this keeps the admission estimate
-/// proportional to the state-by-record cross product instead of only the
-/// final cache size.
+/// Estimated work for decoding one record in one historical state. A state
+/// snapshot traverses the record table repeatedly to build topology,
+/// incidence, and carrier projections, so the estimate is proportional to the
+/// state-by-record cross product.
 const HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY: u64 = 4096;
-/// Work ceiling for the complete-history binding estimate, taken as the
-/// minimum with the policy ceiling. The binding is optional enrichment, and
-/// its per-entry cache estimate understates the live memory of a deep history,
-/// so the binding keeps this bound when the session work allowance is larger.
+/// Codec-local bound on the complete-history binding estimate. The binding is
+/// optional enrichment; a deep history past this bound skips historical
+/// topology and reports the skip.
 const HISTORY_BINDING_MAX_WORK_UNITS: u64 = 4_000_000_000;
 
 /// Whether binding every historical record table fits the decode policy.
@@ -607,28 +591,17 @@ enum TableBindingCost {
 
 /// Estimate the complete-history binding from the per-state table lengths.
 ///
-/// The estimate is compared against the absolute policy ceilings before any
-/// cache is built. Exceeding it skips the optional historical topology; the
-/// decode continues and reports the skip.
-fn complete_table_binding_cost(
-    table_lengths: impl IntoIterator<Item = usize>,
-    limits: &cadmpeg_core::decode::ResourceLimits,
-) -> TableBindingCost {
+/// The estimate is compared with the codec-local bound before any cache is
+/// built. Exceeding it skips the optional historical topology; the decode
+/// continues and reports the skip.
+fn complete_table_binding_cost(table_lengths: impl IntoIterator<Item = usize>) -> TableBindingCost {
     let fits = table_lengths
         .into_iter()
         .try_fold(0_u64, |total, length| {
             total.checked_add(u64_from_index(length))
         })
-        .is_some_and(|entries| {
-            entries
-                .checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY)
-                .is_some_and(|bytes| bytes <= limits.max_materialized_bytes)
-                && entries
-                    .checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
-                    .is_some_and(|work| {
-                        work <= limits.max_work_units.min(HISTORY_BINDING_MAX_WORK_UNITS)
-                    })
-        });
+        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
+        .is_some_and(|work| work <= HISTORY_BINDING_MAX_WORK_UNITS);
     if fits {
         TableBindingCost::Admitted
     } else {
@@ -641,7 +614,6 @@ fn bind_complete_record_tables(
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
-    limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return Ok(TableBindingCost::Admitted);
@@ -672,10 +644,8 @@ fn bind_complete_record_tables(
         u64_from_index(states.len()),
         "check F3D complete history topology",
     )?;
-    if complete_table_binding_cost(
-        states.iter().map(|state| state.entity_versions.len()),
-        limits,
-    ) == TableBindingCost::Exceeded
+    if complete_table_binding_cost(states.iter().map(|state| state.entity_versions.len()))
+        == TableBindingCost::Exceeded
     {
         return Ok(TableBindingCost::Exceeded);
     }
