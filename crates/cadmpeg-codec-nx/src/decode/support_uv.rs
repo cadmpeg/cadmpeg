@@ -3453,15 +3453,17 @@ mod tests {
                     &fit_budget,
                 );
                 if work_limit == GEOMETRY_WORK {
-                    let first =
-                        parameters.expect_err("the original slice cannot admit the complete grid");
-                    assert_eq!(geometry_ctx.resource_refusal(), Some(first));
+                    // The original slice cannot admit the complete grid: the
+                    // fit is skipped and the session continues.
+                    assert_eq!(parameters, Ok(None));
+                    assert!(fit_budget.exhausted());
+                    assert!(geometry_ctx.resource_refusal().is_none());
                     crate::test_support::with_decode_context(|miss_ctx| {
                         let miss_budget = GeometryWorkBudget::from_context(
                             miss_ctx,
                             cadmpeg_core::decode::u64_from_index(work_limit),
                         );
-                        let refusal = unseeded_nurbs_surface_parameters_with_index_and_budget(
+                        let missed = unseeded_nurbs_surface_parameters_with_index_and_budget(
                             &index,
                             &surface_id,
                             &geometry,
@@ -3469,9 +3471,10 @@ mod tests {
                             Point3::new(0.5, 0.5, 1.0),
                             FIT_TOLERANCE,
                             &miss_budget,
-                        )
-                        .expect_err("the original slice cannot admit the complete miss grid");
-                        assert_eq!(miss_ctx.resource_refusal(), Some(refusal));
+                        );
+                        assert_eq!(missed, Ok(None));
+                        assert!(miss_budget.exhausted());
+                        assert!(miss_ctx.resource_refusal().is_none());
                     });
                     return;
                 }

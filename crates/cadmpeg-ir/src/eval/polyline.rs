@@ -75,7 +75,7 @@ pub(super) fn polyline_point(
     for segment in 0..count - 1 {
         admission
             .work(1, "IR polyline point segment scan")
-            .map_err(EvaluationFailure::ResourceLimit)?;
+            .map_err(EvaluationFailure::from)?;
         let start = parameter(segment).ok_or(EvaluationFailure::NoValue)?;
         let end = parameter(segment + 1).ok_or(EvaluationFailure::NoValue)?;
         match t.segment_position(start, end) {
@@ -119,7 +119,7 @@ pub(super) fn polyline_tangent(
     for (segment, window) in parameters.windows(2).enumerate() {
         admission
             .work(1, "IR polyline tangent segment scan")
-            .map_err(EvaluationFailure::ResourceLimit)?;
+            .map_err(EvaluationFailure::from)?;
         if !((t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])) {
             continue;
         }

@@ -1598,7 +1598,10 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                     Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
                         return Err(limit.into())
                     }
-                    Err(cadmpeg_ir::eval::EvaluationFailure::NoValue) => {
+                    Err(
+                        cadmpeg_ir::eval::EvaluationFailure::NoValue
+                        | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted,
+                    ) => {
                         evaluable = false;
                         break;
                     }

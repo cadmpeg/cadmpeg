@@ -1088,7 +1088,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
             .unwrap(),
         );
 
-        let first = crate::decode::pcurves::pcurve_matches_edge_range_with_index_and_budget(
+        let matches = crate::decode::pcurves::pcurve_matches_edge_range_with_index_and_budget(
             &index,
             &edge,
             &surface,
@@ -1097,10 +1097,10 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
             None,
             &budget,
         )
-        .expect_err("zero work must retain the original refusal");
-        assert_eq!(first.operation, "model evaluation work slice");
-        assert_eq!(geometry_ctx.resource_refusal(), Some(first));
+        .expect("an empty geometry work slice skips edge admission");
+        assert!(!matches);
         assert!(budget.exhausted());
+        assert!(geometry_ctx.resource_refusal().is_none());
     });
 }
 

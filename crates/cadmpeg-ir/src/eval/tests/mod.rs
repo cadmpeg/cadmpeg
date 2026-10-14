@@ -393,7 +393,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
             0.25,
             0.75
         ))
-        .is_err_and(|failure| failure == crate::eval::EvaluationFailure::NoValue));
+        .is_err_and(|failure| failure == crate::eval::EvaluationFailure::WorkExhausted));
     assert!(budget.exhausted());
     let budget = WorkBudget::new(13);
     assert_eq!(
@@ -462,7 +462,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
             &budget,
             |admission| model_surface_point_by_id(admission, &index, &surface_id, 0.25, 2.0)
         ),
-        Err(crate::eval::EvaluationFailure::NoValue)
+        Err(crate::eval::EvaluationFailure::WorkExhausted)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(6);
@@ -1082,7 +1082,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
             .within_work_slice(&budget, |admission| model_surface_point_by_id(
                 admission, &index, &second_id, 1.0e16, -1.0e16
             )),
-        Err(crate::eval::EvaluationFailure::NoValue)
+        Err(crate::eval::EvaluationFailure::WorkExhausted)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(3);
