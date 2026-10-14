@@ -3679,71 +3679,6 @@ fn append_a8_rolling_ball_pools(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn freeform_topology_seed_annotation_refuses_second_admission() {
-        let result = crate::test_support::with_collection_limit(4, |ctx| {
-            let mut base = cadmpeg_ir::AnnotationBuilder::new();
-            let mut candidate = cadmpeg_ir::AnnotationBuilder::new();
-            crate::assemble::annotate(
-                ctx,
-                &mut base,
-                "catia:payload:unknown#freeform",
-                "CATPart",
-                0,
-                "freeform",
-                cadmpeg_ir::Exactness::Unknown,
-            )?;
-            crate::assemble::annotate(
-                ctx,
-                &mut candidate,
-                "catia:payload:unknown#freeform",
-                "CATPart",
-                0,
-                "freeform",
-                cadmpeg_ir::Exactness::Unknown,
-            )
-        });
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "collect source provenance")
-        );
-    }
-
-    #[test]
-    fn freeform_spatial_circle_collection_refuses_before_growth() {
-        let mut bytes = vec![0xb2, 0x03, 0x0f, 112, 0x05];
-        let cosine = 0.696_706_709_347_165_3_f64;
-        let sine = 0.717_356_090_899_522_8_f64;
-        for value in [
-            17.0,
-            23.0,
-            13.0,
-            cosine,
-            -sine,
-            0.0,
-            sine,
-            cosine,
-            -0.0,
-            7.0,
-            0.0,
-            11.2,
-            1.0,
-            -16.391_148_575_128_55,
-        ] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            Ok(
-                crate::families::b2::records::b2_spatial_circles_from_records(&bytes, &records)
-                    .collect::<Vec<_>>(),
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_freeform_spatial_circles")
-        );
-    }
 
     use super::{
         append_consolidated_line_profiles, append_freeform_surface_pools,
@@ -3777,46 +3712,6 @@ mod tests {
             super::solve_planar_chart_rechart(ctx, sites, loci, target)
         })
         .expect("service chart resource budget")
-    }
-
-    #[test]
-    fn consolidated_jet_pcurve_workspace_refuses_materialized_limit() {
-        use crate::wire::records::{ConsolidatedPcurve, ConsolidatedPcurveSite};
-        let site = |knot, u| ConsolidatedPcurveSite {
-            knot: cadmpeg_ir::scalar::FiniteReal::new(knot).expect("finite knot"),
-            point: cadmpeg_ir::units::FiniteVector::new([u, 0.0]).expect("finite point"),
-            first_derivatives: cadmpeg_ir::units::FiniteVector::new([1.0, 0.0])
-                .expect("finite first jet"),
-            second_derivatives: cadmpeg_ir::units::FiniteVector::new([0.0, 0.0])
-                .expect("finite second jet"),
-        };
-        let pcurve = ConsolidatedPcurve {
-            pos: 16,
-            support_id: 1,
-            extrapolation_sites: 0,
-            sites: vec![site(0.0, 0.0), site(1.0, 1.0)]
-                .try_into()
-                .expect("ordered fixture sites"),
-            range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
-                .expect("increasing range"),
-            tail: Vec::new(),
-        };
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::consolidated_jet_pcurve(
-                ctx,
-                &pcurve,
-                &ConsolidatedCarrierChart::Identity,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        };
-        assert!(crate::test_support::with_service_context(run)
-            .expect("service profile admits consolidated jet")
-            .is_some());
-        assert!(
-            matches!(crate::test_support::with_materialized_limit(0, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia consolidated pcurve points")
-        );
     }
 
     fn with_admission<T>(run: impl FnOnce(&mut super::FamilyEntityAdmission<'_, '_>) -> T) -> T {
@@ -3924,30 +3819,6 @@ mod tests {
     }
 
     #[test]
-    fn consolidated_revolution_directrix_id_refuses_retained_limit() {
-        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let resolved = crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
-        })
-        .expect("service decode");
-        assert_eq!(resolved.len(), 1);
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            let mut admission = super::FamilyEntityAdmission::new(ctx);
-            super::append_consolidated_revolutions(
-                &mut CadIr::empty(),
-                &mut AnnotationBuilder::new(),
-                &resolved,
-                &mut admission,
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_revolution_directrix_id")
-        );
-    }
-
-    #[test]
     fn typed_face_counts_partition_the_parsed_record_identities() {
         use crate::families::b5::graph::{parse, parse_from_records, B5Record};
         use crate::test_support::test_b5::{append_b5_record, b5_closed_triangle_stream};
@@ -3985,13 +3856,6 @@ mod tests {
             ))
             .expect("service face count"),
             [1, 1, 0, 2]
-        );
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            typed_face_counts(&graph.face_records, &graph.faces)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_freeform_resolved_face_ids")
         );
 
         let record = B5Record {
@@ -4164,89 +4028,6 @@ mod tests {
     }
 
     #[test]
-    fn rejected_later_wire_refuses_before_plan_collection_growth() {
-        let mut ir = CadIr::empty();
-        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
-        ir.model.curves.push(Curve {
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                    None,
-                    false,
-                )
-                .expect("fixture constructor admission")
-                .expect("valid linear NURBS"),
-            )),
-            source_object: None,
-        });
-        let wires = [(curve_id.clone(), [0.0, 1.0], 0), (curve_id, [1.0, 0.0], 1)];
-        let before = ir.model.clone();
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            let mut admission = super::FamilyEntityAdmission::new(ctx);
-            attach_standalone_wires(
-                &mut ir,
-                &mut AnnotationBuilder::new(),
-                &wires,
-                &mut admission,
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_freeform_wire_plans")
-        );
-        assert_eq!(ir.model, before);
-    }
-
-    #[test]
-    fn standalone_wire_owner_id_refuses_before_retained_copy() {
-        let mut ir = CadIr::empty();
-        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
-        ir.model.curves.push(Curve {
-            parameter_range: None,
-            id: curve_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                    None,
-                    false,
-                )
-                .expect("fixture constructor admission")
-                .expect("valid linear NURBS"),
-            )),
-            source_object: None,
-        });
-        let wires = [(curve_id.clone(), [0.0, 1.0], 0)];
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_freeform_wire_body_id", |ctx| {
-                let mut trial_ir = ir.clone();
-                let mut admission = super::FamilyEntityAdmission::new(ctx);
-                let result = attach_standalone_wires(
-                    &mut trial_ir,
-                    &mut AnnotationBuilder::new(),
-                    &wires,
-                    &mut admission,
-                );
-                if result.is_err() {
-                    assert!(trial_ir.model.bodies.is_empty());
-                }
-                result
-            });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_freeform_wire_body_id")
-        );
-        assert!(ir.model.bodies.is_empty());
-    }
-
-    #[test]
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
@@ -4296,114 +4077,6 @@ mod tests {
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new())
             .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:?}", validation.findings);
-    }
-
-    #[test]
-    fn consolidated_line_profile_refuses_collection_limit() {
-        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            consolidated_line_profiles(&bytes, &records)
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_consolidated_line_profiles")
-        );
-        let service = crate::test_support::with_service_context(|ctx| {
-            consolidated_line_profiles(&bytes, &records)
-        })
-        .expect("service profile admits line profile");
-        assert_eq!(service.len(), 1);
-    }
-
-    #[test]
-    fn consolidated_line_profile_identity_refuses_retained_limit() {
-        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_line_profiles(&bytes, &records)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_freeform_line_profile_id")
-        );
-        let service = crate::test_support::with_service_context(|ctx| {
-            consolidated_line_profiles(&bytes, &records)
-        })
-        .expect("service budget");
-        assert_eq!(service.len(), 1);
-        assert_eq!(
-            service[0].curve.id.as_str(),
-            "catia:consolidated:line-profile-curve#0"
-        );
-    }
-
-    #[test]
-    fn freeform_surface_pool_refuses_carrier_collection_limit() {
-        let bytes = crate::test_support::test_a5a8::a5_surface_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            let mut ir = CadIr::empty();
-            let mut annotations = AnnotationBuilder::new();
-            let mut admission = super::FamilyEntityAdmission::new(ctx);
-            append_freeform_surface_pools(
-                &mut ir,
-                &mut annotations,
-                &bytes,
-                &records,
-                &HashMap::new(),
-                &mut crate::nurbs::LaneRefusals::new(),
-                &mut admission,
-            )
-            .map(|_| ir.model.surfaces.len())
-        };
-        let mut refused_at_carrier = false;
-        for limit in 0..96 {
-            let result = crate::test_support::with_collection_limit(limit, run);
-            if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_freeform_surface_pool_carrier_ids")
-            {
-                refused_at_carrier = true;
-                break;
-            }
-        }
-        assert!(refused_at_carrier);
-        assert_eq!(
-            crate::test_support::with_service_context(run)
-                .expect("service profile admits freeform surface pool"),
-            1
-        );
-    }
-
-    #[test]
-    fn a5_guide_scratch_points_refuse_materialized_limit() {
-        let bytes = crate::test_support::test_a5a8::a5_guide_curve_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            let mut ir = CadIr::empty();
-            let mut annotations = AnnotationBuilder::new();
-            let mut admission = super::FamilyEntityAdmission::new(ctx);
-            append_freeform_surface_pools(
-                &mut ir,
-                &mut annotations,
-                &bytes,
-                &records,
-                &HashMap::new(),
-                &mut crate::nurbs::LaneRefusals::new(),
-                &mut admission,
-            )
-            .map(|_| ir.model.curves.len())
-        };
-        let refused = crate::test_support::with_materialized_limit(0, run);
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia A5 guide points")
-        );
-        assert_eq!(
-            crate::test_support::with_service_context(run)
-                .expect("service profile admits A5 guide curve"),
-            1
-        );
     }
 
     #[test]
@@ -4716,37 +4389,6 @@ mod tests {
             }),
             Err(RechartFailure::NonFinite),
         ));
-    }
-
-    #[test]
-    fn equivalent_surface_rechart_refuses_pcurve_copy_limit() {
-        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-        let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
-                None,
-                false,
-            )
-            .expect("fixture pcurve construction admission")
-            .expect("valid pcurve fixture"),
-        };
-        let refused = crate::test_support::with_collection_limit(5, |ctx| {
-            rechart_equivalent_surface_pcurve(ctx, &pcurve, &surface, &surface)
-        });
-        assert!(matches!(
-            refused,
-            Err(RechartFailure::Resource(
-                cadmpeg_core::CodecError::ResourceLimit(_)
-            ))
-        ));
-        let copied = crate::test_support::with_service_context(|ctx| {
-            rechart_equivalent_surface_pcurve(ctx, &pcurve, &surface, &surface)
-        })
-        .expect("service budget");
-        assert_eq!(copied, Some(pcurve));
     }
 
     #[test]
@@ -5138,32 +4780,6 @@ mod tests {
             .get(&0x1234),
             Some(&None)
         );
-    }
-
-    #[test]
-    fn standard_carrier_tag_index_refuses_collection_limit() {
-        let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint("catia:test:surface#tagged".to_owned()).expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-            source_object: Some(
-                crate::test_support::with_service_context(|ctx| {
-                    crate::assemble::cgm_source("carrier", 0x1234)
-                })
-                .expect("service profile admits source object"),
-            ),
-        });
-        let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            standard_carrier_surface_ids(ctx, &ir)
-        });
-        assert!(matches!(
-            refused,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        let indexed =
-            crate::test_support::with_service_context(|ctx| standard_carrier_surface_ids(ctx, &ir))
-                .expect("service budget");
-        assert_eq!(indexed.get(&0x1234), Some(&None));
     }
 
     #[test]

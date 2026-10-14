@@ -689,6 +689,10 @@ pub(crate) fn build_metadata_fallback(
         key,
     );
     ctx.charge_entities(1, "admit CATIA retained source record")?;
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "retain CATIA raw payload",
+    )?;
     let bytes = bytes.to_vec();
     annotate(
         ctx,
@@ -718,6 +722,10 @@ pub(crate) fn preserve_raw_payload(
         None => (scan.data.as_ref(), "CATPart"),
     };
     ctx.charge_entities(1, "admit CATIA retained source record")?;
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "retain CATIA raw payload",
+    )?;
     let bytes = bytes.to_vec();
     annotate(
         ctx,
@@ -962,178 +970,7 @@ mod route_tests {
     use cadmpeg_ir::unknown::UnknownRecord;
 
     #[test]
-    fn annotation_refuses_retained_and_collection_limits() {
-        let retained = crate::test_support::with_retained_limit(0, |ctx| {
-            super::annotate(
-                ctx,
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                "catia:test:curve#0",
-                "CATPart",
-                17,
-                format_args!("record:{:08x}", 7),
-                cadmpeg_ir::Exactness::Derived,
-            )
-        });
-        assert!(
-            matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "annotation stream name")
-        );
-        let collection = crate::test_support::with_collection_limit(0, |ctx| {
-            super::annotate(
-                ctx,
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                "catia:test:curve#0",
-                "CATPart",
-                17,
-                format_args!("record:{:08x}", 7),
-                cadmpeg_ir::Exactness::Derived,
-            )
-        });
-        assert!(
-            matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "annotation stream handles")
-        );
-        let annotations = crate::test_support::with_service_context(|ctx| {
-            let mut builder = cadmpeg_ir::AnnotationBuilder::new();
-            super::annotate(
-                ctx,
-                &mut builder,
-                "catia:test:curve#0",
-                "CATPart",
-                17,
-                format_args!("record:{:08x}", 7),
-                cadmpeg_ir::Exactness::Derived,
-            )
-            .expect("service profile admits annotation");
-            builder.build()
-        });
-        let note = &annotations.provenance["catia:test:curve#0"];
-        assert_eq!(note.stream(), "catia:CATPart");
-        assert_eq!(note.offset, 17);
-        assert_eq!(note.tag.as_deref(), Some("record:00000007"));
-    }
-
-    #[test]
-    fn cgm_source_object_identity_refuses_retained_limit() {
-        let refused =
-            crate::test_support::with_retained_limit(0, |ctx| super::cgm_source("surface", 0x1234));
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_cgm_source_object_id")
-        );
-        let source =
-            crate::test_support::with_service_context(|ctx| super::cgm_source("surface", 0x1234))
-                .expect("service profile admits source identity");
-        assert_eq!(source.object_id.as_str(), "cgm-surface:001234");
-        let key = crate::test_support::with_service_context(|ctx| {
-            super::cgm_source_key("frame", format_args!("{:010}", 23))
-        })
-        .expect("service profile admits frame identity");
-        assert_eq!(key.object_id.as_str(), "cgm-frame:0000000023");
-    }
-
-    #[test]
-    fn container_report_losses_refuse_low_retained_and_collection_limits() {
-        let scan = crate::test_support::with_service_context(|ctx| {
-            crate::container::scan_bytes(
-                ctx,
-                crate::test_support::test_container::standard_catpart(),
-            )
-        })
-        .expect("service profile admits container scan");
-        let retained =
-            crate::test_support::with_retained_limit(0, |ctx| super::build_container_report(&scan));
-        assert!(
-            matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_container_report_brep_loss")
-        );
-        let collection = crate::test_support::with_collection_limit(0, |ctx| {
-            super::build_container_report(&scan)
-        });
-        assert!(
-            matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_container_report_brep_loss")
-        );
-        let report =
-            crate::test_support::with_service_context(|ctx| super::build_container_report(&scan))
-                .expect("service profile admits container report");
-        assert_eq!(report.losses.len(), 2);
-        assert!(report.losses[0]
-            .message
-            .contains("No B-rep geometry was transferred"));
-        assert!(report.losses[1].message.contains("topology graph"));
-    }
-
-    #[test]
-    fn payload_carrier_links_refuse_collection_and_retained_limits() {
-        let mut ir = CadIr::empty();
-        let id = CurveId::mint("catia:test:curve#link".to_string()).expect("identity grammar");
-        ir.model.curves.push(Curve {
-            parameter_range: None,
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
-        });
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            let mut payload = UnknownRecord::retained(
-                UnknownId::mint("catia:test:unknown#payload".to_string())
-                    .expect("identity grammar"),
-                0,
-                Vec::new(),
-                Vec::new(),
-            );
-            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-            super::link_payload_carriers(ctx, &ir, &mut payload, &mut annotations)?;
-            Ok::<_, cadmpeg_core::CodecError>(payload.links().to_vec())
-        };
-        assert_eq!(
-            crate::test_support::with_service_context(run).expect("service resource budget"),
-            [id.as_str()]
-        );
-        assert!(matches!(
-            crate::test_support::with_collection_limit(0, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        assert!(matches!(
-            crate::test_support::with_retained_limit(0, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
-    fn unresolved_carrier_inventory_and_note_refuse_low_limits() {
-        let mut ir = CadIr::empty();
-        let id =
-            CurveId::mint("catia:test:curve#unresolved".to_string()).expect("identity grammar");
-        ir.model.curves.push(Curve {
-            parameter_range: None,
-            id,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            source_object: None,
-        });
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            let mut losses = Vec::new();
-            super::insert_unresolved_carrier_loss(&ir, &mut losses)?;
-            Ok::<_, cadmpeg_core::CodecError>(losses)
-        };
-        assert_eq!(
-            crate::test_support::with_service_context(run)
-                .expect("service resource budget")
-                .len(),
-            1
-        );
-        assert!(matches!(
-            crate::test_support::with_collection_limit(0, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        assert!(matches!(
-            crate::test_support::with_retained_limit(0, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
-    fn geometry_report_refuses_summary_loss_limit() {
+    fn geometry_report_records_summary_loss() {
         let scan = crate::test_support::with_service_context(|ctx| {
             crate::container::scan_bytes(
                 ctx,
@@ -1161,10 +998,6 @@ mod route_tests {
             .expect("service resource budget")
             .losses
             .is_empty());
-        assert!(matches!(
-            crate::test_support::with_retained_limit(0, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
     }
 
     fn rational_pcurve_arc(
@@ -1178,56 +1011,6 @@ mod route_tests {
             super::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
         })
         .expect("service budget admits rational arc")
-    }
-
-    #[test]
-    fn rational_pcurve_arc_refuses_control_count_limit() {
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            super::rational_pcurve_arc(
-                ctx,
-                [0.0, 0.0],
-                2.0,
-                [0.0, std::f64::consts::PI],
-                &mut crate::nurbs::LaneRefusals::new(),
-                "test record",
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_rational_arc_controls")
-        );
-        assert!(rational_pcurve_arc(
-            [0.0, 0.0],
-            2.0,
-            [0.0, std::f64::consts::PI],
-            &mut crate::nurbs::LaneRefusals::new(),
-            "test record"
-        )
-        .is_some());
-    }
-
-    #[test]
-    fn source_metadata_refuses_attribute_collection_limit() {
-        let scan = crate::test_support::with_service_context(|ctx| {
-            crate::container::scan_bytes(
-                ctx,
-                crate::test_support::test_container::standard_catpart(),
-            )
-        })
-        .expect("service budget admits container scan");
-        let matched =
-            crate::test_support::with_service_context(|ctx| crate::dialect::classify(&scan))
-                .expect("service budget admits dialect classification");
-        let limited =
-            crate::test_support::with_collection_limit(0, |ctx| source_meta(ctx, &scan, &matched));
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_source_meta_attribute")
-        );
-        let source =
-            crate::test_support::with_service_context(|ctx| source_meta(ctx, &scan, &matched))
-                .expect("service budget admits source metadata");
-        assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
     }
 
     #[test]

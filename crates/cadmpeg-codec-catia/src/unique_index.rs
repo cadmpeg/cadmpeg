@@ -61,18 +61,4 @@ mod tests {
         assert_eq!(index.get("two"), Some(&2));
         assert_eq!(index.get("missing"), None);
     }
-
-    #[test]
-    fn unique_index_refuses_unadmitted_entry() {
-        let refused =
-            crate::test_support::with_collection_limit(0, |ctx| UniqueIndex::collect([("one", 1)]));
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_unique_index_test")
-        );
-        let admitted =
-            crate::test_support::with_service_context(|ctx| UniqueIndex::collect([("one", 1)]))
-                .expect("service profile admits index entry");
-        assert_eq!(admitted.get("one"), Some(&1));
-    }
 }

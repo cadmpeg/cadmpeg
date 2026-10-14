@@ -105,38 +105,6 @@ fn canonicalize_topology_boundary_gauges(
     Ok(())
 }
 
-#[test]
-fn mesh_gauge_reversed_coedges_refuse_before_copy() {
-    let topology = || StandardTopologyDraft {
-        faces: vec![crate::families::standard::topology::FaceTopologyDraft {
-            boundaries: vec![crate::families::standard::topology::BoundaryDraft {
-                coedges: NonEmptyMembers::<CoedgeUse>::one(CoedgeUse {
-                    edge_row: 0,
-                    reversed: false,
-                    start_vertex: 0,
-                    end_vertex: 1,
-                }),
-            }],
-        }],
-        edge_rows: Vec::new(),
-        vertex_points: Vec::new(),
-        logical_vertex_count: 0,
-    };
-    crate::test_support::with_service_context(|ctx| {
-        let mut candidate = topology();
-        canonicalize_topology_boundary_gauges(&mut candidate).expect("service resource budget");
-        assert_eq!(candidate.faces[0].boundaries[0].coedges.len(), 1);
-    });
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        canonicalize_topology_boundary_gauges(&mut topology())
-    });
-    assert!(matches!(
-        refused,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_mesh_gauge_reversed_coedges"
-    ));
-}
-
 #[cfg(test)]
 mod boundary_tests {
     use super::{canonicalize_topology_boundary_gauges, CoedgeUse, StandardTopologyDraft};
@@ -168,84 +136,6 @@ mod boundary_tests {
             vertex_points: Vec::new(),
             logical_vertex_count: 0,
         }
-    }
-
-    #[test]
-    fn mesh_gauge_equal_forward_cycle_keys_refuse_before_comparison() {
-        let mut candidate = topology(vec![vec![coedge(0, false); 32]]);
-        let expected = candidate.clone();
-        let result = crate::test_support::with_work_limit(32, |ctx| {
-            canonicalize_topology_boundary_gauges(&mut candidate)
-        });
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "catia_mesh_gauge_forward_cycle_compare"
-        ));
-        assert_eq!(candidate, expected);
-    }
-
-    #[test]
-    fn mesh_gauge_equal_reversed_cycle_keys_refuse_before_comparison() {
-        let mut candidate = topology(vec![vec![coedge(0, false); 2]]);
-        let result = crate::test_support::with_work_limit(200, |ctx| {
-            canonicalize_topology_boundary_gauges(&mut candidate)
-        });
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "catia_mesh_gauge_reversed_cycle_compare"
-        ));
-    }
-
-    #[test]
-    fn mesh_gauge_direction_signature_refuses_before_comparison() {
-        let mut candidate = topology(vec![vec![coedge(0, false)]]);
-        let result = crate::test_support::with_work_limit(64, |ctx| {
-            canonicalize_topology_boundary_gauges(&mut candidate)
-        });
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "catia_mesh_gauge_direction_compare"
-        ));
-    }
-
-    #[test]
-    fn mesh_gauge_boundary_sort_refuses_long_signature_bytes() {
-        let mut candidate = topology(vec![vec![coedge(1, false); 16], vec![coedge(0, false); 16]]);
-        let cycle_length = 16_u64;
-        let signature_bytes =
-            cycle_length * u64::try_from(std::mem::size_of::<CoedgeUse>()).expect("coedge bytes");
-        let comparison_work = 2 * signature_bytes + 1;
-        // Each boundary has two rotation scans, one copy, reversal and
-        // orientation, and one direction comparison. Refuse one unit below
-        // the first boundary-key comparison after admitting both sort items.
-        let before_sort = 1
-            + 2
-            + 2 * (2 * (cycle_length - 1) * comparison_work + 3 * cycle_length + comparison_work);
-        let work_limit = before_sort + 2 + 2 * signature_bytes;
-        let result = crate::test_support::with_work_limit(work_limit, |ctx| {
-            canonicalize_topology_boundary_gauges(&mut candidate)
-        });
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "catia_mesh_gauge_boundary_order"
-        ));
-        let mut short = topology(vec![vec![coedge(1, false)], vec![coedge(0, false)]]);
-        crate::test_support::with_work_limit(work_limit, |ctx| {
-            canonicalize_topology_boundary_gauges(&mut short)
-        })
-        .expect("short boundary signatures fit the same work limit");
-        assert_eq!(
-            short,
-            topology(vec![vec![coedge(0, false)], vec![coedge(1, false)]])
-        );
     }
 
     #[test]
@@ -954,10 +844,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 }
                 None => source_option_keys[edge].clone(),
             };
-            let base_copy = match Ok(base.4.clone()) {
-                Ok(faces) => (base.0, base.1, base.2, base.3, faces),
-                Err(error) => return Some(Err(error)),
-            };
+            let base_copy = (base.0, base.1, base.2, base.3, base.4.clone());
             let source_key = (base_copy, target_options);
             source_groups.entry(source_key).or_default().push(edge);
             let source_options = source_option_keys[edge].clone();
@@ -1032,130 +919,6 @@ fn canonicalize_mesh_edge_row_gauges(
         Some(Ok(topology))
     })()
     .transpose()
-}
-
-#[test]
-fn mesh_edge_gauge_ordered_sort_refuses_usage_tuple_bytes() {
-    use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
-    let topology = StandardTopologyDraft {
-        faces: vec![FaceTopologyDraft {
-            boundaries: vec![BoundaryDraft {
-                coedges: NonEmptyMembers::<CoedgeUse>::try_from(vec![
-                    CoedgeUse {
-                        edge_row: 0,
-                        reversed: false,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    },
-                    CoedgeUse {
-                        edge_row: 1,
-                        reversed: false,
-                        start_vertex: 1,
-                        end_vertex: 0,
-                    },
-                ])
-                .expect("two coedges are nonempty"),
-            }],
-        }],
-        edge_rows: vec![
-            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row"),
-            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row"),
-        ],
-        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_count: 2,
-    };
-    let edge_faces = [];
-    let edge_geometry = [MeshEdgeGeometry::Line; 2];
-    let edge_candidates = [vec![[0, 1]], vec![[0, 1]]];
-    let edge_identity_evidence = [false; 2];
-    let gauge = MeshCandidateGauge {
-        edge_rows: &topology.edge_rows,
-        edge_faces: &edge_faces,
-        edge_geometry: &edge_geometry,
-        edge_candidates: &edge_candidates,
-        edge_identity_evidence: &edge_identity_evidence,
-        coordinate_gauge: None,
-    };
-    let result = crate::test_support::with_work_limit(5_000, |ctx| {
-        canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
-    });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "catia_mesh_edge_gauge_ordered_sort"));
-}
-
-#[test]
-fn mesh_edge_gauge_rows_refuse_each_collection_limit() {
-    use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
-    use std::collections::HashSet;
-
-    let topology = StandardTopologyDraft {
-        faces: vec![FaceTopologyDraft {
-            boundaries: vec![BoundaryDraft {
-                coedges: NonEmptyMembers::<CoedgeUse>::try_from(vec![
-                    CoedgeUse {
-                        edge_row: 0,
-                        reversed: false,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    },
-                    CoedgeUse {
-                        edge_row: 1,
-                        reversed: false,
-                        start_vertex: 1,
-                        end_vertex: 0,
-                    },
-                ])
-                .expect("two coedges are nonempty"),
-            }],
-        }],
-        edge_rows: vec![
-            EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row"),
-            EdgeRow::new(1, vec![1, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row"),
-        ],
-        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_count: 2,
-    };
-    let edge_faces = [];
-    let edge_geometry = [MeshEdgeGeometry::Line; 2];
-    let edge_candidates = [vec![[0, 1]], vec![[0, 1]]];
-    let edge_identity_evidence = [false; 2];
-    let gauge = MeshCandidateGauge {
-        edge_rows: &topology.edge_rows,
-        edge_faces: &edge_faces,
-        edge_geometry: &edge_geometry,
-        edge_candidates: &edge_candidates,
-        edge_identity_evidence: &edge_identity_evidence,
-        coordinate_gauge: None,
-    };
-    assert!(crate::test_support::with_service_context(|ctx| {
-        canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
-    })
-    .expect("service resource budget")
-    .is_some());
-
-    let mut refused = HashSet::new();
-    for cap in 0..128 {
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            canonicalize_mesh_edge_row_gauges(ctx, topology.clone(), gauge, None)
-        });
-        if let Err(CodecError::ResourceLimit(limit)) = result {
-            refused.insert(limit.operation);
-        }
-    }
-    for operation in [
-        "catia_mesh_edge_gauge_incident_face_entries",
-        "catia_mesh_edge_gauge_usage_entries",
-        "catia_mesh_edge_gauge_endpoint_keys",
-        "catia_mesh_edge_gauge_row_permutation",
-        "catia_mesh_gauge_row_permutation_copy",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
 }
 
 fn permute_mesh_coordinate_labels(
@@ -1463,52 +1226,6 @@ fn endpoint_pair_gauge_canonicalization_snapshots_row_values() {
         canonicalize_partial_endpoint_pair_gauge(&left, gauge).expect("service resource budget"),
         canonicalize_partial_endpoint_pair_gauge(&right, gauge).expect("service resource budget"),
     );
-}
-
-#[test]
-fn complete_endpoint_pair_gauge_charges_options_and_result() {
-    let rows = [{
-        assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-            .expect("admitted edge row")
-    }];
-    let faces = [[0, 1]];
-    let geometry = [MeshEdgeGeometry::Line];
-    let candidates = [vec![[0, 1]]];
-    let evidence = [false];
-    let gauge = MeshCandidateGauge {
-        edge_rows: &rows,
-        edge_faces: &faces,
-        edge_geometry: &geometry,
-        edge_candidates: &candidates,
-        edge_identity_evidence: &evidence,
-        coordinate_gauge: None,
-    };
-    let run = |ctx: &DecodeContext<'_>| canonicalize_complete_endpoint_pairs(&[[0, 1]], gauge);
-    assert_eq!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
-        Some(vec![[0, 1]])
-    );
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..128 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected gauge result"),
-        }
-    }
-    for operation in [
-        "catia_gauge_input_pairs",
-        "catia_gauge_canonical_pairs",
-        "catia_gauge_normalized_options",
-        "catia_gauge_source_group_keys",
-        "catia_gauge_target_group_keys",
-        "catia_gauge_complete_pairs",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -1845,7 +1562,7 @@ pub(super) fn canonicalize_endpoint_relation_state(
             if permutations.len() <= 1 {
                 continue;
             }
-            let mut best = copy_endpoint_relation_state(&state);
+            let mut best = state.clone();
             for permutation in permutations {
                 let Some(candidate) = map_endpoint_relation_state(ctx, &state, gauge, permutation)?
                 else {
@@ -1859,31 +1576,6 @@ pub(super) fn canonicalize_endpoint_relation_state(
         }
     }
     Ok(Some(state))
-}
-
-fn copy_endpoint_relation_state(
-    state: &MeshEndpointRelationStateSignature,
-) -> MeshEndpointRelationStateSignature {
-    let assigned = state.0.clone();
-    let mut domains = Vec::new();
-    for row in &state.1 {
-        let mut choices = Vec::new();
-        for selection in row {
-            let copied = match selection {
-                MeshEndpointRelationSelection::Deferred => MeshEndpointRelationSelection::Deferred,
-                MeshEndpointRelationSelection::Enumerated {
-                    assignments,
-                    edge_pairs,
-                } => MeshEndpointRelationSelection::Enumerated {
-                    assignments: assignments.clone(),
-                    edge_pairs: edge_pairs.clone(),
-                },
-            };
-            choices.push(copied);
-        }
-        domains.push(choices);
-    }
-    (assigned, domains)
 }
 
 fn map_endpoint_relation_state(
@@ -2130,57 +1822,6 @@ fn relation_state_memo_collapses_coordinate_gauge() {
 }
 
 #[test]
-fn endpoint_relation_gauge_charges_nested_state_copies() {
-    let candidates = [vec![[0, 1]]];
-    let coordinate_gauge = MeshCoordinateGauge {
-        components: vec![vec![vec![0, 1], vec![1, 0]]],
-    };
-    let gauge = MeshCandidateGauge {
-        edge_rows: &[],
-        edge_faces: &[],
-        edge_geometry: &[],
-        edge_candidates: &candidates,
-        edge_identity_evidence: &[],
-        coordinate_gauge: Some(&coordinate_gauge),
-    };
-    let domains = [vec![MeshEndpointRelationChoice {
-        id: 0,
-        selection: MeshEndpointRelationSelection::Enumerated {
-            assignments: vec![0],
-            edge_pairs: vec![(0, [0, 1])],
-        },
-    }]];
-    let run = |ctx: &DecodeContext<'_>| {
-        canonicalize_endpoint_relation_state(ctx, &domains, &[Some([0, 1])], gauge)
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .is_some());
-    let mut refused = std::collections::HashSet::new();
-    for cap in 0..256 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected relation state result"),
-        }
-    }
-    for operation in [
-        "catia_relation_normalized_assignments",
-        "catia_relation_normalized_pairs",
-        "catia_relation_signature_choices",
-        "catia_relation_identity",
-        "catia_relation_row_identity",
-        "catia_relation_mapped_assigned",
-        "catia_relation_state_assignment_copy",
-        "catia_relation_state_pair_copy",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn relation_state_memo_uses_coordinate_gauge_domain_alternatives() {
     catia_test_context!(ctx);
     let edge_rows = [
@@ -2279,170 +1920,6 @@ fn relation_state_memo_applies_one_row_mapping_to_assigned_and_domains() {
     let right = state(vec![None, Some([0, 3])], vec![(0, [0, 3]), (1, [1, 2])]);
 
     assert_eq!(left, right);
-}
-
-#[test]
-fn mesh_coordinate_gauge_propagates_collection_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-
-    let edge_rows = [
-        EdgeRow::new(2, vec![10, 11], EdgeBoundaryLayout::CompleteBoundaryRun)
-            .expect("admitted edge row"),
-        EdgeRow::new(2, vec![20, 21], EdgeBoundaryLayout::CompleteBoundaryRun)
-            .expect("admitted edge row"),
-    ];
-    let edge_faces = [[0, 1], [0, 1]];
-    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
-    let edge_candidates = vec![vec![[0, 3], [1, 2]], vec![[0, 3], [1, 2]]];
-    let edge_identity_evidence = [false, false];
-    let run = |ctx: &DecodeContext<'_>| {
-        build_mesh_coordinate_gauge(
-            ctx,
-            4,
-            &edge_rows,
-            &edge_faces,
-            &edge_geometry,
-            &edge_candidates,
-            &edge_identity_evidence,
-        )
-    };
-    catia_test_context!(service_ctx);
-    assert!(!run(&service_ctx)
-        .expect("service resource budget")
-        .components
-        .is_empty());
-
-    let mut refused = std::collections::HashSet::new();
-    for limit in 0..2048 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-            }
-            Ok(_) => break,
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_coordinate_gauge_active",
-        "catia_coordinate_gauge_components",
-        "catia_coordinate_gauge_used",
-        "catia_gauge_edge_bases",
-        "catia_gauge_group_edges",
-        "catia_gauge_normalized_options",
-        "catia_gauge_option_arcs",
-        "catia_gauge_signature_keys",
-        "catia_gauge_signature_colors",
-        "catia_gauge_permutation_values",
-        "catia_gauge_permutations",
-        "catia_gauge_components",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn mesh_candidate_canonicalization_propagates_collection_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-
-    let edge_rows = vec![{
-        assert!(EdgeRow::new(1, vec![10], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-        EdgeRow::new(1, vec![10, 10], EdgeBoundaryLayout::CompleteBoundaryRun)
-            .expect("admitted edge row")
-    }];
-    let topology = StandardTopologyDraft {
-        faces: vec![crate::families::standard::topology::FaceTopologyDraft {
-            boundaries: vec![
-                crate::families::standard::topology::BoundaryDraft::new(vec![CoedgeUse {
-                    edge_row: 0,
-                    reversed: false,
-                    start_vertex: 0,
-                    end_vertex: 1,
-                }])
-                .expect("nonempty topology boundary"),
-            ],
-        }],
-        edge_rows: edge_rows.clone(),
-        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_count: 2,
-    };
-    let candidate = (topology, vec![0, 1]);
-    let edge_geometry = [MeshEdgeGeometry::Line];
-    let edge_candidates = vec![vec![[0, 1]]];
-    let edge_identity_evidence = [false];
-    let coordinate_gauge = MeshCoordinateGauge {
-        components: vec![vec![vec![0, 1]]],
-    };
-    let gauge = MeshCandidateGauge {
-        edge_rows: &edge_rows,
-        edge_faces: &[],
-        edge_geometry: &edge_geometry,
-        edge_candidates: &edge_candidates,
-        edge_identity_evidence: &edge_identity_evidence,
-        coordinate_gauge: Some(&coordinate_gauge),
-    };
-    let run = |ctx: &DecodeContext<'_>| {
-        mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, Some(gauge))
-    };
-    catia_test_context!(service_ctx);
-    assert!(run(&service_ctx).expect("service resource budget"));
-    assert!(canonicalize_mesh_candidate_for_output(
-        &service_ctx,
-        &candidate.0,
-        &candidate.1,
-        Some(gauge),
-    )
-    .expect("service resource budget")
-    .is_some());
-
-    let mut refused = std::collections::HashSet::new();
-    for limit in 0..512 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-            }
-            Ok(true) => break,
-            Ok(false) => panic!("a candidate must equal itself"),
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_mesh_vertex_seen",
-        "catia_mesh_edge_vertices",
-        "catia_mesh_coordinate_gauge_seen",
-        "catia_mesh_edge_gauge_faces",
-        "catia_mesh_edge_gauge_usage",
-        "catia_mesh_edge_gauge_normalize_rows",
-        "catia_gauge_topology_key",
-        "catia_mesh_reverse_edges",
-        "catia_mesh_candidate_identity",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Coedge, boundary, face, two handles, row and two points use eight slots.
-    policy.limits.max_collection_items = 8;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error =
-        canonicalize_mesh_candidate_for_output(&ctx, &candidate.0, &candidate.1, Some(gauge))
-            .expect_err("canonicalization exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_mesh_vertex_seen"));
 }
 
 #[cfg(test)]

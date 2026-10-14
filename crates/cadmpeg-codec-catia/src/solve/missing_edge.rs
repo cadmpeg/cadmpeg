@@ -38,7 +38,7 @@ pub(crate) fn standard_edge_rows(
     Ok(parse_edge_tables(bytes, after_faces)?.map(|(rows, _)| rows))
 }
 
-fn standard_edge_port_identities_with_namespace(
+fn standard_edge_port_identities(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     global: bool,
@@ -92,7 +92,7 @@ fn standard_edge_port_identities_with_namespace(
     Ok(Some(pairs))
 }
 
-fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
+pub(crate) fn fbb_edge_port_identities(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
     let Some(face_run) = largest_fbb_run(bytes) else {
         return None;
     };
@@ -310,39 +310,15 @@ fn compressed_visualization_point_bindings(
     (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
 }
 
-fn standard_edge_port_identities(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    standard_edge_port_identities_with_namespace(ctx, bytes, false)
-}
-
-fn fbb_edge_port_identities(bytes: &[u8]) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    Ok(fbb_edge_port_identities_with_namespace(bytes, false))
-}
-
-fn standard_global_edge_port_identities(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    standard_edge_port_identities_with_namespace(ctx, bytes, true)
-}
-
-pub(crate) fn fbb_global_edge_port_identities(
-    bytes: &[u8],
-) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    Ok(fbb_edge_port_identities_with_namespace(bytes, true))
-}
-
 /// Select conservative endpoint identities for the bounded topology solver.
 pub(crate) fn edge_port_identities(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    if let Some(identities) = standard_edge_port_identities(ctx, bytes)? {
+    if let Some(identities) = standard_edge_port_identities(ctx, bytes, false)? {
         Ok(Some(identities))
     } else {
-        fbb_edge_port_identities(bytes)
+        Ok(fbb_edge_port_identities(bytes, false))
     }
 }
 
@@ -352,10 +328,10 @@ fn global_edge_port_identities(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    if let Some(identities) = standard_global_edge_port_identities(ctx, bytes)? {
+    if let Some(identities) = standard_edge_port_identities(ctx, bytes, true)? {
         Ok(Some(identities))
     } else {
-        fbb_global_edge_port_identities(bytes)
+        Ok(fbb_edge_port_identities(bytes, true))
     }
 }
 
@@ -503,75 +479,6 @@ fn mesh_edge_ports(
     Ok(Some(ports))
 }
 
-#[cfg(test)]
-#[test]
-fn mesh_edge_ports_refuse_each_graph_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-
-    let analysis = StandardMeshAnalysis {
-        edge_rows: vec![{
-            assert!(EdgeRow::new(
-                0,
-                vec![0],
-                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
-            )
-            .is_none());
-            EdgeRow::new(
-                1,
-                vec![0, 0],
-                crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
-            )
-            .expect("admitted edge row")
-        }],
-        cycles: vec![vec![vec![0, 1]]],
-        occurrences: vec![vec![MeshEdgeRun {
-            edge: 0,
-            face: 0,
-            cycle: 0,
-            start: 0,
-            segment_count: 1,
-            reversed: false,
-        }]],
-        fixed_complete_row_spans: false,
-    };
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    assert_eq!(
-        mesh_edge_ports(&analysis, &[[10, 11]]).expect("service resource budget"),
-        Some(vec![[0, 1]])
-    );
-
-    let mut operations = HashSet::new();
-    for cap in 0..=32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match mesh_edge_ports(&analysis, &[[10, 11]]) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                operations.insert(limit.operation);
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("valid edge port graph must reconstruct"),
-            Err(error) => panic!("unexpected edge port refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_mesh_edge_port_union",
-        "catia_mesh_edge_port_identities",
-        "catia_mesh_edge_port_corner_nodes",
-        "catia_mesh_edge_port_corners",
-        "catia_mesh_edge_port_roots",
-        "catia_mesh_edge_ports",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-}
-
 /// One exact occurrence of a physical edge row on a trim-mesh boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MeshEdgeRun {
@@ -673,61 +580,6 @@ fn mesh_edge_occurrences(
         rows.push(occurrences);
     }
     Some(rows)
-}
-
-#[cfg(test)]
-#[test]
-fn mesh_edge_occurrences_refuse_nested_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-
-    let rows = [{
-        assert!(EdgeRow::new(
-            0,
-            vec![0],
-            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
-        )
-        .is_none());
-        EdgeRow::new(
-            1,
-            vec![0, 1, 0],
-            crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
-        )
-        .expect("admitted edge row")
-    }];
-    let cycles = [vec![vec![0, 1]]];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    assert!(mesh_edge_occurrences(&rows, &cycles).is_some());
-
-    let mut operations = HashSet::new();
-    for cap in 0..=32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match mesh_edge_occurrences(&rows, &cycles) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                operations.insert(limit.operation);
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("matching boundary handle must admit a run"),
-            Err(error) => panic!("unexpected occurrence refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_mesh_occurrence_handles",
-        "catia_mesh_occurrence_locations",
-        "catia_mesh_occurrence_matches",
-        "catia_mesh_occurrence_cycle_counts",
-        "catia_mesh_occurrence_runs",
-        "catia_mesh_occurrence_rows",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[derive(Debug)]

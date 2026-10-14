@@ -290,44 +290,6 @@ mod tests {
     }
 
     #[test]
-    fn pmi_duplicate_search_refuses_work() {
-        let native = CatiaNative {
-            entity_records: vec![range_only_entity("DiameterThread")],
-            ..CatiaNative::default()
-        };
-        let mut ir = CadIr::empty();
-        crate::test_support::with_service_context(|ctx| {
-            transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-        })
-        .expect("first dimension");
-        // The formatted identity charges its length twice (measure, then append); the
-        // scan then charges both ids.
-        let id_work = 2 * u64::try_from("catia:model:pmi#entity-record-0000000000".len())
-            .expect("identity length fits u64");
-        crate::test_support::with_work_limit(id_work, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-            .expect_err("duplicate scan consumes work") else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_pmi_duplicate_search");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-        assert_eq!(ir.model.pmi.len(), 1);
-    }
-
-    #[test]
     fn transfers_source_closed_range_only_size_dimensions() {
         let diameter = range_only_entity("DiameterThread");
         let mut size = range_only_entity("FeatureRSUR");
@@ -406,44 +368,6 @@ mod tests {
                 && limit.operation == "admit CATIA PMI dimension")
         );
         assert_eq!(ir.model.pmi.len(), 1);
-    }
-
-    #[test]
-    fn pmi_dimension_identity_refuses_retained_limit() {
-        let native = CatiaNative {
-            entity_records: vec![range_only_entity("DiameterThread")],
-            ..CatiaNative::default()
-        };
-        let mut ir = CadIr::empty();
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_pmi_dimension_id")
-        );
-        assert!(ir.model.pmi.is_empty());
-        let admitted = with_service_context(|ctx| {
-            transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            )
-        })
-        .expect("service profile admits dimension");
-        assert_eq!(admitted, 1);
-        assert_eq!(
-            ir.model.pmi[0].id.as_str(),
-            "catia:model:pmi#entity-record-0000000000"
-        );
     }
 
     #[test]

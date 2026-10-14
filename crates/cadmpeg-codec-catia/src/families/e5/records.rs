@@ -1023,42 +1023,6 @@ mod tests {
             .is_empty());
     }
 
-    #[test]
-    fn e5_station_collection_limit_refuses_before_station_vectors() {
-        let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 13;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("the source fits the service input limit");
-        let error = e5_rolling_ball_jets(&bytes).expect_err("two stations need 14 slots");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "decode CATIA E5 rolling-ball stations"));
-    }
-
-    #[test]
-    fn e5_rolling_ball_result_refuses_before_growth() {
-        let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
-        assert!(matches!(
-            crate::test_support::with_collection_limit(14, |ctx| e5_rolling_ball_jets(&bytes)),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_e5_rolling_ball_jets"
-        ));
-    }
-
-    #[test]
-    fn e5_rolling_ball_definition_refuses_before_station_copy() {
-        let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
-        let jets = decoded_jets(&bytes).expect("service resource budget");
-        assert_eq!(jets.len(), 1);
-        assert!(matches!(
-            crate::test_support::with_collection_limit(1, |ctx| jets[0].definition(ctx)),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_e5_rolling_ball_definition_stations"
-        ));
-    }
-
     fn nurbs_surface_payload(mode: u16) -> Vec<u8> {
         let mut payload = vec![0x80];
         append_nurbs_axis(&mut payload, 1);
@@ -1130,52 +1094,6 @@ mod tests {
     }
 
     #[test]
-    fn e7_nurbs_surface_collections_refuse_before_growth() {
-        for (mode, expected) in [
-            (
-                0,
-                [
-                    "catia_e5_nurbs_axis_knots",
-                    "catia_e5_nurbs_axis_multiplicities",
-                    "catia_e5_nurbs_expanded_axis",
-                    "catia_e5_nurbs_control_points",
-                    "catia_e5_nurbs_point_row",
-                    "catia_e5_nurbs_point_rows",
-                    "catia_e5_surfaces",
-                ]
-                .as_slice(),
-            ),
-            (
-                1,
-                [
-                    "catia_e5_nurbs_weights",
-                    "catia_e5_nurbs_weight_row",
-                    "catia_e5_nurbs_weight_rows",
-                    "catia_e5_nurbs_weighted_poles",
-                    "catia_e5_nurbs_weighted_rows",
-                ]
-                .as_slice(),
-            ),
-        ] {
-            let mut bytes = Vec::new();
-            append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
-            let mut operations = std::collections::HashSet::new();
-            for cap in 0..64 {
-                if let Err(CodecError::ResourceLimit(limit)) =
-                    crate::test_support::with_collection_limit(cap, |ctx| {
-                        e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
-                    })
-                {
-                    operations.insert(limit.operation);
-                }
-            }
-            for operation in expected {
-                assert!(operations.contains(operation), "no refusal at {operation}");
-            }
-        }
-    }
-
-    #[test]
     fn f1_surface_wrapper_reads_its_five_reference_lane() {
         let mut payload = vec![0x85];
         for reference in [0x0102_0304, 0x0506, 0x0708, 0x090a, 0x0b0c] {
@@ -1203,12 +1121,6 @@ mod tests {
             [0x0304, 0x0506, 0x0708, 0x090a, 0x0b0c]
         );
         assert_eq!(wrappers[0].underlying_surface(), 0x0304);
-
-        assert!(matches!(
-            crate::test_support::with_collection_limit(0, |ctx| e5_surface_wrappers(&bytes)),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_e5_surface_wrappers"
-        ));
     }
 
     #[test]

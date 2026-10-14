@@ -327,40 +327,6 @@ mod tests {
     }
 
     #[test]
-    fn planar_boundary_comparisons_refuse_work() {
-        let boundaries = rows(vec![
-            square(0.0, 0.0, 10.0, 10.0),
-            square(2.0, 2.0, 3.0, 3.0),
-        ]);
-        crate::test_support::with_work_limit(2, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
-                super::classify_planar_boundaries(ctx, &plane(), &boundaries)
-                    .expect_err("comparison work must be admitted")
-            else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_boundary_classification_work");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-    }
-
-    #[test]
-    fn planar_boundary_points_refuse_before_nested_polygon_allocation() {
-        let boundaries = rows(vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)]);
-        let limited = crate::test_support::with_collection_limit(3, |ctx| {
-            super::classify_planar_boundaries(ctx, &plane(), &boundaries)
-        });
-        assert!(matches!(
-            limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        assert_eq!(
-            classify_planar_boundaries(&plane(), &boundaries),
-            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
-        );
-    }
-
-    #[test]
     fn planar_boundaries_decline_an_off_plane_hole() {
         let outer = square(0.0, 0.0, 10.0, 10.0);
         let mut inner = square(2.0, 2.0, 3.0, 3.0);

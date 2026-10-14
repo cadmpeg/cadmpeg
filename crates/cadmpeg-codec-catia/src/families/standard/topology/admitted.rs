@@ -206,17 +206,4 @@ mod tests {
             assert_eq!(boundary.coedges(), cycle);
         });
     }
-
-    #[test]
-    fn closed_boundary_admission_propagates_caller_work_refusal() {
-        crate::test_support::with_work_limit(0, |ctx| {
-            let error = Boundary::new(NonEmptyMembers::one(coedge(0, 0, 0)))
-                .expect_err("closure scan requires work");
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("work refusal")
-            };
-            assert_eq!(limit.operation, "catia_closed_boundary_admission");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-    }
 }

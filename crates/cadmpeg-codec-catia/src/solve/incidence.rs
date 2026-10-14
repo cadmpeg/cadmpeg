@@ -35,28 +35,6 @@ type MeshEndpointSolutionVisitor<'a> =
     &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
 
-fn copy_incidence_degree_rows(rows: &[BTreeMap<usize, u8>]) -> Vec<BTreeMap<usize, u8>> {
-    let mut copy = Vec::new();
-
-    for row in rows {
-        let mut copied_row = BTreeMap::new();
-        for (&point, &degree) in row {
-            copied_row.insert(point, degree);
-        }
-        copy.push(copied_row);
-    }
-    copy
-}
-
-fn copy_incidence_edge_rows(rows: &[EdgeRow]) -> Vec<EdgeRow> {
-    let mut copy = Vec::new();
-
-    for row in rows {
-        copy.push(row.clone());
-    }
-    copy
-}
-
 fn singleton_incidence_pairs(
     ctx: &DecodeContext<'_>,
     pairs: &[[usize; 2]],
@@ -748,12 +726,12 @@ enum IncidenceSearchState {
 
 enum IncidenceVisitError {
     Exhausted,
-    Resource(CodecError),
+    Codec(CodecError),
 }
 
 impl From<CodecError> for IncidenceVisitError {
     fn from(error: CodecError) -> Self {
-        Self::Resource(error)
+        Self::Codec(error)
     }
 }
 
@@ -1813,18 +1791,6 @@ enum CompactBoundaryAdvanceOutcome {
     Exhausted,
 }
 
-fn copy_quotient_states(states: &[MeshQuotientGaugeState]) -> Vec<MeshQuotientGaugeState> {
-    let mut copy = Vec::new();
-
-    for (quotient, oriented) in states {
-        let mut oriented_copy = HashSet::new();
-
-        oriented_copy.extend(oriented.iter().copied());
-        copy.push((quotient.clone(), oriented_copy));
-    }
-    copy
-}
-
 fn advance_compact_boundary_domains<'a>(
     ctx: &DecodeContext<'_>,
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
@@ -1912,15 +1878,13 @@ fn advance_compact_boundary_domains<'a>(
                     });
                 }
                 let boundaries = vec![uses];
-                let alternatives = vec![MeshFaceBoundaryAssignment { boundaries }];
-                alternatives
+                vec![MeshFaceBoundaryAssignment { boundaries }]
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 let Some(materialized) = deferred_boundary_assignment(domain, &points)? else {
                     return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
-                let alternatives = vec![materialized];
-                alternatives
+                vec![materialized]
             }
         };
         ordered.push(alternatives);
@@ -2955,10 +2919,9 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         for option in options {
             if let Some(applied) = self.apply_face_configuration(option, coordinate_domains)? {
-                if let Some(next_states) = self.advance_ordered_faces(
-                    applied.affected_faces,
-                    copy_quotient_states(quotient_states),
-                )? {
+                if let Some(next_states) =
+                    self.advance_ordered_faces(applied.affected_faces, quotient_states.to_vec())?
+                {
                     self.search_with_quotient(
                         &next_states,
                         applied.coordinate_domains.as_ref(),
@@ -3066,7 +3029,7 @@ impl IncidenceComponentSearch<'_, '_> {
     ) -> Result<(), CodecError> {
         let mut assigned = Vec::new();
         let mut factor_checkpoint = None;
-        let mut states = copy_quotient_states(quotient_states);
+        let mut states = quotient_states.to_vec();
         let mut domains = coordinate_domains.cloned();
         while let Some(applied) = self.apply_face_configuration(option, domains.as_ref())? {
             let applied_factor_checkpoint = applied.factor_checkpoint;
@@ -3274,10 +3237,9 @@ impl IncidenceComponentSearch<'_, '_> {
                 .partial_solution_filter
                 .is_none_or(|constraint| (constraint.valid)(&self.assignment))
             {
-                if let Some(next_states) = self.advance_ordered_faces(
-                    self.edge_faces[edge],
-                    copy_quotient_states(quotient_states),
-                )? {
+                if let Some(next_states) =
+                    self.advance_ordered_faces(self.edge_faces[edge], quotient_states.to_vec())?
+                {
                     self.search_with_quotient(
                         &next_states,
                         next_coordinate_domains.as_ref(),
@@ -4157,7 +4119,7 @@ where
             edges: component,
             constraints,
             assignment: assignment.to_vec(),
-            degrees: copy_incidence_degree_rows(degrees),
+            degrees: degrees.to_vec(),
             solutions: Vec::new(),
             solution_filter: Some(&filter),
             solution_visitor,
@@ -4367,7 +4329,7 @@ where
         };
 
         let base_assignment = assignment.to_vec();
-        let base_degrees = copy_incidence_degree_rows(degrees);
+        let base_degrees = degrees.to_vec();
         let mut downstream_control = Ok(ControlFlow::Continue(()));
         let mut visit_solution =
             |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
@@ -4842,7 +4804,7 @@ where
                 search_budget,
             },
         ) {
-            Err(IncidenceVisitError::Resource(error)) => return Err(error),
+            Err(IncidenceVisitError::Codec(error)) => return Err(error),
             Err(IncidenceVisitError::Exhausted) => {
                 exhausted = true;
                 return Ok(None);
@@ -4962,7 +4924,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     };
     reconstruct_incidence(
         ctx,
-        copy_incidence_edge_rows(edge_rows),
+        edge_rows.to_vec(),
         vertex_points.to_vec(),
         edge_faces,
         &solution_pairs,
@@ -5158,7 +5120,7 @@ where
         }
         Ok(reconstruct_incidence(
             ctx,
-            copy_incidence_edge_rows(edge_rows),
+            edge_rows.to_vec(),
             vertex_points.to_vec(),
             edge_faces,
             points,

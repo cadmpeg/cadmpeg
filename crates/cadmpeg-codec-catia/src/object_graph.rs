@@ -4,7 +4,6 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -727,11 +726,9 @@ pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
 /// The returned map contains only alias cores outside complete object graphs,
 /// value blocks, and catalogs. A `None` value means that the raw tag exists but
 /// its canonical target is not unique.
-pub(crate) fn surface_alias_tag_map(
-    data: &[u8],
-) -> Result<HashMap<u32, Option<u32>>, cadmpeg_core::CodecError> {
-    let paired_object_graph_roots = entity_table::paired_object_graph_roots(data)?;
-    let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots)?;
+pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
+    let paired_object_graph_roots = entity_table::paired_object_graph_roots(data);
+    let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots);
     let mut value_blocks = value_block::parse(data);
     value_blocks.retain(|block| {
         !object_graphs
@@ -800,7 +797,7 @@ pub(crate) fn surface_alias_tag_map(
             .and_modify(|stored| *stored = None)
             .or_insert(canonical);
     }
-    Ok(tags)
+    tags
 }
 
 pub(crate) fn extent_contains(
@@ -864,14 +861,14 @@ pub(crate) fn is_alias_group_storage_prefix(storage: &[u8]) -> bool {
 }
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
-pub(crate) fn parse(data: &[u8]) -> Result<Option<ObjectGraph>, CodecError> {
-    Ok(parse_all(data)?
+pub(crate) fn parse(data: &[u8]) -> Option<ObjectGraph> {
+    parse_all(data)
         .into_iter()
-        .max_by_key(|graph| graph.records.len()))
+        .max_by_key(|graph| graph.records.len())
 }
 
 /// Parse every length-closed `7C08` object graph in source order.
-pub(crate) fn parse_all(data: &[u8]) -> Result<Vec<ObjectGraph>, CodecError> {
+pub(crate) fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
     parse_all_with_paired_roots(data, &std::collections::HashMap::new())
 }
 
@@ -881,7 +878,7 @@ pub(crate) fn parse_all(data: &[u8]) -> Result<Vec<ObjectGraph>, CodecError> {
 pub(crate) fn parse_all_with_paired_roots(
     data: &[u8],
     paired_roots: &std::collections::HashMap<usize, usize>,
-) -> Result<Vec<ObjectGraph>, CodecError> {
+) -> Vec<ObjectGraph> {
     let catalogs = catalog::parse(data);
     let value_blocks = value_block::parse(data);
     let mut roots = Vec::<ObjectGraph>::new();
@@ -901,10 +898,10 @@ pub(crate) fn parse_all_with_paired_roots(
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let graph = if let Some(graph) = parse_candidate(data, pos, false)? {
+        let graph = if let Some(graph) = parse_candidate(data, pos, false) {
             Some(graph)
         } else if let Some(expected_count) = paired_roots.get(&pos) {
-            parse_candidate(data, pos, true)?.filter(|graph| graph.records.len() == *expected_count)
+            parse_candidate(data, pos, true).filter(|graph| graph.records.len() == *expected_count)
         } else {
             None
         };
@@ -919,7 +916,7 @@ pub(crate) fn parse_all_with_paired_roots(
     for graph in &mut roots {
         bind_catalog(graph, &catalogs, &value_blocks);
     }
-    Ok(roots)
+    roots
 }
 
 fn bind_catalog(
@@ -950,81 +947,70 @@ fn parse_candidate(
     data: &[u8],
     pos: usize,
     allow_opaque_childless_records: bool,
-) -> Result<Option<ObjectGraph>, CodecError> {
-    (|| -> Option<Result<ObjectGraph, CodecError>> {
-        macro_rules! admitted {
-            ($result:expr) => {
-                match $result {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error)),
-                }
-            };
-        }
-        let total_len = usize::try_from(View::u32_le_at(data, pos + 2)?).ok()?;
-        let end = pos.checked_add(total_len)?;
-        if total_len < 15 || end > data.len() {
+) -> Option<ObjectGraph> {
+    let total_len = usize::try_from(View::u32_le_at(data, pos + 2)?).ok()?;
+    let end = pos.checked_add(total_len)?;
+    if total_len < 15 || end > data.len() {
+        return None;
+    }
+    let mut at = pos + 6;
+    let mut records = Vec::new();
+    while at + 6 <= end && data.get(at..at + 2) == Some(&[0x7c, 0x09]) {
+        let record_len = usize::try_from(View::u32_le_at(data, at + 2)?).ok()?;
+        let record_end = at.checked_add(record_len)?;
+        if record_len < 6 || record_end > end {
             return None;
         }
-        let mut at = pos + 6;
-        let mut records = Vec::new();
-        while at + 6 <= end && data.get(at..at + 2) == Some(&[0x7c, 0x09]) {
-            let record_len = usize::try_from(View::u32_le_at(data, at + 2)?).ok()?;
-            let record_end = at.checked_add(record_len)?;
-            if record_len < 6 || record_end > end {
-                return None;
-            }
-            let head_start = at + 6;
-            let mut children = data[head_start..record_end]
-                .windows(2)
-                .enumerate()
-                .filter_map(|(relative, marker)| {
-                    if marker != [0x7c, 0x0a] {
-                        return None;
-                    }
-                    let child = head_start + relative;
-                    let child_len = usize::try_from(View::u32_le_at(data, child + 2)?).ok()?;
-                    (child_len >= 6 && child.checked_add(child_len) == Some(record_end))
-                        .then_some((child, child_len))
-                });
-            let child = children.next();
-            if child.is_some() && children.next().is_some() {
-                return None;
-            }
-            let body = data.get(head_start..record_end)?;
-            let (lead, body_form) = match child {
-                Some((child, _)) => {
-                    let head_bytes = data.get(head_start..child)?;
-                    let lead = *head_bytes.first()?;
-                    let head = decode_head(head_bytes);
-                    let payload = admitted!(decode_payload(&data[child + 6..record_end]))?;
-                    (lead, ObjectRecordBody::Nested { head, payload })
+        let head_start = at + 6;
+        let mut children = data[head_start..record_end]
+            .windows(2)
+            .enumerate()
+            .filter_map(|(relative, marker)| {
+                if marker != [0x7c, 0x0a] {
+                    return None;
                 }
-                None if is_inline_body(body) => {
-                    let lead = body[0];
-                    (lead, ObjectRecordBody::Inline(body.to_vec()))
-                }
-                None if allow_opaque_childless_records && !body.is_empty() => {
-                    let lead = body[0];
-                    (lead, ObjectRecordBody::Inline(body.to_vec()))
-                }
-                None => return None,
-            };
-            records.push(ObjectRecord {
-                pos: at,
-                total_len: record_len,
-                lead,
-                body: body_form,
+                let child = head_start + relative;
+                let child_len = usize::try_from(View::u32_le_at(data, child + 2)?).ok()?;
+                (child_len >= 6 && child.checked_add(child_len) == Some(record_end))
+                    .then_some((child, child_len))
             });
-            at = record_end;
+        let child = children.next();
+        if child.is_some() && children.next().is_some() {
+            return None;
         }
-        (!records.is_empty() && at == end).then_some(Ok(ObjectGraph {
-            pos,
-            total_len,
-            catalog_pos: None,
-            records,
-        }))
-    })()
-    .transpose()
+        let body = data.get(head_start..record_end)?;
+        let (lead, body_form) = match child {
+            Some((child, _)) => {
+                let head_bytes = data.get(head_start..child)?;
+                let lead = *head_bytes.first()?;
+                let head = decode_head(head_bytes);
+                let payload = decode_payload(&data[child + 6..record_end])?;
+                (lead, ObjectRecordBody::Nested { head, payload })
+            }
+            None if is_inline_body(body) => {
+                let lead = body[0];
+                (lead, ObjectRecordBody::Inline(body.to_vec()))
+            }
+            None if allow_opaque_childless_records && !body.is_empty() => {
+                let lead = body[0];
+                (lead, ObjectRecordBody::Inline(body.to_vec()))
+            }
+            None => return None,
+        };
+        records.push(ObjectRecord {
+            pos: at,
+            total_len: record_len,
+            lead,
+            body: body_form,
+        });
+        at = record_end;
+    }
+    (!records.is_empty() && at == end).then_some(ObjectGraph {
+        pos,
+        total_len,
+        catalog_pos: None,
+        records,
+    })
 }
 
 /// Occupant of the object head owner slot.
@@ -1583,195 +1569,186 @@ fn is_final_terminator_run(bytes: &[u8], at: usize) -> bool {
     bytes.get(at) == Some(&0xfe) && bytes[at..].iter().all(|byte| *byte == 0xfe)
 }
 
-fn decode_payload(bytes: &[u8]) -> Result<Option<ObjectPayload>, CodecError> {
-    (|| -> Option<Result<ObjectPayload, CodecError>> {
-        macro_rules! admitted {
-            ($result:expr) => {
-                $result
-            };
+fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
+    let mut fields = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let offset = at;
+        if bytes[at] == 0xe5 {
+            if let Some(end) = blob_end(bytes, at) {
+                fields.push(PayloadField::Blob {
+                    bytes: bytes[at + 5..end].to_vec().into(),
+                    offset,
+                });
+                at = end;
+                continue;
+            }
+            if blob_declared_end(bytes, at) == Some(bytes.len()) {
+                return None;
+            }
         }
-        let mut fields = Vec::new();
-        let mut at = 0;
-        while at < bytes.len() {
-            let offset = at;
-            if bytes[at] == 0xe5 {
-                if let Some(end) = blob_end(bytes, at) {
-                    fields.push(PayloadField::Blob {
-                        bytes: bytes[at + 5..end].to_vec().into(),
-                        offset,
-                    });
-                    at = end;
-                    continue;
-                }
-                if blob_declared_end(bytes, at) == Some(bytes.len()) {
-                    return None;
-                }
+        if matches!(bytes[at], 0x80 | 0x32) {
+            if let Some(value) = bytes
+                .get(at + 5)
+                .and_then(|_| View::u32_le_at(bytes, at + 1))
+            {
+                fields.push(if bytes[at] == 0x80 {
+                    PayloadField::Atom { value, offset }
+                } else {
+                    PayloadField::Reference { value, offset }
+                });
+                at += 5;
+                continue;
             }
-            if matches!(bytes[at], 0x80 | 0x32) {
-                if let Some(value) = bytes
-                    .get(at + 5)
-                    .and_then(|_| View::u32_le_at(bytes, at + 1))
-                {
-                    fields.push(if bytes[at] == 0x80 {
-                        PayloadField::Atom { value, offset }
-                    } else {
-                        PayloadField::Reference { value, offset }
-                    });
-                    at += 5;
-                    continue;
+        }
+        match bytes[at] {
+            0xfe if is_final_terminator_run(bytes, at) => {
+                while bytes.get(at) == Some(&0xfe) {
+                    fields.push(PayloadField::Terminator);
+                    at += 1;
                 }
+                break;
             }
-            match bytes[at] {
-                0xfe if is_final_terminator_run(bytes, at) => {
-                    while bytes.get(at) == Some(&0xfe) {
-                        fields.push(PayloadField::Terminator);
-                        at += 1;
-                    }
-                    break;
-                }
-                0x3c => {
-                    let Some((count, advance)) = atom(bytes, at + 1) else {
-                        fields.push(PayloadField::Atom {
-                            value: 0x3c,
-                            offset,
-                        });
-                        at += 1;
-                        continue;
-                    };
-                    let table_at = at + 1 + advance;
-                    let Some(table_count) = View::u32_le_at(bytes, table_at) else {
-                        fields.push(PayloadField::Atom {
-                            value: 0x3c,
-                            offset,
-                        });
-                        at += 1;
-                        continue;
-                    };
-                    let table_end = table_at.checked_add(4)?;
-                    if usize::try_from(table_count)
-                        .ok()
-                        .is_some_and(|count| count <= bytes.len() - table_end)
-                    {
-                        let (rows, end) =
-                            admitted!(parse_bulk_table_rows(bytes, table_end, table_count))?;
-                        fields.push(PayloadField::BulkTable {
-                            count,
-                            rows,
-                            offset,
-                        });
-                        at = end;
-                        continue;
-                    }
+            0x3c => {
+                let Some((count, advance)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: 0x3c,
                         offset,
                     });
                     at += 1;
-                }
-                0x3b => {
-                    if is_final_terminator_run(bytes, at + 1) {
-                        fields.push(PayloadField::Atom {
-                            value: 0x3b,
-                            offset,
-                        });
-                        at += 1;
-                        continue;
-                    }
-                    let Some((declared_count, advance)) = atom(bytes, at + 1) else {
-                        fields.push(PayloadField::Atom {
-                            value: 0x3b,
-                            offset,
-                        });
-                        at += 1;
-                        continue;
-                    };
-                    at += 1 + advance;
-                    let mut items = Vec::new();
-                    for _ in 0..declared_count {
-                        if at >= bytes.len() || is_final_terminator_run(bytes, at) {
-                            break;
-                        }
-                        let item_offset = at;
-                        let tagged_reference = bytes[at] == 0x81;
-                        let tagged_atom = bytes[at] == 0x80;
-                        let fixed_reference = bytes[at] == 0x32;
-                        let fixed_atom = tagged_atom
-                            && at
-                                .checked_add(5)
-                                .is_some_and(|fixed_end| fixed_end < bytes.len());
-                        let value_at =
-                            at + usize::from(tagged_reference || (tagged_atom && !fixed_atom));
-                        if (tagged_reference || tagged_atom)
-                            && (value_at >= bytes.len() || is_final_terminator_run(bytes, value_at))
-                        {
-                            at = value_at;
-                            break;
-                        }
-                        let Some((value, consumed)) = tagged_value(bytes, value_at) else {
-                            break;
-                        };
-                        items.push(if tagged_reference || fixed_reference {
-                            ListItem::Reference {
-                                value,
-                                offset: item_offset,
-                            }
-                        } else {
-                            ListItem::Atom {
-                                value,
-                                offset: item_offset,
-                            }
-                        });
-                        at = value_at + consumed;
-                    }
-                    fields.push(PayloadField::List {
-                        declared_count,
-                        items,
+                    continue;
+                };
+                let table_at = at + 1 + advance;
+                let Some(table_count) = View::u32_le_at(bytes, table_at) else {
+                    fields.push(PayloadField::Atom {
+                        value: 0x3c,
                         offset,
                     });
-                }
-                0x81 | 0x3a | 0x39 | 0x7a => {
-                    let tag = bytes[at];
-                    if is_final_terminator_run(bytes, at + 1) {
-                        fields.push(PayloadField::Atom {
-                            value: u32::from(tag),
-                            offset,
-                        });
-                        at += 1;
-                        continue;
-                    }
-                    let Some((value, consumed)) = tagged_value(bytes, at + 1) else {
-                        fields.push(PayloadField::Atom {
-                            value: u32::from(tag),
-                            offset,
-                        });
-                        at += 1;
-                        continue;
-                    };
-                    fields.push(match tag {
-                        0x81 => PayloadField::Reference { value, offset },
-                        _ => PayloadField::Scalar { tag, value, offset },
-                    });
-                    at += 1 + consumed;
-                }
-                0x0d => {
-                    fields.push(PayloadField::Sentinel { offset });
                     at += 1;
+                    continue;
+                };
+                let table_end = table_at.checked_add(4)?;
+                if usize::try_from(table_count)
+                    .ok()
+                    .is_some_and(|count| count <= bytes.len() - table_end)
+                {
+                    let (rows, end) = parse_bulk_table_rows(bytes, table_end, table_count)?;
+                    fields.push(PayloadField::BulkTable {
+                        count,
+                        rows,
+                        offset,
+                    });
+                    at = end;
+                    continue;
                 }
-                _ => {
-                    let (value, consumed) = atom(bytes, at).unwrap_or((u32::from(bytes[at]), 1));
-                    fields.push(PayloadField::Atom { value, offset });
-                    at += consumed;
+                fields.push(PayloadField::Atom {
+                    value: 0x3c,
+                    offset,
+                });
+                at += 1;
+            }
+            0x3b => {
+                if is_final_terminator_run(bytes, at + 1) {
+                    fields.push(PayloadField::Atom {
+                        value: 0x3b,
+                        offset,
+                    });
+                    at += 1;
+                    continue;
                 }
+                let Some((declared_count, advance)) = atom(bytes, at + 1) else {
+                    fields.push(PayloadField::Atom {
+                        value: 0x3b,
+                        offset,
+                    });
+                    at += 1;
+                    continue;
+                };
+                at += 1 + advance;
+                let mut items = Vec::new();
+                for _ in 0..declared_count {
+                    if at >= bytes.len() || is_final_terminator_run(bytes, at) {
+                        break;
+                    }
+                    let item_offset = at;
+                    let tagged_reference = bytes[at] == 0x81;
+                    let tagged_atom = bytes[at] == 0x80;
+                    let fixed_reference = bytes[at] == 0x32;
+                    let fixed_atom = tagged_atom
+                        && at
+                            .checked_add(5)
+                            .is_some_and(|fixed_end| fixed_end < bytes.len());
+                    let value_at =
+                        at + usize::from(tagged_reference || (tagged_atom && !fixed_atom));
+                    if (tagged_reference || tagged_atom)
+                        && (value_at >= bytes.len() || is_final_terminator_run(bytes, value_at))
+                    {
+                        at = value_at;
+                        break;
+                    }
+                    let Some((value, consumed)) = tagged_value(bytes, value_at) else {
+                        break;
+                    };
+                    items.push(if tagged_reference || fixed_reference {
+                        ListItem::Reference {
+                            value,
+                            offset: item_offset,
+                        }
+                    } else {
+                        ListItem::Atom {
+                            value,
+                            offset: item_offset,
+                        }
+                    });
+                    at = value_at + consumed;
+                }
+                fields.push(PayloadField::List {
+                    declared_count,
+                    items,
+                    offset,
+                });
+            }
+            0x81 | 0x3a | 0x39 | 0x7a => {
+                let tag = bytes[at];
+                if is_final_terminator_run(bytes, at + 1) {
+                    fields.push(PayloadField::Atom {
+                        value: u32::from(tag),
+                        offset,
+                    });
+                    at += 1;
+                    continue;
+                }
+                let Some((value, consumed)) = tagged_value(bytes, at + 1) else {
+                    fields.push(PayloadField::Atom {
+                        value: u32::from(tag),
+                        offset,
+                    });
+                    at += 1;
+                    continue;
+                };
+                fields.push(match tag {
+                    0x81 => PayloadField::Reference { value, offset },
+                    _ => PayloadField::Scalar { tag, value, offset },
+                });
+                at += 1 + consumed;
+            }
+            0x0d => {
+                fields.push(PayloadField::Sentinel { offset });
+                at += 1;
+            }
+            _ => {
+                let (value, consumed) = atom(bytes, at).unwrap_or((u32::from(bytes[at]), 1));
+                fields.push(PayloadField::Atom { value, offset });
+                at += consumed;
             }
         }
-        (at == bytes.len() && matches!(fields.last(), Some(PayloadField::Terminator))).then_some(
-            Ok(ObjectPayload {
-                size: bytes.len(),
-                fields,
-            }),
-        )
-    })()
-    .transpose()
+    }
+    (at == bytes.len() && matches!(fields.last(), Some(PayloadField::Terminator))).then_some(
+        ObjectPayload {
+            size: bytes.len(),
+            fields,
+        },
+    )
 }
 
 fn parse_bulk_table_rows(

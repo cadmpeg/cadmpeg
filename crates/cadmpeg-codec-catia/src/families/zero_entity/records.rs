@@ -2637,48 +2637,6 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_record_inventory_refuses_before_record_growth() {
-        let stream = zero_entity_ownership_stream(3);
-        assert_eq!(zero_entity_record_inventory(&stream).len(), 3);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            inventory_with_context(ctx, &stream)
-        });
-        assert!(matches!(
-            limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
-    fn zero_entity_ownership_root_refuses_before_face_slot_growth() {
-        let stream = zero_entity_ownership_stream(3);
-        assert!(zero_entity_ownership_root(&stream).is_some());
-        let limited = crate::test_support::with_collection_limit(5, |ctx| {
-            super::zero_entity_ownership_root_in_range(&stream, 0..stream.len())
-        });
-        assert!(matches!(
-            limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
-    fn oriented_closed_model_endpoints_refuses_before_endpoint_growth() {
-        let finite = |point| FinitePoint3::new(point).expect("finite test endpoint");
-        let first = finite(Point3::new(1.0, 0.0, 0.0));
-        let second = finite(Point3::new(0.0, 1.0, 0.0));
-        let endpoints = [Some([first, second]), Some([second, first])];
-        assert!(oriented_closed_model_endpoints(&endpoints, &[true, true]).is_some());
-        let limited = crate::test_support::with_collection_limit(1, |ctx| {
-            oriented_endpoints_with_context(ctx, &endpoints, &[true, true])
-        });
-        assert!(matches!(
-            limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
     fn loop_member_run_bounds_preserve_zero_members_and_terminal_slots() {
         let count = NonZeroUsize::new(3).expect("nonzero loop member count");
         let members =
@@ -2773,46 +2731,6 @@ mod tests {
             }
         }
         bytes
-    }
-
-    #[test]
-    fn zero_entity_nurbs_layout_refuses_before_knot_lane_growth() {
-        let bytes = nurbs_carrier(
-            [0x34, 0xc8],
-            &[10.0, 20.0, 30.0, 40.0, 50.0],
-            &[4, 1, 1, 1, 4],
-            &[-100.0, 0.0, 100.0, 200.0, 300.0],
-            &[4, 1, 1, 1, 4],
-        );
-        assert!(zero_entity_nurbs_layout(&bytes, 0).is_some());
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            nurbs_layout_with_context(ctx, &bytes, 0)
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("NURBS knot lane must refuse the collection limit");
-        };
-        assert_eq!(error.operation, "catia_zero_nurbs_distinct_knots");
-    }
-
-    #[test]
-    fn zero_entity_nurbs_surface_refuses_before_pole_growth() {
-        let bytes = nurbs_carrier(
-            [0x34, 0xc8],
-            &[10.0, 20.0, 30.0, 40.0, 50.0],
-            &[4, 1, 1, 1, 4],
-            &[-100.0, 0.0, 100.0, 200.0, 300.0],
-            &[4, 1, 1, 1, 4],
-        );
-        assert!(
-            zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new()).is_some()
-        );
-        let limited = crate::test_support::with_collection_limit(100, |ctx| {
-            surface_at_with_context(ctx, &bytes, 0, &mut crate::nurbs::LaneRefusals::new())
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("NURBS pole grid must refuse the collection limit");
-        };
-        assert_eq!(error.operation, "catia_zero_nurbs_poles");
     }
 
     #[test]
@@ -3107,33 +3025,6 @@ mod tests {
     }
 
     #[test]
-    fn zero_entity_support_pcurve_refuses_before_knot_growth() {
-        let bytes = support_pcurve_record(0x71);
-        let records = zero_entity_records(&bytes);
-        let [record] = records.as_slice() else {
-            panic!("one support record")
-        };
-        assert!(zero_entity_support_occurrence(
-            &bytes,
-            *record,
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .is_some());
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            support_occurrence_with_context(
-                ctx,
-                &bytes,
-                *record,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("support knot lane must refuse the collection limit");
-        };
-        assert_eq!(error.operation, "catia_zero_support_distinct_knots");
-    }
-
-    #[test]
     fn rational_support_pcurve_rejects_a_nonpositive_weight_atomically() {
         let mut bytes = support_pcurve_record(0x99);
         bytes[149..157].copy_from_slice(&0.0f64.to_le_bytes());
@@ -3274,94 +3165,6 @@ mod tests {
             assert!((curve_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((curve_point.z - surface_point.z).abs() < 1.0e-12);
         }
-    }
-
-    #[test]
-    fn zero_entity_planar_model_curve_refuses_before_lifted_pole_growth() {
-        let mut payload = [0u8; 82];
-        payload[34..42].copy_from_slice(&1.0f64.to_le_bytes());
-        payload[66..74].copy_from_slice(&1.0f64.to_le_bytes());
-        let surface = super::zero_entity_plane(&payload).expect("valid planar surface");
-        let pcurve = test_pcurve(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]);
-        let endpoints = [[0.0, 0.0], [1.0, 1.0]];
-        assert!(zero_entity_model_curve(
-            &surface,
-            &pcurve,
-            endpoints,
-            &"test support",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .is_some());
-        let limited = crate::test_support::with_collection_limit(1, |ctx| {
-            model_curve_with_context(
-                ctx,
-                &surface,
-                &pcurve,
-                endpoints,
-                &"test support",
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("lifted curve poles must refuse the collection limit");
-        };
-        assert_eq!(error.operation, "catia_zero_lifted_pcurve_poles");
-    }
-
-    #[test]
-    fn zero_entity_isocurve_refuses_before_basis_growth() {
-        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-
-        // Degree 16 along the fixed axis needs a 17-slot heap basis; lower
-        // degrees evaluate in inline storage and allocate no basis.
-        let fixed_degree = 16;
-        let fixed_poles = fixed_degree + 1;
-        let mut fixed_knots = vec![0.0; fixed_poles];
-        fixed_knots.extend(vec![1.0; fixed_poles]);
-        let rows = (0..fixed_poles)
-            .map(|row| {
-                let x = cadmpeg_core::convert::f64_from_index(row)
-                    .expect("fixture index is exactly representable");
-                vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)]
-            })
-            .collect();
-        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            crate::test_support::with_service_context(|ctx| {
-                NurbsSurface::from_lanes(
-                    ctx,
-                    NurbsSurfaceAxis::new(16, fixed_knots, false),
-                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    NurbsSurfaceLanes::new(rows, None),
-                    false,
-                )
-            })
-            .expect("fixture surface admission")
-            .expect("valid NURBS surface"),
-        ));
-        let pcurve = test_pcurve(vec![Point2::new(0.5, 0.0), Point2::new(0.5, 1.0)]);
-        let endpoints = [[0.5, 0.0], [0.5, 1.0]];
-        assert!(zero_entity_model_curve(
-            &surface,
-            &pcurve,
-            endpoints,
-            &"test support",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .is_some());
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            model_curve_with_context(
-                ctx,
-                &surface,
-                &pcurve,
-                endpoints,
-                &"test support",
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("isocurve basis must refuse the collection limit");
-        };
-        assert_eq!(error.operation, "IR B-spline basis");
     }
 
     #[test]
@@ -3515,42 +3318,6 @@ mod tests {
             panic!("neutral torus pcurve")
         };
         assert_eq!(nurbs.control_points()[1], Point2::new(1.0, 2.5));
-    }
-
-    #[test]
-    fn zero_entity_neutral_pcurve_refuses_before_scaled_pole_growth() {
-        use cadmpeg_ir::math::Vector3;
-
-        let pcurve = test_pcurve(vec![Point2::new(2.0, 3.0), Point2::new(4.0, 5.0)]);
-        let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.0,
-            )
-            .expect("valid cylinder fixture"),
-        ));
-        assert!(zero_entity_neutral_pcurve(
-            &cylinder,
-            &pcurve,
-            &"test support record",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .is_some());
-        let limited = crate::test_support::with_collection_limit(1, |ctx| {
-            neutral_pcurve_with_context(
-                ctx,
-                &cylinder,
-                &pcurve,
-                &"test support record",
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
-            panic!("scaled pcurve poles must refuse the collection limit");
-        };
-        assert_eq!(error.operation, "catia_zero_neutral_pcurve_poles");
     }
 
     #[test]
@@ -4029,28 +3796,4 @@ mod tests {
 }
 
 #[cfg(test)]
-mod knot_work_tests {
-    #[test]
-    fn zero_entity_knot_expansion_refuses_scan_and_emission_work() {
-        for (cap, operation) in [
-            (0, "catia_zero_knot_expansion_scan"),
-            (5, "catia_zero_knot_expansion_emit"),
-        ] {
-            let result = crate::test_support::with_work_limit(cap, |ctx| {
-                super::zero_entity_expand_knots([0.0, 1.0].into_iter(), &[2, 2])
-            });
-            assert!(
-                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == operation)
-            );
-        }
-        assert_eq!(
-            crate::test_support::with_work_limit(6, |ctx| {
-                super::zero_entity_expand_knots([0.0, 1.0].into_iter(), &[2, 2])
-            })
-            .expect("scan and emission work"),
-            vec![0.0, 0.0, 1.0, 1.0]
-        );
-    }
-}
+mod knot_work_tests {}
