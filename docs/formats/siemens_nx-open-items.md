@@ -661,9 +661,9 @@ construction ownership only.
 
 ### OM-26. `SKIN` and `THRU_CURVE` construction roles
 
-**Question.** Which ordered `SKIN` and `THRU_CURVE` references and branch groups select sections, guides, continuity, and terminal controls?
+**Question.** Which complete `SKIN` and `THRU_CURVE` branch allocations select ordered section strings, and which control bytes encode alignment, continuity, construction, patch, and result settings?
 
-**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", §7.1 "The envelope is followed by one counted branch group.", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, both exact construction envelopes, counted branch groups, ordered references, and the fourteen-block logical payload. A complete `THRU_CURVE` allocation places its nine envelope-reference blocks before its branch member and terminal blocks. A complete `SKIN` or `Studio Surface` allocation places its first eleven envelope-reference blocks before the branch allocation and its final three envelope references after it; an internal storage gap may occur. Branch declared counts include their terminal references, while the `THRU_CURVE` group count includes an implicit owner slot. These positional rules establish storage ownership and order only.
+**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", §7.1 "The envelope is followed by one counted branch group.", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, exact envelopes, counted branches, and ordered storage references. Complete `THRU_CURVE` and `SKIN` allocations form consecutive block runs when all envelope, member, and terminal references are taken in serialized order. Their physical boundaries can split structured rows and scalar atoms, including the member/terminal boundary. Branch declared counts include their terminal references; the `THRU_CURVE` group count includes an implicit owner slot. The NXOpen ThroughCurvesBuilder has an ordered SectionsList and separate alignment, continuity, construction, patch, and body-preference controls. Its API has no guide collector. The API does not assign native branch or control-byte roles.
 
 **Need.** We must know the roles to construct the neutral loft surface or body.
 
@@ -671,11 +671,15 @@ construction ownership only.
 `THRU_CURVE` envelope preserves nine references in order, and both operations'
 branch groups preserve modes, state lanes, members, and terminal references.
 The positional allocation and branch ordinal provide storage order but no
-relation assigning sections, guides, continuity, or terminal controls. The
+relation assigning section strings, continuity, or terminal controls. The
 envelope-reference slots are not all one consecutive reference-only run.
 Scalar pairs and strings are payload-owned and do not add those roles. The
 operation-owned data blocks may still contain selections of existing curve
 objects, so allocation ownership does not establish neutral curve identity.
+
+**Note.** Change one authored section or setting at a time and query the NX
+builder before save. Compare complete allocations and all controls. An output
+body relation or an empty interchange sibling does not identify input curves.
 
 ### OM-27. `Studio Surface` construction roles
 

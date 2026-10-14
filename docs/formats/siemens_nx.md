@@ -2187,7 +2187,7 @@ the operation's output bodies.
 
 An `EXTRACT_STRING` operation with four null operation-label object-index fields, no body output, no body-reference field, no body operand, no payload-string frame, one operation record, one terminal frame, and no common frame is a non-modeling history node. Its operation label, operation record, terminal frame, and bounded bytes remain retained. It assigns no string value, body relation, or feature output. A record that does not satisfy every condition remains a native operation.
 
-The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions. Their section identities and result controls remain unresolved until the corresponding parameter fields are assigned.
+The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.
 
 The `SWP104` operation label identifies a sweep-family construction. Its profile, path, result mode, orientation, transition, transformation, twist, and scale remain unresolved until their serialized construction fields are assigned.
 
@@ -2200,22 +2200,30 @@ The envelope is followed by one counted branch group. Its first byte is a count 
 The complete `THRU_CURVE` construction allocation is positional. The nine
 envelope-reference blocks precede the branch member and terminal blocks in
 branch order. The branch terminal is a separate block and is not one of the
-nine envelope references. This allocation order establishes storage ownership
-and branch order only; it does not assign a branch to a neutral section, guide,
-continuity mode, or result role.
+nine envelope references. The references select storage fragments. A fragment
+boundary can split a structured row, scalar-codec header, or scalar atom,
+including an atom split between a branch member and its terminal block.
+Concatenate the member and terminal bytes in reference order before reading
+their records. This allocation order establishes storage ownership and branch
+order only; it does not assign a branch to a neutral section, guide, continuity
+mode, or result role.
 
 `SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope. Its header is `discriminator, 00 00 01 00, reference[0..2], 01 09, header[8], 01 09, reference[3..10]`; `SKIN` discriminators are `3e` and `3f`, while the `Studio Surface` discriminator is `14`. The same bounded payload contains exactly one trailing lane framed as `03 03 2f a4 7a e1 47 ae 14 7b, reference[11..13], 01 01 ff ff ff ff ff ff ff ff ff 00 00 00 00 01 02`. All references use the canonical object-index encoding and unique-store resolution rule and retain their exact tokens and offsets. An invalid discriminator, malformed header, absent or repeated trailing lane, null or noncanonical reference, or incomplete suffix rejects the common envelope atomically without rejecting the bounded operation record.
 
 When all fourteen common-envelope references resolve to one offset store, bytewise concatenation of their blocks in reference order is the logical surface construction payload. Physical block boundaries do not delimit its fields. The payload retains its exact length and hash, ordered construction references and block identities, payload-relative block starts, exact block lengths, and absolute source offsets. An incomplete, out-of-order, unresolved, or cross-store graph remains unreconstructed. The nine-reference `THRU_CURVE` envelope does not use this fourteen-block reconstruction rule.
 
-The complete `SKIN` or `Studio Surface` construction allocation is also
-positional. The first eleven envelope-reference blocks are followed by the
-counted branch member and terminal blocks, and the final three envelope
-references follow that branch allocation. A storage gap may occur inside the
-branch interval. The fourteen envelope-reference slots are therefore ordered
-slots around the branch allocation, not one consecutive reference-only run.
-The allocation order and the storage role do not assign section, guide,
-continuity, terminal, or control semantics.
+The `SKIN` construction allocation is also positional. The first eleven
+envelope-reference blocks are followed by the counted branch member and
+terminal blocks, and the final three envelope references follow that branch
+allocation. The complete allocation forms one consecutive block run. The
+fourteen envelope-reference slots are ordered slots around the branch
+allocation, not one consecutive reference-only run. A physical block boundary
+can split a scalar atom. Concatenate each ordered allocation before reading
+its records; member-block counts are storage counts, not curve counts.
+The allocation order and storage role do not assign section, guide,
+continuity, terminal, or control semantics. `Studio Surface` places additional
+serialized storage references after its branch terminator and before its
+trailing envelope references.
 
 The logical surface construction payload uses the common object-payload scalar-pair frame `08 02 03 01, branch, c0 45 04 00 80 86 02 00 03, shifted-f64, 00, shifted-f64`, where `branch` is `03 01` or `81 02 01`. Each complete occurrence is retained in payload order. Both values are finite. The typed frame preserves its owning logical payload, exact discriminator including the branch, both exact scalar encodings, payload-relative discriminator and scalar offsets, and their exact absolute source offsets across source-block boundaries. An incomplete or non-finite frame is rejected atomically.
 
