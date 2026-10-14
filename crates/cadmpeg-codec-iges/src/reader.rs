@@ -75,7 +75,7 @@ fn push_occurrence_loss(
         .iter()
         .find(|entry| entry.sequence == source_sequence)
     {
-        losses.push(note.with_provenance(entry.admitted_loss_provenance()));
+        losses.push(note.with_provenance(entry.loss_provenance()));
     } else {
         losses.push(note);
     }
@@ -189,10 +189,7 @@ fn append_generic_losses(
             )
         };
 
-        losses.push(
-            code.note(message)
-                .with_provenance(entry.admitted_loss_provenance()),
-        );
+        losses.push(code.note(message).with_provenance(entry.loss_provenance()));
     }
 }
 
@@ -266,7 +263,7 @@ struct PhysicalParse<'a> {
 
 impl<'a> PhysicalParse<'a> {
     fn run(bytes: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let scan = card::scan_with_context(bytes)?;
+        let scan = card::scan(bytes)?;
         let (global, mut global_losses) = global::parse(&scan)?;
         let (directory, quarantined_directory) =
             directory::parse(&scan, global.global_table(), ctx)?;
@@ -347,10 +344,7 @@ impl<'a> PhysicalParse<'a> {
                     defect.describe(),
                 );
 
-                losses.push(
-                    code.note(message)
-                        .with_provenance(entry.admitted_loss_provenance()),
-                );
+                losses.push(code.note(message).with_provenance(entry.loss_provenance()));
             }
         }
         Ok(losses)

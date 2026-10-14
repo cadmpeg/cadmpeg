@@ -19,7 +19,7 @@ fn push_attributed_loss(
 ) {
     losses.push(
         code.note(message.to_string())
-            .with_provenance(entry.admitted_loss_provenance()),
+            .with_provenance(entry.loss_provenance()),
     );
 }
 
