@@ -9,7 +9,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
 
 #[test]
-fn point_commit_propagates_local_entity_limit() {
+fn point_commit_skips_the_object_at_the_local_entity_limit() {
     let object = object_record_with_payload(
         ArchiveVersion::V5,
         1,
@@ -21,19 +21,21 @@ fn point_commit_propagates_local_entity_limit() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
         context.set_expansion_limits([16, 16, 4]);
-        let error = context
+        context
             .decode_geometry()
-            .expect_err("five point entities exceed four");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance entity limit" && refusal.limit == 4 && refusal.additional == 1)
-        );
+            .expect("five point entities exceeding four skip the point");
         assert!(context.session.document().model.points.is_empty());
+        assert!(context
+            .report
+            .phase_warnings
+            .messages()
+            .any(|message| message.contains("document instance entity budget exceeded")));
+        assert_eq!(expand.ctx().resource_refusal(), None);
     });
 }
 
 #[test]
-fn candidate_propagates_local_entity_limit() {
+fn candidate_is_rejected_at_the_local_entity_limit() {
     let scan = scan_with_objects(&[]);
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
@@ -58,16 +60,15 @@ fn candidate_propagates_local_entity_limit() {
                 ));
             })
             .expect_err("candidate exceeds zero entities");
-        assert!(
-            matches!(error, CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal.operation == "Rhino instance entity limit" && refusal.limit == 0 && refusal.additional == 1)
-        );
+        assert!(matches!(&error, CandidateError::Admission(message)
+            if message == "document instance entity budget exceeded"));
         assert!(context.session.document().model.points.is_empty());
+        assert_eq!(expand.ctx().resource_refusal(), None);
     });
 }
 
 #[test]
-fn brep_commit_propagates_local_entity_limit() {
+fn brep_commit_skips_the_object_at_the_local_entity_limit() {
     let object = object_record_with_payload(
         ArchiveVersion::V5,
         0x10,
@@ -79,14 +80,18 @@ fn brep_commit_propagates_local_entity_limit() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
         context.set_expansion_limits([16, 16, 0]);
-        let error = context
+        context
             .decode_geometry()
-            .expect_err("Brep exceeds zero entities");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance entity limit" && refusal.limit == 0)
-        );
+            .expect("a Brep exceeding zero entities is skipped");
         assert!(context.session.document().model.bodies.is_empty());
+        assert!(context
+            .report
+            .phase_warnings
+            .messages()
+            .any(|message| message.contains(
+                "Brep draft rejected before commit: document instance entity budget exceeded"
+            )));
+        assert_eq!(expand.ctx().resource_refusal(), None);
     });
 }
 
@@ -332,7 +337,7 @@ fn transformed_instance_annotation_ids_refuse_scoped_slots_before_copy() {
 }
 
 #[test]
-fn point_cloud_commit_propagates_local_entity_limit() {
+fn point_cloud_commit_skips_the_object_at_the_local_entity_limit() {
     let scan = scan_with_objects(&[crate::test_support::test_dump::object_record(
         ArchiveVersion::V5,
         1,
@@ -343,7 +348,7 @@ fn point_cloud_commit_propagates_local_entity_limit() {
         context.set_expansion_limits([16, 16, 6]);
         let point =
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("point");
-        let error = context
+        let committed = context
             .commit_geometry(
                 0,
                 crate::curves::DecodedGeometry::PointCloud(crate::curves::PointCloud {
@@ -352,13 +357,15 @@ fn point_cloud_commit_propagates_local_entity_limit() {
                     warnings: crate::loss::Diagnostics::new(),
                 }),
             )
-            .expect_err("seven cloud entities exceed six");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance entity limit" && refusal.limit == 6 && refusal.additional == 1)
-        );
+            .expect("seven cloud entities exceeding six skip the cloud");
+        assert!(!committed);
         assert!(context.session.document().model.bodies.is_empty());
         assert!(context.session.document().model.vertices.is_empty());
-        assert!(context.report.phase_warnings.is_empty());
+        assert!(context
+            .report
+            .phase_warnings
+            .messages()
+            .any(|message| message.contains("document instance entity budget exceeded")));
+        assert_eq!(expand.ctx().resource_refusal(), None);
     });
 }

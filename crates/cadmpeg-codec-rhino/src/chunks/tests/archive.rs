@@ -311,6 +311,28 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
 }
 
 #[test]
+fn polycurve_nested_past_the_curve_depth_cap_fails_one_object() {
+    let mut nested = line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
+    let mut class = LINE_CLASS;
+    for _ in 0..40 {
+        nested = polycurve_payload(&[0.0, 1.0], &[(class, nested)]);
+        class = POLYCURVE_CLASS;
+    }
+    let result = decode(&archive(&[
+        object_record(4, POLYCURVE_CLASS, &nested),
+        object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0])),
+    ]));
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("curve recursion limit exceeded")));
+}
+
+#[test]
 fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_order() {
     let inner = polycurve_payload(
         &[10.0, 20.0],

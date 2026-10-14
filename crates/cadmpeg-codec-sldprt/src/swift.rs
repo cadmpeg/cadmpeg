@@ -643,18 +643,10 @@ fn parse_unique_root(
     Ok(parsed)
 }
 
-fn admit_swift_depth(
-    ctx: &DecodeContext<'_>,
-    depth: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if depth >= MAX_DEPTH {
-        let requested = u64_from_index(depth).checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), u64::MAX)
-        })?;
-        return Err(ctx.refuse_codec_limit(operation, u64_from_index(MAX_DEPTH), requested));
-    }
-    Ok(())
+/// Whether a SWIFT traversal may descend to `depth`. The SWIFT nesting cap
+/// bounds one optional parse or feature walk; the caller skips that item.
+const fn swift_depth_admitted(depth: usize) -> bool {
+    depth < MAX_DEPTH
 }
 
 fn parse_entity(
@@ -666,7 +658,9 @@ fn parse_entity(
     if pstr(cursor) != Some("Entity") {
         return Ok(None);
     }
-    admit_swift_depth(ctx, depth, "parse SWIFT entity")?;
+    if !swift_depth_admitted(depth) {
+        return Ok(None);
+    }
     let _depth_guard = ctx.enter_nested("parse SWIFT entity")?;
     ctx.charge_work(1, "parse SWIFT entity")?;
     let Some(class) = pstr(cursor) else {
@@ -1728,7 +1722,9 @@ fn feature_reaches(
     if visited.contains(id) {
         return Ok(false);
     }
-    admit_swift_depth(ctx, depth, "traverse SWIFT feature reachability")?;
+    if !swift_depth_admitted(depth) {
+        return Ok(false);
+    }
     let _depth = ctx.enter_nested("traverse SWIFT feature reachability")?;
     let owned_id =
         ctx.format_retained(format_args!("{id}"), "retain SWIFT reachability path ID")?;
@@ -1856,7 +1852,9 @@ fn collect_rotational_projections(
     if visited.contains(id) {
         return Ok(());
     }
-    admit_swift_depth(ctx, depth, "scan SWIFT rotational features")?;
+    if !swift_depth_admitted(depth) {
+        return Ok(());
+    }
     let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT rotational path ID")?;
     ctx.insert_btree_set(visited, owned_id, "track SWIFT rotational path")?;
@@ -2060,7 +2058,9 @@ fn collect_diameter_contributors(
     if visited.contains(id) {
         return Ok(());
     }
-    admit_swift_depth(ctx, depth, "scan SWIFT diameter features")?;
+    if !swift_depth_admitted(depth) {
+        return Ok(());
+    }
     let _depth = ctx.enter_nested("scan SWIFT diameter features")?;
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT diameter path ID")?;
     ctx.insert_btree_set(visited, owned_id, "track SWIFT diameter path")?;
@@ -2673,7 +2673,9 @@ fn measurement_for_feature(
     if visited.contains(id) {
         return Ok(None);
     }
-    admit_swift_depth(ctx, depth, "measure SWIFT feature geometry")?;
+    if !swift_depth_admitted(depth) {
+        return Ok(None);
+    }
     let _depth = ctx.enter_nested("measure SWIFT feature geometry")?;
     let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT measurement path ID")?;
     ctx.insert_btree_set(visited, owned_id, "track SWIFT measurement path")?;
@@ -3087,7 +3089,9 @@ fn visit_expanded_feature_ids<'a>(
     if short_class(&feature.class) != "GdtPattern" {
         return visit(id);
     }
-    admit_swift_depth(ctx, depth, "expand SWIFT target features")?;
+    if !swift_depth_admitted(depth) {
+        return visit(id);
+    }
     let Some(subfeatures) = direct_subfeature_ids(feature) else {
         return visit(id);
     };

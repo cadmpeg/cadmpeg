@@ -1415,7 +1415,7 @@ pub(crate) fn transformed_procedural_instance_keeps_solved_carriers_without_dang
 }
 
 #[test]
-fn branching_instance_member_limit_propagates_resource_refusal() {
+fn branching_instance_member_limit_retains_the_wide_reference() {
     let archive = ArchiveVersion::V5;
     let first_member_id = [0x31; 16];
     let second_member_id = [0x32; 16];
@@ -1467,13 +1467,23 @@ fn branching_instance_member_limit_propagates_resource_refusal() {
         let mut context =
             crate::decode::DecodeContext::new(&scan, expand).expect("test transaction");
         context.set_expansion_limits([16, 1, 128]);
-        let error = context
+        context
             .decode_geometry()
-            .expect_err("wide reference exceeds one member");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance member limit" && refusal.limit == 1 && refusal.additional == 1)
+            .expect("the wide reference exceeding one member is retained");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert_eq!(
+            result.ir().model.points.len(),
+            1,
+            "{:?}",
+            result.ir().model.points
         );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("instance member budget exceeded")));
     });
 }
 
@@ -1691,7 +1701,7 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
 }
 
 #[test]
-fn instance_reference_limit_propagates_resource_refusal() {
+fn instance_reference_limit_retains_the_reference() {
     let archive = ArchiveVersion::V5;
     let reference = object_record_with_payload(
         archive,
@@ -1703,16 +1713,23 @@ fn instance_reference_limit_propagates_resource_refusal() {
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
         context.set_expansion_limits([0, 16, 128]);
-        let error = context.decode_geometry().expect_err("zero reference limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance reference limit" && refusal.limit == 0 && refusal.additional == 1)
-        );
+        context
+            .decode_geometry()
+            .expect("a zero reference limit retains the reference");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert!(result.ir().model.bodies.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("instance reference budget exceeded")));
     });
 }
 
 #[test]
-fn instance_local_depth_limit_propagates_resource_refusal() {
+fn instance_local_depth_limit_retains_the_reference() {
     let archive = ArchiveVersion::V5;
     let definitions: Vec<_> = (1u8..=65)
         .map(|index| {
@@ -1749,12 +1766,16 @@ fn instance_local_depth_limit_propagates_resource_refusal() {
     install_definitions(&mut scan, definitions);
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand).expect("transaction");
-        let error = context
+        context
             .decode_geometry()
-            .expect_err("65 reference levels exceed the local slice");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino instance depth limit" && refusal.limit == 64 && refusal.additional == 1)
-        );
+            .expect("65 reference levels exceeding the local cap are retained");
+        assert_eq!(expand.ctx().resource_refusal(), None);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("instance nesting exceeds 64 levels")));
     });
 }
