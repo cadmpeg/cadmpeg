@@ -196,7 +196,7 @@ pub(crate) struct SurfaceCarrier {
 }
 
 fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
-    let mut candidates = Vec::with_capacity(2);
+    let mut candidates = Vec::new();
 
     let partition_marker = hdr.checked_add(analytic::MARKER)?;
     if matches!(body.get(partition_marker), Some(0x2b | 0x2d)) {
@@ -410,10 +410,6 @@ pub(crate) fn patch_compact_values(
     let Some(bytes) = body.get_mut(start..carrier.end) else {
         return Ok(false);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(size),
-        "patch SLDPRT compact values",
-    )?;
     for (slot, value) in bytes.chunks_exact_mut(8).zip(values) {
         slot.copy_from_slice(&value.to_be_bytes());
     }
@@ -435,7 +431,7 @@ pub(crate) fn patch_nurbs_by_attr(
     let Some(SolvedCurveGeometry::Nurbs(old)) = carrier.geometry.solved() else {
         return Ok(false);
     };
-    Ok(patch_nurbs_curve(ctx, body, carrier.offset, old, new, 0.001)?.is_some())
+    Ok(patch_nurbs_curve(body, carrier.offset, old, new, 0.001)?.is_some())
 }
 
 #[cfg(test)]
@@ -844,6 +840,3 @@ mod tests {
         assert!(parse_carrier(&bytes, 0).is_none());
     }
 }
-
-#[cfg(test)]
-mod patch_tests;

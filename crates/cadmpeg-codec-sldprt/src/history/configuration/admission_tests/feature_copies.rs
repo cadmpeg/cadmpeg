@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{assert_projection_refusal, design_configuration, feature_input_lane};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use super::{design_configuration, feature_input_lane};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     ConfigurationEvaluation, ConfigurationFeatureState, DistinctMembers, Feature, FeatureContent,
@@ -134,50 +134,21 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 #[test]
-fn configuration_feature_copy_design_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_design);
+fn configuration_feature_copy_design_runs_under_service_policy() {
+    run_design(&DecodePolicy::service()).unwrap();
 }
+
 #[test]
-fn configuration_feature_copy_design_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_design);
+fn configuration_feature_copy_supplemental_runs_under_service_policy() {
+    run_supplemental(&DecodePolicy::service()).unwrap();
 }
+
 #[test]
-fn configuration_feature_copy_design_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_design);
+fn configuration_feature_copy_topology_runs_under_service_policy() {
+    run_topology(&DecodePolicy::service()).unwrap();
 }
+
 #[test]
-fn configuration_feature_copy_supplemental_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_supplemental);
-}
-#[test]
-fn configuration_feature_copy_supplemental_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_supplemental);
-}
-#[test]
-fn configuration_feature_copy_supplemental_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_supplemental);
-}
-#[test]
-fn configuration_feature_copy_topology_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_topology);
-}
-#[test]
-fn configuration_feature_copy_topology_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_topology);
-}
-#[test]
-fn configuration_feature_copy_topology_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_topology);
-}
-#[test]
-fn configuration_feature_copy_sketch_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_sketch);
-}
-#[test]
-fn configuration_feature_copy_sketch_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_sketch);
-}
-#[test]
-fn configuration_feature_copy_sketch_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_sketch);
+fn configuration_feature_copy_sketch_runs_under_service_policy() {
+    run_sketch(&DecodePolicy::service()).unwrap();
 }

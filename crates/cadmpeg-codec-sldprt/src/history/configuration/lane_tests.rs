@@ -45,27 +45,23 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 
     assert_eq!(
         unresolved_configuration_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             &configurations,
             &[
                 feature_input_lane("first", Some("1")),
                 feature_input_lane("second", Some("2")),
             ],
-        )
-        .unwrap(),
+        ),
         0
     );
     assert_eq!(
         unresolved_configuration_lanes(
-            &cadmpeg_test_support::service_decode_context(),
             &configurations,
             &[
                 feature_input_lane("duplicate-first", Some("1")),
                 feature_input_lane("duplicate-second", Some("1")),
                 feature_input_lane("unmatched", Some("3")),
             ],
-        )
-        .unwrap(),
+        ),
         3
     );
 }
@@ -1375,8 +1371,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         native_ref: None,
     });
 
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
-        .unwrap();
+    align_configuration_parameter_kinds(&mut ir);
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
@@ -1390,8 +1385,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Length(Length::new(7.0).unwrap()),
     );
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
-        .unwrap();
+    align_configuration_parameter_kinds(&mut ir);
     assert_eq!(
         ir.model.configurations[0].parameter_values[&count_id],
         ParameterValue::Integer(7)
@@ -1401,8 +1395,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.0).unwrap()),
     );
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
-        .unwrap();
+    align_configuration_parameter_kinds(&mut ir);
     assert_eq!(
         ir.model.configurations[0].parameter_values[&count_id],
         ParameterValue::Integer(7)
@@ -1412,8 +1405,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap()),
     );
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
-        .unwrap();
+    align_configuration_parameter_kinds(&mut ir);
     assert!(!ir.model.configurations[0]
         .parameter_values
         .contains_key(&count_id));
@@ -1435,11 +1427,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
             count_id.clone(),
             ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(real).unwrap()),
         );
-        align_configuration_parameter_kinds(
-            &cadmpeg_test_support::service_decode_context(),
-            &mut ir,
-        )
-        .unwrap();
+        align_configuration_parameter_kinds(&mut ir);
         assert_eq!(
             ir.model.configurations[0].parameter_values.get(&count_id),
             expected.map(ParameterValue::Integer).as_ref()
@@ -1491,11 +1479,7 @@ fn integer_parameter_refuses_real_override_outside_i64_or_fractional() {
             count_id.clone(),
             ParameterValue::Real(FiniteReal::new(real).unwrap()),
         );
-        align_configuration_parameter_kinds(
-            &cadmpeg_test_support::service_decode_context(),
-            &mut ir,
-        )
-        .unwrap();
+        align_configuration_parameter_kinds(&mut ir);
         assert_eq!(
             ir.model.configurations[0].parameter_values.get(&count_id),
             expected.map(ParameterValue::Integer).as_ref(),
@@ -1528,7 +1512,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let native =
-        crate::resolved_features::terminations::compact_surface_selection_value(&ctx, &components)
+        crate::resolved_features::terminations::compact_surface_selection_value(&components)
             .expect("surface selection text");
     let selection = || crate::records::FeatureInputSurfaceSelection {
         id: "selection".into(),

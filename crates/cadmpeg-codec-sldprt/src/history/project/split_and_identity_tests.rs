@@ -5,7 +5,7 @@
 use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
-use crate::history::project::neutral_feature_id_charged;
+use crate::history::project::neutral_feature_id;
 use crate::history::project::project_configurations_charged;
 use crate::history::project::project_features;
 use crate::history::project::project_semantic_notes;
@@ -87,11 +87,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
     );
     assert_eq!(
         split_feature.dependencies.as_slice(),
-        vec![neutral_feature_id_charged(
-            &cadmpeg_test_support::service_decode_context(),
-            &sketch.id
-        )
-        .unwrap()]
+        vec![neutral_feature_id(&sketch.id).unwrap()]
     );
 }
 
@@ -105,15 +101,13 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
     let sketch_id =
         cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch-geometry").unwrap();
 
-    assert!(with_test_ctx(|ctx| bind_definition_sketch(
-        ctx,
+    assert!(bind_definition_sketch(
         &mut definition,
         "sketch-native",
         &feature_id,
         &sketch_id,
         true,
-    ))
-    .unwrap());
+    ));
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -139,10 +133,8 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
         features: vec![note.clone()],
     };
 
-    let annotations = with_test_ctx(|ctx| {
-        project_semantic_notes(ctx, std::slice::from_ref(&history))
-            .expect("semantic note projection")
-    });
+    let annotations =
+        project_semantic_notes(std::slice::from_ref(&history)).expect("semantic note projection");
     assert!(
         project_features(&cadmpeg_test_support::service_decode_context(), &[history])
             .unwrap()
@@ -185,9 +177,8 @@ fn charged_configuration_projection_preserves_writer_projection() {
         features: Vec::new(),
     };
     let histories = [history];
-    let charged = with_test_ctx(|ctx| {
-        project_configurations_charged(ctx, &histories).expect("charged configuration projection")
-    });
+    let charged =
+        project_configurations_charged(&histories).expect("charged configuration projection");
     assert_eq!(
         charged,
         vec![cadmpeg_ir::features::DesignConfiguration {

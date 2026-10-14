@@ -30,13 +30,7 @@ fn coincident_physical_loci_keep_the_smallest_identity_and_role() {
         .iter()
         .map(|entity| (entity.id(), entity))
         .collect();
-    canonicalize_physical_loci(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut loci,
-        &index,
-        EPS_PHYSICAL_LOCUS_QUANTIZATION,
-    )
-    .unwrap();
+    canonicalize_physical_loci(&mut loci, &index, EPS_PHYSICAL_LOCUS_QUANTIZATION);
     assert_eq!(loci, expected);
 }
 
@@ -59,13 +53,7 @@ fn distinct_physical_loci_preserve_input_order() {
         .iter()
         .map(|entity| (entity.id(), entity))
         .collect();
-    canonicalize_physical_loci(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut loci,
-        &index,
-        EPS_PHYSICAL_LOCUS_QUANTIZATION,
-    )
-    .unwrap();
+    canonicalize_physical_loci(&mut loci, &index, EPS_PHYSICAL_LOCUS_QUANTIZATION);
     assert_eq!(loci, expected);
 }
 
@@ -88,12 +76,6 @@ fn unresolved_physical_loci_preserve_input_order() {
         .iter()
         .map(|entity| (entity.id(), entity))
         .collect();
-    canonicalize_physical_loci(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut loci,
-        &index,
-        EPS_PHYSICAL_LOCUS_QUANTIZATION,
-    )
-    .unwrap();
+    canonicalize_physical_loci(&mut loci, &index, EPS_PHYSICAL_LOCUS_QUANTIZATION);
     assert_eq!(loci, expected);
 }

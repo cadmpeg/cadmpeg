@@ -8,7 +8,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
@@ -17,7 +17,6 @@ use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
 
 pub(crate) fn named_scalars_charged(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     parent: &str,
     names: &[FeatureInputName],
@@ -43,47 +42,22 @@ pub(crate) fn named_scalars_charged(
         else {
             continue;
         };
-        let ordinal = u32::try_from(scalars.len()).map_err(|_| {
-            ctx.refuse_codec_limit("number SLDPRT named scalars", u64::MAX - 1, u64::MAX)
-        })?;
-        let offset = u64::try_from(value_offset).map_err(|_| {
-            ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
-        })?;
-        let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
-        let id = ctx.format_retained(
-            format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
-            "retain SLDPRT scalar identity",
-        )?;
-        let parent = copy_scalar_text(ctx, parent)?;
-        let name_id = copy_scalar_text(ctx, &name.id)?;
-        ctx.reserve_vec(&mut scalars, 1, "collect SLDPRT named scalars")?;
+        let ordinal = u32::try_from(scalars.len())
+            .map_err(|_| CodecError::malformed("SLDPRT named scalar ordinal overflows u32"))?;
         scalars.push(FeatureInputScalar {
-            id,
-            parent,
+            id: format!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
+            parent: parent.to_owned(),
             feature_ref: None,
             ordinal,
-            offset,
+            offset: u64_from_index(value_offset),
             object_id,
-            name: name_id,
+            name: name.id.clone(),
             value,
             role: scalar_role(payload, trailer_offset),
-            operands,
+            operands: scalar_operands(payload, trailer_offset, parent),
         });
     }
     Ok(scalars)
-}
-
-fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(copy_work, "retain SLDPRT scalar identity")?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, text.len(), "retain SLDPRT scalar identity")?;
-    copy.push_str(text);
-    Ok(copy)
 }
 
 /// The scalar payload offset that follows the serialized object name at
@@ -151,33 +125,23 @@ fn ulp_distance(left: f64, right: f64) -> u64 {
     ordered(left).abs_diff(ordered(right))
 }
 
-fn scalar_operands_charged(
-    ctx: &DecodeContext<'_>,
+fn scalar_operands(
     payload: &[u8],
     trailer_offset: usize,
     parent: &str,
-) -> Result<Vec<FeatureInputOperand>, CodecError> {
+) -> Vec<FeatureInputOperand> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let mut operands = Vec::new();
-    for (offset, kind, entity_index) in operand_cells(payload, trailer_offset).into_iter().flatten()
-    {
-        let offset_u64 = u64::try_from(offset).map_err(|_| {
-            ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
-        })?;
-        let reference_ref = ctx.format_retained(
-            format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
-            "retain SLDPRT scalar identity",
-        )?;
-        ctx.reserve_vec(&mut operands, 1, "collect SLDPRT scalar operands")?;
-        operands.push(FeatureInputOperand {
-            offset: offset_u64,
-            reference_ref,
+    operand_cells(payload, trailer_offset)
+        .into_iter()
+        .flatten()
+        .map(|(offset, kind, entity_index)| FeatureInputOperand {
+            offset: u64_from_index(offset),
+            reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
             kind,
             entity_index,
             entity_ref: None,
-        });
-    }
-    Ok(operands)
+        })
+        .collect()
 }
 
 fn operand_cells(
@@ -243,61 +207,34 @@ pub(super) struct FeatureObjectNames<'a> {
 }
 
 impl<'a> FeatureObjectNames<'a> {
-    pub(super) fn new<'ctx>(
-        ctx: &'ctx DecodeContext<'_>,
-        names: &'a [FeatureInputName],
-        operation: &'static str,
-    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
-        ctx.with_scoped_storage(operation, || {
-            let mut by_source = HashMap::new();
-            let mut by_value = HashMap::<&str, Option<&FeatureInputName>>::new();
-            for name in names {
-                if let Some(source) = name.object_id.and_then(ObjectId::value) {
-                    ctx.charge_work(4, operation)?;
-                    if by_source.len() == by_source.capacity() && !by_source.contains_key(&source) {
-                        ctx.charge_work(u64_from_index(by_source.len()), operation)?;
-                    }
-                    ctx.admit_hash_map_entry(&mut by_source, &source, operation)?;
-                    by_source
-                        .entry(source)
-                        .and_modify(|value| *value = None)
-                        .or_insert(Some(name));
-                }
-                let value = name.value.as_str();
-                ctx.charge_work(u64_from_index(value.len()) + 1, operation)?;
-                if by_value.len() == by_value.capacity() && !by_value.contains_key(value) {
-                    for key in by_value.keys() {
-                        ctx.charge_work(u64_from_index(key.len()), operation)?;
-                    }
-                }
-                ctx.admit_hash_map_entry(&mut by_value, &value, operation)?;
-                by_value
-                    .entry(value)
+    pub(super) fn new(names: &'a [FeatureInputName]) -> Self {
+        let mut by_source = HashMap::new();
+        let mut by_value = HashMap::<&str, Option<&FeatureInputName>>::new();
+        for name in names {
+            if let Some(source) = name.object_id.and_then(ObjectId::value) {
+                by_source
+                    .entry(source)
                     .and_modify(|value| *value = None)
                     .or_insert(Some(name));
             }
-            Ok(Self {
-                by_source,
-                by_value,
-            })
-        })
+            by_value
+                .entry(name.value.as_str())
+                .and_modify(|value| *value = None)
+                .or_insert(Some(name));
+        }
+        Self {
+            by_source,
+            by_value,
+        }
     }
 
-    pub(super) fn get(
-        &self,
-        ctx: &DecodeContext<'_>,
-        source: Option<u32>,
-        name: &str,
-        operation: &'static str,
-    ) -> Result<Option<&'a FeatureInputName>, CodecError> {
+    pub(super) fn get(&self, source: Option<u32>, name: &str) -> Option<&'a FeatureInputName> {
         if let Some(source) = source {
-            ctx.charge_work(1, operation)?;
             if let Some(found) = self.by_source.get(&source) {
-                return Ok(*found);
+                return *found;
             }
         }
-        ctx.charge_work(u64_from_index(name.len()) + 1, operation)?;
-        Ok(self.by_value.get(name).copied().flatten())
+        self.by_value.get(name).copied().flatten()
     }
 }
 

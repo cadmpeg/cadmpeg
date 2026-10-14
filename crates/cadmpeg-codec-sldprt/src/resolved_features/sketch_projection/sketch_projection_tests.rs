@@ -1,12 +1,8 @@
 //! Tests for the `sketch_projection` module.
 
-const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
-
 use super::super::curves::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
 use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
@@ -39,9 +35,7 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
         .with_endpoint_refs(vec!["native:100".into(), "native:300".into()]),
     ];
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap();
+    resolve_connected_marker_arcs(&mut entities, 1.0e-9);
 
     assert_eq!(
         entities[3].geometry,
@@ -204,71 +198,11 @@ fn slot_cycle_fixture() -> (
 }
 
 #[test]
-fn slot_cycle_refuses_collection_limit() {
-    let (payload, inputs, mut entities) = slot_cycle_fixture();
-    let markers = inputs.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error =
-        resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT slot curves"));
-}
-
-#[test]
-fn slot_cycle_refuses_work_limit() {
-    let (payload, inputs, mut entities) = slot_cycle_fixture();
-    let markers = inputs.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error =
-        resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "sort SLDPRT slot curves"));
-}
-
-#[test]
-fn slot_cycle_refuses_retained_limit() {
-    let (payload, inputs, entities) = slot_cycle_fixture();
-    let markers = inputs.iter().collect::<Vec<_>>();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT slot endpoint identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-            let mut entities = entities.clone();
-            resolve_slot_marker_arcs(
-                &ctx,
-                &payload,
-                &markers,
-                &mut entities,
-                EPS_REFUSAL_GEOMETRY,
-            )
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT slot endpoint identity"));
-}
-
-#[test]
 fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
     let (payload, inputs, mut entities) = slot_cycle_fixture();
     let markers = inputs.iter().collect::<Vec<_>>();
 
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
+    resolve_slot_marker_arcs(&payload, &markers, &mut entities, 1.0e-9);
 
     assert_eq!(
         entities[9].endpoint_refs,
