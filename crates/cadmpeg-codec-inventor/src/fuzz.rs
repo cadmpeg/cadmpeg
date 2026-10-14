@@ -28,7 +28,7 @@ pub fn database(data: &[u8]) {
     with_source(data, |ctx, _| {
         let _probe = crate::database::parse_database(ctx, data);
         let _probe = crate::database::parse_registry(ctx, data);
-        let _probe = crate::database::parse_revisions(ctx, data);
+        let _probe = crate::database::parse_revisions(data);
     });
 }
 
@@ -42,30 +42,27 @@ pub fn meta_stream(data: &[u8]) {
 /// Exercises metadata tables and the corresponding bulk-record framing.
 pub fn record_tables(data: &[u8]) {
     let split = data.len() / 2;
-    let arena = DecodeArena::new();
-    let policy = fuzz_policy();
-    let Ok((ctx, source)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
-        return;
-    };
-    let Some(metadata_source) = source.child(source.start(), source.start() + split) else {
-        return;
-    };
-    let Ok(tables) = crate::records::parse_meta_tables(&ctx, metadata_source) else {
-        return;
-    };
-    let Some(bulk_source) = source.child(source.start() + split, source.end()) else {
-        return;
-    };
-    // The bulk framing reads the version from the input's first byte. Nothing
-    // stands in for an input that states no byte: it leaves the way every
-    // other input this wrapper cannot carry further leaves. `parse_meta_tables`
-    // above refuses a body shorter than its prefix, so no input reaches this
-    // guard without a first byte -- which is what the substituted version
-    // stood in for.
-    let Some(&version) = data.first() else {
-        return;
-    };
-    let _probe = crate::records::frame_bulk_records(&ctx, bulk_source, &tables, version);
+    with_source(data, |_, source| {
+        let Some(metadata_source) = source.child(source.start(), source.start() + split) else {
+            return;
+        };
+        let Ok(tables) = crate::records::parse_meta_tables(metadata_source) else {
+            return;
+        };
+        let Some(bulk_source) = source.child(source.start() + split, source.end()) else {
+            return;
+        };
+        // The bulk framing reads the version from the input's first byte. Nothing
+        // stands in for an input that states no byte: it leaves the way every
+        // other input this wrapper cannot carry further leaves. `parse_meta_tables`
+        // above refuses a body shorter than its prefix, so no input reaches this
+        // guard without a first byte -- which is what the substituted version
+        // stood in for.
+        let Some(&version) = data.first() else {
+            return;
+        };
+        let _probe = crate::records::frame_bulk_records(bulk_source, &tables, version);
+    });
 }
 
 /// Exercises the bulk envelope and its exact zlib member.

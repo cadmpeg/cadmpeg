@@ -19,19 +19,6 @@ use std::fmt::{Display, Formatter};
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::RenderingStyleExtension;
 
-fn retained_digest(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(64, operation)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "hash Inventor native record bytes",
-    )?;
-    Ok(cadmpeg_ir::hash::sha256_hex(bytes))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
     pub(crate) revision: u8,
@@ -374,23 +361,12 @@ impl AssemblyOccurrenceRecord {
         ctx: &DecodeContext<'_>,
         occurrence: &crate::assembly::AssemblyOccurrence,
     ) -> Result<Self, CodecError> {
-        ctx.charge_collection_items(1, "collect Inventor native assembly occurrence")?;
         ctx.charge_entities(1, "admit Inventor native assembly occurrence")?;
-        let id = ctx.format_retained(
-            format_args!(
-                "inventor:assembly:occurrence#{}-{}",
-                occurrence.segment_token, occurrence.record_ordinal
-            ),
-            "retain Inventor assembly occurrence id",
-        )?;
-        let segment_token = ctx.copy_retained_text(
-            &occurrence.segment_token,
-            "retain Inventor assembly occurrence token",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(occurrence.related_references.len()),
-            "copy Inventor assembly related references",
-        )?;
+        let id = format!(
+            "inventor:assembly:occurrence#{}-{}",
+            occurrence.segment_token, occurrence.record_ordinal
+        );
+        let segment_token = occurrence.segment_token.clone();
         Ok(Self {
             id,
             segment_token,
@@ -454,22 +430,13 @@ pub(crate) struct AssemblyPlacementRecordWire {
 }
 
 impl AssemblyPlacementRecordWire {
-    pub(crate) fn from_placement(
-        ctx: &DecodeContext<'_>,
-        placement: &crate::assembly::AssemblyPlacement<'_>,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
-            id: ctx.format_retained(
-                format_args!(
-                    "inventor:assembly:placement#{}-{}",
-                    placement.segment_token, placement.record_ordinal
-                ),
-                "retain Inventor assembly placement id",
-            )?,
-            segment_token: ctx.copy_retained_text(
-                &placement.segment_token,
-                "retain Inventor assembly placement token",
-            )?,
+    pub(crate) fn from_placement(placement: &crate::assembly::AssemblyPlacement<'_>) -> Self {
+        Self {
+            id: format!(
+                "inventor:assembly:placement#{}-{}",
+                placement.segment_token, placement.record_ordinal
+            ),
+            segment_token: placement.segment_token.clone(),
             record_ordinal: placement.record_ordinal,
             header_id: placement.header_id,
             owner_reference: placement.owner_reference,
@@ -483,12 +450,8 @@ impl AssemblyPlacementRecordWire {
             graphics_index: placement.graphics_index,
             object_reference: placement.object_reference,
             suffix_len: cadmpeg_core::decode::u64_from_index(placement.suffix.window().len()),
-            suffix_sha256: retained_digest(
-                ctx,
-                placement.suffix.window(),
-                "retain Inventor assembly placement suffix digest",
-            )?,
-        })
+            suffix_sha256: cadmpeg_ir::hash::sha256_hex(placement.suffix.window()),
+        }
     }
 }
 
@@ -696,7 +659,7 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
     }
 }
 
-pub(super) fn rendering_style_issue(
+fn rendering_style_issue(
     segment_version_major: u8,
     comment: &str,
     has_extension: bool,
@@ -1215,37 +1178,22 @@ pub(crate) struct RseRecordRecord {
 
 impl RseRecordRecord {
     pub(crate) fn from_frame(
-        ctx: &DecodeContext<'_>,
         token: &str,
         frame: &crate::records::RseRecordFrame<'_>,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            id: ctx.format_retained(
-                format_args!("inventor:rse:record#{token}-{}", frame.ordinal),
-                "retain Inventor RSe record id",
-            )?,
-            token: ctx.copy_retained_text(token, "retain Inventor RSe record token")?,
+            id: format!("inventor:rse:record#{token}-{}", frame.ordinal),
+            token: token.to_owned(),
             ordinal: frame.ordinal,
             selector: frame.selector,
             type_index: frame.type_index()?,
-            type_id: {
-                ctx.charge_retained(32, "retain Inventor RSe record type GUID")?;
-                crate::pmdc::type_id_string(frame.type_id)
-            },
+            type_id: { crate::pmdc::type_id_string(frame.type_id) },
             payload_offset: frame.payload_offset,
             payload_len: u64::from(frame.payload_len()?),
-            payload_sha256: retained_digest(
-                ctx,
-                frame.payload.window(),
-                "retain Inventor RSe payload digest",
-            )?,
+            payload_sha256: cadmpeg_ir::hash::sha256_hex(frame.payload.window()),
             trailing_payload_len: frame.trailing_payload_len()?,
             trailer_len: cadmpeg_core::decode::u64_from_index(frame.trailer.window().len()),
-            trailer_sha256: retained_digest(
-                ctx,
-                frame.trailer.window(),
-                "retain Inventor RSe trailer digest",
-            )?,
+            trailer_sha256: cadmpeg_ir::hash::sha256_hex(frame.trailer.window()),
         })
     }
     pub(crate) fn type_index(&self) -> u8 {
@@ -1573,26 +1521,17 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
 }
 
 impl ActiveCarrierRecord {
-    pub(crate) fn from_state(
-        ctx: &DecodeContext<'_>,
-        state: &crate::kernel::ActiveCarrierState<'_>,
-    ) -> Result<Self, CodecError> {
-        let id = ctx.copy_retained_text(
-            "inventor:kernel:active-carrier#root",
-            "retain Inventor active carrier id",
-        )?;
-        Ok(match state {
+    pub(crate) fn from_state(state: &crate::kernel::ActiveCarrierState<'_>) -> Self {
+        let id = "inventor:kernel:active-carrier#root".to_owned();
+        match state {
             crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
             crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
                 id,
-                detail: ctx.copy_retained_text(detail, "retain Inventor active carrier issue")?,
+                detail: detail.to_owned(),
             },
             crate::kernel::ActiveCarrierState::Selected(carrier) => Self::Selected {
                 id,
-                segment_token: ctx.copy_retained_text(
-                    carrier.segment_token.as_str(),
-                    "retain Inventor active carrier segment token",
-                )?,
+                segment_token: carrier.segment_token.as_str().to_owned(),
                 record_ordinal: carrier.record_ordinal,
                 segment_version_major: carrier.segment_version_major,
                 family: carrier.family,
@@ -1602,17 +1541,13 @@ impl ActiveCarrierRecord {
                 schema: carrier.schema,
                 carrier_len: carrier.carrier_len,
                 carrier_offset: carrier.carrier_offset,
-                carrier_sha256: retained_digest(
-                    ctx,
-                    carrier.bytes.window(),
-                    "retain Inventor active carrier digest",
-                )?,
+                carrier_sha256: cadmpeg_ir::hash::sha256_hex(carrier.bytes.window()),
                 selected_key: carrier.selected_key,
                 enabled: carrier.enabled,
                 delta_state: carrier.delta_state,
                 history_reference: carrier.history_reference,
             },
-        })
+        }
     }
 
     pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {

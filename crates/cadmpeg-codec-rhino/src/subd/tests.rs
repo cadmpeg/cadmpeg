@@ -106,118 +106,6 @@ fn decode_mesh_proxy(
     decode_mesh_proxy_with_ctx(&ctx, data, extra, archive, scale, id, fingerprint)
 }
 
-fn decode_with_collection_limit(limit: u64) -> SubdError {
-    let fixture = Fixture::default();
-    let data = payload(fixture);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-        .expect("valid input within service limits");
-    decode_with_ctx(
-        &ctx,
-        &data,
-        0..data.len(),
-        fixture.archive,
-        MillimeterScale::IDENTITY,
-        "rhino:test:subd#0".try_into().expect("valid identity"),
-    )
-    .expect_err("collection limit must refuse the SubD")
-}
-
-macro_rules! subd_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            match decode_with_collection_limit($limit) {
-                SubdError::Resource(refusal) => {
-                    assert_eq!(refusal.operation, $operation);
-                }
-                other => panic!("expected resource refusal, got {other:?}"),
-            }
-        }
-    };
-}
-
-subd_collection_limit_test!(
-    level_vertices_refuse_collection_limit,
-    3,
-    "Rhino SubD level vertices"
-);
-subd_collection_limit_test!(
-    component_pointers_refuse_collection_limit,
-    5,
-    "Rhino SubD component pointers"
-);
-subd_collection_limit_test!(
-    level_edges_refuse_collection_limit,
-    19,
-    "Rhino SubD level edges"
-);
-subd_collection_limit_test!(
-    level_faces_refuse_collection_limit,
-    32,
-    "Rhino SubD level faces"
-);
-subd_collection_limit_test!(
-    child_ranges_refuse_collection_limit,
-    37,
-    "Rhino SubD child ranges"
-);
-subd_collection_limit_test!(
-    component_types_refuse_collection_limit,
-    46,
-    "Rhino SubD component types"
-);
-subd_collection_limit_test!(
-    vertex_edge_map_refuses_collection_limit,
-    50,
-    "Rhino SubD vertex-edge map"
-);
-subd_collection_limit_test!(
-    incidence_members_refuse_collection_limit,
-    51,
-    "Rhino SubD incidence members"
-);
-subd_collection_limit_test!(
-    face_edge_lookup_refuses_collection_limit,
-    62,
-    "Rhino SubD face edge lookup"
-);
-subd_collection_limit_test!(
-    vertex_face_map_refuses_collection_limit,
-    66,
-    "Rhino SubD vertex-face map"
-);
-subd_collection_limit_test!(
-    edge_face_map_refuses_collection_limit,
-    74,
-    "Rhino SubD edge-face map"
-);
-subd_collection_limit_test!(
-    serialized_incidence_refuses_collection_limit,
-    80,
-    "Rhino SubD serialized incidence"
-);
-subd_collection_limit_test!(
-    vertex_indices_refuse_collection_limit,
-    98,
-    "Rhino SubD vertex indices"
-);
-subd_collection_limit_test!(
-    edge_indices_refuse_collection_limit,
-    102,
-    "Rhino SubD edge indices"
-);
-subd_collection_limit_test!(vertices_refuse_collection_limit, 106, "Rhino SubD vertices");
-subd_collection_limit_test!(edges_refuse_collection_limit, 110, "Rhino SubD edges");
-subd_collection_limit_test!(faces_refuse_collection_limit, 111, "Rhino SubD faces");
-subd_collection_limit_test!(
-    face_edges_refuse_collection_limit,
-    115,
-    "Rhino SubD face edges"
-);
-
 fn anonymous(body: &[u8]) -> Vec<u8> {
     let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
     bytes.extend_from_slice(
@@ -231,17 +119,11 @@ fn anonymous(body: &[u8]) -> Vec<u8> {
 }
 
 fn anonymous_mixed(body: &[u8], children: &[Range<usize>]) -> Vec<u8> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-        false,
-    );
-    let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), children)
+    let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
         .expect("valid SubD fixture children");
     let mut hasher = crc32fast::Hasher::new();
     for range in &direct {
-        hasher.update(&body[range.expect("admitted fixture checksum traversal")]);
+        hasher.update(&body[range]);
     }
     let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
     bytes.extend_from_slice(
@@ -290,7 +172,6 @@ fn rotate_symmetry_accepts_nan_padding_and_prototype_omission() {
         let mut reader =
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
         read_symmetry(
-            &cadmpeg_test_support::service_decode_context(),
             &mut reader,
             ArchiveVersion::V5,
             &mut Vec::new(),
@@ -307,7 +188,6 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     let bytes = rotate_symmetry(6, false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
     read_symmetry(
-        &cadmpeg_test_support::service_decode_context(),
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
@@ -321,7 +201,6 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
     diagnostics.clear();
     read_symmetry(
-        &cadmpeg_test_support::service_decode_context(),
         &mut reader,
         ArchiveVersion::V5,
         &mut diagnostics,
@@ -332,50 +211,6 @@ fn unknown_symmetry_enums_map_to_unset_without_dropping_the_chunk() {
     assert_eq!(
         diagnostics,
         vec![SubdEnumDiagnostic::SymmetryCoordinateSystem(7)]
-    );
-}
-
-#[test]
-fn unknown_symmetry_enum_refuses_collection_limit() {
-    let bytes = rotate_symmetry(6, false);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-    let refused = read_symmetry(
-        &ctx,
-        &mut reader,
-        ArchiveVersion::V5,
-        &mut Vec::new(),
-        &mut Diagnostics::new(),
-    )
-    .expect_err("enum diagnostic exceeds zero collection items");
-    assert!(
-        matches!(refused, SubdError::Resource(limit) if limit.operation == "Rhino SubD enum diagnostics")
-    );
-}
-
-#[test]
-fn subd_crc_diagnostic_refuses_collection_limit() {
-    let mut bytes = anonymous(&[0]);
-    let crc = bytes.len() - 1;
-    bytes[crc] ^= 1;
-    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
-        .expect("chunk framing");
-    let mut parent = BoundedReader::new(&bytes, 0, bytes.len()).expect("parent");
-    let child = BoundedReader::new(&bytes, chunk.body().start, chunk.body().end).expect("child");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let refused =
-        super::finish_direct_chunk(&ctx, &mut parent, &chunk, child, &mut Diagnostics::new())
-            .expect_err("CRC diagnostic exceeds zero collection items");
-    assert!(
-        matches!(refused, SubdError::Resource(limit) if limit.operation == "Rhino diagnostics")
     );
 }
 

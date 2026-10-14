@@ -54,21 +54,3 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
             .any(|loss| loss.code.local_code() == "source.gui-metadata-unresolved"));
     }
 }
-
-#[test]
-fn gui_metadata_recovery_preserves_resource_refusals() {
-    crate::test_support::assert_retained_refusal_at(&[], "FCStd GUI metadata diagnostic", |ctx| {
-        super::super::source_only_graph(
-            ctx,
-            None,
-            &cadmpeg_core::CodecError::Malformed("unreadable".into()),
-        )
-    });
-    crate::test_support::assert_collection_refusal_at(&[], "FCStd GUI metadata losses", |ctx| {
-        super::super::source_only_graph(
-            ctx,
-            None,
-            &cadmpeg_core::CodecError::Malformed("unreadable".into()),
-        )
-    });
-}

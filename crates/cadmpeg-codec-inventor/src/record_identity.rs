@@ -54,11 +54,8 @@ impl RecordIdentity {
     }
 
     /// The identity key of this record: `{segment_token}-{record_ordinal}`.
-    pub(crate) fn key(&self, ctx: &DecodeContext<'_>) -> Result<IdentityKey, CodecError> {
-        let key = ctx.format_retained(
-            format_args!("{}-{}", self.segment_token, self.record_ordinal),
-            "Inventor record identity key",
-        )?;
+    pub(crate) fn key(&self) -> Result<IdentityKey, CodecError> {
+        let key = format!("{}-{}", self.segment_token, self.record_ordinal);
         IdentityKey::try_new(key).map_err(CodecError::malformed)
     }
 }
@@ -100,32 +97,18 @@ pub(crate) fn push_record<T>(
     ordinal: u32,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
     ctx.charge_entities(1, operation)?;
-    ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
 
     records.push(Located::new(
         value,
         crate::record_identity::RecordTypeId::from_bytes(type_id),
-        segment_token.try_clone_for_decode(ctx, "retain Inventor PmDc record segment token")?,
+        segment_token.clone(),
         ordinal,
     ));
     Ok(())
 }
 
 impl<T: RecordPayload> Located<T> {
-    pub(crate) fn id_len(&self) -> Option<usize> {
-        Some(
-            "inventor:pmdc:".len()
-                + T::KIND.len()
-                + 1
-                + self.identity.segment_token.as_str().len()
-                + 1
-                + usize::try_from(self.identity.record_ordinal.max(1).ilog10()).ok()?
-                + 1,
-        )
-    }
-
     pub(crate) fn id(&self) -> String {
         self.identity.id(T::KIND)
     }
@@ -253,12 +236,7 @@ mod tests {
         let record = super::Located::new(
             Payload { value: 7 },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             1,
         );
         assert_native_limit(

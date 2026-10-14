@@ -10,7 +10,6 @@ use crate::attachment::MapModeIndex;
 use cadmpeg_ir::units::FiniteVector;
 use frame::FiniteFrame;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
@@ -27,186 +26,6 @@ pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
     )
 }
 
-pub(crate) fn native_id_charged(
-    ctx: &DecodeContext<'_>,
-    kind: &str,
-    key: &str,
-) -> Result<String, CodecError> {
-    const OPERATION: &str = "FreeCAD native identity";
-    let encoded_len = encoded_segment_len(ctx, key, OPERATION)?;
-    let len = "fcstd:native:"
-        .len()
-        .checked_add(kind.len())
-        .and_then(|len| len.checked_add(1))
-        .and_then(|len| len.checked_add(encoded_len))
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    OPERATION,
-                ),
-            )
-        })?;
-    let mut id = ctx.retained_string(len, OPERATION)?;
-    id.push_str("fcstd:native:");
-    id.push_str(kind);
-    id.push('#');
-    id.extend(encoded_segment_bytes(key).map(char::from));
-    Ok(id)
-}
-
-pub(crate) fn encoded_segment_charged(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<IdentityKey, CodecError> {
-    let len = encoded_segment_len(ctx, value, operation)?;
-    let mut key = ctx.retained_string(len, operation)?;
-    key.extend(encoded_segment_bytes(value).map(char::from));
-    IdentityKey::try_new(key).map_err(CodecError::malformed)
-}
-
-pub(crate) fn native_child_id_charged(
-    ctx: &DecodeContext<'_>,
-    kind: &str,
-    parent: &str,
-    child: &str,
-) -> Result<String, CodecError> {
-    const OPERATION: &str = "FreeCAD native child identity";
-    let parent_key = id_key(parent);
-    let child_len = encoded_segment_len(ctx, child, OPERATION)?;
-    let len = "fcstd:native:"
-        .len()
-        .checked_add(kind.len())
-        .and_then(|len| len.checked_add(1))
-        .and_then(|len| len.checked_add(parent_key.len()))
-        .and_then(|len| len.checked_add(1))
-        .and_then(|len| len.checked_add(child_len))
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    OPERATION,
-                ),
-            )
-        })?;
-    let mut id = ctx.retained_string(len, OPERATION)?;
-    id.push_str("fcstd:native:");
-    id.push_str(kind);
-    id.push('#');
-    id.push_str(parent_key);
-    id.push(':');
-    id.extend(encoded_segment_bytes(child).map(char::from));
-    Ok(id)
-}
-
-pub(crate) fn model_id_charged(
-    ctx: &DecodeContext<'_>,
-    kind: &str,
-    parent: &str,
-    child: &str,
-) -> Result<String, CodecError> {
-    model_id_charged_at(ctx, kind, parent, child, "FreeCAD model identity")
-}
-
-pub(crate) fn model_id_charged_at(
-    ctx: &DecodeContext<'_>,
-    kind: &str,
-    parent: &str,
-    child: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let parent_key = id_key(parent);
-    let child_len = if child.is_empty() {
-        0
-    } else {
-        encoded_segment_len(ctx, child, operation)?
-    };
-    let len = "fcstd:model:"
-        .len()
-        .checked_add(kind.len())
-        .and_then(|len| len.checked_add(1))
-        .and_then(|len| len.checked_add(parent_key.len()))
-        .and_then(|len| len.checked_add(1))
-        .and_then(|len| len.checked_add(child_len))
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    operation,
-                ),
-            )
-        })?;
-    let mut id = ctx.retained_string(len, operation)?;
-    id.push_str("fcstd:model:");
-    id.push_str(kind);
-    id.push('#');
-    id.push_str(parent_key);
-    id.push(':');
-    if !child.is_empty() {
-        id.extend(encoded_segment_bytes(child).map(char::from));
-    }
-    Ok(id)
-}
-
-fn encoded_segment_len(
-    ctx: &DecodeContext<'_>,
-    key: &str,
-    operation: &'static str,
-) -> Result<usize, CodecError> {
-    if key.is_empty() {
-        return Ok(6);
-    }
-    key.bytes()
-        .try_fold(0_usize, |len, byte| {
-            len.checked_add(
-                if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
-                    1
-                } else {
-                    3
-                },
-            )
-        })
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    ctx.policy().limits.max_retained_bytes,
-                    u64::MAX,
-                    operation,
-                ),
-            )
-        })
-}
-
-fn encoded_segment_bytes(key: &str) -> impl Iterator<Item = u8> + '_ {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    b"%EMPTY"
-        .iter()
-        .copied()
-        .take(if key.is_empty() { 6 } else { 0 })
-        .chain(key.bytes().flat_map(|byte| {
-            if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
-                [byte, 0, 0].into_iter().take(1)
-            } else {
-                [
-                    b'%',
-                    HEX[usize::from(byte >> 4)],
-                    HEX[usize::from(byte & 0x0f)],
-                ]
-                .into_iter()
-                .take(3)
-            }
-        }))
-}
-
-#[cfg(test)]
 pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
     let parent_key = id_key(parent);
     format!(
@@ -215,7 +34,6 @@ pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
     )
 }
 
-#[cfg(test)]
 pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> String {
     let child = child.as_ref();
     let child_key = if child.is_empty() {
@@ -236,78 +54,54 @@ mod tests {
     use super::{model_id, native_child_id, native_id};
 
     #[test]
-    fn entries_check_names_identities_references_and_charge_cached_digest() {
-        crate::test_support::with_service_context(&[], |ctx| {
-            for (id, name, references) in [
-                ("invalid", "safe", vec![]),
-                ("fcstd:native:entry#safe", "../x", vec![]),
-                (
-                    "fcstd:native:entry#safe",
-                    "safe",
-                    vec!["invalid".to_owned()],
-                ),
-            ] {
-                assert!(super::EntryRecord::new(
-                    ctx,
-                    id.into(),
-                    name.into(),
-                    cadmpeg_core::container::ContainerRole::Auxiliary,
-                    references,
-                    vec![1, 2, 3]
-                )
-                .is_err());
-            }
-            let record = super::EntryRecord::new(
-                ctx,
-                "fcstd:native:entry#safe".into(),
-                "safe".into(),
+    fn entries_check_names_identities_references_and_cache_the_digest() {
+        for (id, name, references) in [
+            ("invalid", "safe", vec![]),
+            ("fcstd:native:entry#safe", "../x", vec![]),
+            (
+                "fcstd:native:entry#safe",
+                "safe",
+                vec!["invalid".to_owned()],
+            ),
+        ] {
+            assert!(super::EntryRecord::new(
+                id.into(),
+                name.into(),
                 cadmpeg_core::container::ContainerRole::Auxiliary,
-                Vec::new(),
-                vec![1, 2, 3],
+                references,
+                vec![1, 2, 3]
             )
-            .expect("entry");
-            let wire = serde_json::to_value(&record).expect("wire");
-            assert_eq!(
-                wire["sha256"],
-                "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81"
-            );
-            for (key, value) in [
-                ("id", serde_json::json!("invalid")),
-                ("name", serde_json::json!("../x")),
-                ("referenced_by", serde_json::json!(["invalid"])),
-            ] {
-                let mut invalid = wire.clone();
-                invalid[key] = value;
-                assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
-            }
-            let mut record = record;
-            assert!(record.add_reference(ctx, "invalid").is_err());
-            assert!(record.referenced_by().is_empty());
-        });
-        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD entry digest", |ctx| {
-            super::EntryRecord::new(
-                ctx,
-                "fcstd:native:entry#safe".into(),
-                "safe".into(),
-                cadmpeg_core::container::ContainerRole::Auxiliary,
-                Vec::new(),
-                vec![1, 2, 3],
-            )
-        });
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index("fcstd:native:entry#safe".len() + "safe".len())
-                + 2;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("context");
-        assert!(
-            matches!(super::EntryRecord::new(&ctx, "fcstd:native:entry#safe".into(), "safe".into(), cadmpeg_core::container::ContainerRole::Auxiliary, Vec::new(), vec![1, 2, 3]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD entry digest")
+            .is_err());
+        }
+        let record = super::EntryRecord::new(
+            "fcstd:native:entry#safe".into(),
+            "safe".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            vec![1, 2, 3],
+        )
+        .expect("entry");
+        let wire = serde_json::to_value(&record).expect("wire");
+        assert_eq!(
+            wire["sha256"],
+            "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81"
         );
+        for (key, value) in [
+            ("id", serde_json::json!("invalid")),
+            ("name", serde_json::json!("../x")),
+            ("referenced_by", serde_json::json!(["invalid"])),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[key] = value;
+            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
+        }
+        let mut record = record;
+        assert!(record.add_reference("invalid").is_err());
+        assert!(record.referenced_by().is_empty());
     }
 
     #[test]
-    fn duplicate_property_diagnostic_refuses_at_retained_limit() {
+    fn duplicate_property_is_malformed() {
         let property = super::PropertyRecord {
             id: "fcstd:native:property#LongProperty".into(),
             owner: "fcstd:native:object#Owner".into(),
@@ -319,20 +113,8 @@ mod tests {
             order: 0,
             xml: super::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
         };
-        crate::test_support::assert_retained_refusal_at(
-            &[],
-            "FreeCAD duplicate property diagnostic",
-            |ctx| {
-                super::sole_named_property(ctx, "product", &[&property, &property], &property.name)
-            },
-        );
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error =
-            super::sole_named_property(&ctx, "product", &[&property, &property], &property.name)
-                .expect_err("duplicate property");
+        let error = super::sole_named_property("product", &[&property, &property], &property.name)
+            .expect_err("duplicate property");
         assert_eq!(
             error.to_string(),
             "malformed container: product property LongProperty occurs more than once"
@@ -355,80 +137,6 @@ mod tests {
             ("Å", None),
         ] {
             assert_eq!(super::parse_bool(text), expected, "{text}");
-        }
-    }
-
-    #[test]
-    fn charged_native_identity_preserves_encoding_and_refuses_at_retained_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        for key in ["", "Body", "A B#%", "Å"] {
-            assert_eq!(
-                super::native_id_charged(&ctx, "entry", key).expect("ID fits policy"),
-                native_id("entry", key)
-            );
-        }
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(native_id("entry", "A B#%").len()) - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::native_id_charged(&ctx, "entry", "A B#%"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD native identity"));
-    }
-
-    #[test]
-    fn charged_native_child_identity_refuses_at_retained_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let parent = native_id("object", "A B");
-        let expected = native_child_id("property", &parent, "S # Å");
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(
-            matches!(super::native_child_id_charged(&ctx, "property", &parent, "S # Å"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD native child identity")
-        );
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert_eq!(
-            super::native_child_id_charged(&ctx, "property", &parent, "S # Å")
-                .expect("ID fits policy"),
-            expected
-        );
-    }
-
-    #[test]
-    fn charged_model_identity_refuses_at_retained_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let parent = native_id("object", "A B");
-        for child in ["", "S # Å"] {
-            let expected = model_id("body", &parent, child);
-            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("empty root is within policy");
-            assert!(
-                matches!(super::model_id_charged(&ctx, "body", &parent, child),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FreeCAD model identity")
-            );
-            let policy = cadmpeg_core::decode::DecodePolicy::default();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("empty root is within policy");
-            assert_eq!(
-                super::model_id_charged(&ctx, "body", &parent, child).expect("ID fits policy"),
-                expected
-            );
         }
     }
 
@@ -557,14 +265,7 @@ mod tests {
         let mut ordered = namespace
             .arena_as::<super::StringTableRecord>("string_tables")
             .unwrap();
-        cadmpeg_test_support::service_decode_context()
-            .stable_sort_by(
-                &mut ordered,
-                |left, right| left.index.cmp(&right.index),
-                |_| 0,
-                "test string tables sort",
-            )
-            .unwrap();
+        ordered.sort_by_key(|table| table.index);
         let tables = super::StringTables::try_from(ordered).unwrap();
         assert_eq!(
             tables
@@ -1125,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn entry_hex_storage_uses_metadata_items_instead_of_payload_items() {
+    fn entry_data_is_stored_as_hex_on_the_wire() {
         let bytes: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
         let record = crate::test_support::entry_record(
             "fcstd:native:entry#Payload.bin".into(),
@@ -1135,14 +836,13 @@ mod tests {
             bytes.clone(),
         );
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 256;
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         namespace
             .set_arena(&ctx, "entries", &[record])
-            .expect("metadata item budget admits payload");
+            .expect("entry arena");
         let records = namespace.arena_as::<super::EntryRecord>("entries").unwrap();
         assert_eq!(records[0].data(), bytes);
         let wire = namespace.arena_as::<serde_json::Value>("entries").unwrap();
@@ -1493,14 +1193,8 @@ impl RetainedXml {
             .ok_or("raw_xml byte_end overflow")?;
         Self::try_new(text, start, end)
     }
-    pub(crate) fn from_source(
-        ctx: &DecodeContext<'_>,
-        text: &str,
-        start: u64,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        let copy = ctx.copy_retained_text(text, operation)?;
-        Self::from_text(copy, start).map_err(CodecError::Malformed)
+    pub(crate) fn from_source(text: &str, start: u64) -> Result<Self, CodecError> {
+        Self::from_text(text.to_owned(), start).map_err(CodecError::Malformed)
     }
     pub(crate) fn text(&self) -> &str {
         &self.text
@@ -3067,17 +2761,6 @@ pub(crate) enum ExternalDocument {
 }
 
 impl ExternalDocument {
-    pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let value = NonBlankString::new(
-            ctx.copy_retained_text(self.as_str(), "FreeCAD external document copy")?,
-        )
-        .ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
-        Ok(match self {
-            Self::File(_) => Self::File(value),
-            Self::Name(_) => Self::Name(value),
-        })
-    }
-
     /// Document token retained on the CADIR wire.
     pub(crate) fn as_str(&self) -> &str {
         match self {
@@ -3127,34 +2810,6 @@ pub(crate) struct LinkTarget {
 }
 
 impl LinkTarget {
-    pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let document = self
-            .document
-            .as_ref()
-            .map(|document| document.clone_with_context(ctx))
-            .transpose()?;
-        let object = self
-            .object
-            .as_ref()
-            .map(|value| {
-                NonBlankString::new(
-                    ctx.copy_retained_text(value.as_str(), "FreeCAD link object copy")?,
-                )
-                .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
-            })
-            .transpose()?;
-        let mut subelements =
-            ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
-        for subelement in &self.subelements {
-            subelements.push(ctx.copy_retained_text(subelement, "FreeCAD link subelement text")?);
-        }
-        Ok(Self {
-            document,
-            object,
-            subelements,
-        })
-    }
-
     /// Admits a target from a parsed link element, or absence when the element
     /// selects no document, object, or subelement.
     pub(crate) fn optional_from_wire(wire: LinkTargetWire) -> Result<Option<Self>, String> {
@@ -3341,17 +2996,15 @@ where
 /// `owner` is the noun that names the property carrier in the duplicate
 /// diagnostic.
 pub(crate) fn sole_named_property<'a>(
-    ctx: &DecodeContext<'_>,
     owner: &str,
     properties: &[&'a PropertyRecord],
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
     match unique_property(properties.iter().copied(), |property| property.name == name) {
         Ok(property) => Ok(property),
-        Err(_) => Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("{owner} property {name} occurs more than once"),
-            "FreeCAD duplicate property diagnostic",
-        )?)),
+        Err(_) => Err(CodecError::malformed(format_args!(
+            "{owner} property {name} occurs more than once"
+        ))),
     }
 }
 
@@ -3631,36 +3284,16 @@ pub(crate) fn is_safe_entry_name(name: &str) -> bool {
 
 impl EntryRecord {
     pub(crate) fn new(
-        ctx: &DecodeContext<'_>,
         id: String,
         name: String,
         role: cadmpeg_core::container::ContainerRole,
         referenced_by: Vec<String>,
         data: Vec<u8>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(id.len()),
-            "FreeCAD entry identity validation",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name.len()),
-            "FreeCAD entry name validation",
-        )?;
-        for reference in &referenced_by {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(reference.len()),
-                "FreeCAD entry reference validation",
-            )?;
-        }
         let id = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
         let name = ArchiveEntryName::try_from(name).map_err(CodecError::malformed)?;
         let referenced_by =
             EntryReferences::try_from(referenced_by).map_err(CodecError::malformed)?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len()),
-            "FreeCAD entry digest",
-        )?;
-        ctx.charge_retained(64, "FreeCAD entry digest")?;
         let sha256 = sha256_hex(&data);
         Ok(Self {
             id,
@@ -3691,29 +3324,17 @@ impl EntryRecord {
         &self.sha256
     }
 
-    pub(crate) fn add_reference(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        owner: &str,
-    ) -> Result<(), CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(owner.len()),
-            "FreeCAD entry reference validation",
-        )?;
+    pub(crate) fn add_reference(&mut self, owner: &str) -> Result<(), CodecError> {
         if !cadmpeg_ir::ids::is_valid_identity(owner) {
             return Err(CodecError::malformed("entry reference identity is invalid"));
         }
         for candidate in &self.referenced_by.0 {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(candidate.len()),
-                "FreeCAD entry reference comparison",
-            )?;
             if candidate == owner {
                 return Ok(());
             }
         }
-        ctx.reserve_vec(&mut self.referenced_by.0, 1, "FCStd GUI entry references")?;
-        let owner = ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?;
+
+        let owner = owner.to_owned();
         self.referenced_by.0.push(owner);
         Ok(())
     }

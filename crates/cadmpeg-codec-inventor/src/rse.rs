@@ -17,14 +17,6 @@ use crate::kernel::{select_active_carrier, ActiveCarrierState};
 use crate::layout::bulk_envelope as envelope;
 use crate::records::{frame_bulk_records, parse_meta_tables, MetaTables, RseRecordTable};
 
-fn rse_issue_detail(ctx: &DecodeContext<'_>, error: CodecError) -> Result<String, CodecError> {
-    if matches!(error, CodecError::ResourceLimit(_)) {
-        return Err(error);
-    }
-    ctx.charge_formatted_retained(format_args!("{error}"), "retain RSe issue detail")?;
-    crate::issue_detail(error)
-}
-
 /// A validated `V<n>` storage-band number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct StorageBand(u32);
@@ -58,37 +50,18 @@ enum SegmentPrefix {
 }
 
 impl SegmentToken {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        self.0.try_clone_for_decode(ctx, operation).map(Self)
-    }
-
-    fn parse(
-        ctx: &DecodeContext<'_>,
-        name: &str,
-    ) -> Result<Option<(SegmentPrefix, Self)>, CodecError> {
-        let Some((prefix, token)) = name.split_at_checked(1) else {
-            return Ok(None);
-        };
+    fn parse(name: &str) -> Option<(SegmentPrefix, Self)> {
+        let (prefix, token) = name.split_at_checked(1)?;
         let prefix = match prefix.chars().next() {
             Some('M') => SegmentPrefix::Metadata,
             Some('B') => SegmentPrefix::Bulk,
-            _ => return Ok(None),
+            _ => return None,
         };
         if token.is_empty() || token.contains('#') || token.chars().any(char::is_whitespace) {
-            return Ok(None);
+            return None;
         }
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(token.len()),
-            "retain RSe segment token",
-        )?;
-        let Ok(token) = IdentityKey::try_new(token) else {
-            return Ok(None);
-        };
-        Ok(Some((prefix, Self(token))))
+        let token = IdentityKey::try_new(token).ok()?;
+        Some((prefix, Self(token)))
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -196,12 +169,8 @@ impl DocumentKind {
 }
 
 impl SegmentKind {
-    fn classify(
-        ctx: &DecodeContext<'_>,
-        display_name: &str,
-        type_name: Option<&str>,
-    ) -> Result<Self, CodecError> {
-        let kind = match type_name {
+    fn classify(display_name: &str, type_name: Option<&str>) -> Self {
+        match type_name {
             Some("PmBrepSegmentType") => Self::PmBRep,
             Some("PmDcSegmentType") => Self::PmDc,
             Some("PmGRxSegmentType") => Self::PmGraphics,
@@ -217,22 +186,9 @@ impl SegmentKind {
             Some("AmRxSegmentType") => Self::AmRx,
             Some("NotebookSegmentType") => Self::Notebook,
             Some("FWxDesignViewType" | "FWxDesignViewManagerType") => Self::DesignView,
-            Some(type_name) => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(type_name.len()),
-                    "retain RSe unknown segment kind",
-                )?;
-                Self::Unknown(type_name.into())
-            }
-            None => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(display_name.len()),
-                    "retain RSe unknown segment kind",
-                )?;
-                Self::Unknown(display_name.into())
-            }
-        };
-        Ok(kind)
+            Some(type_name) => Self::Unknown(type_name.into()),
+            None => Self::Unknown(display_name.into()),
+        }
     }
 
     pub(crate) fn label(&self) -> &str {
@@ -299,21 +255,11 @@ impl SegmentMetaState<'_> {
     /// parsed stream is not evidence that it declared version 8, and reporting
     /// the verified pair here would erase the unverified admission the
     /// declaration earns.
-    pub(crate) fn declaration(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<MetaStreamDeclaration>, CodecError> {
-        let declaration = match self {
-            Self::Parsed(meta) => Some(&meta.declared),
-            Self::Malformed { declared, .. } => declared.as_ref(),
-        };
-        declaration
-            .map(|declaration| {
-                let bytes = cadmpeg_core::decode::u64_from_index(declaration.marker.len());
-                ctx.charge_retained(bytes, "retain Inventor dialect declaration marker")?;
-                Ok(declaration.clone())
-            })
-            .transpose()
+    pub(crate) fn declaration(&self) -> Option<MetaStreamDeclaration> {
+        match self {
+            Self::Parsed(meta) => Some(meta.declared.clone()),
+            Self::Malformed { declared, .. } => declared.clone(),
+        }
     }
 }
 
@@ -395,26 +341,13 @@ impl DatabaseDescriptor {
         }
     }
 
-    pub(crate) fn issue_detail(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<String>, CodecError> {
+    pub(crate) fn issue_detail(&self) -> Option<String> {
         match &self.state {
-            DatabaseState::Parsed(_) => Ok(None),
+            DatabaseState::Parsed(_) => None,
             DatabaseState::Unframed { schema, detail } => {
-                ctx.charge_formatted_retained(format_args!(
-                        "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
-                         {detail}",
-                        schema.value(),
-                        RseSchema::SCHEMA_31.value()
-                    ), "retain Inventor database issue detail")?;
-                Ok(Some(DatabaseHeader::unframed_detail(*schema, detail)))
+                Some(DatabaseHeader::unframed_detail(*schema, detail))
             }
-            DatabaseState::Unreadable(detail) => {
-                let bytes = cadmpeg_core::decode::u64_from_index(detail.len());
-                ctx.charge_retained(bytes, "retain Inventor database issue detail")?;
-                Ok(Some(detail.clone()))
-            }
+            DatabaseState::Unreadable(detail) => Some(detail.clone()),
         }
     }
 }
@@ -436,7 +369,6 @@ impl<'a> RseInventory<'a> {
         ctx: &DecodeContext<'a>,
         snapshot: &CompoundSnapshot<'a>,
     ) -> Result<Self, CodecError> {
-        let mut stream_storage = ctx.reserve_scoped(0, "Inventor RSe stream indices")?;
         let mut databases = Vec::new();
         let mut metadata = BTreeMap::new();
         let mut bulk = BTreeMap::new();
@@ -446,53 +378,26 @@ impl<'a> RseInventory<'a> {
             };
             let path = stream.path();
             if let Some(band) = database_band(path) {
-                stream_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut databases,
-                        (band, stream.id()),
-                        "index RSe database stream",
-                    )
-                })?;
+                databases.push((band, stream.id()));
                 continue;
             }
             let Some(name) = direct_rse_child(path) else {
                 continue;
             };
-            let Some((prefix, token)) =
-                stream_storage.with_storage(|| SegmentToken::parse(ctx, name))?
-            else {
+            let Some((prefix, token)) = SegmentToken::parse(name) else {
                 continue;
             };
             match prefix {
                 SegmentPrefix::Metadata => {
-                    stream_storage.with_storage(|| {
-                        ctx.insert_btree_map(
-                            &mut metadata,
-                            token,
-                            stream.id(),
-                            "index RSe metadata stream",
-                        )
-                    })?;
+                    metadata.insert(token, stream.id());
                 }
                 SegmentPrefix::Bulk => {
-                    stream_storage.with_storage(|| {
-                        ctx.insert_btree_map(&mut bulk, token, stream.id(), "index RSe bulk stream")
-                    })?;
+                    bulk.insert(token, stream.id());
                 }
             }
         }
-        ctx.stable_sort_by(
-            &mut databases,
-            |(left, _), (right, _)| left.cmp(right),
-            |_| 0,
-            "RSe database descriptor sort",
-        )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(databases.len()),
-            "admit RSe database descriptors",
-        )?;
-        let mut database_descriptors =
-            ctx.vector_storage(databases.len(), "admit RSe database descriptors")?;
+        databases.sort_by_key(|(left, _)| *left);
+        let mut database_descriptors = Vec::new();
         for (band, stream_id) in databases {
             let state = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot
@@ -503,17 +408,9 @@ impl<'a> RseInventory<'a> {
                     Ok(DatabaseHeader::Unframed { schema, detail }) => {
                         DatabaseState::Unframed { schema, detail }
                     }
-                    Err(error) => DatabaseState::Unreadable(rse_issue_detail(ctx, error)?),
+                    Err(error) => DatabaseState::Unreadable(crate::issue_detail(error)?),
                 },
-                None => {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(
-                            "RSe database stream handle is absent".len(),
-                        ),
-                        "retain RSe missing database detail",
-                    )?;
-                    DatabaseState::Unreadable("RSe database stream handle is absent".into())
-                }
+                None => DatabaseState::Unreadable("RSe database stream handle is absent".into()),
             };
             database_descriptors.push(DatabaseDescriptor {
                 band,
@@ -532,17 +429,17 @@ impl<'a> RseInventory<'a> {
                 .and_then(|view| parse_registry(ctx, view.window()))
             {
                 Ok(value) => ParsedState::Parsed(value),
-                Err(error) => ParsedState::Unavailable(rse_issue_detail(ctx, error)?),
+                Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
         let revisions = match snapshot.stream("RSeStorage/RSeDbRevisionInfo") {
             None => ParsedState::Absent,
             Some(stream) => match snapshot
                 .open(ctx, stream)
-                .and_then(|view| parse_revisions(ctx, view.window()))
+                .and_then(|view| parse_revisions(view.window()))
             {
                 Ok(value) => ParsedState::Parsed(value),
-                Err(error) => ParsedState::Unavailable(rse_issue_detail(ctx, error)?),
+                Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
         let mut pairs = Vec::new();
@@ -550,17 +447,12 @@ impl<'a> RseInventory<'a> {
             let Some(bulk_id) = bulk.get(token) else {
                 continue;
             };
-            ctx.charge_collection_items(1, "pair RSe segment streams")?;
             pairs.push(SegmentPair {
-                token: token.try_clone_for_decode(ctx, "retain RSe paired token")?,
+                token: token.clone(),
                 metadata: *metadata_id,
                 bulk: *bulk_id,
             });
         }
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(pairs.len()),
-            "admit RSe segment descriptors",
-        )?;
         let mut segments = pairs
             .into_iter()
             .map(
@@ -576,7 +468,7 @@ impl<'a> RseInventory<'a> {
                         Ok(meta) => meta,
                         Err(error) => SegmentMetaState::Malformed {
                             declared: None,
-                            detail: rse_issue_detail(ctx, error)?,
+                            detail: crate::issue_detail(error)?,
                         },
                     };
                     let bulk = snapshot
@@ -588,7 +480,7 @@ impl<'a> RseInventory<'a> {
                         .and_then(|view| parse_bulk_stream(ctx, view));
                     let bulk = match bulk {
                         Ok(bulk) => SegmentBulkState::Framed(bulk),
-                        Err(error) => SegmentBulkState::Malformed(rse_issue_detail(ctx, error)?),
+                        Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
                     };
                     Ok(SegmentDescriptor {
                         pair,
@@ -602,33 +494,30 @@ impl<'a> RseInventory<'a> {
             )
             .collect::<Result<Vec<_>, _>>()?;
         if let ParsedState::Parsed(registry) = &registry {
-            join_registry(ctx, &mut segments, registry)?;
+            join_registry(&mut segments, registry);
         } else {
             for segment in &mut segments {
                 if let SegmentMetaState::Parsed(meta) = &segment.meta {
-                    segment.kind = SegmentKind::classify(ctx, &meta.display_name, None)?;
+                    segment.kind = SegmentKind::classify(&meta.display_name, None);
                 } else {
                     segment.kind = SegmentKind::Unresolved;
                 }
-                push_identity_issue(
-                    ctx,
-                    &mut segment.identity_issues,
-                    format_args!("segment registry is unavailable"),
-                )?;
+                segment
+                    .identity_issues
+                    .push("segment registry is unavailable".to_owned());
             }
         }
-        let segments = frame_segment_records(ctx, segments)?;
-        let mut unpaired_metadata = Vec::new();
-        for token in metadata.keys().filter(|token| !bulk.contains_key(*token)) {
-            ctx.charge_collection_items(1, "collect RSe unpaired metadata")?;
-            unpaired_metadata
-                .push(token.try_clone_for_decode(ctx, "retain RSe unpaired metadata token")?);
-        }
-        let mut unpaired_bulk = Vec::new();
-        for token in bulk.keys().filter(|token| !metadata.contains_key(*token)) {
-            ctx.charge_collection_items(1, "collect RSe unpaired bulk")?;
-            unpaired_bulk.push(token.try_clone_for_decode(ctx, "retain RSe unpaired bulk token")?);
-        }
+        let segments = frame_segment_records(segments)?;
+        let unpaired_metadata = metadata
+            .keys()
+            .filter(|token| !bulk.contains_key(*token))
+            .cloned()
+            .collect();
+        let unpaired_bulk = bulk
+            .keys()
+            .filter(|token| !metadata.contains_key(*token))
+            .cloned()
+            .collect();
         let document_kind = document_kind_for_segments(&segments);
         let active_carrier = select_active_carrier(ctx, &segments, &document_kind)?;
         Ok(Self {
@@ -678,31 +567,12 @@ fn document_kind_for_segments(segments: &[SegmentDescriptor<'_>]) -> DocumentKin
     }
 }
 
-fn push_identity_issue(
-    ctx: &DecodeContext<'_>,
-    issues: &mut Vec<String>,
-    detail: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    ctx.push_formatted_retained(
-        issues,
-        detail,
-        "admit RSe segment identity issue",
-        "retain RSe segment identity issue",
-    )
-}
-
-fn join_registry<B>(
-    ctx: &DecodeContext<'_>,
-    segments: &mut [SegmentDescriptor<'_, B>],
-    registry: &SegmentRegistry,
-) -> Result<(), CodecError> {
+fn join_registry<B>(segments: &mut [SegmentDescriptor<'_, B>], registry: &SegmentRegistry) {
     for segment in segments {
         let SegmentMetaState::Parsed(meta) = &segment.meta else {
-            push_identity_issue(
-                ctx,
-                &mut segment.identity_issues,
-                format_args!("segment metadata is unavailable"),
-            )?;
+            segment
+                .identity_issues
+                .push("segment metadata is unavailable".to_owned());
             segment.kind = SegmentKind::Unresolved;
             continue;
         };
@@ -718,26 +588,21 @@ fn join_registry<B>(
             } else {
                 "metadata segment id is duplicated in the registry"
             };
-            push_identity_issue(ctx, &mut segment.identity_issues, format_args!("{detail}"))?;
-            segment.kind = SegmentKind::classify(ctx, &meta.display_name, None)?;
+            segment.identity_issues.push(detail.to_owned());
+            segment.kind = SegmentKind::classify(&meta.display_name, None);
             continue;
         };
         segment.registry = Some(RegistryJoin {
             version_major: entry.version.major,
         });
-        segment.kind = SegmentKind::classify(ctx, &entry.display_name, Some(&entry.type_name))?;
+        segment.kind = SegmentKind::classify(&entry.display_name, Some(&entry.type_name));
         if entry.display_name != meta.display_name {
-            push_identity_issue(
-                ctx,
-                &mut segment.identity_issues,
-                format_args!(
-                    "registry display name {:?} differs from metadata display name {:?}",
-                    entry.display_name, meta.display_name
-                ),
-            )?;
+            segment.identity_issues.push(format!(
+                "registry display name {:?} differs from metadata display name {:?}",
+                entry.display_name, meta.display_name
+            ));
         }
     }
-    Ok(())
 }
 
 fn parse_bulk_stream<'a>(
@@ -768,13 +633,8 @@ fn parse_bulk_stream<'a>(
 }
 
 fn frame_segment_records<'a>(
-    ctx: &DecodeContext<'a>,
     segments: Vec<SegmentDescriptor<'a, BulkEnvelope<'a>>>,
 ) -> Result<Vec<SegmentDescriptor<'a>>, CodecError> {
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(segments.len()),
-        "admit RSe framed segments",
-    )?;
     segments
         .into_iter()
         .map(|segment| {
@@ -782,12 +642,9 @@ fn frame_segment_records<'a>(
                 SegmentBulkState::Malformed(detail) => SegmentBulkState::Malformed(detail),
                 SegmentBulkState::Framed(bulk) => {
                     let result = match (&segment.meta, segment.registry) {
-                        (SegmentMetaState::Parsed(meta), Some(registry)) => frame_bulk_records(
-                            ctx,
-                            bulk.expanded,
-                            &meta.tables,
-                            registry.version_major,
-                        ),
+                        (SegmentMetaState::Parsed(meta), Some(registry)) => {
+                            frame_bulk_records(bulk.expanded, &meta.tables, registry.version_major)
+                        }
                         (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
                             "RSe record framing requires the segment registry version".into(),
                         )),
@@ -797,7 +654,7 @@ fn frame_segment_records<'a>(
                     };
                     let records = match result {
                         Ok(records) => RecordFrameState::Framed(records),
-                        Err(error) => RecordFrameState::Unavailable(rse_issue_detail(ctx, error)?),
+                        Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
                     };
                     SegmentBulkState::Framed(SegmentBulk {
                         prefix: bulk.prefix,
@@ -833,24 +690,17 @@ fn parse_meta_stream<'a>(
     source: View<'a>,
 ) -> Result<SegmentMetaState<'a>, CodecError> {
     let mut cursor = MetaCursor::new(source);
-    let marker = cursor.length_prefixed_utf8(ctx, "marker")?;
+    let marker = cursor.length_prefixed_utf8("marker")?;
     let version = cursor.u16("version")?;
     let declared = MetaStreamDeclaration { marker, version };
     // The marker and version are a declaration, never a gate: the version-8
     // grammar is attempted on every stream, and a body that does not obey it is
     // `Malformed` with the declaration intact.
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(declared.marker.len()),
-        "retain RSe metadata declaration marker",
-    )?;
     match parse_meta_stream_v8(ctx, source, cursor, declared.clone()) {
-        Ok(meta) => {
-            ctx.charge_collection_items(1, "admit RSe parsed metadata segment")?;
-            Ok(SegmentMetaState::Parsed(Box::new(meta)))
-        }
+        Ok(meta) => Ok(SegmentMetaState::Parsed(Box::new(meta))),
         Err(error) => Ok(SegmentMetaState::Malformed {
             declared: Some(declared),
-            detail: rse_issue_detail(ctx, error)?,
+            detail: crate::issue_detail(error)?,
         }),
     }
 }
@@ -866,8 +716,8 @@ fn parse_meta_stream_v8<'a>(
     let mut segment_id = [0; 16];
     segment_id.copy_from_slice(cursor.take(16, "segment id")?);
     let state_words = cursor.u32_array("state words")?;
-    let created = cursor.length_prefixed_utf8(ctx, "creation timestamp")?;
-    let modified = cursor.length_prefixed_utf8(ctx, "modification timestamp")?;
+    let created = cursor.length_prefixed_utf8("creation timestamp")?;
+    let modified = cursor.length_prefixed_utf8("modification timestamp")?;
     let body_form = cursor.u8("body form")?;
     if cursor.remaining() == 0 {
         return Err(CodecError::Malformed(
@@ -878,7 +728,7 @@ fn parse_meta_stream_v8<'a>(
         .child(cursor.position(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = inflate_zlib_exact(ctx, compressed)?;
-    let tables = parse_meta_tables(ctx, body)?;
+    let tables = parse_meta_tables(body)?;
     Ok(SegmentMeta {
         declared,
         header_values,
@@ -950,11 +800,7 @@ impl<'a> MetaCursor<'a> {
         })
     }
 
-    fn length_prefixed_utf8(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        what: &'static str,
-    ) -> Result<String, CodecError> {
+    fn length_prefixed_utf8(&mut self, what: &'static str) -> Result<String, CodecError> {
         let len = self.length(what, 1)?;
         if len > 256 {
             return Err(CodecError::malformed(format_args!(
@@ -964,10 +810,6 @@ impl<'a> MetaCursor<'a> {
         let bytes = self.take(len, what)?;
         let text = std::str::from_utf8(bytes)
             .map_err(|_| CodecError::malformed(format_args!("RSe metadata {what} is not UTF-8")))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(text.len()),
-            "retain RSe metadata UTF-8 field",
-        )?;
         Ok(text.to_owned())
     }
 
@@ -1013,7 +855,6 @@ pub(crate) fn database_band(path: &str) -> Option<StorageBand> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
     use std::io::Write as _;
 
     use cadmpeg_container::compound::CompoundSnapshot;
@@ -1022,15 +863,14 @@ mod tests {
     use flate2::Compression;
 
     use super::{
-        parse_bulk_stream, parse_meta_stream, push_identity_issue, rse_issue_detail, MetaCursor,
-        MetaStreamDeclaration, RseInventory, SegmentKind, SegmentMetaState, SegmentToken,
+        parse_bulk_stream, parse_meta_stream, MetaCursor, MetaStreamDeclaration, RseInventory,
+        SegmentKind, SegmentMetaState, SegmentToken,
     };
     use cadmpeg_core::decode::DecodeContext;
-    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     #[test]
-    fn database_issue_detail_refuses_retained_limit_before_copy() {
+    fn database_issue_detail_reports_unframed_and_unreadable_streams() {
         let bytes =
             crate::test_support::test_fixtures::primary_envelope_fixture_with_broken_database();
         let arena = DecodeArena::new();
@@ -1040,41 +880,13 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
         let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
         let descriptor = &mut inventory.databases[0];
-        let detail = descriptor
-            .issue_detail(&setup_ctx)
-            .expect("service admission")
-            .expect("unframed issue");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            descriptor.issue_detail(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor database issue detail"
-        ));
-
+        assert!(descriptor.issue_detail().is_some(), "unframed issue");
         descriptor.state = super::DatabaseState::Unreadable("bad".into());
-        policy.limits.max_retained_bytes = 2;
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            descriptor.issue_detail(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor database issue detail"
-        ));
-        assert_eq!(
-            descriptor
-                .issue_detail(&setup_ctx)
-                .expect("service admission"),
-            Some("bad".into())
-        );
+        assert_eq!(descriptor.issue_detail(), Some("bad".into()));
     }
 
     #[test]
-    fn dialect_declaration_refuses_retained_limit_before_marker_clone() {
+    fn dialect_declaration_survives_a_malformed_body() {
         let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
         let arena = DecodeArena::new();
         let (setup_ctx, root) =
@@ -1083,310 +895,50 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
         let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
         let meta = &mut inventory.segments[0].meta;
-        let expected = meta
-            .declaration(&setup_ctx)
-            .expect("service admission")
-            .expect("metadata declaration");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(expected.marker.len() - 1);
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            meta.declaration(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor dialect declaration marker"
-        ));
-
+        let expected = meta.declaration().expect("metadata declaration");
         *meta = SegmentMetaState::Malformed {
             declared: Some(expected.clone()),
             detail: "bad body".into(),
         };
-        assert!(matches!(
-            meta.declaration(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "retain Inventor dialect declaration marker"
-        ));
-        assert_eq!(
-            meta.declaration(&setup_ctx).expect("service admission"),
-            Some(expected)
-        );
-    }
-
-    fn inventory_refusal_operations(
-        dimension: ResourceDimension,
-        maximum_limit: u64,
-    ) -> BTreeSet<&'static str> {
-        let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
-        inventory_refusal_operations_for(&bytes, dimension, maximum_limit)
-    }
-
-    fn inventory_refusal_operations_for(
-        bytes: &[u8],
-        dimension: ResourceDimension,
-        maximum_limit: u64,
-    ) -> BTreeSet<&'static str> {
-        let arena = DecodeArena::new();
-        let (setup_ctx, root) =
-            DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-                .expect("primary envelope fits service policy");
-        let snapshot = CompoundSnapshot::new(&setup_ctx, root)
-            .expect("primary envelope compound directory parses");
-        let mut operations = BTreeSet::new();
-        let mut limit = 0;
-        for _ in 0..=maximum_limit {
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-                _ => panic!("unsupported inventory limit dimension"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-                .expect("primary envelope fits input cap");
-            if let Err(CodecError::ResourceLimit(refusal)) = RseInventory::build(&ctx, &snapshot) {
-                if refusal.dimension == dimension {
-                    operations.insert(refusal.operation);
-                    let threshold = refusal
-                        .used
-                        .checked_add(refusal.additional)
-                        .expect("bounded refusal total");
-                    assert!(threshold > limit);
-                    limit = threshold;
-                }
-            } else {
-                break;
-            }
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-            .expect("primary envelope fits service policy");
-        RseInventory::build(&ctx, &snapshot).expect("primary envelope inventory builds");
-        operations
+        assert_eq!(meta.declaration(), Some(expected));
     }
 
     #[test]
-    fn rse_inventory_stream_collections_refuse_before_insertion() {
-        let operations = inventory_refusal_operations(ResourceDimension::CollectionItems, 128);
-        for operation in [
-            "index RSe database stream",
-            "index RSe bulk stream",
-            "index RSe metadata stream",
-            "admit RSe database descriptors",
-            "pair RSe segment streams",
-            "admit RSe segment descriptors",
-            "admit RSe parsed metadata segment",
-            "admit RSe framed segments",
-        ] {
-            assert!(
-                operations.contains(operation),
-                "missing refusal at {operation}"
-            );
-        }
+    fn rse_unknown_segment_kind_keeps_its_name() {
+        assert_eq!(SegmentKind::classify("abc", None).label(), "abc");
     }
 
     #[test]
-    fn rse_inventory_paired_token_refuses_retained_limit_before_copy() {
-        let operations = inventory_refusal_operations(ResourceDimension::RetainedBytes, 1024);
-        assert!(
-            operations.contains("retain RSe paired token"),
-            "paired token copy must be admitted"
-        );
-    }
-
-    #[test]
-    fn rse_unpaired_streams_refuse_collection_and_retained_limits_before_copy() {
-        const DIRECTORY_OFFSET: usize = 512;
-        const DIRECTORY_ENTRY_LEN: usize = 128;
-        const BULK_ENTRY: usize = 6;
-        const META_ENTRY: usize = 7;
-
-        let mut metadata_only = crate::test_support::test_fixtures::primary_envelope_fixture();
-        metadata_only[DIRECTORY_OFFSET + BULK_ENTRY * DIRECTORY_ENTRY_LEN] = b'C';
-        let metadata_collections = inventory_refusal_operations_for(
-            &metadata_only,
-            ResourceDimension::CollectionItems,
-            128,
-        );
-        assert!(metadata_collections.contains("collect RSe unpaired metadata"));
-        let metadata_retained = inventory_refusal_operations_for(
-            &metadata_only,
-            ResourceDimension::RetainedBytes,
-            1024,
-        );
-        assert!(metadata_retained.contains("retain RSe unpaired metadata token"));
-
-        let mut bulk_only = crate::test_support::test_fixtures::primary_envelope_fixture();
-        bulk_only[DIRECTORY_OFFSET + META_ENTRY * DIRECTORY_ENTRY_LEN] = b'C';
-        let bulk_collections =
-            inventory_refusal_operations_for(&bulk_only, ResourceDimension::CollectionItems, 128);
-        assert!(bulk_collections.contains("collect RSe unpaired bulk"));
-        let bulk_retained =
-            inventory_refusal_operations_for(&bulk_only, ResourceDimension::RetainedBytes, 1024);
-        assert!(bulk_retained.contains("retain RSe unpaired bulk token"));
-    }
-
-    #[test]
-    fn rse_unknown_segment_kind_refuses_before_name_copy() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            SegmentKind::classify(&ctx, "abc", None),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe unknown segment kind"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        assert_eq!(
-            SegmentKind::classify(&ctx, "abc", None)
-                .expect("service policy admits kind")
-                .label(),
-            "abc"
-        );
-    }
-
-    #[test]
-    fn rse_identity_issue_refuses_collection_and_retained_limits_before_push() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        let mut issues = Vec::new();
-        assert!(matches!(
-            push_identity_issue(&ctx, &mut issues, format_args!("issue")),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit RSe segment identity issue"
-        ));
-        assert!(issues.is_empty());
-
-        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes =
-            4 + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            push_identity_issue(&ctx, &mut issues, format_args!("issue")),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe segment identity issue"
-        ));
-        assert!(issues.is_empty());
-
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        push_identity_issue(&ctx, &mut issues, format_args!("issue"))
-            .expect("service policy admits issue");
-        assert_eq!(issues, ["issue"]);
-    }
-
-    #[test]
-    fn rse_issue_detail_refuses_retained_limit_before_formatting() {
-        let error = CodecError::Malformed("bad registry".into());
-        let detail = error.to_string();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            rse_issue_detail(&ctx, error),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe issue detail"
-        ));
-
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        assert_eq!(
-            rse_issue_detail(&ctx, CodecError::Malformed("bad registry".into()))
-                .expect("service policy admits detail"),
-            detail
-        );
-    }
-
-    #[test]
-    fn segment_token_refuses_retained_limit_before_key_creation() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            SegmentToken::parse(&ctx, "Mseg"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe segment token"
-        ));
-
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        let (_, token) = SegmentToken::parse(&ctx, "Mseg")
-            .expect("service policy admits token")
-            .expect("valid metadata name");
+    fn segment_token_parses_a_metadata_name() {
+        let (_, token) = SegmentToken::parse("Mseg").expect("valid metadata name");
         assert_eq!(token.as_str(), "seg");
     }
 
     #[test]
-    fn invalid_segment_token_skips_without_retained_charge() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(SegmentToken::parse(&ctx, "M#")
-            .expect("invalid name is skipped")
-            .is_none());
+    fn invalid_segment_token_is_skipped() {
+        assert!(SegmentToken::parse("M#").is_none());
     }
 
     #[test]
-    fn metadata_utf8_field_refuses_retained_limit_before_copy() {
+    fn metadata_utf8_field_decodes() {
         let mut bytes = Vec::new();
         push_bytes(&mut bytes, "é".as_bytes());
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata field fits input cap");
-        let mut cursor = MetaCursor::new(root);
-        assert!(matches!(
-            cursor.length_prefixed_utf8(&ctx, "marker"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe metadata UTF-8 field"
-        ));
-
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("metadata field fits service policy");
         assert_eq!(
             MetaCursor::new(root)
-                .length_prefixed_utf8(&ctx, "marker")
+                .length_prefixed_utf8("marker")
                 .expect("valid UTF-8 field"),
             "é"
         );
     }
 
     #[test]
-    fn metadata_utf16_field_refuses_retained_limit_before_decode() {
+    fn metadata_utf16_field_decodes() {
         let mut bytes = Vec::new();
         push_utf16(&mut bytes, "€");
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata field fits input cap");
-        let mut cursor = MetaCursor::new(root);
-        assert!(matches!(
-            cursor.length_prefixed_utf16(&ctx, "display name"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe metadata UTF-16 field"
-        ));
-
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("metadata field fits service policy");
         assert_eq!(
@@ -1395,42 +947,6 @@ mod tests {
                 .expect("valid UTF-16 field"),
             "€"
         );
-    }
-
-    #[test]
-    fn metadata_utf16_decoding_needs_no_materialized_units() {
-        let mut bytes = Vec::new();
-        push_utf16(&mut bytes, "A");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata field fits input cap");
-        let mut cursor = MetaCursor::new(root);
-        assert_eq!(
-            cursor
-                .length_prefixed_utf16(&ctx, "display name")
-                .expect("direct UTF-16 decode needs no temporary storage"),
-            "A"
-        );
-    }
-
-    #[test]
-    fn metadata_declaration_refuses_retained_limit_before_marker_clone() {
-        let bytes = meta_fixture(false);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1,
-        );
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata stream fits input cap");
-        assert!(matches!(
-            parse_meta_stream(&ctx, root),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe metadata declaration marker"
-        ));
     }
 
     #[test]
