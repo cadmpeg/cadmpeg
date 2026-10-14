@@ -999,7 +999,7 @@ pub(crate) fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u
     Ok(&bytes[..bytes.len() - 2])
 }
 
-/// Decodes a retained UTF-16 string after charging its exact UTF-8 byte count.
+/// Decodes a length-prefixed UTF-16 string.
 pub(crate) fn utf16_retained(
     ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,

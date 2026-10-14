@@ -771,23 +771,20 @@ fn insert_property(
     key: impl fmt::Display,
     value: impl fmt::Display,
 ) {
-    let key = format!("{key}");
-    let value = format!("{value}");
-    properties.insert(key, value);
+    properties.insert(key.to_string(), value.to_string());
 }
 
-fn admitted_named_properties(
+fn named_properties(
     record: &str,
     entries: BTreeMap<String, String>,
     warnings: &mut Diagnostics,
-) -> std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, std::string::String> {
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     use std::collections::btree_map::Entry;
 
     let mut kept = BTreeMap::new();
     for (name, value) in entries {
         match cadmpeg_core::text::NonBlankString::new(name) {
             Some(key) => {
-
                 match kept.entry(key) {
                     Entry::Vacant(slot) => {
                         slot.insert(value);
@@ -2095,8 +2092,8 @@ pub(crate) fn project(
             "descendant_objects",
             Joined(record.descendants.iter(), ","),
         );
-        let properties = admitted_named_properties(&native_ids[index], properties, sink.warnings);
-        let parameters = admitted_named_properties(&native_ids[index], parameters, sink.warnings);
+        let properties = named_properties(&native_ids[index], properties, sink.warnings);
+        let parameters = named_properties(&native_ids[index], parameters, sink.warnings);
         let dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
             .map_err(|error| ProjectionError::Codec(error.into()))?;
 

@@ -1599,8 +1599,7 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
 }
 
 /// Reads an unsigned mesh count bounded by `cap`, without a remaining-bytes
-/// floor (see [`count`]). Callers must consume it through a budget-charged
-/// allocator.
+/// floor (see [`count`]).
 fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = usize::try_from(reader.u32()?)
         .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?;
