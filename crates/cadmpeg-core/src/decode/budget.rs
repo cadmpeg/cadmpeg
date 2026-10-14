@@ -479,6 +479,25 @@ impl DecodeBudget {
         )
     }
 
+    /// Runs `build` with no active storage scope, so its charges stay
+    /// session-retained even when an enclosing scope is active.
+    pub(super) fn session_storage<T>(&self, build: impl FnOnce() -> T) -> T {
+        struct Restore<'a> {
+            scope: &'a Cell<Option<ScopedTally>>,
+            prior: Option<ScopedTally>,
+        }
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) {
+                self.scope.set(self.prior);
+            }
+        }
+        let _restore = Restore {
+            scope: &self.scope,
+            prior: self.scope.replace(None),
+        };
+        build()
+    }
+
     pub(super) fn storage_scope(&self, operation: &'static str) -> StorageScope<'_> {
         let prior = self.scope.replace(Some(ScopedTally::default()));
         StorageScope {
@@ -1128,6 +1147,24 @@ mod tests {
         assert_eq!(budget.collection_items.get(), 4);
         drop(outer);
         assert_eq!(budget.collection_items.get(), 0);
+    }
+
+    #[test]
+    fn session_storage_inside_a_scope_stays_charged() {
+        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
+        let mut scope = budget
+            .reserve_scoped_limit(0, "test outer scope")
+            .expect("empty reservation fits");
+        scope
+            .with_storage_limit(|| {
+                budget.charge_collection_items_limit(2, "test scoped items")?;
+                budget.session_storage(|| {
+                    budget.charge_collection_items_limit(3, "test session items")
+                })
+            })
+            .expect("items fit");
+        drop(scope);
+        assert_eq!(budget.collection_items.get(), 3);
     }
 
     #[test]
