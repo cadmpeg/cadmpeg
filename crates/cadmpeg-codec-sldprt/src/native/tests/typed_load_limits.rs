@@ -1,4 +1,4 @@
-//! Resource admission for the charged native loading route.
+//! Resource admission for native loading under a caller context.
 
 use super::{sldprt_with_body_and_history, triangle_body, Cursor, DecodeOptions, SldprtCodec};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -16,11 +16,11 @@ fn typed_load_refusal(policy: DecodePolicy) -> cadmpeg_core::CodecError {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        crate::native::SldprtNative::load_charged(&service, namespace).unwrap(),
+        crate::native::SldprtNative::load_with_context(&service, namespace).unwrap(),
         crate::native::SldprtNative::load(namespace).unwrap()
     );
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    crate::native::SldprtNative::load_charged(&limited, namespace)
+    crate::native::SldprtNative::load_with_context(&limited, namespace)
         .unwrap_err()
         .into()
 }

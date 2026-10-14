@@ -187,7 +187,7 @@ fn relation_declaration_candidate<'a>(
     Some((class, scalar, family))
 }
 
-pub(super) fn unique_relation_declaration_candidates_charged<'a>(
+pub(super) fn unique_relation_declaration_candidates<'a>(
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],

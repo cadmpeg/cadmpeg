@@ -226,7 +226,7 @@ child_emitter_test!(
 );
 
 #[test]
-fn native_load_charged_matches_load() {
+fn native_load_with_context_matches_load() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let decoded = SldprtCodec
@@ -240,7 +240,7 @@ fn native_load_charged_matches_load() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        crate::native::SldprtNative::load_charged(&service, namespace).unwrap(),
+        crate::native::SldprtNative::load_with_context(&service, namespace).unwrap(),
         crate::native::SldprtNative::load(namespace).unwrap()
     );
 }
@@ -1169,4 +1169,68 @@ fn native_store_refuses_nesting_limit() {
     assert!(matches!(cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RecursionDepth));
+}
+
+#[test]
+fn repeated_circle_display_shape_requires_distinct_display_entities() {
+    use crate::records::{
+        FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+        FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
+    };
+
+    let names = [FeatureInputName {
+        id: "name".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        object_id: None,
+        value: "D1".into(),
+    }];
+    let scalar = |ordinal: u32, entity_index: u16| FeatureInputScalar {
+        id: format!("scalar-{ordinal}"),
+        parent: "lane".into(),
+        feature_ref: Some("sketch".into()),
+        ordinal,
+        offset: 100 + u64::from(ordinal),
+        object_id: 1,
+        name: "name".into(),
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+        role: FeatureInputScalarRole::Display,
+        operands: vec![FeatureInputOperand {
+            offset: 200 + u64::from(ordinal),
+            reference_ref: format!("reference-{ordinal}"),
+            kind: FeatureInputOperandKind::E1,
+            entity_index,
+            entity_ref: None,
+        }],
+    };
+    let record = |scalars: &[FeatureInputScalar]| FeatureInputRelationInstance {
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 100,
+        family: FeatureInputRelationFamily::CircleDiameter,
+        class_ref: "class".into(),
+        feature_ref: "sketch".into(),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            scalars.iter().map(|scalar| scalar.id.clone()).collect(),
+            None,
+            None,
+        )
+        .unwrap(),
+        operands: scalars[0].operands.clone(),
+    };
+
+    let distinct = [scalar(0, 1), scalar(1, 2), scalar(2, 3), scalar(3, 4)];
+    assert!(super::repeated_circle_display_shape_valid(
+        &record(&distinct),
+        &distinct,
+        &names
+    ));
+    let repeated = [scalar(0, 1), scalar(1, 2), scalar(2, 3), scalar(3, 1)];
+    assert!(!super::repeated_circle_display_shape_valid(
+        &record(&repeated),
+        &repeated,
+        &names
+    ));
 }

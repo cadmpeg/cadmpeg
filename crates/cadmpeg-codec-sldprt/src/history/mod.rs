@@ -73,7 +73,7 @@ pub(crate) fn histories(
     scan.sections()
         .try_fold(Vec::new(), |mut histories, section| {
             let source = section.ordinal();
-            let Some(text) = crate::container::xml_text_charged(section.payload()) else {
+            let Some(text) = crate::container::xml_text(section.payload()) else {
                 return Ok(histories);
             };
             let admitted_doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {

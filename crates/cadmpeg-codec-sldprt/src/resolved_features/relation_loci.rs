@@ -216,15 +216,15 @@ pub(super) fn relation_constraint_is_inactive(
                 return Ok(true);
             };
             let measured = if let (Some(first), Some(second)) = (
-                profile_locus_point_charged(first, sketch_entities),
-                profile_locus_point_charged(second, sketch_entities),
+                profile_locus_point(first, sketch_entities),
+                profile_locus_point(second, sketch_entities),
             ) {
                 Some((second.u - first.u).hypot(second.v - first.v))
             } else {
                 let point_line = |point: &SketchLocus,
                                   line: &SketchLocus|
                  -> Result<Option<f64>, cadmpeg_core::CodecError> {
-                    let Some(point) = profile_locus_point_charged(point, sketch_entities) else {
+                    let Some(point) = profile_locus_point(point, sketch_entities) else {
                         return Ok(None);
                     };
                     let SketchLocus::Entity(line) = line else {
@@ -250,8 +250,8 @@ pub(super) fn relation_constraint_is_inactive(
                 return Ok(true);
             };
             let (Some(first), Some(second)) = (
-                profile_locus_point_charged(first, sketch_entities),
-                profile_locus_point_charged(second, sketch_entities),
+                profile_locus_point(first, sketch_entities),
+                profile_locus_point(second, sketch_entities),
             ) else {
                 return Ok(false);
             };
@@ -264,8 +264,8 @@ pub(super) fn relation_constraint_is_inactive(
                 return Ok(true);
             };
             let (Some(first), Some(second)) = (
-                profile_locus_point_charged(first, sketch_entities),
-                profile_locus_point_charged(second, sketch_entities),
+                profile_locus_point(first, sketch_entities),
+                profile_locus_point(second, sketch_entities),
             ) else {
                 return Ok(false);
             };
@@ -839,10 +839,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 else {
                     return Ok(None);
                 };
-                let first_point =
-                    resolved_or_none!(profile_locus_point_charged(&first, sketch_entities));
-                let second_point =
-                    resolved_or_none!(profile_locus_point_charged(&second, sketch_entities));
+                let first_point = resolved_or_none!(profile_locus_point(&first, sketch_entities));
+                let second_point = resolved_or_none!(profile_locus_point(&second, sketch_entities));
                 if !same_relation_dimension_length(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.get(),
@@ -950,10 +948,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 else {
                     return Ok(None);
                 };
-                let first_point =
-                    resolved_or_none!(profile_locus_point_charged(&first, sketch_entities));
-                let second_point =
-                    resolved_or_none!(profile_locus_point_charged(&second, sketch_entities));
+                let first_point = resolved_or_none!(profile_locus_point(&first, sketch_entities));
+                let second_point = resolved_or_none!(profile_locus_point(&second, sketch_entities));
                 let measured = if axis == ProfileAxis::U {
                     (second_point.u - first_point.u).abs()
                 } else {
@@ -1030,8 +1026,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             else {
                 return Ok(None);
             };
-            let point_position =
-                resolved_or_none!(profile_locus_point_charged(&point, sketch_entities));
+            let point_position = resolved_or_none!(profile_locus_point(&point, sketch_entities));
             let line_entity =
                 resolved_or_none!(sketch_entities.iter().find(|entity| entity.id() == &line));
             if !point_line_distance_value(point_position, line_entity)
@@ -1573,7 +1568,7 @@ fn unique_profile_measured_locus(
     else {
         return None;
     };
-    let known_point = profile_locus_point_charged(known, sketch_entities)?;
+    let known_point = profile_locus_point(known, sketch_entities)?;
     let mut selected: Option<SketchLocus> = None;
     for (candidate_point, candidate) in canonical_profile_loci(sketch, sketch_entities) {
         if candidate == *known
@@ -1919,7 +1914,7 @@ fn unique_marker_line_distance_entity(
     let Some(marker_locus) = marker_point_locus(ctx, marker, markers_by_id, loci_by_marker)? else {
         return Ok(None);
     };
-    let Some(marker_point) = profile_locus_point_charged(&marker_locus, sketch_entities) else {
+    let Some(marker_point) = profile_locus_point(&marker_locus, sketch_entities) else {
         return Ok(None);
     };
     Ok(unique_profile_matched_entity(
@@ -2162,10 +2157,10 @@ fn unique_dynamic_marker_point_pair(
     let measure = |first: &SketchLocus,
                    second: &SketchLocus|
      -> Result<Option<f64>, cadmpeg_core::CodecError> {
-        let Some(first_point) = profile_locus_point_charged(first, sketch_entities) else {
+        let Some(first_point) = profile_locus_point(first, sketch_entities) else {
             return Ok(None);
         };
-        let Some(second_point) = profile_locus_point_charged(second, sketch_entities) else {
+        let Some(second_point) = profile_locus_point(second, sketch_entities) else {
             return Ok(None);
         };
         Ok(Some(match relation.family {
@@ -2216,10 +2211,10 @@ fn unique_dynamic_marker_point_pair(
     let mut first_candidates = candidates(0, known_first)?;
     let mut second_candidates = candidates(1, known_second)?;
     deduplicate_physical_loci(&mut first_candidates, |locus| {
-        profile_locus_point_charged(locus, sketch_entities)
+        profile_locus_point(locus, sketch_entities)
     });
     deduplicate_physical_loci(&mut second_candidates, |locus| {
-        profile_locus_point_charged(locus, sketch_entities)
+        profile_locus_point(locus, sketch_entities)
     });
     if first_candidates.is_empty() || second_candidates.is_empty() {
         return Ok(None);
@@ -2449,11 +2444,11 @@ fn unique_dynamic_roster_point_line_pair(
     let lines = collect_profile_lines(sketch, sketch_entities);
     let mut points = collect_profile_loci(sketch, sketch_entities);
     deduplicate_physical_loci(&mut points, |(_, locus)| {
-        profile_locus_point_charged(locus, sketch_entities)
+        profile_locus_point(locus, sketch_entities)
     });
     match known {
         KnownOperands::Point(point) => {
-            let position = profile_locus_point_charged(&point, sketch_entities)?;
+            let position = profile_locus_point(&point, sketch_entities)?;
             select_profile_point_line_pairs(*distance, &[(position, point)], &lines)
         }
         KnownOperands::Line(line) => {
@@ -2463,7 +2458,7 @@ fn unique_dynamic_roster_point_line_pair(
         }
         KnownOperands::Both(point, line) => {
             let line_entity = find_profile_entity(sketch_entities, &line)?;
-            let position = profile_locus_point_charged(&point, sketch_entities)?;
+            let position = profile_locus_point(&point, sketch_entities)?;
             point_line_distance_value(position, line_entity)
                 .is_some_and(|measured| same_dimension_length(measured, distance.get()))
                 .then_some((point, line))
@@ -2482,7 +2477,7 @@ fn unique_roster_point_line_pair(
     };
     let mut loci = collect_profile_loci(sketch, sketch_entities);
     deduplicate_physical_loci(&mut loci, |(_, locus)| {
-        profile_locus_point_charged(locus, sketch_entities)
+        profile_locus_point(locus, sketch_entities)
     });
     // The owning sketch roster supplies line witnesses for family-scoped operands.
     let lines = collect_profile_lines(sketch, sketch_entities);
@@ -2501,7 +2496,7 @@ fn unique_point_line_candidate_pair(
     }
     let mut selected: Option<(&SketchLocus, &SketchEntityId)> = None;
     for point in point_candidates {
-        let point_position = profile_locus_point_charged(point, sketch_entities)?;
+        let point_position = profile_locus_point(point, sketch_entities)?;
         for line in line_candidates {
             let line_entity = find_profile_entity(sketch_entities, line)?;
             if !point_line_distance_value(point_position, line_entity)
@@ -2660,9 +2655,7 @@ fn dynamic_marker_point_candidates(
     let mut candidates = Vec::new();
     if let Some(locus) = marker_point_locus(ctx, marker, markers_by_id, loci_by_marker)? {
         if let Some(entity) = find_profile_entity(sketch_entities, locus_entity(&locus)) {
-            if entity.sketch == *sketch
-                && profile_locus_point_charged(&locus, sketch_entities).is_some()
-            {
+            if entity.sketch == *sketch && profile_locus_point(&locus, sketch_entities).is_some() {
                 candidates.push(locus);
             }
         }
@@ -2931,7 +2924,7 @@ fn resolve_profile_locus_positions(
 ) {
     let mut write = 0;
     for read in 0..loci.len() {
-        if let Some(point) = profile_locus_point_charged(&loci[read].1, entities) {
+        if let Some(point) = profile_locus_point(&loci[read].1, entities) {
             loci[read].0 = point;
             loci.swap(write, read);
             write += 1;
@@ -2977,7 +2970,7 @@ fn unique_profile_point_line_entity(
     else {
         return None;
     };
-    let point = profile_locus_point_charged(point, sketch_entities)?;
+    let point = profile_locus_point(point, sketch_entities)?;
     let mut selected: Option<&SketchEntityId> = None;
     for line in sketch_entities {
         if line.sketch != *sketch
@@ -3062,7 +3055,7 @@ fn unique_repaired_profile_point_line_pair(
     selected
 }
 
-pub(super) fn profile_locus_point_charged(
+pub(super) fn profile_locus_point(
     locus: &SketchLocus,
     sketch_entities: &[SketchEntity],
 ) -> Option<Point2> {
@@ -3749,10 +3742,10 @@ pub(super) fn single_marker_line_entity(
     if second_entity.sketch != *sketch {
         return fallback();
     }
-    let Some(first) = profile_locus_point_charged(&first_locus, sketch_entities) else {
+    let Some(first) = profile_locus_point(&first_locus, sketch_entities) else {
         return Ok(None);
     };
-    let Some(second) = profile_locus_point_charged(&second_locus, sketch_entities) else {
+    let Some(second) = profile_locus_point(&second_locus, sketch_entities) else {
         return Ok(None);
     };
     if same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v) {
@@ -3783,7 +3776,7 @@ fn unique_line_containing_marker_point(
     let Some(locus) = marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)? else {
         return Ok(None);
     };
-    let Some(point) = profile_locus_point_charged(&locus, sketch_entities) else {
+    let Some(point) = profile_locus_point(&locus, sketch_entities) else {
         return Ok(None);
     };
     let Some(entity) = find_profile_entity(sketch_entities, locus_entity(&locus)) else {

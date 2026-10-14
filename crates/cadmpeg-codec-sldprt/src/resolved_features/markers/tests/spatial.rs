@@ -23,8 +23,8 @@ use crate::resolved_features::markers::marker_coordinates;
 use crate::resolved_features::markers::marker_local_id;
 use crate::resolved_features::markers::marker_object_index;
 use crate::resolved_features::markers::marker_spatial_coordinates;
-use crate::resolved_features::markers::reference_cells_charged;
-use crate::resolved_features::markers::relation_bindings_charged;
+use crate::resolved_features::markers::reference_cells;
+use crate::resolved_features::markers::relation_bindings;
 use crate::resolved_features::markers::relation_bindings_scoped;
 use crate::resolved_features::markers::sketch_input_entities;
 use crate::resolved_features::markers::spatial_sketches;
@@ -87,7 +87,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         name: "sgEntHandle".into(),
     }];
 
-    let references = reference_cells_charged(&scalars, &classes).unwrap();
+    let references = reference_cells(&scalars, &classes).unwrap();
 
     assert_eq!(references.len(), 2);
     assert!(references
@@ -102,7 +102,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         offset: 299,
         name: "sgArcHandle".into(),
     });
-    assert!(reference_cells_charged(&scalars, &ambiguous_classes)
+    assert!(reference_cells(&scalars, &ambiguous_classes)
         .unwrap()
         .iter()
         .all(|reference| reference.class_ref.is_none()));
@@ -130,7 +130,7 @@ fn reference_cells_copy_operand_identity() {
         }],
     };
     assert_eq!(
-        reference_cells_charged(std::slice::from_ref(&scalar), &[]).unwrap(),
+        reference_cells(std::slice::from_ref(&scalar), &[]).unwrap(),
         vec![crate::records::FeatureInputReference {
             id: scalar.operands[0].reference_ref.clone(),
             parent: scalar.parent,
@@ -702,7 +702,7 @@ fn relation_binding_requires_family_operand_signature() {
     };
 
     assert_eq!(
-        relation_bindings_charged(
+        relation_bindings(
             "lane",
             std::slice::from_ref(&class),
             &[scalar(FeatureInputOperandKind::E1)],
@@ -711,7 +711,7 @@ fn relation_binding_requires_family_operand_signature() {
         .len(),
         1
     );
-    assert!(relation_bindings_charged(
+    assert!(relation_bindings(
         "lane",
         &[class],
         &[scalar(FeatureInputOperandKind::Native(
@@ -752,7 +752,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         operands: vec![operand(0), operand(1)],
     };
 
-    assert!(relation_bindings_charged(
+    assert!(relation_bindings(
         "lane",
         &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
         &[scalar],
@@ -1369,7 +1369,7 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         payload.extend(value.to_le_bytes());
     }
     assert_eq!(
-        crate::resolved_features::markers::spatial_vertex_coordinates_charged(&payload),
+        crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
         vec![
             cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.25, -2.5, 3.75
@@ -1378,7 +1378,5 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         ]
     );
     payload[7 + 43] = 0x1e;
-    assert!(
-        crate::resolved_features::markers::spatial_vertex_coordinates_charged(&payload).is_empty()
-    );
+    assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());
 }

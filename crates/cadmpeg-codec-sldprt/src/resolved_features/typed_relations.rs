@@ -18,8 +18,8 @@ use super::markers::{
 use super::relation_loci::{
     canonical_profile_loci, find_profile_entity, line_line_distance, linked_midpoint_operands,
     linked_single_arc_entity, linked_single_ellipse_entity, linked_single_entities,
-    marker_point_locus, point_line_distance_value, profile_locus_point_charged,
-    relation_operand_loci, same_dimension_angle, same_dimension_length,
+    marker_point_locus, point_line_distance_value, profile_locus_point, relation_operand_loci,
+    same_dimension_angle, same_dimension_length,
 };
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
@@ -887,7 +887,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             if !sketch_entities.is_empty() {
                 for locus in &loci {
-                    if profile_locus_point_charged(locus, sketch_entities).is_none() {
+                    if profile_locus_point(locus, sketch_entities).is_none() {
                         return Ok(Some(native()?));
                     }
                 }
@@ -955,7 +955,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if first == second {
                 return Ok(Some(native()?));
             }
-            let Some(position) = profile_locus_point_charged(&point, sketch_entities) else {
+            let Some(position) = profile_locus_point(&point, sketch_entities) else {
                 return Ok(Some(native()?));
             };
             for identity in [first, second] {
@@ -1015,10 +1015,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if first == second {
                 return Ok(Some(native()?));
             }
-            let Some(first_point) = profile_locus_point_charged(first, sketch_entities) else {
+            let Some(first_point) = profile_locus_point(first, sketch_entities) else {
                 return Ok(Some(native()?));
             };
-            let Some(second_point) = profile_locus_point_charged(second, sketch_entities) else {
+            let Some(second_point) = profile_locus_point(second, sketch_entities) else {
                 return Ok(Some(native()?));
             };
             let Some(axis_entity) = find_profile_entity(sketch_entities, &axis) else {
@@ -1042,8 +1042,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 return Ok(Some(native()?));
             };
             if !sketch_entities.is_empty() {
-                let Some(point_position) = profile_locus_point_charged(&point, sketch_entities)
-                else {
+                let Some(point_position) = profile_locus_point(&point, sketch_entities) else {
                     return Ok(Some(native()?));
                 };
                 let Some(midpoint) = sketch_entities
@@ -1510,7 +1509,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
         (None, Some(known)) => (known, false),
         _ => return Ok(None),
     };
-    let Some(known_point) = profile_locus_point_charged(&known, sketch_entities) else {
+    let Some(known_point) = profile_locus_point(&known, sketch_entities) else {
         return Ok(None);
     };
     let mut selected: Option<SketchLocus> = None;
@@ -1838,11 +1837,10 @@ fn typed_axis_relation_is_inactive(
             )
         }
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
-            let Some(first) = profile_locus_point_charged(relation.first(), sketch_entities) else {
+            let Some(first) = profile_locus_point(relation.first(), sketch_entities) else {
                 return Ok(None);
             };
-            let Some(second) = profile_locus_point_charged(relation.second(), sketch_entities)
-            else {
+            let Some(second) = profile_locus_point(relation.second(), sketch_entities) else {
                 return Ok(None);
             };
             Some(match relation.axis() {
@@ -1903,7 +1901,7 @@ pub(super) fn marker_relation_is_inactive(
         let mut first = None;
         let mut inactive = false;
         for locus in loci {
-            let Some(point) = profile_locus_point_charged(locus, sketch_entities) else {
+            let Some(point) = profile_locus_point(locus, sketch_entities) else {
                 return Ok(false);
             };
             if let Some(first) = first {

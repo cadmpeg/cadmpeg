@@ -203,7 +203,7 @@ fn single_wrapped_stream(
     let Some((member, uncompressed_size)) = frame else {
         return Ok(None);
     };
-    let inflated = inflate_zlib_frame_budgeted(ctx, member, uncompressed_size)?;
+    let inflated = inflate_zlib_frame(ctx, member, uncompressed_size)?;
     inflated.map_or(Ok(None), |bytes| extracted_stream(magic_at, bytes))
 }
 
@@ -272,7 +272,7 @@ fn chained_wrapped_stream(
         let Some(member) = payload.get(member_start..member_end) else {
             return Ok(None);
         };
-        let Some(frame) = inflate_zlib_frame_budgeted(ctx, member, uncompressed_size)? else {
+        let Some(frame) = inflate_zlib_frame(ctx, member, uncompressed_size)? else {
             return Ok(None);
         };
         frame_outputs.push(frame);
@@ -314,7 +314,7 @@ fn as_usize(value: u32) -> Option<usize> {
     usize::try_from(value).ok()
 }
 
-fn inflate_zlib_frame_budgeted(
+fn inflate_zlib_frame(
     ctx: &DecodeContext<'_>,
     member: &[u8],
     expected: usize,

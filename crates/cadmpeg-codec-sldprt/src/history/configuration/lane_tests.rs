@@ -1512,8 +1512,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let native =
-        crate::resolved_features::terminations::compact_surface_selection_value(&components)
-            .expect("surface selection text");
+        crate::resolved_features::terminations::compact_surface_selection_value(&components);
     let selection = || crate::records::FeatureInputSurfaceSelection {
         id: "selection".into(),
         parent: "lane".into(),

@@ -413,7 +413,7 @@ fn validate_compact_body_selection_edits(
                 .iter()
                 .map(u32::to_string)
                 .collect(),
-            crate::resolved_features::component_paths::compact_body_selection_value_charged(
+            crate::resolved_features::component_paths::compact_body_selection_value(
                 &selection.local_body_ids,
             ),
             &ctx,
@@ -497,10 +497,9 @@ fn validate_compact_edge_selection_edits(
                 feature.id
             )));
         };
-        let native =
-            crate::resolved_features::component_paths::compact_edge_selection_set_value_charged(
-                edge_selections,
-            );
+        let native = crate::resolved_features::component_paths::compact_edge_selection_set_value(
+            edge_selections,
+        );
         let generated = edge_selections
             .iter()
             .map(|selection| -> Result<Option<_>, CodecError> {
@@ -611,7 +610,7 @@ fn validate_compact_surface_selection_edits(
         };
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
             &selection.components,
-        )?;
+        );
         let producer = if first_component {
             selection.producer_feature_refs.first().map(String::as_str)
         } else {

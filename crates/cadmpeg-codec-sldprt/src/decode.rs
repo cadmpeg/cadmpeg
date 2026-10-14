@@ -347,7 +347,7 @@ fn append_design_losses(
 
     let native = match ir.native.namespace("sldprt") {
         None => None,
-        Some(namespace) => match crate::native::SldprtNative::load_charged(ctx, namespace) {
+        Some(namespace) => match crate::native::SldprtNative::load_with_context(ctx, namespace) {
             Ok(native) => Some(native),
             Err(error) => match CodecError::from(error) {
                 limit @ CodecError::ResourceLimit(_) => return Err(limit),
@@ -1538,7 +1538,7 @@ fn append_design_losses(
                         cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
                     ) && outward.is_none())
             }
-            FeatureOperation::Combine { operands,  .. } => {
+            FeatureOperation::Combine { operands, .. } => {
                 let target = operands.target();
                 let tools = operands.tools();
                 incomplete_body_selection(target) || incomplete_body_selection(tools)
@@ -1550,11 +1550,7 @@ fn append_design_losses(
             FeatureOperation::CutWithSurface { targets, tools, .. } => {
                 incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
-            FeatureOperation::TrimBodies {
-                operands,
-
-                keep,
-            } => {
+            FeatureOperation::TrimBodies { operands, keep } => {
                 let targets = operands.targets();
                 let tools = operands.tools();
                 incomplete_body_selection(targets)
@@ -1579,13 +1575,11 @@ fn append_design_losses(
                 incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
             }
             FeatureOperation::DeleteFace { faces, .. } => incomplete_face_selection(faces),
-            FeatureOperation::ReplaceFace {
-                operands,
-
-            } => {
-            let targets = operands.targets();
-            let replacements = operands.replacements();
-incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
+            FeatureOperation::ReplaceFace { operands } => {
+                let targets = operands.targets();
+                let replacements = operands.replacements();
+                incomplete_face_selection(targets) || incomplete_face_selection(replacements)
+            }
             FeatureOperation::MoveFace { faces, .. } => incomplete_face_selection(faces),
             FeatureOperation::MoveBody { bodies, .. } => incomplete_body_selection(bodies),
             FeatureOperation::Dome {
@@ -3880,7 +3874,7 @@ fn project_design_history(
         lanes,
     )?;
     ir.model.configurations =
-        crate::history::project::project_configurations_charged(&semantic_projection)?;
+        crate::history::project::project_configurations(&semantic_projection)?;
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
         &mut parameter_projection,

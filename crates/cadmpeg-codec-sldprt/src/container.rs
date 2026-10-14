@@ -342,7 +342,7 @@ pub(crate) fn looks_like_sldprt(
         .any(|w| w == MARKER))
 }
 
-fn completed_scan_charged<'a>(
+fn completed_scan<'a>(
     ctx: &DecodeContext<'_>,
     source_image: &'a [u8],
     version: u32,
@@ -397,7 +397,7 @@ fn walk_native_markers(
             i += 1;
             continue;
         }
-        if let Some(block) = try_block_budgeted(ctx, root, i)? {
+        if let Some(block) = try_block(ctx, root, i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
             ctx.charge_entities(1, "admit SLDPRT block")?;
             blocks.push(block.into_block(ctx)?);
@@ -454,7 +454,7 @@ pub(crate) fn scan<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
         let compound_streams = compound_streams(ctx, root)?;
-        return completed_scan_charged(
+        return completed_scan(
             ctx,
             root.window(),
             0,
@@ -477,7 +477,7 @@ pub(crate) fn scan<'a>(
         directory,
         cache_cells,
     } = walk_native_markers(ctx, root)?;
-    completed_scan_charged(
+    completed_scan(
         ctx,
         bytes,
         version,
@@ -507,7 +507,7 @@ fn compound_streams(
             "retain SolidWorks CFB stream",
         )?;
         let payload = view.window().to_vec();
-        let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
+        let decoded = decode_wrapped_payload(ctx, view)?;
         let path = entry.path().to_owned();
         let stream = compound_stream(
             ctx,
@@ -522,7 +522,7 @@ fn compound_streams(
     Ok(streams)
 }
 
-fn decode_wrapped_payload_budgeted(
+fn decode_wrapped_payload(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
@@ -685,7 +685,7 @@ fn block_from_inflated(
     }))
 }
 
-fn try_block_budgeted(
+fn try_block(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     off: usize,
@@ -1102,10 +1102,6 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
     }
-}
-
-pub(crate) fn xml_text_charged(bytes: &[u8]) -> Option<String> {
-    xml_text(bytes)
 }
 
 /// Metadata from the first parsed `swSolidWorks` envelope.

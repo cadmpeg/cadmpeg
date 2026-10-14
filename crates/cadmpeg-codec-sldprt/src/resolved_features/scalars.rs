@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
 
-pub(crate) fn named_scalars_charged(
+pub(crate) fn named_scalars(
     payload: &[u8],
     parent: &str,
     names: &[FeatureInputName],
