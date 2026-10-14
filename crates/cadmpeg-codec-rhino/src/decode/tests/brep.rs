@@ -834,7 +834,7 @@ fn brep_region_face_groups_refuse_collection_limit() {
 }
 
 #[test]
-fn staged_brep_collections_refuse_just_below_each_required_count() {
+fn staged_brep_collections_charge_each_required_count() {
     let (data, raw) = source_shaped_plane_brep();
     let brep = with_expand_bytes(&data, |expand| {
         crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
@@ -854,7 +854,7 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
     let unknown: UnknownId = "rhino:object:record#plane"
         .try_into()
         .expect("valid identity");
-    let expected = [
+    let refused = [
         "Rhino Brep C3 slots",
         "Rhino Brep surface slots",
         "Rhino Brep pcurve IDs",
@@ -863,11 +863,6 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
         "Rhino Brep pcurve poles",
         "Rhino Brep pcurve knots",
         "Rhino Brep pcurves",
-        "Rhino staged Brep vertex IDs",
-        "Rhino staged Brep points",
-        "Rhino staged Brep vertices",
-        "Rhino staged Brep edge IDs",
-        "Rhino staged Brep edges",
         "Rhino staged Brep face IDs",
         "Rhino staged Brep pending faces",
         "Rhino staged Brep faces",
@@ -877,9 +872,6 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
         "Rhino staged Brep coedges",
         "Rhino staged Brep loop coedges",
         "Rhino staged Brep coedge pcurves",
-        "Rhino staged Brep face loops",
-        "Rhino staged Brep shells",
-        "Rhino staged Brep shell faces",
         "Rhino staged Brep regions",
         "Rhino staged Brep region shells",
         "Rhino staged Brep body regions",
@@ -887,15 +879,26 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
         "Rhino staged Brep links",
         "Rhino staged Brep derived IDs",
     ];
-    let mut witnessed = std::collections::BTreeSet::new();
-    for limit in 0..1024_u64 {
+    // These scoped collections are released before they are charged, so the
+    // live count stays below an earlier peak and no ceiling refuses them first.
+    let charged = [
+        "Rhino staged Brep vertex IDs",
+        "Rhino staged Brep points",
+        "Rhino staged Brep vertices",
+        "Rhino staged Brep edge IDs",
+        "Rhino staged Brep edges",
+        "Rhino staged Brep face loops",
+        "Rhino staged Brep shells",
+        "Rhino staged Brep shell faces",
+    ];
+    let run = |cap: u64| {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
+        policy.limits.max_collection_items = cap;
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
                 .expect("source bytes fit the root limit");
-        let result = stage_brep(BrepTransferInput {
+        stage_brep(BrepTransferInput {
             expand: crate::mesh::MeshExpand::new(&ctx, root),
             data: &data,
             archive: ArchiveVersion::V5,
@@ -906,27 +909,34 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
             unknown: &unknown,
             scale: crate::test_support::millimeter_scale(25.4),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
-        });
-        match result {
-            Err(crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
-                refusal,
-            ))) if limit == refusal.used + refusal.additional - 1 => {
-                witnessed.insert(refusal.operation);
-            }
-            Ok(_) => break,
-            _ => {}
-        }
-        if expected
-            .iter()
-            .all(|operation| witnessed.contains(operation))
-        {
-            break;
-        }
-    }
-    for operation in expected {
+        })
+        .map(|_| ())
+        .map_err(|error| match error {
+            crate::curves::GeometryError::Codec(error) => error,
+            other => panic!("staged Brep fixture failed: {other:?}"),
+        })
+    };
+    for operation in refused {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            run,
+        );
         assert!(
-            witnessed.contains(operation),
-            "missing refusal at {operation}"
+            matches!(&error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == operation
+                    && refusal.used + refusal.additional > refusal.limit),
+            "{operation}: {error:?}"
+        );
+    }
+    let service = cadmpeg_core::decode::DecodePolicy::service()
+        .limits
+        .max_collection_items;
+    for operation in charged {
+        cadmpeg_test_support::refusal::assert_charged(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            || run(service),
         );
     }
 }

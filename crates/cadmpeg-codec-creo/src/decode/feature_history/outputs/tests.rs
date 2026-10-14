@@ -432,7 +432,7 @@ fn generated_input_body_refuses_before_merge_row() {
 }
 
 #[test]
-fn reconciled_output_refuses_before_update_row() {
+fn reconciled_output_charges_update_row() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
@@ -451,17 +451,17 @@ fn reconciled_output_refuses_before_update_row() {
         ),
         native_ref: None,
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error =
-        super::super::dependencies::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
-            .expect_err("visiting node and update row need two collection items");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo reconciled output update rows")
+    crate::test_support::assert_collection_charged(
+        &[],
+        "creo reconciled output update rows",
+        |ctx| {
+            super::super::dependencies::reconcile_feature_links(
+                ctx,
+                &scan,
+                &mut ir,
+                &BTreeMap::new(),
+            )
+        },
     );
 }
 

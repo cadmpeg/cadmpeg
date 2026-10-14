@@ -531,6 +531,49 @@ pub(crate) fn allocation_limit_at<T>(
     panic!("fixture did not finish within the resource boundary bound");
 }
 
+/// Refuse the named collection-item charge at the smallest service ceiling that
+/// makes it the refusing charge, and return that refusal.
+pub(crate) fn collection_refusal_at<T>(
+    input: &[u8],
+    operation: &str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
+            run(&ctx)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("{operation}: expected a collection refusal");
+    };
+    refusal
+}
+
+/// Run a route under the service policy and assert that it charges collection
+/// items under `operation`.
+pub(crate) fn assert_collection_charged<T>(
+    input: &[u8],
+    operation: &str,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(input, &arena, &DecodePolicy::service()).expect("root");
+    cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        operation,
+        || run(&ctx),
+    )
+}
+
 /// An admitted empty container for owner tests that supply their own rows.
 pub(crate) fn empty_container_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(build_prt("test", &[]));
