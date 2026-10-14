@@ -28,10 +28,6 @@ pub(crate) fn external_reference_issue(path: &str, has_document_id: bool) -> Opt
     (is_blank(path) && !has_document_id).then_some("path or a nonzero document_id is required")
 }
 
-pub(crate) fn byte_document_id_present(value: &[u8]) -> bool {
-    value.iter().any(|byte| *byte != 0)
-}
-
 /// Hexadecimal text for exactly sixteen identifier bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Identifier16(NonBlankString);
@@ -700,13 +696,6 @@ impl ExternalReferenceRecord {
         self.ordinal
     }
 
-    pub(crate) fn document_copy_len(&self) -> usize {
-        match &self.identity {
-            ExternalReferenceIdentity::Path { path, .. } => path.as_str().len(),
-            ExternalReferenceIdentity::DocumentId(document_id) => document_id.as_str().len(),
-        }
-    }
-
     pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocument {
         use cadmpeg_ir::products::ExternalDocument;
         match &self.identity {
@@ -945,10 +934,10 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::{
-        byte_document_id_present, embedded_reference_issue, external_reference_issue,
-        model_state_issue, occurrence_issue, representation_issue, EmbeddedReferenceRecord,
-        ExternalReferenceRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
-        UfrxOccurrenceRecord, UfrxParsedPrefix, UfrxRecord, UfrxRepresentationRecord,
+        embedded_reference_issue, external_reference_issue, model_state_issue, occurrence_issue,
+        representation_issue, EmbeddedReferenceRecord, ExternalReferenceRecord,
+        UfrxModelStateRecord, UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxParsedPrefix,
+        UfrxRecord, UfrxRepresentationRecord,
     };
     use cadmpeg_ir::hash::digest::Sha256Digest;
     use cadmpeg_ir::native::NativeNamespace;
@@ -1086,13 +1075,10 @@ mod tests {
             Some("active_model_state must not be empty")
         );
         assert_eq!(
-            external_reference_issue(" ", byte_document_id_present(&[0; 16])),
+            external_reference_issue(" ", false),
             Some("path or a nonzero document_id is required")
         );
-        assert_eq!(
-            external_reference_issue(" ", byte_document_id_present(&[1; 16])),
-            None
-        );
+        assert_eq!(external_reference_issue(" ", true), None);
     }
 
     #[test]

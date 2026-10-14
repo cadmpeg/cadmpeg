@@ -49,97 +49,54 @@ impl<'a> InventorContainer<'a> {
     }
 
     pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
-        admit_container_entries(ctx, &self.snapshot)?;
         let mut entries = self.snapshot.container_entries(classify);
         for segment in &self.rse.segments {
             let Some(entry) =
-                find_summary_entry(ctx, &mut entries, segment.pair.metadata.directory_id())?
+                find_summary_entry(&mut entries, segment.pair.metadata.directory_id())
             else {
                 continue;
             };
             match &segment.meta {
                 SegmentMetaState::Parsed(meta) => {
-                    insert_attribute(ctx, entry, "inner_framing", format_args!("zlib"))?;
-                    insert_attribute(
-                        ctx,
-                        entry,
-                        "expanded_size",
-                        format_args!("{}", meta.body.window().len()),
-                    )?;
-                    insert_attribute(
-                        ctx,
-                        entry,
-                        "meta_marker",
-                        format_args!("{}", meta.declared.marker),
-                    )?;
-                    insert_attribute(
-                        ctx,
-                        entry,
-                        "meta_stream_version",
-                        format_args!("{}", meta.declared.version),
-                    )?;
-                    insert_attribute(
-                        ctx,
-                        entry,
-                        "segment_kind",
-                        format_args!("{}", segment.kind.label()),
-                    )?;
-                    insert_attribute(
-                        ctx,
-                        entry,
-                        "display_name",
-                        format_args!("{}", meta.display_name),
-                    )?;
+                    insert_attribute(entry, "inner_framing", "zlib");
+                    insert_attribute(entry, "expanded_size", meta.body.window().len());
+                    insert_attribute(entry, "meta_marker", &meta.declared.marker);
+                    insert_attribute(entry, "meta_stream_version", meta.declared.version);
+                    insert_attribute(entry, "segment_kind", segment.kind.label());
+                    insert_attribute(entry, "display_name", &meta.display_name);
                 }
                 SegmentMetaState::Malformed { declared, detail } => {
                     if let Some(declared) = declared {
-                        insert_attribute(
-                            ctx,
-                            entry,
-                            "meta_marker",
-                            format_args!("{}", declared.marker),
-                        )?;
-                        insert_attribute(
-                            ctx,
-                            entry,
-                            "meta_stream_version",
-                            format_args!("{}", declared.version),
-                        )?;
+                        insert_attribute(entry, "meta_marker", &declared.marker);
+                        insert_attribute(entry, "meta_stream_version", declared.version);
                     }
-                    insert_attribute(ctx, entry, "framing_error", format_args!("{detail}"))?;
+                    insert_attribute(entry, "framing_error", detail);
                 }
             }
             let Some(bulk_entry) =
-                find_summary_entry(ctx, &mut entries, segment.pair.bulk.directory_id())?
+                find_summary_entry(&mut entries, segment.pair.bulk.directory_id())
             else {
                 continue;
             };
             match &segment.bulk {
                 SegmentBulkState::Framed(bulk) => {
-                    insert_attribute(ctx, bulk_entry, "inner_framing", format_args!("zlib"))?;
+                    insert_attribute(bulk_entry, "inner_framing", "zlib");
                     insert_attribute(
-                        ctx,
                         bulk_entry,
                         "bulk_form",
                         format_args!("0x{:04x}", bulk.form.value()),
-                    )?;
-                    insert_attribute(
-                        ctx,
-                        bulk_entry,
-                        "expanded_size",
-                        format_args!("{}", bulk.expanded.window().len()),
-                    )?;
+                    );
+                    insert_attribute(bulk_entry, "expanded_size", bulk.expanded.window().len());
                 }
                 SegmentBulkState::Malformed(error) => {
-                    insert_attribute(ctx, bulk_entry, "framing_error", format_args!("{error}"))?;
+                    insert_attribute(bulk_entry, "framing_error", error);
                 }
             }
         }
-        let recovery = crate::dialect::DialectRecovery::of(ctx, self)?;
-        let matched = recovery.classify(ctx)?;
+        let recovery = crate::dialect::DialectRecovery::of(self);
+        let matched = recovery.classify();
         let mut losses = Vec::new();
-        admit_summary_loss_slot(ctx, &matched)?;
-        if let Some(loss) = crate::dialect::dialect_loss(ctx, &matched, &recovery)? {
+        if let Some(loss) = crate::dialect::dialect_loss(&matched, &recovery) {
             losses.push(loss);
         }
         let dialects = crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
@@ -147,17 +104,16 @@ impl<'a> InventorContainer<'a> {
             .iter()
             .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
         {
-            admit_summary_loss_slot(ctx, kernel)?;
-            if let Some(loss) = crate::dialect::kernel_dialect_loss(ctx, kernel)? {
+            if let Some(loss) = crate::dialect::kernel_dialect_loss(kernel) {
                 losses.push(loss);
             }
         }
-        let note = summary_note(
-            ctx,
+        let note = format!(
+            "CFB v{} with {} RSe segment pair(s) and {} versioned database(s)",
             self.snapshot.major_version(),
             self.rse.segments.len(),
             self.rse.databases.len(),
-        )?;
+        );
         Ok(ContainerSummary::classified(
             dialects,
             cadmpeg_ir::ContainerKind::Cfb,
@@ -168,133 +124,36 @@ impl<'a> InventorContainer<'a> {
     }
 }
 
-fn admit_summary_loss_slot(
-    ctx: &DecodeContext<'_>,
-    matched: &cadmpeg_core::dialect::DialectMatch,
-) -> Result<(), CodecError> {
-    if !matches!(
-        matched.admission(),
-        cadmpeg_core::dialect::Admission::Admitted
-    ) {
-        ctx.charge_collection_items(1, "collect Inventor summary loss")?;
-    }
-    Ok(())
-}
-
-fn summary_note(
-    ctx: &DecodeContext<'_>,
-    major: u16,
-    segment_count: usize,
-    database_count: usize,
-) -> Result<String, CodecError> {
-    ctx.charge_collection_items(1, "collect Inventor summary note")?;
-    ctx.charge_formatted_retained(format_args!(
-            "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
-        ), "retain Inventor summary note")?;
-    Ok(format!(
-        "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
-    ))
-}
-
-fn admit_container_entries(
-    ctx: &DecodeContext<'_>,
-    snapshot: &CompoundSnapshot<'_>,
-) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(snapshot.entries().len());
-    ctx.charge_collection_items(count, "collect Inventor container summary entries")?;
-    for entry in snapshot.entries() {
-        let path_len = cadmpeg_core::decode::u64_from_index(entry.path().len());
-        ctx.charge_retained(path_len, "retain Inventor summary entry path")?;
-        ctx.charge_collection_items(1, "collect Inventor summary directory attribute")?;
-        ctx.charge_retained(12, "retain Inventor summary directory key")?;
-        ctx.charge_formatted_retained(
-            format_args!("{}", entry.directory_id()),
-            "retain Inventor summary directory id",
-        )?;
-        if let CompoundEntry::Stream(stream) = entry {
-            if let Some(allocation) = stream.allocation() {
-                ctx.charge_collection_items(1, "collect Inventor summary allocation attribute")?;
-                ctx.charge_retained(10, "retain Inventor summary allocation key")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(allocation.label().len()),
-                    "retain Inventor summary allocation label",
-                )?;
-            }
-            ctx.charge_collection_items(1, "collect Inventor summary start-sector attribute")?;
-            ctx.charge_retained(12, "retain Inventor summary start-sector key")?;
-            ctx.charge_formatted_retained(
-                format_args!("{}", stream.start_sector()),
-                "retain Inventor summary start sector",
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn find_summary_entry<'a>(
-    ctx: &DecodeContext<'_>,
-    entries: &'a mut [ContainerEntry],
+fn find_summary_entry(
+    entries: &mut [ContainerEntry],
     directory_id: u32,
-) -> Result<Option<&'a mut ContainerEntry>, CodecError> {
-    for entry in entries {
-        ctx.charge_work(1, "find Inventor summary entry")?;
-        if entry
+) -> Option<&mut ContainerEntry> {
+    entries.iter_mut().find(|entry| {
+        entry
             .attributes
             .get("directory_id")
             .is_some_and(|value| value.parse::<u32>() == Ok(directory_id))
-        {
-            return Ok(Some(entry));
-        }
-    }
-    Ok(None)
+    })
 }
 
-fn insert_attribute(
-    ctx: &DecodeContext<'_>,
-    entry: &mut ContainerEntry,
-    key: &'static str,
-    value: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    let key = ctx.copy_retained_text(key, "retain Inventor summary attribute key")?;
-    ctx.admit_btree_entry(
-        &entry.attributes,
-        &key,
-        "collect Inventor summary attribute",
-    )?;
-    let value = ctx.format_retained(value, "retain Inventor summary attribute value")?;
-    entry.attributes.insert(key, value);
-    Ok(())
+fn insert_attribute(entry: &mut ContainerEntry, key: &str, value: impl std::fmt::Display) {
+    entry.attributes.insert(key.to_owned(), value.to_string());
 }
 
-pub(crate) fn has_inventor_evidence(
-    ctx: &DecodeContext<'_>,
-    paths: &[String],
-) -> Result<bool, CodecError> {
+pub(crate) fn has_inventor_evidence(paths: &[String]) -> bool {
     let mut has_storage = false;
     for path in paths {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(path.len()),
-            "Inventor directory storage evidence",
-        )?;
         if path.eq_ignore_ascii_case("RSeStorage") {
             has_storage = true;
             break;
         }
     }
     for path in paths {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(path.len()),
-            "Inventor directory corroboration",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(path.len()),
-            "Inventor database evidence",
-        )?;
         if path.eq_ignore_ascii_case("RSeStorage/RSeSegInfo") || database_band(path).is_some() {
-            return Ok(has_storage);
+            return has_storage;
         }
     }
-    Ok(false)
+    false
 }
 
 fn classify(entry: &CompoundEntry) -> ContainerRole {

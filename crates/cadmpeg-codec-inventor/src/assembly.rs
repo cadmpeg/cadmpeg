@@ -72,28 +72,11 @@ pub(crate) struct AssemblyPlacement<'a> {
 }
 
 /// Records one more occurrence of `cause` in a non-zero tally.
-pub(crate) fn count_unresolved<C: Ord>(
-    ctx: &DecodeContext<'_>,
-    counts: &mut BTreeMap<C, NonZeroUsize>,
-    cause: C,
-) -> Result<(), CodecError> {
-    if let Some(count) = counts.get_mut(&cause) {
-        *count = count.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "count unresolved Inventor projection cause",
-                u64::MAX,
-                u64::MAX,
-            )
-        })?;
-        return Ok(());
-    }
-    ctx.insert_btree_map(
-        counts,
-        cause,
-        NonZeroUsize::MIN,
-        "count unresolved Inventor projection cause",
-    )?;
-    Ok(())
+pub(crate) fn count_unresolved<C: Ord>(counts: &mut BTreeMap<C, NonZeroUsize>, cause: C) {
+    counts
+        .entry(cause)
+        .and_modify(|count| *count = count.saturating_add(1))
+        .or_insert(NonZeroUsize::MIN);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -167,33 +150,26 @@ pub(crate) fn project_occurrences(
             .and_then(Option::as_ref)
         else {
             count_unresolved(
-                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
-            )?;
+            );
             continue;
         };
         if !occurrence_records.contains_key(&source.occurrence_id) {
             count_unresolved(
-                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
-            )?;
+            );
             continue;
         }
         if emitted_ids.contains(&source.occurrence_id) {
             count_unresolved(
-                ctx,
                 &mut unresolved_placements,
                 UnresolvedCause::DuplicateOccurrence,
-            )?;
+            );
             continue;
         }
-        ctx.insert_hash_set(
-            &mut emitted_ids,
-            source.occurrence_id,
-            "track Inventor emitted occurrence id",
-        )?;
+        emitted_ids.insert(source.occurrence_id);
 
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let (transform, visible) = match placements
@@ -215,45 +191,21 @@ pub(crate) fn project_occurrences(
                 })
                 .flatten() else {
                     count_unresolved(
-                        ctx,
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
-                    )?;
+                    );
                     continue;
                 };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
-                count_unresolved(ctx, &mut unresolved_placements, UnresolvedCause::Placement)?;
+                count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement);
                 continue;
             }
         };
 
-        ctx.charge_collection_items(1, "project Inventor occurrence")?;
         ctx.charge_entities(1, "project Inventor occurrence")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                "inventor:assembly:instance#".len()
-                    + usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| {
-                        CodecError::Malformed("Inventor numeric value exceeds target range".into())
-                    })?
-                    + 1,
-            ),
-            "retain projected Inventor occurrence id",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(reference.document_copy_len()),
-            "retain projected Inventor external document",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(source.title.as_ref().map_or(0, String::len)),
-            "retain projected Inventor occurrence title",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(source.id.len()),
-            "retain projected Inventor occurrence native reference",
-        )?;
         occurrences.push(Occurrence {
             id: OccurrenceId::compose(
                 &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
@@ -301,30 +253,18 @@ pub(crate) fn inventory<'a>(
         };
         for record in &table.records {
             let result = if segment.kind == SegmentKind::AmDc && record.type_id == OCCURRENCE_TYPE {
-                parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
-                    ctx.charge_collection_items(1, "admit Inventor assembly occurrence record")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
-                        "retain Inventor assembly occurrence token",
-                    )?;
+                parse_occurrence(ctx, record.payload).map(|mut occurrence| {
                     occurrence.segment_token = segment.pair.token.as_str().into();
                     occurrence.record_ordinal = record.ordinal;
                     occurrences.push(occurrence);
-                    Ok(())
                 })
             } else if segment.kind == SegmentKind::AmGraphics
                 && matches!(record.type_id, PLACEMENT_TYPE_CA | PLACEMENT_TYPE_B9)
             {
-                parse_placement(ctx, record.payload).and_then(|mut placement| {
-                    ctx.charge_collection_items(1, "admit Inventor assembly placement record")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
-                        "retain Inventor assembly placement token",
-                    )?;
+                parse_placement(ctx, record.payload).map(|mut placement| {
                     placement.segment_token = segment.pair.token.as_str().into();
                     placement.record_ordinal = record.ordinal;
                     placements.push(placement);
-                    Ok(())
                 })
             } else {
                 continue;
@@ -333,16 +273,7 @@ pub(crate) fn inventory<'a>(
                 if matches!(error, CodecError::ResourceLimit(_)) {
                     return Err(error);
                 }
-                ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
                 ctx.charge_entities(1, "admit Inventor assembly issue")?;
-                ctx.charge_formatted_retained(
-                    format_args!("{error}"),
-                    "retain Inventor assembly issue detail",
-                )?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
-                    "retain Inventor assembly issue token",
-                )?;
                 issues.push(RecordIssue {
                     family: RecordIssueFamily::Assembly,
                     segment_token: segment.pair.token.key().clone(),
@@ -391,14 +322,7 @@ fn parse_occurrence<'a>(
         "occurrence related-list marker",
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(related_count),
-        "admit Inventor occurrence related references",
-    )?;
-    let mut related_references = ctx.vector_storage(
-        related_count,
-        "admit Inventor occurrence related references",
-    )?;
+    let mut related_references = Vec::new();
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;

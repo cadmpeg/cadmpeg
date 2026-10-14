@@ -6,11 +6,12 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
-use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
+use cadmpeg_asm::kernel_header::BinaryHeader;
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
 
 use crate::layout::kernel_carrier_header as carrier_header;
+use crate::records::RseRecordFrame;
 use crate::rse::{
     DocumentKind, RecordFrameState, SegmentBulkState, SegmentDescriptor, SegmentKind,
 };
@@ -83,40 +84,7 @@ fn parse_kernel_header(
             "Inventor ACIS carrier has no parseable header",
         ),
     };
-    if parsed.is_none() {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(absent.len()),
-            "retain Inventor absent kernel header detail",
-        )?;
-    }
     Ok(parsed.ok_or_else(|| absent.to_owned()))
-}
-
-fn copy_kernel_header(
-    ctx: &DecodeContext<'_>,
-    header: &BinaryHeader,
-    operation: &'static str,
-) -> Result<BinaryHeader, CodecError> {
-    let copy_text = |value: &Option<String>| {
-        value
-            .as_deref()
-            .map(|value| ctx.copy_retained_text(value, operation))
-            .transpose()
-    };
-    Ok(BinaryHeader {
-        width: header.width,
-        metadata: KernelHeader {
-            save_format_version: header.metadata.save_format_version,
-            entity_count: header.metadata.entity_count,
-            flags: header.metadata.flags,
-            product_family: copy_text(&header.metadata.product_family)?,
-            product_version: copy_text(&header.metadata.product_version)?,
-            save_date: copy_text(&header.metadata.save_date)?,
-            scale: header.metadata.scale,
-            linear: header.metadata.linear,
-            angular: header.metadata.angular,
-        },
-    })
 }
 
 pub(crate) fn decode_kernel_carrier(
@@ -158,13 +126,6 @@ pub(crate) fn decode_kernel_carrier(
             ))
         })
     })?;
-    ctx.charge_formatted_retained(
-        format_args!(
-            "RSeStorage/B{}:record:{}",
-            carrier.segment_token, carrier.record_ordinal
-        ),
-        "retain Inventor kernel carrier stream name",
-    )?;
     let stream = format!(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
@@ -179,7 +140,7 @@ pub(crate) fn decode_kernel_carrier(
         DecodePurpose::Model,
     )?;
     Ok(DecodedKernelCarrier {
-        header: copy_kernel_header(ctx, header, "copy Inventor decoded kernel header")?,
+        header: header.clone(),
         brep,
     })
 }
@@ -192,64 +153,42 @@ pub(crate) fn select_active_carrier<'a>(
     if !matches!(document_kind, DocumentKind::Part) {
         return Ok(ActiveCarrierState::NotApplicable);
     }
-    let mut brep_count = 0_u64;
-    let mut selected_segment = None;
-    for segment in segments {
-        ctx.charge_work(1, "scan Inventor kernel carrier segments")?;
-        if matches!(segment.kind, SegmentKind::PmBRep) {
-            brep_count = brep_count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "Inventor kernel carrier segment count",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-            selected_segment = Some(segment);
-        }
-    }
-    let Some(segment) = selected_segment.filter(|_| brep_count == 1) else {
-        return unavailable(
-            ctx,
-            format_args!("part document has {brep_count} PmBRep segments; expected one"),
-        );
+    let is_brep = |segment: &&SegmentDescriptor<'a>| matches!(segment.kind, SegmentKind::PmBRep);
+    let brep_count = segments.iter().filter(is_brep).count();
+    let Some(segment) = segments.iter().rfind(is_brep).filter(|_| brep_count == 1) else {
+        return Ok(ActiveCarrierState::Unavailable(format!(
+            "part document has {brep_count} PmBRep segments; expected one"
+        )));
     };
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-        return unavailable(ctx, format_args!("PmBRep bulk stream is unavailable"));
+        return Ok(ActiveCarrierState::Unavailable(
+            "PmBRep bulk stream is unavailable".to_owned(),
+        ));
     };
     let table = match &bulk.records {
         RecordFrameState::Framed(table) => table,
         RecordFrameState::Unavailable(_) => {
-            return unavailable(ctx, format_args!("PmBRep record table is unavailable"));
+            return Ok(ActiveCarrierState::Unavailable(
+                "PmBRep record table is unavailable".to_owned(),
+            ));
         }
     };
-    let mut carrier_count = 0_u64;
-    let mut selected_record = None;
-    for record in &table.records {
-        ctx.charge_work(1, "scan Inventor typed kernel carrier records")?;
-        if record.type_id == KERNEL_RECORD_TYPE_ID {
-            carrier_count = carrier_count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "Inventor typed kernel carrier count",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-            selected_record = Some(record);
-        }
-    }
-    let Some(record) = selected_record.filter(|_| carrier_count == 1) else {
-        return unavailable(
-            ctx,
-            format_args!(
-                "PmBRep contains {carrier_count} typed kernel-carrier records; expected one"
-            ),
-        );
+    let is_carrier = |record: &&RseRecordFrame<'a>| record.type_id == KERNEL_RECORD_TYPE_ID;
+    let carrier_count = table.records.iter().filter(is_carrier).count();
+    let Some(record) = table
+        .records
+        .iter()
+        .rfind(is_carrier)
+        .filter(|_| carrier_count == 1)
+    else {
+        return Ok(ActiveCarrierState::Unavailable(format!(
+            "PmBRep contains {carrier_count} typed kernel-carrier records; expected one"
+        )));
     };
     let Some(version) = segment.registry.map(|join| join.version_major) else {
-        return unavailable(
-            ctx,
-            format_args!("PmBRep segment version is unavailable from the registry"),
-        );
+        return Ok(ActiveCarrierState::Unavailable(
+            "PmBRep segment version is unavailable from the registry".to_owned(),
+        ));
     };
     match parse_carrier(
         ctx,
@@ -261,22 +200,8 @@ pub(crate) fn select_active_carrier<'a>(
     ) {
         Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => {
-            ctx.charge_formatted_retained(
-                format_args!("{error}"),
-                "retain Inventor carrier unavailable detail",
-            )?;
-            Ok(ActiveCarrierState::Unavailable(error.to_string()))
-        }
+        Err(error) => Ok(ActiveCarrierState::Unavailable(error.to_string())),
     }
-}
-
-fn unavailable<'a>(
-    ctx: &DecodeContext<'_>,
-    detail: std::fmt::Arguments<'_>,
-) -> Result<ActiveCarrierState<'a>, CodecError> {
-    ctx.charge_formatted_retained(detail, "retain Inventor carrier unavailable detail")?;
-    Ok(ActiveCarrierState::Unavailable(detail.to_string()))
 }
 
 fn parse_carrier<'a>(
@@ -328,10 +253,7 @@ fn parse_carrier<'a>(
         ));
     };
     let header = match parse_kernel_header(ctx, family, carrier.window())? {
-        Ok(header) => {
-            ctx.charge_collection_items(1, "box Inventor parsed kernel header")?;
-            Ok(Box::new(header))
-        }
+        Ok(header) => Ok(Box::new(header)),
         Err(detail) => Err(detail),
     };
     let mut offset = carrier_end;
@@ -368,8 +290,7 @@ fn parse_carrier<'a>(
     }
 
     Ok(ActiveCarrier {
-        segment_token: segment_token
-            .try_clone_for_decode(ctx, "retain Inventor selected carrier token")?,
+        segment_token: segment_token.clone(),
         carrier_len,
         record_ordinal,
         segment_version_major,

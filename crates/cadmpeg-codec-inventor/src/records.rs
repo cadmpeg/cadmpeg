@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact Inventor `RSe` metadata tables and bulk-record framing.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::layout::meta_body_prefix as meta_prefix;
@@ -171,10 +171,7 @@ pub(crate) struct RseRecordTable<'a> {
     pub(crate) stream_trailer: View<'a>,
 }
 
-pub(crate) fn parse_meta_tables<'a>(
-    ctx: &DecodeContext<'a>,
-    body: View<'a>,
-) -> Result<MetaTables<'a>, CodecError> {
+pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecError> {
     let mut view = body;
     let prefix =
         crate::reader::u16_array::<{ meta_prefix::LEN / 2 }>(&mut view, "metadata prefix")?;
@@ -193,11 +190,7 @@ pub(crate) fn parse_meta_tables<'a>(
 
     let (block_count, section_1_payload, section_1_footer) =
         counted_section(&mut view, 4, "block-size table")?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(block_count),
-        "admit Inventor RSe block descriptors",
-    )?;
-    let mut blocks = ctx.vector_storage(block_count, "admit Inventor RSe block descriptors")?;
+    let mut blocks = Vec::new();
     let mut sizes = section_1_payload;
     for ordinal in 0..block_count {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
@@ -240,14 +233,7 @@ pub(crate) fn parse_meta_tables<'a>(
             "RSe type table has more than 256 entries".into(),
         ));
     }
-    // The test above bounds `type_count` at 256 and `SECTION_COUNT` is 11, so
-    // the charge is at most 267 and `u64` holds it exactly.
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(type_count)
-            + cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
-        "admit Inventor RSe metadata tables",
-    )?;
-    let mut types = ctx.vector_storage(type_count, "admit Inventor RSe metadata tables")?;
+    let mut types = Vec::new();
     for index in 0..type_count {
         let entry = child(
             section_4_payload,
@@ -317,18 +303,12 @@ pub(crate) fn parse_meta_tables<'a>(
 }
 
 pub(crate) fn frame_bulk_records<'a>(
-    ctx: &DecodeContext<'a>,
     bulk: View<'a>,
     tables: &MetaTables<'_>,
     segment_version_major: u8,
 ) -> Result<RseRecordTable<'a>, CodecError> {
-    let stored_count = tables.blocks.iter().filter(|block| block.stored).count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(stored_count),
-        "admit Inventor RSe record frames",
-    )?;
     let mut cursor = Cursor::new(bulk);
-    let mut records = ctx.vector_storage(stored_count, "admit Inventor RSe record frames")?;
+    let mut records = Vec::new();
     for block in tables.blocks.iter().filter(|block| block.stored) {
         let selector = cursor.u32("record type selector")?;
         let type_index = u8::try_from(selector & 0xff).map_err(|_| {
@@ -356,7 +336,7 @@ pub(crate) fn frame_bulk_records<'a>(
         }
         let trailer_start = cursor.position();
         if uses_extended_record_trailer(segment_version_major) {
-            parse_extended_record_trailer(ctx, &mut cursor)?;
+            parse_extended_record_trailer(&mut cursor)?;
         }
         let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
         records.push(RseRecordFrame {
@@ -504,10 +484,7 @@ fn uses_extended_record_trailer(segment_version_major: u8) -> bool {
     segment_version_major > 18
 }
 
-fn parse_extended_record_trailer(
-    ctx: &DecodeContext<'_>,
-    cursor: &mut Cursor<'_>,
-) -> Result<(), CodecError> {
+fn parse_extended_record_trailer(cursor: &mut Cursor<'_>) -> Result<(), CodecError> {
     if !cursor.record_trailer_presence()? {
         return Ok(());
     }
@@ -520,10 +497,6 @@ fn parse_extended_record_trailer(
             "RSe record trailer property count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(property_count),
-        "admit Inventor RSe record trailer properties",
-    )?;
     for _ in 0..property_count {
         cursor.sized_bytes(65_536, "record trailer property name")?;
         match cursor.u32("record trailer property type")? {
@@ -540,10 +513,6 @@ fn parse_extended_record_trailer(
                 cursor.skip(len, "record trailer byte array")?;
             }
             value => {
-                ctx.charge_formatted_retained(
-                    format_args!("RSe record trailer property type {value} is not implemented"),
-                    "retain RSe record trailer property diagnostic",
-                )?;
                 return Err(CodecError::NotImplemented(format!(
                     "RSe record trailer property type {value} is not implemented"
                 )));
@@ -563,10 +532,6 @@ fn parse_extended_record_trailer(
             "RSe record trailer reference count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(reference_count),
-        "admit Inventor RSe record trailer references",
-    )?;
     if reference_count != 0 {
         cursor.skip(8, "record trailer reference header")?;
         for _ in 0..reference_count {

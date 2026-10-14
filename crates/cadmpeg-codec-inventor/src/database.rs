@@ -151,16 +151,10 @@ pub(crate) fn parse_database(
     match schema_31_body(ctx, cursor, id, schema) {
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => {
-            ctx.charge_formatted_retained(
-                format_args!("{error}"),
-                "retain RSe unframed database detail",
-            )?;
-            Ok(DatabaseHeader::Unframed {
-                schema,
-                detail: error.to_string(),
-            })
-        }
+        Err(error) => Ok(DatabaseHeader::Unframed {
+            schema,
+            detail: error.to_string(),
+        }),
     }
 }
 
@@ -182,7 +176,6 @@ fn schema_31_body(
         note: cursor.utf16(ctx, "database note", 65_536)?,
     };
     cursor.finish()?;
-    ctx.charge_collection_items(1, "admit Inventor RSe database")?;
     Ok(database)
 }
 
@@ -201,11 +194,7 @@ pub(crate) fn parse_registry(
 ) -> Result<SegmentRegistry, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe segment registry");
     let count = cursor.count("segment count", 65_536)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit Inventor segment registry entries",
-    )?;
-    let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
+    let mut entries = Vec::new();
     for _ in 0..count {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
@@ -218,12 +207,7 @@ pub(crate) fn parse_registry(
         let type_state = cursor.u32_array("segment type state")?;
         let version = cursor.version("segment version")?;
         let trailing_value = cursor.u32("segment trailing value")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(object_count),
-            "admit Inventor segment registry objects",
-        )?;
-        let mut objects =
-            ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
+        let mut objects = Vec::new();
         let mut node_count = None;
         for _ in 0..object_count {
             let object = SegmentObject {
@@ -247,11 +231,7 @@ pub(crate) fn parse_registry(
                 "RSe segment node count exceeds 1000000".into(),
             ));
         }
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(node_count),
-            "admit Inventor segment registry nodes",
-        )?;
-        let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
+        let mut nodes = Vec::new();
         for _ in 0..node_count {
             nodes.push(SegmentNode {
                 index: cursor.u32("node index")?,
@@ -279,8 +259,8 @@ pub(crate) fn parse_registry(
         });
     }
     let state = cursor.u16_array("registry state")?;
-    let primary_ids = cursor.id_list(ctx, "primary registry ids")?;
-    let secondary_ids = cursor.id_list(ctx, "secondary registry ids")?;
+    let primary_ids = cursor.id_list("primary registry ids")?;
+    let secondary_ids = cursor.id_list("secondary registry ids")?;
     cursor.finish()?;
     Ok(SegmentRegistry {
         entries,
@@ -290,21 +270,14 @@ pub(crate) fn parse_registry(
     })
 }
 
-pub(crate) fn parse_revisions(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<RevisionTable, CodecError> {
+pub(crate) fn parse_revisions(bytes: &[u8]) -> Result<RevisionTable, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe revision table");
     // The version word is evidence, kept on the table, and not a gate: the
     // version-3 grammar is attempted at any declared version, and a table that
     // does not obey it fails structurally at the cursor.
     let version = cursor.u32("version")?;
     let count = cursor.count("revision count", 1_000_000)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit Inventor revision entries",
-    )?;
-    let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
+    let mut entries = Vec::new();
     for _ in 0..count {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
@@ -415,11 +388,7 @@ impl<'a> Cursor<'a> {
         )
     }
 
-    fn id_list(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        field: &'static str,
-    ) -> Result<Vec<[u8; 16]>, CodecError> {
+    fn id_list(&mut self, field: &'static str) -> Result<Vec<[u8; 16]>, CodecError> {
         let count = self.count(field, 1_000_000)?;
         self.source
             .counted(cadmpeg_core::decode::u64_from_index(count), 16)
@@ -428,7 +397,7 @@ impl<'a> Cursor<'a> {
                     "Inventor registry identifier count exceeds remaining payload",
                 )
             })?;
-        let mut ids = ctx.collection_vec(count, "admit Inventor registry identifier list")?;
+        let mut ids = Vec::new();
         for _ in 0..count {
             ids.push(self.array(field)?);
         }

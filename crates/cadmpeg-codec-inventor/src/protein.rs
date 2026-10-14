@@ -60,18 +60,10 @@ pub(crate) fn parse<'a>(
             archive,
             payload,
         }),
-        Err(error) => {
-            if !matches!(error, CodecError::ResourceLimit(_)) {
-                ctx.charge_formatted_retained(
-                    format_args!("{error}"),
-                    "retain Inventor malformed Protein detail",
-                )?;
-            }
-            ProteinState::Malformed {
-                stream: stream.id(),
-                detail: crate::issue_detail(error)?,
-            }
-        }
+        Err(error) => ProteinState::Malformed {
+            stream: stream.id(),
+            detail: crate::issue_detail(error)?,
+        },
     })
 }
 
@@ -116,12 +108,8 @@ fn parse_stream<'a>(
         .ok_or_else(|| CodecError::Malformed("Inventor Protein payload range is invalid".into()))?;
     let archive = ArchiveSnapshot::new(ctx, payload)?;
     for entry in archive.entries() {
-        validate_entry_name(ctx, &entry.name)?;
+        validate_entry_name(&entry.name)?;
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(archive.entries().len()),
-        "admit Inventor Protein package entries",
-    )?;
     Ok(ParsedProtein::Package {
         declared_len,
         archive,
@@ -147,13 +135,7 @@ pub(crate) fn decode_instances_with_issue(
     match decode_instances(ctx, package) {
         Ok(instances) => Ok((instances, None)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => {
-            ctx.charge_formatted_retained(
-                format_args!("{error}"),
-                "retain Inventor Protein semantic issue",
-            )?;
-            Ok((Vec::new(), Some(crate::issue_detail(error)?)))
-        }
+        Err(error) => Ok((Vec::new(), Some(crate::issue_detail(error)?))),
     }
 }
 
@@ -165,35 +147,15 @@ fn decode_instances_from(
     let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
         return Ok(Vec::new());
     };
-    let count = archive
+    archive
         .entries()
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
-        .count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit Inventor Protein instance streams",
-    )?;
-    let entries = archive
-        .entries()
-        .iter()
-        .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
-        .collect::<Vec<_>>();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit Inventor Protein instance records",
-    )?;
-    entries
-        .into_iter()
         .map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
             let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
             let outcome =
                 cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(entry.name.len()),
-                "Inventor Protein instance entry name",
-            )?;
             Ok(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),
                 records: outcome.records,
@@ -203,7 +165,7 @@ fn decode_instances_from(
         .collect()
 }
 
-fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecError> {
+fn validate_entry_name(name: &str) -> Result<(), CodecError> {
     if name.is_empty()
         || name.starts_with('/')
         || name.contains('\\')
@@ -212,10 +174,6 @@ fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecE
             .split('/')
             .any(|component| matches!(component, "" | "." | ".."))
     {
-        ctx.charge_formatted_retained(
-            format_args!("Inventor Protein package has unsafe entry name {name:?}"),
-            "retain Inventor unsafe Protein entry diagnostic",
-        )?;
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein package has unsafe entry name {name:?}"
         )));
