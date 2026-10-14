@@ -882,9 +882,7 @@ pub(crate) fn parse_runs(
 }
 
 /// Identify 7C05 runs paired to object graphs without retaining record bodies.
-pub(crate) fn paired_object_graph_roots(
-    data: &[u8],
-) -> Result<std::collections::HashMap<usize, usize>, CodecError> {
+pub(crate) fn paired_object_graph_roots(data: &[u8]) -> std::collections::HashMap<usize, usize> {
     let mut roots = std::collections::HashMap::new();
     for candidates in parse_candidate_runs(data) {
         if unique_monotone_run(&candidates).is_none() {
@@ -900,7 +898,7 @@ pub(crate) fn paired_object_graph_roots(
             roots.insert(end + 1, candidates.len());
         }
     }
-    Ok(roots)
+    roots
 }
 
 fn parse_candidate_runs(data: &[u8]) -> Vec<Vec<EntityRecordCandidates>> {
@@ -1175,36 +1173,34 @@ fn materialize_record(
     candidate: &EntityRecordCandidates,
     identity: EntityIdentityCandidate,
 ) -> Option<EntityRecord> {
-    {
-        let record_end = candidate.pos.checked_add(candidate.total_len)?;
-        let body = match candidate.layout {
-            EntityRecordLayout::Inline => {
-                let bytes = data.get(candidate.pos + 6..record_end)?;
-                EntityBody::Inline(bytes.to_vec())
+    let record_end = candidate.pos.checked_add(candidate.total_len)?;
+    let body = match candidate.layout {
+        EntityRecordLayout::Inline => {
+            let bytes = data.get(candidate.pos + 6..record_end)?;
+            EntityBody::Inline(bytes.to_vec())
+        }
+        EntityRecordLayout::Nested {
+            definition_end,
+            value_end,
+        } => {
+            let definition_start = candidate.pos.checked_add(13)?;
+            let identity_end = identity.delimiter.checked_add(5)?;
+            let value_payload = data.get(definition_end + 6..value_end)?;
+            let prefix = data.get(definition_start..identity.delimiter)?;
+            EntityBody::Nested {
+                prefix: prefix.to_vec(),
+                suffix: data.get(identity_end..definition_end)?.to_vec(),
+                value_payload: value_payload.to_vec(),
+                record_suffix: data.get(value_end..record_end)?.to_vec(),
             }
-            EntityRecordLayout::Nested {
-                definition_end,
-                value_end,
-            } => {
-                let definition_start = candidate.pos.checked_add(13)?;
-                let identity_end = identity.delimiter.checked_add(5)?;
-                let value_payload = data.get(definition_end + 6..value_end)?;
-                let prefix = data.get(definition_start..identity.delimiter)?;
-                EntityBody::Nested {
-                    prefix: prefix.to_vec(),
-                    suffix: data.get(identity_end..definition_end)?.to_vec(),
-                    value_payload: value_payload.to_vec(),
-                    record_suffix: data.get(value_end..record_end)?.to_vec(),
-                }
-            }
-        };
-        Some(EntityRecord {
-            pos: candidate.pos,
-            lead: candidate.lead,
-            entity_id: identity.entity_id,
-            body,
-        })
-    }
+        }
+    };
+    Some(EntityRecord {
+        pos: candidate.pos,
+        lead: candidate.lead,
+        entity_id: identity.entity_id,
+        body,
+    })
 }
 
 pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<DefinitionSchemaSelector> {
@@ -1498,69 +1494,6 @@ mod tests {
     }
 
     #[test]
-    fn entity_table_cumulative_path_storage_refuses_below_input_need() {
-        let candidate = |entity_id| EntityRecordCandidates {
-            pos: 0,
-            total_len: 12,
-            lead: 0x01,
-            layout: EntityRecordLayout::Inline,
-            identities: vec![EntityIdentityCandidate {
-                delimiter: 0,
-                entity_id,
-            }],
-        };
-        let records = [candidate(1), candidate(2)];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("synthetic fixture fits the input limit");
-        let error = super::unique_monotone_run(&records)
-            .expect_err("the third path collection item exceeds the limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "collect CATIA 7C05 cumulative paths")
-        );
-        assert!(unique_monotone_run(&records).is_some());
-    }
-
-    #[test]
-    fn entity_table_identity_candidate_limit_refuses_before_candidate_allocation() {
-        let bytes = record(&[0x11], 37);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("small entity record fits input limit");
-        let error =
-            super::parse_runs(&ctx, &bytes).expect_err("one identity candidate exceeds zero items");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "admit CATIA 7C05 identity candidate")
-        );
-    }
-
-    #[test]
-    fn entity_table_materialized_record_limit_refuses_before_record_allocation() {
-        let bytes = record(&[0x11], 37);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 7;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("small entity record fits input limit");
-        let error = super::parse_runs(&ctx, &bytes)
-            .expect_err("materialized record exceeds seven admitted items");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "collect CATIA 7C05 materialized records")
-        );
-    }
-
-    #[test]
     fn entity_table_native_entity_limit_refuses_before_record_allocation() {
         let bytes = record(&[0x11], 37);
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1575,77 +1508,6 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
                 && limit.operation == "admit CATIA 7C05 native entity")
-        );
-    }
-
-    #[test]
-    fn entity_table_retained_body_limit_refuses_before_body_copy() {
-        let bytes = record(&[0x11], 37);
-        let error = crate::test_support::with_retained_refusal(
-            &bytes,
-            "retain CATIA 7C05 nested body",
-            |ctx| super::parse_runs(ctx, &bytes),
-        )
-        .expect_err("body storage refusal");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain CATIA 7C05 nested body")
-        );
-    }
-
-    #[test]
-    fn entity_table_path_work_limit_refuses_before_sort() {
-        let mut bytes = record(&[0x11], 37);
-        bytes.extend(record(&[0x12], 38));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len() + 14).expect("small fixture");
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("two records fit the service input limit");
-        let error =
-            super::parse_runs(&ctx, &bytes).expect_err("sorting one predecessor needs work");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "sort CATIA 7C05 predecessor states")
-        );
-    }
-
-    #[test]
-    fn entity_table_marker_scan_work_limit_refuses_before_scan() {
-        let bytes = record(&[0x11], 37);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len() - 1).expect("small fixture");
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("one record fits the input limit");
-        let error =
-            super::parse_runs(&ctx, &bytes).expect_err("marker scan needs one work unit per byte");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "scan CATIA 7C05 markers")
-        );
-    }
-
-    #[test]
-    fn entity_table_identity_scan_work_limit_refuses_before_scan() {
-        let bytes = record(&[0x11], 37);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("small fixture");
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("one record fits the input limit");
-        let error = super::parse_runs(&ctx, &bytes)
-            .expect_err("identity scan needs work beyond marker scan");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "scan CATIA 7C05 identities")
         );
     }
 
@@ -2052,20 +1914,6 @@ mod tests {
         let mut nonconsecutive = payload;
         nonconsecutive[25] += 1;
         assert_eq!(parse_reference_signature(&nonconsecutive), None);
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            super::parse_reference_signature(ctx, &nonconsecutive)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_reference_signature_text")
-        );
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            super::parse_reference_signature(ctx, &nonconsecutive)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_reference_signature_instructions")
-        );
 
         for (offset, replacement) in [
             (5, 0x83),
@@ -2359,90 +2207,6 @@ mod tests {
                 terminator_count: 1,
             }]
         );
-    }
-
-    #[test]
-    fn numeric_packet_items_refuse_collection_limit_before_growth() {
-        let mut payload = vec![0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6];
-        payload.extend_from_slice(&42.0_f64.to_bits().to_le_bytes());
-        payload.extend_from_slice(&[0xfe, 0xbb]);
-        let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            super::parse_numeric_value_packet(&super::ChargedPacketGrowth(ctx), &payload, 1)
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_numeric_packet_items")
-        );
-        let parsed = crate::test_support::with_service_context(|ctx| {
-            super::parse_numeric_value_packet(&super::ChargedPacketGrowth(ctx), &payload, 1)
-        })
-        .expect("service profile admits numeric packet items");
-        assert!(parsed.is_some());
-    }
-
-    #[test]
-    fn copied_numeric_packet_items_refuse_retained_limit() {
-        let packet = EntityValuePacket::Numeric {
-            offset: 0,
-            prefix_atoms: [1, 2],
-            type_selector: 4,
-            layout_atom: 5,
-            value_atom: 6,
-            items: vec![NumericPacketItem::Binary64 {
-                bits: 1.0_f64.to_bits(),
-                offset: 9,
-            }],
-            terminator_count: 1,
-        };
-        let refused = crate::test_support::with_retained_limit(0, |ctx| packet.copy_charged());
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_numeric_packet_items")
-        );
-        let admitted = crate::test_support::with_service_context(|ctx| packet.copy_charged())
-            .expect("service profile admits numeric packet copy");
-        assert_eq!(admitted, packet);
-    }
-
-    #[test]
-    fn definition_schema_selectors_refuse_collection_limit_before_growth() {
-        let prefix = [0x32, 4, 0, 0, 0];
-        let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            super::parse_definition_schema_selectors(&prefix)
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_definition_schema_selectors")
-        );
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            super::parse_definition_schema_selectors(&prefix)
-        })
-        .expect("service profile admits definition selector");
-        assert_eq!(
-            admitted,
-            [super::DefinitionSchemaSelector {
-                value: 4,
-                offset: 0
-            }]
-        );
-    }
-
-    #[test]
-    fn value_packet_indexes_refuse_collection_limit_before_growth() {
-        let payload = [0xe8, 0xe0, 0x0a, 0x37, 0xfe, 0xfe];
-        let fields = value_block::tokenize(&payload);
-        let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            super::value_packets_charged(ctx, &payload, &fields)
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_value_packet_opcodes")
-        );
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            super::value_packets_charged(ctx, &payload, &fields)
-        })
-        .expect("service profile admits compact value packet");
-        assert_eq!(admitted, value_packets(&payload, &fields));
     }
 
     #[test]

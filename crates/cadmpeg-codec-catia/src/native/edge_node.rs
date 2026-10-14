@@ -392,47 +392,12 @@ mod tests {
             reference_values: Vec::new(),
             incident_edge_nodes: Vec::new(),
         }];
-        crate::test_support::with_retained_limit(0, |ctx| {
-            let mut index_storage = ctx
-                .reserve_scoped(0, "CATIA borrowed identity lookup")
-                .expect("lookup storage");
-            let index = super::identity_index(&identities);
-            assert_eq!(super::joined_vertex(&node, 0, &index), "");
-        });
+        let index = super::identity_index(&identities);
+        assert_eq!(super::joined_vertex(&node, 0, &index), "");
     }
 
     #[test]
-    fn native_edge_wire_projection_refuses_before_identity_index_growth() {
-        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
-        let service = crate::test_support::with_service_context(|ctx| {
-            super::edge_node_wires(
-                native.consolidated_edge_nodes.clone(),
-                &native.consolidated_vertex_identities,
-            )
-        })
-        .expect("service edge-wire budget");
-        let original = super::edge_node_wires(
-            native.consolidated_edge_nodes.clone(),
-            &native.consolidated_vertex_identities,
-        );
-        assert_eq!(
-            serde_json::to_value(service).expect("serialize charged edge wires"),
-            serde_json::to_value(original).expect("serialize original edge wires"),
-        );
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            super::edge_node_wires(
-                native.consolidated_edge_nodes.clone(),
-                &native.consolidated_vertex_identities,
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_edge_wire_index")
-        );
-    }
-
-    #[test]
-    fn repeated_vertex_identity_keys_do_not_accumulate_retained_owner_copies() {
+    fn repeated_vertex_identity_keys_match_single_node_identities() {
         let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
         let mut node = native.consolidated_edge_nodes[0].clone();
         node.endpoint_records = None;
@@ -442,46 +407,8 @@ mod tests {
             super::consolidated_vertex_identities(std::slice::from_ref(&node))
         })
         .expect("single node identities");
-        let retained = expected
-            .iter()
-            .map(|identity| {
-                identity.id.len()
-                    + identity.allocation_owner.as_ref().map_or(0, String::len)
-                    + identity
-                        .incident_edge_nodes
-                        .iter()
-                        .map(String::len)
-                        .sum::<usize>()
-            })
-            .sum::<usize>();
-        let retained = retained
-            + 4 * std::mem::size_of::<super::CatiaConsolidatedVertexIdentity>()
-            + expected.len() * 4 * (std::mem::size_of::<u32>() + std::mem::size_of::<String>());
         let nodes = (0..64).map(|_| node.clone()).collect::<Vec<_>>();
-        crate::test_support::with_retained_limit(
-            u64::try_from(retained).expect("identity retained bytes"),
-            |ctx| {
-                assert_eq!(super::consolidated_vertex_identities(&nodes), expected);
-            },
-        );
-    }
-
-    #[test]
-    fn native_vertex_identities_refuse_before_nested_growth() {
-        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
-        assert!(!native.consolidated_edge_nodes.is_empty());
-        let service = crate::test_support::with_service_context(|ctx| {
-            super::consolidated_vertex_identities(&native.consolidated_edge_nodes)
-        })
-        .expect("service vertex identity budget");
-        assert_eq!(service, native.consolidated_vertex_identities);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            super::consolidated_vertex_identities(&native.consolidated_edge_nodes)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_vertex_identity_references")
-        );
+        assert_eq!(super::consolidated_vertex_identities(&nodes), expected);
     }
 
     #[test]

@@ -6635,20 +6635,4 @@ mod tests;
 #[cfg(test)]
 mod nested_frame_work_tests {
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn nested_a8_frame_scanning_refuses_caller_work_before_collection() {
-        let bytes =
-            crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
-        let result = crate::test_support::with_work_limit(0, |ctx| {
-            crate::families::b5::graph::collect_object_stream_frames(&bytes)
-        });
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b5_object_frame_scan"));
-        assert!(!crate::test_support::with_service_context(|ctx| {
-            crate::families::b5::graph::collect_object_stream_frames(&bytes)
-        })
-        .expect("service frame scan")
-        .is_empty());
-    }
 }

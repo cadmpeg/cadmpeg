@@ -165,7 +165,7 @@ pub(in crate::families) fn try_decode_e5(
             &mut unknowns,
             &mut annotations,
             scan,
-            admitted!(Ok(("catia:payload:unknown#e5").to_owned()).and_then(|text| cadmpeg_ir::ids::UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed))),
+            admitted!(cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#e5".to_owned()).map_err(cadmpeg_core::CodecError::malformed)),
         ) {
             Ok(index) => index,
             Err(error) => return Some(Err(error)),
@@ -3527,57 +3527,6 @@ mod route_tests {
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
 
-    #[test]
-    fn e5_unused_surface_stash_refuses_before_collection_growth() {
-        let topology = E5Topology {
-            bodies: Vec::new(),
-            faces: Vec::new(),
-            edges: BTreeMap::new(),
-            pcurves: BTreeMap::new(),
-            bounds: BTreeMap::new(),
-            curve_supports: BTreeMap::new(),
-            vertex_refs: Vec::new(),
-        };
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            let mut ir = CadIr::empty();
-            ir.model.surfaces.push(super::Surface {
-                id: SurfaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
-                    0usize,
-                ),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .expect("valid test plane"),
-                )),
-                source_object: None,
-            });
-            let mut unused = Vec::new();
-            super::prune_e5_unused_surfaces(
-                ctx,
-                &mut ir,
-                &mut AnnotationBuilder::new(),
-                &topology,
-                &HashMap::new(),
-                (&BTreeMap::new(), &BTreeMap::new()),
-                &mut unused,
-            )?;
-            Ok::<_, cadmpeg_core::CodecError>((ir.model.surfaces, unused))
-        };
-        let refusal = crate::test_support::with_collection_limit(0, run);
-        assert!(
-            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_e5_unused_surfaces")
-        );
-        let (surfaces, unused) = crate::test_support::with_service_context(run)
-            .expect("service budget admits the unused surface stash");
-        assert!(surfaces.is_empty());
-        assert_eq!(unused.len(), 1);
-    }
-
     fn rational_pcurve_arc(
         center: [f64; 2],
         radius: f64,
@@ -3591,49 +3540,6 @@ mod route_tests {
         .expect("service budget admits rational arc")
     }
 
-    #[test]
-    fn e5_circle_pcurve_propagates_arc_collection_refusal() {
-        let surface = E5Surface {
-            pos: 0,
-            record_id: 7,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid plane fixture"),
-            )),
-            uv_scale: finite_pair([1.0, 1.0]),
-        };
-        let pcurve = E5Pcurve::Circle {
-            surface: 0,
-            center: finite_pair([0.0, 0.0]),
-            codes: [0, 0],
-            radius: positive(2.0),
-            range: finite_pair([0.0, std::f64::consts::PI]),
-            tail: finite_pair([0.0, 0.0]),
-        };
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            e5_pcurve_on_surface(
-                ctx,
-                &pcurve,
-                &surface,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_rational_arc_controls")
-        );
-        assert!(fixture_pcurve_on_surface(
-            &pcurve,
-            &surface,
-            &mut crate::nurbs::LaneRefusals::new()
-        )
-        .is_some());
-    }
-
     fn fixture_pcurve_on_surface(
         pcurve: &E5Pcurve,
         surface: &E5Surface,
@@ -3643,59 +3549,6 @@ mod route_tests {
             e5_pcurve_on_surface(ctx, pcurve, surface, refusal)
         })
         .expect("service resource budget")
-    }
-
-    #[test]
-    fn e5_jet_pcurve_refuses_scaled_lane_allocations() {
-        let surface = E5Surface {
-            pos: 0,
-            record_id: 7,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .expect("valid plane fixture"),
-            )),
-            uv_scale: finite_pair([1.0, 1.0]),
-        };
-        let pcurve = jet_pcurve(
-            7,
-            vec![0.0, 1.0],
-            vec![6, 6],
-            vec![[0.0, 0.0], [1.0, 0.0]],
-            vec![[1.0, 0.0]; 2],
-            vec![[0.0, 0.0]; 2],
-            [0.0, 1.0],
-        );
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            e5_pcurve_on_surface(
-                ctx,
-                &pcurve,
-                &surface,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        };
-        assert!(crate::test_support::with_service_context(run)
-            .expect("service resource budget")
-            .is_some());
-        assert!(matches!(
-            crate::test_support::with_materialized_limit(0, run),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia E5 pcurve jet knots"
-        ));
-        for (cap, operation) in [
-            (0, "catia E5 pcurve jet knots"),
-            (2, "catia E5 pcurve jet points"),
-            (4, "catia E5 pcurve first jets"),
-            (6, "catia E5 pcurve second jets"),
-        ] {
-            assert!(matches!(
-                crate::test_support::with_collection_limit(cap, run),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation
-            ));
-        }
     }
 
     fn jet_pcurve(

@@ -232,31 +232,6 @@ mod carrier_resource_tests {
     use crate::families::b5::graph::B5Surface;
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use cadmpeg_ir::math::Point3;
-
-    #[test]
-    fn nurbs_surface_carrier_refuses_collection_limit_below_copy_need() {
-        let surface = B5Surface::Nurbs(
-            NurbsSurface::from_lanes(
-                &cadmpeg_test_support::service_decode_context(),
-                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                NurbsSurfaceLanes::new(vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2], None),
-                false,
-            )
-            .expect("fixture constructor admission")
-            .expect("valid bilinear surface"),
-        );
-        let refused =
-            crate::test_support::with_collection_limit(13, |ctx| surface_carrier(ctx, &surface));
-        assert!(matches!(
-            refused,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        let admitted =
-            crate::test_support::with_service_context(|ctx| surface_carrier(ctx, &surface))
-                .expect("service profile");
-        assert!(matches!(admitted, B5SurfaceCarrier::Analytic(_)));
-    }
 }
 
 pub(super) fn revolution_surface(
@@ -1104,80 +1079,6 @@ mod tests {
     use crate::families::b5::transfer::{
         ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
     };
-
-    #[test]
-    fn revolution_profile_weights_propagate_collection_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-        use cadmpeg_ir::math::Point3;
-
-        let profile = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid revolution profile");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Three angular points, three weights, and six knots precede the profile weights.
-        policy.limits.max_collection_items = 12;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        let error = revolve_nurbs(
-            &ctx,
-            &profile,
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            [[0.0, std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
-            &"test record",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .expect_err("profile weights exceed the collection limit");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia b5 revolution profile weights"));
-    }
-
-    #[test]
-    fn revolution_control_rows_refuse_collection_limit_before_nested_copy() {
-        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-        use cadmpeg_ir::math::Point3;
-
-        let profile = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid revolution profile");
-        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            revolve_nurbs(
-                ctx,
-                &profile,
-                [0.0; 3],
-                [0.0, 0.0, 1.0],
-                [[0.0, std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
-                &"test record",
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        };
-        let refused = crate::test_support::with_collection_limit(37, run);
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia b5 revolution point row values")
-        );
-        let admitted =
-            crate::test_support::with_service_context(run).expect("service resource budget");
-        assert!(admitted.is_some());
-    }
 
     #[test]
     fn quadratic_span_knots_remain_finite_across_a_wide_native_interval() {

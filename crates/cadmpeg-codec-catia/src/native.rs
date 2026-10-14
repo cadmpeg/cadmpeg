@@ -4876,9 +4876,9 @@ fn entity_value_schema_selections(
 fn entity_suffix_schema_selection(
     suffix_value: Option<&CatiaEntitySuffixValue>,
     catalog: Option<&CatiaCatalog>,
-) -> Result<Option<CatiaEntitySuffixSchemaSelection>, CodecError> {
+) -> Option<CatiaEntitySuffixSchemaSelection> {
     let Some(suffix_value) = suffix_value else {
-        return Ok(None);
+        return None;
     };
     let CatiaEntitySuffixPayload::SchemaSelected {
         selector_offset,
@@ -4886,13 +4886,13 @@ fn entity_suffix_schema_selection(
         value,
     } = &suffix_value.payload
     else {
-        return Ok(None);
+        return None;
     };
     let Some(entry) = usize::try_from(*selector)
         .ok()
         .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)))
     else {
-        return Ok(None);
+        return None;
     };
     let value = match value {
         CatiaEntitySuffixSchemaValue::Atom { value } => {
@@ -4916,24 +4916,20 @@ fn entity_suffix_schema_selection(
             CatiaEntitySuffixSchemaValue::SchemaSelector {
                 offset: *offset,
                 ordinal: *ordinal,
-                resolution: selected
-                    .map(|entry| -> Result<CatiaDesignClass, CodecError> {
-                        Ok(CatiaDesignClass {
-                            entry: entry.id.clone(),
-                            name: entry.value.clone(),
-                        })
-                    })
-                    .transpose()?,
+                resolution: selected.map(|entry| CatiaDesignClass {
+                    entry: entry.id.clone(),
+                    name: entry.value.clone(),
+                }),
             }
         }
     };
-    Ok(Some(CatiaEntitySuffixSchemaSelection {
+    Some(CatiaEntitySuffixSchemaSelection {
         offset: *selector_offset,
         ordinal: *selector,
         entry: entry.id.clone(),
         name: entry.value.clone(),
         value,
-    }))
+    })
 }
 
 fn copy_value_schema(selection: &CatiaEntityValueSchemaSelection) -> CatiaEntitySchemaValue {
@@ -4963,21 +4959,19 @@ fn value_production(
     entity: &CatiaEntityRecord,
     records: &[CatiaObjectRecord],
     value_fields: &[value_block::ValueField],
-) -> Result<Option<CatiaEntityValueProduction>, CodecError> {
+) -> Option<CatiaEntityValueProduction> {
     if let Some(relation) = relation_expression(
         &entity.definition_schema_selections,
         &entity.value_schema_selections,
     ) {
-        return Ok(Some(CatiaEntityValueProduction::RelationExpression(
-            relation,
-        )));
+        return Some(CatiaEntityValueProduction::RelationExpression(relation));
     }
     if let Some(parameter) = parameter_value(
         entity.lead,
         &entity.value_schema_selections,
         entity.suffix_value(),
     ) {
-        return Ok(Some(CatiaEntityValueProduction::ParameterValue(parameter)));
+        return Some(CatiaEntityValueProduction::ParameterValue(parameter));
     }
     if let Some(range) = resolved_constraint_range(
         entity.lead,
@@ -4987,7 +4981,7 @@ fn value_production(
         &entity.object_graph,
         entity.entity_id,
     ) {
-        return Ok(Some(CatiaEntityValueProduction::ConstraintRange(range)));
+        return Some(CatiaEntityValueProduction::ConstraintRange(range));
     }
     if let Some(definition) = definition_value(
         entity.lead,
@@ -4995,19 +4989,17 @@ fn value_production(
         value_fields,
         entity.suffix_value(),
         entity.suffix_schema_selection.as_ref(),
-    )? {
-        return Ok(Some(CatiaEntityValueProduction::DefinitionValue(
-            definition,
-        )));
+    ) {
+        return Some(CatiaEntityValueProduction::DefinitionValue(definition));
     }
-    Ok(definition_chain_value(
+    definition_chain_value(
         entity.lead,
         &entity.definition_schema_selections,
         value_fields,
         entity.suffix_value(),
         entity.suffix_schema_selection.as_ref(),
-    )?
-    .map(CatiaEntityValueProduction::DefinitionChainValue))
+    )
+    .map(CatiaEntityValueProduction::DefinitionChainValue)
 }
 
 fn relation_expression(
@@ -5378,113 +5370,35 @@ fn resolved_constraint_range(
     Some(range)
 }
 
-fn copy_suffix_schema_value(
-    value: &CatiaEntitySuffixSchemaValue,
-) -> Result<CatiaEntitySuffixSchemaValue, CodecError> {
-    Ok(match value {
-        CatiaEntitySuffixSchemaValue::Atom { value } => {
-            CatiaEntitySuffixSchemaValue::Atom { value: *value }
-        }
-        CatiaEntitySuffixSchemaValue::Evaluation {
-            opcode_offset,
-            evaluation,
-        } => CatiaEntitySuffixSchemaValue::Evaluation {
-            opcode_offset: *opcode_offset,
-            evaluation: evaluation.clone(),
-        },
-        CatiaEntitySuffixSchemaValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
-        CatiaEntitySuffixSchemaValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
-        CatiaEntitySuffixSchemaValue::SchemaSelector {
-            offset,
-            ordinal,
-            resolution,
-        } => CatiaEntitySuffixSchemaValue::SchemaSelector {
-            offset: *offset,
-            ordinal: *ordinal,
-            resolution: resolution
-                .as_ref()
-                .map(|class| -> Result<CatiaDesignClass, CodecError> {
-                    Ok(CatiaDesignClass {
-                        entry: class.entry.clone(),
-                        name: class.name.clone(),
-                    })
-                })
-                .transpose()?,
-        },
-    })
-}
-
-fn copy_suffix_payload(
-    payload: &CatiaEntitySuffixPayload,
-) -> Result<CatiaEntitySuffixPayload, CodecError> {
-    Ok(match payload {
-        CatiaEntitySuffixPayload::Evaluation {
-            opcode_offset,
-            evaluation,
-            encoding,
-        } => CatiaEntitySuffixPayload::Evaluation {
-            opcode_offset: *opcode_offset,
-            evaluation: evaluation.clone(),
-            encoding: *encoding,
-        },
-        CatiaEntitySuffixPayload::Atom { value } => {
-            CatiaEntitySuffixPayload::Atom { value: *value }
-        }
-        CatiaEntitySuffixPayload::SchemaSelected {
-            selector_offset,
-            selector,
-            value,
-        } => CatiaEntitySuffixPayload::SchemaSelected {
-            selector_offset: *selector_offset,
-            selector: *selector,
-            value: copy_suffix_schema_value(value)?,
-        },
-        CatiaEntitySuffixPayload::ControlE8 => CatiaEntitySuffixPayload::ControlE8,
-        CatiaEntitySuffixPayload::ControlE9 => CatiaEntitySuffixPayload::ControlE9,
-        CatiaEntitySuffixPayload::Separator37 => CatiaEntitySuffixPayload::Separator37,
-    })
-}
-
 fn definition_value(
     lead: u8,
     definitions: &[CatiaDefinitionSchemaSelection],
     value_fields: &[value_block::ValueField],
     suffix_value: Option<&CatiaEntitySuffixValue>,
     suffix_schema_selection: Option<&CatiaEntitySuffixSchemaSelection>,
-) -> Result<Option<CatiaDefinitionValue>, CodecError> {
+) -> Option<CatiaDefinitionValue> {
     if lead != 2
         || !matches!(
             value_fields,
             [value_block::ValueField::Terminator { offset: 0 }]
         )
     {
-        return Ok(None);
+        return None;
     }
     let [definition] = definitions else {
-        return Ok(None);
+        return None;
     };
     let Some(suffix_value) = suffix_value else {
-        return Ok(None);
+        return None;
     };
     let Some(definition) = copy_definition_schema(definition) else {
-        return Ok(None);
+        return None;
     };
-    let schema_selection = suffix_schema_selection
-        .map(|selection| -> Result<_, CodecError> {
-            Ok(CatiaEntitySuffixSchemaSelection {
-                offset: selection.offset,
-                ordinal: selection.ordinal,
-                entry: selection.entry.clone(),
-                name: selection.name.clone(),
-                value: copy_suffix_schema_value(&selection.value)?,
-            })
-        })
-        .transpose()?;
-    Ok(Some(CatiaDefinitionValue {
+    Some(CatiaDefinitionValue {
         definition,
-        payload: copy_suffix_payload(&suffix_value.payload)?,
-        schema_selection,
-    }))
+        payload: suffix_value.payload.clone(),
+        schema_selection: suffix_schema_selection.cloned(),
+    })
 }
 
 fn definition_chain_value(
@@ -5493,43 +5407,43 @@ fn definition_chain_value(
     value_fields: &[value_block::ValueField],
     suffix_value: Option<&CatiaEntitySuffixValue>,
     suffix_schema_selection: Option<&CatiaEntitySuffixSchemaSelection>,
-) -> Result<Option<CatiaDefinitionChainValue>, CodecError> {
+) -> Option<CatiaDefinitionChainValue> {
     if lead != 2
         || !matches!(
             value_fields,
             [value_block::ValueField::Terminator { offset: 0 }]
         )
     {
-        return Ok(None);
+        return None;
     }
     let [selector, role] = definitions else {
-        return Ok(None);
+        return None;
     };
     let Some(selector_value) = copy_definition_schema(selector) else {
-        return Ok(None);
+        return None;
     };
     let Some(role) = copy_definition_schema(role) else {
-        return Ok(None);
+        return None;
     };
     let Some(suffix_schema_selection) = suffix_schema_selection else {
-        return Ok(None);
+        return None;
     };
     if suffix_schema_selection.entry != selector_value.entry
         || suffix_schema_selection.name != selector_value.value
     {
-        return Ok(None);
+        return None;
     }
     let Some(suffix_value) = suffix_value else {
-        return Ok(None);
+        return None;
     };
     let CatiaEntitySuffixPayload::SchemaSelected { .. } = &suffix_value.payload else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(CatiaDefinitionChainValue {
+    Some(CatiaDefinitionChainValue {
         selector: selector_value,
         role,
-        value: copy_suffix_schema_value(&suffix_schema_selection.value)?,
-    }))
+        value: suffix_schema_selection.value.clone(),
+    })
 }
 
 fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
@@ -5920,7 +5834,7 @@ fn reference_signature(
 
 fn derive_reference_signature_cohorts(
     entity_records: &[CatiaEntityRecord],
-) -> Result<Vec<CatiaReferenceSignatureCohort>, CodecError> {
+) -> Vec<CatiaReferenceSignatureCohort> {
     let mut cohorts = Vec::<CatiaReferenceSignatureCohort>::new();
     let mut cohort_by_pair = HashMap::<(&str, u32), usize>::new();
     let mut next_ordinal_by_graph = HashMap::<&str, u64>::new();
@@ -6008,20 +5922,16 @@ fn derive_reference_signature_cohorts(
             selected = Some(selection);
         }
         cohort.schema_selection = if valid {
-            selected
-                .map(|selection| -> Result<_, CodecError> {
-                    Ok(CatiaReferenceSignatureSchemaSelection {
-                        ordinal: selection.ordinal,
-                        entry: selection.entry.clone(),
-                        name: selection.name.clone(),
-                    })
-                })
-                .transpose()?
+            selected.map(|selection| CatiaReferenceSignatureSchemaSelection {
+                ordinal: selection.ordinal,
+                entry: selection.entry.clone(),
+                name: selection.name.clone(),
+            })
         } else {
             None
         };
     }
-    Ok(cohorts)
+    cohorts
 }
 
 fn schema_configuration_record(
@@ -7649,7 +7559,7 @@ fn legacy_role_selector(role: legacy_entity::LegacyRoleSelector) -> CatiaLegacyR
     }
 }
 
-fn legacy_entity_runs(bytes: &[u8]) -> Result<Vec<CatiaLegacyEntityRun>, CodecError> {
+fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
     let mut converted = Vec::new();
     for (index, run) in legacy_entity::parse_runs(bytes).into_iter().enumerate() {
         let id = format!("catia:legacy:entity-run#{index:08}");
@@ -7662,32 +7572,27 @@ fn legacy_entity_runs(bytes: &[u8]) -> Result<Vec<CatiaLegacyEntityRun>, CodecEr
                 lead: identity.lead,
             })
             .collect::<Vec<_>>();
-        let schema_program = run
-            .schema_program
-            .map(|program| -> Result<_, CodecError> {
-                Ok(CatiaLegacySchemaProgram {
-                    byte_offset: u64_from_index(program.offset),
-                    boundary_byte_offset: u64_from_index(program.boundary_offset),
-                    boundary: match program.boundary {
-                        legacy_entity::LegacySchemaProgramBoundary::VendorFooter => {
-                            CatiaLegacySchemaProgramBoundary::VendorFooter
-                        }
-                        legacy_entity::LegacySchemaProgramBoundary::StreamDirectory => {
-                            CatiaLegacySchemaProgramBoundary::StreamDirectory
-                        }
-                    },
-                    data: (program.bytes).into(),
-                    identifiers: program
-                        .identifiers
-                        .into_iter()
-                        .map(|identifier| CatiaLegacySchemaIdentifier {
-                            byte_offset: u64_from_index(identifier.offset),
-                            value: identifier.value,
-                        })
-                        .collect::<Vec<_>>(),
+        let schema_program = run.schema_program.map(|program| CatiaLegacySchemaProgram {
+            byte_offset: u64_from_index(program.offset),
+            boundary_byte_offset: u64_from_index(program.boundary_offset),
+            boundary: match program.boundary {
+                legacy_entity::LegacySchemaProgramBoundary::VendorFooter => {
+                    CatiaLegacySchemaProgramBoundary::VendorFooter
+                }
+                legacy_entity::LegacySchemaProgramBoundary::StreamDirectory => {
+                    CatiaLegacySchemaProgramBoundary::StreamDirectory
+                }
+            },
+            data: (program.bytes).into(),
+            identifiers: program
+                .identifiers
+                .into_iter()
+                .map(|identifier| CatiaLegacySchemaIdentifier {
+                    byte_offset: u64_from_index(identifier.offset),
+                    value: identifier.value,
                 })
-            })
-            .transpose()?;
+                .collect::<Vec<_>>(),
+        });
         let role_selectors = run
             .role_selectors
             .into_iter()
@@ -7717,7 +7622,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Result<Vec<CatiaLegacyEntityRun>, CodecEr
         let relations = run
             .relations
             .into_iter()
-            .map(|relation| -> Result<_, CodecError> {
+            .map(|relation| {
                 let (inputs, output, result_type) = relation.signature.into_parts();
                 let parameter = |parameter: legacy_entity::LegacyRelationParameter| {
                     CatiaLegacyRelationParameter {
@@ -7725,7 +7630,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Result<Vec<CatiaLegacyEntityRun>, CodecEr
                         value_type: parameter.value_type,
                     }
                 };
-                Ok(CatiaLegacyRelation {
+                CatiaLegacyRelation {
                     entity_id: relation.entity_id,
                     body_selector: relation.body_selector,
                     parameter_selector: relation.parameter_selector,
@@ -7737,74 +7642,68 @@ fn legacy_entity_runs(bytes: &[u8]) -> Result<Vec<CatiaLegacyEntityRun>, CodecEr
                     inputs: inputs.into_iter().map(parameter).collect::<Vec<_>>(),
                     output: output.map(parameter),
                     result_type,
-                })
+                }
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         let scalar_values = run
             .scalar_values
             .into_iter()
-            .map(|value| -> Result<_, CodecError> {
-                Ok(CatiaLegacyScalarValue {
-                    id: format!("catia:legacy:scalar#{index:08}-{:016}", value.offset),
-                    byte_offset: u64_from_index(value.offset),
-                    entity_id: value.entity_id,
-                    encoding: match value.encoding {
-                        legacy_entity::LegacyScalarEncoding::Named84 => {
-                            CatiaLegacyScalarEncoding::Named84
-                        }
-                        legacy_entity::LegacyScalarEncoding::Standalone85 => {
-                            CatiaLegacyScalarEncoding::Standalone85
-                        }
-                    },
-                    name_field: value.name_offset.map(u64_from_index),
-                    name: value.name,
-                    evaluation: match value.evaluation {
-                        legacy_entity::LegacyScalarEvaluation::Value(bits) => {
-                            CatiaLegacyScalarEvaluation::Value { bits }
-                        }
-                        legacy_entity::LegacyScalarEvaluation::Unset => {
-                            CatiaLegacyScalarEvaluation::Unset
-                        }
-                    },
-                })
+            .map(|value| CatiaLegacyScalarValue {
+                id: format!("catia:legacy:scalar#{index:08}-{:016}", value.offset),
+                byte_offset: u64_from_index(value.offset),
+                entity_id: value.entity_id,
+                encoding: match value.encoding {
+                    legacy_entity::LegacyScalarEncoding::Named84 => {
+                        CatiaLegacyScalarEncoding::Named84
+                    }
+                    legacy_entity::LegacyScalarEncoding::Standalone85 => {
+                        CatiaLegacyScalarEncoding::Standalone85
+                    }
+                },
+                name_field: value.name_offset.map(u64_from_index),
+                name: value.name,
+                evaluation: match value.evaluation {
+                    legacy_entity::LegacyScalarEvaluation::Value(bits) => {
+                        CatiaLegacyScalarEvaluation::Value { bits }
+                    }
+                    legacy_entity::LegacyScalarEvaluation::Unset => {
+                        CatiaLegacyScalarEvaluation::Unset
+                    }
+                },
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         let string_values = run
             .string_values
             .into_iter()
-            .map(|value| -> Result<_, CodecError> {
-                Ok(CatiaLegacyStringValue {
-                    id: format!("catia:legacy:string#{index:08}-{:016}", value.offset),
-                    byte_offset: u64_from_index(value.offset),
-                    entity_id: value.entity_id,
-                    name_field: value.name_offset.map(u64_from_index),
-                    name: value.name,
-                    value: value.value,
-                })
+            .map(|value| CatiaLegacyStringValue {
+                id: format!("catia:legacy:string#{index:08}-{:016}", value.offset),
+                byte_offset: u64_from_index(value.offset),
+                entity_id: value.entity_id,
+                name_field: value.name_offset.map(u64_from_index),
+                name: value.name,
+                value: value.value,
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         let integer_values = run
             .integer_values
             .into_iter()
-            .map(|value| -> Result<_, CodecError> {
-                Ok(CatiaLegacyIntegerValue {
-                    id: format!("catia:legacy:integer#{index:08}-{:016}", value.offset),
-                    byte_offset: u64_from_index(value.offset),
-                    entity_id: value.entity_id,
-                    encoding: match value.encoding {
-                        legacy_entity::LegacyIntegerEncoding::Inline => {
-                            CatiaLegacyIntegerEncoding::Inline
-                        }
-                        legacy_entity::LegacyIntegerEncoding::WideI32 => {
-                            CatiaLegacyIntegerEncoding::WideI32
-                        }
-                    },
-                    name_field: value.name_offset.map(u64_from_index),
-                    name: value.name,
-                    value: value.value,
-                })
+            .map(|value| CatiaLegacyIntegerValue {
+                id: format!("catia:legacy:integer#{index:08}-{:016}", value.offset),
+                byte_offset: u64_from_index(value.offset),
+                entity_id: value.entity_id,
+                encoding: match value.encoding {
+                    legacy_entity::LegacyIntegerEncoding::Inline => {
+                        CatiaLegacyIntegerEncoding::Inline
+                    }
+                    legacy_entity::LegacyIntegerEncoding::WideI32 => {
+                        CatiaLegacyIntegerEncoding::WideI32
+                    }
+                },
+                name_field: value.name_offset.map(u64_from_index),
+                name: value.name,
+                value: value.value,
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         let row = CatiaLegacyEntityRun {
             id,
             byte_offset: u64_from_index(byte_offset),
@@ -7860,7 +7759,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Result<Vec<CatiaLegacyEntityRun>, CodecEr
         };
         converted.push(row);
     }
-    Ok(converted)
+    converted
 }
 
 pub(crate) fn legacy_evaluated_value_name<'a>(
@@ -7959,122 +7858,12 @@ fn consolidated_class5b5c_records(
 mod consolidated_class_record_limit_tests {
     use super::{consolidated_class5b5c_records, consolidated_class61_records};
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn native_class61_order_output_and_id_refuse_limits() {
-        let mut bytes = crate::test_support::test_b2::b2_counted_61_stream();
-        bytes.extend_from_slice(&crate::test_support::test_b2::b2_long_61_stream());
-        let records = crate::wire::records::consolidated_records(&bytes);
-        for (limit, operation) in [
-            (7, "catia_native_class61_order"),
-            (13, "catia_native_class61_records"),
-        ] {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                consolidated_class61_records(&bytes, &records)
-            });
-            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-                if error.operation == operation));
-        }
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_native_class61_id", |ctx| {
-                consolidated_class61_records(&bytes, &records)
-            });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_class61_id"));
-    }
-
-    #[test]
-    fn native_class5b5c_output_and_id_refuse_limits() {
-        let bytes = crate::test_support::test_b2::b2_class5b5c_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let payload_bytes = u64::try_from(
-            records
-                .iter()
-                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
-                .map(|record| record.payload().expect("class payload").len())
-                .sum::<usize>(),
-        )
-        .expect("fixture payloads fit u64");
-        let record_count = u64::try_from(
-            records
-                .iter()
-                .filter(|record| matches!(record.class(), 0x5b | 0x5c))
-                .count(),
-        )
-        .expect("fixture records fit u64");
-        let limited =
-            crate::test_support::with_collection_limit(payload_bytes + record_count, |ctx| {
-                consolidated_class5b5c_records(&bytes, &records)
-            });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_class5b5c_records"));
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_native_class5b5c_id", |ctx| {
-                consolidated_class5b5c_records(&bytes, &records)
-            });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_class5b5c_id"));
-    }
 }
 
 #[cfg(test)]
 mod consolidated_cone_face_limit_tests {
     use super::{consolidated_cone_faces, consolidated_parameter_points};
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn native_cone_face_output_and_id_refuse_limits() {
-        let bytes = crate::test_support::test_b2::b2_cone_face_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(17, |ctx| {
-            consolidated_cone_faces(&bytes, &records, &[])
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_faces"));
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_native_cone_face_id", |ctx| {
-                consolidated_cone_faces(&bytes, &records, &[])
-            });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_face_id"));
-    }
-
-    #[test]
-    fn native_cone_face_parameter_links_refuse_collection_limits() {
-        let bytes = crate::test_support::test_b2::b2_cone_face_parameter_point_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let points = crate::test_support::with_service_context(|ctx| {
-            consolidated_parameter_points(&bytes, &records)
-        })
-        .expect("service decode");
-        assert_eq!(points.len(), 4);
-        for (limit, operation) in [
-            (0, "catia_native_cone_face_point_index"),
-            (4, "catia_native_cone_face_class18_ends"),
-            (25, "catia_native_cone_face_positions"),
-            (29, "catia_native_cone_face_parameter_points"),
-        ] {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                consolidated_cone_faces(&bytes, &records, &points)
-            });
-            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-                if error.operation == operation));
-        }
-        let limited = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_native_cone_face_point_index_id",
-            |ctx| consolidated_cone_faces(&bytes, &records, &points),
-        );
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_face_point_index_id"));
-        let limited = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_native_cone_face_parameter_id",
-            |ctx| consolidated_cone_faces(&bytes, &records, &points),
-        );
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cone_face_parameter_id"));
-    }
 }
 
 fn consolidated_cone_faces(
@@ -8257,48 +8046,6 @@ fn consolidated_cylinder_groups(
 mod consolidated_cylinder_limit_tests {
     use super::{consolidated_cylinder_groups, consolidated_cylinders};
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn native_standalone_cylinder_refuses_uncharged_output_and_id() {
-        let bytes = crate::test_support::test_b2::b2_cylinder_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            consolidated_cylinders(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cylinders"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_cylinders(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cylinder_id"));
-        let cylinders = crate::test_support::with_service_context(|ctx| {
-            consolidated_cylinders(&bytes, &records)
-        })
-        .expect("service decode");
-        assert_eq!(cylinders.len(), 1);
-    }
-
-    #[test]
-    fn native_embedded_cylinder_and_group_refuse_collection_limit() {
-        let bytes = crate::test_support::test_b2::b2_embedded_cylinder_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            consolidated_cylinder_groups(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_embedded_cylinders"));
-        let limited = crate::test_support::with_collection_limit(1, |ctx| {
-            consolidated_cylinder_groups(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_cylinder_groups"));
-        let (groups, cylinders) = crate::test_support::with_service_context(|ctx| {
-            consolidated_cylinder_groups(&bytes, &records)
-        })
-        .expect("service decode");
-        assert_eq!((groups.len(), cylinders.len()), (1, 1));
-    }
 }
 
 #[cfg(test)]
@@ -8309,135 +8056,6 @@ mod consolidated_analytic_limit_tests {
         consolidated_revolutions, consolidated_spheres, consolidated_tori,
     };
     use cadmpeg_core::CodecError;
-
-    #[test]
-    fn native_analytic_carriers_refuse_output_and_id_limits() {
-        macro_rules! check {
-            ($fixture:ident, $decode:ident, $output:literal, $id:literal) => {{
-            let bytes = crate::test_support::test_b2::$fixture();
-            let records = crate::wire::records::consolidated_records(&bytes);
-            let limited = crate::test_support::with_collection_limit(0, |ctx| $decode(ctx, &bytes, &records));
-            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-                if error.operation == $output));
-            let limited = crate::test_support::with_retained_limit(0, |ctx| $decode(ctx, &bytes, &records));
-            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-                if error.operation == $id));
-            }};
-        }
-        check!(
-            b2_circle_stream,
-            consolidated_circles,
-            "catia_native_circles",
-            "catia_native_circle_id"
-        );
-        check!(
-            b2_cone_stream,
-            consolidated_cones,
-            "catia_native_cones",
-            "catia_native_cone_id"
-        );
-        check!(
-            b2_sphere_stream,
-            consolidated_spheres,
-            "catia_native_spheres",
-            "catia_native_sphere_id"
-        );
-        check!(
-            b2_torus_stream,
-            consolidated_tori,
-            "catia_native_tori",
-            "catia_native_torus_id"
-        );
-    }
-
-    #[test]
-    fn native_revolution_charges_profile_map_and_refuses_output_and_id_limits() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            consolidated_revolutions(&bytes, &records, &[])
-        };
-        // Released scope scratch peaks above the profile map.
-        cadmpeg_test_support::refusal::assert_charged(
-            ResourceDimension::CollectionItems,
-            "catia_native_revolution_profile_index",
-            || crate::test_support::with_service_context(decode),
-        );
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::CollectionItems,
-            "catia_native_revolutions",
-            |cap| crate::test_support::with_collection_limit(cap, decode),
-        );
-        let limited = crate::test_support::with_retained_limit(0, decode);
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_revolution_id"));
-    }
-
-    #[test]
-    fn native_parameter_points_and_line_profiles_refuse_output_and_id_limits() {
-        let bytes = crate::test_support::test_b2::b2_parameter_point_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            consolidated_parameter_points(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_parameter_points"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_parameter_points(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_parameter_point_id"));
-        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            consolidated_line_profiles(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_line_profiles"));
-        let limited = crate::test_support::with_retained_limit(0, |ctx| {
-            consolidated_line_profiles(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_line_profile_id"));
-    }
-
-    #[test]
-    fn native_reference_lists_refuse_output_and_id_limits() {
-        let bytes = crate::test_support::test_b2::b2_reference_list_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(27, |ctx| {
-            consolidated_reference_lists(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_reference_lists"));
-        let limited = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_native_reference_list_id",
-            |ctx| consolidated_reference_lists(&bytes, &records),
-        );
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_reference_list_id"));
-    }
-
-    #[test]
-    fn native_plane_carriers_refuse_output_and_id_limits() {
-        let bytes = crate::test_support::test_b2::b2_plane_carrier_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(3, |ctx| {
-            consolidated_plane_carriers(&bytes, &records)
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_plane_carriers"));
-        let limited = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_native_plane_carrier_id",
-            |ctx| consolidated_plane_carriers(&bytes, &records),
-        );
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_plane_carrier_id"));
-    }
 }
 
 fn consolidated_parameter_points(
@@ -8601,34 +8219,7 @@ fn consolidated_pcurves(
 }
 
 #[cfg(test)]
-mod consolidated_pcurve_limit_tests {
-    #[test]
-    fn native_pcurve_id_and_output_refuse_limits() {
-        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_native_pcurve_id", |ctx| {
-                super::consolidated_pcurves(&bytes, &records)
-            });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_pcurve_id")
-        );
-        let limited = crate::test_support::with_collection_limit(13, |ctx| {
-            super::consolidated_pcurves(&bytes, &records)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_pcurves")
-        );
-        let pcurves = crate::test_support::with_service_context(|ctx| {
-            super::consolidated_pcurves(&bytes, &records)
-        })
-        .expect("service decode");
-        assert_eq!(pcurves.len(), 1);
-        assert_eq!(pcurves[0].points.len(), 2);
-    }
-}
+mod consolidated_pcurve_limit_tests {}
 
 fn consolidated_revolutions(
     bytes: &[u8],
@@ -9092,7 +8683,7 @@ impl CatiaNative {
             alias_rows.push(row);
         }
         let mut parsed_object_graphs =
-            object_graph::parse_all_with_paired_roots(bytes, &paired_object_graph_roots)?;
+            object_graph::parse_all_with_paired_roots(bytes, &paired_object_graph_roots);
         let mut parsed_value_blocks = value_block::parse(bytes);
         filter_nested_inventory(
             &mut parsed_object_graphs,
@@ -9135,7 +8726,7 @@ impl CatiaNative {
                 })
                 .map(CatiaOuterContainerBinding::from_source);
             let (graph, mut entities) =
-                native_object_graph(graph, entities, finjpl_segment, outer_container)?;
+                native_object_graph(graph, entities, finjpl_segment, outer_container);
 
             entity_records.append(&mut entities);
             object_graphs.push(graph);
@@ -9177,8 +8768,8 @@ impl CatiaNative {
                     entity_value_schema_selections(&value_fields, catalog, &value_packets);
                 entity.parse_suffix();
                 entity.suffix_schema_selection =
-                    entity_suffix_schema_selection(entity.suffix_value(), catalog)?;
-                entity.value_production = value_production(entity, &graph.records, &value_fields)?;
+                    entity_suffix_schema_selection(entity.suffix_value(), catalog);
+                entity.value_production = value_production(entity, &graph.records, &value_fields);
                 entity.range_interval = range_interval(
                     entity.value_payload(),
                     &entity.value_schema_selections,
@@ -9232,7 +8823,7 @@ impl CatiaNative {
                 &parameter_bindings,
             );
         }
-        let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records)?;
+        let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
         let schema_configuration_row_chains = derive_schema_configuration_row_chains(
             &entity_records,
             &entities_by_graph_identity,
@@ -9315,7 +8906,7 @@ impl CatiaNative {
         }
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
-        let mut legacy_entity_runs = legacy_entity_runs(bytes)?;
+        let mut legacy_entity_runs = legacy_entity_runs(bytes);
         for run in &mut legacy_entity_runs {
             run.outer_container = outer_directory
                 .as_ref()
@@ -9345,7 +8936,7 @@ impl CatiaNative {
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
         let mut consolidated_owner_packets =
             consolidated_owner_packets(ctx, bytes, consolidated_records)?;
-        resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows)?;
+        resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
         let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
         let consolidated_reference_lists =

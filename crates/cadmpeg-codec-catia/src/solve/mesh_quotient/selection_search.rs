@@ -5,7 +5,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::{
     canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
-    copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
     distinct_domain_matching_with_budget, initial_mesh_quotient,
     mesh_candidates_equivalent_with_context, orient_face_cycles, reconstruct_mesh_selection,
     same_unordered_pair, Arc, BoundaryDraft, CodecError, CoedgeUse, DecodeContext, EdgeRow,
@@ -511,7 +510,7 @@ impl MeshSelectionSearch<'_, '_> {
             completion.push(
                 selected
                     .as_ref()
-                    .map(|(index, directions)| (*index, copy_mesh_boundary_directions(directions))),
+                    .map(|(index, directions)| (*index, directions.clone())),
             );
         }
         for (face, selected) in completion.iter_mut().enumerate() {
@@ -793,8 +792,8 @@ impl MeshSelectionSearch<'_, '_> {
                 let Some(source) = self.assignments[face].get(*assignment) else {
                     return Ok(());
                 };
-                selected_assignments.push(copy_mesh_assignment(source));
-                directions.push(copy_mesh_boundary_directions(selected_directions));
+                selected_assignments.push(source.clone());
+                directions.push(selected_directions.clone());
             }
             let Some(port_identities) = self.port_identities else {
                 return Ok(());
@@ -863,9 +862,9 @@ impl MeshSelectionSearch<'_, '_> {
         let mut quotient = quotient.clone();
         let mut selected = Vec::new();
         for choice in &self.selected {
-            let copy = choice.as_ref().map(|(assignment, directions)| {
-                (*assignment, copy_mesh_boundary_directions(directions))
-            });
+            let copy = choice
+                .as_ref()
+                .map(|(assignment, directions)| (*assignment, directions.clone()));
             selected.push(copy);
         }
         Ok((
@@ -1049,8 +1048,8 @@ impl MeshSelectionSearch<'_, '_> {
                 let Some(assignment) = self.assignments[face].get(*index) else {
                     return Ok(());
                 };
-                selected_assignments.push(copy_mesh_assignment(assignment));
-                directions.push(copy_mesh_boundary_directions(selected_directions));
+                selected_assignments.push(assignment.clone());
+                directions.push(selected_directions.clone());
             }
             if self
                 .edge_candidates
@@ -1264,8 +1263,7 @@ impl MeshSelectionSearch<'_, '_> {
         }
         if let [(assignment_index, directions, next_quotient)] = options.as_slice() {
             let changed_edges = changed_quotient_edges(&measured, next_quotient)?;
-            self.selected[face] =
-                Some((*assignment_index, copy_mesh_boundary_directions(directions)));
+            self.selected[face] = Some((*assignment_index, directions.clone()));
             if self.selected_orientable()? {
                 if let Some(next_quotient) =
                     self.prepare_selected_branch(next_quotient, &changed_edges, propagation_budget)?
@@ -1637,7 +1635,7 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     }
     let topology = StandardTopologyDraft {
         faces,
-        edge_rows: copy_mesh_edge_rows(edge_rows),
+        edge_rows: edge_rows.to_vec(),
         vertex_points: vertex_points.to_vec(),
         logical_vertex_count: vertex_points.len(),
     };
@@ -1727,9 +1725,7 @@ struct DistinctAssignment {
 
 impl DistinctAssignment {
     fn new(points: Vec<usize>, point_count: usize) -> Option<Self> {
-        let mut seen = Vec::new();
-
-        seen.resize(point_count, false);
+        let mut seen = vec![false; point_count];
         for &point in &points {
             let used = seen.get_mut(point)?;
             if *used {
@@ -2041,20 +2037,6 @@ pub(super) fn resolve_singleton_mesh_selection(
 #[cfg(test)]
 mod reduced_matching_tests {
     use super::{reduced_distinct_matching, DistinctAssignment};
-
-    #[test]
-    fn distinct_assignment_initialization_refuses_work() {
-        crate::test_support::with_work_limit(0, |ctx| {
-            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-                super::DistinctAssignment::new(vec![], 64)
-            else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_distinct_assignment");
-            assert_eq!(limit.additional, 64);
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-    }
 
     #[test]
     fn reduced_matching_reserves_later_singletons_before_domains() {
