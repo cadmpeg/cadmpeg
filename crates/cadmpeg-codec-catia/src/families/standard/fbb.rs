@@ -1150,6 +1150,20 @@ mod allocation_tests {
         operations
     }
 
+    /// Run `run` under the service policy and assert it charges `operation`.
+    /// Released scope scratch peaks above these charges, so no collection
+    /// ceiling makes them the refusing charge.
+    fn charges_collection_items<T>(
+        operation: &str,
+        run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
+    ) -> T {
+        cadmpeg_test_support::refusal::assert_charged(
+            ResourceDimension::CollectionItems,
+            operation,
+            || crate::test_support::with_service_context(run),
+        )
+    }
+
     #[test]
     fn counted_trim_search_and_packet_lanes_refuse_before_growth() {
         let mut bytes = vec![
@@ -1326,90 +1340,67 @@ mod allocation_tests {
     }
 
     #[test]
-    fn fbb_boundary_coverage_propagates_collection_refusal() {
+    fn fbb_boundary_coverage_charges_collection_items() {
         let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
-        crate::test_support::with_service_context(|ctx| {
-            assert!(parse_standard(ctx, &bytes)
-                .expect("service resource budget")
-                .is_some());
+        let parsed = charges_collection_items("catia FBB boundary coverage", |ctx| {
+            parse_standard(ctx, &bytes)
         });
-        let operations = collection_refusals(&bytes, |ctx| {
-            parse_standard(ctx, &bytes)?;
-            Ok(())
-        });
-        assert!(operations.contains("catia FBB boundary coverage"));
+        assert!(parsed.is_some());
     }
 
     #[test]
-    fn fbb_only_boundary_coverage_propagates_collection_refusal() {
+    fn fbb_only_boundary_coverage_charges_collection_items() {
         let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        crate::test_support::with_service_context(|ctx| {
-            assert!(crate::families::standard::topology::parse_fbb(ctx, &bytes)
-                .expect("service resource budget")
-                .is_some());
+        let parsed = charges_collection_items("catia FBB boundary coverage", |ctx| {
+            crate::families::standard::topology::parse_fbb(ctx, &bytes)
         });
-        let operations = collection_refusals(&bytes, |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)?;
-            Ok(())
-        });
-        assert!(operations.contains("catia FBB boundary coverage"));
+        assert!(parsed.is_some());
     }
 
     #[test]
-    fn multiple_standard_runs_propagate_coverage_refusal_during_selection() {
+    fn multiple_standard_runs_charge_coverage_during_selection() {
         let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
         bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
-        crate::test_support::with_service_context(|ctx| {
-            assert_eq!(
-                standard_face_count(ctx, &bytes).expect("service resource budget"),
-                None
-            );
+        let count = charges_collection_items("catia FBB boundary coverage", |ctx| {
+            standard_face_count(ctx, &bytes)
         });
-        let operations = collection_refusals(&bytes, |ctx| {
-            standard_face_count(ctx, &bytes)?;
-            Ok(())
-        });
-        assert!(operations.contains("catia FBB boundary coverage"));
+        assert_eq!(count, None);
     }
 
     #[test]
-    fn fbb_reconstruct_union_refuses_before_boundary_selection() {
+    fn fbb_reconstruct_union_charges_collection_items() {
         let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let operations = collection_refusals(&bytes, |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)?;
-            Ok(())
+        let parsed = charges_collection_items("catia_reconstruct_union", |ctx| {
+            crate::families::standard::topology::parse_fbb(ctx, &bytes)
         });
-        assert!(operations.contains("catia_reconstruct_union"));
+        assert!(parsed.is_some());
     }
 
     #[test]
-    fn fbb_reconstruct_boundaries_refuse_collection_limit() {
+    fn fbb_reconstruct_boundaries_charge_collection_items() {
         let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let operations = collection_refusals(&bytes, |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)?;
-            Ok(())
+        let parsed = charges_collection_items("catia_reconstruct_boundaries", |ctx| {
+            crate::families::standard::topology::parse_fbb(ctx, &bytes)
         });
-        assert!(operations.contains("catia_reconstruct_boundaries"));
+        assert!(parsed.is_some());
     }
 
     #[test]
-    fn fbb_reconstruct_faces_refuse_collection_limit() {
+    fn fbb_reconstruct_faces_charge_collection_items() {
         let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let operations = collection_refusals(&bytes, |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)?;
-            Ok(())
+        let parsed = charges_collection_items("catia_reconstruct_faces", |ctx| {
+            crate::families::standard::topology::parse_fbb(ctx, &bytes)
         });
-        assert!(operations.contains("catia_reconstruct_faces"));
+        assert!(parsed.is_some());
     }
 
     #[test]
-    fn fbb_reconstruct_roots_refuse_collection_limit() {
+    fn fbb_reconstruct_roots_charge_collection_items() {
         let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let operations = collection_refusals(&bytes, |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)?;
-            Ok(())
+        let parsed = charges_collection_items("catia_reconstruct_roots", |ctx| {
+            crate::families::standard::topology::parse_fbb(ctx, &bytes)
         });
-        assert!(operations.contains("catia_reconstruct_roots"));
+        assert!(parsed.is_some());
     }
 }
 

@@ -223,6 +223,30 @@ fn standard_collection_limit_operation(
     }
 }
 
+/// Refuse `operation` one collection item below its need on `run`.
+fn standard_collection_refusal_at<T>(
+    operation: &str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            run(&ctx)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == operation && limit.used + limit.additional > limit.limit));
+}
+
 fn duplicate_face_slot_fixture(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
@@ -292,26 +316,29 @@ fn standard_endpoint_degree_entries_refuse_before_growth() {
 }
 
 #[test]
-fn standard_unresolved_assignment_propagates_collection_refusal() {
-    assert_eq!(
-        duplicate_face_slot_operation(12 + 1),
-        "catia standard unresolved edge assignment"
+fn standard_unresolved_assignment_charges_collection_items() {
+    // Released scope scratch peaks above the one-slot assignment row.
+    let slots = cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "catia standard unresolved edge assignment",
+        || crate::test_support::with_service_context(duplicate_face_slot_fixture),
     );
+    assert_eq!(slots, Some(vec![[0, 1], [0, 1], [0, 1]]));
 }
 
 #[test]
 fn standard_unresolved_marks_propagate_collection_refusal() {
-    assert_eq!(
-        duplicate_face_slot_operation(13 + 1),
-        "catia standard unresolved edge marks"
+    standard_collection_refusal_at(
+        "catia standard unresolved edge marks",
+        duplicate_face_slot_fixture,
     );
 }
 
 #[test]
 fn standard_duplicate_choices_refuse_before_search_branch() {
-    assert_eq!(
-        duplicate_face_slot_operation(14 + 1),
-        "catia_standard_duplicate_choices"
+    standard_collection_refusal_at(
+        "catia_standard_duplicate_choices",
+        duplicate_face_slot_fixture,
     );
 }
 
@@ -417,13 +444,6 @@ fn ambiguous_duplicate_face_fixture(
     )
 }
 
-fn ambiguous_duplicate_face_operation(max_collection_items: u64) -> &'static str {
-    standard_collection_limit_operation(max_collection_items, |ctx| {
-        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)?;
-        Ok(())
-    })
-}
-
 #[test]
 fn standard_duplicate_mesh_edge_faces_refuse_before_search_copy() {
     use cadmpeg_core::CodecError;
@@ -448,26 +468,23 @@ fn standard_duplicate_mesh_edge_faces_refuse_before_search_copy() {
 
 #[test]
 fn standard_duplicate_solution_values_refuse_before_copy() {
-    assert_eq!(
-        ambiguous_duplicate_face_operation(24 + 2),
-        "catia_standard_duplicate_solution_values"
-    );
+    standard_collection_refusal_at("catia_standard_duplicate_solution_values", |ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)
+    });
 }
 
 #[test]
 fn standard_duplicate_solutions_refuse_before_result_growth() {
-    assert_eq!(
-        ambiguous_duplicate_face_operation(26 + 2),
-        "catia_standard_duplicate_solutions"
-    );
+    standard_collection_refusal_at("catia_standard_duplicate_solutions", |ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)
+    });
 }
 
 #[test]
 fn standard_duplicate_assignment_marks_propagate_collection_refusal() {
-    assert_eq!(
-        ambiguous_duplicate_face_operation(28 + 2),
-        "catia standard duplicate assignment marks"
-    );
+    standard_collection_refusal_at("catia standard duplicate assignment marks", |ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)
+    });
 }
 
 #[test]
