@@ -20,11 +20,6 @@ mod replay;
 pub(crate) mod view;
 
 #[cfg(test)]
-thread_local! {
-    static TYPED_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
 pub(crate) fn test_ctx() -> DecodeContext<'static> {
     let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
     DecodeContext::from_root_bytes(&[], arena, &cadmpeg_core::decode::DecodePolicy::service())
@@ -34,12 +29,11 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 
 /// Deepest container chain one native record field may hold.
 ///
-/// Every descent of a stored field recurses: `serde_json::from_value` carries
-/// no recursion counter, a read of the stored text lifts the parser's limit,
-/// [`replay::emit`] starts one parse per container, and `canon::CanonValue`
-/// enters one frame per container. The bound is therefore stated where a
-/// field enters the record, so every reader of a constructed record is
-/// already inside it.
+/// Every descent of a stored field recurses: a typed or value read of the
+/// stored text lifts the parser's limit, [`replay::emit`] starts one parse
+/// per container, and `canon::CanonValue` enters one frame per container.
+/// The bound is therefore stated where a field enters the record, so every
+/// reader of a constructed record is already inside it.
 /// It is twice the 128 containers a `serde_json` text parse admits, so every
 /// field a CADIR document can state is read back.
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
@@ -467,20 +461,29 @@ impl NativeRecord {
         Some(read_stored(replay::member(&self.json, name)?.get()))
     }
 
+    /// Deserialize the codec-owned record straight from its stored text.
+    ///
+    /// The read holds one frame of the caller's depth account per container
+    /// level of the stored text, the record's own object included. A refused
+    /// field states the message without the text position the parser appends.
     fn to_typed<T: DeserializeOwned>(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
-        let record = copy_value_for_decode(ctx, self)?;
-        #[cfg(test)]
-        TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        match serde_json::from_value(record) {
-            Ok(value) => Ok(value),
-            Err(source) => Err(NativeConvertError::ReadRecord {
-                id: self.id.clone(),
-                source,
-            }),
+        let mut frames = Vec::new();
+        for _ in 0..container_depth(&self.json) {
+            frames.push(ctx.enter_nested(canon::WORK)?);
         }
+        // The writer bounded each field's nesting, so the parser's recursion
+        // limit is lifted.
+        let mut deserializer = serde_json::Deserializer::from_str(&self.json);
+        deserializer.disable_recursion_limit();
+        T::deserialize(&mut deserializer)
+            .and_then(|value| deserializer.end().map(|()| value))
+            .map_err(|source| NativeConvertError::ReadRecord {
+                id: self.id.clone(),
+                source: without_position(source),
+            })
     }
 
     /// Compare a typed serialization against this record's stored text
@@ -502,13 +505,48 @@ struct DigestUnknown<'a> {
     links: &'a [Value],
 }
 
-/// Copies a value through the canonical serializer.
-fn copy_value_for_decode<T: Serialize + ?Sized>(
-    ctx: &DecodeContext<'_>,
-    value: &T,
-) -> Result<Value, NativeConvertError> {
-    let copied = value.serialize(canon::CanonValue::for_record(ctx));
-    Ok(copied.map_err(|error| error.into_native(ctx))?.into_value())
+/// Deepest container nesting in canonical JSON text, the outer value
+/// included.
+fn container_depth(json: &str) -> usize {
+    let mut depth = 0_usize;
+    let mut deepest = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    for byte in json.bytes() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'[' | b'{' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+            }
+            b']' | b'}' => depth -= 1,
+            _ => {}
+        }
+    }
+    deepest
+}
+
+/// The refusal without the text position a parse appends to its message.
+fn without_position(error: serde_json::Error) -> serde_json::Error {
+    if error.line() == 0 {
+        return error;
+    }
+    let suffix = format!(" at line {} column {}", error.line(), error.column());
+    let message = error.to_string();
+    match message.strip_suffix(&suffix) {
+        Some(message) => <serde_json::Error as serde::de::Error>::custom(message),
+        None => error,
+    }
 }
 
 /// Adds an arena name to a semantic typed-record refusal.
