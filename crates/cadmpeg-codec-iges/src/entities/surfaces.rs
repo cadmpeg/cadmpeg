@@ -1274,7 +1274,7 @@ pub(super) fn project(
         entries.insert(entry.sequence, entry);
     }
 
-    let composite_index = CompositeIndex::from_ir(ir)?;
+    let composite_index = CompositeIndex::from_ir(ir);
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 

@@ -237,26 +237,15 @@ pub(super) struct CompositeIndex {
 }
 
 impl CompositeIndex {
-    pub(super) fn from_ir(ir: &CadIr) -> Result<Self, CodecError> {
+    pub(super) fn from_ir(ir: &CadIr) -> Self {
         let mut curve_positions = BTreeMap::new();
         for (position, curve) in ir.model.curves.iter().enumerate() {
-            if !curve_positions.contains_key(&curve.id) {
-                let key = curve.id.clone();
-                curve_positions.insert(key, position);
-            }
+            curve_positions.entry(curve.id.clone()).or_insert(position);
         }
-        let mut edges = BTreeMap::new();
+        let mut edges = BTreeMap::<CurveId, Vec<CompositeEdge>>::new();
         for edge in &ir.model.edges {
             if let Some(curve) = edge.curve() {
-                if !edges.contains_key(curve) {
-                    let key = curve.clone();
-                    edges.insert(key, Vec::new());
-                }
-                let indexed = edges.get_mut(curve).ok_or_else(|| {
-                    CodecError::Malformed("IGES composite edge index is absent".into())
-                })?;
-
-                indexed.push(CompositeEdge {
+                edges.entry(curve.clone()).or_default().push(CompositeEdge {
                     start: edge.start.clone(),
                     end: edge.end.clone(),
                     param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
@@ -265,25 +254,19 @@ impl CompositeIndex {
         }
         let mut points = BTreeMap::<PointId, FinitePoint3>::new();
         for point in &ir.model.points {
-            if !points.contains_key(&point.id) {
-                let key = point.id.clone();
-                points.insert(key, point.position());
-            }
+            points.entry(point.id.clone()).or_insert(point.position());
         }
         let mut vertex_points = BTreeMap::<VertexId, FinitePoint3>::new();
         for vertex in &ir.model.vertices {
             if let Some(point) = points.get(&vertex.point).copied() {
-                if !vertex_points.contains_key(&vertex.id) {
-                    let key = vertex.id.clone();
-                    vertex_points.insert(key, point);
-                }
+                vertex_points.entry(vertex.id.clone()).or_insert(point);
             }
         }
-        Ok(Self {
+        Self {
             curve_positions,
             edges,
             vertex_points,
-        })
+        }
     }
 
     pub(super) fn curve_by_id<'a>(&self, ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a Curve> {
@@ -298,22 +281,12 @@ impl CompositeIndex {
         curve_index: usize,
         edge: CompositeEdge,
         endpoints: [(VertexId, FinitePoint3); 2],
-    ) -> Result<(), CodecError> {
-        let position_key = curve_id.clone();
-        self.curve_positions.insert(position_key, curve_index);
-        if !self.edges.contains_key(curve_id) {
-            let edge_key = curve_id.clone();
-            self.edges.insert(edge_key, Vec::new());
-        }
-        let indexed = self.edges.get_mut(curve_id).ok_or_else(|| {
-            CodecError::Malformed("IGES composite added edge index is absent".into())
-        })?;
-
-        indexed.push(edge);
+    ) {
+        self.curve_positions.insert(curve_id.clone(), curve_index);
+        self.edges.entry(curve_id.clone()).or_default().push(edge);
         for (vertex, point) in endpoints {
             self.vertex_points.insert(vertex, point);
         }
-        Ok(())
     }
 }
 
@@ -1717,7 +1690,7 @@ fn project_native_composite(
             param_range: None,
         },
         [(start_vertex, start), (end_vertex, end)],
-    )?;
+    );
     Ok(Some(edge_id))
 }
 
@@ -1866,7 +1839,7 @@ fn project_with_type_130_policy(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    let mut index = CompositeIndex::from_ir(ir)?;
+    let mut index = CompositeIndex::from_ir(ir);
     let join_tolerance = global.minimum_resolution_mm();
 
     for entry in directory
@@ -2232,7 +2205,7 @@ fn project_with_type_130_policy(
                 param_range: Some([0.0, cursor]),
             },
             [(start_vertex, start), (end_vertex, end)],
-        )?;
+        );
         let mut boundaries = vec![0.0];
         let mut components = Vec::new();
         for segment in segments.into_iter() {

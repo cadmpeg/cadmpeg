@@ -237,18 +237,6 @@ pub(crate) struct DirectoryEntry {
 }
 
 impl DirectoryEntry {
-    pub(crate) fn admitted_loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
-        let format = "iges".to_owned();
-        let tag = format!("directory_entry:D{}", self.sequence);
-        cadmpeg_ir::SourceProvenance::in_stream(
-            format,
-            cadmpeg_ir::stream_name!("iges"),
-            self.source_offset,
-        )
-        .with_tag(tag)
-    }
-
-    #[cfg(test)]
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
         cadmpeg_ir::SourceProvenance::in_stream(
             "iges",
@@ -267,7 +255,7 @@ pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
             losses.push(
                 IgesLossCode::DirectoryMetadataNoncanonical
                     .note(message)
-                    .with_provenance(entry.admitted_loss_provenance()),
+                    .with_provenance(entry.loss_provenance()),
             );
         }
         for (name, value) in [
@@ -280,7 +268,7 @@ pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
             ("subscript", entry.subscript),
         ] {
             if value.is_none() {
-                let note = IgesLossCode::DirectoryMetadataUnreadable.note(format!("Directory D{} {name} is unreadable; interpretation fields and exact source cards remain available", entry.sequence)).with_provenance(entry.admitted_loss_provenance());
+                let note = IgesLossCode::DirectoryMetadataUnreadable.note(format!("Directory D{} {name} is unreadable; interpretation fields and exact source cards remain available", entry.sequence)).with_provenance(entry.loss_provenance());
                 losses.push(note);
             }
         }

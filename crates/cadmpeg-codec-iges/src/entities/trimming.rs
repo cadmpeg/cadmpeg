@@ -2366,7 +2366,7 @@ pub(super) fn project(
                 let mut pcurve_refusal = None;
                 for sequence in &segment.pcurves {
                     if composite_index.is_none() {
-                        composite_index = Some(CompositeIndex::from_ir(ir)?);
+                        composite_index = Some(CompositeIndex::from_ir(ir));
                     }
                     let index = composite_index.as_ref().ok_or_else(|| {
                         CodecError::Malformed("IGES trimming composite index is absent".into())
