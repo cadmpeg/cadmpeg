@@ -42,21 +42,21 @@ impl Serialize for FeatureSwp104LeadingBranch {
         let mut wire = serializer.serialize_map(None)?;
         wire.serialize_entry("id", &self.id)?;
         wire.serialize_entry("operation_label", &self.operation_label)?;
-        wire.serialize_entry("discriminator", &self.discriminator)?;
+        wire.serialize_entry("parameter_class_index", &self.parameter_class_index)?;
         wire.serialize_entry("scalars", &self.scalars.map(|scalar| scalar.value().get()))?;
         wire.serialize_entry(
             "raw_scalars",
             &self.scalars.map(|scalar| NativeBytes::from(scalar.raw())),
         )?;
         wire.serialize_entry("leading_zero", &self.leading_zero)?;
-        wire.serialize_entry("mode", &self.mode)?;
+        wire.serialize_entry("profile_class_index", &self.profile_class_index)?;
         wire.serialize_entry("declared_count", &self.members.declared_count())?;
         if let Some(count) = self.state_lane.witnessed_count() {
             wire.serialize_entry("witnessed_count", &count)?;
         }
         wire.serialize_entry("state_lane", &NativeBytes::from(self.state_lane.bytes()))?;
         wire.serialize_entry("members", &MembersView(self))?;
-        let terminal_offset = self.source_offset
+        let successor_offset = self.source_offset
             + self.members_offset()
             + self
                 .members
@@ -67,12 +67,12 @@ impl Serialize for FeatureSwp104LeadingBranch {
             + self.state_len()
             + 3;
         wire.serialize_entry(
-            "terminal",
+            "successor",
             &ReferenceView {
                 ordinal: u32::from(self.members.declared_count() - 1),
-                token: &self.terminal.token,
-                data_block: self.terminal.data_block.as_deref(),
-                source_offset: terminal_offset,
+                token: &self.successor.token,
+                data_block: self.successor.data_block.as_deref(),
+                source_offset: successor_offset,
             },
         )?;
         wire.serialize_entry("byte_len", &self.byte_len())?;
@@ -94,7 +94,7 @@ mod tests {
         for _ in 0..4 {
             payload.extend([47, 164, 122, 225, 71, 174, 20, 123]);
         }
-        payload.extend([35, 1, 2, 240, 1]);
+        payload.extend([35, 1, 2, 240, 255]);
         payload.extend([0; 5]);
         payload.extend([255, 1, 2, 241, 1, 0, 0]);
         let record =
@@ -130,7 +130,7 @@ mod tests {
         for _ in 0..4 {
             payload.extend([47, 164, 122, 225, 71, 174, 20, 123]);
         }
-        payload.extend([35, 1, 2, 240, 1]);
+        payload.extend([35, 1, 2, 240, 255]);
         payload.extend([0; 5]);
         payload.extend([255, 1, 2, 241, 1, 0, 0]);
         let record =

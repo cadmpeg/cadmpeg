@@ -91,7 +91,7 @@ fn swp104_container() -> crate::container::Container<'static> {
     for _ in 0..4 {
         payload.extend([47, 164, 122, 225, 71, 174, 20, 123]);
     }
-    payload.extend([35, 1, 2, 240, 1]);
+    payload.extend([35, 1, 2, 240, 255]);
     payload.extend([0; 5]);
     payload.extend([255, 1, 2, 241, 1, 0, 0]);
     reference_container("SWP104", payload)

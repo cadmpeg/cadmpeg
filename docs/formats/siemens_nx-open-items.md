@@ -696,15 +696,15 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Note.** Create controlled native variants that change one continuity setting, add one section, add one guide, or reverse one string independently. Query the authored section and guide collectors before save. Compare the complete operation and allocation. Body-write relations select outputs; incomplete output topology and an empty interchange sibling supply no input-ownership witness.
 
-### OM-38. `SWP104` leading construction roles
+### OM-38. `SWP104` logical construction roles
 
-**Question.** Which sweep parameters and selections do the four scalars, mode, counted member references, state lane, and terminal reference encode?
+**Question.** Which logical fields assign authored construction roles to the four scalars, counted column sequence, and independent state lane?
 
-**Known.** `siemens_nx.md` §7.1 "The `SWP104` operation label identifies a sweep-family construction." and §7.1 "A bounded `SWP104` payload begins with one construction branch" define the exact leading branch, independent declared and witnessed counts, ordered references, state-lane bounds, and terminal marker.
+**Known.** `siemens_nx.md` §7.1 "A bounded `SWP104` payload begins with one construction branch" defines one-based parameter and profile class indices. §7.1 "Member and successor references are non-null canonical payload object indices." defines the consecutive physical column sequence. Its block boundaries do not delimit logical fields. The witness count is independent of the member count.
 
-**Need.** We must identify the profile, path, result mode, orientation, transition, transformation, twist, and scale fields required for a neutral sweep feature.
+**Need.** Decode the logical rows across column boundaries and join their native endpoints to the profile, path, result mode, orientation, transition, transformation, twist, and scale fields required for a neutral feature.
 
-**Conflict.** Serialized order, count relations, and offset-store identities do not assign semantic roles to the retained values or references.
+**Conflict.** Parameter-class identity, physical adjacency, and equal scalar values do not identify the authored operands or distinguish dormant construction policies.
 
 ### OM-39. `SHELL` construction roles
 

@@ -1172,14 +1172,14 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     payload.extend([0xff, 1, 2, 0xf0, 0x33, 0, 0xaa]);
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
     let branch = swp104_payload_leading_branch(record).expect("leading branch");
-    assert_eq!(branch.discriminator.get(), 0x21);
+    assert_eq!(branch.parameter_class_index.get(), 0x21);
     assert_eq!(branch.scalars.map(|scalar| scalar.value().get()), [0.04; 4]);
     assert_eq!(
         branch.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
         [raw_scalar; 4]
     );
     assert!(!branch.leading_zero);
-    assert_eq!(branch.mode.get(), 0x23);
+    assert_eq!(branch.profile_class_index.get(), 0x23);
     assert_eq!(branch.members.declared_count(), 3);
     assert_eq!(branch.state_lane.witnessed_count(), Some(4));
     assert_eq!(branch.state_lane.bytes(), [0, 1, 1, 0, 0, 0, 0]);
@@ -1192,8 +1192,22 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
             .collect::<Vec<_>>(),
         [0x31, 0x32]
     );
-    assert_eq!(branch.terminal.value(), 0x33);
+    assert_eq!(branch.successor.value(), 0x33);
     assert_eq!(record.payload_offset() + branch.byte_len(), 259);
+
+    for (offset, value) in [(41, 0), (43, 0x31), (43, 0x33), (57, 0x32), (57, 0x34)] {
+        let mut invalid = payload.clone();
+        invalid[offset] = value;
+        assert!(swp104_payload_leading_branch(
+            crate::om::operation_record::OperationPayload::new(
+                &invalid,
+                record.payload_offset(),
+                record.name(),
+            )
+            .unwrap(),
+        )
+        .is_none());
+    }
 
     let mut malformed_witness = payload.clone();
     malformed_witness[45] = 1;

@@ -778,23 +778,44 @@ impl PointFeatureScalarLane {
 /// Exact leading construction branch in a `SWP104` payload.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Swp104PayloadLeadingBranch {
-    /// Nonzero construction discriminator at the payload start.
-    pub(crate) discriminator: NonZeroU8,
+    /// One-based parameter-class index in the owning OM section.
+    pub(crate) parameter_class_index: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
     pub(crate) scalars: [ShiftedBinary64; 4],
-    /// Whether one zero byte precedes the branch mode.
+    /// Whether one zero byte precedes the profile-class index.
     pub(crate) leading_zero: bool,
-    /// Serialized nonzero branch mode.
-    pub(crate) mode: NonZeroU8,
-    /// Exact state lane preceding the terminal marker.
+    /// One-based profile-class index in the owning OM section.
+    pub(crate) profile_class_index: NonZeroU8,
+    /// Exact state lane preceding the successor marker.
     pub(crate) state_lane: Swp104StateLane,
-    /// Ordered nonterminal references.
+    /// Ordered member column references.
     pub(crate) members: BranchItems<reference_index::PayloadIndexToken>,
-    /// Terminal reference.
-    pub(crate) terminal: reference_index::PayloadIndexToken,
+    /// Successor column reference.
+    pub(crate) successor: reference_index::PayloadIndexToken,
 }
 
 impl Swp104PayloadLeadingBranch {
+    /// Test the complete non-null consecutive column sequence without allocation.
+    pub(crate) fn consecutive_column_indices(
+        indices: impl IntoIterator<Item = reference_index::PayloadIndexToken>,
+    ) -> bool {
+        let mut indices = indices.into_iter();
+        let Some(first) = indices.next() else {
+            return false;
+        };
+        let mut previous = first.value();
+        if previous == 0 {
+            return false;
+        }
+        for index in indices {
+            if previous.checked_add(1) != Some(index.value()) {
+                return false;
+            }
+            previous = index.value();
+        }
+        true
+    }
+
     pub(crate) fn byte_len(&self) -> usize {
         40 + usize::from(self.leading_zero)
             + self
@@ -805,7 +826,7 @@ impl Swp104PayloadLeadingBranch {
                 .sum::<usize>()
             + self.state_lane.byte_len()
             + 3
-            + self.terminal.raw().len()
+            + self.successor.raw().len()
             + 1
     }
 }
@@ -2268,8 +2289,15 @@ pub(crate) fn swp104_payload_leading_branch(
         cadmpeg_core::decode::u64_from_index(record.payload().len()),
         "scan NX SWP104 leading branch",
     )?;
-    let Some((discriminator, scalars, leading_zero, mode, declared_count, mut at)) = (|| {
-        let discriminator = NonZeroU8::new(*record.payload().first()?)?;
+    let Some((
+        parameter_class_index,
+        scalars,
+        leading_zero,
+        profile_class_index,
+        declared_count,
+        mut at,
+    )) = (|| {
+        let parameter_class_index = NonZeroU8::new(*record.payload().first()?)?;
         (record.payload().get(1..5) == Some(&HEADER)).then_some(())?;
         let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
             ShiftedBinary64::read(record.payload().get(5 + i * 8..13 + i * 8)?)
@@ -2278,21 +2306,22 @@ pub(crate) fn swp104_payload_leading_branch(
         let mut at = 37;
         let leading_zero = record.payload().get(at) == Some(&0x00);
         at += usize::from(leading_zero);
-        let mode = NonZeroU8::new(*record.payload().get(at)?)?;
+        let profile_class_index = NonZeroU8::new(*record.payload().get(at)?)?;
         (*record.payload().get(at + 1)? == 0x01).then_some(())?;
         let declared_count @ 2.. = *record.payload().get(at + 2)? else {
             return None;
         };
         at += 3;
         Some((
-            discriminator,
+            parameter_class_index,
             scalars,
             leading_zero,
-            mode,
+            profile_class_index,
             declared_count,
             at,
         ))
-    })() else {
+    })()
+    else {
         return Ok(None);
     };
     let len = usize::from(declared_count) - 1;
@@ -2350,22 +2379,28 @@ pub(crate) fn swp104_payload_leading_branch(
     };
     let width = object_index.raw().len();
     at += width;
-    let terminal = object_index;
+    let successor = object_index;
     if record.payload().get(at) != Some(&0x00) {
         return Ok(None);
     }
 
+    if !Swp104PayloadLeadingBranch::consecutive_column_indices(
+        members.iter().copied().chain(std::iter::once(successor)),
+    ) {
+        return Ok(None);
+    }
+
     Ok(Some(Swp104PayloadLeadingBranch {
-        discriminator,
+        parameter_class_index,
         scalars,
         leading_zero,
-        mode,
+        profile_class_index,
         state_lane,
         members: match BranchItems::new(members) {
             Ok(members) => members,
             Err(_) => return Ok(None),
         },
-        terminal,
+        successor,
     }))
 }
 

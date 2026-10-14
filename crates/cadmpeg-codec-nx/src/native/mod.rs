@@ -75,5 +75,13 @@ pub(crate) fn admit_construction_records(
         ctx.charge_work(268, "admit NX construction named-target envelope")?;
         record?.validate_links(ctx, namespace)?;
     }
+    for record in namespace
+        .arena_iter_as_for_decode::<features::swp104_branch::FeatureSwp104LeadingBranch>(
+            ctx,
+            "feature_swp104_leading_branches",
+        )
+    {
+        record?;
+    }
     features::surface_allocation::admit_surface_allocations(ctx, namespace)
 }
