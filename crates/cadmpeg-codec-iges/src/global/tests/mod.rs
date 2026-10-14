@@ -8,11 +8,11 @@ use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::fixed_ascii_with_global;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 
+mod declaration_text;
 mod dialect;
 mod inspection;
 mod parsing;
 mod resolution;
-mod text_admission;
 mod units;
 
 fn valid_global_fields() -> Vec<String> {
