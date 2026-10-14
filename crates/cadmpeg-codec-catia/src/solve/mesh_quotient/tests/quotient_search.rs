@@ -447,6 +447,52 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
 }
 
 #[test]
+fn coordinate_root_preparation_skips_on_an_exhausted_local_slice() {
+    let candidates = [
+        vec![[0, 1], [0, 2]],
+        vec![[0, 1]],
+        vec![[0, 1]],
+        vec![[2, 2]],
+    ];
+    catia_test_context!(initial_ctx);
+    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &initial_ctx,
+        &candidates,
+        3,
+        &[[10, 11], [10, 12], [13, 11], [14, 14]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    // Every local slice too small for the preparation ends it without
+    // domains; none of them refuses the session.
+    let mut skipped = 0;
+    let mut prepared = false;
+    for units in 0..4096 {
+        let (result, refusal) = crate::test_support::with_service_context(|ctx| {
+            let budget = ctx.work_budget(units);
+            let result = quotient.clone().prepare_coordinate_root_domains(
+                ctx,
+                3,
+                &candidates,
+                Some(&budget),
+            );
+            (
+                result.map(|domains| domains.is_some()),
+                ctx.resource_refusal(),
+            )
+        });
+        assert_eq!(refusal, None, "{units}");
+        if result.expect("local slice exhaustion is not a session refusal") {
+            prepared = true;
+            break;
+        }
+        skipped += 1;
+    }
+    assert!(skipped > 0);
+    assert!(prepared, "a sufficient slice prepares the domains");
+}
+
+#[test]
 fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
     let candidates = [
         vec![[0, 1], [0, 2]],
