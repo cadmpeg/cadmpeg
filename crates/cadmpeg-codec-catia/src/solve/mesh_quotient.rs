@@ -8970,8 +8970,7 @@ mod face_domain_support_tests {
 
     #[test]
     fn complete_endpoint_pairs_refuse_materialization_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
+        use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 
         let domains = [MeshFaceBoundaryDomain::DeferredValidation(
             MeshDeferredFaceBoundary {
@@ -8991,30 +8990,21 @@ mod face_domain_support_tests {
             },
         )];
         let pairs = [[0, 1], [0, 1]];
-        catia_test_context!(service_ctx);
-        assert!(materialize_boundary_domains(&service_ctx, &domains, &pairs)
-            .expect("service resource budget")
-            .is_some());
-
-        let mut refused = HashSet::new();
-        for limit in 0..128 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits the input limit");
-            match materialize_boundary_domains(&ctx, &domains, &pairs) {
-                Err(CodecError::ResourceLimit(error)) => {
-                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                    refused.insert(error.operation.to_owned());
-                }
-                Ok(Some(_)) => break,
-                Ok(None) => panic!("closed boundary must materialize"),
-                Err(error) => panic!("unexpected refusal: {error}"),
-            }
-        }
-        assert!(refused.contains("catia materialized boundary domains"));
-        assert!(refused.contains("catia materialized deferred boundary"));
+        let materialize = |ctx: &DecodeContext<'_>| {
+            materialize_boundary_domains(ctx, &domains, &pairs).map(|domains| domains.is_some())
+        };
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "catia materialized boundary domains",
+            |cap| crate::test_support::with_collection_limit(cap, materialize),
+        );
+        // Released scope scratch peaks above the deferred boundary rows.
+        let closed = cadmpeg_test_support::refusal::assert_charged(
+            ResourceDimension::CollectionItems,
+            "catia materialized deferred boundary",
+            || crate::test_support::with_service_context(materialize),
+        );
+        assert!(closed, "closed boundary must materialize");
     }
 
     #[test]
@@ -11393,7 +11383,7 @@ fn endpoint_configuration_relation_charges_covered_and_assigned_edges() {
 
 #[test]
 fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 
     let edge_rows = (0..3)
         .map(|_| {
@@ -11450,30 +11440,9 @@ fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
         Some(MeshSolve::Solved(_))
     ));
 
-    let mut refused = HashSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    for _ in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation);
-                limit = error.used + error.additional;
-            }
-            Ok(Some(MeshSolve::Solved(_))) => {
-                completed = true;
-                break;
-            }
-            Ok(outcome) => panic!("singleton cycle must solve, got {outcome:?}"),
-            Err(error) => panic!("unexpected singleton refusal: {error}"),
-        }
-    }
-    assert!(completed, "adaptive caps must admit the singleton cycle");
+    let solved = |ctx: &DecodeContext<'_>| {
+        run(ctx).map(|outcome| matches!(outcome, Some(MeshSolve::Solved(_))))
+    };
     for operation in [
         "catia_reduced_matching",
         "catia_reduced_matching_used",
@@ -11485,11 +11454,21 @@ fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
         "catia_singleton_domain_values",
         "catia_singleton_identity_points",
         "catia_singleton_completed_points",
-        "catia_mesh_edge_use_counts",
         "catia_selection_singleton_point_assignment",
     ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| crate::test_support::with_collection_limit(cap, solved),
+        );
     }
+    // Released scope scratch peaks above the edge-use counts.
+    let complete = cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "catia_mesh_edge_use_counts",
+        || crate::test_support::with_service_context(solved),
+    );
+    assert!(complete, "singleton cycle must solve");
 }
 
 #[test]

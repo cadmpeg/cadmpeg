@@ -140,41 +140,33 @@ fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
 fn native_edge_node_storage_refuses_collection_and_retained_limits() {
     let bytes = b2_edge_node_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..128 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
-        });
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
-            operations.insert(refusal.operation);
-        }
-    }
-    for operation in [
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "catia_native_edge_frames",
+        |cap| crate::test_support::with_collection_limit(cap, decode),
+    );
+    // Released scope scratch peaks above the one-node output vector.
+    let nodes = cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "catia_native_consolidated_edge_nodes",
-    ] {
-        assert!(
-            operations.contains(operation),
-            "missing charge for {operation}"
-        );
-    }
+        || crate::test_support::with_service_context(decode),
+    );
+    assert_eq!(nodes.len(), 1);
     // Vector growth admits four slots up to 1024 bytes per record, otherwise one.
     let record_size = std::mem::size_of::<crate::native::CatiaConsolidatedEdgeNode>();
     let record_storage = record_size * if record_size <= 1024 { 4 } else { 1 };
     let limited = crate::test_support::with_retained_limit(
         u64::try_from(record_storage).expect("record storage fits"),
-        |ctx| super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[]),
+        decode,
     );
     assert!(
         matches!(&limited, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
         if refusal.operation == "catia_native_edge_node_id"),
         "{limited:?}"
     );
-    let nodes = crate::test_support::with_service_context(|ctx| {
-        super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
-    })
-    .expect("service context admits the edge node");
-    assert_eq!(nodes.len(), 1);
 }
 
 #[test]

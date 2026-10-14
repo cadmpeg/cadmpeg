@@ -697,8 +697,7 @@ fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
 
 #[test]
 fn deferred_boundary_materialization_refuses_match_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::ResourceDimension;
 
     let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
         cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
@@ -708,37 +707,24 @@ fn deferred_boundary_materialization_refuses_match_collection_limits() {
         missing_edges: vec![0, 1],
     };
     let pairs = [[0, 1], [0, 1]];
-    catia_test_context!(service_ctx);
-    assert!(
-        crate::solve::incidence::deferred_boundary_assignment(&service_ctx, &domain, &pairs)
-            .expect("service resource budget")
-            .is_some()
-    );
-
-    let mut refused = HashSet::new();
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match crate::solve::incidence::deferred_boundary_assignment(&ctx, &domain, &pairs) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("closed deferred boundary must materialize"),
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
+    let materialize = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::solve::incidence::deferred_boundary_assignment(ctx, &domain, &pairs)
+            .map(|assignment| assignment.is_some())
+    };
+    for operation in ["catia_deferred_match", "catia_deferred_visit"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| crate::test_support::with_collection_limit(cap, materialize),
+        );
     }
-    for operation in [
-        "catia_deferred_match",
-        "catia_deferred_visit",
+    // Released scope scratch peaks above the materialized boundary rows.
+    let closed = cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
         "catia_deferred_boundaries",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
+        || crate::test_support::with_service_context(materialize),
+    );
+    assert!(closed, "closed deferred boundary must materialize");
 }
 
 #[test]

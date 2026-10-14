@@ -277,22 +277,22 @@ fn a8_class21_jet_uses_frame_extent_for_knot_count() {
 }
 
 #[test]
-fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn a8_class21_pcurve_multiplicities_charge_collection_items() {
+    use cadmpeg_core::decode::ResourceDimension;
 
     let payload = a8_class21_test_payload();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Two knots use forty-six items before the retained multiplicity vector.
-    policy.limits.max_collection_items = 46;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = parse_a8_class21_pcurve(&ctx, 7, &payload)
-        .expect_err("multiplicity array exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia B5 pcurve multiplicities"));
+    // Released scope scratch peaks above the two-knot multiplicity vector.
+    let pcurve = cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "catia B5 pcurve multiplicities",
+        || {
+            crate::test_support::with_service_context(|ctx| {
+                parse_a8_class21_pcurve(ctx, 7, &payload)
+            })
+        },
+    )
+    .expect("class-21 jet pcurve");
+    assert_eq!(pcurve.multiplicities.len(), pcurve.distinct_knots.len());
 }
 
 #[test]
