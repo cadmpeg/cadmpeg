@@ -29,6 +29,33 @@ codec-local constants against the fields; it does not restate or own the
 profile values, so a census note that names a profile number describes the
 constant, and `policy.rs` remains the authority when the two drift.
 
+## Exhaustion outcome
+
+A session ceiling refuses. The refusal sets the session fuse, every later
+charge fails, and the decode returns a structured resource refusal. The
+session ceilings are the `ResourceLimits` fields, charged through
+`DecodeContext` (`charge_*`, `admit_*`, `reserve_*`, `enter_nested`,
+`charge_work`).
+
+A codec-local bound on optional, derivable, or best-effort work does not
+refuse the session. Search, iteration, and convergence caps, local work
+slices, nesting caps in an optional evaluator, size caps that reject one
+candidate or one record, and cost estimates for enrichment are such bounds.
+At exhaustion the decoder skips that item and reports the skipped data
+through its loss vocabulary. `refuse_codec_limit` is for a bound whose excess
+leaves no valid decode of mandatory data. A caller that calls
+`refuse_codec_limit` and then returns a skip result still fails the decode,
+because the fuse is set.
+
+Storage charged inside a storage scope is live. A scope's reservation holds
+materialized bytes and collection items and releases both when it drops; a
+commit keeps the items and moves the bytes to retained storage. Charge a
+temporary index, sort buffer, or framing pass inside a scope
+(`with_scoped_storage`, `reserve_scoped_*`, `temporary_*`). Charge decoded
+output outside a scope. A test of a scoped charge uses
+`refusal::resource_limit_at` or, when an earlier peak hides the charge,
+`refusal::assert_charged`, never a fixed ceiling sized by a total.
+
 ## Production census
 
 | Crate                    | File                                   | Constant                                  | Value               | Kind | Action      | Notes                                                                                                                                                               |
