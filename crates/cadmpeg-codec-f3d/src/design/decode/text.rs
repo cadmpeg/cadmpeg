@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Charged text reads shared by Design record decoders.
+//! Text reads shared by Design record decoders.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -14,17 +14,18 @@ pub(in crate::design::decode) fn class_tag_from_view(
     crate::records::references::DesignClassTag::try_from(value.to_owned())
 }
 
-/// Compose a native scope and record suffix under the retained text budget.
+/// Compose a native scope and record suffix.
 pub(in crate::design::decode) fn design_record_id_charged(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     stream: &str,
     suffix: &'static str,
     offset: u64,
-    charge_operation: &'static str,
+    _operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut id = super::sketch::native_scope_charged(ctx, stream)?;
-    ctx.append_formatted_retained(&mut id, format_args!("{suffix}{offset}"), charge_operation)?;
-    Ok(id)
+    Ok(format!(
+        "{}{suffix}{offset}",
+        crate::ids::native_scope(stream)
+    ))
 }
 
 /// Validate an exact 36-code-unit relaxed GUID into a fixed ASCII array.
@@ -47,19 +48,15 @@ pub(in crate::design::decode) fn fixed_guid_ascii(
 
 /// Read a fixed-width relaxed GUID into its native value after code-unit validation.
 pub(in crate::design::decode) fn fixed_relaxed_guid_text(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     count_at: usize,
 ) -> Result<Option<(crate::records::mesh::DesignRelaxedGuidText, usize)>, CodecError> {
-    ctx.charge_work(36, "validate F3D relaxed GUID code units")?;
     let Some((guid, end)) = fixed_guid_ascii(bytes, count_at) else {
         return Ok(None);
     };
-    // UTF-8 validation, copy, GUID validation, and identity-key validation.
-    ctx.charge_work(36 * 4, "copy and admit F3D relaxed GUID")?;
     let guid = std::str::from_utf8(&guid)
         .map_err(|_| CodecError::malformed("validated F3D relaxed GUID is not ASCII"))?;
-    let text = ctx.copy_retained_text(guid, "retain F3D relaxed GUID")?;
+    let text = guid.to_owned();
     let value = crate::records::mesh::DesignRelaxedGuidText::try_from(text)
         .map_err(CodecError::malformed)?;
     Ok(Some((value, end)))
@@ -114,42 +111,12 @@ mod tests {
     use crate::bytes::lp_ascii_filtered_view;
 
     #[test]
-    fn fixed_relaxed_guid_text_refuses_retained_limit_and_preserves_bytes() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
+    fn fixed_relaxed_guid_text_preserves_bytes() {
         let value = "ABCDEF12-3456-7890-ABCD-EF1234567890";
         let bytes = crate::bytes::lp_utf16_bytes(value).unwrap();
-        for retained in [0, 35, 36] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = retained;
-
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = super::fixed_relaxed_guid_text(&ctx, &bytes, 0);
-            if retained < 36 {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "retain F3D relaxed GUID" && limit.additional == 36));
-            } else {
-                let (guid, end) = result.unwrap().unwrap();
-                assert_eq!(guid.as_str(), value);
-                assert_eq!(end, bytes.len());
-                assert!(ctx.charge_retained(1, "after GUID copy").is_err());
-            }
-        }
-    }
-
-    #[test]
-    fn fixed_relaxed_guid_text_refuses_work_before_scanning() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let bytes = crate::bytes::lp_utf16_bytes("ABCDEF12-3456-7890-ABCD-EF1234567890").unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(super::fixed_relaxed_guid_text(&ctx, &bytes, 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits));
+        let (guid, end) = super::fixed_relaxed_guid_text(&bytes, 0).unwrap().unwrap();
+        assert_eq!(guid.as_str(), value);
+        assert_eq!(end, bytes.len());
     }
 
     #[test]
@@ -256,11 +223,8 @@ mod tests {
             for bounds in [0..=2000, 3..=3] {
                 let predicates: [fn(&u8) -> bool; 2] = [u8::is_ascii_graphic, u8::is_ascii_digit];
                 for allowed in predicates {
-                    let original = crate::test_support::with_decode_context(|ctx| {
-                        crate::bytes::lp_ascii_strict_charged(ctx, &bytes, 0, bounds.clone())
-                            .unwrap()
-                    })
-                    .filter(|(text, _)| text.as_bytes().iter().all(allowed));
+                    let original = crate::bytes::lp_ascii_strict_charged(&bytes, 0, bounds.clone())
+                        .filter(|(text, _)| text.as_bytes().iter().all(allowed));
                     let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)
                         .map(|(value, end)| (value.to_owned(), end));
                     assert_eq!(borrowed, original);

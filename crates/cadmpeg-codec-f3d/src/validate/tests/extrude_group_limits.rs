@@ -77,63 +77,6 @@ pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
     native
 }
 
-fn group_error(
-    valid: bool,
-    duplicate: bool,
-    max_items: u64,
-    max_retained: u64,
-) -> cadmpeg_core::CodecError {
-    crate::test_support::with_decode_context(|service_ctx| {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native(valid, duplicate);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        policy.limits.max_retained_bytes = max_retained;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        super::super::validate_extrude_selection_groups(&ctx, &mut Vec::new()).unwrap_err()
-    })
-}
-
-#[test]
-fn extrude_group_slot_refuses_collection_limit() {
-    let error = group_error(true, false, 0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D Extrude selection group slots")
-    );
-}
-
-#[test]
-fn extrude_group_invalid_finding_refuses_collection_limit() {
-    let error = group_error(false, false, 0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings")
-    );
-}
-
-#[test]
-fn extrude_group_invalid_entity_refuses_retained_limit() {
-    let error = group_error(false, false, u64::MAX, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity")
-    );
-}
-
-#[test]
-fn extrude_group_duplicate_slot_finding_refuses_collection_limit() {
-    let error = group_error(true, true, 1, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings")
-    );
-}
-
 #[test]
 fn extrude_group_valid_slot_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
@@ -141,41 +84,7 @@ fn extrude_group_valid_slot_has_no_finding() {
         let native = native(true, false);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         let mut findings = Vec::new();
-        super::super::validate_extrude_selection_groups(&ctx, &mut findings).unwrap();
+        super::super::validate_extrude_selection_groups(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
-}
-
-fn group_members_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
-    crate::test_support::with_decode_context(|service_ctx| {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native(false, false);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        policy.limits.max_retained_bytes = max_retained;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        super::super::validate_extrude_selection_group_members(&ctx, &mut Vec::new()).unwrap_err()
-    })
-}
-
-#[test]
-fn extrude_group_missing_member_finding_refuses_collection_limit() {
-    let error = group_members_error(0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings")
-    );
-}
-
-#[test]
-fn extrude_group_missing_member_entity_refuses_retained_limit() {
-    let error = group_members_error(u64::MAX, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity")
-    );
 }

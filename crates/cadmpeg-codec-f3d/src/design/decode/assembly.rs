@@ -270,11 +270,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let first_selection_record_index = first_selection_reference.value;
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
-    let point = match exact_point_data_construction(ctx, bytes, records, &[point_record_index], stream_types) {
-        Ok(Some(point)) => point,
-        Ok(None) => return None,
-        Err(error) => return Some(Err(error)),
-    };
+    let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
     let hole = match exact_hole_construction(
 ctx,
 bytes,
@@ -413,13 +409,7 @@ fn exact_legacy_as_built_face_selection(
             if class_tag != expected_class_tag {
                 return None;
             }
-            let copied_id = match ctx.copy_retained(
-                scope.id.as_bytes(),
-                "f3d legacy AsBuilt selection header ID",
-            ) {
-                Ok(copied) => copied,
-                Err(error) => return Some(Err(error)),
-            };
+            let copied_id = scope.id.as_bytes().to_vec();
             let id = match String::from_utf8(copied_id) {
                 Ok(id) => id,
                 Err(error) => {
@@ -481,46 +471,4 @@ fn exact_legacy_as_built_face_selection(
         return Ok(None);
     }
     Ok(Some(candidate))
-}
-
-#[cfg(test)]
-mod tests {
-    use cadmpeg_core::decode::u64_from_index;
-
-    use super::exact_legacy_as_built_face_selection;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    #[test]
-    fn legacy_as_built_selection_header_id_refuses_retained_limit() {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"307");
-        bytes.extend_from_slice(&77u32.to_le_bytes());
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        let scope = crate::records::feature::scope::DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-            crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-            42,
-        );
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64_from_index(scope.id.len()) - 1;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = exact_legacy_as_built_face_selection(
-            &ctx,
-            &bytes,
-            &records,
-            &scope,
-            0,
-            (77, "307"),
-            &[],
-        );
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d legacy AsBuilt selection header ID"
-        ));
-    }
 }

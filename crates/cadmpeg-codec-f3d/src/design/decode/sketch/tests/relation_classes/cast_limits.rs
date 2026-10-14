@@ -33,10 +33,8 @@ fn refuses_wrapped_offset(
             definition,
         )
         .expect_err("offset above u32 must be refused before it wraps");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == operation)
-        );
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+            if message.contains(operation)));
         assert!(output.is_empty());
     });
 }

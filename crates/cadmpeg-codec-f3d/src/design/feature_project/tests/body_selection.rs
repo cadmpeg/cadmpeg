@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::feature_project::design_body_selection;
 use crate::records::bodies::{DesignBodyBinding, DesignBodyBindingWire};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
@@ -26,68 +25,6 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
     })
     .unwrap();
     (scope, binding)
-}
-
-fn assert_selection_refusal(operation: &'static str, retained: bool) {
-    let (scope, binding) = fixture();
-
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            if retained {
-                ResourceDimension::RetainedBytes
-            } else {
-                ResourceDimension::CollectionItems
-            },
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if retained {
-                    policy.limits.max_retained_bytes = cap;
-                } else {
-                    policy.limits.max_collection_items = cap;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = design_body_selection(
-                    &ctx,
-                    &scope,
-                    [20].into_iter(),
-                    std::slice::from_ref(&binding),
-                );
-                result
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
-    }
-}
-
-#[test]
-fn body_selection_body_refuses_collection_limit() {
-    assert_selection_refusal("f3d body selection body", false);
-}
-
-#[test]
-fn body_selection_body_id_refuses_retained_limit() {
-    assert_selection_refusal("f3d body selection body id", true);
-}
-
-#[test]
-fn body_selection_resolved_native_id_refuses_retained_limit() {
-    assert_selection_refusal("f3d body selection resolved native id", true);
-}
-
-#[test]
-fn body_selection_missing_binding_native_id_refuses_retained_limit() {
-    let (scope, _) = fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = design_body_selection(&ctx, &scope, [20].into_iter(), &[]).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == "f3d body selection native id"));
 }
 
 fn project_copied_body(
@@ -174,55 +111,6 @@ fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {
         );
     }
     (scope, binding)
-}
-
-fn assert_copied_body_output_refusal(operation: &'static str, retained: bool) {
-    let (scope, binding) = copied_body_fixture();
-
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            if retained {
-                ResourceDimension::RetainedBytes
-            } else {
-                ResourceDimension::CollectionItems
-            },
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if retained {
-                    policy.limits.max_retained_bytes = cap;
-                } else {
-                    policy.limits.max_collection_items = cap;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                project_copied_body(&ctx, &scope, &binding)
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
-    }
-}
-
-#[test]
-fn copied_body_output_charges_collection_items() {
-    // Released selection scratch peaks above the output charge.
-    let (scope, binding) = copied_body_fixture();
-    let features = cadmpeg_test_support::refusal::assert_charged(
-        ResourceDimension::CollectionItems,
-        "f3d copied body output",
-        || {
-            crate::test_support::with_decode_context(|decode_ctx| {
-                project_copied_body(decode_ctx, &scope, &binding)
-            })
-        },
-    );
-    assert_eq!(features.len(), 1);
-}
-
-#[test]
-fn copied_body_output_id_refuses_retained_limit() {
-    assert_copied_body_output_refusal("f3d copied body output id", true);
 }
 
 #[test]

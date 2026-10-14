@@ -11,7 +11,6 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn tested_circular_pattern_construction_with_owners(
     bytes: &[u8],
@@ -19,16 +18,8 @@ fn tested_circular_pattern_construction_with_owners(
     scope: &DesignParameterScope,
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Option<DesignCircularPatternConstruction> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        super::exact_circular_pattern_construction_with_owners(
-            ctx,
-            bytes,
-            records,
-            scope,
-            parameter_owners,
-        )
+    super::exact_circular_pattern_construction_with_owners(bytes, records, scope, parameter_owners)
         .unwrap()
-    })
 }
 
 fn tested_rectangular_pattern_construction(
@@ -37,10 +28,7 @@ fn tested_rectangular_pattern_construction(
     scope: &DesignParameterScope,
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternConstruction> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        super::exact_rectangular_pattern_construction(ctx, bytes, records, scope, parameter_owners)
-            .unwrap()
-    })
+    super::exact_rectangular_pattern_construction(bytes, records, scope, parameter_owners).unwrap()
 }
 
 fn tested_rectangular_pattern_instances(
@@ -49,10 +37,7 @@ fn tested_rectangular_pattern_instances(
     scope: &DesignParameterScope,
     construction: &crate::records::feature::patterns::DesignRectangularPatternConstruction,
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternInstances> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        super::exact_rectangular_pattern_instances(ctx, bytes, records, scope, construction)
-            .unwrap()
-    })
+    super::exact_rectangular_pattern_instances(bytes, records, scope, construction)
 }
 
 #[test]
@@ -217,49 +202,14 @@ fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: 
 
 #[test]
 fn pattern_constructions_require_exact_scalar_and_operand_frames() {
-    run_pattern_constructions_fixture(None);
-}
-
-#[test]
-fn circular_pattern_candidates_refuse_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let probe = |bytes: &[u8], scope: &DesignParameterScope| {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        for (limit, operation) in [
-            (0, "f3d circular pattern axis candidates"),
-            (1, "f3d circular pattern count candidates"),
-            (2, "f3d circular pattern angle candidates"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = super::exact_circular_pattern_construction_with_owners(
-                &ctx,
-                bytes,
-                &records,
-                scope,
-                &[],
-            )
-            .unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation)
-            );
-        }
-    };
-    run_pattern_constructions_fixture(Some(probe));
+    run_pattern_constructions_fixture();
 }
 
 #[allow(
     clippy::large_stack_arrays,
     reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."
 )]
-fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterScope)>) {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+fn run_pattern_constructions_fixture() {
     let scope_record_index = 10_u32;
     let count_record_index = 20_u32;
     let angle_record_index = 30_u32;
@@ -386,9 +336,6 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    if let Some(probe) = probe {
-        probe(&bytes, &scope);
-    }
     assert_eq!(
         tested_circular_pattern_construction_with_owners(
             &bytes,
@@ -674,16 +621,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &rectangular_owners,
-        )
-        .unwrap()
-    })
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .unwrap()
     .expect("exact assembly scalar lanes");
     assert_eq!(alignment.angle(), 3.0);
     assert_eq!(alignment.offset(), [1.0, 10.0, 0.0]);
@@ -723,17 +667,14 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(
-        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &placement_and_alignment_owners,
-        )
-        .unwrap())
-        .is_none()
-    );
+    assert!(exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &placement_and_alignment_owners,
+    )
+    .unwrap()
+    .is_none());
     scope
         .try_edit(|draft| {
             draft.frame_length = 732;
@@ -741,16 +682,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &placement_and_alignment_owners,
-        )
-        .unwrap()
-    })
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &placement_and_alignment_owners,
+    )
+    .unwrap()
     .expect("assembly alignment after four placement lanes");
     assert_eq!(alignment.angle(), 0.25);
     assert_eq!(alignment.offset(), [4.0, 5.0, 6.0]);
@@ -769,16 +707,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let datum_envelope_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &placement_and_alignment_owners,
-        )
-        .unwrap()
-    })
+    let datum_envelope_alignment = exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &placement_and_alignment_owners,
+    )
+    .unwrap()
     .expect("JointOrigin datum-envelope alignment after four placement lanes");
     assert_eq!(datum_envelope_alignment.angle(), 0.25);
     assert_eq!(datum_envelope_alignment.offset(), [4.0, 5.0, 6.0]);
@@ -804,17 +739,14 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(
-        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &short_axial_owners,
-        )
-        .unwrap())
-        .is_none()
-    );
+    assert!(exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &short_axial_owners,
+    )
+    .unwrap()
+    .is_none());
     scope
         .try_edit(|draft| {
             draft.frame_length = 705;
@@ -822,16 +754,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &short_axial_owners,
-        )
-        .unwrap()
-    })
+    let short_axial_alignment = exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &short_axial_owners,
+    )
+    .unwrap()
     .expect("six-owner alignment belongs to the 705-byte axial frame");
     assert_eq!(short_axial_alignment.angle(), 0.5);
     assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -849,17 +778,14 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(
-        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &legacy_alignment_owners,
-        )
-        .unwrap())
-        .is_none()
-    );
+    assert!(exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &legacy_alignment_owners,
+    )
+    .unwrap()
+    .is_none());
     scope
         .try_edit(|draft| {
             draft.frame_length = 772;
@@ -867,16 +793,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &scope,
-            &legacy_alignment_owners,
-        )
-        .unwrap()
-    })
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &legacy_alignment_owners,
+    )
+    .unwrap()
     .expect("legacy assembly axial alignment lanes");
     assert_eq!(alignment.angle(), 0.5);
     assert_eq!(alignment.offset(), [0.0, 0.0, 2.0]);
@@ -917,16 +840,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
-    let frames = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &assembly_bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
-            &scope,
-            &rectangular_owners,
-        )
-        .unwrap()
-    })
+    let frames = exact_assembly_alignment(
+        &assembly_bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .unwrap()
     .and_then(|alignment| alignment.operand_frames())
     .expect("exact assembly operand frames");
     assert_eq!(
@@ -971,16 +891,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    let legacy_frames = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &legacy_assembly_bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&legacy_assembly_bytes),
-            &legacy_assembly_scope,
-            &rectangular_owners,
-        )
-        .unwrap()
-    })
+    let legacy_frames = exact_assembly_alignment(
+        &legacy_assembly_bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&legacy_assembly_bytes),
+        &legacy_assembly_scope,
+        &rectangular_owners,
+    )
+    .unwrap()
     .and_then(|alignment| alignment.operand_frames())
     .expect("compact assembly operand frames");
     assert_eq!(legacy_frames[0].reference_offset, 25);
@@ -999,17 +916,14 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    assert!(
-        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-            ctx,
-            &dynamic_standard_bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_standard_bytes),
-            &dynamic_standard_scope,
-            &rectangular_owners,
-        )
-        .unwrap())
-        .is_some_and(|alignment| alignment.operand_frames().is_some())
-    );
+    assert!(exact_assembly_alignment(
+        &dynamic_standard_bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_standard_bytes),
+        &dynamic_standard_scope,
+        &rectangular_owners,
+    )
+    .unwrap()
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
     dynamic_compact_bytes[637..640].copy_from_slice(b"262");
@@ -1024,17 +938,14 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    assert!(
-        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-            ctx,
-            &dynamic_compact_bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_compact_bytes),
-            &dynamic_compact_scope,
-            &rectangular_owners,
-        )
-        .unwrap())
-        .is_some_and(|alignment| alignment.operand_frames().is_some())
-    );
+    assert!(exact_assembly_alignment(
+        &dynamic_compact_bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_compact_bytes),
+        &dynamic_compact_scope,
+        &rectangular_owners,
+    )
+    .unwrap()
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut axial_assembly_bytes = vec![0_u8; 772];
     axial_assembly_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
@@ -1066,16 +977,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    let axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &axial_assembly_bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&axial_assembly_bytes),
-            &axial_assembly_scope,
-            &legacy_alignment_owners,
-        )
-        .unwrap()
-    })
+    let axial_alignment = exact_assembly_alignment(
+        &axial_assembly_bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&axial_assembly_bytes),
+        &axial_assembly_scope,
+        &legacy_alignment_owners,
+    )
+    .unwrap()
     .expect("legacy assembly alignment and operand frames");
     assert_eq!(axial_alignment.angle(), 0.5);
     assert_eq!(axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -1105,16 +1013,13 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .with_fixture_layout(),
     )
     .unwrap();
-    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| {
-        exact_assembly_alignment(
-            ctx,
-            &short_axial_bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&short_axial_bytes),
-            &short_axial_scope,
-            &short_axial_owners,
-        )
-        .unwrap()
-    })
+    let short_axial_alignment = exact_assembly_alignment(
+        &short_axial_bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&short_axial_bytes),
+        &short_axial_scope,
+        &short_axial_owners,
+    )
+    .unwrap()
     .expect("short axial assembly alignment and operand frames");
     assert_eq!(short_axial_alignment.angle(), 0.5);
     assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -1164,8 +1069,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         *slot = Some(axial_alignment.clone());
     }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&ctx, &axial_assembly_bytes, &mut linked_scopes)
-        .unwrap();
+    bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
         linked_scopes[1].joint_origin_transform(),
@@ -1236,8 +1140,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         })
         .unwrap();
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut single_frame_scopes)
-        .unwrap();
+    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
     assert_eq!(
         single_frame_scopes[1].joint_origin_transform_offset(),
         Some(36)
@@ -1266,8 +1169,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
     transform[2][3] += 1.0;
     frame.joint_origin_transform = transform.try_into().unwrap();
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut conflicting_scopes)
-        .unwrap();
+    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
         conflicting_scopes[0].assembly_alignment().and_then(
             crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
@@ -1283,12 +1185,7 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         *slot = None;
     }
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
-    bind_joint_origin_frames_from_assemblies(
-        &ctx,
-        &single_frame_bytes,
-        &mut invalid_single_frame_scopes,
-    )
-    .unwrap();
+    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
     assert_eq!(
         invalid_single_frame_scopes[1].joint_origin_transform(),
         None
@@ -1310,17 +1207,14 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         .unwrap();
     compact_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
-    assert!(
-        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
-            ctx,
-            &compact_bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
-            &compact_scope,
-            &rectangular_owners,
-        )
-        .unwrap())
-        .is_some_and(|alignment| alignment.operand_frames().is_some())
-    );
+    assert!(exact_assembly_alignment(
+        &compact_bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
+        &compact_scope,
+        &rectangular_owners,
+    )
+    .unwrap()
+    .is_some_and(|alignment| alignment.operand_frames().is_some()));
 }
 
 #[test]
@@ -1398,40 +1292,6 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
 }
 
 #[test]
-fn rectangular_pattern_instance_collections_refuse_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let (bytes, records, scope, construction) = rectangular_instance_fixture();
-    for (limit, operation) in [
-        (2, "f3d rectangular pattern record indices"),
-        (11, "f3d rectangular pattern reference starts"),
-        (14, "f3d rectangular pattern candidate groups"),
-        (15, "f3d rectangular pattern transform candidates"),
-        (18, "f3d rectangular pattern candidate run"),
-        (21, "f3d rectangular pattern matching runs"),
-        (22, "f3d rectangular pattern instances"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::exact_rectangular_pattern_instances(
-            &ctx,
-            &bytes,
-            &records,
-            &scope,
-            &construction,
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == operation)
-        );
-    }
-}
-
-#[test]
 fn circular_pattern_historical_wrappers_refuse_collection_limit() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScopeDraft};
     let scope = DesignParameterScope::try_new(
@@ -1501,28 +1361,16 @@ fn circular_pattern_historical_wrappers_refuse_collection_limit() {
     bytes.extend_from_slice(&503u64.to_le_bytes());
     indexed_header(&mut bytes, *b"308", 83);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(super::exact_legacy_circular_pattern_axis(
-        &ctx, &bytes, &records, 0, 129, 50, &scope),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && failure.operation == "f3d circular pattern historical axis wrappers"));
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        let (axis, selection) =
-            super::exact_legacy_circular_pattern_axis(ctx, &bytes, &records, 0, 129, 50, &scope)
-                .unwrap()
-                .unwrap();
-        assert_eq!(selection, 20);
-        assert!(
-            matches!(axis, crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
-            wrappers, persistent_identity: 503, resolved: None,
-        } if wrappers.len() == 2 && wrappers[0] == wrappers[1])
-        );
-    });
+    let (axis, selection) =
+        super::exact_legacy_circular_pattern_axis(&bytes, &records, 0, 129, 50, &scope)
+            .unwrap()
+            .unwrap();
+    assert_eq!(selection, 20);
+    assert!(
+        matches!(axis, crate::records::feature::patterns::DesignCircularPatternAxis::HistoricalEdge {
+        wrappers, persistent_identity: 503, resolved: None,
+    } if wrappers.len() == 2 && wrappers[0] == wrappers[1])
+    );
 }
 
 fn rectangular_instance_fixture() -> (
@@ -1574,47 +1422,6 @@ fn rectangular_instance_fixture() -> (
 }
 
 #[test]
-fn rectangular_pattern_search_preserves_work_refusals() {
-    let (bytes, records, scope, construction) = rectangular_instance_fixture();
-    let mut scan_work = 0;
-    for index in [100, 120, 130] {
-        let start = records.first_at_or_after(0, index).unwrap();
-        let end = scope
-            .reference_members()
-            .values()
-            .filter_map(|index| records.first_at_or_after(0, *index))
-            .filter(|offset| *offset > start)
-            .min()
-            .unwrap();
-        scan_work += 18 + u64_from_index(end - start - 120) + 152;
-    }
-    for (work, operation) in [
-        (0, "index F3D rectangular pattern candidate range"),
-        (18, "scan F3D rectangular pattern matrices"),
-        (scan_work, "match F3D rectangular pattern endpoints"),
-        (scan_work + 24, "match F3D rectangular pattern intermediate"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = super::exact_rectangular_pattern_instances(
-                ctx,
-                &bytes,
-                &records,
-                &scope,
-                &construction,
-            )
-            .unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("pattern search must refuse");
-            };
-            assert_eq!(limit.operation, operation);
-            assert_eq!(Some(limit), ctx.resource_refusal());
-        });
-    }
-}
-
-#[test]
 fn rectangular_pattern_local_search_ceilings_refuse() {
     let (bytes, records, scope, construction) = rectangular_instance_fixture();
     let mut wire =
@@ -1625,39 +1432,81 @@ fn rectangular_pattern_local_search_ceilings_refuse() {
     let construction =
         crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire)
             .unwrap();
-    crate::test_support::with_decode_context(|ctx| {
-        let error = super::exact_rectangular_pattern_instances(
-            ctx,
-            &bytes,
-            &records,
-            &scope,
-            &construction,
-        )
-        .unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("local count ceiling must refuse");
-        };
-        assert_eq!(limit.operation, "F3D rectangular pattern search count");
-        assert_eq!(Some(limit), ctx.resource_refusal());
-    });
+    assert!(
+        super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction)
+            .is_none(),
+        "instances past the local count ceiling stay unresolved"
+    );
     let (mut bytes, _, scope, construction) = rectangular_instance_fixture();
     bytes.splice(139..139, std::iter::repeat_n(0, 1_048_576));
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    crate::test_support::with_decode_context(|ctx| {
-        let error = super::exact_rectangular_pattern_instances(
-            ctx,
-            &bytes,
-            &records,
-            &scope,
-            &construction,
-        )
-        .unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("local span ceiling must refuse");
-        };
-        assert_eq!(limit.operation, "F3D rectangular pattern record span");
-        assert_eq!(Some(limit), ctx.resource_refusal());
-    });
+    assert!(
+        super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction)
+            .is_none(),
+        "instances past the local record-span ceiling stay unresolved"
+    );
+}
+
+#[test]
+fn rectangular_pattern_run_search_stops_at_its_work_cap() {
+    fn append_translation(bytes: &mut Vec<u8>, translation: [f64; 3]) {
+        for value in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let decoyed_instances = |decoys: u32| {
+        let (_, _, scope, construction) = rectangular_instance_fixture();
+        let mut wire =
+            crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
+                construction,
+            );
+        wire.u_extent = 2.0;
+        let construction =
+            crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire)
+                .unwrap();
+        let mut bytes = Vec::new();
+        append_transform_record(&mut bytes, 100, [0., 0., 0.]);
+        for decoy in 0..decoys {
+            append_translation(&mut bytes, [10. + f64::from(decoy), 0., 0.]);
+        }
+        for index in 50..=53 {
+            append_header(&mut bytes, index);
+        }
+        append_header(&mut bytes, 110);
+        append_transform_record(&mut bytes, 120, [0., 0., 1.]);
+        append_transform_record(&mut bytes, 130, [0., 0., 2.]);
+        for decoy in 0..decoys {
+            append_translation(&mut bytes, [-10. - f64::from(decoy), 0., 0.]);
+        }
+        append_header(&mut bytes, 140);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction)
+    };
+    assert!(
+        decoyed_instances(8).is_some(),
+        "one endpoint pair spans the extent"
+    );
+    assert!(
+        decoyed_instances(1024).is_none(),
+        "endpoint pairs past the local work cap leave the instances unresolved"
+    );
 }
 
 #[test]
@@ -1699,19 +1548,9 @@ fn rectangular_pattern_aggregate_search_span_refuses() {
     let construction =
         crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire)
             .unwrap();
-    crate::test_support::with_decode_context(|ctx| {
-        let error = super::exact_rectangular_pattern_instances(
-            ctx,
-            &bytes,
-            &records,
-            &scope,
-            &construction,
-        )
-        .unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("aggregate span must refuse");
-        };
-        assert_eq!(limit.operation, "F3D rectangular pattern aggregate span");
-        assert_eq!(Some(limit), ctx.resource_refusal());
-    });
+    assert!(
+        super::exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction)
+            .is_none(),
+        "instances past the aggregate span ceiling stay unresolved"
+    );
 }

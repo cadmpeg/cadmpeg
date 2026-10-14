@@ -37,17 +37,8 @@ pub(super) fn exact_thread_construction(
     let Some(designation_at) = start.checked_add(designation_delta) else {
         return Ok(None);
     };
-    let count = match prefix_form {
-        ThreadPrefix::Standard => 1,
-        ThreadPrefix::Compact => scope.reference_members().len() / 2,
-    };
 
     let mut face_group_record_indices = Vec::new();
-    ctx.reserve_vec(
-        &mut face_group_record_indices,
-        count,
-        "f3d Thread face groups",
-    )?;
     match prefix_form {
         ThreadPrefix::Standard => {
             let Some(first) = scope.reference_members().values().next() else {

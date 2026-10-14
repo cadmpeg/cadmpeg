@@ -90,21 +90,14 @@ pub(crate) fn project_decal_images(
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter())
         {
-            let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
-            ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
-            faces.push(copied);
+            faces.push(face.try_clone_for_decode(ctx, "f3d Decal face identifier")?);
         }
-        ctx.stable_sort_by(
-            &mut faces[..],
-            |a, b| a.as_str().cmp(b.as_str()),
-            |_| 0,
-            "sort f3d design decal 1",
-        )?;
+        faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
         faces.dedup();
         if faces.is_empty() {
             continue;
         }
-        let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
+        let Some(asset) = embedded_image_asset(scan, image.asset.name())? else {
             continue;
         };
         let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
@@ -114,31 +107,20 @@ pub(crate) fn project_decal_images(
         let asset_id = asset
             .id
             .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
-        let native_id = String::from_utf8(
-            ctx.copy_retained(operand.id.as_bytes(), "f3d Decal native operand identifier")?,
-        )
-        .map_err(|_| CodecError::malformed("F3D Decal operand identifier must be UTF-8"))?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
                 asset: asset_id,
                 faces: FaceSelection::Resolved {
                     faces,
-                    native: native_id,
+                    native: operand.id.clone(),
                 },
                 mapping: DecalMapping::FitToFaces,
                 opacity: None,
             }));
-
-        ctx.reserve_vec(&mut assets, 1, "f3d Decal assets")?;
         assets.push(asset);
     }
-    ctx.stable_sort_by(
-        &mut assets[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design decal 2",
-    )?;
+    assets.sort_by(|a, b| a.id.cmp(&b.id));
     assets.dedup_by(|a, b| a.id == b.id);
     Ok(assets)
 }
@@ -271,16 +253,8 @@ fn parse_decal_asset_record(
         if after_asset_name != next_at {
             return None;
         }
-        let asset_class_tag =
-            match ctx.copy_retained_text(asset_class_tag, "f3d Decal asset class tag") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
-        let name_class_tag =
-            match ctx.copy_retained_text(name_class_tag, "f3d Decal name class tag") {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            };
+        let asset_class_tag = asset_class_tag.to_owned();
+        let name_class_tag = name_class_tag.to_owned();
 
         DesignDecalAsset::new(
             [asset_class_tag, name_class_tag],
@@ -300,7 +274,6 @@ mod tests {
     use super::parse_decal_image_frame;
     use crate::records::decal::DesignDecalMappingMode;
     use crate::test_support::write_marked_reference;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -331,32 +304,6 @@ mod tests {
         header(&mut bytes, 150, *b"440", 17);
         header(&mut bytes, end_at, *b"302", 23);
         (bytes, scope_at)
-    }
-
-    fn assert_class_tag_retained_refusal(limit: u64, operation: &'static str) {
-        let (bytes, scope_at) = fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = parse_decal_image_frame(&ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
-            .err()
-            .unwrap();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == operation)
-        );
-    }
-
-    #[test]
-    fn decal_asset_class_tag_refuses_retained_limit() {
-        assert_class_tag_retained_refusal(10, "f3d Decal asset class tag");
-    }
-
-    #[test]
-    fn decal_name_class_tag_refuses_retained_limit() {
-        assert_class_tag_retained_refusal(13, "f3d Decal name class tag");
     }
 
     #[test]
@@ -402,25 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn decal_asset_name_refuses_retained_limit() {
-        let (bytes, scope_at) = fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = parse_decal_image_frame(&ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
-            .err()
-            .unwrap();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text")
-        );
-    }
-
-    #[test]
-    fn decal_projection_refuses_face_asset_native_and_output_limits() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn decal_projection_emits_one_asset() {
         use cadmpeg_ir::features::{
             Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,
         };
@@ -550,120 +479,6 @@ mod tests {
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
-            let after_embedded = face.as_str().len()
-                + 3
-                + "mark.png".len()
-                + crate::ids::native_scope(ENTRY).len()
-                + asset_id_len
-                + crate::ids::neutral_feature_id(&scope).as_str().len();
-            for (retained, items, dimension, operation) in [
-                (
-                    u64::MAX,
-                    0,
-                    ResourceDimension::CollectionItems,
-                    "f3d Decal faces",
-                ),
-                (
-                    u64::MAX,
-                    1,
-                    ResourceDimension::CollectionItems,
-                    "f3d Decal assets",
-                ),
-                (
-                    u64::try_from(face.as_str().len() - 1).unwrap(),
-                    u64::MAX,
-                    ResourceDimension::RetainedBytes,
-                    "f3d Decal face identifier",
-                ),
-                (
-                    u64::try_from(after_embedded + asset_id_len - 1).unwrap(),
-                    u64::MAX,
-                    ResourceDimension::RetainedBytes,
-                    "f3d image feature asset identifier",
-                ),
-                (
-                    u64::try_from(after_embedded + asset_id_len + operand.id.len() - 1).unwrap(),
-                    u64::MAX,
-                    ResourceDimension::RetainedBytes,
-                    "f3d Decal native operand identifier",
-                ),
-            ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = retained;
-                policy.limits.max_collection_items = items;
-                let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-                    dimension,
-                    operation,
-                    |cap| {
-                        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                        match dimension {
-                            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                                policy.limits.max_retained_bytes = cap;
-                            }
-                            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                                policy.limits.max_collection_items = cap;
-                            }
-                            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                                policy.limits.max_materialized_bytes = cap;
-                            }
-                            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                                policy.limits.max_work_units = cap;
-                            }
-                            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                        }
-                        let (ctx, _) =
-                            DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                        (super::project_decal_images(
-                            &ctx,
-                            scan,
-                            std::slice::from_ref(&scope),
-                            std::slice::from_ref(&image),
-                            std::slice::from_ref(&group),
-                            std::slice::from_ref(&operand),
-                            &mut [feature()],
-                        ))
-                        .map(|_| ())
-                    },
-                ) {
-                    cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                    error => panic!("unexpected refusal: {error:?}"),
-                };
-                policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = refusal_cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = refusal_cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = refusal_cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = refusal_cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = super::project_decal_images(
-                    &ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&image),
-                    std::slice::from_ref(&group),
-                    std::slice::from_ref(&operand),
-                    &mut [feature()],
-                );
-                assert!(
-                    matches!(result,
-                        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                            if failure.dimension == dimension && failure.operation == operation
-                    ),
-                    "operation {operation}: {result:?}"
-                );
-            }
             let assets = super::project_decal_images(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,

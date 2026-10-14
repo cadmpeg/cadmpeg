@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::index_from_u32;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
@@ -31,7 +31,6 @@ use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope::DesignParameterScope;
 
 pub(super) fn exact_variable_reference_operand_qualifiers(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -39,7 +38,7 @@ pub(super) fn exact_variable_reference_operand_qualifiers(
 ) -> Result<Option<[DesignAssemblyOperandQualifier; 2]>, CodecError> {
     let mut qualifiers = [None, None];
     for (qualifier, frame) in qualifiers.iter_mut().zip(frames) {
-        *qualifier = exact_class_363_operand_path(ctx, bytes, records, scope, frame)?
+        *qualifier = exact_class_363_operand_path(bytes, records, scope, frame)?
             .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
             .or_else(|| exact_class_307_joint_origin(bytes, records, frame));
     }
@@ -50,7 +49,6 @@ pub(super) fn exact_variable_reference_operand_qualifiers(
 }
 
 fn exact_class_363_operand_path(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -148,13 +146,13 @@ fn exact_class_363_operand_path(
             }
         }
         let (occurrence_guid, identity_guid, occurrence_guid_offset, identity_guid_offset) =
-            match exact_class_363_identity_guids(ctx, bytes, leading_identity.start) {
+            match exact_class_363_identity_guids(bytes, leading_identity.start) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
         let (terminal_occurrence_guid, terminal_identity_guid, _, _) =
-            match exact_class_363_identity_guids(ctx, bytes, terminal_identity.start) {
+            match exact_class_363_identity_guids(bytes, terminal_identity.start) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
@@ -395,7 +393,6 @@ fn exact_class_264_record_frame(
 }
 
 fn exact_class_363_identity_guids(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
 ) -> Result<
@@ -410,13 +407,13 @@ fn exact_class_363_identity_guids(
     (|| {
         let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
         let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
-        let (occurrence_guid, occurrence_end) =
-            match fixed_relaxed_guid_text(ctx, bytes, occurrence_at) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-        let (identity_guid, identity_end) = match fixed_relaxed_guid_text(ctx, bytes, identity_at) {
+        let (occurrence_guid, occurrence_end) = match fixed_relaxed_guid_text(bytes, occurrence_at)
+        {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let (identity_guid, identity_end) = match fixed_relaxed_guid_text(bytes, identity_at) {
             Ok(Some(value)) => value,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -609,13 +606,9 @@ mod tests {
                     scope_reference
                 })
             );
-            let (occurrence, identity, _, _) = exact_class_363_identity_guids(
-                &cadmpeg_test_support::service_decode_context(),
-                &bytes,
-                0,
-            )
-            .expect("GUID admission")
-            .expect("identity GUID prefix");
+            let (occurrence, identity, _, _) = exact_class_363_identity_guids(&bytes, 0)
+                .expect("GUID admission")
+                .expect("identity GUID prefix");
             assert_eq!(occurrence.as_str(), guid);
             assert_eq!(identity.as_str(), guid);
         }

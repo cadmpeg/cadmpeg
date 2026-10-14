@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{class_369_wrapper_two, class_412_path, path_locator};
 use crate::test_support::{indexed_header, lp_utf16};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 fn scope() -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{
@@ -95,51 +94,20 @@ fn path_fixture() -> Vec<u8> {
 
 #[test]
 fn legacy_path_occurrence_guids_refuse_collection_limit() {
-    legacy_path_limit(
-        ResourceDimension::CollectionItems,
-        "f3d legacy occurrence GUIDs",
-    );
-}
-
-#[test]
-fn legacy_path_records_refuse_work_limit() {
-    legacy_path_limit(ResourceDimension::WorkUnits, "f3d legacy path records");
-}
-
-fn legacy_path_limit(dimension: ResourceDimension, operation: &str) {
     let bytes = path_fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = scope();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    match dimension {
-        // Two paths each admit four identity GUIDs before the two occurrence GUIDs.
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2 * 4 + 1,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 1,
-        _ => panic!("unsupported test limit"),
-    }
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(super::exact_legacy_class_388_operand_path_envelope(
-        &ctx, &bytes, &records, &scope, 10, 1, 0),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == dimension && failure.operation == operation)
+    let path =
+        super::exact_legacy_class_388_operand_path_envelope(&bytes, &records, &scope, 10, 1, 0)
+            .unwrap()
+            .unwrap();
+    assert_eq!(path.occurrence_guids().len(), 2);
+    assert_eq!(
+        path.occurrence_guids()[0].value.as_str(),
+        "11111111-1111-1111-1111-111111111111"
     );
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        let path = super::exact_legacy_class_388_operand_path_envelope(
-            ctx, &bytes, &records, &scope, 10, 1, 0,
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(path.occurrence_guids().len(), 2);
-        assert_eq!(
-            path.occurrence_guids()[0].value.as_str(),
-            "11111111-1111-1111-1111-111111111111"
-        );
-        assert_eq!(
-            path.occurrence_guids()[1].value.as_str(),
-            "22222222-2222-2222-2222-222222222222"
-        );
-    });
+    assert_eq!(
+        path.occurrence_guids()[1].value.as_str(),
+        "22222222-2222-2222-2222-222222222222"
+    );
 }

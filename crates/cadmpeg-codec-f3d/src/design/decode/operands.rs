@@ -98,9 +98,6 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let key = (stream, header.record_index);
-        if !headers.contains_key(&key) {
-            ctx.reserve_map(&mut headers, 1, "f3d edge operand header index")?;
-        }
         headers.insert(key, header);
     }
     let mut terminal_group_members = HashSet::new();
@@ -112,34 +109,19 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let key = (stream, group.scope_record_index, member.value);
-        if !terminal_group_members.contains(&key) {
-            ctx.reserve_set(
-                &mut terminal_group_members,
-                1,
-                "f3d edge operand terminal member",
-            )?;
-            terminal_group_members.insert(key);
-        }
+        terminal_group_members.insert(key);
     }
     let mut stream_offsets: HashMap<&str, Vec<u64>> = HashMap::new();
     for header in record_headers {
         if let Some(stream) = native_stream(&header.id) {
-            ctx.push_hash_group(
-                &mut stream_offsets,
-                stream,
-                header.byte_offset,
-                "f3d edge operand offset stream",
-                "f3d edge operand stream offset",
-            )?;
+            stream_offsets
+                .entry(stream)
+                .or_default()
+                .push(header.byte_offset);
         }
     }
     for offsets in stream_offsets.values_mut() {
-        ctx.sort_unstable_by(
-            offsets,
-            Ord::cmp,
-            |_| 0,
-            "sort f3d edge operand stream offsets",
-        )?;
+        offsets.sort_unstable();
     }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
@@ -153,18 +135,12 @@ pub(crate) fn decode_edge_operands(
                 && group.scope_record_index == scope.record_index
         }) {
             for member in group.members() {
-                ctx.insert_hash_set(
-                    &mut member_indices,
-                    member.value,
-                    "f3d edge operand member index",
-                )
-                .map(|_| ())?;
+                member_indices.insert(member.value);
             }
         }
         if let Some(operation) = scope.surface_extend_operation() {
             for &index in &operation.edge_record_indices {
-                ctx.insert_hash_set(&mut member_indices, index, "f3d edge operand member index")
-                    .map(|_| ())?;
+                member_indices.insert(index);
             }
         }
         if let Some(operation) = scope.surface_offset_operation() {
@@ -174,23 +150,13 @@ pub(crate) fn decode_edge_operands(
             } = &operation.support
             {
                 for &index in edge_record_indices {
-                    ctx.insert_hash_set(
-                        &mut member_indices,
-                        index,
-                        "f3d edge operand member index",
-                    )
-                    .map(|_| ())?;
+                    member_indices.insert(index);
                 }
             }
         }
         if let Some(construction) = scope.work_point_construction() {
             for input in construction.rule.inputs() {
-                ctx.insert_hash_set(
-                    &mut member_indices,
-                    input.record_index(),
-                    "f3d edge operand member index",
-                )
-                .map(|_| ())?;
+                member_indices.insert(input.record_index());
             }
         }
         let Some(stream) = native_stream(&scope.id) else {
@@ -239,16 +205,10 @@ pub(crate) fn decode_edge_operands(
             };
             let operand = operand?;
 
-            ctx.reserve_vec(&mut out, 1, "f3d edge operand output")?;
             out.push(operand);
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 1",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -267,9 +227,6 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let key = (stream, header.record_index);
-        if !header_index.contains_key(&key) {
-            ctx.reserve_map(&mut header_index, 1, "f3d vertex operand header index")?;
-        }
         header_index.insert(key, header);
     }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
@@ -327,7 +284,6 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
                 continue;
             };
 
-            ctx.reserve_vec(&mut out, 1, "f3d vertex operand output")?;
             out.push(DesignEdgeTreatmentVertexOperand {
                 id: design_record_id_charged(
                     ctx,
@@ -344,12 +300,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             });
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |left, right| left.id.cmp(&right.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 2",
-    )?;
+    out.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(out)
 }
 
@@ -369,9 +320,6 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let key = (stream, header.record_index);
-        if !header_index.contains_key(&key) {
-            ctx.reserve_map(&mut header_index, 1, "f3d WorkPoint header index")?;
-        }
         header_index.insert(key, header);
     }
     let mut work_planes: HashMap<String, HashMap<u32, u32>> = HashMap::new();
@@ -383,20 +331,10 @@ pub(crate) fn bind_work_point_input_carriers(
         else {
             continue;
         };
-        if !work_planes.contains_key(stream) {
-            ctx.reserve_map(&mut work_planes, 1, "f3d WorkPoint work-plane stream index")?;
-            work_planes.insert(
-                ctx.copy_retained_text(stream, "f3d WorkPoint work-plane stream key")?,
-                HashMap::new(),
-            );
-        }
-        let Some(indices) = work_planes.get_mut(stream) else {
-            continue;
-        };
-        if !indices.contains_key(&preceding_index) {
-            ctx.reserve_map(indices, 1, "f3d WorkPoint work-plane index")?;
-        }
-        indices.insert(preceding_index, scope.record_index);
+        work_planes
+            .entry(stream.to_owned())
+            .or_default()
+            .insert(preceding_index, scope.record_index);
     }
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
@@ -406,9 +344,7 @@ pub(crate) fn bind_work_point_input_carriers(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let (_stream_reservation, stream) = ctx
-            .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
-            .map(|(text, reservation)| (reservation, text))?;
+        let stream = stream.to_owned();
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -419,11 +355,12 @@ pub(crate) fn bind_work_point_input_carriers(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        let mut inputs = ctx.try_collect_retained_with(
-            construction.rule.inputs(),
-            "f3d WorkPoint input copy",
-            |input| input.try_clone_for_decode(ctx, "f3d WorkPoint input copy"),
-        )?;
+        let mut inputs = construction
+            .rule
+            .inputs()
+            .into_iter()
+            .map(|input| input.try_clone_for_decode(ctx, "f3d WorkPoint input copy"))
+            .collect::<Result<Vec<_>, _>>()?;
         for input in &mut inputs {
             let mut edge_matches = edge_operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream.as_str())
@@ -434,8 +371,7 @@ pub(crate) fn bind_work_point_input_carriers(
             if let Some(operand) = edge_match.filter(|_| edge_matches.next().is_none()) {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
-                        operand_id: ctx
-                            .copy_retained_text(&operand.id, "f3d WorkPoint edge operand ID")?,
+                        operand_id: operand.id.clone(),
                     })))
                     .map_err(CodecError::Malformed)?;
                 continue;
@@ -491,7 +427,7 @@ pub(crate) fn bind_work_point_input_carriers(
                                     point_persistent_id: selection.point_persistent_id,
                                     point_persistent_id_offset: selection
                                         .point_persistent_id_offset,
-                                    point_native_id: ctx.copy_retained_text(&point.id, "f3d WorkPoint sketch-point ID")?,
+                                    point_native_id: point.id.clone(),
                                     next_record_index: selection.next_record_index,
                                     next_byte_offset: selection.next_byte_offset,
                                 },
@@ -578,9 +514,6 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let key = (stream, header.record_index);
-        if !header_index.contains_key(&key) {
-            ctx.reserve_map(&mut header_index, 1, "f3d work plane header index")?;
-        }
         header_index.insert(key, header);
     }
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
@@ -594,9 +527,7 @@ pub(crate) fn bind_work_plane_constructions(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let (_stream_reservation, stream) = ctx
-            .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
-            .map(|(text, reservation)| (reservation, text))?;
+        let stream = stream.to_owned();
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -662,9 +593,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
     tags: &[PersistentSubentityTag],
 ) -> Result<(), CodecError> {
     for scope in scopes {
-        let (_scope_reservation, scope_id) = ctx
-            .format_scoped(format_args!("{}", scope.id), "f3d scoped stream identity")
-            .map(|(text, reservation)| (reservation, text))?;
+        let scope_id = scope.id.clone();
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
                 bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&scope_id))?;
@@ -746,9 +675,6 @@ pub(crate) fn decode_edge_identity_operands(
             continue;
         };
         let key = (stream, header.record_index);
-        if !header_index.contains_key(&key) {
-            ctx.reserve_map(&mut header_index, 1, "f3d edge identity header index")?;
-        }
         header_index.insert(key, header);
     }
     let mut out = Vec::new();
@@ -796,7 +722,6 @@ pub(crate) fn decode_edge_identity_operands(
                 continue;
             };
 
-            ctx.reserve_vec(&mut out, 1, "f3d edge identity output")?;
             out.push(
                 DesignEdgeIdentityOperand::try_new(
                     crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
@@ -831,12 +756,7 @@ pub(crate) fn decode_edge_identity_operands(
             );
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 3",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -855,9 +775,6 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let key = (stream, header.record_index);
-        if !header_index.contains_key(&key) {
-            ctx.reserve_map(&mut header_index, 1, "f3d face operand header index")?;
-        }
         header_index.insert(key, header);
     }
     let mut scope_index = HashMap::new();
@@ -866,9 +783,6 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let key = (stream, scope.record_index);
-        if !scope_index.contains_key(&key) {
-            ctx.reserve_map(&mut scope_index, 1, "f3d face operand scope index")?;
-        }
         scope_index.insert(key, scope);
     }
     let mut out = Vec::new();
@@ -973,11 +887,7 @@ pub(crate) fn decode_face_operands(
             .map(|member| &member.value)
             .enumerate()
         {
-            if !ctx.insert_hash_set(
-                &mut seen,
-                (stream, scope.record_index, *record_index),
-                "f3d face operand seen key",
-            )? {
+            if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
             }
             let Ok(group_member_ordinal) = u32::try_from(group_member_index) else {
@@ -1017,7 +927,6 @@ pub(crate) fn decode_face_operands(
                 },
                 recipes,
             ) {
-                ctx.reserve_vec(&mut out, 1, "f3d face operand output")?;
                 out.push(operand?);
             }
         }
@@ -1070,11 +979,7 @@ pub(crate) fn decode_face_operands(
             else {
                 continue;
             };
-            if !ctx.insert_hash_set(
-                &mut seen,
-                (stream, scope.record_index, record_index),
-                "f3d face operand seen key",
-            )? {
+            if !seen.insert((stream, scope.record_index, record_index)) {
                 continue;
             }
             let (Ok(scope_reference_ordinal), Some(header)) = (
@@ -1114,17 +1019,11 @@ pub(crate) fn decode_face_operands(
                 },
                 recipes,
             ) {
-                ctx.reserve_vec(&mut out, 1, "f3d face operand output")?;
                 out.push(operand?);
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 4",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1155,12 +1054,11 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let reference_headers = face_source_reference_headers(
-            ctx,
             bytes,
             scope_start,
             scope.reference_members().values(),
             records,
-        )?;
+        );
         for (carrier_ordinal, carrier) in reference_headers.iter().enumerate() {
             let Some(FaceSourceReferenceHeader {
                 record_index: carrier_record_index,
@@ -1187,13 +1085,11 @@ pub(crate) fn decode_face_source_groups(
                 continue;
             }
             let Some(source_reference_offsets) = parse_face_source_carrier_prefix(
-                ctx,
                 bytes,
                 *carrier_byte_offset,
                 scope.record_index,
                 layout,
-            )?
-            else {
+            ) else {
                 continue;
             };
             let parsed_source_members = source_reference_offsets.into_iter()
@@ -1228,8 +1124,7 @@ pub(crate) fn decode_face_source_groups(
                         },
                     }))
                 });
-            // The supported carrier layouts contain at most four source slots.
-            let mut source_members = ctx.collection_vec(4, "collect F3D face source members")?;
+            let mut source_members = Vec::new();
             let mut complete = true;
             for member in parsed_source_members {
                 match member? {
@@ -1260,35 +1155,26 @@ pub(crate) fn decode_face_source_groups(
             ) else {
                 continue;
             };
-            ctx.push_vec(
-                &mut out,
-                DesignFaceSourceGroup {
-                    id: design_record_id_charged(
-                        ctx,
-                        &entry.name,
-                        ":design-face-source-group#",
-                        carrier_start,
-                        "f3d face source group ID",
-                    )?,
-                    scope_record_index: scope.record_index,
-                    carrier_reference_ordinal,
-                    carrier_record_index: *carrier_record_index,
-                    carrier_span,
-                    carrier_class_tag,
-                    paired_record_index: *paired_record_index,
-                    paired_class_tag,
-                    source_members,
-                },
-                "f3d face source group output",
-            )?;
+            out.push(DesignFaceSourceGroup {
+                id: design_record_id_charged(
+                    ctx,
+                    &entry.name,
+                    ":design-face-source-group#",
+                    carrier_start,
+                    "f3d face source group ID",
+                )?,
+                scope_record_index: scope.record_index,
+                carrier_reference_ordinal,
+                carrier_record_index: *carrier_record_index,
+                carrier_span,
+                carrier_class_tag,
+                paired_record_index: *paired_record_index,
+                paired_class_tag,
+                source_members,
+            });
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 5",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1299,34 +1185,27 @@ struct FaceSourceReferenceHeader<'a> {
 }
 
 fn face_source_reference_headers<'a, 'r>(
-    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     scope_start: usize,
-    references: impl ExactSizeIterator<Item = &'r u32>,
+    references: impl Iterator<Item = &'r u32>,
     records: &IndexedRecordOffsets,
-) -> Result<Vec<Option<FaceSourceReferenceHeader<'a>>>, CodecError> {
-    let mut headers = Vec::new();
-    ctx.reserve_vec(
-        &mut headers,
-        references.len(),
-        "f3d face source reference headers",
-    )?;
-    for record_index in references {
-        let header = scope_start
-            .checked_add(indexed_header::LEN)
-            .and_then(|at| records.first_at_or_after(at, *record_index))
-            .and_then(|byte_offset| {
-                lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
-                    |(class_tag, _)| FaceSourceReferenceHeader {
-                        record_index: *record_index,
-                        byte_offset,
-                        class_tag,
-                    },
-                )
-            });
-        headers.push(header);
-    }
-    Ok(headers)
+) -> Vec<Option<FaceSourceReferenceHeader<'a>>> {
+    references
+        .map(|record_index| {
+            scope_start
+                .checked_add(indexed_header::LEN)
+                .and_then(|at| records.first_at_or_after(at, *record_index))
+                .and_then(|byte_offset| {
+                    lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
+                        |(class_tag, _)| FaceSourceReferenceHeader {
+                            record_index: *record_index,
+                            byte_offset,
+                            class_tag,
+                        },
+                    )
+                })
+        })
+        .collect()
 }
 
 /// Fixed source-reference and scalar layout for one face carrier class.
@@ -1375,39 +1254,30 @@ pub(crate) fn face_source_carrier_spec(
 }
 
 fn parse_face_source_carrier_prefix(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     scope_record_index: u32,
     layout: FaceSourceCarrierLayout,
-) -> Result<Option<Vec<(usize, u32)>>, CodecError> {
-    let parsed = (|| {
-        if bytes
-            .get(start + indexed_header::LEN..start + indexed_header::LEN + 10)
-            .is_none_or(|lane| lane != [0; 10])
-            || marked_face_source_reference(bytes, start + 21)? != scope_record_index
-            || View::u32_le_at(bytes, start + 32)? != u32::try_from(layout.source_count).ok()?
-            || View::u32_le_at(bytes, start + layout.scalar_offset)? != layout.scalar_discriminator
-            || !View::f64_le_at(bytes, start + layout.scalar_offset + 4)?.is_finite()
-            || View::u32_le_at(bytes, start + layout.scalar_offset + 12)?
-                != layout.scalar_discriminator
-        {
-            return None;
-        }
-        // Every supported carrier uses the same four-slot allocation.
-        let mut references = match ctx.collection_vec(4, "collect F3D face source references") {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
-        for ordinal in 0..layout.source_count {
-            let offset = start
-                .checked_add(layout.source_reference_offset)?
-                .checked_add(ordinal.checked_mul(11)?)?;
-            references.push((offset, marked_face_source_reference(bytes, offset)?));
-        }
-        Some(Ok(references))
-    })();
-    parsed.transpose()
+) -> Option<Vec<(usize, u32)>> {
+    if bytes
+        .get(start + indexed_header::LEN..start + indexed_header::LEN + 10)
+        .is_none_or(|lane| lane != [0; 10])
+        || marked_face_source_reference(bytes, start + 21)? != scope_record_index
+        || View::u32_le_at(bytes, start + 32)? != u32::try_from(layout.source_count).ok()?
+        || View::u32_le_at(bytes, start + layout.scalar_offset)? != layout.scalar_discriminator
+        || !View::f64_le_at(bytes, start + layout.scalar_offset + 4)?.is_finite()
+        || View::u32_le_at(bytes, start + layout.scalar_offset + 12)? != layout.scalar_discriminator
+    {
+        return None;
+    }
+    let mut references = Vec::new();
+    for ordinal in 0..layout.source_count {
+        let offset = start
+            .checked_add(layout.source_reference_offset)?
+            .checked_add(ordinal.checked_mul(11)?)?;
+        references.push((offset, marked_face_source_reference(bytes, offset)?));
+    }
+    Some(references)
 }
 
 fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
@@ -1424,67 +1294,42 @@ fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
 
 /// Index recipes by their final record for each native recipe identity.
 fn indexed_operand_recipes<'a>(
-    ctx: &DecodeContext<'_>,
     recipes: &'a [ConstructionRecipe],
-) -> Result<HashMap<&'a str, &'a ConstructionRecipe>, CodecError> {
+) -> HashMap<&'a str, &'a ConstructionRecipe> {
     let mut indexed = HashMap::new();
     for recipe in recipes {
-        if !indexed.contains_key(recipe.id.as_str()) {
-            ctx.reserve_map(&mut indexed, 1, "f3d operand recipe index")?;
-        }
         indexed.insert(recipe.id.as_str(), recipe);
     }
-    Ok(indexed)
+    indexed
 }
 
 fn indexed_operand_headers<'a>(
-    ctx: &DecodeContext<'_>,
     headers: &'a [DesignRecordHeader],
-) -> Result<HashMap<(&'a str, u32), &'a DesignRecordHeader>, CodecError> {
+) -> HashMap<(&'a str, u32), &'a DesignRecordHeader> {
     let mut indexed = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
             continue;
         };
         let key = (stream, header.record_index);
-        if !indexed.contains_key(&key) {
-            ctx.reserve_map(&mut indexed, 1, "f3d operand header index")?;
-        }
         indexed.insert(key, header);
     }
-    Ok(indexed)
-}
-
-fn push_operand_face_candidate(
-    ctx: &DecodeContext<'_>,
-    candidates: &mut Vec<cadmpeg_ir::ids::FaceId>,
-    face: &cadmpeg_ir::ids::FaceId,
-) -> Result<(), CodecError> {
-    ctx.push_vec(
-        candidates,
-        face.try_clone_for_decode(ctx, "f3d operand face candidate ID")?,
-        "f3d operand face candidate",
-    )?;
-    Ok(())
+    indexed
 }
 
 fn referenced_operand_faces<'a>(
-    ctx: &DecodeContext<'_>,
     references: &'a [crate::records::dimensions::DesignRecipeReference],
     design_reference: i64,
-) -> Result<HashSet<&'a cadmpeg_ir::ids::FaceId>, CodecError> {
+) -> HashSet<&'a cadmpeg_ir::ids::FaceId> {
     let mut referenced = HashSet::new();
     for face in references
         .iter()
         .filter(|reference| reference.design_reference == design_reference)
         .flat_map(|reference| &reference.candidate_faces)
     {
-        if !referenced.contains(face) {
-            ctx.reserve_set(&mut referenced, 1, "f3d referenced face candidate")?;
-            referenced.insert(face);
-        }
+        referenced.insert(face);
     }
-    Ok(referenced)
+    referenced
 }
 
 /// Join each face recipe's persistent Design reference to active solved faces.
@@ -1496,7 +1341,7 @@ pub(crate) fn bind_face_operand_candidates(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let recipes = indexed_operand_recipes(ctx, recipes)?;
+    let recipes = indexed_operand_recipes(recipes);
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
         for reference in &mut operand.recipe_references {
@@ -1516,25 +1361,21 @@ pub(crate) fn bind_face_operand_candidates(
                 && tag.design_references.contains(&design_reference)
         }) {
             if let AttributeTarget::Face(face) = &tag.target {
-                push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
+                operand.candidate_faces.push(face.clone());
             }
         }
-        ctx.stable_sort_by(
-            &mut operand.candidate_faces[..],
-            |left, right| left.as_str().cmp(right.as_str()),
-            |_| 0,
-            "sort f3d design operands 6",
-        )?;
+        operand
+            .candidate_faces
+            .sort_by(|left, right| left.as_str().cmp(right.as_str()));
         operand.candidate_faces.dedup();
-        let referenced =
-            referenced_operand_faces(ctx, &operand.recipe_references, design_reference)?;
+        let referenced = referenced_operand_faces(&operand.recipe_references, design_reference);
         operand.unreferenced_candidate_faces.clear();
         for face in operand
             .candidate_faces
             .iter()
             .filter(|face| !referenced.contains(face))
         {
-            push_operand_face_candidate(ctx, &mut operand.unreferenced_candidate_faces, face)?;
+            operand.unreferenced_candidate_faces.push(face.clone());
         }
         for face in operand
             .recipe_references
@@ -1542,18 +1383,13 @@ pub(crate) fn bind_face_operand_candidates(
             .filter(|reference| reference.design_reference == design_reference)
             .flat_map(|reference| &reference.alternate_selector_faces)
         {
-            push_operand_face_candidate(
-                ctx,
-                &mut operand.alternate_selector_candidate_faces,
-                face,
-            )?;
+            operand
+                .alternate_selector_candidate_faces
+                .push(face.clone());
         }
-        ctx.stable_sort_by(
-            &mut operand.alternate_selector_candidate_faces[..],
-            |left, right| left.as_str().cmp(right.as_str()),
-            |_| 0,
-            "sort f3d design operands 7",
-        )?;
+        operand
+            .alternate_selector_candidate_faces
+            .sort_by(|left, right| left.as_str().cmp(right.as_str()));
         operand.alternate_selector_candidate_faces.dedup();
     }
     Ok(())
@@ -1566,7 +1402,7 @@ pub(crate) fn bind_edge_operand_candidates(
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
 ) -> Result<(), CodecError> {
-    let recipes = indexed_operand_recipes(ctx, recipes)?;
+    let recipes = indexed_operand_recipes(recipes);
     for operand in operands {
         operand.candidate_faces.clear();
         for reference in &mut operand.recipe_references {
@@ -1585,26 +1421,22 @@ pub(crate) fn bind_edge_operand_candidates(
                 && tag.design_references.contains(&design_reference)
         }) {
             if let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target {
-                push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
+                operand.candidate_faces.push(face.clone());
             }
         }
-        ctx.stable_sort_by(
-            &mut operand.candidate_faces[..],
-            |a, b| a.as_str().cmp(b.as_str()),
-            |_| 0,
-            "sort f3d design operands 8",
-        )?;
+        operand
+            .candidate_faces
+            .sort_by(|a, b| a.as_str().cmp(b.as_str()));
         operand.candidate_faces.dedup();
     }
     Ok(())
 }
 
 pub(crate) fn edge_operand_candidate_faces(
-    ctx: &DecodeContext<'_>,
     design_reference: i64,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
-) -> Result<Vec<cadmpeg_ir::ids::FaceId>, CodecError> {
+) -> Vec<cadmpeg_ir::ids::FaceId> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut faces = tags
@@ -1618,14 +1450,9 @@ pub(crate) fn edge_operand_candidate_faces(
             _ => None,
         })
         .collect::<Vec<_>>();
-    ctx.stable_sort_by(
-        &mut faces,
-        |left, right| left.as_str().cmp(right.as_str()),
-        |face| face.as_str().len(),
-        "f3d edge operand candidate faces sort",
-    )?;
+    faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
-    Ok(faces)
+    faces
 }
 
 /// Resolve the unique sketch-profile frame named by profile-based scopes.
@@ -1636,7 +1463,7 @@ pub(crate) fn bind_sketch_profiles(
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
 ) -> Result<(), CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
@@ -1703,7 +1530,7 @@ pub(crate) fn decode_extrude_selection_groups(
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignExtrudeSelectionGroup>, CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -1736,12 +1563,7 @@ pub(crate) fn decode_extrude_selection_groups(
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 9",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1752,7 +1574,6 @@ fn push_extrude_selection_group(
     stream: &str,
     offset: u64,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(out, 1, "f3d extrude selection group output")?;
     group.id = design_record_id_charged(
         ctx,
         stream,
@@ -1775,7 +1596,7 @@ pub(crate) fn decode_construction_operand_groups(
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignConstructionOperandGroup>, CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
@@ -1849,14 +1670,9 @@ pub(crate) fn decode_construction_operand_groups(
                     )?;
                 }
                 ConstructionOperandGroupParse::Unclosed => {
-                    ctx.push_vec(
-                        &mut unclosed,
-                        record_index,
-                        "f3d unclosed construction operand group",
-                    )?;
+                    unclosed.push(record_index);
                 }
                 ConstructionOperandGroupParse::NotAGroup => {}
-                ConstructionOperandGroupParse::Refused(error) => return Err(error),
             }
         }
         scope.unclosed_construction_operand_groups = unclosed;
@@ -1864,12 +1680,7 @@ pub(crate) fn decode_construction_operand_groups(
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 10",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1880,7 +1691,6 @@ fn push_construction_operand_group(
     stream: &str,
     offset: u64,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(out, 1, "f3d construction operand group output")?;
     group.id = design_record_id_charged(
         ctx,
         stream,
@@ -1901,7 +1711,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignLoftLegacyBodyCarrier>, CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
@@ -1934,12 +1744,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |left, right| left.id.cmp(&right.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 11",
-    )?;
+    out.sort_by(|left, right| left.id.cmp(&right.id));
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
 }
@@ -1951,7 +1756,6 @@ fn push_loft_legacy_body_carrier(
     stream: &str,
     offset: u64,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(out, 1, "f3d legacy Loft body carrier output")?;
     carrier.id = design_record_id_charged(
         ctx,
         stream,
@@ -2129,29 +1933,21 @@ pub(in crate::design) fn assign_extrude_face_roles(
 
 /// Pair Fillet construction-operand groups with their radius inputs.
 fn push_fillet_radius_group(
-    ctx: &DecodeContext<'_>,
     out: &mut Vec<DesignFilletRadiusGroup>,
     stream: &str,
     group_ordinal: u32,
     group: &DesignConstructionOperandGroup,
     law: DesignFilletRadiusLaw,
     tangency_weight_parameter_record_index: Option<u32>,
-) -> Result<(), CodecError> {
+) {
     const SUFFIX: &str = ":design-fillet-radius-group#";
 
-    let edge_operand_record_indices = ctx.collect_vec(
-        group.members().iter().map(|member| member.value),
-        "f3d Fillet edge operand indices",
-    )?;
-    let mut id = ctx.copy_retained_text(stream, "f3d Fillet group stream ID")?;
-
-    ctx.append_formatted_retained(
-        &mut id,
-        format_args!("{SUFFIX}{}", group.record_index),
-        "f3d Fillet group ID suffix",
-    )?;
-
-    ctx.reserve_vec(out, 1, "f3d Fillet group output")?;
+    let edge_operand_record_indices = group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .collect::<Vec<_>>();
+    let id = format!("{stream}{SUFFIX}{}", group.record_index);
     out.push(DesignFilletRadiusGroup {
         id,
         scope_record_index: group.scope_record_index,
@@ -2161,11 +1957,10 @@ fn push_fillet_radius_group(
         law,
         tangency_weight_parameter_record_index,
     });
-    Ok(())
 }
 
 pub(crate) fn decode_fillet_radius_groups(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     owners: &[DesignParameterOwner],
@@ -2177,9 +1972,6 @@ pub(crate) fn decode_fillet_radius_groups(
             continue;
         };
         let key = (stream, parameter.record_index);
-        if !parameter_index.contains_key(&key) {
-            ctx.reserve_map(&mut parameter_index, 1, "f3d Fillet parameter index")?;
-        }
         parameter_index.insert(key, parameter);
     }
     let mut out = Vec::new();
@@ -2190,76 +1982,40 @@ pub(crate) fn decode_fillet_radius_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let mut scope_groups = ctx.collect_vec(
-            groups.iter().filter(|group| {
+        let mut scope_groups = groups
+            .iter()
+            .filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-            }),
-            "f3d Fillet scope groups",
-        )?;
-        ctx.stable_sort_by(
-            &mut scope_groups[..],
-            |left, right| {
-                let left_key = {
-                    let group = left;
-                    {
-                        group.scope_reference_ordinal
-                    }
-                };
-                let right_key = {
-                    let group = right;
-                    {
-                        group.scope_reference_ordinal
-                    }
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
-            "sort f3d design operands 12",
-        )?;
-        let mut owned_parameters = ctx.collect_vec(
-            owners
-                .iter()
-                .filter(|owner| {
-                    native_stream(owner.id()) == Some(stream)
-                        && owner.scope_record_index() == scope.record_index
-                })
-                .filter_map(|owner| {
-                    Some((
-                        owner.local_ordinal(),
-                        *parameter_index.get(&(stream, owner.parameter_record_index()))?,
-                    ))
-                }),
-            "f3d Fillet owned parameters",
-        )?;
-        ctx.stable_sort_by(
-            &mut owned_parameters[..],
-            |left, right| {
-                let left_key = {
-                    let (ordinal, _) = left;
-                    *ordinal
-                };
-                let right_key = {
-                    let (ordinal, _) = right;
-                    *ordinal
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
-            "sort f3d design operands 13",
-        )?;
-        let radii = ctx.collect_vec(
-            owned_parameters.iter().filter_map(|(_, parameter)| {
+            })
+            .collect::<Vec<_>>();
+        scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
+        let mut owned_parameters = owners
+            .iter()
+            .filter(|owner| {
+                native_stream(owner.id()) == Some(stream)
+                    && owner.scope_record_index() == scope.record_index
+            })
+            .filter_map(|owner| {
+                Some((
+                    owner.local_ordinal(),
+                    *parameter_index.get(&(stream, owner.parameter_record_index()))?,
+                ))
+            })
+            .collect::<Vec<_>>();
+        owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
+        let radii = owned_parameters
+            .iter()
+            .filter_map(|(_, parameter)| {
                 (parameter.source_kind() == "Radius").then_some(*parameter)
-            }),
-            "f3d Fillet radius parameters",
-        )?;
-        let weights = ctx.collect_vec(
-            owned_parameters.iter().filter_map(|(_, parameter)| {
+            })
+            .collect::<Vec<_>>();
+        let weights = owned_parameters
+            .iter()
+            .filter_map(|(_, parameter)| {
                 (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
-            }),
-            "f3d Fillet weight parameters",
-        )?;
+            })
+            .collect::<Vec<_>>();
         if owned_parameters.len() == radii.len() + weights.len()
             && scope_groups.len() == radii.len()
             && (weights.is_empty() || weights.len() == scope_groups.len())
@@ -2269,7 +2025,6 @@ pub(crate) fn decode_fillet_radius_groups(
                     continue;
                 };
                 push_fillet_radius_group(
-                    ctx,
                     &mut out,
                     stream,
                     group_ordinal,
@@ -2278,19 +2033,19 @@ pub(crate) fn decode_fillet_radius_groups(
                         radius_parameter_record_index: radius.record_index,
                     },
                     weights.get(ordinal).map(|parameter| parameter.record_index),
-                )?;
+                );
             }
             continue;
         }
         let [group] = scope_groups.as_slice() else {
             continue;
         };
-        let chord_lengths = ctx.collect_vec(
-            owned_parameters.iter().filter_map(|(_, parameter)| {
+        let chord_lengths = owned_parameters
+            .iter()
+            .filter_map(|(_, parameter)| {
                 (parameter.source_kind() == "ChordLen").then_some(parameter.record_index)
-            }),
-            "f3d Fillet chord lengths",
-        )?;
+            })
+            .collect::<Vec<_>>();
         // TangencyWeight is optional for the chordal law; older records carry
         // only the required ChordLen input.
         if (weights.is_empty() && owned_parameters.len() == 1)
@@ -2300,7 +2055,6 @@ pub(crate) fn decode_fillet_radius_groups(
                 continue;
             };
             push_fillet_radius_group(
-                ctx,
                 &mut out,
                 stream,
                 0,
@@ -2309,20 +2063,20 @@ pub(crate) fn decode_fillet_radius_groups(
                     chord_length_parameter_record_index: *chord_length,
                 },
                 weights.first().map(|parameter| parameter.record_index),
-            )?;
+            );
             continue;
         }
         let asymmetric_offsets = |kind: &str| {
-            ctx.collect_vec(
-                owned_parameters.iter().filter_map(|(_, parameter)| {
+            owned_parameters
+                .iter()
+                .filter_map(|(_, parameter)| {
                     (parameter.source_kind() == kind).then_some(parameter.record_index)
-                }),
-                "f3d Fillet asymmetric offsets",
-            )
+                })
+                .collect::<Vec<_>>()
         };
         let (offset_one, offset_two) = (
-            asymmetric_offsets("EdgeOffset1")?,
-            asymmetric_offsets("EdgeOffset2")?,
+            asymmetric_offsets("EdgeOffset1"),
+            asymmetric_offsets("EdgeOffset2"),
         );
         if owned_parameters.len() == 3 {
             if let ([offset_one], [offset_two], [weight]) = (
@@ -2331,7 +2085,6 @@ pub(crate) fn decode_fillet_radius_groups(
                 weights.as_slice(),
             ) {
                 push_fillet_radius_group(
-                    ctx,
                     &mut out,
                     stream,
                     0,
@@ -2341,23 +2094,23 @@ pub(crate) fn decode_fillet_radius_groups(
                         offset_two_parameter_record_index: *offset_two,
                     },
                     Some(weight.record_index),
-                )?;
+                );
                 continue;
             }
         }
         let records = |kind: &str| {
-            ctx.collect_vec(
-                owned_parameters.iter().filter_map(|(_, parameter)| {
+            owned_parameters
+                .iter()
+                .filter_map(|(_, parameter)| {
                     (parameter.source_kind() == kind).then_some(parameter.record_index)
-                }),
-                "f3d Fillet variable parameters",
-            )
+                })
+                .collect::<Vec<_>>()
         };
         let (start, end, middle_radii, middle_parameters) = (
-            records("StartRadius")?,
-            records("EndRadius")?,
-            records("MidRadius")?,
-            records("MidParams")?,
+            records("StartRadius"),
+            records("EndRadius"),
+            records("MidRadius"),
+            records("MidParams"),
         );
         let ([start], [end]) = (start.as_slice(), end.as_slice()) else {
             continue;
@@ -2372,19 +2125,17 @@ pub(crate) fn decode_fillet_radius_groups(
         {
             continue;
         }
-        let middle = ctx.collect_vec(
-            middle_radii.into_iter().zip(middle_parameters).map(
-                |(radius_parameter_record_index, parameter_record_index)| {
-                    crate::records::topology::fillet::DesignFilletMidpoint {
-                        radius_parameter_record_index,
-                        parameter_record_index,
-                    }
-                },
-            ),
-            "f3d Fillet middle parameters",
-        )?;
+        let middle = middle_radii
+            .into_iter()
+            .zip(middle_parameters)
+            .map(|(radius_parameter_record_index, parameter_record_index)| {
+                crate::records::topology::fillet::DesignFilletMidpoint {
+                    radius_parameter_record_index,
+                    parameter_record_index,
+                }
+            })
+            .collect::<Vec<_>>();
         push_fillet_radius_group(
-            ctx,
             &mut out,
             stream,
             0,
@@ -2395,14 +2146,9 @@ pub(crate) fn decode_fillet_radius_groups(
                 middle,
             },
             weights.first().map(|parameter| parameter.record_index),
-        )?;
+        );
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 14",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -2439,8 +2185,6 @@ pub(super) enum ConstructionOperandGroupParse {
     Unclosed,
     /// A complete group.
     Complete(Box<DesignConstructionOperandGroup>),
-    /// A caller resource limit refused the group.
-    Refused(CodecError),
 }
 
 impl ConstructionOperandGroupParse {
@@ -2449,7 +2193,7 @@ impl ConstructionOperandGroupParse {
     fn complete(self) -> Option<DesignConstructionOperandGroup> {
         match self {
             Self::Complete(group) => Some(*group),
-            Self::NotAGroup | Self::Unclosed | Self::Refused(_) => None,
+            Self::NotAGroup | Self::Unclosed => None,
         }
     }
 }
@@ -2546,13 +2290,13 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// both: exactly one of the four readings reaches a paired header carrying
 /// this record's own index.
 pub(super) fn parse_construction_operand_group(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &RecordFrame,
 ) -> ConstructionOperandGroupParse {
-    use ConstructionOperandGroupParse::{Complete, NotAGroup, Refused, Unclosed};
+    use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
 
     let Ok(start) = usize::try_from(header.byte_offset) else {
         return NotAGroup;
@@ -2581,9 +2325,6 @@ pub(super) fn parse_construction_operand_group(
     }
     let members_at = cursor;
     for _ in 0..member_count {
-        if let Err(error) = ctx.charge_work(1, "probe F3D construction operand reference") {
-            return Refused(error);
-        }
         if take_record_reference(bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
@@ -2621,9 +2362,6 @@ pub(super) fn parse_construction_operand_group(
     }
     let trailing_at = cursor;
     for _ in 0..trailing_count {
-        if let Err(error) = ctx.charge_work(1, "probe F3D construction operand reference") {
-            return Refused(error);
-        }
         if take_record_reference(bytes, &mut cursor).is_none() {
             return NotAGroup;
         }
@@ -2770,43 +2508,17 @@ pub(super) fn parse_construction_operand_group(
         return Unclosed;
     }
     let mut members = Vec::new();
-    if let Err(error) = ctx.reserve_vec(
-        &mut members,
-        index_from_u32(member_count),
-        "f3d construction operand members",
-    ) {
-        return Refused(error);
-    }
     let mut cursor = members_at;
     for _ in 0..member_count {
-        if let Err(error) = ctx.charge_work(1, "read F3D construction operand reference") {
-            return Refused(error);
-        }
         let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
         members.push(crate::records::identity::Located { value, offset });
     }
-    let auxiliary_records = match ctx.collect_vec(
-        auxiliary_slots.into_iter().flatten(),
-        "f3d construction operand auxiliary record",
-    ) {
-        Ok(records) => records,
-        Err(error) => return Refused(error),
-    };
+    let auxiliary_records = auxiliary_slots.into_iter().flatten().collect::<Vec<_>>();
     let mut trailing_records = Vec::new();
-    if let Err(error) = ctx.reserve_vec(
-        &mut trailing_records,
-        index_from_u32(trailing_count),
-        "f3d construction operand trailing records",
-    ) {
-        return Refused(error);
-    }
     let mut cursor = trailing_at;
     for _ in 0..trailing_count {
-        if let Err(error) = ctx.charge_work(1, "read F3D construction operand reference") {
-            return Refused(error);
-        }
         let Some((value, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
@@ -2933,12 +2645,11 @@ fn legacy_body_group_tail(
 
 /// Bind exact typed records selected by construction-group trailing runs.
 pub(crate) fn bind_construction_operand_trailing_records(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<(), CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     for group in groups {
         group
             .frame
@@ -2968,24 +2679,12 @@ pub(crate) fn bind_construction_operand_trailing_records(
                 continue;
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
-                ctx.push_vec(
-                    &mut trailing_transforms,
-                    transform,
-                    "f3d construction operand trailing transforms",
-                )?;
+                trailing_transforms.push(transform);
             } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
             {
-                ctx.push_vec(
-                    &mut trailing_dual_transforms,
-                    transform,
-                    "f3d construction operand trailing dual transforms",
-                )?;
+                trailing_dual_transforms.push(transform);
             } else if let Some(flag) = parse_construction_operand_flag(bytes, header) {
-                ctx.push_vec(
-                    &mut trailing_flags,
-                    flag,
-                    "f3d construction operand trailing flags",
-                )?;
+                trailing_flags.push(flag);
             }
         }
         group
@@ -3033,12 +2732,11 @@ fn parse_construction_operand_flag(
 
 /// Bind exact persistent-entity path records selected by construction groups.
 pub(crate) fn bind_construction_operand_paths(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<(), CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     for group in groups {
         group
             .frame
@@ -3060,11 +2758,7 @@ pub(crate) fn bind_construction_operand_paths(
             if let Some(path) =
                 parse_construction_operand_path(bytes, group.scope_record_index, header)
             {
-                ctx.push_vec(
-                    &mut auxiliary_paths,
-                    path,
-                    "f3d construction operand auxiliary paths",
-                )?;
+                auxiliary_paths.push(path);
             }
         }
         group
@@ -3243,7 +2937,7 @@ pub(crate) fn decode_construction_operand_identities(
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignConstructionOperandIdentity>, CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -3276,63 +2970,25 @@ pub(crate) fn decode_construction_operand_identities(
                 "f3d construction operand identity ID",
             )?;
 
-            ctx.reserve_vec(&mut out, 1, "f3d construction operand identity output")?;
             out.push(identity);
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 15",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
 }
 
 /// Collect one Design stream's lost-edge records in source byte order.
 fn collect_stream_lost_edges<'a>(
-    ctx: &DecodeContext<'_>,
     lost_edges: &'a [LostEdgeReference],
     stream: &str,
-) -> Result<Vec<&'a LostEdgeReference>, CodecError> {
-    let mut edges = Vec::new();
-    for edge in lost_edges
+) -> Vec<&'a LostEdgeReference> {
+    let mut edges = lost_edges
         .iter()
         .filter(|edge| native_stream(&edge.id) == Some(stream))
-    {
-        ctx.reserve_vec(&mut edges, 1, "f3d lost-edge stream records")?;
-        edges.push(edge);
-    }
-    ctx.stable_sort_by(
-        &mut edges[..],
-        |left, right| {
-            let left_key = {
-                let edge = left;
-                edge.record_byte_offset()
-            };
-            let right_key = {
-                let edge = right;
-                edge.record_byte_offset()
-            };
-            left_key.cmp(&right_key)
-        },
-        |_| 0,
-        "sort f3d design operands 16",
-    )?;
-    Ok(edges)
-}
-
-fn copy_lost_edge_run_ids(
-    ctx: &DecodeContext<'_>,
-    run: &[&LostEdgeReference],
-) -> Result<Vec<String>, CodecError> {
-    let mut ids = Vec::new();
-    ctx.reserve_vec(&mut ids, run.len(), "f3d lost-edge run IDs")?;
-    for edge in run {
-        ids.push(ctx.copy_retained_text(&edge.id, "f3d lost-edge run ID text")?);
-    }
-    Ok(ids)
+        .collect::<Vec<_>>();
+    edges.sort_by_key(|edge| edge.record_byte_offset());
+    edges
 }
 
 /// Bind a contiguous unresolved-edge run to the construction group whose
@@ -3343,11 +2999,10 @@ fn copy_lost_edge_run_ids(
 /// lost-edge references; its unresolved records stay unrepaired and are
 /// reported as lost edge references.
 pub(crate) fn bind_lost_edge_groups(
-    ctx: &DecodeContext<'_>,
     groups: &mut [DesignConstructionOperandGroup],
     identities: &[DesignConstructionOperandIdentity],
     lost_edges: &[LostEdgeReference],
-) -> Result<(), CodecError> {
+) {
     for group in groups {
         group.lost_edge_references.clear();
         let Some(stream) = native_stream(&group.id) else {
@@ -3369,7 +3024,7 @@ pub(crate) fn bind_lost_edge_groups(
         let wrapper_record_index = wrapper.record_index;
         let wrapper_byte_offset = wrapper.byte_offset;
         let wrapper_class_tag = wrapper.class_tag.as_str();
-        let stream_edges = collect_stream_lost_edges(ctx, lost_edges, stream)?;
+        let stream_edges = collect_stream_lost_edges(lost_edges, stream);
         let mut terminal = None;
         let mut multiple_terminals = false;
         for (ordinal, edge) in stream_edges.iter().enumerate() {
@@ -3403,9 +3058,8 @@ pub(crate) fn bind_lost_edge_groups(
         if run.len() != group.members().len() {
             continue;
         }
-        group.lost_edge_references = copy_lost_edge_run_ids(ctx, run)?;
+        group.lost_edge_references = run.iter().map(|edge| edge.id.clone()).collect();
     }
-    Ok(())
 }
 
 fn parse_construction_operand_identity(
@@ -3443,19 +3097,8 @@ fn parse_construction_operand_identity(
             return None;
         }
 
-        if let Err(error) = ctx.reserve_set(
-            &mut seen,
-            1,
-            "f3d construction identity wrapper visited keys",
-        ) {
-            return Some(Err(error));
-        }
         seen.insert((current_record_index, current_at));
 
-        if let Err(error) = ctx.reserve_vec(&mut wrappers, 1, "f3d construction identity wrappers")
-        {
-            return Some(Err(error));
-        }
         wrappers.push(
             crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: current_record_index,
@@ -3666,16 +3309,8 @@ fn parse_extrude_selection_group(
         if member_count == 0 || member_count > bytes.len().checked_sub(position)? / 11 {
             return None;
         }
-        let members_operation = "parse F3D extrude selection members";
-        let mut members = match ctx.collection_vec(member_count, members_operation) {
-            Ok(members) => members,
-            Err(error) => return Some(Err(error)),
-        };
-        let offsets_operation = "parse F3D extrude selection member offsets";
-        let mut member_offsets = match ctx.collection_vec(member_count, offsets_operation) {
-            Ok(member_offsets) => member_offsets,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut members = Vec::new();
+        let mut member_offsets = Vec::new();
         for _ in 0..member_count {
             if bytes.get(position) != Some(&1)
                 || bytes.get(position + 5..position + 11)? != [0; 6]
@@ -3750,7 +3385,7 @@ pub(crate) fn decode_extrude_selection_members(
     groups: &[DesignExtrudeSelectionGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignExtrudeSelectionMember>, CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -3784,17 +3419,11 @@ pub(crate) fn decode_extrude_selection_members(
                     "f3d extrude selection member ID",
                 )?;
 
-                ctx.reserve_vec(&mut out, 1, "f3d extrude selection member output")?;
                 out.push(member);
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 17",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -3805,7 +3434,7 @@ pub(crate) fn decode_entity_selection_operands(
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignEntitySelectionOperand>, CodecError> {
-    let headers = indexed_operand_headers(ctx, headers)?;
+    let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -3839,17 +3468,11 @@ pub(crate) fn decode_entity_selection_operands(
                     "f3d entity selection operand ID",
                 )?;
 
-                ctx.reserve_vec(&mut out, 1, "f3d entity selection operand output")?;
                 out.push(operand);
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 18",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -4266,7 +3889,6 @@ pub(crate) fn decode_body_recipe_operands(
         if let Some(existing) = headers_by_identity.get_mut(&key) {
             *existing = None;
         } else {
-            ctx.reserve_map(&mut headers_by_identity, 1, "f3d body recipe header index")?;
             headers_by_identity.insert(key, Some(header));
         }
     }
@@ -4278,41 +3900,13 @@ pub(crate) fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&recipe.id) else {
             continue;
         };
-        if !body_recipes_by_stream.contains_key(stream) {
-            ctx.reserve_map(
-                &mut body_recipes_by_stream,
-                1,
-                "f3d body recipe stream index",
-            )?;
-            body_recipes_by_stream.insert(stream, Vec::new());
-        }
-        let Some(stream_recipes) = body_recipes_by_stream.get_mut(stream) else {
-            continue;
-        };
-        ctx.reserve_vec(stream_recipes, 1, "f3d body recipe stream entries")?;
-        stream_recipes.push(recipe);
+        body_recipes_by_stream
+            .entry(stream)
+            .or_default()
+            .push(recipe);
     }
     for stream_recipes in body_recipes_by_stream.values_mut() {
-        ctx.stable_sort_by(
-            &mut stream_recipes[..],
-            |left, right| {
-                let left_key = {
-                    let recipe = left;
-                    {
-                        recipe.byte_offset
-                    }
-                };
-                let right_key = {
-                    let recipe = right;
-                    {
-                        recipe.byte_offset
-                    }
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
-            "sort f3d design operands 19",
-        )?;
+        stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
     }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
@@ -4436,22 +4030,13 @@ pub(crate) fn decode_body_recipe_operands(
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design operands 20",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     let mut owner_counts = HashMap::<String, u32>::new();
     for operand in &out {
         if let Some(count) = owner_counts.get_mut(&operand.id) {
-            *count = count
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit("f3d body recipe owner count", 0, 1))?;
+            *count = count.saturating_add(1);
         } else {
-            ctx.reserve_map(&mut owner_counts, 1, "f3d body recipe owner keys")?;
-            let id = ctx.copy_retained_text(&operand.id, "f3d body recipe owner ID")?;
-            owner_counts.insert(id, 1_u32);
+            owner_counts.insert(operand.id.clone(), 1_u32);
         }
     }
     out.retain(|operand| owner_counts.get(&operand.id) == Some(&1));
@@ -4473,7 +4058,6 @@ fn push_body_recipe_operand(
         "f3d body recipe operand ID",
     )?;
 
-    ctx.reserve_vec(out, 1, "f3d body recipe operand output")?;
     out.push(operand);
     Ok(())
 }
@@ -4639,13 +4223,6 @@ fn parse_body_recipe_operand_frame_with_index(
     }
 
     let mut references = Vec::new();
-    if let Err(error) = ctx.reserve_vec(
-        &mut references,
-        reference_count,
-        "f3d body recipe references",
-    ) {
-        return Some(Err(error));
-    }
     for _ in 0..reference_count {
         references.push(DesignBodyRecipeReference {
             design_reference: View::u64_le_at(bytes, cursor)?,
@@ -4708,10 +4285,7 @@ fn parse_body_recipe_operand_frame_with_index(
     {
         return None;
     }
-    let recipe_id = match ctx.copy_retained_text(&recipe.id, "f3d body recipe operand recipe ID") {
-        Ok(id) => id,
-        Err(error) => return Some(Err(error)),
-    };
+    let recipe_id = recipe.id.clone();
     DesignBodyRecipeOperand::try_new(
         crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: String::new(),
@@ -4746,7 +4320,7 @@ fn parse_body_recipe_operand_frame_with_index(
 
 /// Join body-recipe Design references to solved persistent face tags.
 pub(crate) fn bind_body_recipe_operand_candidates(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     operands: &mut [DesignBodyRecipeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
@@ -4759,9 +4333,6 @@ pub(crate) fn bind_body_recipe_operand_candidates(
         if let Some(existing) = recipes_by_id.get_mut(recipe.id.as_str()) {
             *existing = None;
         } else {
-            {
-                ctx.reserve_map(&mut recipes_by_id, 1, "f3d body recipe candidate index")?;
-            }
             recipes_by_id.insert(recipe.id.as_str(), Some(recipe));
         }
     }
@@ -4785,8 +4356,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             .and_then(|recipe| *recipe)
             .and_then(|recipe| recipe.design.as_ref()?.selector)
             .map(|selector| i64::from(selector.value));
-        let operand_id =
-            { ctx.copy_retained_text(&operand.id, "f3d body recipe candidate operand ID")? };
+        let operand_id = operand.id.clone();
         for reference in operand.reference_bindings_mut() {
             reference.candidate_faces.clear();
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
@@ -4800,17 +4370,12 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                         || tag_selector == Some(tag.selector))
             }) {
                 if let AttributeTarget::Face(face) = &tag.target {
-                    {
-                        push_operand_face_candidate(ctx, reference.candidate_faces, face)?;
-                    }
+                    reference.candidate_faces.push(face.clone());
                 }
             }
-            ctx.stable_sort_by(
-                &mut reference.candidate_faces[..],
-                |left, right| left.as_str().cmp(right.as_str()),
-                |_| 0,
-                "sort f3d design operands 21",
-            )?;
+            reference
+                .candidate_faces
+                .sort_by(|left, right| left.as_str().cmp(right.as_str()));
             reference.candidate_faces.dedup();
         }
     }
@@ -4820,13 +4385,12 @@ pub(crate) fn bind_body_recipe_operand_candidates(
 /// Resolve selection-member local identities against persistent point and
 /// curve identities owned by the Extrude scope's selected Sketch.
 pub(crate) fn bind_extrude_selection_geometry(
-    ctx: &DecodeContext<'_>,
     members: &mut [DesignExtrudeSelectionMember],
     groups: &[DesignExtrudeSelectionGroup],
     scopes: &[DesignParameterScope],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
-) -> Result<(), CodecError> {
+) {
     let mut selected_sketches = HashMap::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -4842,13 +4406,6 @@ pub(crate) fn bind_extrude_selection_geometry(
             continue;
         };
         let key = (stream, group.record_index);
-        if !selected_sketches.contains_key(&key) {
-            ctx.reserve_map(
-                &mut selected_sketches,
-                1,
-                "f3d selected Extrude sketch index",
-            )?;
-        }
         selected_sketches.insert(key, profile.entity_id.suffix());
     }
     for member in members {
@@ -4887,69 +4444,42 @@ pub(crate) fn bind_extrude_selection_geometry(
             member.resolved_geometry = Some(resolved);
         }
     }
-    Ok(())
 }
 
 /// Bind selection members to construction-operand identity chains that
 /// terminate at the same fixed persistent identity record.
 pub(crate) fn bind_extrude_selection_identities(
-    ctx: &DecodeContext<'_>,
     members: &mut [DesignExtrudeSelectionMember],
     identities: &[DesignConstructionOperandIdentity],
-) -> Result<(), CodecError> {
+) {
     for member in members {
         let Some(stream) = native_stream(&member.id) else {
             continue;
         };
-        let mut matches = Vec::new();
-        for identity in identities.iter().filter(|identity| {
-            native_stream(&identity.id) == Some(stream)
-                && identity.following_record_index() == member.record_index()
-                && identity.following_byte_offset() == member.byte_offset()
-                && identity.persistent_identity().is_some_and(|persistent| {
-                    persistent.local_id == member.local_id
-                        && persistent.asset_id == member.asset_id
-                        && persistent.context_id == member.context_id
-                })
-        }) {
-            ctx.reserve_vec(&mut matches, 1, "f3d Extrude identity matches")?;
-            matches.push(identity);
-        }
-        ctx.stable_sort_by(
-            &mut matches[..],
-            |left, right| {
-                let left_key = {
-                    let identity = left;
-                    {
-                        identity
-                            .wrappers()
-                            .first()
-                            .map(|wrapper| wrapper.byte_offset)
-                    }
-                };
-                let right_key = {
-                    let identity = right;
-                    {
-                        identity
-                            .wrappers()
-                            .first()
-                            .map(|wrapper| wrapper.byte_offset)
-                    }
-                };
-                left_key.cmp(&right_key)
-            },
-            |_| 0,
-            "sort f3d design operands 22",
-        )?;
-
-        let mut ids = Vec::new();
-        ctx.reserve_vec(&mut ids, matches.len(), "f3d Extrude identity IDs")?;
-        for identity in matches {
-            ids.push(ctx.copy_retained_text(&identity.id, "f3d Extrude identity ID text")?);
-        }
-        member.operand_identity_ids = ids;
+        let mut matches = identities
+            .iter()
+            .filter(|identity| {
+                native_stream(&identity.id) == Some(stream)
+                    && identity.following_record_index() == member.record_index()
+                    && identity.following_byte_offset() == member.byte_offset()
+                    && identity.persistent_identity().is_some_and(|persistent| {
+                        persistent.local_id == member.local_id
+                            && persistent.asset_id == member.asset_id
+                            && persistent.context_id == member.context_id
+                    })
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by_key(|identity| {
+            identity
+                .wrappers()
+                .first()
+                .map(|wrapper| wrapper.byte_offset)
+        });
+        member.operand_identity_ids = matches
+            .into_iter()
+            .map(|identity| identity.id.clone())
+            .collect();
     }
-    Ok(())
 }
 
 fn parse_extrude_selection_member(
@@ -5252,16 +4782,8 @@ pub(in crate::design) fn parse_sketch_profile(
         return None;
     }
     let region_selection =
-        match parse_sketch_profile_region_selection(ctx, bytes, header.record_index, paired_at) {
-            Some(Ok(value)) => Some(value),
-            Some(Err(error)) => return Some(Err(error)),
-            None => None,
-        };
-    let entity_id_text =
-        match ctx.copy_retained_text(entity.entity_id.as_str(), "f3d sketch profile entity ID") {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
+        parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
+    let entity_id_text = entity.entity_id.as_str().to_owned();
     DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal,
@@ -5283,11 +4805,10 @@ pub(in crate::design) fn parse_sketch_profile(
 }
 
 fn parse_sketch_profile_region_selection(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     profile_record_index: u32,
     paired_at: usize,
-) -> Option<Result<DesignSketchProfileRegionSelection, CodecError>> {
+) -> Option<DesignSketchProfileRegionSelection> {
     const REGION_MARKER_LEN: usize = 1;
     const REGION_COUNT_LEN: usize = 4;
     const TERMINATOR_LEN: usize = 5;
@@ -5351,9 +4872,6 @@ fn parse_sketch_profile_region_selection(
     }
 
     let mut regions = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut regions, region_count, "f3d sketch profile regions") {
-        return Some(Err(error));
-    }
     for region_ordinal in 0..region_count {
         if region_ordinal != 0 {
             if bytes.get(cursor) != Some(&1) {
@@ -5386,13 +4904,6 @@ fn parse_sketch_profile_region_selection(
         }
 
         let mut members = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut members,
-            member_count,
-            "f3d sketch profile region members",
-        ) {
-            return Some(Err(error));
-        }
         for _ in 0..member_count {
             let kind_offset = cursor;
             let kind = View::u32_le_at(bytes, cursor)?;
@@ -5453,7 +4964,7 @@ fn parse_sketch_profile_region_selection(
     if View::u32_le_at(bytes, after_companion_class_tag)? != selection_record_index {
         return None;
     }
-    Some(Ok(DesignSketchProfileRegionSelection {
+    Some(DesignSketchProfileRegionSelection {
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
@@ -5465,7 +4976,7 @@ fn parse_sketch_profile_region_selection(
         companion_class_tag: crate::design::decode::text::class_tag_from_view(companion_class_tag)
             .ok()?,
         companion_byte_offset: u64::try_from(companion_at).ok()?,
-    }))
+    })
 }
 
 struct ParsedRecipeOperand {
@@ -5642,20 +5153,9 @@ fn parse_recipe_operand(
     if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
         return None;
     }
-    let recipe_program =
-        match contiguous_i32_program(ctx, bytes, recipe_program_at, recipe_program_end)? {
-            Ok(program) => program,
-            Err(error) => return Some(Err(error)),
-        };
-    let recipe_prefix_bytes =
-        match ctx.copy_retained(recipe_prefix_bytes, "f3d recipe operand prefix") {
-            Ok(prefix) => prefix,
-            Err(error) => return Some(Err(error)),
-        };
-    let recipe_id = match ctx.copy_retained_text(&recipe.id, "f3d recipe operand recipe ID") {
-        Ok(id) => id,
-        Err(error) => return Some(Err(error)),
-    };
+    let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
+    let recipe_prefix_bytes = recipe_prefix_bytes.to_vec();
+    let recipe_id = recipe.id.clone();
     Some(Ok(ParsedRecipeOperand {
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: crate::design::decode::text::class_tag_from_view(indexed[0].0).ok()?,
@@ -5721,7 +5221,6 @@ fn parse_edge_operand(
     let surface_patch_recipe_structure =
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
             match surface_patch_recipe_structure_with_context(
-                ctx,
                 &parsed.recipe_program,
                 parsed.recipe_references.len(),
             ) {
@@ -5731,17 +5230,9 @@ fn parse_edge_operand(
         } else {
             None
         };
-    let local_topology_references = match recipe_structure.as_ref() {
-        Some(structure) => match edge_recipe_local_topology_references_with_context(
-            ctx,
-            structure,
-            parsed.recipe_references.len(),
-        ) {
-            Ok(references) => references,
-            Err(error) => return Some(Err(error)),
-        },
-        None => None,
-    };
+    let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
+        edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
+    });
     let id = match design_record_id_charged(
         ctx,
         stream
@@ -5820,7 +5311,6 @@ pub(crate) fn edge_recipe_structure_with_context(
 /// references, and the fourth and sixth fields are zero pairs. The final field
 /// is a counted sequence of the standard eight-word topology entries.
 pub(crate) fn surface_patch_recipe_structure_with_context(
-    ctx: &DecodeContext<'_>,
     program: &[i32],
     reference_count: usize,
 ) -> Result<
@@ -5837,9 +5327,9 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
         return Ok(None);
     }
     remaining = tail;
-    let mut clauses = ctx.collection_vec(2, "collect F3D SurfacePatch clauses")?;
+    let mut clauses = Vec::new();
     for _ in 0..2 {
-        let mut fields = ctx.collection_vec(6, "collect F3D SurfacePatch fields")?;
+        let mut fields = Vec::new();
         for _ in 0..6 {
             let Some(delimiter_at) = remaining.iter().position(|word| *word == -1) else {
                 return Ok(None);
@@ -5850,10 +5340,7 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
             let Some(field) = remaining.get(..delimiter_at) else {
                 return Ok(None);
             };
-            let field = ctx.collect_vec(
-                field.iter().copied(),
-                "collect F3D SurfacePatch field words",
-            )?;
+            let field = field.iter().copied().collect::<Vec<_>>();
             if field.is_empty() || field.iter().any(|word| *word < 0) {
                 return Ok(None);
             }
@@ -5878,7 +5365,7 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
         let Some(payload) = tail.get(..payload_word_count) else {
             return Ok(None);
         };
-        let Some(entries) = edge_recipe_entries_with_context(ctx, payload)? else {
+        let Some(entries) = edge_recipe_entries(payload) else {
             return Ok(None);
         };
         if u32::try_from(entries.len()).ok() != Some(payload_entry_count) {
@@ -5925,7 +5412,6 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
                 fields,
                 face_reference_ordinals,
                 edge_reference_ordinals,
-
                 entries,
             },
         );
@@ -5944,25 +5430,11 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
     }))
 }
 
-#[cfg(test)]
 fn edge_recipe_local_topology_references(
     structure: &crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
     reference_count: usize,
 ) -> Option<Vec<std::num::NonZeroU32>> {
-    crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_local_topology_references_with_context(decode_ctx, structure, reference_count)
-            .ok()
-            .flatten()
-    })
-}
-
-fn edge_recipe_local_topology_references_with_context(
-    ctx: &DecodeContext<'_>,
-    structure: &crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
-    reference_count: usize,
-) -> Result<Option<Vec<std::num::NonZeroU32>>, CodecError> {
     topology_recipe_references(
-        ctx,
         structure.sides.iter().flat_map(|side| {
             std::iter::once(side.header_value).chain(side.scalars.iter().copied())
         }),
@@ -6015,18 +5487,15 @@ fn edge_recipe_side_sequences<'w>(
     words: &'w [i32],
     side_count: usize,
 ) -> Result<Vec<RecipeSideSequence<'w>>, CodecError> {
-    let _depth = Some(ctx.enter_nested("f3d recipe side recursion")?);
+    let _depth = ctx.enter_nested("f3d recipe side recursion")?;
     if side_count == 0 {
-        let mut empty = Vec::new();
-        ctx.reserve_vec(&mut empty, 1, "f3d recipe empty side sequence")?;
-        empty.push(RecipeSideSequence {
+        return Ok(vec![RecipeSideSequence {
             sides: Vec::new(),
             remaining: words,
-        });
-        return Ok(empty);
+        }]);
     }
     let mut out = Vec::new();
-    for (side, tail) in edge_recipe_counted_side_candidates(ctx, words)? {
+    for (side, tail) in edge_recipe_counted_side_candidates(words) {
         let remaining = if side_count == 1 {
             tail
         } else if let Some(remaining) = recipe_delimiter(tail) {
@@ -6039,10 +5508,7 @@ fn edge_recipe_side_sequences<'w>(
             remaining: tail,
         } in edge_recipe_side_sequences(ctx, remaining, side_count - 1)?
         {
-            let copied = copy_recipe_side(ctx, &side)?;
-            ctx.reserve_vec(&mut following, 1, "f3d recipe following side")?;
-            following.insert(0, copied);
-            ctx.reserve_vec(&mut out, 1, "f3d recipe side sequence")?;
+            following.insert(0, copy_recipe_side(&side));
             out.push(RecipeSideSequence {
                 sides: following,
                 remaining: tail,
@@ -6052,16 +5518,13 @@ fn edge_recipe_side_sequences<'w>(
     Ok(out)
 }
 
-fn copy_recipe_side(
-    ctx: &DecodeContext<'_>,
-    side: &DesignTopologyRecipeSide,
-) -> Result<DesignTopologyRecipeSide, CodecError> {
-    Ok(DesignTopologyRecipeSide {
+fn copy_recipe_side(side: &DesignTopologyRecipeSide) -> DesignTopologyRecipeSide {
+    DesignTopologyRecipeSide {
         header_value: side.header_value,
-        scalars: ctx.copy_slice(&side.scalars, "f3d recipe copied scalars")?,
-        payload_prefix: ctx.copy_slice(&side.payload_prefix, "f3d recipe copied payload prefix")?,
-        entries: ctx.copy_slice(&side.entries, "f3d recipe copied entries")?,
-    })
+        scalars: side.scalars.clone(),
+        payload_prefix: side.payload_prefix.clone(),
+        entries: side.entries.clone(),
+    }
 }
 
 fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
@@ -6093,57 +5556,48 @@ fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
 }
 
 fn edge_recipe_counted_side_candidates<'w>(
-    ctx: &DecodeContext<'_>,
     words: &'w [i32],
-) -> Result<Vec<(DesignTopologyRecipeSide, &'w [i32])>, CodecError> {
+) -> Vec<(DesignTopologyRecipeSide, &'w [i32])> {
     let Some(field_count) = words
         .first()
         .and_then(|word| u32::try_from(*word).ok())
         .and_then(std::num::NonZeroU32::new)
     else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     if field_count.get() < 2 {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let Some(scalar_count) = usize::try_from(field_count.get())
         .ok()
         .and_then(|count| count.checked_sub(1))
     else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let Some(&header_value) = words.get(1) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let Some(mut remaining) = words.get(2..).and_then(recipe_delimiter) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     // Each scalar consumes at least one remaining word; a larger count is
     // corrupt and must not reach the allocator.
     if scalar_count > remaining.len() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let mut scalars = Vec::new();
-    ctx.reserve_vec(&mut scalars, scalar_count, "f3d recipe scalars")?;
     for _ in 0..scalar_count {
         let Some((&scalar, tail)) = remaining.split_first() else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         scalars.push(scalar);
         let Some(tail) = recipe_delimiter(tail) else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         remaining = tail;
     }
     let mut candidates = Vec::new();
     for entry_count_at in 0..remaining.len() {
-        {
-            let work = u64::try_from(entry_count_at)
-                .ok()
-                .and_then(|length| length.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit("f3d recipe payload candidates", 0, 1))?;
-            ctx.charge_work(work, "f3d recipe payload candidates")?;
-        }
         if !complete_recipe_payload_prefix(&remaining[..entry_count_at]) {
             continue;
         }
@@ -6160,22 +5614,18 @@ fn edge_recipe_counted_side_candidates<'w>(
         let Some((entries_at, entries_end, tail)) = candidate else {
             continue;
         };
-        let Some(entries) =
-            edge_recipe_entries_with_context(ctx, &remaining[entries_at..entries_end])?
-        else {
+        let Some(entries) = edge_recipe_entries(&remaining[entries_at..entries_end]) else {
             continue;
         };
         let side = DesignTopologyRecipeSide {
             header_value,
-            scalars: ctx.copy_slice(&scalars, "f3d recipe candidate scalars")?,
-            payload_prefix: ctx
-                .copy_slice(&remaining[..entry_count_at], "f3d recipe payload prefix")?,
+            scalars: scalars.clone(),
+            payload_prefix: remaining[..entry_count_at].to_vec(),
             entries,
         };
-        ctx.reserve_vec(&mut candidates, 1, "f3d recipe side candidate")?;
         candidates.push((side, tail));
     }
-    Ok(candidates)
+    candidates
 }
 
 pub(crate) fn face_recipe_structure_with_context(
@@ -6256,7 +5706,6 @@ fn face_recipe_nodes_with_context(
         if values != [-1, -1, 2] {
             continue;
         }
-        ctx.reserve_vec(&mut recipe_node_indices, 1, "f3d face recipe node index")?;
         recipe_node_indices.push(index);
     }
     if recipe_node_indices.first().is_some_and(|index| *index < 3) {
@@ -6295,8 +5744,7 @@ fn face_recipe_nodes_with_context(
             Some(tail) => face_recipe_structure_with_context(ctx, tail)?,
             None => None,
         };
-        let program = ctx.copy_slice(program, "f3d face recipe node program")?;
-        ctx.reserve_vec(&mut recipe_nodes, 1, "f3d face recipe node")?;
+        let program = program.to_vec();
         recipe_nodes.push(crate::records::topology::face::DesignFaceRecipeNode {
             byte_offset,
             end_byte_offset,
@@ -6308,43 +5756,29 @@ fn face_recipe_nodes_with_context(
 }
 
 fn topology_recipe_references(
-    ctx: &DecodeContext<'_>,
     words: impl IntoIterator<Item = i32>,
     reference_count: usize,
-) -> Result<Option<Vec<std::num::NonZeroU32>>, CodecError> {
+) -> Option<Vec<std::num::NonZeroU32>> {
     let mut references = Vec::new();
     for word in words {
         if word == 0 {
             continue;
         }
-        let Some(ordinal) = u32::try_from(word).ok().and_then(std::num::NonZeroU32::new) else {
-            return Ok(None);
-        };
+        let ordinal = u32::try_from(word)
+            .ok()
+            .and_then(std::num::NonZeroU32::new)?;
         if usize::try_from(ordinal.get())
             .ok()
             .is_none_or(|index| index > reference_count)
         {
-            return Ok(None);
+            return None;
         }
-        ctx.reserve_vec(&mut references, 1, "f3d recipe topology reference")?;
         references.push(ordinal);
     }
-    Ok(Some(references))
+    Some(references)
 }
 
-#[cfg(test)]
 fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
-    crate::test_support::with_decode_context(|decode_ctx| {
-        edge_recipe_entries_with_context(decode_ctx, words)
-            .ok()
-            .flatten()
-    })
-}
-
-fn edge_recipe_entries_with_context(
-    ctx: &DecodeContext<'_>,
-    words: &[i32],
-) -> Result<Option<Vec<DesignTopologyRecipeEntry>>, CodecError> {
     let mut entries = Vec::new();
     for entry in words.chunks_exact(8) {
         let Some(parsed) = (|| {
@@ -6366,18 +5800,17 @@ fn edge_recipe_entries_with_context(
                     topology_triplets,
                 })
         })() else {
-            return Ok(None);
+            return None;
         };
         if entries
             .last()
             .is_some_and(|last: &DesignTopologyRecipeEntry| last.selector >= parsed.selector)
         {
-            return Ok(None);
+            return None;
         }
-        ctx.reserve_vec(&mut entries, 1, "f3d recipe topology entry")?;
         entries.push(parsed);
     }
-    Ok(Some(entries))
+    Some(entries)
 }
 
 fn edge_recipe_topology_triplet(
@@ -6547,16 +5980,8 @@ pub(super) fn parse_face_operand(
     if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
         return None;
     }
-    let recipe_program =
-        match contiguous_i32_program(ctx, bytes, recipe_program_at, recipe_program_end)? {
-            Ok(program) => program,
-            Err(error) => return Some(Err(error)),
-        };
-    let recipe_prefix_bytes =
-        match ctx.copy_retained(recipe_prefix_bytes, "f3d face operand prefix") {
-            Ok(prefix) => prefix,
-            Err(error) => return Some(Err(error)),
-        };
+    let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
+    let recipe_prefix_bytes = recipe_prefix_bytes.to_vec();
     let program_kind = face_recipe_program_kind(&recipe_program)?;
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
     let recipe_nodes =
@@ -6566,10 +5991,7 @@ pub(super) fn parse_face_operand(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
-    let recipe_id = match ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID") {
-        Ok(id) => id,
-        Err(error) => return Some(Err(error)),
-    };
+    let recipe_id = recipe.id.clone();
     let id = match design_record_id_charged(
         ctx,
         stream

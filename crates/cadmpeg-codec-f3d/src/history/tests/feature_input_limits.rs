@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission limits for projected feature input topology.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 fn input_fixture() -> (
@@ -73,16 +72,9 @@ fn input_fixture() -> (
     (feature, scope, history)
 }
 
-fn project(
-    max_items: u64,
-    max_retained_bytes: u64,
-) -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
+fn project() -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
     let (feature, scope, history) = input_fixture();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained_bytes;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
     super::super::project_feature_input_topologies(
         &ctx,
         std::slice::from_ref(&feature),
@@ -94,70 +86,8 @@ fn project(
 }
 
 #[test]
-fn input_body_members_refuse_collection_limit() {
-    let error = project(0, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D input bodies")
-    );
-}
-
-#[test]
-fn input_face_members_charge_collection_items() {
-    // Released input scratch peaks above this charge, so no ceiling refuses it.
-    cadmpeg_test_support::refusal::assert_charged(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "collect F3D input faces",
-        || project(u64::MAX, u64::MAX),
-    );
-}
-
-#[test]
-fn input_edge_members_charge_collection_items() {
-    // Released input scratch peaks above this charge, so no ceiling refuses it.
-    cadmpeg_test_support::refusal::assert_charged(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "collect F3D input edges",
-        || project(u64::MAX, u64::MAX),
-    );
-}
-
-#[test]
-fn input_vertex_members_charge_collection_items() {
-    // Released input scratch peaks above this charge, so no ceiling refuses it.
-    cadmpeg_test_support::refusal::assert_charged(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "collect F3D input vertices",
-        || project(u64::MAX, u64::MAX),
-    );
-}
-
-#[test]
-fn input_topologies_charge_collection_items() {
-    // Released input scratch peaks above this charge, so no ceiling refuses it.
-    cadmpeg_test_support::refusal::assert_charged(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "collect F3D input topologies",
-        || project(u64::MAX, u64::MAX),
-    );
-}
-
-#[test]
-fn input_identity_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain F3D history input identity",
-        |cap| project(u64::MAX, cap).map(|_| ()),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D history input identity")
-    );
-}
-
-#[test]
 fn input_projection_preserves_member_order() {
-    let projected = project(9, u64::MAX).unwrap();
+    let projected = project().unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(
         projected[0].vertices.as_slice()[0].as_str(),
@@ -208,7 +138,7 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     assert_eq!(inputs.len(), 1);
     assert_eq!(
         inputs[0].faces.as_slice(),
-        &[crate::ids::history_input_face_id_charged(&ctx, &feature.id, 4, 2).unwrap()]
+        &[crate::ids::history_input_face_id_charged(&feature.id, 4, 2).unwrap()]
     );
     assert_eq!(
         inputs[0].native_ref.as_deref(),

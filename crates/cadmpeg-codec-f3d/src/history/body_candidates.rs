@@ -3,7 +3,7 @@
 use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
 use crate::records::sketch_links::PersistentDesignLink;
 use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::topology::{Body, Region, Shell};
@@ -45,75 +45,38 @@ impl<'a> BodyCandidates<'a> {
             linked: None,
         }
     }
-    fn external_index(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<&ExternalIndex<'a>, CodecError> {
-        if self.external.is_none() {
+    fn external_index(&mut self) -> &ExternalIndex<'a> {
+        let (bodies, regions, shells) = (self.bodies, self.regions, self.shells);
+        self.external.get_or_insert_with(|| {
             let mut body_by_region = HashMap::new();
-            for region in self.regions {
-                ctx.charge_work(
-                    u64_from_index(region.id.as_str().len()) + 1,
-                    "index F3D external body regions",
-                )?;
-                ctx.insert_hash_map(
-                    &mut body_by_region,
-                    &region.id,
-                    &region.body,
-                    "index F3D external body regions",
-                )?;
+            for region in regions {
+                body_by_region.insert(&region.id, &region.body);
             }
             let mut body_by_face = HashMap::new();
-            for shell in self.shells {
-                ctx.charge_work(
-                    u64_from_index(shell.region.as_str().len()) + 1,
-                    "index F3D external body faces",
-                )?;
+            for shell in shells {
                 let Some(body) = body_by_region.get(&shell.region).copied() else {
                     continue;
                 };
                 for face in shell.faces() {
-                    ctx.charge_work(
-                        u64_from_index(face.as_str().len()) + 1,
-                        "index F3D external body faces",
-                    )?;
-                    ctx.insert_hash_map(
-                        &mut body_by_face,
-                        face,
-                        body,
-                        "index F3D external body faces",
-                    )?;
+                    body_by_face.insert(face, body);
                 }
             }
             let mut metadata = HashMap::new();
-            for body in self.bodies {
-                ctx.charge_work(
-                    u64_from_index(body.id.as_str().len()) + 1,
-                    "index F3D external body metadata",
-                )?;
-                ctx.insert_hash_map(
-                    &mut metadata,
-                    &body.id,
-                    body,
-                    "index F3D external body metadata",
-                )?;
+            for body in bodies {
+                metadata.insert(&body.id, body);
             }
-            self.external = Some(ExternalIndex {
+            ExternalIndex {
                 body_by_face,
                 metadata,
-            });
-        }
-        self.external
-            .as_ref()
-            .ok_or_else(|| CodecError::malformed("external body index was not built"))
+            }
+        })
     }
     pub(super) fn face_body_candidates(
         &mut self,
-        ctx: &DecodeContext<'_>,
         operand: &DesignBodyRecipeOperand,
         selected: &BodyId,
-    ) -> Result<(bool, bool), CodecError> {
-        let index = self.external_index(ctx)?;
+    ) -> (bool, bool) {
+        let index = self.external_index();
         let mut any = false;
         let mut contains = false;
         for face in operand
@@ -121,10 +84,6 @@ impl<'a> BodyCandidates<'a> {
             .iter()
             .flat_map(|reference| &reference.candidate_faces)
         {
-            ctx.charge_work(
-                u64_from_index(face.as_str().len()) + 1,
-                "resolve F3D body recipe face carrier",
-            )?;
             if let Some(body) = index
                 .body_by_face
                 .get(face)
@@ -134,7 +93,7 @@ impl<'a> BodyCandidates<'a> {
                 contains |= *body == selected;
             }
         }
-        Ok((any, contains))
+        (any, contains)
     }
     pub(super) fn linked(
         &mut self,
@@ -150,45 +109,26 @@ impl<'a> BodyCandidates<'a> {
         if self.linked.is_none() {
             let mut recipes = HashMap::new();
             for recipe in self.recipes {
-                ctx.charge_work(1, "walk F3D body recipes")?;
                 if recipe.kind != ConstructionRecipeKind::Body {
                     continue;
                 }
-                ctx.charge_work(
-                    u64_from_index(recipe.id.len()) + 1,
-                    "index F3D body recipe links",
-                )?;
-                if !recipes.contains_key(recipe.id.as_str()) {
-                    ctx.reserve_map(&mut recipes, 1, "index F3D body recipe links")?;
-                }
+
                 recipes
                     .entry(recipe.id.as_str())
                     .and_modify(|row| *row = None)
                     .or_insert(Some(recipe));
             }
-            for body in self.bodies {
-                ctx.charge_work(
-                    u64_from_index(body.id.as_str().len()) + 1,
-                    "index F3D linked live bodies",
-                )?;
-            }
-            let live = ctx.collect_hash_set(
-                self.bodies.iter().map(|body| &body.id),
-                "index F3D linked live bodies",
-            )?;
+            let live = self
+                .bodies
+                .iter()
+                .map(|body| &body.id)
+                .collect::<std::collections::HashSet<_>>();
             let mut latest = HashMap::<&BodyId, &PersistentDesignLink>::new();
             for link in self.links {
-                ctx.charge_work(1, "walk F3D persistent body links")?;
                 let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
                     continue;
                 };
-                ctx.charge_work(
-                    u64_from_index(body.as_str().len()) + 1,
-                    "resolve F3D persistent body link",
-                )?;
-                if !latest.contains_key(body) {
-                    ctx.reserve_map(&mut latest, 1, "index F3D latest body links")?;
-                }
+
                 latest
                     .entry(body)
                     .and_modify(|previous| {
@@ -204,13 +144,7 @@ impl<'a> BodyCandidates<'a> {
                     continue;
                 }
                 let key = (link.design_id.as_str(), link.design_reference);
-                ctx.charge_work(
-                    u64_from_index(key.0.len()) + 1,
-                    "resolve F3D persistent body link",
-                )?;
-                if !selected.contains_key(&key) {
-                    ctx.reserve_map(&mut selected, 1, "index F3D selected body links")?;
-                }
+
                 selected
                     .entry(key)
                     .and_modify(|previous| {
@@ -225,10 +159,7 @@ impl<'a> BodyCandidates<'a> {
         let Some(index) = self.linked.as_ref() else {
             return Ok(None);
         };
-        ctx.charge_work(
-            u64_from_index(operand.recipe_id.len()) + 1,
-            "resolve F3D persistent body link",
-        )?;
+
         let Some(recipe) = index
             .recipes
             .get(operand.recipe_id.as_str())
@@ -246,10 +177,7 @@ impl<'a> BodyCandidates<'a> {
         let Some(selector) = design.selector else {
             return Ok(None);
         };
-        ctx.charge_work(
-            u64_from_index(design.id.value.len()) + 1,
-            "resolve F3D persistent body link",
-        )?;
+
         let Some(body) = index
             .selected
             .get(&(design.id.value.as_str(), i64::from(selector.value)))
@@ -269,7 +197,7 @@ impl<'a> BodyCandidates<'a> {
         operand: &DesignBodyRecipeOperand,
     ) -> Result<Option<BodyId>, CodecError> {
         if let Some(body) = self.linked(ctx, operand)? {
-            let (any, contains) = self.face_body_candidates(ctx, operand, &body)?;
+            let (any, contains) = self.face_body_candidates(operand, &body);
             return Ok((!any || contains).then_some(body));
         }
         self.external(ctx, operand, None)
@@ -280,25 +208,14 @@ impl<'a> BodyCandidates<'a> {
         operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
         current_history_source: Option<&str>,
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
-        let index = self.external_index(ctx)?;
+        let index = self.external_index();
         let body_by_face = &index.body_by_face;
         let body_metadata = &index.metadata;
-        let current_prefix = current_history_source
-            .map(|source| {
-                ctx.format_retained(
-                    format_args!("f3d:brep/{source}/"),
-                    "retain F3D current history prefix",
-                )
-            })
-            .transpose()?;
+        let current_prefix = current_history_source.map(|source| format!("f3d:brep/{source}/"));
         let mut candidates: Option<BTreeSet<cadmpeg_ir::ids::BodyId>> = None;
         for reference in operand.references() {
             let mut reference_candidates = BTreeSet::new();
             for face in &reference.candidate_faces {
-                ctx.charge_work(
-                    u64_from_index(face.as_str().len()) + 1,
-                    "query F3D external body faces",
-                )?;
                 let Some(body) = body_by_face.get(face).copied() else {
                     continue;
                 };
@@ -310,11 +227,7 @@ impl<'a> BodyCandidates<'a> {
                 }
                 if !reference_candidates.contains(body) {
                     let id = body.try_clone_for_decode(ctx, "copy F3D external body candidate")?;
-                    ctx.insert_btree_set(
-                        &mut reference_candidates,
-                        id,
-                        "collect F3D external body candidates",
-                    )?;
+                    reference_candidates.insert(id);
                 }
             }
             if let Some(candidates) = &mut candidates {
@@ -336,7 +249,7 @@ impl<'a> BodyCandidates<'a> {
                 .is_some_and(|body| body.visible == Some(true))
         }) {
             let id = body.try_clone_for_decode(ctx, "copy F3D displayed external body")?;
-            ctx.insert_btree_set(&mut displayed, id, "collect F3D displayed external bodies")?;
+            displayed.insert(id);
         }
         if !displayed.is_empty() {
             candidates = displayed;

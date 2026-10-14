@@ -5,7 +5,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::fillet::deserialize_historical_binding;
 use super::fillet::HistoricalBinding;
-use crate::records::admission::RecordAdmission;
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
@@ -152,38 +151,15 @@ pub(crate) struct DesignExtrudeSelectionGroupWire {
     pub(crate) paired_byte_offset: u64,
 }
 
-enum ExtrudeSelectionWireError {
-    Payload(String),
-    Resource(CodecError),
-}
-
-impl From<String> for ExtrudeSelectionWireError {
-    fn from(value: String) -> Self {
-        Self::Payload(value)
-    }
-}
-
-impl From<&'static str> for ExtrudeSelectionWireError {
-    fn from(value: &'static str) -> Self {
-        Self::Payload(value.into())
-    }
-}
-
 impl DesignExtrudeSelectionGroup {
     pub(crate) fn from_wire_charged(
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         wire: DesignExtrudeSelectionGroupWire,
     ) -> Result<Self, CodecError> {
-        Self::from_wire_inner(RecordAdmission::Charged(ctx), wire).map_err(|error| match error {
-            ExtrudeSelectionWireError::Payload(message) => CodecError::Malformed(message),
-            ExtrudeSelectionWireError::Resource(error) => error,
-        })
+        Self::from_wire_inner(wire).map_err(CodecError::Malformed)
     }
 
-    fn from_wire_inner(
-        admission: RecordAdmission<'_, '_>,
-        wire: DesignExtrudeSelectionGroupWire,
-    ) -> Result<Self, ExtrudeSelectionWireError> {
+    fn from_wire_inner(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, String> {
         if wire.members.len() != wire.member_offsets.len() {
             return Err("members and member_offsets must have equal lengths".into());
         }
@@ -193,12 +169,7 @@ impl DesignExtrudeSelectionGroup {
             if unique.contains(member) {
                 return Err("members must be distinct".into());
             }
-            {
-                let operation = "index F3D extrude selection members";
-                admission
-                    .reserve_set(&mut unique, 1, operation)
-                    .map_err(ExtrudeSelectionWireError::Resource)?;
-            }
+            {}
             unique.insert(member);
         }
         if wire.member_count_offset != offsets[0]
@@ -222,9 +193,7 @@ impl DesignExtrudeSelectionGroup {
             NonZeroU32::new(wire.opaque_index).ok_or("opaque_index must be nonzero")?;
         let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(wire.opaque_scalar)
             .ok_or("opaque_scalar must be finite")?;
-        let mut members = admission
-            .collection_vec(wire.members.len(), "admit F3D extrude selection members")
-            .map_err(ExtrudeSelectionWireError::Resource)?;
+        let mut members = Vec::new();
         members.extend(
             wire.members
                 .into_iter()
@@ -252,10 +221,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
     type Error = String;
 
     fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
-        Self::from_wire_inner(RecordAdmission::Admitted, wire).map_err(|error| match error {
-            ExtrudeSelectionWireError::Payload(message) => message,
-            ExtrudeSelectionWireError::Resource(error) => error.to_string(),
-        })
+        Self::from_wire_inner(wire)
     }
 }
 

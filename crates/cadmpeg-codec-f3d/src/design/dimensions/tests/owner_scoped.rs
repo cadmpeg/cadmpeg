@@ -770,17 +770,3 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         .expect("resource allocation did not fail")
     );
 }
-
-mod refusal_radial_dimension_definition_at_tolerance;
-
-mod refusal_owner_scoped_radial;
-
-mod refusal_owner_scoped_line_length;
-
-mod refusal_owner_scoped_angular;
-
-mod refusal_preceding_incident_angular;
-
-mod refusal_unique_point_class;
-
-mod refusal_radial_locus;

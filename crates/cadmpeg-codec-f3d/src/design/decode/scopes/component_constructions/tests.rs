@@ -16,89 +16,11 @@ fn tested_component_insert_construction(
 }
 
 #[test]
-fn component_carrier_role_text_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let role = "b2231f72-46dc-40fa-b8e8-10cd208d7df8_urn:adsk.test:asset";
-    let mut bytes = Vec::new();
-    bytes.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
-    bytes.extend_from_slice(&[0, 0x21, 0, 0, 0, 0, 1, 0, 0, 0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(role.len() - 1).unwrap();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::direct_utf16_role_until_tail(&ctx, &bytes, 0, bytes.len()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-        if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == "f3d component carrier role text")
-    );
-}
-
-#[test]
 fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
-    run_component_insert_scope_fixture(None);
+    run_component_insert_scope_fixture();
 }
 
-#[test]
-fn component_insert_placement_collections_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let cases = match stage {
-            "legacy" => &[
-                (0, "f3d legacy component insert placements"),
-                (1, "f3d component insert merged placements"),
-            ][..],
-            _ => &[(0, "f3d component insert placements")][..],
-        };
-        for (limit, operation) in cases {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = *limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error =
-                exact_component_insert_construction(&ctx, bytes, &records, scope).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == *operation)
-            );
-        }
-    };
-    run_component_insert_scope_fixture(Some(probe));
-}
-
-#[test]
-fn legacy_component_identity_text_refuses_materialized_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
-        if stage != "legacy" {
-            return;
-        }
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        for limit in [0, 46] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_materialized_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error =
-                exact_component_insert_construction(&ctx, bytes, &records, scope).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::MaterializedBytes
-                    && failure.operation == "f3d Design temporary UTF-16 text")
-            );
-        }
-    };
-    run_component_insert_scope_fixture(Some(probe));
-}
-
-fn run_component_insert_scope_fixture(
-    probe: Option<fn(&[u8], &DesignParameterScope, &'static str)>,
-) {
+fn run_component_insert_scope_fixture() {
     let header = |bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(class_tag);
@@ -180,10 +102,6 @@ fn run_component_insert_scope_fixture(
         .with_fixture_layout(),
     )
     .unwrap();
-
-    if let Some(probe) = probe {
-        probe(&bytes, &scope, "simple");
-    }
 
     let construction = tested_component_insert_construction(
         &bytes,
@@ -329,9 +247,6 @@ fn run_component_insert_scope_fixture(
         .with_fixture_layout(),
     )
     .unwrap();
-    if let Some(probe) = probe {
-        probe(&expanded, &expanded_scope, "expanded");
-    }
     let construction = tested_component_insert_construction(
         &expanded,
         &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
@@ -410,9 +325,6 @@ fn run_component_insert_scope_fixture(
         .with_fixture_layout(),
     )
     .unwrap();
-    if let Some(probe) = probe {
-        probe(&legacy, &legacy_scope, "legacy");
-    }
     let construction = tested_component_insert_construction(
         &legacy,
         &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
@@ -1272,74 +1184,4 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     );
 }
 
-#[test]
-fn component_insert_scanned_role_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
-        if stage != "simple" {
-            return;
-        }
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 35;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(
-            matches!(exact_component_insert_construction(&ctx, bytes, &records, scope),
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d Design UTF-16 text")
-        );
-    };
-    run_component_insert_scope_fixture(Some(probe));
-}
-
 mod copy_paste;
-
-#[test]
-fn component_insert_scans_preserve_work_refusals() {
-    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
-        if stage == "simple" {
-            return;
-        }
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error =
-                exact_component_insert_construction(ctx, bytes, &records, scope).unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("carrier scan must refuse");
-            };
-            assert_eq!(
-                limit.dimension,
-                cadmpeg_core::decode::ResourceDimension::WorkUnits
-            );
-            assert_eq!(Some(limit), ctx.resource_refusal());
-        });
-    };
-    run_component_insert_scope_fixture(Some(probe));
-}
-
-#[test]
-fn accepted_component_insert_roles_preserve_retained_refusals() {
-    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
-        if stage == "simple" {
-            return;
-        }
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "f3d Design UTF-16 text",
-            0,
-            |ctx| exact_component_insert_construction(ctx, bytes, &records, scope),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "f3d Design UTF-16 text")
-        );
-    };
-    run_component_insert_scope_fixture(Some(probe));
-}

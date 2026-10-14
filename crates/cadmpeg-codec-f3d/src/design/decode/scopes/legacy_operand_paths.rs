@@ -25,7 +25,7 @@ use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_legacy_class_388_scope(
@@ -188,7 +188,6 @@ const CLASS_383_OPERAND_SPECS: [LegacyClass383OperandSpec; 2] = [
 ];
 
 pub(super) fn exact_legacy_class_383_operand_paths(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -205,15 +204,12 @@ pub(super) fn exact_legacy_class_383_operand_paths(
         }
         let [first, second] = CLASS_383_OPERAND_SPECS;
         Some(Ok([
-            match exact_legacy_class_383_operand_path(ctx, bytes, records, scope, &frames[0], first)
-            {
+            match exact_legacy_class_383_operand_path(bytes, records, scope, &frames[0], first) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             },
-            match exact_legacy_class_383_operand_path(
-                ctx, bytes, records, scope, &frames[1], second,
-            ) {
+            match exact_legacy_class_383_operand_path(bytes, records, scope, &frames[1], second) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
@@ -224,7 +220,6 @@ pub(super) fn exact_legacy_class_383_operand_paths(
 }
 
 fn exact_legacy_class_383_operand_path(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -418,7 +413,7 @@ fn exact_legacy_class_383_operand_path(
             leading_identity_guid,
             occurrence_guid_offset,
             identity_guid_offset,
-        ) = match exact_legacy_class_383_identity_guids(ctx, bytes, leading_identity_at) {
+        ) = match exact_legacy_class_383_identity_guids(bytes, leading_identity_at) {
             Ok(Some(value)) => value,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -429,7 +424,7 @@ fn exact_legacy_class_383_operand_path(
             second_face_identity_at,
         ] {
             let (occurrence_guid, identity_guid, _, _) =
-                match exact_legacy_class_383_identity_guids(ctx, bytes, identity_at) {
+                match exact_legacy_class_383_identity_guids(bytes, identity_at) {
                     Ok(Some(value)) => value,
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
@@ -506,7 +501,6 @@ fn exact_legacy_class_383_record_frame(
 }
 
 fn exact_legacy_class_383_identity_guids(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
 ) -> Result<
@@ -521,13 +515,12 @@ fn exact_legacy_class_383_identity_guids(
     (|| {
         let first_at = start.checked_add(class_383_identity::OCCURRENCE_GUID)?;
         let second_at = start.checked_add(class_383_identity::IDENTITY_GUID)?;
-        let (occurrence_guid, after_occurrence) =
-            match fixed_relaxed_guid_text(ctx, bytes, first_at) {
-                Ok(Some(value)) => value,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-        let (identity_guid, after_identity) = match fixed_relaxed_guid_text(ctx, bytes, second_at) {
+        let (occurrence_guid, after_occurrence) = match fixed_relaxed_guid_text(bytes, first_at) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let (identity_guid, after_identity) = match fixed_relaxed_guid_text(bytes, second_at) {
             Ok(Some(value)) => value,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -559,7 +552,6 @@ struct LegacyClass412Path {
 }
 
 pub(super) fn exact_legacy_class_388_operand_paths(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -598,11 +590,7 @@ pub(super) fn exact_legacy_class_388_operand_paths(
                 .copied()
                 .filter(|locator_at| *locator_at >= search_start)
             {
-                if let Err(error) = ctx.charge_work(1, "f3d legacy path candidate") {
-                    return Some(Err(error));
-                }
                 let path = match exact_legacy_class_388_operand_path_envelope(
-                    ctx,
                     bytes,
                     records,
                     scope,
@@ -645,7 +633,6 @@ pub(super) fn exact_legacy_class_388_operand_paths(
 }
 
 fn exact_legacy_class_388_operand_path_envelope(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -742,9 +729,6 @@ fn exact_legacy_class_388_operand_path_envelope(
             return None;
         }
         let mut path_at = next_indexed_record_offset(bytes, locator_end)?;
-        if let Err(error) = ctx.charge_work(u64::from(path_count), "f3d legacy path records") {
-            return Some(Err(error));
-        }
         let mut path_records = [None, None];
         let mut final_path_reference_offset = None;
         for ordinal in 0..path_count {
@@ -755,8 +739,7 @@ fn exact_legacy_class_388_operand_path_envelope(
             }
             let path_end = next_indexed_record_offset(bytes, path_at.checked_add(1)?)?;
             let path =
-                match exact_legacy_class_412_path(ctx, bytes, path_at, path_record_index, path_end)
-                {
+                match exact_legacy_class_412_path(bytes, path_at, path_record_index, path_end) {
                     Ok(Some(path)) => path,
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
@@ -785,13 +768,6 @@ fn exact_legacy_class_388_operand_path_envelope(
         let final_path = path_records[final_index].take()?;
 
         let mut occurrence_guids = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut occurrence_guids,
-            usize::try_from(path_count).ok()?,
-            "f3d legacy occurrence GUIDs",
-        ) {
-            return Some(Err(error));
-        }
         for path in path_records.into_iter().flatten() {
             occurrence_guids.push(path.occurrence_guid);
         }
@@ -822,7 +798,6 @@ fn exact_legacy_class_388_operand_path_envelope(
 }
 
 fn exact_legacy_class_412_path(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     record_index: u32,
@@ -850,7 +825,6 @@ fn exact_legacy_class_412_path(
             return None;
         }
         let (occurrence_guid, occurrence_end) = match fixed_relaxed_guid_text(
-            ctx,
             bytes,
             start.checked_add(class_412_path::OCCURRENCE_GUID)?,
         ) {
@@ -867,21 +841,14 @@ fn exact_legacy_class_412_path(
             class_412_path::THIRD_IDENTITY_GUID,
             class_412_path::FOURTH_IDENTITY_GUID,
         ];
-        let mut identity_guids = match ctx.collection_vec(
-            identity_offsets.len(),
-            "collect F3D legacy path identity GUIDs",
-        ) {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut identity_guids = Vec::new();
         for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
             let identity_at = start.checked_add(relative_offset)?;
-            let (identity_guid, identity_end) =
-                match fixed_relaxed_guid_text(ctx, bytes, identity_at) {
-                    Ok(Some(value)) => value,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+            let (identity_guid, identity_end) = match fixed_relaxed_guid_text(bytes, identity_at) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let expected_end = match ordinal {
                 0 => class_412_path::SECOND_IDENTITY_GUID,
                 1 => class_412_path::IDENTITY_SEPARATOR,

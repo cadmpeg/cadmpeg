@@ -23,8 +23,8 @@ pub(super) fn exact_copy_paste_bodies_operation(
         return Ok(None);
     }
     let body_count = scope.reference_members().len() - 1;
-    let mut operands = ctx.collection_vec(body_count, "f3d CopyPasteBodies operands")?;
-    let mut bodies = ctx.collection_vec(body_count, "f3d CopyPasteBodies bodies")?;
+    let mut operands = Vec::new();
+    let mut bodies = Vec::new();
     let parsed = (|| -> Option<Result<DesignCopyPasteBodiesOperation, CodecError>> {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let body_group_record_index = marked_record_reference(bytes, start + 29)?;

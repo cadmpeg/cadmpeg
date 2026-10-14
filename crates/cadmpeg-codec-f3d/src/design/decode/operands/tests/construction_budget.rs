@@ -41,7 +41,7 @@ pub(super) fn complete_group_bytes(member: bool, auxiliary: bool, trailing: bool
 }
 
 #[test]
-fn incomplete_construction_candidates_do_not_allocate_reference_runs() {
+fn incomplete_construction_candidates_are_not_complete_groups() {
     let scope = DesignParameterScope::empty(
         "f3d:test:construction-group-scope#12",
         DesignFeatureKind::Extrude,
@@ -61,17 +61,14 @@ fn incomplete_construction_candidates_do_not_allocate_reference_runs() {
     false_count.extend_from_slice(&1_000_000u32.to_le_bytes());
     false_count.resize(false_count.len() + 1_000_000, 0xe5);
     candidates.push(false_count);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     for bytes in candidates {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         assert!(matches!(
             parse_construction_operand_group(&ctx, &bytes, &scope, 0, &header),
             ConstructionOperandGroupParse::NotAGroup | ConstructionOperandGroupParse::Unclosed
         ));
-        ctx.finish_session()
-            .expect("candidate uses no collection items");
     }
 }
 
@@ -97,6 +94,4 @@ fn complete_construction_group_retains_each_reference_and_offset() {
     assert_eq!(group.frame.trailing_records()[0].value, 202);
     assert!(group.members()[0].offset < group.frame.auxiliary_records[0].offset);
     assert!(group.frame.auxiliary_records[0].offset < group.frame.trailing_records()[0].offset);
-    ctx.finish_session()
-        .expect("complete group is within budget");
 }

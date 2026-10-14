@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
-fn revolve_native_profile_id_refuses_retained_limit() {
+fn revolve_projects_with_native_profile() {
     use crate::records::feature::path_features::{
         DesignPathFeatureConstruction, DesignRevolveConstruction,
     };
@@ -9,8 +9,6 @@ fn revolve_native_profile_id_refuses_retained_limit() {
     use crate::records::topology::construction::DesignConstructionOperandGroup;
     use crate::records::topology::edge_identity::DesignEdgeOperand;
     use crate::records::topology::extrude_selection::DesignOperandRole;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let mut scope =
         DesignParameterScope::empty("f3d:test:scope#12", DesignFeatureKind::Revolve, 12);
@@ -79,30 +77,13 @@ fn revolve_native_profile_id_refuses_retained_limit() {
         "next_byte_offset": 160
     }))
     .unwrap();
-    let project = |ctx: &DecodeContext<'_>| {
-        super::super::project_fixed_revolve_with_entities(
-            ctx,
-            &scope,
-            &groups,
-            std::slice::from_ref(&axis),
-            &[],
-            &[],
-            (&[], &[]),
-        )
-    };
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx))
-            .unwrap()
-            .is_some()
-    );
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(project(&ctx), Err(CodecError::ResourceLimit(failure))
-        if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == "f3d Revolve native profile id")
-    );
+    assert!(super::super::project_fixed_revolve_with_entities(
+        &scope,
+        &groups,
+        std::slice::from_ref(&axis),
+        &[],
+        &[],
+        (&[], &[]),
+    )
+    .is_some());
 }

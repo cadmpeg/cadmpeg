@@ -59,7 +59,6 @@ impl<'a> MetaStreamEntry<'a> {
 }
 
 fn paired_bulk_entry_name<'a>(
-    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     prefix: &str,
 ) -> Result<&'a str, CodecError> {
@@ -70,17 +69,9 @@ fn paired_bulk_entry_name<'a>(
     {
         return Ok(&entry.name);
     }
-    let length = "entry "
-        .len()
-        .checked_add(prefix.len())
-        .and_then(|length| length.checked_add("BulkStream.dat not found".len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d missing design bulk name length", 0, 1))?;
-
-    let mut message = ctx.retained_string(length, "f3d missing Design BulkStream error")?;
-    message.push_str("entry ");
-    message.push_str(prefix);
-    message.push_str("BulkStream.dat not found");
-    Err(CodecError::Malformed(message))
+    Err(CodecError::malformed(format_args!(
+        "entry {prefix}BulkStream.dat not found"
+    )))
 }
 
 /// Decode the type table of every Design `MetaStream` entry.
@@ -96,7 +87,6 @@ pub(crate) fn decode_types(
     {
         let meta = scan.parsed_metastream(ctx, &entry.entry.name)?;
         for design_type in &meta.types {
-            ctx.reserve_vec(&mut out, 1, "f3d design type table")?;
             out.push(copy_design_type(ctx, design_type, &entry.entry.name)?);
         }
     }
@@ -110,34 +100,23 @@ fn copy_design_type(
 ) -> Result<SegmentType, CodecError> {
     use crate::records::identity::ReferenceRun;
 
-    let count = design_type.entities.values().len();
-
     let entities = if let Some(rows) = design_type.entities.located_rows() {
         let mut copied = Vec::new();
-        ctx.reserve_vec(&mut copied, count, "f3d design type registered entities")?;
         copied.extend_from_slice(rows);
         ReferenceRun::located(copied)
     } else {
-        let mut copied = ctx.collection_vec(count, "f3d design type registered entities")?;
+        let mut copied = Vec::new();
         copied.extend(design_type.entities.values().copied());
         ReferenceRun::unlocated(copied)
     };
-    let module = String::from_utf8(
-        ctx.copy_retained(design_type.module.as_bytes(), "f3d design type module")?,
-    )
-    .map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
+    let module = String::from_utf8(design_type.module.as_bytes().to_vec())
+        .map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
     let id = design_record_id_charged(
         ctx,
         stream,
         ":design-type#",
         design_type.byte_offset,
         "f3d design type id suffix",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(id.len())
-            .checked_mul(8)
-            .ok_or_else(|| ctx.refuse_codec_limit("admit F3D type identity", 0, u64::MAX))?,
-        "admit F3D type identity",
     )?;
     SegmentType::try_new(
         id,
@@ -166,19 +145,15 @@ fn insert_component_naming_space(
 ) -> Result<(), CodecError> {
     if let Some(existing) = by_component.get(&component_record_index) {
         if existing.context_uuid != context_uuid {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
+            return Err(crate::design::text::malformed_design(format_args!(
                 "Design component {component_record_index} has conflicting context UUID bindings"
-            ),
-            ));
+            )));
         }
         return Ok(());
     }
 
-    ctx.reserve_map(by_component, 1, "f3d component naming spaces by entity")?;
     let byte_offset = u64::try_from(marker)
-        .map_err(|_| ctx.refuse_codec_limit("f3d component naming marker offset", 0, 1))?;
+        .map_err(|_| CodecError::malformed("f3d component naming marker offset exceeds u64"))?;
     let id = design_record_id_charged(
         ctx,
         bulk_name,
@@ -187,7 +162,7 @@ fn insert_component_naming_space(
         "f3d component naming space id suffix",
     )?;
     let context_uuid_offset = u64::try_from(context_uuid_offset)
-        .map_err(|_| ctx.refuse_codec_limit("f3d component naming UUID offset", 0, 1))?;
+        .map_err(|_| CodecError::malformed("f3d component naming UUID offset exceeds u64"))?;
     by_component.insert(
         component_record_index,
         DesignComponentNamingSpace {
@@ -225,17 +200,13 @@ pub(crate) fn decode_component_naming_spaces(
                     })
         }) {
             for &entity_id in design_type.entities.values() {
-                ctx.insert_hash_set(
-                    &mut component_entities,
-                    entity_id,
-                    "f3d component naming registered entities",
-                )?;
+                component_entities.insert(entity_id);
             }
         }
         if component_entities.is_empty() {
             continue;
         }
-        let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
+        let bulk_name = paired_bulk_entry_name(scan, meta_entry.prefix)?;
         let bytes = scan.entry_bytes(bulk_name)?;
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
@@ -343,25 +314,14 @@ pub(crate) fn decode_component_naming_spaces(
             .filter(|entity| !by_component.contains_key(entity))
             .min()
         {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!("Design component {missing} has no context UUID binding"),
-            ));
+            return Err(crate::design::text::malformed_design(format_args!(
+                "Design component {missing} has no context UUID binding"
+            )));
         }
 
-        ctx.reserve_vec(
-            &mut out,
-            by_component.len(),
-            "f3d component naming spaces output",
-        )?;
         out.extend(by_component.into_values());
     }
-    ctx.stable_sort_by(
-        &mut out[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design meta 1",
-    )?;
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -440,15 +400,10 @@ pub(super) fn design_primary_frames<'a>(
     let mut registered_entities = HashSet::new();
     for (ordinal, design_type) in meta.types.iter().enumerate() {
         for &entity_id in design_type.entities.values() {
-            ctx.insert_hash_set(
-                &mut registered_entities,
-                (ordinal, entity_id),
-                "f3d registered primary entities",
-            )?;
+            registered_entities.insert((ordinal, entity_id));
         }
     }
     let mut frames = Vec::new();
-    ctx.reserve_vec(&mut frames, indexed.len(), "f3d design primary frames")?;
     for frame in indexed {
         let entity_id = frame.entity_id;
         let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
@@ -521,15 +476,11 @@ pub(super) fn typed_primary_frames<'a>(
         }
         for &entity_id in design_type.entities.values() {
             if typed_entities.contains(&entity_id) {
-                return Err(crate::design::text::malformed_design(
-                    ctx,
-                    format_args!(
-                        "F3D Design {record_kind} entity {entity_id} is registered more than once"
-                    ),
-                ));
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D Design {record_kind} entity {entity_id} is registered more than once"
+                )));
             }
 
-            ctx.reserve_set(&mut typed_entities, 1, "f3d typed primary entities")?;
             typed_entities.insert(entity_id);
         }
     }
@@ -546,11 +497,9 @@ pub(super) fn typed_primary_frames<'a>(
             continue;
         }
         if !resolved_entities.contains(&primary_frame.entity_id) {
-            ctx.reserve_set(&mut resolved_entities, 1, "f3d resolved primary entities")?;
             resolved_entities.insert(primary_frame.entity_id);
         }
 
-        ctx.reserve_vec(&mut frames, 1, "f3d typed primary frames")?;
         frames.push(TypedPrimaryFrame {
             entity_id: primary_frame.entity_id,
             start: primary_frame.start,
@@ -559,7 +508,7 @@ pub(super) fn typed_primary_frames<'a>(
         });
     }
     if let Some(entity_id) = typed_entities.difference(&resolved_entities).min() {
-        return Err(crate::design::text::malformed_design(ctx, format_args!(
+        return Err(crate::design::text::malformed_design(format_args!(
             "F3D Design {record_kind} entity {entity_id} has no primary record of its registered class"
         )));
     }
@@ -569,34 +518,29 @@ pub(super) fn typed_primary_frames<'a>(
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
 pub(super) fn stream_types_by_entity<'a>(
-    ctx: &DecodeContext<'_>,
     types: &'a [SegmentType],
     bulk_entry_name: &str,
-) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
+) -> HashMap<u64, (&'a str, u32)> {
     let mut by_entity = HashMap::new();
     for design_type in types.iter().filter(|design_type| {
         native_stream(design_type.id())
             .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
     }) {
         for &entity_id in design_type.entities.values() {
-            if !by_entity.contains_key(&entity_id) {
-                ctx.reserve_map(&mut by_entity, 1, "f3d stream types by entity")?;
-            }
             by_entity.insert(
                 entity_id,
                 (design_type.type_guid.as_str(), design_type.version),
             );
         }
     }
-    Ok(by_entity)
+    by_entity
 }
 
 /// Complete type-table row keyed by the segment-local dynamic class tag.
 pub(super) fn stream_types_by_class_tag<'a>(
-    ctx: &DecodeContext<'_>,
     types: &'a [SegmentType],
     bulk_entry_name: &str,
-) -> Result<HashMap<u32, &'a SegmentType>, CodecError> {
+) -> HashMap<u32, &'a SegmentType> {
     let mut by_class_tag = HashMap::new();
     for (ordinal, design_type) in types
         .iter()
@@ -613,10 +557,9 @@ pub(super) fn stream_types_by_class_tag<'a>(
             continue;
         };
 
-        ctx.reserve_map(&mut by_class_tag, 1, "f3d stream types by class tag")?;
         by_class_tag.insert(class_tag, design_type);
     }
-    Ok(by_class_tag)
+    by_class_tag
 }
 
 /// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
@@ -729,15 +672,7 @@ fn parse_feature_timeline_record(
         return Ok(None);
     };
 
-    let work = count
-        .checked_next_power_of_two()
-        .and_then(|power| usize::try_from(power.ilog2()).ok())
-        .and_then(|levels| count.checked_mul(levels.checked_add(1)?)?.checked_mul(2))
-        .and_then(|units| u64::try_from(units).ok())
-        .ok_or_else(|| ctx.refuse_codec_limit("F3D timeline sort work", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, "validate F3D timeline item uniqueness")?;
     let mut items = Vec::new();
-    ctx.reserve_vec(&mut items, count, "admit F3D timeline item slots")?;
     for _ in 0..count {
         let Some(target_offset) = at.checked_add(1) else {
             return Ok(None);
@@ -777,21 +712,14 @@ fn parse_feature_timeline_record(
     let Some(item_count_offset) = u64::try_from(item_count_offset).ok() else {
         return Ok(None);
     };
-    let frame = match crate::records::entity_header::DesignTimelineFrame::new(
-        crate::records::admission::RecordAdmission::Charged(ctx),
+    let Ok(frame) = crate::records::entity_header::DesignTimelineFrame::new(
         frame_start,
         frame_length,
         context_reference_offset,
         item_count_offset,
         items,
-    ) {
-        Ok(frame) => frame,
-        Err(crate::records::entity_header::DesignTimelineFrameError::Resource(error)) => {
-            return Err(error);
-        }
-        Err(crate::records::entity_header::DesignTimelineFrameError::Invalid(_)) => {
-            return Ok(None);
-        }
+    ) else {
+        return Ok(None);
     };
     let Some(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag).ok() else {
         return Ok(None);
@@ -871,18 +799,15 @@ pub(crate) fn decode_feature_timelines(
                 "Design MetaStream record offsets are not strictly increasing".into(),
             ));
         }
-        let bulk_name = paired_bulk_entry_name(ctx, scan, meta_entry.prefix)?;
+        let bulk_name = paired_bulk_entry_name(scan, meta_entry.prefix)?;
         let bytes = scan.entry_bytes(bulk_name)?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
             for entity_id in design_type.entities.values() {
-                ctx.push_hash_group(
-                    &mut type_guids_by_entity,
-                    *entity_id,
-                    design_type.type_guid.as_str(),
-                    "index F3D timeline entity",
-                    "index F3D timeline type GUID",
-                )?;
+                type_guids_by_entity
+                    .entry(*entity_id)
+                    .or_default()
+                    .push(design_type.type_guid.as_str());
             }
         }
         let mut source_ordinal = 0_u32;
@@ -892,7 +817,6 @@ pub(crate) fn decode_feature_timelines(
             .enumerate()
             .filter(|(_, design_type)| is_timeline_type(design_type))
         {
-            let _class_tag_reservation = ctx.reserve_scoped(3, "format F3D timeline class tag")?;
             let expected_class_tag = u32::try_from(type_ordinal)
                 .ok()
                 .and_then(|ordinal| ordinal.checked_add(256))
@@ -908,12 +832,6 @@ pub(crate) fn decode_feature_timelines(
                 source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
                     CodecError::Malformed("Design feature-timeline ordinal exceeds u32".into())
                 })?;
-                ctx.charge_work(
-                    u64::try_from(meta.records.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("F3D timeline record search", u64::MAX - 1, u64::MAX)
-                    })?,
-                    "find F3D timeline primary record",
-                )?;
                 let mut matches = meta
                     .records
                     .iter()
@@ -962,7 +880,6 @@ pub(crate) fn decode_feature_timelines(
                     )
                 })?;
 
-                ctx.reserve_vec(&mut out, 1, "retain F3D feature timeline")?;
                 out.push(timeline);
             }
         }

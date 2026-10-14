@@ -14,8 +14,6 @@ use crate::records::topology::construction::{
     DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
     DesignConstructionOperandRole,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
 pub(super) fn scope() -> DesignParameterScope {
@@ -133,11 +131,7 @@ fn parameters() -> [crate::records::parameters::DesignParameter; 2] {
     ]
 }
 
-fn assert_profile_fallback(
-    groups: &[DesignConstructionOperandGroup],
-    expected_native: &str,
-    operation: &'static str,
-) {
+fn assert_profile_fallback(groups: &[DesignConstructionOperandGroup], expected_native: &str) {
     let scope = scope();
     let parameters = parameters();
     let owned = [(0, &parameters[0]), (1, &parameters[1])];
@@ -152,47 +146,21 @@ fn assert_profile_fallback(
             profile: ProfileRef::Planar(PlanarProfileRef::Native(ref native)), ..
         }) if native == expected_native
     ));
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let arena = DecodeArena::new();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_extrude(&ctx, &scope, &owned, groups, &[], &[], &[])).map(|_| ())
-            },
-        );
-        assert!(
-            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation)
-        );
-    }
 }
 
 #[test]
-fn extrude_single_profile_group_id_refuses_retained_limit() {
+fn extrude_single_profile_falls_back_to_group_id() {
     let first = profile_group(100, 0);
-    assert_profile_fallback(
-        std::slice::from_ref(&first),
-        &first.id,
-        "f3d Extrude profile group id",
-    );
+    assert_profile_fallback(std::slice::from_ref(&first), &first.id);
 }
 
 #[test]
-fn extrude_multiple_profile_fallback_scope_id_refuses_retained_limit() {
+fn extrude_multiple_profiles_fall_back_to_scope_id() {
     let groups = [profile_group(100, 0), profile_group(101, 1)];
-    assert_profile_fallback(
-        &groups,
-        "f3d:Design/BulkStream.dat:scope#12",
-        "f3d Extrude fallback scope id",
-    );
+    assert_profile_fallback(&groups, "f3d:Design/BulkStream.dat:scope#12");
 }
 
-fn assert_face_fallback(role: DesignConstructionOperandRole, operation: &'static str) {
+fn assert_face_projects(role: DesignConstructionOperandRole) {
     let scope = scope_with_extent(DesignExtrudeExtent::OneSidedToFace);
     let profile = profile_group(100, 0);
     let mut selection = profile_group(101, 1);
@@ -226,43 +194,19 @@ fn assert_face_fallback(role: DesignConstructionOperandRole, operation: &'static
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
     ));
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let arena = DecodeArena::new();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_extrude(&ctx, &scope, &owned, &groups, &[], &[], &[])).map(|_| ())
-            },
-        );
-        assert!(
-            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == operation)
-        );
-    }
 }
 
 #[test]
-fn extrude_selected_face_group_id_refuses_retained_limit() {
-    assert_face_fallback(
-        DesignConstructionOperandRole::ExtrudeFaces {
-            encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
-            usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
-        },
-        "f3d Extrude selected face group id",
-    );
+fn extrude_projects_with_selected_face_group() {
+    assert_face_projects(DesignConstructionOperandRole::ExtrudeFaces {
+        encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
+        usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+    });
 }
 
 #[test]
-fn extrude_target_shape_group_id_refuses_retained_limit() {
-    assert_face_fallback(
-        DesignConstructionOperandRole::Other(
-            crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
-        ),
-        "f3d Extrude target shape group id",
-    );
+fn extrude_projects_with_target_shape_group() {
+    assert_face_projects(DesignConstructionOperandRole::Other(
+        crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+    ));
 }

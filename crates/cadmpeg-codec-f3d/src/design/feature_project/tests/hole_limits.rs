@@ -4,8 +4,6 @@ use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::feature_project::project_hole;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
 fn hole_parameters() -> [crate::records::parameters::DesignParameter; 3] {
@@ -43,7 +41,7 @@ fn hole_parameters() -> [crate::records::parameters::DesignParameter; 3] {
 }
 
 #[test]
-fn hole_fallback_face_id_refuses_retained_limit() {
+fn hole_without_face_operand_falls_back_to_scope_face() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#32",
         DesignFeatureKind::Hole,
@@ -66,24 +64,4 @@ fn hole_fallback_face_id_refuses_retained_limit() {
             face: Some(FaceSelection::Native(id)), ..
         }) if id == scope.id
     ));
-
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "f3d Hole fallback face id",
-            |cap| {
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let arena = DecodeArena::new();
-
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (project_hole(&ctx, &scope, &indexed, &[])).map(|_| ())
-            },
-        );
-        assert!(
-            matches!(Err::<(), cadmpeg_core::CodecError>(error), Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d Hole fallback face id")
-        );
-    }
 }

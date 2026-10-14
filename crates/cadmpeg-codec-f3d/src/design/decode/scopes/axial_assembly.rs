@@ -25,10 +25,9 @@ use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 pub(super) fn bind_joint_origin_frames_from_assemblies(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scopes: &mut [DesignParameterScope],
-) -> Result<(), CodecError> {
+) {
     let mut candidates = Vec::new();
     let mut envelopes = Vec::new();
     for scope in scopes.iter() {
@@ -40,7 +39,6 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             .and_then(assembly::DesignAssemblyAlignment::operand_frames)
         {
             for frame in frames {
-                ctx.reserve_vec(&mut candidates, 1, "f3d joint-origin frame candidates")?;
                 candidates.push((
                     frame.reference_record_index,
                     frame.transform,
@@ -50,10 +48,8 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             }
         }
         if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
-            ctx.reserve_vec(&mut envelopes, 1, "f3d joint-origin assembly envelopes")?;
             envelopes.push((scope.record_index, joint_origin, frame.transform));
 
-            ctx.reserve_vec(&mut candidates, 1, "f3d joint-origin frame candidates")?;
             candidates.push((
                 joint_origin,
                 frame.transform,
@@ -103,9 +99,6 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
         let Some(transform) = scope.joint_origin_transform() else {
             continue;
         };
-        if !resolved_origins.contains_key(&scope.record_index) {
-            ctx.reserve_map(&mut resolved_origins, 1, "f3d resolved joint origins")?;
-        }
         resolved_origins.insert(scope.record_index, transform);
     }
     for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
@@ -128,7 +121,6 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             });
         }
     }
-    Ok(())
 }
 
 /// Bind the pathless axial assembly selectors after every scope in the Design
@@ -163,7 +155,6 @@ pub(super) fn bind_axial_assembly_operand_targets(
             continue;
         };
 
-        ctx.reserve_vec(&mut bindings, 1, "f3d axial assembly bindings")?;
         bindings.push((
             ordinal,
             assembly::DesignAssemblyAlignmentForm::qualified(
@@ -455,14 +446,14 @@ fn exact_assembly_axial_selector(
         cursor = cursor.checked_add(4)?;
         let selector_asset_at = cursor;
         let (selector_asset_id, after_selector_asset_id) =
-            match fixed_relaxed_guid_text(ctx, bytes, selector_asset_at) {
+            match fixed_relaxed_guid_text(bytes, selector_asset_at) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
         let selector_context_at = after_selector_asset_id;
         let (selector_context_id, after_selector_context_id) =
-            match fixed_relaxed_guid_text(ctx, bytes, selector_context_at) {
+            match fixed_relaxed_guid_text(bytes, selector_context_at) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
@@ -515,7 +506,7 @@ fn exact_assembly_axial_selector(
         }
         let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
         let (occurrence_role, after_occurrence_role) =
-            match fixed_relaxed_guid_text(ctx, bytes, occurrence_role_at) {
+            match fixed_relaxed_guid_text(bytes, occurrence_role_at) {
                 Ok(Some(value)) => value,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),

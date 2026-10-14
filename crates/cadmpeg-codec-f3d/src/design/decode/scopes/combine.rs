@@ -141,15 +141,6 @@ pub(super) fn exact_combine_operation(
                 }
                 CombineOperandRole::Tool => {
                     let additional = first_tool.is_some();
-                    if additional {
-                        if let Err(error) = ctx.reserve_vec(
-                            &mut additional_tools,
-                            1,
-                            "f3d Combine additional tools",
-                        ) {
-                            return Some(Err(error));
-                        }
-                    }
                     let external_identity = match exact_combine_external_body_identity(
                         ctx,
                         bytes,

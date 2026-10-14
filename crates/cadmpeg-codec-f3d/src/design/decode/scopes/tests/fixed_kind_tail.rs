@@ -17,77 +17,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 #[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let (bytes, scope, transform) = fixed_kind_frames();
-    super::fixed_kind_tail_operations::fixed_kind_tail_operations(
-        bytes, scope, transform, None, None,
-    );
-}
-
-#[test]
-fn surface_boundary_edges_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, scope, transform) = fixed_kind_frames();
-    let probe = |bytes: &[u8], scope: &DesignParameterScope| {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::design::decode::scopes::surfaces::exact_surface_extend_operation(
-            &ctx, bytes, &records, scope,
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d surface boundary edges")
-        );
-    };
-    super::fixed_kind_tail_operations::fixed_kind_tail_operations(
-        bytes,
-        scope,
-        transform,
-        Some(probe),
-        None,
-    );
-}
-
-#[test]
-fn surface_offset_face_groups_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, scope, transform) = fixed_kind_frames();
-    let probe = |bytes: &[u8], scope: &DesignParameterScope| {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        for (limit, operation) in [
-            // The operand group first admits one member and one trailing
-            // reference; both auxiliary references are absent.
-            (2, "f3d surface offset covered reference"),
-            (3, "f3d surface offset covered reference"),
-            (4, "f3d surface offset face group"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = crate::design::decode::scopes::surfaces::exact_surface_offset_operation(
-                &ctx, bytes, &records, scope,
-            )
-            .unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation)
-            );
-        }
-    };
-    super::fixed_kind_tail_operations::fixed_kind_tail_operations(
-        bytes,
-        scope,
-        transform,
-        None,
-        Some(probe),
-    );
+    super::fixed_kind_tail_operations::fixed_kind_tail_operations(bytes, scope, transform);
 }
 
 fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
@@ -166,7 +96,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(scope.paired_byte_offset(), u64_from_index(paired_at));
     let discovered =
         crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
-            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         )

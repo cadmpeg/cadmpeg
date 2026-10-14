@@ -11,8 +11,6 @@ use crate::records::feature::work_geometry::{
     DesignWorkPointRule, DesignWorkPointRuleForm, DesignWorkPointSketchPointSelection,
     DesignWorkPointSketchPointSelectionDraft,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
 };
@@ -123,67 +121,6 @@ fn fixture() -> (
     );
     spatial.native_ref = Some(point_native_id.to_owned());
     (scope, feature, planar, spatial)
-}
-
-fn assert_refusal(operation: &'static str, spatial: bool) {
-    let (scope, feature, planar, spatial_entity) = fixture();
-
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut features = [feature.clone()];
-                let result = bind_work_point_sketch_point_constructions(
-                    &ctx,
-                    &mut features,
-                    std::slice::from_ref(&scope),
-                    if spatial {
-                        &[]
-                    } else {
-                        std::slice::from_ref(&planar)
-                    },
-                    if spatial {
-                        std::slice::from_ref(&spatial_entity)
-                    } else {
-                        &[]
-                    },
-                );
-                result
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (ResourceDimension::RetainedBytes)));
-    }
-}
-
-#[test]
-fn work_point_sketch_native_ref_refuses_retained_limit() {
-    assert_refusal("f3d work point sketch native ref", false);
-}
-
-#[test]
-fn work_point_planar_sketch_id_refuses_retained_limit() {
-    assert_refusal("f3d work point planar sketch id", false);
-}
-
-#[test]
-fn work_point_planar_point_id_refuses_retained_limit() {
-    assert_refusal("f3d work point planar point id", false);
-}
-
-#[test]
-fn work_point_spatial_sketch_id_refuses_retained_limit() {
-    assert_refusal("f3d work point spatial sketch id", true);
-}
-
-#[test]
-fn work_point_spatial_point_id_refuses_retained_limit() {
-    assert_refusal("f3d work point spatial point id", true);
 }
 
 #[test]
