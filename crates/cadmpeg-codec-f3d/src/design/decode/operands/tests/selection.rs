@@ -788,6 +788,31 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         bound_group.lost_edge_references,
         ["f3d:Design/BulkStream.dat:lost-edge-reference#152"]
     );
+
+    let lost_edge = |offset: u64, record_index: u32, next_class: &str, next_index: u32| {
+        LostEdgeReference::new(
+            format!("f3d:Design/BulkStream.dat:lost-edge-reference#{offset}"),
+            offset,
+            "419".into(),
+            record_index,
+            next_class.into(),
+            next_index,
+        )
+        .expect("valid lost-edge record layout")
+    };
+    let two_record_run = [
+        lost_edge(104, 298, "419", 299),
+        lost_edge(152, 299, "326", 300),
+    ];
+    bind_lost_edge_groups(
+        &ctx,
+        std::slice::from_mut(&mut bound_group),
+        std::slice::from_ref(&terminating_identity),
+        &two_record_run,
+    )
+    .expect("a run that does not match the operand list leaves the group unbound");
+    assert_eq!(bound_group.members().len(), 1);
+    assert!(bound_group.lost_edge_references.is_empty());
 }
 
 #[test]
