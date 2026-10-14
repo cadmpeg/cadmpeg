@@ -16,10 +16,9 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 mod graph_diagnostic_tests;
-mod property_diagnostic_tests;
 
 #[test]
-fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
+fn local_copy_on_change_target_maps_to_its_definition() {
     let target = native::LinkTarget::optional_from_wire(native::LinkTargetWire {
         document: None,
         document_attribute: None,
@@ -28,209 +27,12 @@ fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
     })
     .expect("valid target")
     .expect("target is present");
-    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD model identity", |ctx| {
-        super::neutral_link_target(ctx, &target)
-    });
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let target = super::neutral_link_target(&ctx, &target)
+    let target = super::neutral_link_target(&target)
         .expect("admitted target")
         .expect("local reference");
     assert!(
         matches!(target, cadmpeg_ir::products::PrototypeReference::Local { definition }
         if definition.as_str() == "fcstd:model:product_definition#Gear:definition")
-    );
-}
-
-#[test]
-fn product_record_collection_refuses_at_caller_limit() {
-    let object = native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Assembly".into(),
-            "Assembly".into(),
-        )
-        .expect("object identity"),
-        type_name: "App::Part".into(),
-        persistent_id: None,
-        view_type: None,
-        attributes: std::collections::BTreeMap::default(),
-        dependencies: Vec::new(),
-        dependency_allow_partial: None,
-        order: 0,
-        data: None,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer(&ctx, &[object], &[], &std::collections::BTreeMap::default()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd product records")
-    );
-}
-
-#[test]
-fn product_native_identity_refuses_at_retained_limit() {
-    let object = native::ObjectRecord {
-        identity: crate::native::object_identity::ObjectIdentity::try_new(
-            "fcstd:native:object#Assembly".into(),
-            "Assembly".into(),
-        )
-        .expect("object identity"),
-        type_name: "App::Part".into(),
-        persistent_id: None,
-        view_type: None,
-        attributes: std::collections::BTreeMap::default(),
-        dependencies: Vec::new(),
-        dependency_allow_partial: None,
-        order: 0,
-        data: None,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<native::ProductNodeRecord>()
-            + native::native_id("product", object.name()).len(),
-    ) - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer(&ctx, &[object], &[], &std::collections::BTreeMap::default()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD native identity")
-    );
-}
-
-fn resource_product_container() -> native::ProductNodeRecord {
-    native::ProductNodeRecord {
-        id: "fcstd:native:product#Part".into(),
-        object: "fcstd:native:object#Part".into(),
-        node: native::ProductNode::Part(native::ContainerNode {
-            members: Vec::new(),
-            local_transform: None,
-            placement_property: None,
-        }),
-    }
-}
-
-#[test]
-fn product_definition_identity_refuses_at_retained_limit() {
-    let record = resource_product_container();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>()
-            + native::model_id("product_definition", &record.object, "definition").len(),
-    ) - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity")
-    );
-}
-
-#[test]
-fn product_container_identity_refuses_at_retained_limit() {
-    let record = resource_product_container();
-    let definition_len = native::model_id("product_definition", &record.object, "definition").len();
-    let container_len = native::model_id("occurrence", &record.object, "container").len();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<cadmpeg_ir::products::ProductDefinition>()
-            + 4 * std::mem::size_of::<cadmpeg_ir::products::Occurrence>()
-            + definition_len
-            + record.object.len()
-            + container_len,
-    ) - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity")
-    );
-}
-
-#[test]
-fn product_element_identity_refuses_at_retained_limit() {
-    let array = native::LinkArray::try_new(None, Vec::new(), Vec::new(), Vec::new(), Vec::new())
-        .expect("scalar link array");
-    let record = native::ProductNodeRecord {
-        id: "fcstd:native:product#Link".into(),
-        object: "fcstd:native:object#Link".into(),
-        node: native::ProductNode::Occurrence(Box::new(native::LinkOccurrence {
-            members: Vec::new(),
-            prototype: None,
-            external_document: None,
-            local_transform: None,
-            placement_property: None,
-            array,
-            link_transform: None,
-            linked_subelements: Vec::new(),
-            claim_child: None,
-            copy_on_change: None,
-            scale: None,
-        })),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        native::model_id("occurrence", &record.object, "instance").len(),
-    ) - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity")
-    );
-}
-
-#[test]
-fn product_body_prefix_refuses_at_retained_limit() {
-    let property = native::PropertyRecord {
-        id: "fcstd:native:property#Part:Shape".into(),
-        owner: "fcstd:native:object#Part".into(),
-        name: "Shape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: native::PropertyFamily::Unknown,
-        status: None,
-        body: native::PropertyBody::Transient,
-        order: 0,
-        xml: native::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
-    };
-    let payload = crate::brep::ShapePayloadRecord {
-        id: "fcstd:native:shape-payload#Part:Shape".into(),
-        property: property.id.clone(),
-        entry: "shape.brp".into(),
-        payload: crate::brep::ShapePayload::Empty,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-        // Owner lookup (four buckets), its property vector, the property-owner lookup,
-        // and four body-owner slots are live before the scoped body prefix.
-        4 * std::mem::size_of::<(&str, Vec<&native::PropertyRecord>)>()
-            + 35
-            + 4 * std::mem::size_of::<&native::PropertyRecord>()
-            + 4 * std::mem::size_of::<(&str, &str)>()
-            + 35
-            + 4 * std::mem::size_of::<(String, &str)>()
-            + native::model_id("body", &payload.id, "").len(),
-    ) - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &[], &[], &[], &[property], &[payload], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity")
     );
 }
 
@@ -1083,27 +885,10 @@ fn link_group_retains_element_list_on_the_native_wire() {
 #[test]
 fn product_record_identity_rejects_duplicates() {
     let records = [node("A", &[]), node("A", &[])];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(matches!(
-        product_record_index(&ctx, &records),
+        product_record_index(&records),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
-}
-
-#[test]
-fn product_record_index_refuses_at_caller_limit() {
-    let records = [node("A", &[]), node("B", &[])];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(matches!(product_record_index(&ctx, &records),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd product record index"));
 }
 
 #[test]
@@ -1535,11 +1320,7 @@ fn reconvergent_product_graph_is_not_a_cycle() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(product_cycle_nodes(&ctx, &nodes)
+    assert!(product_cycle_nodes(&nodes)
         .expect("cycle analysis")
         .is_empty());
 }
@@ -1551,31 +1332,10 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert_eq!(
-        product_cycle_nodes(&ctx, &nodes).expect("cycle analysis"),
+        product_cycle_nodes(&nodes).expect("cycle analysis"),
         HashSet::from(["B", "C"])
     );
-}
-
-#[test]
-fn product_cycle_graph_refuses_at_caller_limit() {
-    let records = [node("A", &["B"]), node("B", &[])];
-    let nodes = records
-        .iter()
-        .map(|record| (record.object.as_str(), record))
-        .collect();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(matches!(product_cycle_nodes(&ctx, &nodes),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd product reverse graph"));
 }
 
 #[test]
@@ -1650,16 +1410,7 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
             std::num::NonZeroU64::MIN
         ))
     );
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert_eq!(
-        super::occurrence_count(&ctx, occurrence)
-            .expect("count")
-            .get(),
-        1
-    );
+    assert_eq!(super::occurrence_count(occurrence).expect("count").get(), 1);
 
     // A stated zero with a populated carrier is an inconsistent link array.
     let populated = r#"<Document SchemaVersion="4" FileVersion="1">

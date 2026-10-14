@@ -5,9 +5,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
-    rendering_style_issue, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
-    PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord,
+    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmAppRenderingStyleRecordWire,
+    PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
 };
 use crate::presentation::PresentationInventory;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -33,17 +32,13 @@ pub(super) fn project(
     };
     for style in &inventory.default_styles {
         let token = style.identity.segment_token.as_str();
-        ctx.charge_collection_items(1, "collect Inventor native default style")?;
         ctx.charge_entities(1, "admit Inventor native default style")?;
         projection.default_styles.push(PmAppDefaultStyleRecord {
-            id: ctx.format_retained(
-                format_args!(
-                    "inventor:presentation:default-style#{token}-{}",
-                    style.identity.record_ordinal
-                ),
-                "retain Inventor default style id",
-            )?,
-            segment_token: ctx.copy_retained_text(token, "retain Inventor default style token")?,
+            id: format!(
+                "inventor:presentation:default-style#{token}-{}",
+                style.identity.record_ordinal
+            ),
+            segment_token: token.to_owned(),
             record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
@@ -65,15 +60,11 @@ pub(super) fn project(
         let token = style.identity.segment_token.as_str();
         let extension = style.extension.as_ref();
         let wire = PmAppRenderingStyleRecordWire {
-            id: ctx.format_retained(
-                format_args!(
-                    "inventor:presentation:rendering-style#{token}-{}",
-                    style.identity.record_ordinal
-                ),
-                "retain Inventor rendering style id",
-            )?,
-            segment_token: ctx
-                .copy_retained_text(token, "retain Inventor rendering style token")?,
+            id: format!(
+                "inventor:presentation:rendering-style#{token}-{}",
+                style.identity.record_ordinal
+            ),
+            segment_token: token.to_owned(),
             record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
@@ -84,50 +75,16 @@ pub(super) fn project(
             default_state: style.default_state,
             value: style.value,
             name_reference: style.name_reference,
-            name: ctx.copy_retained_text(&style.name, "retain Inventor rendering style text")?,
-            comment: ctx
-                .copy_retained_text(&style.comment, "retain Inventor rendering style text")?,
-            long_name: ctx
-                .copy_retained_text(&style.long_name, "retain Inventor rendering style text")?,
+            name: style.name.clone(),
+            comment: style.comment.clone(),
+            long_name: style.long_name.clone(),
             style_state: extension.map(|value| value.style_state),
-            style_label: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.style_label,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            asset_guid: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.asset_guid,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            material_id: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.material_id,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
-            asset_library_id: extension
-                .map(|value| {
-                    ctx.copy_retained_text(
-                        &value.asset_library_id,
-                        "retain Inventor rendering extension text",
-                    )
-                })
-                .transpose()?,
+            style_label: extension.map(|value| value.style_label.clone()),
+            asset_guid: extension.map(|value| value.asset_guid.clone()),
+            material_id: extension.map(|value| value.material_id.clone()),
+            asset_library_id: extension.map(|value| value.asset_library_id.clone()),
             style_values: extension.map(|value| value.style_values),
-            guid: extension
-                .map(|value| {
-                    ctx.copy_retained_text(&value.guid, "retain Inventor rendering extension text")
-                })
-                .transpose()?,
+            guid: extension.map(|value| value.guid.clone()),
             suffix_len: cadmpeg_core::decode::u64_from_index(style.suffix.window().len()),
             suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                 ctx,
@@ -136,31 +93,17 @@ pub(super) fn project(
             )
             .map(String::from)?,
         };
-        if let Some(detail) = rendering_style_issue(
-            style.segment_version_major,
-            &style.comment,
-            style.extension.is_some(),
-        ) {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(detail.len()),
-                "retain Inventor rendering conversion issue",
-            )?;
-        }
         match PmAppRenderingStyleRecord::try_from(wire) {
             Ok(record) => {
-                ctx.charge_collection_items(1, "collect Inventor native rendering style")?;
                 ctx.charge_entities(1, "admit Inventor native rendering style")?;
                 projection.rendering_styles.push(record);
             }
             Err(detail) => {
-                ctx.charge_collection_items(1, "collect Inventor rendering conversion issue")?;
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Presentation,
-                    segment_token: cadmpeg_ir::ids::IdentityKey::try_new(
-                        ctx.copy_retained_text(token, "retain Inventor rendering issue token")?,
-                    )
-                    .map_err(CodecError::malformed)?,
+                    segment_token: cadmpeg_ir::ids::IdentityKey::try_new(token.to_owned())
+                        .map_err(CodecError::malformed)?,
                     record_ordinal: style.identity.record_ordinal,
                     detail,
                 });
@@ -169,19 +112,11 @@ pub(super) fn project(
     }
     for face in &inventory.graphics_faces {
         let token = face.identity.segment_token.as_str();
-        let id = ctx.format_retained(
-            format_args!(
-                "inventor:presentation:graphics-face#{token}-{}",
-                face.identity.record_ordinal
-            ),
-            "retain Inventor graphics face id",
-        )?;
-        let segment_token = ctx.copy_retained_text(token, "retain Inventor graphics face token")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(face.edge_references.references().len()),
-            "copy Inventor graphics face edge references",
-        )?;
-        ctx.charge_collection_items(1, "collect Inventor native graphics face")?;
+        let id = format!(
+            "inventor:presentation:graphics-face#{token}-{}",
+            face.identity.record_ordinal
+        );
+        let segment_token = token.to_owned();
         ctx.charge_entities(1, "admit Inventor native graphics face")?;
         projection.graphics_faces.push(PmGraphicsFaceRecord {
             id,
@@ -204,20 +139,11 @@ pub(super) fn project(
     }
     for collection in &inventory.graphics_style_collections {
         let token = collection.identity.segment_token.as_str();
-        let id = ctx.format_retained(
-            format_args!(
-                "inventor:presentation:graphics-style-collection#{token}-{}",
-                collection.identity.record_ordinal
-            ),
-            "retain Inventor graphics style collection id",
-        )?;
-        let segment_token =
-            ctx.copy_retained_text(token, "retain Inventor graphics style collection token")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(collection.style_references.references().len()),
-            "copy Inventor graphics style references",
-        )?;
-        ctx.charge_collection_items(1, "collect Inventor native graphics style collection")?;
+        let id = format!(
+            "inventor:presentation:graphics-style-collection#{token}-{}",
+            collection.identity.record_ordinal
+        );
+        let segment_token = token.to_owned();
         ctx.charge_entities(1, "admit Inventor native graphics style collection")?;
         projection.graphics_style_collections.push(
             PmGraphicsStyleCollectionRecord::new(
@@ -233,20 +159,15 @@ pub(super) fn project(
     }
     for style in &inventory.graphics_primary_color_styles {
         let token = style.identity.segment_token.as_str();
-        ctx.charge_collection_items(1, "collect Inventor native primary color style")?;
         ctx.charge_entities(1, "admit Inventor native primary color style")?;
         projection
             .graphics_primary_color_styles
             .push(PmGraphicsPrimaryColorStyleRecord {
-                id: ctx.format_retained(
-                    format_args!(
-                        "inventor:presentation:graphics-primary-color#{token}-{}",
-                        style.identity.record_ordinal
-                    ),
-                    "retain Inventor primary color style id",
-                )?,
-                segment_token: ctx
-                    .copy_retained_text(token, "retain Inventor primary color style token")?,
+                id: format!(
+                    "inventor:presentation:graphics-primary-color#{token}-{}",
+                    style.identity.record_ordinal
+                ),
+                segment_token: token.to_owned(),
                 record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,

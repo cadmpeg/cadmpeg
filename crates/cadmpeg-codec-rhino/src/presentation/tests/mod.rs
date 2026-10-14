@@ -78,13 +78,12 @@ fn assert_presentation_native_limit<T: serde::Serialize>(
 
 #[test]
 fn dimension_style_controls_stream_under_native_retained_limit() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut controls = DimensionControlEntries::default();
     controls
-        .insert_with(&ctx, "v5_dimension_scale", || Ok(serde_json::json!(2.0)))
+        .insert_with("v5_dimension_scale", || Ok(serde_json::json!(2.0)))
         .expect("dimension control admitted");
     controls
-        .insert_with(&ctx, "text_height", || Ok(serde_json::json!(4.0)))
+        .insert_with("text_height", || Ok(serde_json::json!(4.0)))
         .expect("text control admitted");
     let details = DimensionStyleDetails::Modern {
         parent_style_uuid: Some("11111111-1111-1111-1111-111111111111".to_owned()),
@@ -386,10 +385,6 @@ fn current_dimension_style_chunk() -> Vec<u8> {
     dimension_style_chunk(11, &[])
 }
 
-fn dimension_style_with_override_bits_chunk() -> Vec<u8> {
-    dimension_style_chunk(11, &[1])
-}
-
 fn v5_dimension_style_chunk() -> Vec<u8> {
     let mut bytes = vec![0x15];
     bytes.extend(7_i32.to_le_bytes());
@@ -556,14 +551,7 @@ fn light_table_class_data_stops_before_record_children() {
     ));
     let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
 
-    let range = class_data_prefix(
-        &cadmpeg_test_support::service_decode_context(),
-        &body,
-        &record,
-        archive,
-        LIGHT,
-    )
-    .expect("light class");
+    let range = class_data_prefix(&body, &record, archive, LIGHT).expect("light class");
     assert_eq!(&body[range], payload);
 }
 
@@ -1083,7 +1071,6 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         payload_range: 0..extra_bytes.len(),
     };
     let extra = parse_v5_dimension_style_extra(
-        &cadmpeg_test_support::service_decode_context(),
         &extra_bytes,
         &descriptor,
         ArchiveVersion::V5,
@@ -1149,7 +1136,6 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     let mut minor_zero_descriptor = descriptor;
     minor_zero_descriptor.payload_range = 0..minor_zero.len();
     let minor_zero = parse_v5_dimension_style_extra(
-        &cadmpeg_test_support::service_decode_context(),
         &minor_zero,
         &minor_zero_descriptor,
         ArchiveVersion::V5,
@@ -1339,11 +1325,7 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     )
     .expect("second group");
     let mut groups = vec![first, second];
-    assert_eq!(
-        disambiguate_group_ids(&cadmpeg_test_support::service_decode_context(), &mut groups)
-            .expect("duplicate group IDs fit the service profile"),
-        2
-    );
+    assert_eq!(disambiguate_group_ids(&mut groups), 2);
     assert_ne!(groups[0].id, groups[1].id);
     assert_eq!(groups[0].archive_index, 7);
     assert_eq!(groups[1].archive_index, 7);
@@ -1563,7 +1545,6 @@ fn rendering_attributes_transfer_mapping_channels_and_flags() {
     let bytes = anonymous(3, &rendering_body);
 
     let value = rendering_attributes(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,
@@ -1644,7 +1625,6 @@ fn rendering_attributes_reject_negative_nested_version_minors() {
         ),
     ] {
         let result = rendering_attributes(
-            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             Some(0..bytes.len()),
             ArchiveVersion::V8,
@@ -1677,7 +1657,6 @@ fn rendering_material_reference_consumes_obsolete_mapping_channels() {
     let bytes = anonymous(3, &rendering_body);
 
     let value = rendering_attributes(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,
@@ -1858,31 +1837,5 @@ mod patterns;
 mod resource_limits;
 
 mod materials;
-
-#[test]
-fn legacy_rdk_material_optional_readers_propagate_tree_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let xml = "<xml><render-content-manager-data><material instance-id=\"AABBCCDD-EEFF-0011-2233-445566778899\" /></render-content-manager-data></xml>";
-    let bytes = legacy_rdk_payload(xml, false, &[]);
-    let userdata = [legacy_rdk_descriptor(0..bytes.len())];
-    for opaque in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = if opaque {
-            super::rdk_material_userdata_requires_opaque(&ctx, &bytes, &userdata).map(|_| ())
-        } else {
-            legacy_rdk_material_instance_id(&ctx, &bytes, &userdata).map(|_| ())
-        }
-        .unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("tree admission must refuse");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "Rhino legacy RDK XML tree");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    }
-}
 
 mod utf16;

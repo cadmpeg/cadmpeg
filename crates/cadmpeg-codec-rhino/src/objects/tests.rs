@@ -44,170 +44,6 @@ fn parse_attributes(
     )
 }
 
-fn attribute_resource_refusal(
-    bytes: &[u8],
-    collection_limit: u64,
-    retained_limit: u64,
-) -> crate::chunks::FramingError {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    crate::objects::parse_attributes(
-        &ctx,
-        bytes,
-        0..bytes.len(),
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        None,
-        &mut Diagnostics::new(),
-    )
-    .expect_err("attribute value exceeds configured resource limit")
-}
-
-fn assert_attribute_resource(error: &crate::chunks::FramingError, operation: &str) {
-    assert!(
-        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == operation),
-        "expected resource operation {operation}"
-    );
-}
-
-fn attribute_userdata_refusal_at(bytes: &[u8], limit: u64) -> crate::chunks::FramingError {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    crate::objects::parse_attribute_userdata(
-        &ctx,
-        bytes,
-        0..bytes.len(),
-        ArchiveVersion::V4,
-        &mut Diagnostics::new(),
-    )
-    .expect_err("attribute userdata descriptor exceeds collection limit")
-}
-
-fn attribute_userdata_refusal(bytes: &[u8]) -> crate::chunks::FramingError {
-    attribute_userdata_refusal_at(bytes, 0)
-}
-
-#[test]
-fn unknown_attribute_userdata_refuses_collection_limit() {
-    let bytes = long_chunk(ArchiveVersion::V4, 0x0002_0001, &[]);
-    assert_attribute_resource(&attribute_userdata_refusal(&bytes), "Rhino diagnostics");
-    assert_attribute_resource(
-        &attribute_userdata_refusal_at(&bytes, 1),
-        "Rhino attribute userdata descriptors",
-    );
-}
-
-#[test]
-fn known_attribute_userdata_refuses_collection_limit() {
-    let bytes = class_userdata_v1_with_direct_payload(ArchiveVersion::V4, [1; 16], &[]);
-    assert_attribute_resource(
-        &attribute_userdata_refusal(&bytes),
-        "Rhino attribute userdata descriptors",
-    );
-}
-
-#[test]
-fn future_attribute_userdata_refuses_collection_limit() {
-    let bytes = long_chunk(ArchiveVersion::V4, 0x0002_7ffd, &[0x30]);
-    assert_attribute_resource(
-        &attribute_userdata_refusal(&bytes),
-        "Rhino attribute userdata descriptors",
-    );
-}
-
-#[test]
-fn fixed_object_name_and_url_refuse_retained_limit() {
-    let bytes = fixed_attributes(0, 0, None);
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 100, 3),
-        "Rhino object name",
-    );
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 100, 4),
-        "Rhino object URL",
-    );
-}
-
-#[test]
-fn tagged_object_name_and_url_refuse_retained_limit() {
-    let bytes = tagged_attributes(&[(1, utf16_bytes("name"))], 0);
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 100, 3),
-        "Rhino object name",
-    );
-    let bytes = tagged_attributes(&[(2, utf16_bytes("url"))], 0);
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 100, 2),
-        "Rhino object URL",
-    );
-}
-
-#[test]
-fn fixed_object_groups_refuse_collection_limit() {
-    let mut bytes = fixed_attributes(1, 0, None);
-    let count_offset = fixed_attributes(0, 0, None).len();
-    bytes.splice(
-        count_offset..count_offset + 4,
-        [1_i32.to_le_bytes(), 7_i32.to_le_bytes()].concat(),
-    );
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 0, 100),
-        "Rhino object groups",
-    );
-}
-
-#[test]
-fn fixed_object_display_materials_refuse_collection_limit() {
-    let mut bytes = fixed_attributes(3, 0, None);
-    let count_offset = fixed_attributes(2, 0, None).len();
-    let mut payload = 1_i32.to_le_bytes().to_vec();
-    payload.extend([1; 32]);
-    bytes.splice(count_offset..count_offset + 4, payload);
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 0, 100),
-        "Rhino object display materials",
-    );
-}
-
-#[test]
-fn fixed_object_explicit_display_materials_refuse_collection_limit() {
-    let mut bytes = fixed_attributes(6, 0, None);
-    let count_offset = fixed_attributes(5, 0, None).len() + 1;
-    let mut payload = 1_i32.to_le_bytes().to_vec();
-    payload.extend([1; 32]);
-    bytes.splice(count_offset..count_offset + 4, payload);
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 0, 100),
-        "Rhino object explicit display materials",
-    );
-}
-
-#[test]
-fn tagged_object_groups_and_display_materials_refuse_collection_limit() {
-    let mut groups = 1_i32.to_le_bytes().to_vec();
-    groups.extend(7_i32.to_le_bytes());
-    let bytes = tagged_attributes(&[(18, groups)], 0);
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 0, 100),
-        "Rhino object groups",
-    );
-
-    let mut materials = 1_i32.to_le_bytes().to_vec();
-    materials.extend([1; 32]);
-    let bytes = tagged_attributes(&[(21, materials)], 0);
-    assert_attribute_resource(
-        &attribute_resource_refusal(&bytes, 0, 100),
-        "Rhino object display materials",
-    );
-}
-
 #[test]
 fn parses_fixed_attributes_through_every_minor_gate() {
     for minor in 0..=8 {
@@ -776,13 +612,8 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         10,
     )))];
     let mut warnings = Diagnostics::new();
-    let material = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
-        material,
-        &metadata,
-        &mut warnings,
-    )
-    .expect("service profile admits material identity");
+    let material = crate::objects::resolve_identities(material, &metadata, &mut warnings)
+        .expect("service profile admits material identity");
     assert_eq!(
         material[0]
             .identity()
@@ -807,13 +638,8 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.color_source = crate::objects::ColorSource::Parent;
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 20)))];
-    let parent = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
-        parent,
-        &metadata,
-        &mut warnings,
-    )
-    .expect("service profile admits parent identity");
+    let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings)
+        .expect("service profile admits parent identity");
     assert_eq!(
         parent[0]
             .identity()
@@ -858,7 +684,6 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
     object.class_uuid = Uuid::from_wire([9; 16]);
     let mut warnings = Diagnostics::new();
     let objects = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
         objects,
         &settings::DocumentMetadata::default(),
         &mut warnings,
@@ -884,30 +709,12 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
 }
 
 #[test]
-fn resolved_object_identities_refuse_collection_limit() {
+fn degraded_object_record_resolves_to_one_identity() {
     let objects = vec![ObjectRecord::Degraded {
         range: 0..1,
         warning: "fixture".to_owned(),
     }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let refusal = crate::objects::resolve_identities(
-        &ctx,
-        objects.clone(),
-        &settings::DocumentMetadata::default(),
-        &mut Diagnostics::new(),
-    )
-    .expect_err("one resolved record exceeds zero collection items");
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino resolved object identities"
-    ));
     let resolved = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
         objects,
         &settings::DocumentMetadata::default(),
         &mut Diagnostics::new(),
@@ -917,29 +724,10 @@ fn resolved_object_identities_refuse_collection_limit() {
 }
 
 #[test]
-fn malformed_attribute_userdata_diagnostic_refuses_collection_limit() {
+fn malformed_attribute_userdata_adds_one_warning() {
     let bytes = [0_u8];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let refusal = crate::objects::parse_attribute_userdata(
-        &ctx,
-        &bytes,
-        0..bytes.len(),
-        ArchiveVersion::V5,
-        &mut Diagnostics::new(),
-    )
-    .expect_err("one degradation diagnostic exceeds zero collection items");
-    assert!(matches!(
-        refusal,
-        crate::chunks::FramingError::Resource(limit)
-            if limit.operation == "Rhino diagnostics"
-    ));
     let mut warnings = Diagnostics::new();
     crate::objects::parse_attribute_userdata(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V5,
@@ -963,7 +751,6 @@ pub(crate) fn attribute_userdata_recovers_after_malformed_bounded_record() {
     malformed.extend(valid);
     let mut warnings = Diagnostics::new();
     let descriptors = crate::objects::parse_attribute_userdata(
-        &cadmpeg_test_support::service_decode_context(),
         &malformed,
         0..malformed.len(),
         ArchiveVersion::V4,
@@ -1202,56 +989,6 @@ fn malformed_per_object_mesh_userdata_keeps_object_attributes() {
 }
 
 #[test]
-fn custom_mesh_userdata_diagnostics_refuse_collection_limit() {
-    let bytes = [0_u8; 5];
-    let parse_obsolete: fn(
-        &cadmpeg_core::decode::DecodeContext<'_>,
-        &[u8],
-        &[_],
-        ArchiveVersion,
-        &mut _,
-    ) -> _ = super::parse_obsolete_custom_mesh_userdata;
-    for (class_uuid, parse) in [
-        (
-            crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA,
-            parse_obsolete,
-        ),
-        (
-            crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA,
-            super::parse_per_object_mesh_userdata,
-        ),
-    ] {
-        let descriptors = [crate::objects::AttributeUserdataDescriptor::Known(
-            crate::objects::AttributeUserdata {
-                range: 0..bytes.len(),
-                class_uuid,
-                item_uuid: class_uuid,
-                application_uuid: None,
-                writer_version: None,
-                payload_range: 0..bytes.len(),
-            },
-        )];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root bytes admitted");
-        let refused = parse(
-            &ctx,
-            &bytes,
-            &descriptors,
-            ArchiveVersion::V5,
-            &mut Diagnostics::new(),
-        )
-        .expect_err("custom mesh diagnostic exceeds zero collection items");
-        assert!(
-            matches!(refused, crate::chunks::FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
-        );
-    }
-}
-
-#[test]
 fn user_string_list_reads_ordered_entries_and_bounded_suffixes() {
     let archive = ArchiveVersion::V5;
     let mut first = utf16_bytes("CaseKey");
@@ -1295,73 +1032,12 @@ fn user_string_list_rejects_a_negative_count() {
     .is_err());
 }
 
-fn user_string_list_refusal(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> crate::chunks::FramingError {
-    let archive = ArchiveVersion::V5;
-    let mut entry = utf16_bytes("key");
-    entry.extend(utf16_bytes("value"));
-    let mut body = 1_i32.to_le_bytes().to_vec();
-    body.extend(anonymous_chunk(archive, 0, &entry));
-    let bytes = anonymous_chunk(archive, 0, &body);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    crate::objects::parse_user_string_list(&ctx, &bytes, 0..bytes.len(), archive)
-        .expect_err("user strings exceed configured limit")
-}
-
-#[test]
-fn user_string_entries_refuse_collection_limit() {
-    assert_attribute_resource(
-        &user_string_list_refusal(0, 100),
-        "Rhino user-string entries",
-    );
-}
-
-#[test]
-fn user_string_key_refuses_retained_limit() {
-    assert_attribute_resource(
-        &user_string_list_refusal(
-            100,
-            crate::test_support::retained_limit_at("Rhino user-string key", 0, |cap| {
-                match user_string_list_refusal(100, cap) {
-                    crate::chunks::FramingError::Resource(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-        ),
-        "Rhino user-string key",
-    );
-}
-
-#[test]
-fn user_string_value_refuses_retained_limit() {
-    assert_attribute_resource(
-        &user_string_list_refusal(
-            100,
-            crate::test_support::retained_limit_at("Rhino user-string value", 0, |cap| {
-                match user_string_list_refusal(100, cap) {
-                    crate::chunks::FramingError::Resource(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-        ),
-        "Rhino user-string value",
-    );
-}
-
 #[test]
 fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
     let archive = ArchiveVersion::V5;
     let uuid = crc_chunk(archive, 0x0002_fffb, &[0; 16]);
     let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
     let (class, userdata) = crate::objects::parse_class_wrapper_with_userdata(
-        &cadmpeg_test_support::service_decode_context(),
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1374,44 +1050,20 @@ fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
 }
 
 #[test]
-fn class_uuid_checksum_diagnostic_refuses_collection_limit() {
+fn class_uuid_checksum_mismatch_adds_one_warning() {
     let archive = ArchiveVersion::V5;
     let mut uuid = crc_chunk(archive, 0x0002_fffb, &[0; 16]);
     let crc_offset = uuid.len() - 1;
     uuid[crc_offset] ^= 1;
     let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
-        .expect("root bytes admitted");
-    let refusal = crate::objects::parse_class_wrapper(
-        &ctx,
-        &wrapper,
-        0..wrapper.len(),
-        archive,
-        &mut Diagnostics::new(),
-    )
-    .expect_err("checksum diagnostic exceeds zero collection items");
-    assert!(matches!(
-        refusal,
-        crate::chunks::FramingError::Resource(limit)
-            if limit.operation == "Rhino diagnostics"
-    ));
     let mut warnings = Diagnostics::new();
-    crate::objects::parse_class_wrapper(
-        &cadmpeg_test_support::service_decode_context(),
-        &wrapper,
-        0..wrapper.len(),
-        archive,
-        &mut warnings,
-    )
-    .expect("service profile retains checksum diagnostic");
+    crate::objects::parse_class_wrapper(&wrapper, 0..wrapper.len(), archive, &mut warnings)
+        .expect("service profile retains checksum diagnostic");
     assert_eq!(warnings.iter().count(), 1);
 }
 
 #[test]
-fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only() {
+fn class_wrapper_retains_userdata_only_on_request() {
     let archive = ArchiveVersion::V8;
     let userdata = crate::test_support::test_dump::class_userdata(
         archive,
@@ -1426,34 +1078,14 @@ fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only(
         &[],
         &userdata,
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
-        .expect("root bytes admitted");
     crate::objects::parse_class_wrapper(
-        &ctx,
         &wrapper,
         0..wrapper.len(),
         archive,
         &mut Diagnostics::new(),
     )
     .expect("scan-only class wrapper does not retain userdata");
-    let error = crate::objects::parse_class_wrapper_with_userdata(
-        &ctx,
-        &wrapper,
-        0..wrapper.len(),
-        archive,
-        &mut Diagnostics::new(),
-    )
-    .expect_err("retained userdata exceeds collection limit");
-    assert!(matches!(
-        error,
-        crate::chunks::FramingError::Resource(refusal)
-            if refusal.operation == "Rhino class userdata"
-    ));
     let (class, retained) = crate::objects::parse_class_wrapper_with_userdata(
-        &cadmpeg_test_support::service_decode_context(),
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1471,31 +1103,9 @@ fn uuid_list_uses_an_anonymous_versioned_chunk() {
     body.extend([0x11; 16]);
     let bytes = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UUID-list reader");
-    let values = crate::objects::read_uuid_list(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut reader,
-        archive,
-    )
-    .expect("UUID list");
+    let values = crate::objects::read_uuid_list(&mut reader, archive).expect("UUID list");
     assert_eq!(values.len(), 1);
     assert_eq!(reader.remaining(), 0);
-}
-
-#[test]
-fn object_uuid_list_refuses_collection_limit() {
-    let archive = ArchiveVersion::V5;
-    let mut body = 1_i32.to_le_bytes().to_vec();
-    body.extend([0x11; 16]);
-    let bytes = anonymous_chunk(archive, 0, &body);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UUID-list reader");
-    let error = crate::objects::read_uuid_list(&ctx, &mut reader, archive)
-        .expect_err("UUID list exceeds collection limit");
-    assert_attribute_resource(&error, "Rhino UUID list");
 }
 
 #[test]
@@ -1519,83 +1129,6 @@ fn object_trailer_accepts_bounded_unknown_child_without_history() {
             .len(),
         1
     );
-}
-
-fn object_record_collection_refusal(bytes: &[u8], limit: u64) -> crate::chunks::FramingError {
-    let archive = ArchiveVersion::V5;
-    let chunk = crate::chunks::chunk_at(bytes, 0, bytes.len(), archive, false)
-        .expect("object record framing");
-    let record = crate::container::Record::long(chunk.typecode, chunk.range(), chunk.body());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    crate::objects::parse_object_record(
-        &ctx,
-        bytes,
-        &record,
-        archive,
-        None,
-        &mut Diagnostics::new(),
-    )
-    .expect_err("object collection exceeds configured limit")
-}
-
-#[test]
-fn object_unknown_trailer_refuses_collection_limit() {
-    let bytes = object_record_with_unknown_trailer(ArchiveVersion::V5, POINT_CLASS);
-    assert!(matches!(
-        object_record_collection_refusal(&bytes, 0),
-        crate::chunks::FramingError::Resource(refusal)
-            if refusal.operation == "Rhino object unknown trailer"
-    ));
-}
-
-#[test]
-fn object_class_userdata_refuses_collection_limit() {
-    let archive = ArchiveVersion::V5;
-    let object_type = short_chunk(archive, 0x8200_0071, 1);
-    let uuid = crc_chunk(archive, 0x0002_fffb, &POINT_CLASS);
-    let class_data = crc_chunk(archive, 0x0002_fffc, &[]);
-    let userdata = class_userdata_v1_with_direct_payload(archive, [1; 16], &[]);
-    let class_end = short_chunk(archive, 0x8002_7fff, 0);
-    let class = long_chunk(
-        archive,
-        0x0002_7ffa,
-        &[uuid, class_data, userdata, class_end].concat(),
-    );
-    let object_end = short_chunk(archive, 0x8200_007f, 0);
-    let bytes = crate::test_support::test_dump::nested_crc_chunk(
-        archive,
-        0x2000_8070,
-        &[object_type, class, object_end].concat(),
-    );
-    assert!(matches!(
-        object_record_collection_refusal(&bytes, 0),
-        crate::chunks::FramingError::Resource(refusal)
-            if refusal.operation == "Rhino object userdata"
-    ));
-    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false)
-        .expect("object record framing");
-    let record = crate::container::Record::long(chunk.typecode, chunk.range(), chunk.body());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("root bytes admitted");
-    let parsed = crate::objects::parse_object_record(
-        &ctx,
-        &bytes,
-        &record,
-        archive,
-        None,
-        &mut Diagnostics::new(),
-    )
-    .expect("service profile admits class userdata");
-    assert_eq!(parsed.framed().expect("framed object").userdata.len(), 1);
 }
 
 #[test]
@@ -1743,71 +1276,4 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .iter()
         .filter(|loss| loss.code != crate::loss::RhinoLossCode::IntegrityFailure.kind())
         .any(|loss| { loss.message.contains("OBJECT_RECORD") || loss.message.contains("offset") }));
-}
-
-#[test]
-fn degraded_object_warning_refuses_retained_limit() {
-    let record = crate::container::Record::short(0x2000_8070, 0..1, 0);
-    let error = crate::chunks::FramingError::InvalidHeader;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    let refusal = crate::objects::degraded_object_record(&ctx, &record, &error)
-        .expect_err("degraded warning text exceeds zero retained bytes");
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino degraded object warning"
-    ));
-    let result = crate::objects::degraded_object_record(
-        &cadmpeg_test_support::service_decode_context(),
-        &record,
-        &error,
-    )
-    .expect("service profile admits degraded warning");
-    assert!(
-        matches!(result, ObjectRecord::Degraded { warning, .. } if warning.contains("degraded"))
-    );
-}
-
-#[test]
-fn attribute_userdata_checksum_refusal_propagates_without_diagnostic() {
-    use crate::chunks::FramingError;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let bytes = class_userdata_v2_with_direct_payload(
-        ArchiveVersion::V5,
-        [1; 16],
-        [2; 16],
-        50,
-        2_348_836_140,
-        &[1, 2, 3, 4],
-    );
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "Rhino chunk checksum bytes",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            let mut warnings = Diagnostics::new();
-            match crate::objects::parse_attribute_userdata(
-                &ctx,
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                &mut warnings,
-            ) {
-                Err(FramingError::Resource(limit)) => {
-                    assert_eq!(ctx.resource_refusal(), Some(limit));
-                    assert!(warnings.is_empty());
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                }
-                Err(error) => panic!("unexpected userdata error: {error}"),
-                Ok(value) => Ok(value),
-            }
-        },
-    );
 }
