@@ -3537,6 +3537,21 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_studio_post_branch_references",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_studio_post_branch_references,
+                r,
+                ns,
+            )
+        },
+        len: |m| m.features.feature_studio_post_branch_references.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_surface_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,

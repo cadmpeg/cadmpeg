@@ -60,8 +60,8 @@ pub(crate) fn attach_container_layer(
     attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native)
 }
 
-/// Admit the deep byte contracts of retained construction target envelopes.
-pub(crate) fn admit_construction_named_targets(
+/// Admit construction target byte contracts and complete surface allocations.
+pub(crate) fn admit_construction_records(
     ctx: &DecodeContext<'_>,
     namespace: &cadmpeg_ir::native::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
@@ -74,5 +74,5 @@ pub(crate) fn admit_construction_named_targets(
         ctx.charge_work(268, "admit NX construction named-target envelope")?;
         record?.validate_links(ctx, namespace)?;
     }
-    Ok(())
+    features::surface_allocation::admit_surface_allocations(ctx, namespace)
 }

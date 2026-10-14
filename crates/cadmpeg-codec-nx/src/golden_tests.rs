@@ -300,6 +300,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_sketch_records",
     "feature_sketch_references",
     "feature_surface_construction_branches",
+    "feature_studio_post_branch_references",
     "feature_surface_construction_payloads",
     "feature_surface_construction_references",
     "feature_surface_construction_scalar_pairs",
@@ -387,7 +388,7 @@ const KNOWN_ARENAS: &[&str] = &[
 ];
 
 /// Minimum distinct arenas the golden fixtures must collectively populate.
-const ARENA_COVERAGE_FLOOR: usize = 124;
+const ARENA_COVERAGE_FLOOR: usize = 125;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
@@ -415,6 +416,14 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 
     // Self-contained `.prt` images.
     f.push(("single_part_prt", single_part_prt()));
+    f.push((
+        "studio_complete_storage_allocation",
+        crate::test_support::studio_surface::prt(),
+    ));
+    f.push((
+        "skin_complete_storage_allocation",
+        crate::test_support::studio_surface::skin_prt(),
+    ));
     f.push(("topology_part_prt", topology_part_prt()));
     f.push(("prt_with_arrangements", prt_with_arrangements()));
     f.push((
@@ -1076,7 +1085,7 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 257, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 258, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()

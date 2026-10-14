@@ -6,6 +6,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod native_references;
+pub(crate) mod studio_surface;
 pub(crate) mod test_bytes;
 pub(crate) mod test_cfb;
 pub(crate) mod test_deltas;

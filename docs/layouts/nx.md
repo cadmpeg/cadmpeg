@@ -52,6 +52,32 @@ record states which lane it is in.
 | `134` | B_CURVE | 23 B | logical fixed record length | §4.1 |
 | `137` | SP_CURVE | variable | 33 bytes plus escape and large-index shifts | §4.1 |
 
+## `studio_post_branch_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 22 B
+
+Relative to the byte immediately after the admitted eight-byte Studio branch terminator. Eight variable-width canonical object-index references follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/studio_references.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 22 | `discriminator` | `bytes[22]` | big | spec | Its fixed prefix is `00 00 00 00 00 00 00 00 00 01 04 02 01 01 01 05 01 01 01 01 01 09` (22 bytes) · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 2, 1, 1, 1, 5, 1, 1, 1, 1, 1, 9]` |
+
+## `studio_post_branch_suffix`
+
+Spec §7.1 · layout: byte offsets · size: 36 B
+
+Relative to the byte immediately after the eighth canonical post-branch object-index reference. The suffix ends at the trailing envelope prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/studio_references.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 36 | `discriminator` | `bytes[36]` | big | spec | the fixed suffix `01 05 ff ff ff ff 15 01 10 04 04 02 02 a0 5a 50 08 08 02 02 01 01 01 01 02 02 01 05 2f a4 7a e1 47 ae 14 7b` (36 bytes) · value `[1, 5, 255, 255, 255, 255, 21, 1, 16, 4, 4, 2, 2, 160, 90, 80, 8, 8, 2, 2, 1, 1, 1, 1, 2, 2, 1, 5, 47, 164, 122, 225, 71, 174, 20, 123]` |
+
 ## `construction_binary64_prefix`
 
 Spec §7.1 · layout: byte offsets · size: 18 B

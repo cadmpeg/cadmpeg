@@ -4,6 +4,9 @@ use crate::native::features::construction_records::{
     feature_surface_construction_scalar_pairs, feature_surface_construction_strings,
 };
 use crate::native::features::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
+use crate::native::features::surface_allocation::{
+    FeatureSurfaceConstructionPayload, SurfaceAllocationSources,
+};
 use crate::native::features::{
     feature_datum_csys_payload_fixed_pairs, feature_datum_csys_payload_scalar_pairs,
     feature_datum_csys_payload_scalars, feature_datum_plane_payload_scalar_pairs,
@@ -12,7 +15,6 @@ use crate::native::features::{
     feature_sketch_payload_names, feature_sketch_payload_scalar_lanes, offset_data_block_bytes,
     FeatureConstructionOwner, FeatureConstructionPayload, FeatureDatumCsysPayload,
     FeatureDatumPlanePayload, FeaturePayloadName, FeatureSketchConstructionInputs,
-    FeatureSurfaceConstructionPayload,
 };
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -178,13 +180,16 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
                 }
             }
             FrameRoute::SurfacePair | FrameRoute::SurfaceString => {
-                let content: FeaturePayloadContent<[FeaturePayloadBlock; 14]> =
+                let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
                     FeaturePayloadContent::from_source(ctx, vec![id; 14], &blocks)?
                         .expect("surface payload");
                 FramePayload::Surface(Box::new(FeatureSurfaceConstructionPayload {
                     id: "surface-payload".into(),
                     operation_label: "operation".into(),
                     construction_references: std::array::from_fn(|_| "reference".into()),
+                    sources: SurfaceAllocationSources::Skin {
+                        construction_branches: vec!["branch".into()].try_into().unwrap(),
+                    },
                     content,
                 }))
             }

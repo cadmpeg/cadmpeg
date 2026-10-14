@@ -14,7 +14,6 @@ use crate::native::features::construction_records::feature_point_construction_sc
 use crate::native::features::construction_records::feature_projected_curve_construction_payloads;
 use crate::native::features::construction_records::feature_projected_curve_construction_strings;
 use crate::native::features::construction_records::feature_projected_curve_references;
-use crate::native::features::construction_records::feature_surface_construction_payloads;
 use crate::native::features::construction_records::feature_surface_construction_references;
 use crate::native::features::construction_records::feature_swp104_leading_branches;
 use crate::native::features::construction_records::feature_thru_curve_construction_envelopes;
@@ -31,6 +30,7 @@ use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
 use crate::native::features::draft::FeatureDraftConstructionIndexLane;
 use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::feature_operation_labels;
+use crate::native::features::surface_allocation::feature_surface_construction_payloads;
 use crate::native::features::FeatureExtrudeProfileReference;
 
 /// A container whose feature-history links exceed what the stable sort sorts
@@ -840,13 +840,7 @@ pub(super) fn surface_payload_bytes() -> Vec<u8> {
 }
 
 fn surface_payload_container() -> crate::container::Container<'static> {
-    let store = (0..600).map(|_| b"A".as_slice()).collect::<Vec<_>>();
-    let part = crate::test_support::test_om::composed_feature_history_payload(
-        &[(&[0xff; 4], "SKIN", surface_payload_bytes())],
-        &store,
-    );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    let file = crate::test_support::studio_surface::prt();
     crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
         .expect("synthetic surface payload container")
 }
@@ -1104,8 +1098,33 @@ fn surface_payload_route_refusal(
     })
     .expect("admitted surface references");
     assert_eq!(references.len(), 14);
+    let labels = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::feature_operation_labels(ctx, &container)
+    })
+    .unwrap();
+    let branches = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::surface_branches::feature_surface_construction_branches(
+            ctx, &container,
+        )
+    })
+    .unwrap();
+    let post = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::construction_records::feature_studio_post_branch_references(
+            ctx, &container,
+        )
+    })
+    .unwrap();
+    assert_eq!(branches.len(), 3);
+    assert_eq!(post.len(), 8);
     let payloads = crate::test_support::with_decode_context(|ctx| {
-        feature_surface_construction_payloads(ctx, &container, &references)
+        feature_surface_construction_payloads(
+            ctx,
+            &container,
+            &references,
+            &labels,
+            &branches,
+            &post,
+        )
     })
     .expect("admitted surface payload");
     assert_eq!(payloads.len(), 1);
@@ -1116,8 +1135,15 @@ fn surface_payload_route_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_surface_construction_payloads(ctx, &container, &references)
-                .expect_err("surface payload resource limit")
+            feature_surface_construction_payloads(
+                ctx,
+                &container,
+                &references,
+                &labels,
+                &branches,
+                &post,
+            )
+            .expect_err("surface payload resource limit")
         },
     )
 }

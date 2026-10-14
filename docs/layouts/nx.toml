@@ -31,6 +31,42 @@ note = "Parasolid XMT index, small form: a big-endian u16. The large form is a n
 section = "3.1"
 anchor = "| Small index | `uint16` BE, 2 bytes |"
 
+[[record]]
+name = "studio_post_branch_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/studio_references.rs"
+kind = "byte"
+section = "7.1"
+anchor = "Its fixed prefix is `00 00 00 00 00 00 00 00 00 01 04 02 01 01 01 05 01 01 01 01 01 09` (22 bytes)"
+size = 22
+endianness = "big"
+note = "Relative to the byte immediately after the admitted eight-byte Studio branch terminator. Eight variable-width canonical object-index references follow."
+
+[[record.field]]
+name = "discriminator"
+offset = 0
+type = "bytes[22]"
+source = "spec"
+anchor = "Its fixed prefix is `00 00 00 00 00 00 00 00 00 01 04 02 01 01 01 05 01 01 01 01 01 09` (22 bytes)"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 2, 1, 1, 1, 5, 1, 1, 1, 1, 1, 9]
+
+[[record]]
+name = "studio_post_branch_suffix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/studio_references.rs"
+kind = "byte"
+section = "7.1"
+anchor = "the fixed suffix `01 05 ff ff ff ff 15 01 10 04 04 02 02 a0 5a 50 08 08 02 02 01 01 01 01 02 02 01 05 2f a4 7a e1 47 ae 14 7b` (36 bytes)"
+size = 36
+endianness = "big"
+note = "Relative to the byte immediately after the eighth canonical post-branch object-index reference. The suffix ends at the trailing envelope prefix."
+
+[[record.field]]
+name = "discriminator"
+offset = 0
+type = "bytes[36]"
+source = "spec"
+anchor = "the fixed suffix `01 05 ff ff ff ff 15 01 10 04 04 02 02 a0 5a 50 08 08 02 02 01 01 01 01 02 02 01 05 2f a4 7a e1 47 ae 14 7b` (36 bytes)"
+value = [1, 5, 255, 255, 255, 255, 21, 1, 16, 4, 4, 2, 2, 160, 90, 80, 8, 8, 2, 2, 1, 1, 1, 1, 2, 2, 1, 5, 47, 164, 122, 225, 71, 174, 20, 123]
+
 # --- §2 SPLMSSTR container --------------------------------------------------
 
 [[record]]

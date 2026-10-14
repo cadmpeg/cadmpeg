@@ -75,11 +75,14 @@ use super::features::construction_records::{
     feature_operation_body_scalar_triples, feature_point_construction_headers,
     feature_point_construction_scalar_lanes, feature_projected_curve_construction_payloads,
     feature_projected_curve_construction_strings, feature_projected_curve_references,
-    feature_surface_construction_payloads, feature_surface_construction_references,
+    feature_studio_post_branch_references, feature_surface_construction_references,
     feature_surface_construction_scalar_pairs, feature_surface_construction_strings,
     feature_swp104_leading_branches, feature_thru_curve_construction_envelopes,
 };
 use super::features::operation_record::FeatureOperationRecord;
+use super::features::surface_allocation::{
+    feature_surface_construction_payloads, FeatureSurfaceConstructionPayload,
+};
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use super::features::{
     feature_body_data_block_uses, feature_body_reference_occurrences, feature_body_references,
@@ -128,8 +131,8 @@ use super::features::{
     FeatureSketchPayloadFixedPair, FeatureSketchPayloadMixedPair, FeatureSketchPayloadNamedRecord,
     FeatureSketchPayloadScalarLane, FeatureSketchPoint, FeatureSketchPointGroup,
     FeatureSketchPointUse, FeatureSketchPrecedingNamedPointUse, FeatureSketchRecord,
-    FeatureSketchReference, FeatureSurfaceConstructionPayload, FeatureSurfaceConstructionReference,
-    FeatureSurfaceConstructionString, FeatureThruCurveConstructionEnvelope, OffsetStoreNamedPoint,
+    FeatureSketchReference, FeatureSurfaceConstructionReference, FeatureSurfaceConstructionString,
+    FeatureThruCurveConstructionEnvelope, OffsetStoreNamedPoint,
 };
 use super::om::{
     audit_trail_rows, class_definitions, configuration_attribute_uses, configurations,
@@ -446,6 +449,7 @@ pub(in crate::native) struct FeatureRecords {
         Vec<FeatureDraftConstructionIdentityFrame>,
     pub(super) feature_draft_construction_terminal_lanes: Vec<FeatureDraftConstructionTerminalLane>,
     pub(super) feature_surface_construction_references: Vec<FeatureSurfaceConstructionReference>,
+    pub(super) feature_studio_post_branch_references: Vec<FeatureSurfaceConstructionReference>,
     pub(super) feature_surface_construction_payloads: Vec<FeatureSurfaceConstructionPayload>,
     pub(super) feature_surface_construction_scalar_pairs: Vec<FeaturePayloadScalarPair>,
     pub(super) feature_surface_construction_strings: Vec<FeatureSurfaceConstructionString>,
@@ -1186,10 +1190,17 @@ impl NativeModel {
             feature_draft_construction_terminal_lanes(ctx, container)?;
         let feature_surface_construction_references =
             feature_surface_construction_references(ctx, container)?;
+        let feature_studio_post_branch_references =
+            feature_studio_post_branch_references(ctx, container)?;
+        let feature_surface_construction_branches =
+            feature_surface_construction_branches(ctx, container)?;
         let feature_surface_construction_payloads = feature_surface_construction_payloads(
             ctx,
             container,
             &feature_surface_construction_references,
+            &feature_operation_labels,
+            &feature_surface_construction_branches,
+            &feature_studio_post_branch_references,
         )?;
         let feature_surface_construction_scalar_pairs = feature_surface_construction_scalar_pairs(
             ctx,
@@ -1201,8 +1212,6 @@ impl NativeModel {
             container,
             &feature_surface_construction_payloads,
         )?;
-        let feature_surface_construction_branches =
-            feature_surface_construction_branches(ctx, container)?;
         let feature_swp104_leading_branches = feature_swp104_leading_branches(ctx, container)?;
         let feature_thru_curve_construction_branch_groups =
             feature_thru_curve_construction_branch_groups(ctx, container)?;
@@ -1646,6 +1655,7 @@ impl NativeModel {
                 feature_draft_construction_identity_frames,
                 feature_draft_construction_terminal_lanes,
                 feature_surface_construction_references,
+                feature_studio_post_branch_references,
                 feature_surface_construction_payloads,
                 feature_surface_construction_scalar_pairs,
                 feature_surface_construction_strings,

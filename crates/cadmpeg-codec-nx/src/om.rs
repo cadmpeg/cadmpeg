@@ -58,6 +58,7 @@ pub(crate) mod discriminators;
 pub(crate) mod extrude_32;
 pub(crate) mod extrude_profile;
 pub(crate) mod simple_hole_references;
+pub(crate) mod studio_references;
 pub(crate) mod surface_branches;
 pub(crate) mod surface_envelope;
 use branch_items::BranchItems;

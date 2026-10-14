@@ -43,6 +43,7 @@ mod common_frame_wire;
 mod datum_plane_wire;
 pub(super) mod object_frame;
 pub(super) mod operation_record;
+pub(super) mod surface_allocation;
 pub(super) mod surface_branches;
 pub(super) mod swp104_branch;
 pub(super) mod thru_curve_branches;
@@ -2628,7 +2629,7 @@ pub(super) struct FeatureSurfaceConstructionReference {
     pub(super) id: String,
     /// Owning `SKIN`, `Studio Surface`, or `THRU_CURVE` operation label.
     pub(super) operation_label: String,
-    /// Zero-based slot order in the exact common envelope.
+    /// Zero-based slot order in the owning exact reference field.
     pub(super) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
@@ -2661,20 +2662,6 @@ pub(super) struct FeatureThruCurveConstructionEnvelope {
     trailing_value: NativeBytes<[u8; 2]>,
     /// Absolute source offset of the discriminator.
     source_offset: u64,
-}
-
-/// Exact logical payload reconstructed from an ordered surface-construction graph.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct FeatureSurfaceConstructionPayload {
-    /// Globally unique reconstructed-payload identity.
-    pub(super) id: String,
-    /// Owning `SKIN` or `Studio Surface` operation label.
-    pub(super) operation_label: String,
-    /// Ordered construction-reference records.
-    construction_references: [String; 14],
-    /// Ordered source blocks and the hash of their concatenated bytes.
-    #[serde(flatten)]
-    content: FeaturePayloadContent<[FeaturePayloadBlock; 14]>,
 }
 
 /// One printable string frame in a reconstructed surface payload.

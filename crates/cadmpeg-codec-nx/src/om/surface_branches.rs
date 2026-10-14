@@ -152,6 +152,13 @@ impl<B> SurfaceBranch<B> {
     pub(crate) fn terminal_offset(&self) -> u64 {
         self.offset + self.terminal_relative_offset()
     }
+
+    pub(crate) fn end_offset(&self) -> u64 {
+        self.terminal_offset()
+            + cadmpeg_core::decode::u64_from_index(self.terminal.0.raw().len())
+            + 1
+            + cadmpeg_core::decode::u64_from_index(self.suffix.0.len())
+    }
 }
 
 impl SurfaceBranch<()> {

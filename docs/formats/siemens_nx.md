@@ -2210,20 +2210,13 @@ mode, or result role.
 
 `SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope. Its header is `discriminator, 00 00 01 00, reference[0..2], 01 09, header[8], 01 09, reference[3..10]`; `SKIN` discriminators are `3e` and `3f`, while the `Studio Surface` discriminator is `14`. The same bounded payload contains exactly one trailing lane framed as `03 03 2f a4 7a e1 47 ae 14 7b, reference[11..13], 01 01 ff ff ff ff ff ff ff ff ff 00 00 00 00 01 02`. All references use the canonical object-index encoding and unique-store resolution rule and retain their exact tokens and offsets. An invalid discriminator, malformed header, absent or repeated trailing lane, null or noncanonical reference, or incomplete suffix rejects the common envelope atomically without rejecting the bounded operation record.
 
-When all fourteen common-envelope references resolve to one offset store, bytewise concatenation of their blocks in reference order is the logical surface construction payload. Physical block boundaries do not delimit its fields. The payload retains its exact length and hash, ordered construction references and block identities, payload-relative block starts, exact block lengths, and absolute source offsets. An incomplete, out-of-order, unresolved, or cross-store graph remains unreconstructed. The nine-reference `THRU_CURVE` envelope does not use this fourteen-block reconstruction rule.
+A complete surface construction allocation contains the first eleven common-envelope references, every counted branch member and terminal reference, and the final three common-envelope references in serialized source order. `Studio Surface` inserts eight post-branch storage references before the trailing envelope references. These object indices form one positive consecutive run in one unique offset store. Their resolved blocks are byte-adjacent. Bytewise concatenation of the complete run forms the logical surface construction payload. The fourteen common-envelope slots surround the branch allocation; concatenating only those slots omits source content.
 
-The `SKIN` construction allocation is also positional. The first eleven
-envelope-reference blocks are followed by the counted branch member and
-terminal blocks, and the final three envelope references follow that branch
-allocation. The complete allocation forms one consecutive block run. The
-fourteen envelope-reference slots are ordered slots around the branch
-allocation, not one consecutive reference-only run. A physical block boundary
-can split a scalar atom. Concatenate each ordered allocation before reading
-its records; member-block counts are storage counts, not curve counts.
-The allocation order and storage role do not assign section, guide,
-continuity, terminal, or control semantics. `Studio Surface` places additional
-serialized storage references after its branch terminator and before its
-trailing envelope references.
+The complete payload retains the operation kind, fourteen common-envelope reference identities, ordered branch identities, the eight post-branch reference identities for `Studio Surface`, exact length and hash, ordered block identities, payload-relative block starts, exact block lengths, and absolute source offsets. An absent or incomplete branch group, missing Studio post-branch lane, unresolved reference, repeated or nonconsecutive object index, cross-store graph, or physical storage gap leaves the allocation unreconstructed. Primitive admitted envelopes and branches remain independently retained. The nine-reference `THRU_CURVE` envelope does not use this reconstruction rule.
+
+Physical block boundaries can split a structured row, reference token, or scalar atom. Concatenate the complete allocation before reading its records. Branch member counts are storage counts, not curve counts. The allocation order and storage role do not assign section, guide, continuity, terminal, or control semantics.
+
+A `Studio Surface` post-branch lane begins immediately after the uniquely admitted branch group's eight-byte terminator. Its fixed prefix is `00 00 00 00 00 00 00 00 00 01 04 02 01 01 01 05 01 01 01 01 01 09` (22 bytes), followed by eight non-null canonical object-index references and the fixed suffix `01 05 ff ff ff ff 15 01 10 04 04 02 02 a0 5a 50 08 08 02 02 01 01 01 01 02 02 01 05 2f a4 7a e1 47 ae 14 7b` (36 bytes). The suffix ends exactly at the common envelope's trailing prefix. Each reference retains its slot, exact serialized token, source offset, and unique-store resolution. A malformed neighboring group or envelope, changed fixed byte, null or noncanonical token, missing reference, or intervening byte rejects the post-branch lane atomically.
 
 The logical surface construction payload uses the common object-payload scalar-pair frame `08 02 03 01, branch, c0 45 04 00 80 86 02 00 03, shifted-f64, 00, shifted-f64`, where `branch` is `03 01` or `81 02 01`. Each complete occurrence is retained in payload order. Both values are finite. The typed frame preserves its owning logical payload, exact discriminator including the branch, both exact scalar encodings, payload-relative discriminator and scalar offsets, and their exact absolute source offsets across source-block boundaries. An incomplete or non-finite frame is rejected atomically.
 

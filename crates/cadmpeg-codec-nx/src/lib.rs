@@ -148,7 +148,7 @@ impl CodecBackend for NxCodec {
                     ctx, namespace,
                 )
             })
-            .and_then(|_| native::admit_construction_named_targets(ctx, namespace))
+            .and_then(|_| native::admit_construction_records(ctx, namespace))
             .and_then(|()| {
                 for record in namespace
                     .arena_iter_as_for_decode::<native::assembly_placement::AssemblyPlacement>(

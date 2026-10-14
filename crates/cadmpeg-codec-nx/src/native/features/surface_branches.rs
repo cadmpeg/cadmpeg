@@ -23,7 +23,7 @@ mod borrowed_wires;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "SurfaceBranchWire")]
 pub(in crate::native) struct FeatureSurfaceConstructionBranch {
-    id: String,
+    pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
     order: NonZeroU8,
     family: SurfaceFamily,

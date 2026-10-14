@@ -685,7 +685,7 @@ body relation or an empty interchange sibling does not identify input curves.
 
 **Question.** Which ordered `Studio Surface` references and branch groups select control geometry, continuity, and terminal controls?
 
-**Known.** `siemens_nx.md` §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." and `siemens_nx.md` §7.1 "The `Studio Surface` operation label identifies a freeform-surface construction." define the surface construction envelope, ordered references, logical payload, and feature family.
+**Known.** `siemens_nx.md` §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." and `siemens_nx.md` §7.1 "The `Studio Surface` operation label identifies a freeform-surface construction." define the common envelope, counted branches, eight post-branch storage references, complete consecutive allocation, and feature family. Physical block boundaries can split structured rows, tokens, and scalars. Their storage order does not identify input curves.
 
 **Need.** We must know the roles to construct the neutral freeform surface.
 
@@ -693,6 +693,8 @@ body relation or an empty interchange sibling does not identify input curves.
 counted branch grammar with `SKIN`; the operation label selects the family but
 does not label individual references or branch members. No serialized field
 assigns control geometry, continuity, or terminal semantics.
+
+**Note.** Create controlled native variants that change one continuity setting, add one section, add one guide, or reverse one string independently. Query the authored section and guide collectors before save. Compare the complete operation and allocation. Body-write relations select outputs; incomplete output topology and an empty interchange sibling supply no input-ownership witness.
 
 ### OM-29. `RMFastLoad` class records
 
