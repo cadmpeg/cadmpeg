@@ -24,36 +24,6 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
 
-pub(super) fn assert_codec_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_collection_items = 0;
-    for _ in 0..4096 {
-        let error = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &options)
-            .expect_err("collection admission must refuse");
-        let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
-            panic!("expected {operation} collection refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        let threshold = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("finite test budget");
-        if limit.operation == operation {
-            options.policy.limits.max_collection_items = threshold - 1;
-            let final_error = FcstdCodec
-                .decode(&mut Cursor::new(bytes), &options)
-                .expect_err("one item below the site must refuse");
-            assert!(matches!(final_error,
-                cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(ref refusal))
-                    if refusal.operation == operation));
-            return;
-        }
-        options.policy.limits.max_collection_items = threshold;
-    }
-    panic!("{operation} was not reached");
-}
-
 pub(super) fn assert_codec_retained_refusal(bytes: &[u8], operation: &str) {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 0;
