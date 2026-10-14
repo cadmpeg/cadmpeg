@@ -186,13 +186,7 @@ impl TrailingPointerAnalysis {
         match self {
             Self::Macro => 0,
             Self::Unambiguous(_) => primary_end.map_or_else(
-                || {
-                    crate::test_support::with_service_context(&[], |ctx| {
-                        structural_pointer_group_candidates_with_context(record, ctx)
-                            .expect("test-only pointer candidate allocation")
-                            .len()
-                    })
-                },
+                || structural_pointer_group_candidates_with_context(record).len(),
                 |_| 1,
             ),
             Self::Ambiguous { candidates, .. } => *candidates,
@@ -3511,7 +3505,6 @@ fn tokenize(
     parameter_delimiter: u8,
     record_delimiter: u8,
     global_table: GlobalTable,
-    ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     tokenize_with_limits(
         bytes,
@@ -3520,7 +3513,6 @@ fn tokenize(
         record_delimiter,
         global_table,
         NumericLimits::default(),
-        ctx,
     )
 }
 
