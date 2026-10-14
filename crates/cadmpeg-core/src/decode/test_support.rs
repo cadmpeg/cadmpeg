@@ -13,8 +13,16 @@ struct Target {
     peak: u64,
 }
 
+#[derive(Debug)]
+struct Recording {
+    dimension: ResourceDimension,
+    operation: String,
+    charged: u64,
+}
+
 thread_local! {
     static TARGET: RefCell<Option<Target>> = const { RefCell::new(None) };
+    static RECORDING: RefCell<Option<Recording>> = const { RefCell::new(None) };
 }
 
 #[derive(Debug)]
@@ -52,6 +60,58 @@ pub fn at_charge<T>(
         }),
         run,
     )
+}
+
+/// Run `run` and return its result with the amount charged to `dimension`
+/// under `operation`.
+///
+/// Use this to prove that a route charges a named allocation when released
+/// storage keeps that charge below an earlier peak, so no ceiling can make it
+/// the refusing charge. Nested recordings restore the outer recording.
+pub fn charged_at<T>(
+    dimension: ResourceDimension,
+    operation: &str,
+    run: impl FnOnce() -> T,
+) -> (T, u64) {
+    let previous = RECORDING.with(|recording| {
+        recording.replace(Some(Recording {
+            dimension,
+            operation: operation.to_owned(),
+            charged: 0,
+        }))
+    });
+    let guard = RestoreRecording(previous);
+    let result = run();
+    let charged = RECORDING.with(|recording| {
+        recording
+            .borrow()
+            .as_ref()
+            .map_or(0, |recording| recording.charged)
+    });
+    drop(guard);
+    (result, charged)
+}
+
+#[derive(Debug)]
+struct RestoreRecording(Option<Recording>);
+
+impl Drop for RestoreRecording {
+    fn drop(&mut self) {
+        RECORDING.with(|recording| *recording.borrow_mut() = self.0.take());
+    }
+}
+
+pub(super) fn record_charge(dimension: ResourceDimension, operation: &str, amount: u64) {
+    RECORDING.with(|recording| {
+        if let Some(recording) = recording.borrow_mut().as_mut() {
+            if recording.dimension == dimension && recording.operation == operation {
+                // A total past u64::MAX keeps its earlier, already positive value.
+                if let Some(total) = recording.charged.checked_add(amount) {
+                    recording.charged = total;
+                }
+            }
+        }
+    });
 }
 
 /// Run a normal policy check while suspending any enclosing charge probe.
@@ -191,6 +251,19 @@ mod tests {
             .charge_work_limit(2, "other")
             .expect("other charge fits");
         assert_eq!(budget.charge_work_limit(7, "target"), Err(found));
+    }
+
+    #[test]
+    fn recording_sums_matching_charges_including_released_storage() {
+        let (result, charged) =
+            super::charged_at(ResourceDimension::MaterializedBytes, "target", || {
+                let budget = DecodeBudget::new(DecodePolicy::desktop(), 0);
+                drop(budget.reserve_scoped_limit(7, "before")?);
+                drop(budget.reserve_scoped_limit(2, "target")?);
+                budget.reserve_scoped_limit(9, "target").map(drop)
+            });
+        assert_eq!(result, Ok(()));
+        assert_eq!(charged, 11);
     }
 
     #[test]
