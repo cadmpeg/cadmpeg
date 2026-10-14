@@ -172,23 +172,13 @@ fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
 }
 
 #[test]
-fn feature_output_refresh_refuses_before_update_rows() {
+fn feature_output_refresh_charges_update_rows() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature_for_output_refresh());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = refresh_feature_outputs(&ctx, &scan, &mut ir)
-        .expect_err("one refresh needs one update row");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo feature output update rows")
-    );
-    assert_eq!(ir.model.features[0].ordinal, 3);
+    crate::test_support::assert_collection_charged(&[], "creo feature output update rows", |ctx| {
+        refresh_feature_outputs(ctx, &scan, &mut ir)
+    });
 }
 
 #[test]

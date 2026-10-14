@@ -691,19 +691,16 @@ mod allocation_tests {
         scan
     }
 
-    fn generator_limit_error(limit: u64, model_ids: bool, operation: &'static str) {
+    fn generator_limit_error(limit: u64, operation: &'static str) {
         let scan = generator_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = if model_ids {
-            model_feature_ids(&ctx, &scan).map(|_| ())
-        } else {
-            geometry_generator_features(&ctx, &scan).map(|_| ())
-        }
-        .expect_err("one generator exceeds the collection limit");
+        let error = geometry_generator_features(&ctx, &scan)
+            .map(|_| ())
+            .expect_err("one generator exceeds the collection limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -747,32 +744,42 @@ mod allocation_tests {
 
     #[test]
     fn generator_feature_map_nodes_refuse_collection_limit() {
-        generator_limit_error(0, false, "creo generator feature map nodes");
+        generator_limit_error(0, "creo generator feature map nodes");
     }
 
     #[test]
     fn generator_surface_ids_refuse_collection_limit() {
-        generator_limit_error(1, false, "creo generator surface IDs");
+        generator_limit_error(1, "creo generator surface IDs");
     }
 
     #[test]
     fn generator_curve_ids_refuse_collection_limit() {
-        generator_limit_error(2, false, "creo generator curve IDs");
+        generator_limit_error(2, "creo generator curve IDs");
     }
 
     #[test]
     fn geometry_generator_features_refuse_collection_limit() {
-        generator_limit_error(3, false, "creo geometry generator features");
+        generator_limit_error(3, "creo geometry generator features");
     }
 
     #[test]
-    fn model_feature_numeric_identity_nodes_refuse_collection_limit() {
-        generator_limit_error(4, true, "creo model feature numeric identity nodes");
+    fn model_feature_numeric_identity_nodes_charge_collection_items() {
+        let scan = generator_scan();
+        crate::test_support::assert_collection_charged(
+            &[],
+            "creo model feature numeric identity nodes",
+            |ctx| model_feature_ids(ctx, &scan),
+        );
     }
 
     #[test]
     fn model_feature_identity_nodes_refuse_collection_limit() {
-        generator_limit_error(5, true, "creo model feature identity nodes");
+        let scan = generator_scan();
+        crate::test_support::collection_refusal_at(
+            &[],
+            "creo model feature identity nodes",
+            |ctx| model_feature_ids(ctx, &scan),
+        );
     }
 
     #[test]

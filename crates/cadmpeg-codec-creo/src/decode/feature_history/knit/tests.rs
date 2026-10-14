@@ -352,12 +352,7 @@ fn one_result_edge() -> Vec<crate::curve::CurveTopologyRow> {
     }]
 }
 
-fn topology_limit_error(
-    face: bool,
-    collection: Option<u64>,
-    retained: Option<u64>,
-    operation: &'static str,
-) {
+fn topology_limit_error(face: bool, retained: Option<u64>, operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (tables, rows) = if face {
         one_result_surface()
@@ -367,9 +362,6 @@ fn topology_limit_error(
     let curve_rows = if face { Vec::new() } else { one_result_edge() };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    if let Some(limit) = collection {
-        policy.limits.max_collection_items = limit;
-    }
     if retained.is_some() {
         policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
@@ -401,29 +393,38 @@ fn topology_limit_error(
 
 #[test]
 fn feature_result_face_local_id_refuses_retained_limit() {
-    topology_limit_error(true, None, Some(0), "creo feature result face local IDs");
+    topology_limit_error(true, Some(0), "creo feature result face local IDs");
 }
 
 #[test]
-fn feature_result_face_members_refuse_collection_limit() {
-    topology_limit_error(true, Some(2), None, "creo feature result face members");
+fn feature_result_face_members_charge_collection_items() {
+    let (tables, rows) = one_result_surface();
+    crate::test_support::assert_collection_charged(
+        &[],
+        "creo feature result face members",
+        |ctx| feature_result_topology(ctx, &tables, &rows, &[], 17),
+    );
 }
 
 #[test]
 fn feature_result_edge_local_id_refuses_retained_limit() {
-    topology_limit_error(false, None, Some(0), "creo feature result edge local IDs");
+    topology_limit_error(false, Some(0), "creo feature result edge local IDs");
 }
 
 #[test]
-fn feature_result_edge_members_refuse_collection_limit() {
-    topology_limit_error(false, Some(4), None, "creo feature result edge members");
+fn feature_result_edge_members_charge_collection_items() {
+    let curve_rows = one_result_edge();
+    crate::test_support::assert_collection_charged(
+        &[],
+        "creo feature result edge members",
+        |ctx| feature_result_topology(ctx, &[], &[], &curve_rows, 17),
+    );
 }
 
 #[test]
 fn feature_result_topology_id_refuses_retained_limit() {
     topology_limit_error(
         true,
-        None,
         Some(cadmpeg_core::decode::u64_from_index("surface#201".len())),
         "creo feature result topology ID",
     );
@@ -433,7 +434,6 @@ fn feature_result_topology_id_refuses_retained_limit() {
 fn feature_result_owner_id_refuses_retained_limit() {
     topology_limit_error(
         true,
-        None,
         Some(cadmpeg_core::decode::u64_from_index(
             "surface#201".len() + "creo:model:feature-result-topology#17".len(),
         )),
@@ -473,8 +473,7 @@ fn feature_result_distinctness_refuses_work_limit() {
 }
 
 #[test]
-fn feature_result_topology_arena_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn feature_result_topology_arena_charges_collection_items() {
     use cadmpeg_ir::features::{
         DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
         FeatureOperation,
@@ -500,43 +499,27 @@ fn feature_result_topology_arena_refuses_collection_limit() {
         )),
         native_ref: None,
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::emit_feature_result_topologies(&ctx, &scan, &mut ir)
-        .expect_err("one topology arena row exceeds the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo feature result member distinctness"),
-        "{error:?}"
-    );
-    assert!(ir.model.feature_result_topologies.is_empty());
-    let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-        unreachable!()
-    };
-    assert!(matches!(ctx.finish_session(),
-        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
-    let error = crate::test_support::last_refusal_at(
+    crate::test_support::collection_refusal_at(
         &[],
-        ResourceDimension::CollectionItems,
-        "creo model feature result topologies",
+        "creo feature result member distinctness",
         |ctx| {
             let mut candidate = ir.clone();
             let result = super::emit_feature_result_topologies(ctx, &scan, &mut candidate);
-            if result.is_err() {
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = &result {
                 assert!(candidate.model.feature_result_topologies.is_empty());
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(first));
             }
             result
         },
     );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo model feature result topologies")
+    // One feature with one result surface emits one topology row.
+    let mut candidate = ir.clone();
+    crate::test_support::assert_collection_charged(
+        &[],
+        "creo model feature result topologies",
+        |ctx| super::emit_feature_result_topologies(ctx, &scan, &mut candidate),
     );
+    assert_eq!(candidate.model.feature_result_topologies.len(), 1);
 }
 
 fn result_surface_limit_error(limit: u64, by_feature: bool, operation: &'static str) {
@@ -577,8 +560,13 @@ fn feature_result_feature_identity_nodes_refuse_collection_limit() {
 }
 
 #[test]
-fn feature_result_surface_map_nodes_refuse_collection_limit() {
-    result_surface_limit_error(3, true, "creo feature result surface map nodes");
+fn feature_result_surface_map_nodes_charge_collection_items() {
+    let (tables, rows) = one_result_surface();
+    crate::test_support::assert_collection_charged(
+        &[],
+        "creo feature result surface map nodes",
+        |ctx| super::feature_result_surface_ids_by_feature(ctx, &tables, &rows),
+    );
 }
 
 #[test]
@@ -790,8 +778,10 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
     );
 }
 
-fn transition_limit_error(limit: u64, operation: &'static str, dependency_route: bool) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn transition_fixture() -> (
+    crate::feature::entity::FeatureEntityTable,
+    [crate::surface::SurfaceRow; 2],
+) {
     let entry =
         |entity_id, class_id, related_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(
@@ -823,17 +813,20 @@ fn transition_limit_error(limit: u64, operation: &'static str, dependency_route:
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let rows = [row(11, 3), row(201, 17)];
+    (table, rows)
+}
+
+fn transition_limit_error(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (table, rows) = transition_fixture();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = if dependency_route {
-        super::surface_transition_dependencies(&ctx, 17, &[table], &rows).map(|_| ())
-    } else {
-        super::feature_surface_transitions(&ctx, 17, &[table], &rows).map(|_| ())
-    }
-    .expect_err("one transition exceeds the collection limit");
+    let error = super::feature_surface_transitions(&ctx, 17, &[table], &rows)
+        .map(|_| ())
+        .expect_err("one transition exceeds the collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -843,27 +836,30 @@ fn transition_limit_error(limit: u64, operation: &'static str, dependency_route:
 
 #[test]
 fn transition_output_identity_nodes_refuse_collection_limit() {
-    transition_limit_error(0, "creo transition output identity nodes", false);
+    transition_limit_error(0, "creo transition output identity nodes");
 }
 
 #[test]
 fn transition_intermediate_identity_nodes_refuse_collection_limit() {
-    transition_limit_error(1, "creo transition intermediate identity nodes", false);
+    transition_limit_error(1, "creo transition intermediate identity nodes");
 }
 
 #[test]
 fn transition_source_identity_nodes_refuse_collection_limit() {
-    transition_limit_error(2, "creo transition source identity nodes", false);
+    transition_limit_error(2, "creo transition source identity nodes");
 }
 
 #[test]
 fn surface_transitions_refuse_collection_limit() {
-    transition_limit_error(3, "creo surface transitions", false);
+    transition_limit_error(3, "creo surface transitions");
 }
 
 #[test]
-fn transition_dependencies_refuse_collection_limit() {
-    transition_limit_error(4, "creo transition dependencies", true);
+fn transition_dependencies_charge_collection_items() {
+    let (table, rows) = transition_fixture();
+    crate::test_support::assert_collection_charged(&[], "creo transition dependencies", |ctx| {
+        super::surface_transition_dependencies(ctx, 17, std::slice::from_ref(&table), &rows)
+    });
 }
 
 #[test]

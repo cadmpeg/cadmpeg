@@ -7,9 +7,8 @@ use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
 
 /// Highest degree whose basis is evaluated in inline storage is 15; this
-/// degree needs a heap basis of `BASIS_SLOTS` admitted collection items.
+/// degree needs a heap basis of admitted collection items.
 const DEGREE: usize = 16;
-const BASIS_SLOTS: u64 = 17;
 
 fn line(periodic: bool) -> CurveGeometry {
     let poles = DEGREE + 1;
@@ -53,20 +52,16 @@ fn basis_refusal<T>(result: &Result<T, CodecError>) {
 
 #[test]
 fn nonperiodic_endpoint_recovery_propagates_evaluator_refusal() {
-    for cap in [2, BASIS_SLOTS] {
-        context_test(
-            |ctx| basis_refusal(&super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))),
-            cap,
-        );
-    }
-    context_test(
-        |ctx| {
-            assert_eq!(
-                super::nonperiodic_nurbs_endpoint_points(ctx, &line(false)).expect("service"),
-                Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-            );
-        },
-        u64::MAX,
+    crate::test_support::collection_refusal_at(&[], "IR B-spline basis", |ctx| {
+        super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))
+    });
+    // Each later evaluation releases its basis before the next one, so its
+    // charge stays at the first peak and no ceiling refuses it first.
+    assert_eq!(
+        crate::test_support::assert_collection_charged(&[], "IR B-spline basis", |ctx| {
+            super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))
+        }),
+        Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     );
 }
 
@@ -100,27 +95,16 @@ fn nonperiodic_orientation_propagates_evaluator_refusal() {
 
 #[test]
 fn periodic_range_recovery_propagates_evaluator_refusal() {
-    for cap in [2, BASIS_SLOTS] {
-        context_test(
-            |ctx| {
-                basis_refusal(&super::full_periodic_nurbs_edge_parameter_range(
-                    ctx,
-                    &line(true),
-                    [0.0, 0.0, 0.0],
-                ));
-            },
-            cap,
-        );
-    }
-    context_test(
-        |ctx| {
-            assert_eq!(
-                super::full_periodic_nurbs_edge_parameter_range(ctx, &line(true), [0.0, 0.0, 0.0])
-                    .expect("service"),
-                Some([0.0, 1.0])
-            );
-        },
-        u64::MAX,
+    crate::test_support::collection_refusal_at(&[], "IR B-spline basis", |ctx| {
+        super::full_periodic_nurbs_edge_parameter_range(ctx, &line(true), [0.0, 0.0, 0.0])
+    });
+    // Each later evaluation releases its basis before the next one, so its
+    // charge stays at the first peak and no ceiling refuses it first.
+    assert_eq!(
+        crate::test_support::assert_collection_charged(&[], "IR B-spline basis", |ctx| {
+            super::full_periodic_nurbs_edge_parameter_range(ctx, &line(true), [0.0, 0.0, 0.0])
+        }),
+        Some([0.0, 1.0])
     );
 }
 
