@@ -206,50 +206,6 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
 }
 
 #[test]
-fn pcurve_locus_fractions_refuse_collection_limit() {
-    let (mut ir, surface_id) = plane();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        parameter_range: None,
-        id: CurveId::from(ids::data(kind!("curve"), 54)),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("finite line"),
-        )),
-        source_object: None,
-    });
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#54=LINE('',#55,#56);#55=DUMMY();#56=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("valid line reference");
-    let edge = EdgeDef::Curve {
-        start: 1,
-        end: 2,
-        curve: 54,
-        same: true,
-    };
-    let pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 0.0),
-        )
-        .expect("finite pcurve"),
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    assert!(
-        matches!(pcurve_locus_witness(&index, &exchange, &edge, &surface_id, &pcurve, super::super::PcurveWitness { endpoint: PcurveEndpointFit { start_parameter: 0.0, end_parameter: 1.0, max_residual: 0.0 }, curve_start: Point3::new(0.0, 0.0, 0.0), curve_end: Point3::new(1.0, 0.0, 0.0), bound: COINCIDENCE_TOLERANCE }, &ctx), Err(PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
-        if refusal.operation == "step_pcurve_locus_fractions")
-    );
-}
-
-#[test]
 fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     let (mut ir, surface_id) = plane();
     let curve_id = CurveId::from(ids::data(kind!("curve"), 54));
@@ -527,97 +483,6 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
 }
 
 #[test]
-fn pcurve_selection_helpers_preserve_session_depth_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let (ir, id) = plane();
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
-    let pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 0.0),
-        )
-        .expect("valid line"),
-    );
-    for seeded in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let target = Point3::new(0.5, 0.0, 0.0);
-        let limit = if seeded {
-            pcurve_surface_closest(&ctx, &index, &id, &pcurve, target, &[0.0])
-        } else {
-            mapped_pcurve_closest(&ctx, &index, &id, &pcurve, target, 0.0)
-        }
-        .expect_err("first seed or inverse step charges work");
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-        assert_eq!(
-            limit.operation,
-            if seeded {
-                "step pcurve seed visit"
-            } else {
-                "step pcurve inverse step"
-            }
-        );
-        assert_eq!(
-            ctx.charge_work_limit(0, "observe selection refusal"),
-            Err(limit)
-        );
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let limit = pcurve_selection_uv(&ctx, &pcurve, 0.5).expect_err("first evaluator frame refuses");
-    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
-    assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-    assert_eq!(
-        ctx.charge_work_limit(0, "observe selection refusal"),
-        Err(limit)
-    );
-    for directed in [false, true] {
-        let result = if directed {
-            pcurve_declared_endpoint_fit_directed(
-                &ctx,
-                &index,
-                &id,
-                &pcurve,
-                [0.0, 1.0],
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-            )
-        } else {
-            pcurve_declared_endpoint_fit(
-                &ctx,
-                &index,
-                &id,
-                &pcurve,
-                [0.0, 1.0],
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-            )
-        };
-        assert_eq!(result, Err(limit));
-    }
-    assert_eq!(
-        pcurve_surface_closest(&ctx, &index, &id, &pcurve, Point3::new(0.5, 0.0, 0.0), &[]),
-        Err(limit)
-    );
-    assert_eq!(
-        mapped_pcurve_closest(
-            &ctx,
-            &index,
-            &id,
-            &pcurve,
-            Point3::new(0.5, 0.0, 0.0),
-            f64::NAN
-        ),
-        Err(limit)
-    );
-}
-
-#[test]
 fn certified_pcurve_endpoint_does_not_repeat_tangents_or_seed_searches() {
     let (ir, id) = plane();
     let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
@@ -629,8 +494,7 @@ fn certified_pcurve_endpoint_does_not_repeat_tangents_or_seed_searches() {
         .unwrap(),
     );
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     assert_eq!(
         pcurve_surface_closest(
@@ -660,52 +524,6 @@ fn certified_pcurve_endpoint_does_not_repeat_tangents_or_seed_searches() {
 }
 
 #[test]
-fn selection_domains_use_indexed_constructions_and_caller_work_limits() {
-    let (mut ir, support) = plane();
-    let mut subset = ir.model.surfaces[0].clone();
-    subset.id = SurfaceId::mint("test:model:surface#subset").unwrap();
-    let id = subset.id.clone();
-    ir.model.surfaces.push(subset);
-    ir.model
-        .add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
-            &id,
-            cadmpeg_ir::geometry::ProceduralSurface::new(
-                cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:procedural-surface#subset")
-                    .unwrap(),
-                ProceduralSurfaceDefinition::Subset(
-                    cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
-                        support,
-                        [[2.0, 5.0], [4.0, 9.0]],
-                        None,
-                        None,
-                        None,
-                    )
-                    .unwrap(),
-                ),
-                None,
-            ),
-        )
-        .unwrap()
-        .unwrap();
-    let index = ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
-    with_context(|ctx| {
-        assert_eq!(
-            surface_selection_parameter_domains(&index, &id, &ir.model.surfaces[1].geometry, ctx)
-                .unwrap(),
-            [Some([0.0, 3.0]), Some([0.0, 5.0])]
-        );
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert!(matches!(surface_selection_parameter_domains(
-        &index, &id, &ir.model.surfaces[1].geometry, &ctx),
-        Err(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
-}
-
-#[test]
 fn established_curve_locus_witness_does_not_repeat_other_seed_inversions() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let curve = &ir.model.curves[0];
@@ -718,8 +536,7 @@ fn established_curve_locus_witness_does_not_repeat_other_seed_inversions() {
     )
     .unwrap();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let seeds = (0..100)
         .map(|seed| cadmpeg_core::convert::f64_from_index(seed).unwrap())
@@ -736,4 +553,23 @@ fn established_curve_locus_witness_does_not_repeat_other_seed_inversions() {
         .unwrap(),
         Some(0.0)
     );
+}
+
+#[test]
+fn pcurve_selection_uv_refuses_at_the_session_depth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("valid line"),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let limit = pcurve_selection_uv(&ctx, &pcurve, 0.5).expect_err("first evaluator frame refuses");
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
 }

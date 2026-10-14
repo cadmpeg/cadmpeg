@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -87,19 +87,6 @@ pub(crate) struct BinaryValue {
 }
 
 impl BinaryValue {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_work(u64_from_index(self.data.len()), operation)?;
-        let data = ctx.copy_slice(&self.data, operation)?;
-        Ok(Self {
-            unused_bits: self.unused_bits,
-            data: data.into_boxed_slice(),
-        })
-    }
-
     pub(crate) fn bit_len(&self) -> usize {
         self.data.len() * 8 - usize::from(self.unused_bits)
     }
@@ -151,12 +138,6 @@ pub(crate) fn lex_with_context(
 }
 
 #[derive(Clone, Copy)]
-enum LiteralStorage {
-    Retained,
-    Transient,
-}
-
-#[derive(Clone, Copy)]
 pub(crate) enum LiteralAdmission {
     Required,
     Metadata,
@@ -171,7 +152,6 @@ enum ExchangeSyntax {
 pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
     budget: &'ctx DecodeContext<'arena>,
-    literal_storage: LiteralStorage,
     literal_admission: LiteralAdmission,
     at: usize,
     allow_print_controls: bool,
@@ -191,7 +171,6 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         Self {
             input,
             budget: ctx,
-            literal_storage: LiteralStorage::Retained,
             literal_admission: LiteralAdmission::Required,
             at: draft_offset.unwrap_or(0),
             allow_print_controls: true,
@@ -203,10 +182,6 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 ExchangeSyntax::Standard
             },
         }
-    }
-
-    pub(crate) fn set_transient_literals(&mut self) {
-        self.literal_storage = LiteralStorage::Transient;
     }
 
     pub(crate) fn set_literal_admission(&mut self, admission: LiteralAdmission) {
@@ -468,7 +443,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             b'!' => self.user_name()?,
             b'+' | b'-' | b'0'..=b'9' | b'.' => self.number()?,
-            b if b.is_ascii_alphabetic() || b == b'_' => TokenKind::Name(self.name()?),
+            b if b.is_ascii_alphabetic() || b == b'_' => TokenKind::Name(self.name()),
             _ => return Err(Self::error(start, "unexpected byte")),
         };
         Ok(Token {
@@ -485,7 +460,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         kind
     }
 
-    fn name(&mut self) -> Result<String, LexError> {
+    fn name(&mut self) -> std::string::String {
         let start = self.at;
         self.at += 1;
         while self.input.get(self.at).is_some_and(|b| {
@@ -493,9 +468,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }) {
             self.at += 1;
         }
-        let (mut name, _) = self.normalized(start, self.at, LiteralStorage::Retained)?;
+        let mut name = self.normalized(start, self.at);
         name.make_ascii_uppercase();
-        Ok(name)
+        name
     }
 
     fn tag_name(&mut self) -> Result<TokenKind, LexError> {
@@ -513,7 +488,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }) {
             self.at += 1;
         }
-        let (name, _) = self.normalized(start, self.at, LiteralStorage::Retained)?;
+        let name = self.normalized(start, self.at);
         Ok(TokenKind::TagName(name))
     }
 
@@ -528,7 +503,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         {
             return Err(Self::error(start, "user-defined name has no identifier"));
         }
-        Ok(TokenKind::UserName(self.name()?))
+        Ok(TokenKind::UserName(self.name()))
     }
 
     fn occurrence(&mut self, prefix: OccurrencePrefix) -> Result<TokenKind, LexError> {
@@ -545,8 +520,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         break;
                     }
                 }
-                let (raw, _temporary) =
-                    self.normalized(digits, self.at, LiteralStorage::Transient)?;
+                let raw = self.normalized(digits, self.at);
                 let value = raw
                     .parse::<u64>()
                     .ok()
@@ -569,8 +543,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                         break;
                     }
                 }
-                let (mut name, _) =
-                    self.normalized(name_start, self.at, LiteralStorage::Retained)?;
+                let mut name = self.normalized(name_start, self.at);
                 name.make_ascii_uppercase();
                 match prefix {
                     OccurrencePrefix::Entity => Ok(TokenKind::ConstantEntity(name)),
@@ -613,7 +586,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 _ => break,
             }
         }
-        let (mut raw, _temporary) = self.normalized(start, self.at, LiteralStorage::Transient)?;
+        let mut raw = self.normalized(start, self.at);
         if exponent && raw.ends_with('.') {
             raw.pop();
         }
@@ -660,7 +633,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if self.input.get(self.at) != Some(&b'.') {
             return Err(Self::error(start, "unterminated enumeration"));
         }
-        let (mut name, _) = self.normalized(name_start, self.at, LiteralStorage::Retained)?;
+        let mut name = self.normalized(name_start, self.at);
         name.make_ascii_uppercase();
         self.at += 1;
         Ok(TokenKind::Enumeration(name))
@@ -671,21 +644,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.at += 1;
         let content = self.at;
         loop {
-            self.budget
-                .charge_work(1, "step_string_boundary_scan")
-                .map_err(|error| Self::resource_error(start, error))?;
             match self.input.get(self.at).copied() {
                 Some(b'\'') => {
                     if let Some(end) = self.match_exact_ignoring_controls(self.at, b"''") {
                         self.at = end;
                     } else {
-                        let mut bytes = self
-                            .budget
-                            .copy_retained(&self.input[content..self.at], "step_string_lexeme")
-                            .map_err(|error| Self::resource_error(start, error))?;
-                        self.budget
-                            .charge_work(u64_from_index(bytes.len()), "step_string_normalization")
-                            .map_err(|error| Self::resource_error(start, error))?;
+                        let mut bytes = self.input[content..self.at].to_vec();
                         bytes.retain(|byte| !byte.is_ascii_control());
                         self.at += 1;
                         return Ok(TokenKind::String(bytes));
@@ -730,9 +694,6 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             return Err(error);
         }
         for end in start + 1..self.input.len() {
-            self.budget
-                .charge_work(1, "STEP metadata literal recovery")
-                .map_err(|error| Self::resource_error(start, error))?;
             if self.input[end] == closing {
                 self.at = end + 1;
                 return Ok(TokenKind::UninterpretedLiteral);
@@ -770,13 +731,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if self.input.get(self.at) != Some(&b'"') {
             return Err(Self::error(start, "invalid binary literal"));
         }
-        let _temporary = self
-            .budget
-            .reserve_scoped(u64_from_index(digit_count), "step_binary_lexeme_temp")
-            .map_err(|error| Self::resource_error(start, error))?;
         let mut raw = self
             .budget
-            .alloc_filled_admitted(digit_count, HexDigit(0), "step_binary_hex_digits")
+            .alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut cursor = content;
         let mut written = 0usize;
@@ -821,21 +778,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             return Err(Self::error(start, "unused binary bits are not zero"));
         }
         let packed_len = digits.len().div_ceil(2);
-        let _packed_temporary = if matches!(self.literal_storage, LiteralStorage::Transient) {
-            Some(
-                self.budget
-                    .reserve_scoped(u64_from_index(packed_len), "step_binary_packed_temp")
-                    .map_err(|error| Self::resource_error(start, error))?,
-            )
-        } else {
-            self.budget
-                .charge_retained(u64_from_index(packed_len), "step_binary_lexeme_retained")
-                .map_err(|error| Self::resource_error(start, error))?;
-            None
-        };
         let mut data = self
             .budget
-            .alloc_filled_admitted(packed_len, 0_u8, "step_binary_packed_bytes")
+            .alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut output = 0usize;
         let mut pairs = digits.chunks_exact(2);
@@ -883,18 +828,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if self.input.get(self.at) != Some(&b'>') {
             return Err(Self::error(start, "unterminated resource token"));
         }
-        let _temporary = self
-            .budget
-            .reserve_scoped(u64_from_index(value_len), "step_uri_lexeme_temp")
-            .map_err(|error| Self::resource_error(start, error))?;
-        if matches!(self.literal_storage, LiteralStorage::Retained) {
-            self.budget
-                .charge_retained(u64_from_index(value_len), "step_uri_lexeme_retained")
-                .map_err(|error| Self::resource_error(start, error))?;
-        }
         let mut value = self
             .budget
-            .alloc_filled_admitted(value_len, 0_u8, "step_uri_lexeme_bytes")
+            .alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut written = 0usize;
         for &byte in &self.input[content..self.at] {
@@ -922,46 +858,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.input.get(at).copied()
     }
 
-    fn normalized(
-        &self,
-        start: usize,
-        end: usize,
-        storage: LiteralStorage,
-    ) -> Result<(String, Option<ScopedReservation<'_>>), LexError> {
-        let byte_count = self.input[start..end]
+    fn normalized(&self, start: usize, end: usize) -> String {
+        self.input[start..end]
             .iter()
             .filter(|byte| !byte.is_ascii_control())
-            .map(|byte| char::from(*byte).len_utf8())
-            .sum::<usize>();
-        let operation = match storage {
-            LiteralStorage::Retained => "step_lex_normalized_retained",
-            LiteralStorage::Transient => "step_lex_normalized_temp",
-        };
-        let (mut output, reservation) = match storage {
-            LiteralStorage::Retained => (
-                self.budget
-                    .retained_string(byte_count, operation)
-                    .map_err(|error| Self::resource_error(start, error))?,
-                None,
-            ),
-            LiteralStorage::Transient => {
-                let mut reservation = self
-                    .budget
-                    .reserve_scoped(0, operation)
-                    .map_err(|error| Self::resource_error(start, error))?;
-                let mut output = String::new();
-                self.budget
-                    .reserve_scoped_string(&mut reservation, &mut output, byte_count, operation)
-                    .map_err(|error| Self::resource_error(start, error))?;
-                (output, Some(reservation))
-            }
-        };
-        for &byte in &self.input[start..end] {
-            if !byte.is_ascii_control() {
-                output.push(char::from(byte));
-            }
-        }
-        Ok((output, reservation))
+            .map(|byte| char::from(*byte))
+            .collect()
     }
 
     fn print_control_end(&self, at: usize) -> Option<usize> {

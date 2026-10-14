@@ -8,4 +8,3 @@ mod header_recovery;
 mod index;
 mod omitted;
 mod resource_limits;
-mod storage;

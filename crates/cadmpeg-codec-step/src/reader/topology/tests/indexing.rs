@@ -7,6 +7,24 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
 
 #[test]
+fn source_identity_groups_keep_singletons_and_shared_order() {
+    use std::collections::BTreeMap;
+
+    let mut groups = BTreeMap::new();
+    for source in 0..1_000 {
+        super::super::push_source_identity(&mut groups, source, source);
+    }
+    assert_eq!(groups.len(), 1_000);
+    assert_eq!(groups[&0].iter().copied().collect::<Vec<_>>(), [0]);
+
+    let mut groups = BTreeMap::new();
+    for identity in [11, 22, 33] {
+        super::super::push_source_identity(&mut groups, 7, identity);
+    }
+    assert_eq!(groups[&7].iter().copied().collect::<Vec<_>>(), [11, 22, 33]);
+}
+
+#[test]
 fn cached_void_roots_preserve_the_outer_shell_role() {
     let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CLOSED_SHELL('',());#2=CLOSED_SHELL('',());#3=CLOSED_SHELL('',());#10=BREP_WITH_VOIDS('',#1,(#2,#3));#11=BREP_WITH_VOIDS('',#1,(#3,#2));#12=BREP_WITH_VOIDS('',#2,(#1,#3));ENDSEC;END-ISO-10303-21;";
     crate::test_support::with_service_context(source, |source, ctx| {
@@ -28,10 +46,8 @@ fn cached_void_roots_preserve_the_outer_shell_role() {
                 exchange.records().get(&id).expect("authored root"),
                 &exchange,
                 &shells,
-                ctx,
             )
             .expect("bounded key")
-            .expect("resolved shells")
         };
         assert_eq!(key(10), key(11));
         assert_ne!(key(10), key(12));
@@ -71,14 +87,12 @@ fn pcurve_index_is_shared_across_shells_and_coedges() {
             (exchange, diagnostics)
         });
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
+    let policy = DecodePolicy::service();
     // One shared carrier index and all 100 drafts fit; 200 complete model
     // indexes would consume more than this allowance.
-    policy.limits.max_collection_items = 100_000;
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
-    let carriers =
-        crate::reader::index::CarrierIndex::from_ir(&ir, &ctx).expect("carrier lookup fits policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir);
     super::super::decode(&exchange, &mut ir, &carriers, &ctx)
         .expect("all shells share the admitted pcurve index");
     assert_eq!(ir.model.bodies.len(), 100);
@@ -126,14 +140,12 @@ fn pcurve_index_is_shared_across_independent_roots() {
             (exchange, diagnostics)
         });
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
+    let policy = DecodePolicy::service();
     // The same carrier population and 100 topology drafts fit this bound.
     // A complete identity index per root exceeds it before the roots finish.
-    policy.limits.max_collection_items = 100_000;
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
-    let carriers =
-        crate::reader::index::CarrierIndex::from_ir(&ir, &ctx).expect("carrier lookup fits policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir);
     super::super::decode(&exchange, &mut ir, &carriers, &ctx)
         .expect("all independent roots share the admitted pcurve index");
     assert_eq!(ir.model.bodies.len(), 100);
@@ -150,59 +162,6 @@ fn pcurve_index_is_shared_across_independent_roots() {
 }
 
 #[test]
-fn source_identity_groups_keep_singletons_inline_and_shared_order() {
-    use cadmpeg_core::{decode::ResourceDimension, CodecError};
-    use std::collections::BTreeMap;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1_000;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-    let mut groups = BTreeMap::new();
-    for source in 0..1_000 {
-        super::super::push_source_identity(
-            &mut groups,
-            source,
-            source,
-            "step_topology_source_edge_groups",
-            "step_topology_source_edges",
-            &ctx,
-        )
-        .expect("each singleton has one map entry and no member vector");
-    }
-    assert_eq!(groups.len(), 1_000);
-    let error = super::super::push_source_identity(
-        &mut groups,
-        0,
-        2_000,
-        "step_topology_source_edge_groups",
-        "step_topology_source_edges",
-        &ctx,
-    )
-    .expect_err("an additional identity needs a member slot");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_topology_source_edges"));
-    assert_eq!(groups[&0].iter().copied().collect::<Vec<_>>(), [0]);
-
-    let arena = DecodeArena::new();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-    let mut groups = BTreeMap::new();
-    for identity in [11, 22, 33] {
-        super::super::push_source_identity(
-            &mut groups,
-            7,
-            identity,
-            "step_topology_source_edge_groups",
-            "step_topology_source_edges",
-            &ctx,
-        )
-        .expect("one map entry and two additional members");
-    }
-    assert_eq!(groups[&7].iter().copied().collect::<Vec<_>>(), [11, 22, 33]);
-}
-
-#[test]
 fn terminal_edges_own_one_definition_map_without_cycle_nodes() {
     let records = (100..1100).fold(String::new(), |mut records, id| {
         write!(records, "#{id}=EDGE('',#1,#2);").expect("fixture string");
@@ -212,8 +171,7 @@ fn terminal_edges_own_one_definition_map_without_cycle_nodes() {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("bounded edges");
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1000;
+    let policy = DecodePolicy::service();
     crate::test_support::with_policy_context(source.as_bytes(), &policy, |_, ctx| {
         let edges = super::super::edge_defs(&exchange, ctx).expect("one slot per terminal edge");
         assert_eq!(edges.len(), 1000);
@@ -231,16 +189,15 @@ fn coedges_need_only_their_element_definition_until_used_as_wire_edges() {
         records
     });
     let base = format!("ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=EDGE('',#1,#2);{records}");
-    for (wire, cap, keys) in [
-        ("", 1, vec![3]),
-        ("#3000=CONNECTED_EDGE_SET('',(#1000));", 3, vec![3, 1000]),
+    for (wire, keys) in [
+        ("", vec![3]),
+        ("#3000=CONNECTED_EDGE_SET('',(#1000));", vec![3, 1000]),
     ] {
         let source = format!("{base}{wire}ENDSEC;END-ISO-10303-21;");
         let (exchange, _) =
             crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
                 .expect("bounded coedges");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
+        let policy = DecodePolicy::service();
         crate::test_support::with_policy_context(source.as_bytes(), &policy, |_, ctx| {
             let edges = super::super::edge_defs(&exchange, ctx)
                 .expect("only referenced edge definitions allocate");
