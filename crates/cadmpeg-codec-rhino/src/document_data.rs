@@ -541,15 +541,15 @@ fn render_userdata(
     ))
 }
 
-fn retained_numbered_id(prefix: &str, index: usize) -> String {
+fn numbered_id(prefix: &str, index: usize) -> String {
     format!("{prefix}{index:04}")
 }
 
-fn retained_typecode(typecode: u32) -> String {
+fn typecode_text(typecode: u32) -> String {
     format!("{typecode:#010x}")
 }
 
-fn retained_sha256(bytes: &[u8]) -> String {
+fn sha256_text(bytes: &[u8]) -> String {
     let digest = cadmpeg_ir::hash::sha256(bytes);
     format!("{}", cadmpeg_ir::hash::LowerHex(&digest))
 }
@@ -622,21 +622,21 @@ pub(crate) fn install(
     let mut previews = Vec::new();
     for (index, value) in properties.previews.iter().enumerate() {
         previews.push(PreviewRecord {
-            id: retained_numbered_id("rhino:document:preview#", index),
+            id: numbered_id("rhino:document:preview#", index),
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
             compressed: value.compressed,
-            sha256: retained_sha256(&scan.data[value.source.range.clone()]),
+            sha256: sha256_text(&scan.data[value.source.range.clone()]),
         });
     }
     let mut setting_records = Vec::new();
     for (index, value) in settings.unsupported.iter().enumerate() {
         setting_records.push(SettingRecord {
-            id: retained_numbered_id("rhino:document:setting#", index),
+            id: numbered_id("rhino:document:setting#", index),
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
-            typecode: retained_typecode(value.typecode),
-            sha256: retained_sha256(&scan.data[value.source.range.clone()]),
+            typecode: typecode_text(value.typecode),
+            sha256: sha256_text(&scan.data[value.source.range.clone()]),
             parse_error: None,
         });
     }
@@ -670,14 +670,14 @@ pub(crate) fn install(
                 });
 
                 setting_records.push(SettingRecord {
-                    id: retained_numbered_id(
+                    id: numbered_id(
                         "rhino:document:setting#unit-binding-",
                         setting_records.len(),
                     ),
                     source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
                     byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
-                    typecode: retained_typecode(record.typecode),
-                    sha256: retained_sha256(&scan.data[record.range.clone()]),
+                    typecode: typecode_text(record.typecode),
+                    sha256: sha256_text(&scan.data[record.range.clone()]),
                     parse_error: Some(message),
                 });
                 continue;
@@ -760,14 +760,11 @@ pub(crate) fn install(
                 });
 
                 setting_records.push(SettingRecord {
-                    id: retained_numbered_id(
-                        "rhino:document:setting#error-",
-                        setting_records.len(),
-                    ),
+                    id: numbered_id("rhino:document:setting#error-", setting_records.len()),
                     source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
                     byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
-                    typecode: retained_typecode(record.typecode),
-                    sha256: retained_sha256(&scan.data[record.range.clone()]),
+                    typecode: typecode_text(record.typecode),
+                    sha256: sha256_text(&scan.data[record.range.clone()]),
                     parse_error: Some(format!("{error}")),
                 });
             }
