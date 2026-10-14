@@ -4096,12 +4096,8 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         depth: usize,
         parse: impl FnOnce(&mut Self, usize) -> Option<T>,
     ) -> Option<T> {
+        // An expression nested past the local ceiling is not evaluated.
         if depth >= MAX_FORMULA_EXPRESSION_DEPTH {
-            self.refusal = Some(self.ctx.refuse_codec_limit(
-                "catia_formula_expression_local_depth",
-                u64_from_index(MAX_FORMULA_EXPRESSION_DEPTH),
-                u64_from_index(MAX_FORMULA_EXPRESSION_DEPTH) + 1,
-            ));
             return None;
         }
         let ctx = self.ctx;
@@ -4960,20 +4956,14 @@ mod parser_tests {
             crate::test_support::with_service_context(|ctx| {
                 let result =
                     super::evaluate_formula_expression_charged(ctx, &expression, &bindings);
-                if accepted {
-                    assert!(
-                        result.expect("128 descents fit the ceiling").is_some(),
-                        "{depth}"
-                    );
-                } else {
-                    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
-                        panic!("resource refusal required")
-                    };
-                    assert_eq!(limit.operation, "catia_formula_expression_local_depth");
-                    assert_eq!(limit.limit, 128);
-                    assert_eq!(limit.additional, 1);
-                    assert_eq!(ctx.resource_refusal(), Some(limit));
-                }
+                assert_eq!(
+                    result
+                        .expect("the local depth ceiling is not a session refusal")
+                        .is_some(),
+                    accepted,
+                    "{depth}"
+                );
+                assert_eq!(ctx.resource_refusal(), None);
             });
         }
     }

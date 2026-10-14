@@ -3561,6 +3561,28 @@ impl StandardTopologyFailure {
         Self::InadmissibleNeutralModel,
     ];
 
+    /// Classify a candidate that no topology solver completed.
+    ///
+    /// An exhausted local search slice leaves the candidate without topology;
+    /// it is not a session refusal.
+    fn unsolved(
+        search_exhausted: bool,
+        mesh_failure: Option<mesh_quotient::MeshCandidateFailure>,
+    ) -> Self {
+        match mesh_failure {
+            _ if search_exhausted => Self::TopologySearchExhausted,
+            Some(mesh_quotient::MeshCandidateFailure::Exhausted(_)) => {
+                Self::TopologySearchExhausted
+            }
+            Some(mesh_quotient::MeshCandidateFailure::Ambiguous(_)) => {
+                Self::AmbiguousTopologySolution
+            }
+            Some(mesh_quotient::MeshCandidateFailure::Rejected(_)) | None => {
+                Self::NoTopologySolution
+            }
+        }
+    }
+
     const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
         match self {
             Self::NoCurveSupports => {
@@ -6948,7 +6970,7 @@ fn attach_standard_topology(
         } else {
             solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)?
         };
-        Ok(match outcome.require_work(ctx, work_budget)? {
+        Ok(match outcome.preserve_session_refusal(ctx)? {
             mesh_quotient::MeshSolve::Solved(candidate) => Some(candidate),
             mesh_quotient::MeshSolve::Failed(failure) => {
                 diagnostics.mesh_failure = Some(failure);
@@ -7005,23 +7027,14 @@ fn attach_standard_topology(
             .map_err(StandardTopologyError::Resource)?;
         (topology, point_assignment)
     } else {
-        if work_budget.exhausted() {
-            ctx.charge_work(0, "catia_mesh_topology_work")
-                .map_err(StandardTopologyError::Resource)?;
-            return Err(StandardTopologyError::Resource(ctx.refuse_codec_limit(
-                "catia_mesh_topology_work",
-                0,
-                1,
-            )));
-        }
-        return Err((if matches!(
+        // A session refusal behind an exhausted slice stops the decode. A
+        // local search limit leaves this candidate without topology.
+        ctx.charge_work(0, "catia_mesh_topology_work")
+            .map_err(StandardTopologyError::Resource)?;
+        return Err(StandardTopologyFailure::unsolved(
+            work_budget.exhausted(),
             diagnostics.mesh_failure,
-            Some(mesh_quotient::MeshCandidateFailure::Ambiguous(_))
-        ) {
-            StandardTopologyFailure::AmbiguousTopologySolution
-        } else {
-            StandardTopologyFailure::NoTopologySolution
-        })
+        )
         .into());
     };
     if let Some(faces) = selected_face_assignment {
