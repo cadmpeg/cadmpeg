@@ -2336,14 +2336,12 @@ mod tests {
             },
         )]);
         let mut witnesses = BTreeMap::new();
-        {
-            super::collect_support_cone_plane_witness(
-                &mut witnesses,
-                &planes,
-                [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
-                [Some([[1.0, 2.0], [3.0, 4.0]]), None],
-            )
-        };
+        super::collect_support_cone_plane_witness(
+            &mut witnesses,
+            &planes,
+            [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
+            [Some([[1.0, 2.0], [3.0, 4.0]]), None],
+        );
         let witness = witnesses.get(&1).expect("face witness");
         assert_eq!(witness.len(), 1);
         assert_eq!(witness[0].0, [[1.0, 2.0], [3.0, 4.0]]);

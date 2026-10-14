@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::topology::PcurveUse;
 
 use super::super::{one_coedge_pcurve_use, push_untransferred_pcurve_loss};
 
-fn loss_result() -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+fn loss_result() -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = Vec::new();
     push_untransferred_pcurve_loss(&mut losses, 10, 5, "refused carrier");
-    Ok(losses)
+    losses
 }
 
 #[test]
 fn brep_untransferred_pcurve_loss_preserves_service_message() {
-    let losses = loss_result().expect("service loss admitted");
+    let losses = loss_result();
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].message,

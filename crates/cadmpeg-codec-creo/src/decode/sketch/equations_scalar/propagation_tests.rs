@@ -35,14 +35,12 @@ fn overflowing_midpoint_rhs_is_not_admitted_to_solver() {
     };
     let scalar_values = BTreeMap::from([(result, Some(f64::MAX))]);
     let mut equations = Vec::new();
-    {
-        append_section_equation_auxiliary_coordinate_constraints(
-            &constraints,
-            &scalar_values,
-            &BTreeMap::new(),
-            &mut equations,
-        )
-    };
+    append_section_equation_auxiliary_coordinate_constraints(
+        &constraints,
+        &scalar_values,
+        &BTreeMap::new(),
+        &mut equations,
+    );
     assert!(equations.is_empty());
 }
 
@@ -285,9 +283,7 @@ fn coordinate_derived_axis_distance_propagates_through_scalar_equality() {
 
     let mut values = section_equation_scalar_seed_values(&definition);
     for (variable, value) in derived {
-        {
-            merge_scalar_value_candidate(&mut values, variable, value)
-        };
+        merge_scalar_value_candidate(&mut values, variable, value);
     }
     assert!(propagate_section_equation_scalar_equality_values(
         &definition,
