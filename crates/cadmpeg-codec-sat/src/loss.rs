@@ -183,11 +183,10 @@ impl SatLossCode {
 
 /// Project shared text-stream recovery into codec losses for decode and inspection.
 pub(crate) fn text_stream_losses<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     diagnostics: impl IntoIterator<Item = &'a cadmpeg_asm::sat::StreamDiagnostic>,
     unread_layout_offset: Option<usize>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_asm::sat::StreamDiagnosticKind;
     for diagnostic in diagnostics {
         let code = match diagnostic.kind {
@@ -202,44 +201,30 @@ pub(crate) fn text_stream_losses<'a>(
             }
             StreamDiagnosticKind::Unread => SatLossCode::FramingRecordsUnread,
         };
-        let message = ctx.format_retained(
-            format_args!(
-                "byte {}: {}; independent records retained",
-                diagnostic.error.offset, diagnostic.error.reason
-            ),
-            "SAT header loss text",
-        )?;
-        ctx.push_vec(
-            losses,
+        let message = format!(
+            "byte {}: {}; independent records retained",
+            diagnostic.error.offset, diagnostic.error.reason
+        );
+        losses.push(
             code.note(message)
                 .with_provenance(cadmpeg_ir::SourceProvenance::root(
                     "sat",
                     cadmpeg_core::decode::u64_from_index(diagnostic.error.offset),
                 )),
-            "SAT header losses",
-        )?;
+        );
     }
-    Ok(())
 }
 
 /// Diagnose product payloads independently of their binary byte boundaries.
 pub(crate) fn binary_header_losses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     header: &cadmpeg_asm::kernel_header::KernelHeader,
     losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for field in header.unreadable_product_fields() {
-        let message = ctx.format_retained(
-            format_args!("binary header {field} is unreadable; independent records retained"),
-            "SAT header loss text",
-        )?;
-        ctx.push_vec(
-            losses,
-            SatLossCode::HeaderMetadataNoncanonical.note(message),
-            "SAT header losses",
-        )?;
+        losses.push(SatLossCode::HeaderMetadataNoncanonical.note(format!(
+            "binary header {field} is unreadable; independent records retained"
+        )));
     }
-    Ok(())
 }
 
 #[cfg(test)]
