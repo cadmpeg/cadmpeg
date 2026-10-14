@@ -5,7 +5,6 @@ use std::io::Cursor;
 
 use super::SourceParameterMap;
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
@@ -28,92 +27,6 @@ use crate::{directory::DirectoryEntry, directory::SourceStatus, parameter::Param
 const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
-
-fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::CollectionItems,
-        operation,
-        0,
-    );
-}
-
-fn assert_offset_retained_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::RetainedBytes,
-        operation,
-        0,
-    );
-}
-
-#[test]
-fn offset_identity_copies_refuse_before_retaining_text() {
-    let bytes = placed_uniform_offset_circle_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
-    for operation in [
-        "iges offset source identity copy",
-        "iges offset procedural source identity",
-        "iges offset placed source identity",
-        "iges offset edge carrier identity",
-    ] {
-        assert_offset_retained_refusal(&bytes, operation);
-    }
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-}
-
-#[test]
-fn offset_projection_charges_controls_and_knots_and_refuses_neutral_slots() {
-    let linear = linear_offset_line_file(1);
-    for operation in [
-        "iges offset neutral point slots",
-        "iges offset neutral vertex slots",
-        "iges offset neutral curve slots",
-        "iges offset neutral edge slots",
-        "store procedural curve constructions",
-        "iges offset wire edge slots",
-    ] {
-        assert_offset_collection_refusal(&linear, operation);
-    }
-    // Released decode scratch peaks above the control, knot, and source slot charges.
-    for operation in ["iges linear-offset controls", "iges linear-offset knots"] {
-        crate::test_support::decode_charges_collection(&linear, operation);
-    }
-    let function = function_offset_line_file();
-    for operation in [
-        "iges function-offset controls",
-        "iges function-offset knots",
-    ] {
-        crate::test_support::decode_charges_collection(&function, operation);
-    }
-    let placed = placed_uniform_offset_line_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
-    crate::test_support::decode_charges_collection(&placed, "iges offset source curve slots");
-}
-
-#[test]
-fn offset_nurbs_pole_admission_refuses_before_copy() {
-    let linear = linear_offset_line_file(1);
-    assert_offset_collection_refusal(&linear, "iges linear-offset admitted controls");
-    IgesCodec
-        .decode(&mut Cursor::new(linear), &DecodeOptions::default())
-        .unwrap();
-    // Released decode scratch peaks above the function-offset charge.
-    crate::test_support::decode_charges_collection(
-        &function_offset_line_file(),
-        "iges function-offset admitted controls",
-    );
-}
 
 #[test]
 fn source_parameter_map_preserves_a_finite_ratio_of_wide_intervals() {

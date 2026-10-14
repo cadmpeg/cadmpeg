@@ -3,8 +3,6 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
-use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -30,9 +28,8 @@ use crate::IgesCodec;
 
 use super::{
     clipping_plane_valid, depth_clipping_valid, display_flag_valid, drawing_directory_valid,
-    drawing_property_value, has_in_plane_component, push_drawing_entity_loss, standard_color_valid,
-    standard_line_font_valid, view_directory_valid, views_visible_directory_valid,
-    DrawingPropertyValue,
+    drawing_property_value, has_in_plane_component, standard_color_valid, standard_line_font_valid,
+    view_directory_valid, views_visible_directory_valid, DrawingPropertyValue,
 };
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 
@@ -58,40 +55,6 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         label: [b' '; 8],
         subscript: Some(0),
     }
-}
-
-#[test]
-fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
-    let entry = directory_entry(404, 0);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut losses = Vec::new();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges drawing loss slots")
-    );
-    assert!(losses.is_empty());
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges drawing loss message")
-    );
-    assert!(losses.is_empty());
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap();
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].message,
-        "IGES entity type 404 form 0 was not projected: missing"
-    );
 }
 
 #[test]
@@ -1029,4 +992,16 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
         "iges:entity:directory#5"
     );
     assert!(result.report().losses.is_empty(), "{:#?}", result.report());
+}
+
+#[test]
+fn drawing_entity_loss_names_the_entity_and_reason() {
+    let entry = directory_entry(404, 0);
+    let mut losses = Vec::new();
+    super::push_drawing_entity_loss(&mut losses, &entry, "missing");
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].message,
+        "IGES entity type 404 form 0 was not projected: missing"
+    );
 }

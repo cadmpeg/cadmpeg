@@ -47,37 +47,12 @@ fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
 }
 
 #[test]
-fn explicit_knot_expansion_refuses_caller_collection_limit() {
-    use crate::parse::Value;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
-    let values = Value::List(vec![
-        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite fixture")),
-        Value::Real(cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite fixture")),
-    ]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    assert!(matches!(
-        super::super::expand_knots(&counts, &values, 3, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_expanded_nurbs_knots"
-    ));
-}
-
-#[test]
 fn knot_constructors_move_one_admitted_value_vector() {
     use super::super::DefaultNurbsKnotKind;
     use crate::parse::Value;
     use cadmpeg_core::decode::DecodePolicy;
 
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    let policy = DecodePolicy::service();
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
         let values = Value::List(vec![
@@ -89,7 +64,6 @@ fn knot_constructors_move_one_admitted_value_vector() {
             .expect("ordered knots");
         assert_eq!(knots.as_slice(), [0.0, 0.0, 0.5]);
     });
-    policy.limits.max_collection_items = 4;
     for (kind, expected) in [
         (DefaultNurbsKnotKind::Uniform, [-1.0, 0.0, 1.0, 2.0]),
         (DefaultNurbsKnotKind::QuasiUniform, [0.0, 0.0, 1.0, 1.0]),

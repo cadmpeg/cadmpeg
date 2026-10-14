@@ -5,7 +5,7 @@ use cadmpeg_test_support::native_serialization::assert_native_limit;
 #[test]
 fn physical_card_id_streams_once_with_native_retained_limit() {
     let bytes = crate::test_support::test_cards::fixed_ascii_with_global_cards(&[b",,;"]);
-    let scan = crate::test_support::scan(&bytes).expect("valid card");
+    let scan = crate::card::scan(&bytes).expect("valid card");
     let line = &scan.lines[0];
     let record = super::super::NativeCard { index: 0, line };
     assert_native_limit(
@@ -19,7 +19,7 @@ fn physical_card_id_streams_once_with_native_retained_limit() {
 }
 
 #[test]
-fn quarantined_record_id_streams_once_with_native_retained_limit() {
+fn quarantined_record_id_serializes_its_section_and_sequence() {
     #[derive(serde::Serialize)]
     struct Record {
         id: super::super::QuarantinedId,
@@ -31,14 +31,14 @@ fn quarantined_record_id_streams_once_with_native_retained_limit() {
             sequence: 3,
         },
     };
-    assert_native_limit(
-        &record,
-        serde_json::json!({"id": "iges:quarantine:directory#3"}),
+    assert_eq!(
+        serde_json::to_value(&record).unwrap(),
+        serde_json::json!({"id": "iges:quarantine:directory#3"})
     );
 }
 
 #[test]
-fn optional_cards_spend_collection_slots_per_record_and_keep_exact_bytes() {
+fn optional_cards_keep_exact_bytes() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let original = crate::test_support::test_curves_and_surfaces::point_file_with_global(b",,;");
     let mut bytes = Vec::new();
@@ -53,10 +53,8 @@ fn optional_cards_spend_collection_slots_per_record_and_keep_exact_bytes() {
     // The source census includes the added Start records.
     let terminate = bytes.len() - 81;
     bytes[terminate..terminate + 8].copy_from_slice(b"S0000500");
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_collection_items = 20_000;
     let result = crate::IgesCodec
-        .decode(&mut std::io::Cursor::new(&bytes), &options)
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
     let first = &result.ir().native.namespace("iges").unwrap().arenas()["cards"][0];

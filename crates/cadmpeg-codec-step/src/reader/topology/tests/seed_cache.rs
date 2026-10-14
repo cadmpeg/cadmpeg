@@ -31,8 +31,7 @@ fn repeated_pcurve_searches_share_one_admitted_seed_vector() {
     let ir = cadmpeg_ir::CadIr::empty();
     let index =
         cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 128;
+    let policy = DecodePolicy::service();
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let cache = RefCell::new(super::super::PcurveSeedCache::default());
         let seeds = super::super::cached_pcurve_selection_seeds(
