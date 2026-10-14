@@ -1443,7 +1443,7 @@ fn plane_coordinates_project_points_onto_the_plane_axes() {
     let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
     let plane = (points[0], Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
-        super::plane_coordinates(&points, plane).unwrap(),
+        super::plane_coordinates(&points, plane),
         Some(vec![[0.0, 0.0], [0.0, -1.0]])
     );
 }

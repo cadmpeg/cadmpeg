@@ -570,12 +570,12 @@ fn analyze_trailing_pointer_groups_for_global_table_with_context(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
-) -> Result<TrailingPointerAnalysis, CodecError> {
+) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return Ok(TrailingPointerAnalysis::Macro);
+        return TrailingPointerAnalysis::Macro;
     }
     analyze_trailing_pointer_groups_from_end(
         record,
@@ -589,12 +589,12 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
     directory: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global_table: GlobalTable,
-) -> Result<TrailingPointerAnalysis, CodecError> {
+) -> TrailingPointerAnalysis {
     if directory
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 306)
     {
-        return Ok(TrailingPointerAnalysis::Macro);
+        return TrailingPointerAnalysis::Macro;
     }
     let is_attribute_table_instance = directory
         .get(&record.directory_sequence)
@@ -615,7 +615,7 @@ fn analyze_trailing_pointer_groups_from_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     primary_end: Option<usize>,
-) -> Result<TrailingPointerAnalysis, CodecError> {
+) -> TrailingPointerAnalysis {
     // IGES defines the group order and pointer classes, but the entity table
     // supplies NV when it defines the primary layout. Use that table boundary
     // before applying the generic CADIR recovery for an entity without a
@@ -673,28 +673,28 @@ fn analyze_trailing_pointer_groups_from_end(
                 candidates.push(candidate);
             }
             _ => {
-                return Ok(TrailingPointerAnalysis::Ambiguous {
+                return TrailingPointerAnalysis::Ambiguous {
                     candidates: candidates.len(),
                     valid,
-                })
+                }
             }
         }
     }
     let [candidate] = candidates.as_slice() else {
-        return Ok(TrailingPointerAnalysis::Ambiguous {
+        return TrailingPointerAnalysis::Ambiguous {
             candidates: candidates.len(),
             valid: 0,
-        });
+        };
     };
-    match groups_for_candidate_with_context(record, directory, *candidate)? {
+    match groups_for_candidate_with_context(record, directory, *candidate) {
         Some(groups) => match groups.fully_valid_with_context() {
-            Some(resolved) => Ok(TrailingPointerAnalysis::Unambiguous(resolved)),
-            None => Ok(TrailingPointerAnalysis::SingleInvalid(groups)),
+            Some(resolved) => TrailingPointerAnalysis::Unambiguous(resolved),
+            None => TrailingPointerAnalysis::SingleInvalid(groups),
         },
-        None => Ok(TrailingPointerAnalysis::Ambiguous {
+        None => TrailingPointerAnalysis::Ambiguous {
             candidates: 1,
             valid: 0,
-        }),
+        },
     }
 }
 
@@ -2543,60 +2543,41 @@ fn groups_for_candidate_with_context(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     candidate: PointerGroupCandidate,
-) -> Result<Option<TrailingPointerGroups>, CodecError> {
-    let pointers =
-        |range: Range<usize>, admitted: fn(i64) -> bool| -> Result<Option<Vec<_>>, CodecError> {
-            if !range
-                .clone()
-                .all(|token_index| record.raw_integer(token_index).is_some())
-            {
-                return Ok(None);
-            }
-            let mut pointers = Vec::new();
-            for token_index in range {
-                let Some(raw_pointer) = record.raw_integer(token_index) else {
-                    return Ok(None);
-                };
-                let resolved = u32::try_from(raw_pointer)
-                    .ok()
-                    .filter(|sequence| sequence % 2 == 1)
-                    .filter(|sequence| {
-                        directory
-                            .get(sequence)
-                            .is_some_and(|entry| admitted(entry.entity_type))
-                    });
-                pointers.push(TrailingPointer {
-                    token_index,
-                    raw_pointer,
-                    resolved,
+) -> Option<TrailingPointerGroups> {
+    let pointers = |range: Range<usize>, admitted: fn(i64) -> bool| -> Option<Vec<_>> {
+        let mut pointers = Vec::new();
+        for token_index in range {
+            let raw_pointer = record.raw_integer(token_index)?;
+            let resolved = u32::try_from(raw_pointer)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+                .filter(|sequence| {
+                    directory
+                        .get(sequence)
+                        .is_some_and(|entry| admitted(entry.entity_type))
                 });
-            }
-            Ok(Some(pointers))
-        };
-    let Some(association_pointers) = pointers(
+            pointers.push(TrailingPointer {
+                token_index,
+                raw_pointer,
+                resolved,
+            });
+        }
+        Some(pointers)
+    };
+    let association_pointers = pointers(
         candidate.association_start..candidate.property_count_index,
         |kind| matches!(kind, 212 | 312 | 402),
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some(property_start) = candidate.property_count_index.checked_add(1) else {
-        return Ok(None);
-    };
-    let Some(property_end) = property_start.checked_add(candidate.property_count) else {
-        return Ok(None);
-    };
-    let Some(property_pointers) = pointers(property_start..property_end, |kind| {
+    )?;
+    let property_start = candidate.property_count_index.checked_add(1)?;
+    let property_end = property_start.checked_add(candidate.property_count)?;
+    let property_pointers = pointers(property_start..property_end, |kind| {
         matches!(kind, 316 | 322 | 406 | 422)
-    })?
-    else {
-        return Ok(None);
-    };
-    Ok(Some(TrailingPointerGroups {
+    })?;
+    Some(TrailingPointerGroups {
         token_start: candidate.token_start,
         association_pointers,
         property_pointers,
-    }))
+    })
 }
 
 /// Why one entity's Parameter Data has no typed tokens.
@@ -3950,7 +3931,7 @@ pub(crate) fn assemble_with_context(
                 &entries,
                 &record_by_directory,
                 global.global_table(),
-            )?;
+            );
             trailing_pointer_analysis.insert(record.directory_sequence, analysis);
         }
     }

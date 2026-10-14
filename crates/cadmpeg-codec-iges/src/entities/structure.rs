@@ -192,9 +192,9 @@ fn single_target_cycle(
     sequence: u32,
     targets: &BTreeMap<u32, u32>,
     visited: &mut BTreeSet<u32>,
-) -> Result<bool, CodecError> {
+) -> bool {
     if visited.contains(&sequence) {
-        return Ok(false);
+        return false;
     }
 
     let mut path = Vec::new();
@@ -205,10 +205,10 @@ fn single_target_cycle(
             for node in path {
                 visited.insert(node);
             }
-            return Ok(false);
+            return false;
         }
         if !visiting.insert(current) {
-            return Ok(true);
+            return true;
         }
 
         path.push(current);
@@ -220,7 +220,7 @@ fn single_target_cycle(
             for node in path {
                 visited.insert(node);
             }
-            return Ok(false);
+            return false;
         };
         current = target;
     }
@@ -1473,7 +1473,7 @@ fn linear_nurbs_is_simple_closed(
     {
         return Ok(false);
     }
-    let Some(projected) = plane_coordinates(&points, plane)? else {
+    let Some(projected) = plane_coordinates(&points, plane) else {
         return Ok(false);
     };
     Ok(!planar_polyline_has_self_intersection(&projected))
@@ -1615,7 +1615,7 @@ fn bounded_plane_curve_is_simple(
             {
                 return Ok(false);
             }
-            let Some(projected) = plane_coordinates(&points, context.plane)? else {
+            let Some(projected) = plane_coordinates(&points, context.plane) else {
                 return Ok(false);
             };
             Ok(!planar_polyline_has_self_intersection(&projected))
@@ -3091,7 +3091,7 @@ pub(super) fn project(
                     .get(target)
                     .is_some_and(|base| array_base_type(base.entity_type, base.form))
         });
-        let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays)?;
+        let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays);
         let transform_valid =
             subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
         let fields_valid = if entry.entity_type == 412 {
@@ -3269,7 +3269,7 @@ pub(super) fn project(
         });
         let transform_valid =
             subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
-        let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances)?;
+        let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances);
         if target_valid && transform_valid && !cyclic {
             decoded.insert(*sequence);
         } else {

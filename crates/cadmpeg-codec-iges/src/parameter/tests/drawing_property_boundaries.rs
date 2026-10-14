@@ -70,7 +70,6 @@ fn type406_form6_entity_table_boundary_follows_fixed_values() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -105,7 +104,6 @@ fn type406_form6_table_boundary_precedes_generic_candidate() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -134,7 +132,6 @@ fn type406_form6_truncated_primary_or_group_does_not_enable_generic_recovery() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -273,7 +270,6 @@ fn type406_forms5_and7_entity_table_boundaries_follow_fixed_values() {
                     &directory,
                     crate::global::GlobalTable::V5Later,
                 )
-                .expect("test-only trailing pointer analysis")
             };
             assert_eq!(
                 analysis.candidate_count(
@@ -330,7 +326,6 @@ fn type406_forms5_and7_table_boundaries_precede_generic_candidates() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -372,7 +367,6 @@ fn type406_forms5_and7_truncated_primary_or_group_does_not_enable_generic_recove
                     &directory,
                     crate::global::GlobalTable::V5Later,
                 )
-                .expect("test-only trailing pointer analysis")
             };
             assert_eq!(
                 analysis.candidate_count(
@@ -443,7 +437,6 @@ fn type406_form19_entity_table_boundary_follows_fixed_values() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -477,7 +470,6 @@ fn type406_form19_table_boundary_precedes_generic_candidate() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -510,7 +502,6 @@ fn type406_form19_malformed_np_or_span_does_not_enable_generic_recovery() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -538,7 +529,6 @@ fn type406_form4_table_boundary_precedes_generic_candidate() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -765,7 +755,6 @@ fn type406_fixed_property_forms_follow_table_boundaries() {
                     &directory,
                     crate::global::GlobalTable::V5Later,
                 )
-                .expect("test-only trailing pointer analysis")
             };
             assert_eq!(
                 analysis.candidate_count(
@@ -825,7 +814,6 @@ fn type406_fixed_property_table_precedes_generic_candidates() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -930,7 +918,6 @@ fn type406_fixed_property_truncation_suppresses_generic_recovery() {
                     &directory,
                     crate::global::GlobalTable::V5Later,
                 )
-                .expect("test-only trailing pointer analysis")
             };
             assert_eq!(
                 analysis.candidate_count(
@@ -1001,7 +988,6 @@ fn type406_form32_entity_table_boundary_follows_fixed_values() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(

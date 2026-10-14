@@ -42,7 +42,6 @@ fn type132_fixed_primary_boundary_follows_fourteen_fields() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -110,7 +109,6 @@ fn type132_table_boundary_precedes_valid_generic_alternative() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -158,7 +156,6 @@ fn type132_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
@@ -183,7 +180,6 @@ fn type132_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -213,7 +209,6 @@ fn type202_form0_boundary_follows_eight_primary_fields() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -238,13 +233,10 @@ fn type202_form0_boundary_precedes_generic_candidate() {
     let generic = { structural_pointer_group_candidates_with_context(&record) };
     let mut valid_starts = Vec::new();
     for candidate in generic {
-        if {
-            groups_for_candidate_with_context(&record, &directory, candidate)
-                .expect("test-only trailing pointer allocation")
-        }
-        .expect("generic Type 202 candidate")
-        .fully_valid()
-        .is_some()
+        if { groups_for_candidate_with_context(&record, &directory, candidate) }
+            .expect("generic Type 202 candidate")
+            .fully_valid()
+            .is_some()
         {
             valid_starts.push(candidate.token_start);
         }
@@ -257,7 +249,6 @@ fn type202_form0_boundary_precedes_generic_candidate() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -303,7 +294,6 @@ fn type202_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
@@ -322,7 +312,6 @@ fn type202_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -351,7 +340,6 @@ fn type204_form0_follows_seven_fixed_primary_fields() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -380,11 +368,8 @@ fn type204_table_boundary_precedes_valid_generic_alternative() {
     let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
         .into_iter()
         .filter(|candidate| {
-            {
-                groups_for_candidate_with_context(&record, &directory, *candidate)
-                    .expect("test-only trailing pointer allocation")
-            }
-            .is_some_and(|groups| groups.fully_valid().is_some())
+            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -396,7 +381,6 @@ fn type204_table_boundary_precedes_valid_generic_alternative() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -438,7 +422,6 @@ fn type204_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
@@ -457,7 +440,6 @@ fn type204_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -486,7 +468,6 @@ fn type206_form0_follows_five_fixed_primary_fields() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -515,11 +496,8 @@ fn type206_table_boundary_precedes_valid_generic_alternative() {
     let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
         .into_iter()
         .filter(|candidate| {
-            {
-                groups_for_candidate_with_context(&record, &directory, *candidate)
-                    .expect("test-only trailing pointer allocation")
-            }
-            .is_some_and(|groups| groups.fully_valid().is_some())
+            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -531,7 +509,6 @@ fn type206_table_boundary_precedes_valid_generic_alternative() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -571,7 +548,6 @@ fn type206_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
@@ -587,7 +563,6 @@ fn type206_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -618,7 +593,6 @@ fn type216_forms_share_five_fixed_primary_field_boundary() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -658,11 +632,8 @@ fn type216_table_boundary_precedes_valid_generic_alternative() {
     let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
         .into_iter()
         .filter(|candidate| {
-            {
-                groups_for_candidate_with_context(&record, &directory, *candidate)
-                    .expect("test-only trailing pointer allocation")
-            }
-            .is_some_and(|groups| groups.fully_valid().is_some())
+            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -674,7 +645,6 @@ fn type216_table_boundary_precedes_valid_generic_alternative() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -715,7 +685,6 @@ fn type216_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&wrong_fields, entity_primary_end(&wrong_fields, &directory)),
@@ -731,7 +700,6 @@ fn type216_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -760,7 +728,6 @@ fn type220_form0_follows_three_fixed_primary_fields() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -789,11 +756,8 @@ fn type220_table_boundary_precedes_valid_generic_alternative() {
     let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
         .into_iter()
         .filter(|candidate| {
-            {
-                groups_for_candidate_with_context(&record, &directory, *candidate)
-                    .expect("test-only trailing pointer allocation")
-            }
-            .is_some_and(|groups| groups.fully_valid().is_some())
+            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -805,7 +769,6 @@ fn type220_table_boundary_precedes_valid_generic_alternative() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -845,7 +808,6 @@ fn type220_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(record, entity_primary_end(record, &directory)),
@@ -862,7 +824,6 @@ fn type220_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -897,7 +858,6 @@ fn type222_forms_follow_fixed_primary_fields() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -936,11 +896,8 @@ fn type222_form0_table_boundary_precedes_valid_generic_alternative() {
     let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
         .into_iter()
         .filter(|candidate| {
-            {
-                groups_for_candidate_with_context(&record, &directory, *candidate)
-                    .expect("test-only trailing pointer allocation")
-            }
-            .is_some_and(|groups| groups.fully_valid().is_some())
+            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+                .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
         .collect::<Vec<_>>();
@@ -952,7 +909,6 @@ fn type222_form0_table_boundary_precedes_valid_generic_alternative() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -1025,7 +981,6 @@ fn type222_complete_wrong_fields_keep_boundaries_and_truncated_spans_do_not_reco
                     &directory,
                     crate::global::GlobalTable::V5Later,
                 )
-                .expect("test-only trailing pointer analysis")
             };
             assert_eq!(
                 analysis.candidate_count(record, entity_primary_end(record, &directory)),
@@ -1059,7 +1014,6 @@ fn type222_complete_wrong_fields_keep_boundaries_and_truncated_spans_do_not_reco
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(

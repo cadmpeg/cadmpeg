@@ -1043,7 +1043,7 @@ fn linear_boundary_geometry(
             return Ok(None);
         }
     }
-    let Some(model_coordinates) = plane_coordinates(&model_points, model_plane)? else {
+    let Some(model_coordinates) = plane_coordinates(&model_points, model_plane) else {
         return Ok(None);
     };
     if surface_kind == BoundarySurfaceKind::Trimmed
@@ -2873,16 +2873,14 @@ pub(super) fn project(
         });
         let shell_faces = vec![face_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
-        let shell = match Shell::new(
+        let shell = Shell::new(
             shell_id.clone(),
             region_id.clone(),
             shell_faces,
             Vec::new(),
             Vec::new(),
-        ) {
-            Ok(shell) => shell,
-            Err(error) => return Err(CodecError::Malformed(format!("{error}"))),
-        };
+        )
+        .map_err(CodecError::malformed)?;
         candidate.model_mut().shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;

@@ -42,7 +42,6 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -87,7 +86,6 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -134,7 +132,6 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -183,7 +180,6 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -247,7 +243,6 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -314,7 +309,6 @@ fn type406_form30_entity_table_boundary_follows_fixed_np_and_note_count() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -380,7 +374,6 @@ fn type406_form30_complete_counted_span_keeps_boundary_with_wrong_note_type() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -446,7 +439,6 @@ fn type406_form30_malformed_np_or_note_count_does_not_enable_generic_recovery() 
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -531,7 +523,6 @@ fn type406_form11_entity_table_boundary_follows_nested_value_counts() {
                     .filter_map(|candidate| {
                         {
                             groups_for_candidate_with_context(&record, &directory, *candidate)
-                                .expect("test-only trailing pointer allocation")
                         }
                     })
                     .filter_map(super::super::TrailingPointerGroups::fully_valid)
@@ -544,7 +535,6 @@ fn type406_form11_entity_table_boundary_follows_nested_value_counts() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -596,7 +586,6 @@ fn type406_form11_complete_nested_span_keeps_boundary_with_invalid_value() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -756,7 +745,6 @@ fn type406_form11_malformed_nested_counts_do_not_enable_generic_recovery() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -820,7 +808,6 @@ fn type406_form12_entity_table_boundary_follows_name_count() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -867,7 +854,6 @@ fn type406_form12_table_boundary_beats_generic_alternatives() {
             .filter_map(|candidate| {
                 {
                     groups_for_candidate_with_context(&record, &directory, *candidate)
-                        .expect("test-only trailing pointer allocation")
                 }
             })
             .filter_map(super::super::TrailingPointerGroups::fully_valid)
@@ -880,7 +866,6 @@ fn type406_form12_table_boundary_beats_generic_alternatives() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -964,7 +949,6 @@ fn type406_form12_malformed_count_or_name_list_do_not_enable_generic_recovery() 
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -1035,7 +1019,6 @@ fn type406_form27_entity_table_boundary_follows_np_and_value_pair_count() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),

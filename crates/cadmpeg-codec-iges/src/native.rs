@@ -363,10 +363,8 @@ fn resolved_label_display_definition(
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source_sequence: u32,
     pointer: Option<i64>,
-) -> Result<Option<String>, CodecError> {
-    let Some(pointer) = pointer else {
-        return Ok(None);
-    };
+) -> Option<String> {
+    let pointer = pointer?;
     (pointer > 0)
         .then(|| {
             references
@@ -377,8 +375,7 @@ fn resolved_label_display_definition(
                 })
         })
         .flatten()
-        .map(|sequence| Ok::<_, CodecError>(format!("iges:structure:associativity#D{sequence}")))
-        .transpose()
+        .map(|sequence| format!("iges:structure:associativity#D{sequence}"))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1219,7 +1216,6 @@ struct NativeUnitsData {
 /// be set independently: [`NativeProductOccurrence::new`] derives both from the
 /// instance path and the optional member, and the id from the same path.
 mod occurrence {
-    use super::CodecError;
     use serde::{Serialize, Serializer};
 
     /// What one product occurrence record is: the assembly root, a nested
@@ -1282,7 +1278,7 @@ mod occurrence {
             definition_sequence: u32,
             neutral_links: Vec<String>,
             frames: ([[f64; 4]; 3], [[f64; 4]; 3]),
-        ) -> Result<Self, CodecError> {
+        ) -> Self {
             let (local_transform, world_transform) = frames;
             let path_key = OccurrencePath(path);
             let (id, role) = match member {
@@ -1299,20 +1295,18 @@ mod occurrence {
                     OccurrenceRole::Nested,
                 ),
             };
-            Ok(Self {
+            Self {
                 id,
                 role,
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
                 definition: format!("iges:entity:directory#{definition_sequence}"),
                 neutral_links,
                 instance_path: (0..path.len())
-                    .map(|index| {
-                        Ok::<_, CodecError>(format!("iges:entity:directory#{}", path[index]))
-                    })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .map(|index| format!("iges:entity:directory#{}", path[index]))
+                    .collect::<Vec<_>>(),
                 local_transform,
                 world_transform,
-            })
+            }
         }
     }
 
@@ -2080,7 +2074,7 @@ impl OccurrenceExpansion<'_, '_> {
             definition_sequence,
             Vec::new(),
             (local.affine_rows(), definition_world.affine_rows()),
-        )?);
+        ));
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
                 path.pop();
@@ -2128,14 +2122,7 @@ impl OccurrenceExpansion<'_, '_> {
                 continue;
             };
 
-            let neutral_links = self
-                .neutral_links
-                .get(member)
-                .map_or(Ok(Vec::new()), |links| {
-                    (0..links.len())
-                        .map(|index| Ok::<_, CodecError>(links[index].clone()))
-                        .collect::<Result<Vec<_>, CodecError>>()
-                })?;
+            let neutral_links = self.neutral_links.get(member).cloned().unwrap_or_default();
             occurrences.push(NativeProductOccurrence::new(
                 path,
                 Some(*member),
@@ -2143,7 +2130,7 @@ impl OccurrenceExpansion<'_, '_> {
                 definition_sequence,
                 neutral_links,
                 (member_local.affine_rows(), member_world.affine_rows()),
-            )?);
+            ));
         }
         path.pop();
         Ok(None)
@@ -2556,8 +2543,8 @@ pub(crate) fn store(
                 id: format!("iges:native:direction#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 components: (0..3)
-                    .map(|index| Ok(parameters.and_then(|record| record.number(index + 1))))
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .map(|index| parameters.and_then(|record| record.number(index + 1)))
+                    .collect(),
                 physically_dependent: entry.status.is_physically_dependent(),
                 has_transform: entry.transform != 0,
             })
@@ -2599,8 +2586,8 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
                 coefficients: (0..12)
-                    .map(|index| Ok(parameters.and_then(|record| record.number(index + 1))))
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .map(|index| parameters.and_then(|record| record.number(index + 1)))
+                    .collect(),
                 parent: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -2631,15 +2618,15 @@ pub(crate) fn store(
                         .map(|tuple| {
                             (0..width)
                                 .map(|component| {
-                                    Ok(tuple
+                                    tuple
                                         .checked_mul(width)
                                         .and_then(|offset| offset.checked_add(start))
                                         .and_then(|offset| offset.checked_add(component))
-                                        .and_then(|index| record.number(index)))
+                                        .and_then(|index| record.number(index))
                                 })
-                                .collect::<Result<Vec<_>, CodecError>>()
+                                .collect::<Vec<_>>()
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?
+                        .collect()
                 }
                 _ => Vec::new(),
             };
@@ -2751,8 +2738,8 @@ pub(crate) fn store(
                     fallback_line_font_number: entry.line_font,
                     segment_count: declared,
                     lengths: (0..count)
-                        .map(|index| Ok(parameters.and_then(|record| record.number(2 + index))))
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                        .map(|index| parameters.and_then(|record| record.number(2 + index)))
+                        .collect(),
                     hexadecimal_pattern: held
                         .then(|| parameters.and_then(|record| record.string(2 + count)))
                         .flatten()
@@ -2849,12 +2836,12 @@ pub(crate) fn store(
                 let motions = (0..motion_count)
                     .map(|offset| {
                         let start = cursor + 4 + offset * 3;
-                        Ok(NativeGlyphMotion {
+                        NativeGlyphMotion {
                             pen_up: record.integer(start).map(|value| value == 1),
                             point: [record.integer(start + 1), record.integer(start + 2)],
-                        })
+                        }
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .collect();
                 characters.push(NativeGlyph {
                     character_code: record.integer(cursor),
                     next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
@@ -2905,8 +2892,8 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 declared_count: parameters.and_then(|record| record.integer(1)),
                 levels: (0..count)
-                    .map(|index| Ok(parameters.and_then(|record| record.integer(2 + index))))
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .map(|index| parameters.and_then(|record| record.integer(2 + index)))
+                    .collect(),
             })
         },
     )?;
@@ -3203,21 +3190,18 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let end = record.map_or(0, |record| clamped_primary_end(entry.sequence, record));
             let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 3, 2);
-            let closed_shell = |index: usize| -> Result<Option<String>, CodecError> {
+            let closed_shell = |index: usize| -> Option<String> {
                 record
                     .and_then(|record| record.integer(index))
                     .and_then(|sequence| {
                         parameter_resolver.resolve_type(entry.sequence, index, sequence, 514, &[1])
                     })
-                    .map(|sequence| {
-                        Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                    })
-                    .transpose()
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
             };
             Ok(NativeManifoldSolid {
                 id: format!("iges:solid:manifold-brep#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                shell: closed_shell(1)?,
+                shell: closed_shell(1),
                 shell_orientation: record.and_then(|record| record.integer(2)),
                 declared_void_count: record.and_then(|record| record.integer(3)),
                 // Struct fields evaluate in written order, so the outer shell
@@ -3225,13 +3209,11 @@ pub(crate) fn store(
                 // own, pinning the serialized edge order to ascending
                 // parameter index.
                 voids: (0..count)
-                    .map(|index| {
-                        Ok(NativeVoidShell {
-                            shell: closed_shell(4 + index * 2)?,
-                            orientation: record.and_then(|record| record.integer(5 + index * 2)),
-                        })
+                    .map(|index| NativeVoidShell {
+                        shell: closed_shell(4 + index * 2),
+                        orientation: record.and_then(|record| record.integer(5 + index * 2)),
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .collect::<Vec<_>>(),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -3306,19 +3288,16 @@ pub(crate) fn store(
                             .and_then(|sequence| {
                                 parameter_resolver.resolve_any(entry.sequence, 4 + index, sequence)
                             })
-                            .map(|sequence| {
-                                Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                            })
-                            .transpose()
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .collect::<Vec<_>>(),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
                 label_display: resolved_label_display_definition(
                     references,
                     entry.sequence,
                     entry.label_display,
-                )?,
+                ),
             })
         },
     )?;
@@ -3397,12 +3376,9 @@ pub(crate) fn store(
                                         sequence,
                                     )
                                 })
-                                .map(|sequence| {
-                                    Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                                })
-                                .transpose()
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?
+                        .collect::<Vec<_>>()
                 } else {
                     Vec::new()
                 },
@@ -3452,12 +3428,9 @@ pub(crate) fn store(
                                         &[0],
                                     )
                                 })
-                                .map(|sequence| {
-                                    Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                                })
-                                .transpose()
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?
+                        .collect::<Vec<_>>()
                 } else {
                     Vec::new()
                 },
@@ -3467,7 +3440,7 @@ pub(crate) fn store(
                     references,
                     entry.sequence,
                     entry.label_display,
-                )?,
+                ),
             })
         },
     )?;
@@ -3526,12 +3499,9 @@ pub(crate) fn store(
                                     &[0],
                                 )
                             })
-                            .map(|sequence| {
-                                Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                            })
-                            .transpose()
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .collect::<Vec<_>>(),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -3543,19 +3513,16 @@ pub(crate) fn store(
             .filter(|entry| entry.entity_type == 132 && entry.form == 0),
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let optional_entity_link = |index| -> Result<Option<String>, CodecError> {
+            let optional_entity_link = |index| -> Option<String> {
                 record
                     .and_then(|record| record.integer(index))
                     .filter(|sequence| *sequence != 0)
                     .and_then(|sequence| {
                         parameter_resolver.resolve_any(entry.sequence, index, sequence)
                     })
-                    .map(|sequence| {
-                        Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                    })
-                    .transpose()
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
             };
-            let optional_template_link = |index| -> Result<Option<String>, CodecError> {
+            let optional_template_link = |index| -> Option<String> {
                 record
                     .and_then(|record| record.integer(index))
                     .filter(|sequence| *sequence != 0)
@@ -3568,10 +3535,7 @@ pub(crate) fn store(
                             &[0, 1],
                         )
                     })
-                    .map(|sequence| {
-                        Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                    })
-                    .transpose()
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
             };
             Ok(NativeConnectPoint {
                 id: format!("iges:product:connect-point#D{}", entry.sequence),
@@ -3581,17 +3545,17 @@ pub(crate) fn store(
                     record.and_then(|record| record.number(2)),
                     record.and_then(|record| record.number(3)),
                 ],
-                display_geometry: optional_entity_link(4)?,
+                display_geometry: optional_entity_link(4),
                 type_flag: record.and_then(|record| record.integer(5)),
                 function_flag: record.and_then(|record| record.integer(6)),
                 function_identifier: record
                     .and_then(|record| record.string(7))
                     .map(|bytes| NativeBytes::from(bytes.to_vec())),
-                identifier_display_template: optional_template_link(8)?,
+                identifier_display_template: optional_template_link(8),
                 function_name: record
                     .and_then(|record| record.string(9))
                     .map(|bytes| NativeBytes::from(bytes.to_vec())),
-                name_display_template: optional_template_link(10)?,
+                name_display_template: optional_template_link(10),
                 identifier: record.and_then(|record| record.integer(11)),
                 function_code: record.and_then(|record| record.integer(12)),
                 swap_flag: record.and_then(|record| record.integer(13)),
@@ -3653,8 +3617,8 @@ pub(crate) fn store(
                 rotation: record.and_then(|record| record.number(10)),
                 do_dont_flag: record.and_then(|record| record.integer(12)),
                 positions: (0..count)
-                    .map(|index| Ok(record.and_then(|record| record.integer(13 + index))))
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .map(|index| record.and_then(|record| record.integer(13 + index)))
+                    .collect(),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -3694,8 +3658,8 @@ pub(crate) fn store(
                 delta_angle: record.and_then(|record| record.number(8)),
                 do_dont_flag: record.and_then(|record| record.integer(10)),
                 positions: (0..count)
-                    .map(|index| Ok(record.and_then(|record| record.integer(11 + index))))
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .map(|index| record.and_then(|record| record.integer(11 + index)))
+                    .collect(),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -3784,12 +3748,9 @@ pub(crate) fn store(
                             .and_then(|sequence| {
                                 parameter_resolver.resolve_any(entry.sequence, 2 + index, sequence)
                             })
-                            .map(|sequence| {
-                                Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                            })
-                            .transpose()
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .collect::<Vec<_>>(),
             })
         },
     )?;
@@ -3828,8 +3789,8 @@ pub(crate) fn store(
                         ordered: record.integer(cursor + 1).map(|value| value == 1),
                         declared_item_count: record.integer(cursor + 2),
                         item_types: (0..item_count)
-                            .map(|offset| Ok(record.integer(cursor + 3 + offset)))
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .map(|offset| record.integer(cursor + 3 + offset))
+                            .collect(),
                     });
                     cursor = next;
                 }
@@ -3863,17 +3824,14 @@ pub(crate) fn store(
             let record = by_directory.get(&entry.sequence).copied();
             let id = format!("iges:structure:associativity#D{}", entry.sequence);
             let source_entity = format!("iges:entity:directory#{}", entry.sequence);
-            let entity_link = |index| -> Result<Option<String>, CodecError> {
+            let entity_link = |index| -> Option<String> {
                 record
                     .and_then(|record| record.integer(index))
                     .filter(|sequence| *sequence != 0)
                     .and_then(|sequence| {
                         parameter_resolver.resolve_any(entry.sequence, index, sequence)
                     })
-                    .map(|sequence| {
-                        Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                    })
-                    .transpose()
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
             };
             let association = match entry.form {
                 5 => {
@@ -3923,7 +3881,7 @@ pub(crate) fn store(
                                         }),
                                     label_level: record
                                         .and_then(|record| record.integer(start + 5)),
-                                    entity: entity_link(start + 6)?,
+                                    entity: entity_link(start + 6),
                                 })
                             })
                             .collect::<Result<Vec<_>, CodecError>>()?,
@@ -3952,7 +3910,7 @@ pub(crate) fn store(
                             .map(|sequence| format!("iges:entity:directory#{sequence}")),
                         visible_entities: (0..count)
                             .map(|offset| entity_link(4 + offset))
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .collect::<Vec<_>>(),
                     }
                 }
                 9 => {
@@ -3964,10 +3922,10 @@ pub(crate) fn store(
                         id,
                         source_entity,
                         declared_child_count: record.and_then(|record| record.integer(2)),
-                        parent: entity_link(3)?,
+                        parent: entity_link(3),
                         children: (0..count)
                             .map(|offset| entity_link(4 + offset))
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .collect::<Vec<_>>(),
                     }
                 }
                 2 | 12 => {
@@ -3979,16 +3937,16 @@ pub(crate) fn store(
                         source_entity,
                         declared_count: record.and_then(|record| record.integer(1)),
                         entries: (0..count)
-                            .map(|offset| -> Result<NativeExternalIndexEntry, CodecError> {
+                            .map(|offset| {
                                 let start = 2 + offset * 2;
-                                Ok(NativeExternalIndexEntry {
+                                NativeExternalIndexEntry {
                                     symbolic_name: record
                                         .and_then(|record| record.string(start))
                                         .map(|bytes| NativeBytes::from(bytes.to_vec())),
-                                    entity: entity_link(start + 1)?,
-                                })
+                                    entity: entity_link(start + 1),
+                                }
                             })
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .collect(),
                     }
                 }
                 8 => {
@@ -4014,24 +3972,19 @@ pub(crate) fn store(
                                                 )
                                             })
                                             .map(|sequence| {
-                                                Ok::<_, CodecError>(format!(
-                                                    "iges:entity:directory#{sequence}"
-                                                ))
+                                                format!("iges:entity:directory#{sequence}")
                                             })
-                                            .transpose()
                                     })
-                                    .collect::<Result<Vec<_>, CodecError>>()?;
-                                let geometry_links = |indices: std::ops::Range<usize>| -> Result<
-                                    Vec<Option<String>>,
-                                    CodecError,
-                                > {
-                                    (0..indices.len())
-                                        .map(|offset| {
-                                            let index = indices.start + offset;
-                                            record
-                                                .integer(index)
-                                                .and_then(|sequence| {
-                                                    parameter_resolver.resolve(
+                                    .collect::<Vec<_>>();
+                                let geometry_links =
+                                    |indices: std::ops::Range<usize>| -> Vec<Option<String>> {
+                                        (0..indices.len())
+                                            .map(|offset| {
+                                                let index = indices.start + offset;
+                                                record
+                                                    .integer(index)
+                                                    .and_then(|sequence| {
+                                                        parameter_resolver.resolve(
                                                         entry.sequence,
                                                         index,
                                                         sequence,
@@ -4045,33 +3998,25 @@ pub(crate) fn store(
                                                             )
                                                         },
                                                     )
-                                                })
-                                                .map(|sequence| {
-                                                    Ok::<_, CodecError>(format!(
-                                                        "iges:entity:directory#{sequence}"
-                                                    ))
-                                                })
-                                                .transpose()
-                                        })
-                                        .collect::<Result<Vec<_>, CodecError>>()
-                                };
+                                                    })
+                                                    .map(|sequence| {
+                                                        format!("iges:entity:directory#{sequence}")
+                                                    })
+                                            })
+                                            .collect::<Vec<_>>()
+                                    };
                                 let name_indices = layout.signal_names();
                                 (
                                     (0..name_indices.len())
                                         .map(|offset| {
                                             record
                                                 .string(name_indices.start + offset)
-                                                .map(|bytes| {
-                                                    Ok::<_, CodecError>(NativeBytes::from(
-                                                        bytes.to_vec(),
-                                                    ))
-                                                })
-                                                .transpose()
+                                                .map(|bytes| NativeBytes::from(bytes.to_vec()))
                                         })
-                                        .collect::<Result<Vec<_>, CodecError>>()?,
+                                        .collect::<Vec<_>>(),
                                     connections,
-                                    geometry_links(layout.schematic())?,
-                                    geometry_links(layout.physical())?,
+                                    geometry_links(layout.schematic()),
+                                    geometry_links(layout.physical()),
                                 )
                             }
                             None => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
@@ -4134,14 +4079,9 @@ pub(crate) fn store(
                                             &[0],
                                         )
                                     })
-                                    .map(|sequence| {
-                                        Ok::<_, CodecError>(format!(
-                                            "iges:entity:directory#{sequence}"
-                                        ))
-                                    })
-                                    .transpose()
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
                             })
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .collect::<Vec<_>>(),
                         box_width: description_start.and_then(|index| {
                             record.and_then(|record| record.number_or(index, 0.0))
                         }),
@@ -4187,24 +4127,17 @@ pub(crate) fn store(
                                                 &[0],
                                             )
                                         })
-                                        .map(|sequence| {
-                                            Ok::<_, CodecError>(format!(
-                                                "iges:entity:directory#{sequence}"
-                                            ))
-                                        })
-                                        .transpose()
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
                                 })
-                                .collect::<Result<Vec<_>, CodecError>>()?;
+                                .collect::<Vec<_>>();
                             let data_indices = layout.data();
                             let data = (0..data_indices.len())
                                 .map(|offset| {
                                     record
                                         .token(data_indices.start + offset)
-                                        .map_or(Ok(TokenValue::Omitted), |item| {
-                                            Ok(item.value.clone())
-                                        })
+                                        .map_or(TokenValue::Omitted, |item| item.value.clone())
                                 })
-                                .collect::<Result<Vec<_>, CodecError>>()?;
+                                .collect::<Vec<_>>();
                             (points, data)
                         }
                         None => (Vec::new(), Vec::new()),
@@ -4246,7 +4179,7 @@ pub(crate) fn store(
                             .map(|sequence| format!("iges:entity:directory#{sequence}")),
                         geometry: (0..count)
                             .map(|offset| entity_link(4 + offset))
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .collect::<Vec<_>>(),
                     }
                 }
                 16 => {
@@ -4273,7 +4206,7 @@ pub(crate) fn store(
                             .map(|sequence| format!("iges:native:transformation#D{sequence}")),
                         entities: (0..count)
                             .map(|offset| entity_link(4 + offset))
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .collect::<Vec<_>>(),
                     }
                 }
                 18 | 20 => {
@@ -4299,7 +4232,7 @@ pub(crate) fn store(
                     } else {
                         [0; 6]
                     };
-                    let flow_links = |start, count| -> Result<Vec<Option<String>>, CodecError> {
+                    let flow_links = |start, count| -> Vec<Option<String>> {
                         (0..count)
                             .map(|offset| {
                                 let index = start + offset;
@@ -4319,17 +4252,12 @@ pub(crate) fn store(
                                             },
                                         )
                                     })
-                                    .map(|sequence| {
-                                        Ok::<_, CodecError>(format!(
-                                            "iges:entity:directory#{sequence}"
-                                        ))
-                                    })
-                                    .transpose()
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
                             })
-                            .collect::<Result<Vec<_>, CodecError>>()
+                            .collect::<Vec<_>>()
                     };
                     let mut cursor = first_list_index;
-                    let associated_flows = flow_links(cursor, counts[0])?;
+                    let associated_flows = flow_links(cursor, counts[0]);
                     cursor += counts[0];
                     let connections = (0..counts[1])
                         .map(|offset| {
@@ -4359,12 +4287,9 @@ pub(crate) fn store(
                                         },
                                     )
                                 })
-                                .map(|sequence| {
-                                    Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                                })
-                                .transpose()
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?;
+                        .collect::<Vec<_>>();
                     cursor += counts[1];
                     let joins = (0..counts[2])
                         .map(|offset| {
@@ -4384,21 +4309,17 @@ pub(crate) fn store(
                                         },
                                     )
                                 })
-                                .map(|sequence| {
-                                    Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                                })
-                                .transpose()
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?;
+                        .collect::<Vec<_>>();
                     cursor += counts[2];
                     let names = (0..counts[3])
                         .map(|offset| {
                             record
                                 .and_then(|record| record.string(cursor + offset))
-                                .map(|bytes| Ok::<_, CodecError>(NativeBytes::from(bytes.to_vec())))
-                                .transpose()
+                                .map(|bytes| NativeBytes::from(bytes.to_vec()))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?;
+                        .collect::<Vec<_>>();
                     cursor += counts[3];
                     let name_displays = (0..counts[4])
                         .map(|offset| {
@@ -4428,12 +4349,9 @@ pub(crate) fn store(
                                         },
                                     )
                                 })
-                                .map(|sequence| {
-                                    Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                                })
-                                .transpose()
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?;
+                        .collect::<Vec<_>>();
                     cursor += counts[4];
                     let continuations = (0..counts[5])
                         .map(|offset| {
@@ -4460,12 +4378,9 @@ pub(crate) fn store(
                                         )
                                     }
                                 })
-                                .map(|sequence| {
-                                    Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                                })
-                                .transpose()
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?;
+                        .collect::<Vec<_>>();
                     NativeAssociativity::Flow {
                         id,
                         source_entity,
@@ -4517,22 +4432,20 @@ pub(crate) fn store(
                         orientation_flag: record.and_then(|record| record.integer(4)),
                         angle: record.and_then(|record| record.number(5)),
                         geometry: (0..count)
-                            .map(
-                                |offset| -> Result<NativeDimensionGeometryItem, CodecError> {
-                                    let start = 6 + offset * 5;
-                                    Ok(NativeDimensionGeometryItem {
-                                        geometry: entity_link(start)?,
-                                        location_flag: record
-                                            .and_then(|record| record.integer(start + 1)),
-                                        point: [
-                                            record.and_then(|record| record.number(start + 2)),
-                                            record.and_then(|record| record.number(start + 3)),
-                                            record.and_then(|record| record.number(start + 4)),
-                                        ],
-                                    })
-                                },
-                            )
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .map(|offset| {
+                                let start = 6 + offset * 5;
+                                NativeDimensionGeometryItem {
+                                    geometry: entity_link(start),
+                                    location_flag: record
+                                        .and_then(|record| record.integer(start + 1)),
+                                    point: [
+                                        record.and_then(|record| record.number(start + 2)),
+                                        record.and_then(|record| record.number(start + 3)),
+                                        record.and_then(|record| record.number(start + 4)),
+                                    ],
+                                }
+                            })
+                            .collect(),
                     }
                 }
                 _ => return Ok(()),
@@ -4770,15 +4683,13 @@ pub(crate) fn store(
         let string = |index| {
             record
                 .string(index)
-                .map(|bytes| Ok::<_, CodecError>(NativeBytes::from(bytes.to_vec())))
-                .transpose()
+                .map(|bytes| NativeBytes::from(bytes.to_vec()))
         };
-        let strings =
-            |start: usize, count: usize| -> Result<Vec<Option<NativeBytes<Vec<u8>>>>, CodecError> {
-                (0..count)
-                    .map(|offset| string(start + offset))
-                    .collect::<Result<Vec<_>, CodecError>>()
-            };
+        let strings = |start: usize, count: usize| -> Vec<Option<NativeBytes<Vec<u8>>>> {
+            (0..count)
+                .map(|offset| string(start + offset))
+                .collect::<Vec<_>>()
+        };
         let value = match entry.form {
             2 => NativePropertyValue::RegionRestriction {
                 electrical_vias: record.integer(2),
@@ -4787,7 +4698,7 @@ pub(crate) fn store(
             },
             3 => NativePropertyValue::LevelFunction {
                 function_code: record.integer(2),
-                description: string(3)?,
+                description: string(3),
             },
             4 => NativePropertyValue::RegionFill {
                 fill_code: record.integer(2),
@@ -4807,13 +4718,13 @@ pub(crate) fn store(
                 lower_layer: record.integer(5),
                 upper_layer: record.integer(6),
             },
-            7 => NativePropertyValue::ReferenceDesignator { value: string(2)? },
-            8 => NativePropertyValue::PinNumber { value: string(2)? },
+            7 => NativePropertyValue::ReferenceDesignator { value: string(2) },
+            8 => NativePropertyValue::PinNumber { value: string(2) },
             9 => NativePropertyValue::PartNumber {
-                generic: string(2)?,
-                military: string(3)?,
-                vendor: string(4)?,
-                internal: string(5)?,
+                generic: string(2),
+                military: string(3),
+                vendor: string(4),
+                internal: string(5),
             },
             10 => NativePropertyValue::Hierarchy {
                 line_font: record.integer(2),
@@ -4872,8 +4783,8 @@ pub(crate) fn store(
                                             variable_type: record.integer(5 + offset),
                                             declared_value_count,
                                             values: (0..value_count)
-                                                .map(|index| Ok(record.number(cursor + index)))
-                                                .collect::<Result<Vec<_>, CodecError>>()?,
+                                                .map(|index| record.number(cursor + index))
+                                                .collect(),
                                         });
                                         cursor = next;
                                     }
@@ -4888,8 +4799,8 @@ pub(crate) fn store(
                                         Some(count) => (
                                             independent_variables,
                                             (0..count)
-                                                .map(|offset| Ok(record.number(cursor + offset)))
-                                                .collect::<Result<Vec<_>, CodecError>>()?,
+                                                .map(|offset| record.number(cursor + offset))
+                                                .collect(),
                                         ),
                                         None => (Vec::new(), Vec::new()),
                                     }
@@ -4907,17 +4818,17 @@ pub(crate) fn store(
                 }
             }
             12 => NativePropertyValue::ExternalReferenceFileList {
-                names: strings(2, counted(1, 1))?,
+                names: strings(2, counted(1, 1)),
             },
             13 => NativePropertyValue::NominalSize {
                 size: record.number(2),
-                name: string(3)?,
-                standard: string(4)?,
+                name: string(3),
+                standard: string(4),
             },
             14 => NativePropertyValue::FlowLineSpecification {
-                values: strings(2, counted(1, 1))?,
+                values: strings(2, counted(1, 1)),
             },
-            15 => NativePropertyValue::Name { value: string(2)? },
+            15 => NativePropertyValue::Name { value: string(2) },
             18 => NativePropertyValue::IntercharacterSpacing {
                 percent: record.number(2),
             },
@@ -4940,7 +4851,7 @@ pub(crate) fn store(
             },
             23 => NativePropertyValue::AssociativityGroupType {
                 associativity_type: record.integer(2),
-                name: string(3)?,
+                name: string(3),
             },
             24 => {
                 let definition_count = counted(2, 4);
@@ -4948,23 +4859,23 @@ pub(crate) fn store(
                     definitions: (0..definition_count)
                         .map(|offset| {
                             let start = 3 + offset * 4;
-                            Ok(NativeLepLayerDefinition {
+                            NativeLepLayerDefinition {
                                 exchange_level: record.integer(start),
-                                native_identifier: (string(start + 1)?),
+                                native_identifier: (string(start + 1)),
                                 physical_layer: record.integer(start + 2),
-                                functional_identifier: (string(start + 3)?),
-                            })
+                                functional_identifier: (string(start + 3)),
+                            }
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                        .collect::<Vec<_>>(),
                 }
             }
             25 => {
                 let level_count = counted(3, 1);
                 NativePropertyValue::LepArtworkStackup {
-                    identification: string(2)?,
+                    identification: string(2),
                     levels: (0..level_count)
-                        .map(|offset| Ok(record.integer(4 + offset)))
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                        .map(|offset| record.integer(4 + offset))
+                        .collect(),
                 }
             }
             26 => NativePropertyValue::LepDrilledHole {
@@ -4975,26 +4886,26 @@ pub(crate) fn store(
             27 => {
                 let value_count = counted(3, 2);
                 NativePropertyValue::GenericData {
-                    name: string(2)?,
+                    name: string(2),
                     values: (0..value_count)
                         .map(|offset| {
                             let index = 4 + offset * 2;
-                            Ok(NativeGenericPropertyValue {
+                            NativeGenericPropertyValue {
                                 data_type: record.integer(index),
                                 value: record
                                     .tokens()
                                     .get(index + 1)
                                     .map_or(TokenValue::Omitted, |token| token.value.clone()),
-                            })
+                            }
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                        .collect::<Vec<_>>(),
                 }
             }
             28 => NativePropertyValue::DimensionUnits {
                 secondary_position: record.integer(2),
                 units_indicator: record.integer(3),
                 character_set: record.integer_or(4, DEFAULT_DIMENSION_UNITS_CHARACTER_SET),
-                suffix: string(5)?,
+                suffix: string(5),
                 fraction_flag: record.integer(6),
                 precision: record.integer(7),
             },
@@ -5015,7 +4926,7 @@ pub(crate) fn store(
                     label_position: record.integer(3),
                     declared_character_set: record.integer(4),
                     character_set: record.integer_or(4, DEFAULT_DIMENSION_DISPLAY_CHARACTER_SET),
-                    label: string(5)?,
+                    label: string(5),
                     decimal_symbol: record.integer(6),
                     declared_witness_line_angle: record.number(7),
                     witness_line_angle: record
@@ -5028,43 +4939,41 @@ pub(crate) fn store(
                     supplemental_notes: (0..note_count)
                         .map(|offset| {
                             let start = 14 + offset * 3;
-                            Ok(NativeSupplementalNote {
+                            NativeSupplementalNote {
                                 position: record.integer(start),
                                 first_text: record.integer(start + 1),
                                 last_text: record.integer(start + 2),
-                            })
+                            }
                         })
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                        .collect::<Vec<_>>(),
                 }
             }
             31 => NativePropertyValue::BasicDimension {
                 corners: (0..4)
-                    .map(|offset| {
-                        Ok([record.number(2 + offset * 2), record.number(3 + offset * 2)])
-                    })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .map(|offset| [record.number(2 + offset * 2), record.number(3 + offset * 2)])
+                    .collect::<Vec<_>>(),
             },
             32 => NativePropertyValue::DrawingSheetApproval {
-                name: string(2)?,
-                organization: string(3)?,
-                date: string(4)?,
+                name: string(2),
+                organization: string(3),
+                date: string(4),
             },
             33 => NativePropertyValue::DrawingSheetId {
                 sheet_number: record.integer(2),
-                revision: string(3)?,
+                revision: string(3),
             },
             34 | 35 => {
                 let range_count = counted(2, 3);
                 let ranges = (0..range_count)
                     .map(|offset| {
                         let start = 3 + offset * 3;
-                        Ok(NativeTextScoreRange {
+                        NativeTextScoreRange {
                             text_index: record.integer(start),
                             first_character: record.integer(start + 1),
                             last_character: record.integer(start + 2),
-                        })
+                        }
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?;
+                    .collect::<Vec<_>>();
                 if entry.form == 34 {
                     NativePropertyValue::Underscore { ranges }
                 } else {
@@ -5129,7 +5038,7 @@ pub(crate) fn store(
                 units: (0..count)
                     .map(|offset| {
                         let start = 2 + offset * 3;
-                        Ok(NativeUnitDefinition {
+                        NativeUnitDefinition {
                             unit_type: record
                                 .and_then(|record| record.string(start))
                                 .map(|bytes| NativeBytes::from(bytes.to_vec())),
@@ -5137,9 +5046,9 @@ pub(crate) fn store(
                                 .and_then(|record| record.string(start + 1))
                                 .map(|bytes| NativeBytes::from(bytes.to_vec())),
                             scale_factor: record.and_then(|record| record.number(start + 2)),
-                        })
+                        }
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .collect(),
                 owners,
             })
         },
@@ -5181,14 +5090,9 @@ pub(crate) fn store(
                                             &[],
                                         )
                                     })
-                                    .map(|sequence| {
-                                        Ok::<_, CodecError>(format!(
-                                            "iges:entity:directory#{sequence}"
-                                        ))
-                                    })
-                                    .transpose()
+                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
                             })
-                            .collect::<Result<Vec<_>, CodecError>>()?,
+                            .collect::<Vec<_>>(),
                     }
                 } else {
                     ViewGeometry::Perspective(Box::new(PerspectiveViewGeometry {
@@ -5309,12 +5213,9 @@ pub(crate) fn store(
                                     sequence,
                                 )
                             })
-                            .map(|sequence| {
-                                Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                            })
-                            .transpose()
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .collect::<Vec<_>>(),
             })
         },
     )?;
@@ -5495,12 +5396,9 @@ pub(crate) fn store(
                                     },
                                 )
                             })
-                            .map(|sequence| {
-                                Ok::<_, CodecError>(format!("iges:entity:directory#{sequence}"))
-                            })
-                            .transpose()
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
-                    .collect::<Result<Vec<_>, CodecError>>()?,
+                    .collect::<Vec<_>>(),
                 name_property: name_property
                     .map(|sequence| format!("iges:product:property#D{sequence}")),
                 name: name_property
