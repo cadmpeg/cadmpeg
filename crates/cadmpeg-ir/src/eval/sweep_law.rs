@@ -8,7 +8,6 @@ use crate::geometry::LawExpression;
 use crate::math::sum::{ExactSignedSum, ScaledValue};
 use crate::math::Vector3;
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
-use cadmpeg_core::decode::u64_from_index;
 
 /// A scalar law's finite value with its derivative, which states its own
 /// outcome: a value can exist where its derivative has no value, or where
@@ -42,7 +41,7 @@ fn operand_derivatives(
     Ok((first.derivative?, second.derivative?))
 }
 
-/// Remove Unicode whitespace while holding the spelling in scoped scratch.
+/// Remove Unicode whitespace.
 pub(super) fn compact_sweep_text(
     scratch: &decode::Scratch<'_, '_>,
     text: &str,
@@ -51,7 +50,7 @@ pub(super) fn compact_sweep_text(
     let mut bytes = Vec::new();
     while !characters.as_str().is_empty() {
         scratch
-            .work(1, "IR sweep law text scan")
+            .work(1)
             .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
         let Some(character) = characters.next() else {
             break;
@@ -59,23 +58,16 @@ pub(super) fn compact_sweep_text(
         if character.is_whitespace() {
             continue;
         }
-        scratch
-            .reserve(
-                &mut bytes,
-                character.len_utf8(),
-                "IR sweep law text storage",
-            )
-            .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
         let mut encoded = [0; 4];
         for byte in character.encode_utf8(&mut encoded).bytes() {
             scratch
-                .work(1, "IR sweep law text copy")
+                .work(1)
                 .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
             bytes.push(byte);
         }
     }
     scratch
-        .work(bytes.len(), "IR sweep law UTF-8 validation")
+        .work(bytes.len())
         .ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
     String::from_utf8(bytes).map_err(|_| EvaluationFailure::NoValue)
 }
@@ -86,9 +78,7 @@ fn trim_sweep_text<'text>(
     mut text: &'text str,
 ) -> Result<&'text str, EvaluationFailure<()>> {
     while !text.is_empty() {
-        admission
-            .work(1, "IR sweep law text whitespace")
-            .map_err(EvaluationFailure::from)?;
+        admission.work(1).map_err(EvaluationFailure::from)?;
         let Some(character) = text.chars().next() else {
             break;
         };
@@ -98,9 +88,7 @@ fn trim_sweep_text<'text>(
         text = &text[character.len_utf8()..];
     }
     while !text.is_empty() {
-        admission
-            .work(1, "IR sweep law text whitespace")
-            .map_err(EvaluationFailure::from)?;
+        admission.work(1).map_err(EvaluationFailure::from)?;
         let Some(character) = text.chars().next_back() else {
             break;
         };
@@ -119,9 +107,7 @@ fn split_sweep_text<'text>(
     delimiter: u8,
 ) -> Result<Option<(&'text str, &'text str)>, EvaluationFailure<()>> {
     for (index, byte) in text.as_bytes().iter().enumerate() {
-        admission
-            .work(1, "IR sweep law field scan")
-            .map_err(EvaluationFailure::from)?;
+        admission.work(1).map_err(EvaluationFailure::from)?;
         if *byte == delimiter {
             return Ok(Some((&text[..index], &text[index + 1..])));
         }
@@ -135,7 +121,7 @@ fn parse_sweep_number(
     text: &str,
 ) -> Result<Option<f64>, EvaluationFailure<()>> {
     admission
-        .work(u64_from_index(text.len()), "IR sweep law number parse")
+        .work(text.len())
         .map_err(EvaluationFailure::from)?;
     Ok(text.parse().ok())
 }
@@ -180,7 +166,7 @@ pub(super) fn scalar_sweep_law_differential(
     parameter: FiniteReal,
 ) -> Result<ScalarSweepDifferential, EvaluationFailure<()>> {
     admission.within_model(|admission| {
-        let _depth = ModelEvaluationDepthGuard::enter(admission.work_slice())
+        let _depth = ModelEvaluationDepthGuard::enter(admission)
             .map_err(EvaluationFailure::ResourceLimit)?;
         admission.model_step()?;
         let no_value = EvaluationFailure::NoValue;

@@ -424,21 +424,10 @@ impl LossKind {
     /// Copy the retained namespace and code through the decode budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, operation)?;
-        match self {
-            Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
-            Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
-                namespace: LossNamespaceName(
-                    ctx.copy_retained_text(kind.namespace.as_str(), operation)?,
-                ),
-                code: ctx.copy_retained_text(&kind.code, operation)?,
-                taxonomy: kind.taxonomy,
-                strict_floor: kind.strict_floor,
-            })),
-        }
+        Ok(self.clone())
     }
 
     /// Shared-namespace code whose local id equals the taxonomy `snake_case` name.
@@ -579,21 +568,10 @@ impl LossNote {
     /// Copies a report loss after admitting every owned string in the copy.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, operation)?;
-        let message = ctx.copy_retained_text(&self.message, operation)?;
-        Ok(Self {
-            code: self.code.try_clone_for_decode(ctx, operation)?,
-            severity: self.severity,
-            message,
-            provenance: self
-                .provenance
-                .as_ref()
-                .map(|value| value.try_clone_for_decode(ctx, operation))
-                .transpose()?,
-        })
+        Ok(self.clone())
     }
 
     /// Creates a loss note with the kind's default severity and no provenance.

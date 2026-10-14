@@ -1,115 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Indexed procedural admission at explicit append-only model boundaries.
 
-use std::collections::{hash_map::RandomState, HashMap, HashSet};
-use std::hash::BuildHasher;
+use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::{Model, ProceduralCarrierError};
 use crate::geometry::{ProceduralCurve, ProceduralSurface};
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 
-// Fingerprints avoid rehashing stored text during table growth. Equal
-// fingerprints retain distinct text entries; every text equality is fallible.
-struct TextIndex<V> {
-    hashes: RandomState,
-    buckets: HashMap<u64, Vec<(String, V)>>,
-}
-
-impl<V> Default for TextIndex<V> {
-    fn default() -> Self {
-        Self {
-            hashes: RandomState::new(),
-            buckets: HashMap::new(),
-        }
-    }
-}
-
-impl<V> TextIndex<V> {
-    fn fingerprint(&self, ctx: &DecodeContext<'_>, text: &str) -> Result<u64, CodecError> {
-        ctx.charge_work(1, "hash procedural identity")?;
-        ctx.charge_work(u64_from_index(text.len()), "hash procedural identity")?;
-        // The integer-table probe hashes a u64 and compares fixed-width keys.
-        ctx.charge_work(24, "probe procedural identity index")?;
-        Ok(self.hashes.hash_one(text))
-    }
-
-    fn get<'a>(&'a self, ctx: &DecodeContext<'_>, text: &str) -> Result<Option<&'a V>, CodecError> {
-        let hash = self.fingerprint(ctx, text)?;
-        if let Some(bucket) = self.buckets.get(&hash) {
-            for (stored, value) in bucket {
-                if crate::ids::comparison::equal(
-                    ctx,
-                    stored,
-                    text,
-                    "compare indexed procedural identities",
-                )? {
-                    return Ok(Some(value));
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    fn get_mut<'a>(
-        &'a mut self,
-        ctx: &DecodeContext<'_>,
-        text: &str,
-    ) -> Result<Option<&'a mut V>, CodecError> {
-        let hash = self.fingerprint(ctx, text)?;
-        if let Some(bucket) = self.buckets.get_mut(&hash) {
-            for (stored, value) in bucket {
-                if crate::ids::comparison::equal(
-                    ctx,
-                    stored,
-                    text,
-                    "compare indexed procedural identities",
-                )? {
-                    return Ok(Some(value));
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    fn insert_first(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        text: &str,
-        value: V,
-    ) -> Result<(), CodecError> {
-        if self.get(ctx, text)?.is_some() {
-            return Ok(());
-        }
-        let hash = self.fingerprint(ctx, text)?;
-        let text = ctx.copy_retained_text(text, "store procedural index identity")?;
-        if self.buckets.len() == self.buckets.capacity() {
-            let work = self
-                .buckets
-                .len()
-                .checked_mul(std::mem::size_of::<(u64, Vec<(String, V)>)>() + 32)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("grow procedural identity index", u64::MAX - 1, u64::MAX)
-                })?;
-            ctx.charge_work(u64_from_index(work), "grow procedural identity index")?;
-        }
-        ctx.push_hash_group(
-            &mut self.buckets,
-            hash,
-            (text, value),
-            "procedural identity index buckets",
-            "procedural identity index entries",
-        )
-    }
-}
-
 #[derive(Default)]
 struct FamilyIndex {
-    owners: TextIndex<usize>,
-    constructions: TextIndex<()>,
-    associations: TextIndex<Vec<usize>>,
+    owners: HashMap<String, usize>,
+    constructions: HashSet<String>,
+    associations: HashMap<String, Vec<usize>>,
     carrier_count: usize,
     construction_count: usize,
 }
@@ -117,7 +22,6 @@ struct FamilyIndex {
 impl FamilyIndex {
     fn sync<'text>(
         &mut self,
-        ctx: &DecodeContext<'_>,
         carriers: impl ExactSizeIterator<Item = (usize, &'text str, Option<&'text str>)>,
         constructions: impl ExactSizeIterator<Item = &'text str>,
     ) -> Result<(), CodecError> {
@@ -129,82 +33,53 @@ impl FamilyIndex {
             ));
         }
         for (slot, owner, construction) in carriers.skip(self.carrier_count) {
-            ctx.charge_work(1, "index appended procedural carriers")?;
-            self.owners.insert_first(ctx, owner, slot)?;
+            self.owners.entry(owner.to_owned()).or_insert(slot);
             if let Some(construction) = construction {
-                self.associate(ctx, construction, slot)?;
+                self.associate(construction, slot);
             }
         }
         for construction in constructions.skip(self.construction_count) {
-            ctx.charge_work(1, "index appended procedural constructions")?;
-            self.constructions.insert_first(ctx, construction, ())?;
+            self.constructions.insert(construction.to_owned());
         }
         self.carrier_count = carrier_count;
         self.construction_count = construction_count;
         Ok(())
     }
 
-    fn associate(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        construction: &str,
-        slot: usize,
-    ) -> Result<(), CodecError> {
-        if let Some(group) = self.associations.get_mut(ctx, construction)? {
-            ctx.push_vec(group, slot, "procedural carrier association slots")?;
-        } else {
-            let mut group = Vec::new();
-            ctx.push_vec(&mut group, slot, "procedural carrier association slots")?;
-            self.associations.insert_first(ctx, construction, group)?;
-        }
-        Ok(())
+    fn associate(&mut self, construction: &str, slot: usize) {
+        self.associations
+            .entry(construction.to_owned())
+            .or_default()
+            .push(slot);
     }
 
     fn owner<'text>(
         &self,
-        ctx: &DecodeContext<'_>,
         noun: &str,
         owner: &str,
         construction: &str,
         owner_at: impl Fn(usize) -> &'text str,
-    ) -> Result<Result<usize, ProceduralCarrierError>, CodecError> {
-        if self.constructions.get(ctx, construction)?.is_some() {
-            return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
-                format_args!("procedural {noun} construction {construction} already exists"),
-                "procedural admission refusal",
-            )?)));
+    ) -> Result<usize, ProceduralCarrierError> {
+        if self.constructions.contains(construction) {
+            return Err(ProceduralCarrierError::new(format!(
+                "procedural {noun} construction {construction} already exists"
+            )));
         }
-        if let Some(group) = self.associations.get(ctx, construction)? {
+        if let Some(group) = self.associations.get(construction) {
             for &slot in group {
                 let other = owner_at(slot);
-                if !crate::ids::comparison::equal(
-                    ctx,
-                    owner,
-                    other,
-                    "compare indexed procedural owners",
-                )? {
-                    return Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
-                        format_args!("procedural {noun} construction {construction} already owns {noun} {other}"), "procedural admission refusal")?)));
+                if owner != other {
+                    return Err(ProceduralCarrierError::new(format!(
+                        "procedural {noun} construction {construction} already owns {noun} {other}"
+                    )));
                 }
             }
         }
-        match self.owners.get(ctx, owner)?.copied() {
-            Some(slot) => Ok(Ok(slot)),
-            None => Ok(Err(ProceduralCarrierError::new(ctx.format_retained(
-                format_args!("procedural {noun} {construction} references missing {noun} {owner}"),
-                "procedural admission refusal",
-            )?))),
-        }
-    }
-}
-
-fn with_index_storage<T>(
-    storage: &mut Option<&mut ScopedReservation<'_>>,
-    work: impl FnOnce() -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    match storage {
-        Some(storage) => storage.with_storage(work),
-        None => work(),
+        self.owners.get(owner).copied().ok_or_else(|| {
+            ProceduralCarrierError::new(format!(
+                "procedural {noun} {construction} references missing {noun} {owner}"
+            ))
+        })
     }
 }
 
@@ -212,7 +87,6 @@ fn with_index_storage<T>(
 /// Existing carrier identities, construction references, and arena order must
 /// remain unchanged. Each accepted attachment updates its indexed ownership.
 /// Discard this index before moving the model or replacing, removing, or reordering arena entries.
-/// Index allocations use the supplied context's current storage admission.
 #[derive(Default)]
 pub struct ProceduralIndex {
     model: Option<*const Model>,
@@ -221,8 +95,7 @@ pub struct ProceduralIndex {
 }
 
 impl ProceduralIndex {
-    fn bind(&mut self, ctx: &DecodeContext<'_>, model: &Model) -> Result<(), CodecError> {
-        ctx.charge_work(0, "indexed procedural admission")?;
+    fn bind(&mut self, model: &Model) -> Result<(), CodecError> {
         if self
             .model
             .is_some_and(|previous| !std::ptr::eq(previous, model))
@@ -234,7 +107,8 @@ impl ProceduralIndex {
         self.model = Some(model);
         Ok(())
     }
-    /// Admit one attachment with retained index backing.
+
+    /// Admit one curve attachment.
     pub fn add_curve(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -242,53 +116,33 @@ impl ProceduralIndex {
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.add_curve_with_storage(ctx, model, owner, procedural, None)
-    }
-
-    fn add_curve_with_storage(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        model: &mut Model,
-        owner: &CurveId,
-        procedural: ProceduralCurve,
-        mut storage: Option<&mut ScopedReservation<'_>>,
-    ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.bind(ctx, model)?;
-        with_index_storage(&mut storage, || {
-            self.curves.sync(
-                ctx,
-                model.curves.iter().enumerate().map(|(slot, carrier)| {
-                    (
-                        slot,
-                        carrier.id.as_str(),
-                        carrier
-                            .geometry
-                            .procedural_construction()
-                            .map(ProceduralCurveId::as_str),
-                    )
-                }),
-                model
-                    .procedural_curves
-                    .iter()
-                    .map(|procedural| procedural.id.as_str()),
-            )
-        })?;
-        let slot = match self.curves.owner(
-            ctx,
-            "curve",
-            owner.as_str(),
-            procedural.id.as_str(),
-            |slot| model.curves[slot].id.as_str(),
-        )? {
-            Ok(slot) => slot,
-            Err(error) => return Ok(Err(error)),
-        };
-        if !crate::ids::comparison::equal(
-            ctx,
-            model.curves[slot].id.as_str(),
-            owner.as_str(),
-            "check indexed procedural owner slot",
-        )? {
+        self.bind(model)?;
+        self.curves.sync(
+            model.curves.iter().enumerate().map(|(slot, carrier)| {
+                (
+                    slot,
+                    carrier.id.as_str(),
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(ProceduralCurveId::as_str),
+                )
+            }),
+            model
+                .procedural_curves
+                .iter()
+                .map(|procedural| procedural.id.as_str()),
+        )?;
+        let slot =
+            match self
+                .curves
+                .owner("curve", owner.as_str(), procedural.id.as_str(), |slot| {
+                    model.curves[slot].id.as_str()
+                }) {
+                Ok(slot) => slot,
+                Err(error) => return Ok(Err(error)),
+            };
+        if model.curves[slot].id.as_str() != owner.as_str() {
             return Err(CodecError::malformed("procedural admission prefix changed"));
         }
         let associated = model.curves[slot]
@@ -305,19 +159,16 @@ impl ProceduralIndex {
                 })?
                 .id
                 .as_str();
-            with_index_storage(&mut storage, || {
-                if !associated {
-                    self.curves.associate(ctx, construction, slot)?;
-                }
-                self.curves
-                    .constructions
-                    .insert_first(ctx, construction, ())
-            })?;
+            if !associated {
+                self.curves.associate(construction, slot);
+            }
+            self.curves.constructions.insert(construction.to_owned());
             self.curves.construction_count = model.procedural_curves.len();
         }
         Ok(result)
     }
-    /// Admit one attachment with retained index backing.
+
+    /// Admit one surface attachment.
     pub fn add_surface(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -325,53 +176,33 @@ impl ProceduralIndex {
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.add_surface_with_storage(ctx, model, owner, procedural, None)
-    }
-
-    fn add_surface_with_storage(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        model: &mut Model,
-        owner: &SurfaceId,
-        procedural: ProceduralSurface,
-        mut storage: Option<&mut ScopedReservation<'_>>,
-    ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.bind(ctx, model)?;
-        with_index_storage(&mut storage, || {
-            self.surfaces.sync(
-                ctx,
-                model.surfaces.iter().enumerate().map(|(slot, carrier)| {
-                    (
-                        slot,
-                        carrier.id.as_str(),
-                        carrier
-                            .geometry
-                            .procedural_construction()
-                            .map(ProceduralSurfaceId::as_str),
-                    )
-                }),
-                model
-                    .procedural_surfaces
-                    .iter()
-                    .map(|procedural| procedural.id.as_str()),
-            )
-        })?;
-        let slot = match self.surfaces.owner(
-            ctx,
-            "surface",
-            owner.as_str(),
-            procedural.id.as_str(),
-            |slot| model.surfaces[slot].id.as_str(),
-        )? {
-            Ok(slot) => slot,
-            Err(error) => return Ok(Err(error)),
-        };
-        if !crate::ids::comparison::equal(
-            ctx,
-            model.surfaces[slot].id.as_str(),
-            owner.as_str(),
-            "check indexed procedural owner slot",
-        )? {
+        self.bind(model)?;
+        self.surfaces.sync(
+            model.surfaces.iter().enumerate().map(|(slot, carrier)| {
+                (
+                    slot,
+                    carrier.id.as_str(),
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(ProceduralSurfaceId::as_str),
+                )
+            }),
+            model
+                .procedural_surfaces
+                .iter()
+                .map(|procedural| procedural.id.as_str()),
+        )?;
+        let slot =
+            match self
+                .surfaces
+                .owner("surface", owner.as_str(), procedural.id.as_str(), |slot| {
+                    model.surfaces[slot].id.as_str()
+                }) {
+                Ok(slot) => slot,
+                Err(error) => return Ok(Err(error)),
+            };
+        if model.surfaces[slot].id.as_str() != owner.as_str() {
             return Err(CodecError::malformed("procedural admission prefix changed"));
         }
         let associated = model.surfaces[slot]
@@ -388,29 +219,24 @@ impl ProceduralIndex {
                 })?
                 .id
                 .as_str();
-            with_index_storage(&mut storage, || {
-                if !associated {
-                    self.surfaces.associate(ctx, construction, slot)?;
-                }
-                self.surfaces
-                    .constructions
-                    .insert_first(ctx, construction, ())
-            })?;
+            if !associated {
+                self.surfaces.associate(construction, slot);
+            }
+            self.surfaces.constructions.insert(construction.to_owned());
             self.surfaces.construction_count = model.procedural_surfaces.len();
         }
         Ok(result)
     }
 }
 
-/// Append-only admission whose index storage is scoped to the caller's session.
+/// Append-only admission bound to one decode context.
 pub struct ProceduralAdmission<'ctx> {
     ctx: &'ctx DecodeContext<'ctx>,
     index: ProceduralIndex,
-    storage: ScopedReservation<'ctx>,
 }
 
 impl<'ctx> ProceduralAdmission<'ctx> {
-    /// Start a scoped index for one model. Each family indexes on first use.
+    /// Start an index for one model. Each family indexes on first use.
     pub fn new(ctx: &'ctx DecodeContext<'_>, model: &Model) -> Result<Self, CodecError> {
         Ok(Self {
             ctx,
@@ -418,7 +244,6 @@ impl<'ctx> ProceduralAdmission<'ctx> {
                 model: Some(model),
                 ..ProceduralIndex::default()
             },
-            storage: ctx.reserve_scoped(0, "indexed procedural admission")?,
         })
     }
     /// Admit one attachment while preserving the append-only prefix.
@@ -428,13 +253,7 @@ impl<'ctx> ProceduralAdmission<'ctx> {
         owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.index.add_curve_with_storage(
-            self.ctx,
-            model,
-            owner,
-            procedural,
-            Some(&mut self.storage),
-        )
+        self.index.add_curve(self.ctx, model, owner, procedural)
     }
     /// Admit one attachment while preserving the append-only prefix.
     pub fn add_surface(
@@ -443,13 +262,7 @@ impl<'ctx> ProceduralAdmission<'ctx> {
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
-        self.index.add_surface_with_storage(
-            self.ctx,
-            model,
-            owner,
-            procedural,
-            Some(&mut self.storage),
-        )
+        self.index.add_surface(self.ctx, model, owner, procedural)
     }
 }
 

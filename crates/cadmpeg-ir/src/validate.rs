@@ -28,13 +28,11 @@ pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
-mod orders;
 mod pmi;
 mod presentation;
 mod products;
 mod referential_integrity;
 mod scans;
-mod scratch;
 mod semantic_annotations;
 mod sketches;
 mod spreadsheets;
@@ -80,7 +78,7 @@ fn pcurve_parameter_domain(
 {
     use crate::geometry::pcurve::PcurveGeometry;
     let _depth = ctx.enter_nested_limit("pcurve parameter domain nesting")?;
-    ctx.charge_work_limit(1, "pcurve parameter domain visit")?;
+
     Ok(match geometry {
         PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
@@ -116,25 +114,20 @@ fn pcurve_parameter_domain(
 }
 
 fn record_finding(
-    ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
     check: Check,
     severity: Severity,
     entity: Option<&str>,
     message: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    ctx.reserve_vec(findings, 1, "validation finding storage")?;
-    let message = ctx.format_retained(message, "validation finding message")?;
-    let entity = entity
-        .map(|id| ctx.copy_retained_text(id, "validation finding identity"))
-        .transpose()?;
+) {
+    let message = std::fmt::format(message);
+    let entity = entity.map(str::to_owned);
     findings.push(Finding {
         check,
         severity,
         message,
         entity,
     });
-    Ok(())
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
@@ -154,13 +147,13 @@ fn validate_model_with_index(
     ids: &crate::index::ModelIndex<'_>,
 ) -> Result<ValidationReport, CodecError> {
     let _depth = ctx.enter_nested("IR neutral validation")?;
-    ctx.charge_work(1, "IR neutral validation")?;
+
     let mut findings = Vec::new();
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ctx, ids.native_view(), &mut findings)?;
-    check_tolerances(ctx, ir, &mut findings)?;
+    check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ctx, ir, &mut findings)?;
@@ -173,7 +166,7 @@ fn validate_model_with_index(
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
     check_pcurve_surface_consistency(ctx, ids, &mut findings)?;
     check_procedural_support_consistency(ctx, ids, &mut findings)?;
-    check_topology_tolerances(ctx, ir, &mut findings)?;
+    check_topology_tolerances(ir, &mut findings);
     check_tessellations(ctx, ir, &mut findings)?;
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ctx, ir, &mut findings)?;
@@ -190,7 +183,7 @@ fn validate_model_with_index(
     check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
 
     Ok(ValidationReport {
-        entity_counts: crate::document::census::count(ctx, ids.native_view())?,
+        entity_counts: crate::document::census::count(ids.native_view()),
         findings,
         losses,
     })
@@ -327,78 +320,17 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn validation_finding_preserves_the_original_storage_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        for entity in [None, Some("test:model:point#missing")] {
-            for dimension in [
-                ResourceDimension::RetainedBytes,
-                ResourceDimension::CollectionItems,
-                ResourceDimension::WorkUnits,
-                ResourceDimension::MaterializedBytes,
-            ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                    ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = 0;
-                    }
-                    _ => unreachable!(),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut findings = Vec::new();
-                let mut create = || {
-                    super::record_finding(
-                        &ctx,
-                        &mut findings,
-                        crate::report::check::Check::ReferentialIntegrity,
-                        crate::report::Severity::Error,
-                        entity,
-                        format_args!("unresolved reference"),
-                    )
-                };
-                let result = if dimension == ResourceDimension::MaterializedBytes {
-                    ctx.with_scoped_storage("temporary validation findings", create)
-                        .map(|_| ())
-                } else {
-                    create()
-                };
-                let Err(CodecError::ResourceLimit(limit)) = result else {
-                    panic!("finding must refuse");
-                };
-                assert_eq!(limit.dimension, dimension);
-                assert_eq!(
-                    limit.operation,
-                    match dimension {
-                        ResourceDimension::WorkUnits => "validation finding message",
-                        _ => "validation finding storage",
-                    }
-                );
-                assert!(findings.is_empty());
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-                );
-            }
-        }
-    }
-
-    #[test]
     fn validation_finding_keeps_absent_identity_and_formatted_message() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut findings = Vec::new();
         for entity in [None, Some("test:model:point#missing")] {
             super::record_finding(
-                &ctx,
                 &mut findings,
                 crate::report::check::Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 entity,
                 format_args!("unresolved reference {}", 7),
-            )
-            .unwrap();
+            );
         }
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].entity, None);
@@ -447,38 +379,22 @@ mod tests {
     }
 
     #[test]
-    fn pcurve_parameter_domain_preserves_session_depth_and_work_refusals() {
+    fn pcurve_parameter_domain_preserves_session_depth_refusals() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let geometry = placed_pcurve(2).unwrap();
-        for (dimension, cap, held_frame) in [
-            (ResourceDimension::RecursionDepth, 0, false),
-            (ResourceDimension::RecursionDepth, 2, false),
-            (ResourceDimension::RecursionDepth, 2, true),
-            (ResourceDimension::WorkUnits, 0, false),
-            (ResourceDimension::WorkUnits, 2, false),
-        ] {
+        for (cap, held_frame) in [(0, false), (2, false), (2, true)] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                _ => unreachable!(),
-            }
+            policy.limits.max_recursion_depth = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
             let limit = pcurve_parameter_domain(&ctx, &geometry).unwrap_err();
-            assert_eq!(limit.dimension, dimension);
+            assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
             assert_eq!(limit.limit, cap);
             assert_eq!(limit.used, cap);
             assert_eq!(limit.additional, 1);
-            assert_eq!(
-                limit.operation,
-                match dimension {
-                    ResourceDimension::RecursionDepth => "pcurve parameter domain nesting",
-                    _ => "pcurve parameter domain visit",
-                }
-            );
+            assert_eq!(limit.operation, "pcurve parameter domain nesting");
             drop(guard);
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -646,10 +562,10 @@ mod caller_policy_tests {
     };
 
     #[test]
-    fn neutral_and_source_validation_preserve_caller_work_limits() {
+    fn neutral_and_source_validation_preserve_caller_depth_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_recursion_depth = 0;
         for sidecar in [false, true] {
             let ctx = DecodeContext::for_loaded_input(&arena, &policy, 1_000_000)
                 .expect("loaded context");
@@ -665,7 +581,7 @@ mod caller_policy_tests {
                 validate_neutral_for_decode(&ctx, &ir, Vec::new())
             };
             assert!(
-                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.limit == 0)
+                matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth && limit.limit == 0)
             );
         }
     }

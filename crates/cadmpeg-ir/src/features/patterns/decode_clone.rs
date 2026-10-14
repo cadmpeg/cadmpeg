@@ -2,36 +2,32 @@
 //! Copy admitted feature fields under the caller decode resource policy.
 
 use super::{
-    CompositePattern, LinearPatternDirection, NoNestedComposite, PatternForm, PatternKind,
-    PatternScaleCenter, PatternSeed, PatternStage, PatternTransform,
+    CompositePattern, LinearPatternDirection, PatternKind, PatternScaleCenter, PatternSeed,
+    PatternStage, PatternTransform,
 };
 
-clone_record_for_decode!(CompositePattern; (field0));
+rewrite_record!(CompositePattern, []; (field0));
 
-clone_record_for_decode!(LinearPatternDirection; { direction, spacing, count });
+rewrite_record!(LinearPatternDirection, []; { direction, spacing, count });
 
-clone_copy_for_decode!(NoNestedComposite);
+rewrite_record!(PatternKind<C>, [C]; (field0));
 
-clone_copy_for_decode!(PatternForm);
-
-clone_record_for_decode!(PatternKind<C>, [C]; (field0));
-
-clone_enum_for_decode!(PatternScaleCenter; {
+rewrite_enum!(PatternScaleCenter, []; {
     FirstSeedCentroid,
     Point(field0),
     Native(field0),
 });
 
-clone_enum_for_decode!(PatternSeed; {
+rewrite_enum!(PatternSeed, []; {
     Feature(field0),
     Faces(field0),
     Bodies(field0),
     Occurrences(field0),
 });
 
-clone_record_for_decode!(PatternStage; { pattern });
+rewrite_record!(PatternStage, []; { pattern });
 
-clone_enum_for_decode!(PatternTransform<C>, [C]; {
+rewrite_enum!(PatternTransform<C>, [C]; {
     Unresolved { form },
     Linear { direction, spacing, count, second },
     LinearOffsets { direction, offsets },

@@ -53,8 +53,8 @@ impl RadiusAdmission for StandardAdmission {
 }
 impl RadiusAdmission for DecodeContext<'_> {
     type Error = ConstructionError;
-    fn work(&self, operation: &'static str) -> Result<(), Self::Error> {
-        self.charge_work(1, operation).map_err(Into::into)
+    fn work(&self, _operation: &'static str) -> Result<(), Self::Error> {
+        Ok(())
     }
     fn invalid(&self) -> Self::Error {
         ConstructionError::Admission(super::INVALID_VARIABLE_RADII)
@@ -64,6 +64,6 @@ impl RadiusAdmission for DecodeContext<'_> {
         values: Vec<I>,
         convert: impl FnMut(I) -> Result<T, Self::Error>,
     ) -> Result<Vec<T>, Self::Error> {
-        self.try_collect_retained_with(values, "IR variable radius admitted samples", convert)
+        values.into_iter().map(convert).collect()
     }
 }

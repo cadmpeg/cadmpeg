@@ -8,7 +8,7 @@ use crate::report::{
     check::{Check, Finding},
     Severity,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde_value::Value;
 
@@ -52,42 +52,37 @@ pub(super) fn check_annotations(
 ) -> Result<(), CodecError> {
     let mut wanted = BorrowedIdentities::build(ctx, |add| {
         for (id, note) in annotations.exactness() {
-            ctx.charge_work(1, "annotated entity selection")?;
             if !note.fields().is_empty() {
                 add(id, false)?;
             }
         }
         Ok(())
     })?;
-    let mut storage = ctx.reserve_scoped(0, "annotated entity values")?;
     let mut values = Vec::new();
     let entities = BorrowedIdentities::build(ctx, |add_identity| {
         // Sort small identity slots rather than moving projected payloads.
         let mut add = |id, value| {
             let position = values.len();
-            storage.with_storage(|| ctx.push_vec(&mut values, value, "annotated entity values"))?;
+            values.push(value);
             add_identity(id, position)
         };
-        view.visit(
-            |work| ctx.charge_work(u64_from_index(work), "annotated native arena scan"),
-            |_, _, records| {
-                for record in records.records() {
-                    let Some(seen) = wanted.get_mut(ctx, record.id())? else {
-                        continue;
-                    };
-                    if *seen {
-                        continue;
-                    }
-                    *seen = true;
-                    let value = match record {
-                        NativeEntity::Product(product) => AnnotatedEntity::Product(product),
-                        NativeEntity::Source(source) => AnnotatedEntity::Source(source),
-                    };
-                    add(record.id(), value)?;
+        view.visit::<cadmpeg_core::CodecError>(|_, _, records| {
+            for record in records.records() {
+                let Some(seen) = wanted.get_mut(ctx, record.id())? else {
+                    continue;
+                };
+                if *seen {
+                    continue;
                 }
-                Ok(())
-            },
-        )?;
+                *seen = true;
+                let value = match record {
+                    NativeEntity::Product(product) => AnnotatedEntity::Product(product),
+                    NativeEntity::Source(source) => AnnotatedEntity::Source(source),
+                };
+                add(record.id(), value)?;
+            }
+            Ok(())
+        })?;
         // Model entities take precedence over native records with the same id.
         // The identity index keeps the last inserted matching value.
         model_entity_projection(ctx, view.ir, &wanted, &mut add)
@@ -95,25 +90,23 @@ pub(super) fn check_annotations(
     for id in annotations.provenance.keys() {
         if !all_ids.contains(ctx, id)? {
             super::record_finding(
-                ctx,
                 findings,
                 Check::Annotations,
                 Severity::Error,
                 Some(id),
                 format_args!("provenance key does not resolve to an entity"),
-            )?;
+            );
         }
     }
     for (id, note) in annotations.exactness() {
         if !all_ids.contains(ctx, id)? {
             super::record_finding(
-                ctx,
                 findings,
                 Check::Annotations,
                 Severity::Error,
                 Some(id),
                 format_args!("exactness key does not resolve to an entity"),
-            )?;
+            );
             continue;
         }
         if note.fields().is_empty() {
@@ -121,7 +114,6 @@ pub(super) fn check_annotations(
         }
         let Some(position) = entities.get(ctx, id)? else {
             super::record_finding(
-                ctx,
                 findings,
                 Check::Annotations,
                 Severity::Warning,
@@ -129,83 +121,59 @@ pub(super) fn check_annotations(
                 format_args!(
                     "entity could not be serialized to validate its exactness field paths"
                 ),
-            )?;
+            );
             continue;
         };
         let entity = &values[*position];
         for path in note.fields().keys() {
             let resolves = match entity {
-                AnnotatedEntity::Projected(value) => {
-                    field_path_resolves(ctx, value, path.as_str())?
-                }
+                AnnotatedEntity::Projected(value) => field_path_resolves(value, path.as_str()),
                 AnnotatedEntity::Product(product) => {
-                    native_field_path_resolves(ctx, product, path.as_str())?
+                    native_field_path_resolves(product, path.as_str())
                 }
                 AnnotatedEntity::Source(source) => {
-                    ctx.charge_work(
-                        u64_from_index(path.as_str().len()),
-                        "annotation source field path scan",
-                    )?;
                     source_field_path_resolves(source, path.as_str())
                 }
             };
             if !resolves {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::Annotations,
                     Severity::Warning,
                     Some(id),
                     format_args!("exactness field path `{path}` does not resolve"),
-                )?;
+                );
             }
         }
     }
     Ok(())
 }
 
-fn native_field_path_resolves(
-    ctx: &DecodeContext<'_>,
-    record: &crate::native::NativeRecord,
-    path: &str,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(
-        u64_from_index(path.len()),
-        "annotation native field path scan",
-    )?;
+fn native_field_path_resolves(record: &crate::native::NativeRecord, path: &str) -> bool {
     let mut components = path.split('.');
     let Some(first) = components.next() else {
-        return Ok(false);
+        return false;
     };
     if first == "id" {
-        return Ok(components.next().is_none());
+        return components.next().is_none();
     }
-    ctx.charge_work(
-        u64_from_index(record.text_len()),
-        "annotation native field map scan",
-    )?;
+
     let Some(field) = record.field(first) else {
-        return Ok(false);
+        return false;
     };
     let mut value = &field;
     for component in components {
-        ctx.charge_work(1, "annotation native field path node")?;
         value = match value {
             serde_json::Value::Object(object) => {
                 let mut next = None;
                 for (key, child) in object {
-                    ctx.charge_work(1, "annotation native field map scan")?;
-                    ctx.charge_work(
-                        u64_from_index(component.len()),
-                        "annotation native field comparison",
-                    )?;
                     if key == component {
                         next = Some(child);
                         break;
                     }
                 }
                 let Some(child) = next else {
-                    return Ok(false);
+                    return false;
                 };
                 child
             }
@@ -215,14 +183,14 @@ fn native_field_path_resolves(
                     .ok()
                     .and_then(|index| array.get(index))
                 else {
-                    return Ok(false);
+                    return false;
                 };
                 child
             }
-            _ => return Ok(false),
+            _ => return false,
         };
     }
-    Ok(true)
+    true
 }
 
 fn source_field_path_resolves(record: &crate::unknown::UnknownRecord, path: &str) -> bool {
@@ -240,56 +208,38 @@ fn source_field_path_resolves(record: &crate::unknown::UnknownRecord, path: &str
         .is_some_and(|index| index < record.links().len())
 }
 
-fn field_path_resolves(
-    ctx: &DecodeContext<'_>,
-    mut value: &Value,
-    path: &str,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(u64_from_index(path.len()), "annotation field path scan")?;
+fn field_path_resolves(mut value: &Value, path: &str) -> bool {
     for component in path.split('.') {
-        loop {
-            ctx.charge_work(1, "annotation field path node")?;
-            match value {
-                Value::Option(Some(inner)) | Value::Newtype(inner) => value = inner,
-                _ => break,
-            }
+        while let Value::Option(Some(inner)) | Value::Newtype(inner) = value {
+            value = inner;
         }
         match value {
             Value::Map(object) => {
                 let mut next = None;
                 for (key, child) in object {
-                    ctx.charge_work(1, "annotation field map scan")?;
-                    ctx.charge_work(
-                        u64_from_index(component.len()),
-                        "annotation field name comparison",
-                    )?;
                     if matches!(key, Value::String(key) if key == component) {
                         next = Some(child);
                         break;
                     }
                 }
                 let Some(child) = next else {
-                    return Ok(false);
+                    return false;
                 };
                 value = child;
             }
             Value::Seq(array) => {
-                ctx.charge_work(
-                    u64_from_index(component.len()),
-                    "annotation field index scan",
-                )?;
                 let Ok(index) = component.parse::<usize>() else {
-                    return Ok(false);
+                    return false;
                 };
                 let Some(next) = array.get(index) else {
-                    return Ok(false);
+                    return false;
                 };
                 value = next;
             }
-            _ => return Ok(false),
+            _ => return false,
         }
     }
-    Ok(true)
+    true
 }
 
 pub(super) fn check_native_links(
@@ -306,28 +256,23 @@ pub(super) fn check_native_links(
         Ok(())
     })?;
     let native_ids = BorrowedIdentities::build(ctx, |add| {
-        view.visit(
-            |work| ctx.charge_work(u64_from_index(work), "native identity arena scan"),
-            |_, _, records| {
-                for record in records.records() {
-                    add(record.id(), ())?;
-                }
-                Ok(())
-            },
-        )
+        view.visit::<cadmpeg_core::CodecError>(|_, _, records| {
+            for record in records.records() {
+                add(record.id(), ())?;
+            }
+            Ok(())
+        })
     })?;
     for feature in &ir.model.features {
-        ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &feature.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(feature.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
         if let crate::features::FeatureDefinition::Operation(
@@ -339,134 +284,118 @@ pub(super) fn check_native_links(
         {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(feature.id.as_str()),
                     format_args!("helix axis native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
     }
     for parameter in &ir.model.parameters {
-        ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &parameter.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(parameter.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
         if let Some(semantic) = &parameter.pmi {
             if !native_ids.contains(ctx, semantic.native_ref.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(parameter.id.as_str()),
                     format_args!("PMI native_ref `{}` does not resolve", semantic.native_ref),
-                )?;
+                );
             }
         }
     }
     for configuration in &ir.model.configurations {
-        ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &configuration.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(configuration.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
     }
     for sketch in &ir.model.sketches {
-        ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &sketch.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(sketch.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
     }
     for sketch in &ir.model.spatial_sketches {
-        ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &sketch.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(sketch.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
     }
     for constraint in &ir.model.sketch_constraints {
-        ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &constraint.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(constraint.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
         if let crate::sketches::SketchConstraintDefinitionInput::Native { operands, .. } =
             constraint.definition.kind()
         {
             for operand in operands {
-                ctx.charge_work(1, "native operand scan")?;
                 if let Some(target) = &operand.native_ref {
                     if !native_ids.contains(ctx, target.as_str())? {
                         super::record_finding(
-                            ctx,
                             findings,
                             Check::NativeLinks,
                             Severity::Error,
                             Some(constraint.id.as_str()),
                             format_args!("operand native_ref `{target}` does not resolve"),
-                        )?;
+                        );
                     }
                 }
             }
         }
     }
     for constraint in &ir.model.spatial_sketch_constraints {
-        ctx.charge_work(1, "native reference owner scan")?;
         if let Some(target) = &constraint.native_ref {
             if !native_ids.contains(ctx, target.as_str())? {
                 super::record_finding(
-                    ctx,
                     findings,
                     Check::NativeLinks,
                     Severity::Error,
                     Some(constraint.id.as_str()),
                     format_args!("native_ref `{target}` does not resolve"),
-                )?;
+                );
             }
         }
         if let crate::sketches::SpatialSketchConstraintDefinitionInput::Native {
@@ -474,17 +403,15 @@ pub(super) fn check_native_links(
         } = constraint.definition.kind()
         {
             for operand in operands {
-                ctx.charge_work(1, "native operand scan")?;
                 if let Some(target) = &operand.native_ref {
                     if !native_ids.contains(ctx, target.as_str())? {
                         super::record_finding(
-                            ctx,
                             findings,
                             Check::NativeLinks,
                             Severity::Error,
                             Some(constraint.id.as_str()),
                             format_args!("operand native_ref `{target}` does not resolve"),
-                        )?;
+                        );
                     }
                 }
             }
@@ -494,84 +421,68 @@ pub(super) fn check_native_links(
     // `unknowns` has a shared identity-link contract. Other arenas own their
     // field shapes; only an array made entirely of strings follows the generic
     // identity-link convention.
-    view.visit(
-        |work| ctx.charge_work(u64_from_index(work), "native link arena scan"),
-        |_, arena, records| {
-            for entity in records.records() {
-                ctx.charge_work(1, "native link record scan")?;
-                let NativeEntity::Product(record) = entity else {
-                    for target in entity.links(ctx)? {
-                        let target = target?;
-                        if !all_targets.contains(ctx, &target)? {
-                            super::record_finding(
-                                ctx,
-                                findings,
-                                Check::NativeLinks,
-                                Severity::Error,
-                                Some(entity.id()),
-                                format_args!("native-record link `{target}` does not resolve"),
-                            )?;
-                        }
+    view.visit::<cadmpeg_core::CodecError>(|_, arena, records| {
+        for entity in records.records() {
+            let NativeEntity::Product(record) = entity else {
+                for target in entity.links() {
+                    if !all_targets.contains(ctx, &target)? {
+                        super::record_finding(
+                            findings,
+                            Check::NativeLinks,
+                            Severity::Error,
+                            Some(entity.id()),
+                            format_args!("native-record link `{target}` does not resolve"),
+                        );
                     }
-                    continue;
-                };
-                ctx.charge_work(
-                    u64_from_index(record.text_len()),
-                    "native link field lookup",
-                )?;
-                let Some(value) = record.field("links") else {
-                    continue;
-                };
-                ctx.charge_work(
-                    u64_from_index(value.as_array().map_or(0, Vec::len)),
-                    "native link shape scan",
-                )?;
-                if arena != "unknowns"
-                    && !value
-                        .as_array()
-                        .is_some_and(|links| links.iter().all(serde_json::Value::is_string))
-                {
-                    continue;
                 }
-                let serde_json::Value::Array(links) = value else {
+                continue;
+            };
+
+            let Some(value) = record.field("links") else {
+                continue;
+            };
+
+            if arena != "unknowns"
+                && !value
+                    .as_array()
+                    .is_some_and(|links| links.iter().all(serde_json::Value::is_string))
+            {
+                continue;
+            }
+            let serde_json::Value::Array(links) = value else {
+                super::record_finding(
+                    findings,
+                    Check::NativeLinks,
+                    Severity::Error,
+                    Some(record.id()),
+                    format_args!("{}", "native-record links must be an array of identities"),
+                );
+                continue;
+            };
+            for (index, link) in links.iter().enumerate() {
+                let Some(target) = link.as_str() else {
                     super::record_finding(
-                        ctx,
                         findings,
                         Check::NativeLinks,
                         Severity::Error,
                         Some(record.id()),
-                        format_args!("{}", "native-record links must be an array of identities"),
-                    )?;
+                        format_args!("native-record link {index} must be an identity string"),
+                    );
                     continue;
                 };
-                for (index, link) in links.iter().enumerate() {
-                    ctx.charge_work(1, "native link scan")?;
-                    let Some(target) = link.as_str() else {
-                        super::record_finding(
-                            ctx,
-                            findings,
-                            Check::NativeLinks,
-                            Severity::Error,
-                            Some(record.id()),
-                            format_args!("native-record link {index} must be an identity string"),
-                        )?;
-                        continue;
-                    };
-                    if !all_targets.contains(ctx, target)? {
-                        super::record_finding(
-                            ctx,
-                            findings,
-                            Check::NativeLinks,
-                            Severity::Error,
-                            Some(record.id()),
-                            format_args!("native-record link `{target}` does not resolve"),
-                        )?;
-                    }
+                if !all_targets.contains(ctx, target)? {
+                    super::record_finding(
+                        findings,
+                        Check::NativeLinks,
+                        Severity::Error,
+                        Some(record.id()),
+                        format_args!("native-record link `{target}` does not resolve"),
+                    );
                 }
             }
-            Ok(())
-        },
-    )?;
+        }
+        Ok(())
+    })?;
     Ok(())
 }
 
