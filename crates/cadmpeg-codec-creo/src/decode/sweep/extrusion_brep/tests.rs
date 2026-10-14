@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    cap_coedge_ids_admitted, cap_record, copy_extrusion_identity, copy_ring_coedges,
-    generated_extrusion_identity, missing_cap_message, push_rejected_extrusion,
-    refused_lane_message, sketch_profiles_cover_generated_extrusion_sides, JoinedLaneRecords,
+    cap_coedge_ids_admitted, copy_extrusion_identity, copy_ring_coedges,
+    generated_extrusion_identity, push_rejected_extrusion, refused_lane_message,
+    sketch_profiles_cover_generated_extrusion_sides, JoinedLaneRecords,
 };
 use crate::decode::tests::surface_row;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -15,31 +15,11 @@ use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, Sk
 use cadmpeg_ir::AnnotationBuilder;
 
 #[test]
-fn extrusion_cap_record_names_feature_profile_and_entity() {
-    assert_eq!(
-        cap_record(7, 2, "bottom", 3),
-        "extrusion feature 7 profile 2 bottom cap at entity 3"
-    );
-    assert_eq!(
-        cap_record(7, 2, "top", 4),
-        "extrusion feature 7 profile 2 top cap at entity 4"
-    );
-}
-
-#[test]
 fn extrusion_refused_lane_message_joins_records() {
     let records = ["first".to_string(), "second".to_string()];
     assert_eq!(
         refused_lane_message("cap 7", &records),
         "Refused lanes on cap 7: first; second"
-    );
-}
-
-#[test]
-fn extrusion_missing_cap_message_names_record() {
-    assert_eq!(
-        missing_cap_message("cap 7"),
-        "cap 7 states no pcurve geometry"
     );
 }
 

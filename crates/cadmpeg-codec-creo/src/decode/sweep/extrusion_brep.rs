@@ -47,18 +47,8 @@ const GENERATED_EXTRUSION_SIDE_KINDS: &[crate::surface::SurfaceKind] = &[
     crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
 ];
 
-fn cap_record(feature_id: u32, profile_index: usize, cap: &str, entity_index: usize) -> String {
-    format!(
-        "extrusion feature {feature_id} profile {profile_index} {cap} cap at entity {entity_index}"
-    )
-}
-
 fn refused_lane_message(record: &str, records: &[String]) -> String {
     format!("Refused lanes on {record}: {}", JoinedLaneRecords(records))
-}
-
-fn missing_cap_message(record: &str) -> String {
-    format!("{record} states no pcurve geometry")
 }
 
 fn generated_extrusion_identity<I>(
@@ -245,48 +235,57 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let mut cap_refusal = crate::lane_refusal::LaneRefusals::new();
         let mut missing_cap = None;
         let mut unprojectable = false;
-        for (entity_index, entity) in profiles
-            .iter()
-            .flat_map(super::profiles::ValidatedProfile::entities)
-            .enumerate()
-        {
-            let Some(sketch_geometry) = entity.geometry().to_sketch(ctx)? else {
-                unprojectable = true;
-                break;
-            };
-            if extrusion_brep_side_surface(
-                ctx,
-                transform,
-                &sketch_geometry,
-                entity.reversed(),
-                [entity.start(), entity.end()],
-                span,
-                &mut crate::lane_refusal::LaneRefusalContext::new(
-                    &format_args!("extrusion feature {feature_id} profile entity {entity_index}"),
-                    &mut refusal,
-                ),
-            )?
-            .is_none()
-            {
-                unprojectable = true;
-                break;
+        // Both caps of this body use each entity with the same orientation and
+        // endpoints, so one cap pcurve per entity, in profile order, serves both.
+        let mut cap_pcurves = Vec::new();
+        let mut entity_index = 0;
+        'probe: for profile in &profiles {
+            let mut profile_caps = Vec::new();
+            for entity in profile.entities() {
+                let Some(sketch_geometry) = entity.geometry().to_sketch(ctx)? else {
+                    unprojectable = true;
+                    break 'probe;
+                };
+                if extrusion_brep_side_surface(
+                    ctx,
+                    transform,
+                    &sketch_geometry,
+                    entity.reversed(),
+                    [entity.start(), entity.end()],
+                    span,
+                    &mut crate::lane_refusal::LaneRefusalContext::new(
+                        &format_args!(
+                            "extrusion feature {feature_id} profile entity {entity_index}"
+                        ),
+                        &mut refusal,
+                    ),
+                )?
+                .is_none()
+                {
+                    unprojectable = true;
+                    break 'probe;
+                }
+                match extrusion_cap_pcurve(
+                    ctx,
+                    &sketch_geometry,
+                    entity.reversed(),
+                    entity.start(),
+                    entity.end(),
+                    &format_args!(
+                        "extrusion feature {feature_id} profile entity {entity_index} cap"
+                    ),
+                    &mut cap_refusal,
+                )? {
+                    Some(cap) => profile_caps.push(cap),
+                    None => {
+                        if missing_cap.is_none() {
+                            missing_cap = Some(entity_index);
+                        }
+                    }
+                }
+                entity_index += 1;
             }
-            // Both caps of this body use this entity with the same orientation
-            // and endpoints, so one probe states both cap pcurves.
-            if extrusion_cap_pcurve(
-                ctx,
-                &sketch_geometry,
-                entity.reversed(),
-                entity.start(),
-                entity.end(),
-                &format_args!("extrusion feature {feature_id} profile entity {entity_index} cap"),
-                &mut cap_refusal,
-            )?
-            .is_none()
-                && missing_cap.is_none()
-            {
-                missing_cap = Some(entity_index);
-            }
+            cap_pcurves.push(profile_caps);
         }
         let records = refusal.take_records();
         if !records.is_empty() {
@@ -675,18 +674,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
+            let caps = &cap_pcurves[profile_index];
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
                 let id = copy_id!(bottom_coedges[ring_index]);
-                let entity = &profile[edge_index];
-                let geometry = entity.geometry();
-                let Some(sketch_geometry) = geometry.to_sketch(ctx)? else {
-                    continue;
-                };
-                let reversed = entity.reversed();
-                let start = entity.start();
-                let end = entity.end();
-
                 let bottom_pcurve = add_extrusion_pcurve(
                     ctx,
                     ir,
@@ -699,34 +690,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         edge_index
                     ),
                     transform.offset,
-                    {
-                        let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                        let record = cap_record(feature_id, profile_index, "bottom", edge_index);
-                        let cap = extrusion_cap_pcurve(
-                            ctx,
-                            &sketch_geometry,
-                            reversed,
-                            start,
-                            end,
-                            &record,
-                            &mut refusal,
-                        )?;
-                        let records = refusal.take_records();
-                        if !records.is_empty() {
-                            // The probe before this body admitted this cap
-                            // pcurve, so a refused or absent cap here breaks
-                            // that invariant.
-                            return Err(cadmpeg_core::CodecError::malformed(refused_lane_message(
-                                &record, &records,
-                            )));
-                        }
-                        let Some(cap) = cap else {
-                            return Err(cadmpeg_core::CodecError::malformed(missing_cap_message(
-                                &record,
-                            )));
-                        };
-                        cap
-                    },
+                    caps[edge_index].clone(),
                 )?;
                 ctx.charge_entities(1, "admit Creo model coedges")?;
                 source_carriers.admit_coedge(
@@ -752,15 +716,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     },
                 )?;
                 let id = copy_id!(top_coedges[ring_index]);
-                let entity = &profile[ring_index];
-                let geometry = entity.geometry();
-                let Some(sketch_geometry) = geometry.to_sketch(ctx)? else {
-                    continue;
-                };
-                let reversed = entity.reversed();
-                let start = entity.start();
-                let end = entity.end();
-
                 let top_pcurve = add_extrusion_pcurve(
                     ctx,
                     ir,
@@ -768,34 +723,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     PcurveAdmission::Existing(source_carriers, &top_surface),
                     extrusion_id!(PcurveId, "pcurve:{}:{}:top-cap", profile_index, ring_index),
                     transform.offset,
-                    {
-                        let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                        let record = cap_record(feature_id, profile_index, "top", ring_index);
-                        let cap = extrusion_cap_pcurve(
-                            ctx,
-                            &sketch_geometry,
-                            reversed,
-                            start,
-                            end,
-                            &record,
-                            &mut refusal,
-                        )?;
-                        let records = refusal.take_records();
-                        if !records.is_empty() {
-                            // The probe before this body admitted this cap
-                            // pcurve, so a refused or absent cap here breaks
-                            // that invariant.
-                            return Err(cadmpeg_core::CodecError::malformed(refused_lane_message(
-                                &record, &records,
-                            )));
-                        }
-                        let Some(cap) = cap else {
-                            return Err(cadmpeg_core::CodecError::malformed(missing_cap_message(
-                                &record,
-                            )));
-                        };
-                        cap
-                    },
+                    caps[ring_index].clone(),
                 )?;
                 ctx.charge_entities(1, "admit Creo model coedges")?;
                 source_carriers.admit_coedge(
