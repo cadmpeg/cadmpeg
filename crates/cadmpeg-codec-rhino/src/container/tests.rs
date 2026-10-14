@@ -25,7 +25,7 @@ fn object_typecode_count_refuses_collection_limit_before_map_insertion() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = super::count_object_typecode(&ctx, &mut std::collections::BTreeMap::new(), 0x20)
+    let error = super::count_object_typecode(&mut std::collections::BTreeMap::new(), 0x20)
         .expect_err("one typecode map node exceeds zero items");
     assert!(matches!(
         error,
@@ -33,8 +33,8 @@ fn object_typecode_count_refuses_collection_limit_before_map_insertion() {
     ));
     let mut counts = std::collections::BTreeMap::new();
     let ctx = cadmpeg_test_support::service_decode_context();
-    super::count_object_typecode(&ctx, &mut counts, 0x20).expect("first count admitted");
-    super::count_object_typecode(&ctx, &mut counts, 0x20).expect("existing count admitted");
+    super::count_object_typecode(&mut counts, 0x20).expect("first count admitted");
+    super::count_object_typecode(&mut counts, 0x20).expect("existing count admitted");
     assert_eq!(counts[&0x20], 2);
 }
 
@@ -46,7 +46,6 @@ fn source_metadata_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let refusal = super::source_meta(
-        &ctx,
         ArchiveVersion::V1.classify(None),
         super::SourceMetaDetail::FlatLegacyArchive,
     )
@@ -57,7 +56,6 @@ fn source_metadata_refuses_collection_limit() {
             if limit.operation == "Rhino source metadata attributes"
     ));
     let meta = super::source_meta(
-        &cadmpeg_test_support::service_decode_context(),
         ArchiveVersion::V1.classify(None),
         super::SourceMetaDetail::FlatLegacyArchive,
     )
@@ -76,15 +74,14 @@ fn container_summary_attributes_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
         .expect("summary input admitted");
-    let refusal = super::summarize(&ctx, &scan)
-        .expect_err("first table attribute exceeds zero collection items");
+    let refusal =
+        super::summarize(&scan).expect_err("first table attribute exceeds zero collection items");
     assert!(matches!(
         refusal,
         CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino container summary attributes"
     ));
-    let summary = super::summarize(&cadmpeg_test_support::service_decode_context(), &scan)
-        .expect("service profile admits container summary");
+    let summary = super::summarize(&scan).expect("service profile admits container summary");
     assert_eq!(summary.entries.len(), scan.tables.len());
 }
 
@@ -98,7 +95,7 @@ fn container_only_loss_refuses_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
         .expect("container-only input admitted");
-    let refusal = super::container_only_result(&ctx, &scan)
+    let refusal = super::container_only_result(&scan)
         .expect_err("two notes leave no collection item for the loss");
     assert!(matches!(
         refusal,
@@ -106,8 +103,7 @@ fn container_only_loss_refuses_collection_limit() {
             if limit.operation == "Rhino container-only losses"
     ));
     let decoded =
-        super::container_only_result(&cadmpeg_test_support::service_decode_context(), &scan)
-            .expect("service profile admits notes and loss");
+        super::container_only_result(&scan).expect("service profile admits notes and loss");
     assert_eq!(decoded.body.notes.len(), 2);
     assert_eq!(decoded.body.losses.len(), 1);
 }
@@ -234,12 +230,9 @@ fn aggregates_object_classes_after_table_entries() {
 #[test]
 fn container_only_returns_empty_current_ir_for_full_bands() {
     for version in ["50", "60", "70", "80", "90"] {
-        let archive = parse_header(
-            &cadmpeg_test_support::service_decode_context(),
-            &header(version),
-        )
-        .expect("required invariant")
-        .archive_version;
+        let archive = parse_header(&header(version))
+            .expect("required invariant")
+            .archive_version;
         let bytes = minimal_document(
             version,
             &[
@@ -268,12 +261,9 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
 #[test]
 fn container_only_returns_empty_current_ir_for_v3_and_v4() {
     for version in ["3", "4"] {
-        let archive = parse_header(
-            &cadmpeg_test_support::service_decode_context(),
-            &header(version),
-        )
-        .expect("required invariant")
-        .archive_version;
+        let archive = parse_header(&header(version))
+            .expect("required invariant")
+            .archive_version;
         let bytes = minimal_document(
             version,
             &[

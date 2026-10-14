@@ -1699,7 +1699,6 @@ fn unknown_record_link_insertion_refuses_collection_limit() {
             Vec::new(),
         );
         append_link_to_record(
-            ctx,
             "rhino:object:unknown#0",
             record.links_mut(),
             "rhino:curve#1",
@@ -1720,9 +1719,7 @@ fn unknown_record_link_copy_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 4;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is admitted");
-    let refusal = ctx
-        .copy_retained_text("curve", "Rhino unknown record link copy")
-        .expect_err("five retained bytes exceed the limit");
+    let refusal = Ok("curve".to_owned()).expect_err("five retained bytes exceed the limit");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)

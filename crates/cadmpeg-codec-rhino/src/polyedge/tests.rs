@@ -38,9 +38,8 @@ fn semantic_json_preserves_bytes_and_refuses_retained_limit() {
     let mut storage = ctx
         .reserve_scoped(0, "polyedge temporary storage")
         .expect("storage");
-    let decoded = storage
-        .with_storage(|| decode(expand, 0..payload.len(), ArchiveVersion::V8))
-        .expect("valid polyedge fixture");
+    let decoded =
+        decode(expand, 0..payload.len(), ArchiveVersion::V8).expect("valid polyedge fixture");
     let refusal = super::semantic_json(&ctx, &decoded)
         .expect_err("semantic JSON exceeds zero retained bytes");
     assert!(matches!(

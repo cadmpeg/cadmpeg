@@ -23,7 +23,7 @@ fn raw_knot_reconstruction_admits_caller_storage_and_copy_work() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) =
-            reconstruct_knots(&ctx, &STORED, 3, 6)
+            reconstruct_knots(&STORED, 3, 6)
         else {
             panic!("reconstruction must preserve the caller refusal");
         };
@@ -40,7 +40,7 @@ fn raw_knot_reconstruction_admits_caller_storage_and_copy_work() {
     policy.limits.max_work_units = 9;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        reconstruct_knots(&ctx, &STORED, 3, 6).expect("exact limits"),
+        reconstruct_knots(&STORED, 3, 6).expect("exact limits"),
         [-1., 0., 1., 2., 3., 4., 5., 6., 7.]
     );
     ctx.finish_session().expect("each operation paid once");
@@ -53,11 +53,11 @@ fn raw_knot_reconstruction_preserves_work_across_successive_calls() {
     policy.limits.max_work_units = 17;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        reconstruct_knots(&ctx, &STORED, 3, 6).expect("first call"),
+        reconstruct_knots(&STORED, 3, 6).expect("first call"),
         [-1., 0., 1., 2., 3., 4., 5., 6., 7.]
     );
     let Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) =
-        reconstruct_knots(&ctx, &STORED, 3, 6)
+        reconstruct_knots(&STORED, 3, 6)
     else {
         panic!("second call must use the same work account");
     };
@@ -81,9 +81,9 @@ fn periodic_knot_scans_preserve_first_and_later_caller_refusals() {
             let result = if checked {
                 let knots =
                     STORED.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite"));
-                crate::surfaces::periodic_knots_checked(&ctx, &knots, 3, 6)
+                crate::surfaces::periodic_knots_checked(&knots, 3, 6)
             } else {
-                crate::surfaces::periodic_knots(&ctx, &STORED, 3, 6)
+                crate::surfaces::periodic_knots(&STORED, 3, 6)
             };
             let Err(CodecError::ResourceLimit(limit)) = result else {
                 panic!("every visited knot and interval needs admission");
@@ -112,9 +112,9 @@ fn periodic_knot_scans_preserve_first_and_later_caller_refusals() {
         let result = if checked {
             let knots =
                 STORED.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite"));
-            crate::surfaces::periodic_knots_checked(&ctx, &knots, 3, 6)
+            crate::surfaces::periodic_knots_checked(&knots, 3, 6)
         } else {
-            crate::surfaces::periodic_knots(&ctx, &STORED, 3, 6)
+            crate::surfaces::periodic_knots(&STORED, 3, 6)
         };
         assert!(result.expect("exact visits"));
         ctx.finish_session().expect("no allocation or extra pass");
@@ -129,7 +129,6 @@ fn periodic_knot_scan_admits_before_reading_and_keeps_early_exit_order() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let reads = std::cell::Cell::new(0);
     let result = crate::surfaces::periodic_knots_by(
-        &ctx,
         &STORED,
         3,
         6,
@@ -145,14 +144,14 @@ fn periodic_knot_scan_admits_before_reading_and_keeps_early_exit_order() {
     let arena = DecodeArena::new();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(!crate::surfaces::periodic_knots(&ctx, &STORED, 2, 6).expect("fixed header rejection"));
+    assert!(!crate::surfaces::periodic_knots(&STORED, 2, 6).expect("fixed header rejection"));
     ctx.finish_session().expect("no scan");
 
     let arena = DecodeArena::new();
     policy.limits.max_work_units = 15;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(
-        !crate::surfaces::periodic_knots(&ctx, &[0., 0., 0., 1., 2., 3., 3.], 3, 6)
+        !crate::surfaces::periodic_knots(&[0., 0., 0., 1., 2., 3., 3.], 3, 6)
             .expect("first unequal interval")
     );
     ctx.finish_session()

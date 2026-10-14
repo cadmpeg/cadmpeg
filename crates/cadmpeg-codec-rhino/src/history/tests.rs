@@ -89,7 +89,7 @@ fn history_uuid_list_refuses_collection_limit() {
     body.extend(id(2).to_wire());
     let bytes = anonymous_value(0, &body);
     let refusal = with_collection_limit(&bytes, 1, |ctx| {
-        uuid_list(ctx, &bytes, 0, bytes.len(), ArchiveVersion::V8)
+        uuid_list(&bytes, 0, bytes.len(), ArchiveVersion::V8)
     })
     .expect_err("two history UUIDs exceed one collection item");
     assert!(matches!(
@@ -432,13 +432,7 @@ fn unstored_evaluation_intervals_remain_absent() {
     let value = evaluation(&mut reader, 0).expect("evaluation");
     assert_eq!(value.intervals, [None, None, None]);
     let mut properties = BTreeMap::new();
-    evaluation_properties(
-        &cadmpeg_test_support::service_decode_context(),
-        "evaluation",
-        &value,
-        &mut properties,
-    )
-    .expect("evaluation properties");
+    evaluation_properties("evaluation", &value, &mut properties).expect("evaluation properties");
     assert!(!properties.contains_key("evaluation.interval_0"));
 }
 
@@ -451,7 +445,7 @@ fn history_evaluation_property_refuses_collection_limit() {
         intervals: [None; 3],
     };
     let refusal = with_collection_limit(&[], 0, |ctx| {
-        evaluation_properties(ctx, "evaluation", &value, &mut BTreeMap::new())
+        evaluation_properties("evaluation", &value, &mut BTreeMap::new())
             .expect_err("one property exceeds zero collection items")
     });
     assert!(matches!(
@@ -702,7 +696,6 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
-                expand.ctx(),
                 "value_7",
                 &parsed.value,
                 Some((
@@ -802,15 +795,8 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
             redundant_repairs: 0,
             refusal: None,
         };
-        structured_value_properties(
-            &cadmpeg_test_support::service_decode_context(),
-            "value_7",
-            &parsed.value,
-            None,
-            &mut properties,
-            &mut sink,
-        )
-        .expect("unbound geometry properties");
+        structured_value_properties("value_7", &parsed.value, None, &mut properties, &mut sink)
+            .expect("unbound geometry properties");
         (sink.untyped, sink.failed)
     };
     assert_eq!(untyped, 1);
@@ -861,7 +847,6 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     };
     crate::decode::with_expand_bytes(&geometry_value, |expand| {
         structured_value_properties(
-            expand.ctx(),
             "value_7",
             &parsed.value,
             Some((
@@ -1290,8 +1275,8 @@ pub(crate) fn scan_decodes_history_identity_dependencies_and_typed_values() {
     let mut body = record_id.to_vec();
     body.extend(202_607_130_i32.to_le_bytes());
     body.extend(command_id);
-    body.extend(uuid_list(descendant));
-    body.extend(uuid_list(antecedent));
+    body.extend(uuid_list());
+    body.extend(uuid_list());
     body.extend(anonymous_chunk(archive, 0, &values_body));
     body.extend(1_i32.to_le_bytes());
     body.push(1);
@@ -1409,14 +1394,8 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
         }
         edge.extend(3_i32.to_le_bytes());
         let bytes = anonymous_value(0, &edge);
-        let (edge, next) = poly_edge(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            0,
-            bytes.len(),
-            ArchiveVersion::V8,
-        )
-        .expect("source-shaped history polyedge");
+        let (edge, next) = poly_edge(&bytes, 0, bytes.len(), ArchiveVersion::V8)
+            .expect("source-shaped history polyedge");
         assert_eq!(next, bytes.len());
         let mut properties = BTreeMap::new();
         let mut sink = GeometrySink {
@@ -1427,7 +1406,6 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
             refusal: None,
         };
         structured_value_properties(
-            &cadmpeg_test_support::service_decode_context(),
             "value_7",
             &Value::PolyEdges(vec![edge]),
             None,
@@ -1603,12 +1581,8 @@ fn embedded_cage_json_preserves_bytes_and_refuses_retained_limit() {
         "weights": cage.weights,
     })
     .to_string();
-    let value = super::embedded_json(
-        &cadmpeg_test_support::service_decode_context(),
-        &super::CageJson(&cage),
-        &mut None,
-    )
-    .expect("service profile admits cage JSON");
+    let value = super::embedded_json(&super::CageJson(&cage), &mut None)
+        .expect("service profile admits cage JSON");
     assert_eq!(value, baseline);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1616,7 +1590,7 @@ fn embedded_cage_json_preserves_bytes_and_refuses_retained_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let mut refusal = None;
-    assert!(super::embedded_json(&ctx, &super::CageJson(&cage), &mut refusal).is_none());
+    assert!(super::embedded_json(&super::CageJson(&cage), &mut refusal).is_none());
     assert!(matches!(
         refusal,
         Some(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1634,12 +1608,8 @@ fn embedded_subd_diagnostics_stream_without_message_vector() {
         neutral_metadata: &false,
         surface: &surface,
     };
-    let text = super::embedded_json(
-        &cadmpeg_test_support::service_decode_context(),
-        &value,
-        &mut None,
-    )
-    .expect("service profile admits SubD diagnostic JSON");
+    let text = super::embedded_json(&value, &mut None)
+        .expect("service profile admits SubD diagnostic JSON");
     assert_eq!(
         text,
         "{\"enum_diagnostics\":[\"SubD symmetry type 9 mapped to neutral Unset\"],\"kind\":\"subd\",\"neutral_metadata\":false,\"surface\":{\"source\":\"subd\"}}"
@@ -1707,12 +1677,8 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
         "channels": mesh.tessellation.channels(),
     })
     .to_string();
-    let text = super::embedded_json(
-        &cadmpeg_test_support::service_decode_context(),
-        &super::MeshJson(&mesh),
-        &mut None,
-    )
-    .expect("service profile admits mesh JSON");
+    let text = super::embedded_json(&super::MeshJson(&mesh), &mut None)
+        .expect("service profile admits mesh JSON");
     assert_eq!(text, baseline);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1720,7 +1686,7 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let mut refusal = None;
-    assert!(super::embedded_json(&ctx, &super::MeshJson(&mesh), &mut refusal).is_none());
+    assert!(super::embedded_json(&super::MeshJson(&mesh), &mut refusal).is_none());
     assert!(matches!(
         refusal,
         Some(cadmpeg_core::CodecError::ResourceLimit(limit))

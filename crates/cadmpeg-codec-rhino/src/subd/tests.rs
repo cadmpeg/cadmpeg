@@ -371,9 +371,8 @@ fn subd_crc_diagnostic_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("root bytes admitted");
-    let refused =
-        super::finish_direct_chunk(&ctx, &mut parent, &chunk, child, &mut Diagnostics::new())
-            .expect_err("CRC diagnostic exceeds zero collection items");
+    let refused = super::finish_direct_chunk(&mut parent, &chunk, child, &mut Diagnostics::new())
+        .expect_err("CRC diagnostic exceeds zero collection items");
     assert!(
         matches!(refused, SubdError::Resource(limit) if limit.operation == "Rhino diagnostics")
     );

@@ -821,11 +821,8 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
             && !diagnostic.diagnostic.message.contains("unsupported class")
     }));
     let container_only = crate::decode::seal_for_test(
-        crate::container::container_only_result(
-            &cadmpeg_test_support::service_decode_context(),
-            &scan,
-        )
-        .expect("container-only source metadata admitted"),
+        crate::container::container_only_result(&scan)
+            .expect("container-only source metadata admitted"),
         true,
     );
     assert!(container_only.report().losses.iter().any(|loss| {

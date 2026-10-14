@@ -26,19 +26,14 @@ fn class_loss_tag_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let refusal = super::super::loss_provenance(&ctx, "fixture", &outcome)
+    let refusal = super::super::loss_provenance("fixture", &outcome)
         .expect_err("class loss tag exceeds retained limit");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino class loss tag"
     ));
-    super::super::loss_provenance(
-        &cadmpeg_test_support::service_decode_context(),
-        "fixture",
-        &outcome,
-    )
-    .expect("service profile admits the tag");
+    super::super::loss_provenance("fixture", &outcome).expect("service profile admits the tag");
 }
 
 fn staged_curve_tree_refusal(limit: u64, operation: &str) {
@@ -108,12 +103,8 @@ fn committed_curve_tree_components_refuse_collection_limit() {
 #[test]
 fn hatch_loop_ids_refuse_collection_limit() {
     let error = with_collection_limit(0, |ctx| {
-        hatch_loop_ids(
-            ctx,
-            "fixture",
-            std::iter::once(crate::hatch::LoopKind::Outer),
-        )
-        .expect_err("one loop exceeds zero collection items")
+        hatch_loop_ids("fixture", std::iter::once(crate::hatch::LoopKind::Outer))
+            .expect_err("one loop exceeds zero collection items")
     });
     assert!(matches!(
         error,
@@ -130,12 +121,8 @@ fn hatch_loop_id_text_refuses_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(expected_len - 1).expect("bounded fixture");
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = hatch_loop_ids(
-        &ctx,
-        "fixture",
-        std::iter::once(crate::hatch::LoopKind::Outer),
-    )
-    .expect_err("the loop ID exceeds the retained-byte limit");
+    let error = hatch_loop_ids("fixture", std::iter::once(crate::hatch::LoopKind::Outer))
+        .expect_err("the loop ID exceeds the retained-byte limit");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -151,7 +138,6 @@ fn hatch_source_links_refuse_collection_limit() {
     );
     let error = with_collection_limit(1, |ctx| {
         hatch_source_links(
-            ctx,
             vec![(crate::hatch::LoopKind::Outer, "loop".to_string())],
             &feature_id,
         )
@@ -176,7 +162,7 @@ fn hatch_feature_link_text_refuses_retained_limit() {
         u64::try_from(feature_id.as_str().len() - 1).expect("bounded fixture");
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = hatch_source_links(&ctx, Vec::new(), &feature_id)
+    let error = hatch_source_links(Vec::new(), &feature_id)
         .expect_err("feature link exceeds retained-byte limit");
     assert!(matches!(
         error,
@@ -191,7 +177,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 4, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect_err("class key exceeds four collection items")
     });
     assert!(
@@ -201,7 +187,7 @@ fn class_outcome_keys_refuse_collection_limit() {
     let outcomes = with_transaction_limits(&scan, 6, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect("service-size class outcome")
             .len()
     });
@@ -214,7 +200,7 @@ fn class_outcome_rows_refuse_collection_limit() {
     let error = with_transaction_limits(&scan, 5, None, None, |expand| {
         let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
-            .class_outcomes(expand.ctx())
+            .class_outcomes()
             .expect_err("class row exceeds five collection items")
     });
     assert!(
@@ -237,7 +223,7 @@ fn class_outcome_label_refuses_retained_limit() {
         |expand| {
             let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
             context
-                .class_outcomes(expand.ctx())
+                .class_outcomes()
                 .expect_err("class label exceeds retained record bytes")
         },
     );
@@ -339,7 +325,7 @@ fn full_source_attributes_refuse_collection_limit() {
     let mut scan = scan_with_objects(&[]);
     scan.metadata.settings.current_layer = Some(7);
     let refusal = with_collection_limit(0, |ctx| {
-        super::super::full_source_attributes(ctx, &scan)
+        super::super::full_source_attributes(&scan)
             .expect_err("one source attribute exceeds zero collection items")
     });
     assert!(matches!(
@@ -347,11 +333,8 @@ fn full_source_attributes_refuse_collection_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino full source attributes"
     ));
-    let attributes = super::super::full_source_attributes(
-        &cadmpeg_test_support::service_decode_context(),
-        &scan,
-    )
-    .expect("source attributes admitted by service profile");
+    let attributes = super::super::full_source_attributes(&scan)
+        .expect("source attributes admitted by service profile");
     assert_eq!(attributes.get("current_layer"), Some(&"7".to_string()));
 }
 

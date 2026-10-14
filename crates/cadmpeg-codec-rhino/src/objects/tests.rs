@@ -776,13 +776,8 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         10,
     )))];
     let mut warnings = Diagnostics::new();
-    let material = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
-        material,
-        &metadata,
-        &mut warnings,
-    )
-    .expect("service profile admits material identity");
+    let material = crate::objects::resolve_identities(material, &metadata, &mut warnings)
+        .expect("service profile admits material identity");
     assert_eq!(
         material[0]
             .identity()
@@ -807,13 +802,8 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.color_source = crate::objects::ColorSource::Parent;
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 20)))];
-    let parent = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
-        parent,
-        &metadata,
-        &mut warnings,
-    )
-    .expect("service profile admits parent identity");
+    let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings)
+        .expect("service profile admits parent identity");
     assert_eq!(
         parent[0]
             .identity()
@@ -858,7 +848,6 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
     object.class_uuid = Uuid::from_wire([9; 16]);
     let mut warnings = Diagnostics::new();
     let objects = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
         objects,
         &settings::DocumentMetadata::default(),
         &mut warnings,
@@ -895,7 +884,6 @@ fn resolved_object_identities_refuse_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let refusal = crate::objects::resolve_identities(
-        &ctx,
         objects.clone(),
         &settings::DocumentMetadata::default(),
         &mut Diagnostics::new(),
@@ -907,7 +895,6 @@ fn resolved_object_identities_refuse_collection_limit() {
             if limit.operation == "Rhino resolved object identities"
     ));
     let resolved = crate::objects::resolve_identities(
-        &cadmpeg_test_support::service_decode_context(),
         objects,
         &settings::DocumentMetadata::default(),
         &mut Diagnostics::new(),
@@ -1361,7 +1348,6 @@ fn null_polymorphic_wrapper_contains_only_a_nil_class_uuid() {
     let uuid = crc_chunk(archive, 0x0002_fffb, &[0; 16]);
     let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
     let (class, userdata) = crate::objects::parse_class_wrapper_with_userdata(
-        &cadmpeg_test_support::service_decode_context(),
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1386,7 +1372,6 @@ fn class_uuid_checksum_diagnostic_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
         .expect("root bytes admitted");
     let refusal = crate::objects::parse_class_wrapper(
-        &ctx,
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1399,14 +1384,8 @@ fn class_uuid_checksum_diagnostic_refuses_collection_limit() {
             if limit.operation == "Rhino diagnostics"
     ));
     let mut warnings = Diagnostics::new();
-    crate::objects::parse_class_wrapper(
-        &cadmpeg_test_support::service_decode_context(),
-        &wrapper,
-        0..wrapper.len(),
-        archive,
-        &mut warnings,
-    )
-    .expect("service profile retains checksum diagnostic");
+    crate::objects::parse_class_wrapper(&wrapper, 0..wrapper.len(), archive, &mut warnings)
+        .expect("service profile retains checksum diagnostic");
     assert_eq!(warnings.iter().count(), 1);
 }
 
@@ -1432,7 +1411,6 @@ fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
         .expect("root bytes admitted");
     crate::objects::parse_class_wrapper(
-        &ctx,
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1440,7 +1418,6 @@ fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only(
     )
     .expect("scan-only class wrapper does not retain userdata");
     let error = crate::objects::parse_class_wrapper_with_userdata(
-        &ctx,
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1453,7 +1430,6 @@ fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only(
             if refusal.operation == "Rhino class userdata"
     ));
     let (class, retained) = crate::objects::parse_class_wrapper_with_userdata(
-        &cadmpeg_test_support::service_decode_context(),
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1471,12 +1447,7 @@ fn uuid_list_uses_an_anonymous_versioned_chunk() {
     body.extend([0x11; 16]);
     let bytes = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UUID-list reader");
-    let values = crate::objects::read_uuid_list(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut reader,
-        archive,
-    )
-    .expect("UUID list");
+    let values = crate::objects::read_uuid_list(&mut reader, archive).expect("UUID list");
     assert_eq!(values.len(), 1);
     assert_eq!(reader.remaining(), 0);
 }
@@ -1493,7 +1464,7 @@ fn object_uuid_list_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("root bytes admitted");
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UUID-list reader");
-    let error = crate::objects::read_uuid_list(&ctx, &mut reader, archive)
+    let error = crate::objects::read_uuid_list(&mut reader, archive)
         .expect_err("UUID list exceeds collection limit");
     assert_attribute_resource(&error, "Rhino UUID list");
 }
@@ -1754,19 +1725,15 @@ fn degraded_object_warning_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is admitted");
-    let refusal = crate::objects::degraded_object_record(&ctx, &record, &error)
+    let refusal = crate::objects::degraded_object_record(&record, &error)
         .expect_err("degraded warning text exceeds zero retained bytes");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "Rhino degraded object warning"
     ));
-    let result = crate::objects::degraded_object_record(
-        &cadmpeg_test_support::service_decode_context(),
-        &record,
-        &error,
-    )
-    .expect("service profile admits degraded warning");
+    let result = crate::objects::degraded_object_record(&record, &error)
+        .expect("service profile admits degraded warning");
     assert!(
         matches!(result, ObjectRecord::Degraded { warning, .. } if warning.contains("degraded"))
     );
