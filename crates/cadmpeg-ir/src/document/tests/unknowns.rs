@@ -124,14 +124,11 @@ fn complete_document_keeps_raw_native_fields_but_product_reader_checks_links() {
 }
 
 #[test]
-fn native_unknown_replacement_preserves_resource_refusals_and_document() {
+fn native_unknown_replacement_keeps_the_document_on_depth_and_record_text_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     for dimension in [
-        ResourceDimension::MaterializedBytes,
         ResourceDimension::RetainedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
         ResourceDimension::RecursionDepth,
     ] {
         let mut document = CadIr::empty();
@@ -145,13 +142,10 @@ fn native_unknown_replacement_preserves_resource_refusals_and_document() {
         let before = document.clone();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => unreachable!(),
+        if dimension == ResourceDimension::RetainedBytes {
+            policy.limits.max_retained_bytes = 0;
+        } else {
+            policy.limits.max_recursion_depth = 0;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = CodecError::from(

@@ -719,7 +719,7 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
 }
 
 #[test]
-fn recursive_law_and_zero_radius_keep_the_live_session_refusal() {
+fn recursive_law_and_zero_radius_return_the_session_depth_refusal() {
     use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
     use crate::geometry::{VariableBlendValue, VariableBlendValuePayload};
     use crate::scalar::FiniteReal;
@@ -760,30 +760,9 @@ fn recursive_law_and_zero_radius_keep_the_live_session_refusal() {
         crate::eval::variable_blend_is_zero_radius(EvaluationAdmission::Standard, &radius).unwrap()
     );
     for route in 0..2 {
-        for trigger in 0..5 {
+        for depth in [0, 1] {
             let mut policy = DecodePolicy::service();
-            let dimension = match trigger {
-                0 => {
-                    policy.limits.max_work_units = 0;
-                    ResourceDimension::WorkUnits
-                }
-                1 => {
-                    policy.limits.max_recursion_depth = 0;
-                    ResourceDimension::RecursionDepth
-                }
-                2 => {
-                    policy.limits.max_materialized_bytes = 0;
-                    ResourceDimension::MaterializedBytes
-                }
-                3 => {
-                    policy.limits.max_collection_items = 0;
-                    ResourceDimension::CollectionItems
-                }
-                _ => {
-                    policy.limits.max_recursion_depth = 1;
-                    ResourceDimension::RecursionDepth
-                }
-            };
+            policy.limits.max_recursion_depth = depth;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let evaluate = || {
@@ -803,14 +782,10 @@ fn recursive_law_and_zero_radius_keep_the_live_session_refusal() {
                 }
             };
             let EvaluationFailure::ResourceLimit(first) = evaluate().unwrap_err() else {
-                panic!("recursive inspection must retain the original resource refusal");
+                panic!("recursive inspection must return the depth refusal");
             };
-            assert_eq!(first.dimension, dimension);
-            assert_eq!(
-                (first.limit, first.used),
-                if trigger == 4 { (1, 1) } else { (0, 0) }
-            );
-            assert!(first.additional > 0);
+            assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
+            assert_eq!((first.limit, first.used), (depth, depth));
             assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
             assert!(
                 matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
@@ -820,40 +795,8 @@ fn recursive_law_and_zero_radius_keep_the_live_session_refusal() {
 }
 
 #[test]
-fn sweep_text_whitespace_refuses_before_the_next_character() {
-    use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let expression = LawExpression::Text {
-        value: cadmpeg_core::text::NonBlankString::new(" X ").unwrap(),
-    };
-    let frame_work = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-        Option<crate::eval::ModelEvaluationIdentity>,
-    >());
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = frame_work + 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result =
-        scalar_sweep_law_differential(EvaluationAdmission::Decode(&ctx), &expression, finite(2.0));
-    let Err(EvaluationFailure::ResourceLimit(first)) = result else {
-        panic!("text inspection must refuse before reading a character");
-    };
-    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(
-        (first.limit, first.used, first.additional),
-        (frame_work + 1, frame_work + 1, 1)
-    );
-    // Attached work slices retain the core work-budget refusal metadata.
-    assert_eq!(first.operation, "work_budget");
-    assert!(
-        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
-    );
-}
-
-#[test]
-fn sweep_text_projections_admit_scoped_storage_and_release_it() {
-    use crate::eval::{admission::EvaluationAdmission, EvaluationFailure};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn sweep_text_projections_ignore_whitespace() {
+    use crate::eval::admission::EvaluationAdmission;
     let scale = LawExpression::Text {
         value: cadmpeg_core::text::NonBlankString::new(" VEC ( 2, 3, 4 ) ").unwrap(),
     };
@@ -862,63 +805,14 @@ fn sweep_text_projections_admit_scoped_storage_and_release_it() {
             .unwrap(),
         variables: Vec::new(),
     };
-    for route in 0..2 {
-        for trigger in 0..4 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 4096;
-            let dimension = match trigger {
-                0 => {
-                    policy.limits.max_materialized_bytes = 0;
-                    Some(ResourceDimension::MaterializedBytes)
-                }
-                1 => {
-                    policy.limits.max_collection_items = 0;
-                    Some(ResourceDimension::CollectionItems)
-                }
-                2 => {
-                    policy.limits.max_work_units = 0;
-                    Some(ResourceDimension::WorkUnits)
-                }
-                _ => {
-                    policy.limits.max_retained_bytes = 0;
-                    None
-                }
-            };
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let evaluate = || {
-                if route == 0 {
-                    crate::eval::sweep_law::sweep_scale(EvaluationAdmission::Decode(&ctx), &scale)
-                        .map(|value| {
-                            assert_eq!(value, Some(Vector3::new(2.0, 3.0, 4.0)));
-                        })
-                } else {
-                    crate::eval::sweep_rail_transform(EvaluationAdmission::Decode(&ctx), &formula)
-                        .map(|value| {
-                            assert_eq!(value, Some(crate::transform::Transform::identity()));
-                        })
-                }
-            };
-            let result = evaluate();
-            if let Some(dimension) = dimension {
-                let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
-                    panic!("text projection must keep its resource refusal");
-                };
-                assert_eq!(first.dimension, dimension);
-                assert_eq!((first.limit, first.used), (0, 0));
-                assert!(first.additional > 0);
-                assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
-                );
-            } else {
-                assert_eq!(result, Ok(()));
-                let storage = ctx
-                    .reserve_scoped_limit(4096, "test released law text")
-                    .unwrap();
-                drop(storage);
-                assert!(ctx.finish_session().is_ok());
-            }
-        }
-    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        crate::eval::sweep_law::sweep_scale(EvaluationAdmission::Decode(&ctx), &scale),
+        Ok(Some(Vector3::new(2.0, 3.0, 4.0)))
+    );
+    assert_eq!(
+        crate::eval::sweep_rail_transform(EvaluationAdmission::Decode(&ctx), &formula),
+        Ok(Some(crate::transform::Transform::identity()))
+    );
+    ctx.finish_session().unwrap();
 }

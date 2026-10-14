@@ -200,7 +200,7 @@ fn a_serializer_cannot_swallow_a_rewrite_collision() {
 #[test]
 fn a_field_walk_cannot_swallow_a_callback_resource_refusal() {
     let original = cadmpeg_core::decode::ResourceLimit {
-        dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
         limit: 4096,
         used: 128,

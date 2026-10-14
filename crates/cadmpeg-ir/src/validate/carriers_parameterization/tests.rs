@@ -424,88 +424,27 @@ fn numerical_audit_parameter_domain_roundoff_is_relative_to_width() {
 }
 
 #[test]
-fn pcurve_requires_bounded_domain_preserves_session_depth_and_work_refusals() {
+fn pcurve_requires_bounded_domain_preserves_session_depth_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let geometry = placed_pcurve(2).unwrap();
-    for (dimension, cap, held_frame) in [
-        (ResourceDimension::RecursionDepth, 0, false),
-        (ResourceDimension::RecursionDepth, 2, false),
-        (ResourceDimension::RecursionDepth, 2, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 2, false),
-    ] {
+    for (cap, held_frame) in [(0, false), (2, false), (2, true)] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => unreachable!(),
-        }
+        policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
         let limit = super::pcurve_requires_bounded_domain(&ctx, &geometry).unwrap_err();
-        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, cap);
         assert_eq!(limit.additional, 1);
-        assert_eq!(
-            limit.operation,
-            match dimension {
-                ResourceDimension::RecursionDepth => "pcurve bounded domain nesting",
-                _ => "pcurve bounded domain visit",
-            }
-        );
+        assert_eq!(limit.operation, "pcurve bounded domain nesting");
         drop(guard);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
         );
     }
-}
-
-#[test]
-fn parameter_domain_indexes_preserve_resource_refusals_and_release_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let mut ir = unit_cube().unwrap();
-    ir.model.edges.clear();
-    ir.model.coedges.clear();
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) =
-            super::check_parameter_domains(&ctx, &ir, &mut findings)
-        else {
-            panic!("domain index must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(findings.is_empty());
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 8192;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut findings = Vec::new();
-    super::check_parameter_domains(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings.is_empty());
-    drop(ctx.reserve_scoped(8192, "domain indexes released").unwrap());
-    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -524,14 +463,11 @@ fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
         (ResourceDimension::RecursionDepth, 0, false),
         (ResourceDimension::RecursionDepth, 2, false),
         (ResourceDimension::RecursionDepth, 2, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 2, false),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
             ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -565,50 +501,8 @@ fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
 }
 
 #[test]
-fn carrier_reachability_preserves_index_scan_and_finding_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let mut ir = unit_cube().unwrap();
-    let mut orphan = ir.model.curves[0].clone();
-    orphan.id = "test:model:curve#orphan".try_into().unwrap();
-    orphan.source_object = None;
-    ir.model.curves.push(orphan);
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RetainedBytes,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = super::check_carrier_reachability(
-            &ctx,
-            crate::native::view::NativeView::new(&ir, None),
-            &mut findings,
-        ) else {
-            panic!("carrier check must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(findings.is_empty());
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-}
-
-#[test]
-fn carrier_reachability_expands_composite_cycles_once_and_releases_scopes() {
+fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() {
     use crate::geometry::{CompositeCurveSegment, CompositeCurveTransition};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = unit_cube().unwrap();
     let root = ir.model.curves[0].id.clone();
     let mut first = ir.model.curves[0].clone();
@@ -640,11 +534,7 @@ fn carrier_reachability_expands_composite_cycles_once_and_releases_scopes() {
         self_intersect: None,
     });
     ir.model.curves.extend([first, second]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 4096;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_carrier_reachability(
         &ctx,
@@ -652,12 +542,7 @@ fn carrier_reachability_expands_composite_cycles_once_and_releases_scopes() {
         &mut findings,
     )
     .unwrap();
-    assert!(findings.is_empty());
-    drop(
-        ctx.reserve_scoped(4096, "carrier indexes and queue released")
-            .unwrap(),
-    );
-    ctx.finish_session().unwrap();
+    assert!(findings.is_empty(), "{findings:?}");
 }
 
 #[test]

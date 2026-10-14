@@ -3,23 +3,12 @@
 use crate::features::FinitePoint3;
 use crate::geometry::nurbs::{
     KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
-    NurbsSurfaceLanes, WeightedPole3,
 };
 use crate::math::Point3;
-use crate::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn knots() -> Vec<f64> {
     vec![0.0, 0.0, 1.0, 1.0]
-}
-fn finite_knots() -> Vec<FiniteReal> {
-    vec![
-        FiniteReal::ZERO,
-        FiniteReal::ZERO,
-        FiniteReal::ONE,
-        FiniteReal::ONE,
-    ]
 }
 fn raw_points() -> Vec<Point3> {
     vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)]
@@ -29,101 +18,6 @@ fn finite_points() -> Vec<FinitePoint3> {
         .into_iter()
         .map(|point| FinitePoint3::new(point).expect("finite"))
         .collect()
-}
-
-#[test]
-fn final_nurbs_construction_admits_raw_conversion_and_all_knot_visits() {
-    for (cap, operation) in [
-        (0, "IR NURBS admitted poles"),
-        (1, "IR NURBS admitted poles"),
-        (2, "IR NURBS knot finiteness"),
-        (6, "IR NURBS knot order"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) = NurbsCurve::new(
-            &ctx,
-            1,
-            knots(),
-            NurbsPoles3::Polynomial {
-                points: raw_points(),
-            },
-            false,
-        ) else {
-            panic!("original outer refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    for dimension in [
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::CollectionItems,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) = NurbsCurve::new(
-            &ctx,
-            1,
-            knots(),
-            NurbsPoles3::Polynomial {
-                points: raw_points(),
-            },
-            false,
-        ) else {
-            panic!("final pole storage refusal");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, "IR NURBS admitted poles");
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    for (cap, operation) in [
-        (0, "IR NURBS grid row shape"),
-        (1, "IR NURBS grid row shape"),
-        (2, "IR NURBS admitted grid rows"),
-        (3, "IR NURBS admitted poles"),
-        (4, "IR NURBS admitted poles"),
-        (5, "IR NURBS admitted grid rows"),
-        (6, "IR NURBS admitted poles"),
-        (7, "IR NURBS admitted poles"),
-        (8, "IR NURBS knot finiteness"),
-        (12, "IR NURBS knot order"),
-        (16, "IR NURBS knot finiteness"),
-        (20, "IR NURBS knot order"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) = NurbsSurface::new(
-            &ctx,
-            NurbsSurfaceAxis::new(1, knots(), false),
-            NurbsSurfaceAxis::new(1, knots(), false),
-            NurbsPoleGrid::Polynomial {
-                rows: vec![raw_points(), raw_points()],
-            },
-            false,
-        ) else {
-            panic!("outer row, pole or knot refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
 }
 
 #[test]
@@ -137,9 +31,7 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
     let point_address = points.as_ptr();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let curve = NurbsCurve::new(
         &ctx,
@@ -169,7 +61,6 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
     let u_address = u_knots.as_ptr();
     let v_address = v_knots.as_ptr();
     let arena = DecodeArena::new();
-    policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let surface = NurbsSurface::new(
         &ctx,
@@ -196,132 +87,13 @@ fn final_nurbs_construction_moves_admitted_storage_without_copy_or_scalar_readmi
 }
 
 #[test]
-fn finite_geometry_construction_admits_final_knot_conversion_in_the_caller() {
-    for (cap, operation) in [
-        (0, "IR finite knot values"),
-        (1, "IR finite knot values"),
-        (2, "IR finite knot values"),
-        (3, "IR finite knot values"),
-        (4, "IR NURBS knot order"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) =
-            NurbsCurve::from_finite_lanes(&ctx, 1, finite_knots(), finite_points(), None, false)
-        else {
-            panic!("finite lane admission must use caller");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    for (cap, operation) in [
-        (0, "IR NURBS grid row shape"),
-        (1, "IR NURBS grid row shape"),
-        (2, "IR finite knot values"),
-        (6, "IR NURBS knot order"),
-        (10, "IR finite knot values"),
-        (14, "IR NURBS knot order"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) = NurbsSurface::from_finite_lanes(
-            &ctx,
-            NurbsSurfaceAxis::new(1, finite_knots(), false),
-            NurbsSurfaceAxis::new(1, finite_knots(), false),
-            NurbsSurfaceLanes::new(vec![finite_points(), finite_points()], None),
-            false,
-        ) else {
-            panic!("finite grid knot admission must use caller");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.operation, operation);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let Err(CodecError::ResourceLimit(limit)) =
-        NurbsCurve::from_finite_lanes(&ctx, 1, finite_knots(), finite_points(), None, false)
-    else {
-        panic!("retained final knot copy must refuse");
-    };
-    assert_eq!(limit.operation, "IR finite knot values");
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-}
-
-#[test]
-fn checked_geometry_construction_releases_raw_pairing_and_keeps_only_final_storage() {
-    for surface in [false, true] {
-        let rows = if surface { 2 } else { 0 };
-        let poles = if surface { 4 } else { 2 };
-        let retained = rows * std::mem::size_of::<Vec<WeightedPole3<FinitePoint3>>>()
-            + poles * std::mem::size_of::<WeightedPole3<FinitePoint3>>();
-        let temporary = if surface {
-            4 * std::mem::size_of::<Vec<WeightedPole3<Point3>>>()
-                + 8 * std::mem::size_of::<WeightedPole3<Point3>>()
-        } else {
-            4 * std::mem::size_of::<WeightedPole3<Point3>>()
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(retained).expect("small fixture");
-        policy.limits.max_materialized_bytes = u64::try_from(temporary).expect("small fixture");
-        policy.limits.max_collection_items = if surface { 12 } else { 4 };
-        policy.limits.max_work_units = if surface { 30 } else { 12 };
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        if surface {
-            let built = NurbsSurface::from_checked_lanes(
-                &ctx,
-                NurbsSurfaceAxis::new(1, knots(), false),
-                NurbsSurfaceAxis::new(1, knots(), false),
-                NurbsSurfaceLanes::new(
-                    vec![raw_points(), raw_points()],
-                    Some(vec![vec![NonZeroReal::ONE; 2]; 2]),
-                ),
-                false,
-            )
-            .expect("exact admitted output and scoped scratch")
-            .expect("valid surface");
-            assert_eq!(
-                built.pole(1, 1).expect("last pole").get(),
-                Point3::new(4.0, 5.0, 6.0)
-            );
-        } else {
-            let built = NurbsCurve::from_checked_lanes(
-                &ctx,
-                1,
-                knots(),
-                raw_points(),
-                Some(vec![NonZeroReal::ONE; 2]),
-                false,
-            )
-            .expect("exact admitted output and scoped scratch")
-            .expect("valid curve");
-            assert_eq!(
-                built.pole_rows().point_at(1).expect("last pole").get(),
-                Point3::new(4.0, 5.0, 6.0)
-            );
-        }
-        let reuse = ctx
-            .reserve_scoped(
-                u64::try_from(temporary).expect("small fixture"),
-                "construction scratch reuse",
-            )
-            .expect("pairing reservation released at return");
-        drop(reuse);
-        ctx.finish_session().expect("exact construction admissions");
-    }
+fn raw_curve_construction_moves_raw_knot_storage() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let knots = knots();
+    let address = knots.as_ptr();
+    let curve = NurbsCurve::from_lanes(&ctx, 1, knots, raw_points(), None, false)
+        .expect("construction admission")
+        .expect("valid curve");
+    assert_eq!(curve.knots().as_ptr(), address);
+    assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
 }

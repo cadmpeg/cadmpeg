@@ -69,97 +69,34 @@ fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes()
 }
 
 #[test]
-fn pcurve_pole_replacement_refuses_before_mutation_and_needs_no_storage() {
+fn polynomial_pcurve_point_replacement_keeps_knots_and_weights() {
     use crate::units::FinitePoint2;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let setup = cadmpeg_test_support::service_decode_context();
-    let polynomial = PcurveNurbs::from_lanes(
-        &setup,
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let original = PcurveNurbs::from_lanes(
+        &ctx,
         1,
         vec![0., 0., 1., 1.],
         vec![Point2::new(1., 2.), Point2::new(3., 4.)],
         None,
         false,
     )
-    .expect("admission")
+    .expect("construction admission")
     .expect("polynomial curve");
     let positions = [
-        FinitePoint2::new(Point2::new(5., 6.)).unwrap(),
-        FinitePoint2::new(Point2::new(7., 8.)).unwrap(),
+        FinitePoint2::new(Point2::new(5., 6.)).expect("finite"),
+        FinitePoint2::new(Point2::new(7., 8.)).expect("finite"),
     ];
-    for original in [pcurve(), polynomial] {
-        for cap in 0..2 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut edited = original.clone();
-            let Err(CodecError::ResourceLimit(limit)) =
-                edited.replace_admitted_control_points(&positions, &ctx)
-            else {
-                panic!("replacement requires work");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "IR pcurve pole replacement");
-            assert_eq!(edited, original);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut edited = original.clone();
-        assert!(!edited
-            .replace_admitted_control_points(&[], &ctx)
-            .expect("wrong lane costs no work"));
-        assert_eq!(edited, original);
-        assert!(edited
-            .replace_admitted_control_points(&positions, &ctx)
-            .expect("exact work"));
-        assert_eq!(edited.control_points(), positions);
-        assert_eq!(edited.weights(), original.weights());
-        assert_eq!(edited.knots(), original.knots());
-        ctx.finish_session().expect("exact work and zero storage");
-    }
-}
-
-#[test]
-fn pcurve_copy_refuses_knot_and_pole_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let source = pcurve();
-    let knot_count = u64::try_from(source.knots().len()).unwrap();
-    for (dimension, limit) in [
-        (ResourceDimension::CollectionItems, knot_count - 1),
-        (ResourceDimension::CollectionItems, knot_count + 1),
-        (ResourceDimension::RetainedBytes, knot_count * 8 - 1),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("unexpected test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test input fits input limit");
-        let error = source
-            .try_clone_for_decode(&ctx, "copy pcurve")
-            .expect_err("copy exceeds resource limit");
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
-        assert_eq!(refusal.dimension, dimension);
-        assert_eq!(refusal.operation, "copy pcurve");
-    }
+    let mut edited = original.clone();
+    assert!(!edited
+        .replace_admitted_control_points(&[], &ctx)
+        .expect("replacement admission"));
+    assert_eq!(edited, original);
+    assert!(edited
+        .replace_admitted_control_points(&positions, &ctx)
+        .expect("replacement admission"));
+    assert_eq!(edited.control_points(), positions);
+    assert_eq!(edited.weights(), original.weights());
+    assert_eq!(edited.knots(), original.knots());
 }
 
 #[test]

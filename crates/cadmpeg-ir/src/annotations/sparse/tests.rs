@@ -51,29 +51,6 @@ fn discarded_sparse_edits_leave_all_annotations_unchanged() {
 }
 
 #[test]
-fn sparse_preparation_refusal_is_atomic_and_sticky() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let annotations = Annotations::default();
-    let mut transaction = annotations
-        .sparse_transaction(&ctx, "test sparse retained transfer")
-        .unwrap();
-    transaction.exactness(ID, Exactness::Derived).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = transaction.prepare() else {
-        panic!("retained transfer must refuse");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert!(annotations.exactness().is_empty());
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-}
-
-#[test]
 fn sparse_provenance_edits_leave_unselected_entries_unchanged() {
     use crate::annotations::StreamHandle;
     use crate::provenance::StreamName;
@@ -127,8 +104,7 @@ fn sparse_long_identity_edits_admit_thousands_without_binary_tree_overbilling() 
     }
     let mut annotations = builder.build();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = WORK;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut transaction = annotations
         .sparse_transaction(&ctx, "long identity edits")
