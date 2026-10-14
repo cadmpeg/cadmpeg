@@ -3,7 +3,11 @@
 use super::*;
 use cadmpeg_core::CodecError;
 
-fn assert_fixed_fillet_refusal(operation: &'static str, variable: bool, complete: bool) {
+fn project_fixture_fillet(
+    policy: &DecodePolicy,
+    variable: bool,
+    complete: bool,
+) -> Result<(), CodecError> {
     let mut scope_value = serde_json::to_value(fixed_scope()).unwrap();
     if variable {
         scope_value["fixed_fillet_parameters"]["groups"][0]["radii"] =
@@ -25,34 +29,39 @@ fn assert_fixed_fillet_refusal(operation: &'static str, variable: bool, complete
     operand.recipe_state_id = Some(7);
     operand.resolved_edge_slot = Some(17);
     let identity = identity(10, &[(17, 3.0), (18, 5.0), (19, 3.0)]);
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let operands = if complete {
-            std::slice::from_ref(&operand)
-        } else {
-            &[]
-        };
-        let identities = if complete {
-            &[][..]
-        } else {
-            std::slice::from_ref(&identity)
-        };
-        match project_fixed_fillet(
-            &scope,
-            std::slice::from_ref(&selection_group),
-            operands,
-            identities,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected fixed Fillet refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no fixed Fillet refusal at {operation}");
+    let operands = if complete {
+        std::slice::from_ref(&operand)
+    } else {
+        &[]
+    };
+    let identities = if complete {
+        &[][..]
+    } else {
+        std::slice::from_ref(&identity)
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    project_fixed_fillet(
+        &scope,
+        std::slice::from_ref(&selection_group),
+        operands,
+        identities,
+        &ctx,
+    )
+    .map(|_| ())
+}
+
+fn assert_fixed_fillet_refusal(operation: &'static str, variable: bool, complete: bool) {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            project_fixture_fillet(&policy, variable, complete)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -71,8 +80,13 @@ fn fixed_fillet_identity_refuses_collection_limit() {
 }
 
 #[test]
-fn fixed_fillet_output_group_refuses_collection_limit() {
-    assert_fixed_fillet_refusal("f3d fixed fillet output group", false, false);
+fn fixed_fillet_output_group_charges_collection_items() {
+    // Released identity scratch peaks above the output group charge.
+    cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "f3d fixed fillet output group",
+        || project_fixture_fillet(&DecodePolicy::service(), false, false),
+    );
 }
 
 #[test]

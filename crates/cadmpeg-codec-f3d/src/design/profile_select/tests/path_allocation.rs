@@ -4,7 +4,7 @@ use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 
-fn assert_planar_path_refusal(operation: &'static str, profile: bool) {
+fn resolve_planar_path(policy: &DecodePolicy, profile: bool) -> Result<(), CodecError> {
     let placement = placement();
     let sketch_id = neutral_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
@@ -63,23 +63,26 @@ fn assert_planar_path_refusal(operation: &'static str, profile: bool) {
     let placements = [placement];
     let setup = planar_resolution(&operands, &placements, &curves, &sketches, &entities);
     let resolution = setup.path_resolution();
-    for limit in 0..32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if profile {
-            resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
-        } else {
-            resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected planar path refusal at {operation}: {other:?}"),
-        }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    if profile {
+        resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
+    } else {
+        resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
     }
-    panic!("no planar path refusal at {operation}");
+}
+
+fn assert_planar_path_refusal(operation: &'static str, profile: bool) {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            resolve_planar_path(&policy, profile)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
 macro_rules! planar_path_refusal {
@@ -113,11 +116,16 @@ planar_path_refusal!(
 );
 
 #[test]
-fn path_selected_planar_profile_refuses_collection_limit() {
-    assert_planar_path_refusal("f3d entity path selected planar profile", true);
+fn path_selected_planar_profile_charges_collection_items() {
+    // Released path scratch peaks above the selected profile charge.
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d entity path selected planar profile",
+        || resolve_planar_path(&DecodePolicy::service(), true),
+    );
 }
 
-fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile: bool) {
+fn resolve_spatial_path(policy: &DecodePolicy, profile: bool) -> Result<(), CodecError> {
     let placement = placement();
     let sketch_id = neutral_spatial_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
@@ -184,33 +192,32 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
         spatial_sketches: &sketches,
         spatial_sketch_entities: &entities,
     };
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            if retained {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            } else {
-                cadmpeg_core::decode::ResourceDimension::CollectionItems
-            },
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if retained {
-                    policy.limits.max_retained_bytes = cap;
-                } else {
-                    policy.limits.max_collection_items = cap;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                if profile {
-                    resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
-                } else {
-                    resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
-                }
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { cadmpeg_core::decode::ResourceDimension::RetainedBytes } else { cadmpeg_core::decode::ResourceDimension::CollectionItems })));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    if profile {
+        resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
+    } else {
+        resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
     }
+}
+
+fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile: bool) {
+    let dimension = if retained {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    } else {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        resolve_spatial_path(&policy, profile)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
@@ -229,6 +236,11 @@ fn path_spatial_sketch_id_refuses_retained_limit() {
 }
 
 #[test]
-fn path_selected_spatial_profile_refuses_collection_limit() {
-    assert_spatial_path_refusal("f3d entity path selected spatial profile", false, true);
+fn path_selected_spatial_profile_charges_collection_items() {
+    // Released path scratch peaks above the selected profile charge.
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d entity path selected spatial profile",
+        || resolve_spatial_path(&DecodePolicy::service(), true),
+    );
 }

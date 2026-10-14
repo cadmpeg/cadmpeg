@@ -118,6 +118,23 @@ fn history_record_with_limits(
     .unwrap_err()
 }
 
+/// Decode `bytes` as one history state under the service policy.
+fn decode_one_framed_history_record(
+    bytes: &[u8],
+) -> Result<Vec<crate::history_records::AsmHistoryRecord>, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::decode_history_records(
+            ctx,
+            bytes,
+            0,
+            None,
+            "history",
+            "state",
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+        )
+    })
+}
+
 fn one_framed_history_record() -> Vec<u8> {
     let mut bytes = b"\x0d\x01x\x0c".to_vec();
     bytes.extend_from_slice(&3_i32.to_le_bytes());
@@ -620,27 +637,25 @@ fn history_graph_visit_refuses_collection_limit() {
 }
 
 #[test]
-fn history_record_references_refuse_collection_limit() {
+fn history_record_references_charge_collection_items() {
     let bytes = one_framed_history_record();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let error = history_record_with_limits(&bytes, &policy);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "frame F3D history references")
+    let records = cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "frame F3D history references",
+        || decode_one_framed_history_record(&bytes),
     );
+    assert_eq!(records.len(), 1);
 }
 
 #[test]
-fn history_record_vector_refuses_collection_limit() {
+fn history_record_vector_charges_collection_items() {
     let bytes = one_framed_history_record();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let error = history_record_with_limits(&bytes, &policy);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "frame F3D history record")
+    let records = cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "frame F3D history record",
+        || decode_one_framed_history_record(&bytes),
     );
+    assert_eq!(records.len(), 1);
 }
 
 #[test]

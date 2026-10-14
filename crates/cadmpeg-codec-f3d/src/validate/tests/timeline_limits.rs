@@ -475,11 +475,25 @@ fn timeline_forward_history_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn timeline_cyclic_history_finding_refuses_collection_limit() {
-    let error = timeline_error_with(cyclic_history_native(), 34, u64::MAX);
+fn timeline_cyclic_history_finding_charges_collection_items() {
+    let findings = crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = cyclic_history_native();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        cadmpeg_test_support::refusal::assert_charged(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "collect F3D native validation findings",
+            || {
+                let mut findings = Vec::new();
+                super::super::validate_feature_timelines(&ctx, &mut findings).map(|()| findings)
+            },
+        )
+    });
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings")
+        findings
+            .iter()
+            .any(|finding| finding.message
+                == "Fusion Design scope history-state dependency is cyclic")
     );
 }
 

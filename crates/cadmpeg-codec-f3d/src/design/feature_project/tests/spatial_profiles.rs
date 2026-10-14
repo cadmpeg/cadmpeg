@@ -124,8 +124,19 @@ fn spatial_profile_boundary_use_refuses_collection_limit() {
 }
 
 #[test]
-fn spatial_profile_output_refuses_collection_limit() {
-    assert_limit("f3d spatial profile", ResourceDimension::CollectionItems);
+fn spatial_profile_output_charges_collection_items() {
+    // Released boundary scratch peaks above the output charge.
+    let (sketch, entities) = fixture();
+    let profiles = cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "f3d spatial profile",
+        || {
+            crate::test_support::with_decode_context(|decode_ctx| {
+                closed_spatial_sketch_profiles(decode_ctx, &sketch, &entities, EPS_PROFILE_CLOSE)
+            })
+        },
+    );
+    assert_eq!(profiles.len(), 2);
 }
 
 #[test]
