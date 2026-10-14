@@ -49,21 +49,15 @@ impl<'a> GeometryWorkBudget<'a> {
         }
     }
 
+    /// Returns the session refusal, if any. Exhaustion of this local slice
+    /// is not a refusal: the step that needed the work is skipped instead.
     pub(super) fn resource_refusal(&self) -> Option<ResourceLimit> {
-        let charges = self.charges;
-        if let Some(limit) = charges.resource_refusal() {
-            return Some(limit);
-        }
-        if self.work.exhausted() {
-            let limit = cadmpeg_core::decode::u64_from_index(self.work.consumed());
-            let additional = limit + u64::from(limit != u64::MAX);
-            drop(charges.refuse_codec_limit("nx adaptive geometry work", limit, additional));
-        }
-        charges.resource_refusal()
+        self.charges.resource_refusal()
     }
 
+    /// Returns whether this slice or the session can admit no more work.
     pub(super) fn exhausted(&self) -> bool {
-        self.resource_refusal().is_some()
+        self.work.exhausted() || self.charges.resource_refusal().is_some()
     }
 
     pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'_> {

@@ -1551,25 +1551,19 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     fit_tolerance,
                     curve_is_cache_backed_with_index(&model_index, owner, geometry_budget.charges)?,
                 )))
-            })();
+            })()?;
         // The candidate's completed replacement is admitted only when its
-        // work fits the shared geometry slice.
+        // work fits the shared geometry slice; otherwise it stays incomplete.
         if geometry_budget
             .consume_child(&candidate_geometry_budget)
             .is_err()
         {
-            return Err(geometry_budget.resource_refusal().map_or_else(
-                || {
-                    cadmpeg_core::decode::refuse_local_limit(
-                        "nx opposite chart geometry work",
-                        0,
-                        1,
-                    )
-                },
-                Into::into,
-            ));
+            if let Some(limit) = geometry_budget.resource_refusal() {
+                return Err(limit.into());
+            }
+            continue;
         }
-        if let Some(replacement) = replacement? {
+        if let Some(replacement) = replacement {
             ctx.reserve_vec(&mut replacements, 1, "nx opposite chart replacements")?;
             replacements.push(replacement);
         }
