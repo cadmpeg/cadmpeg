@@ -26,14 +26,9 @@ fn matrix_reference_plane_owns_overlapping_compact_scan_window() {
     }
     payload[48] = 1;
 
-    assert!(compact_reference_plane_frame_candidates(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload
-    )
-    .any(|candidate| candidate.unwrap().0 == 33));
+    assert!(compact_reference_plane_frame_candidates(&payload).any(|candidate| candidate.0 == 33));
     assert_eq!(
-        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
+        explicit_reference_plane_frame(&payload),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -81,29 +76,11 @@ fn matrix_reference_plane_owns_overlapping_angled_scan_window() {
 
     assert!(angled_reference_plane_frame_candidates(&payload).any(|(offset, _)| offset == 105));
     assert_eq!(
-        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
+        explicit_reference_plane_frame(&payload),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         )))
     );
-}
-
-#[test]
-fn rejected_plane_windows_do_not_run_overlap_scans() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let payload = [0x22; 4096];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 100_000;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        explicit_reference_plane_frame(&ctx, &payload).unwrap(),
-        Ok(None)
-    );
-    assert!(ctx.resource_refusal().is_none());
 }

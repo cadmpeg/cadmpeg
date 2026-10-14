@@ -1,15 +1,16 @@
-//! Resource admission for generated Combine operands.
+//! Generated Combine operand projection.
 
 use super::super::{project_compact_combine_paths, COMPACT_EDGE_VECTOR_MARKER};
 use super::{Feature, FeatureHistory, FeatureInputLane, FeatureSource};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{
     BodySelection, BooleanKind, CombineOperands, FeatureDefinition, FeatureEvaluation, FeatureId,
     FeatureOperation, SketchFeatureBinding,
 };
 use std::collections::BTreeMap;
 
-fn combine_projection_error(policy: DecodePolicy) -> cadmpeg_core::CodecError {
+#[test]
+fn combine_projection_binds_generated_target_and_tool_bodies() {
     let feature = |id: &str, source| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -89,7 +90,7 @@ fn combine_projection_error(policy: DecodePolicy) -> cadmpeg_core::CodecError {
             sketch: SketchFeatureBinding::Unresolved,
         })
     };
-    let mut features = vec![
+    let features = vec![
         model("target", 0, producer()),
         model("tools", 1, producer()),
         model(
@@ -138,43 +139,5 @@ fn combine_projection_error(policy: DecodePolicy) -> cadmpeg_core::CodecError {
     assert_eq!(
         admitted[2].dependencies.iter().collect::<Vec<_>>(),
         [&admitted[0].id, &admitted[1].id]
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    project_compact_combine_paths(
-        &ctx,
-        &mut features,
-        std::slice::from_ref(&history),
-        std::slice::from_ref(&lane),
-    )
-    .unwrap_err()
-}
-
-#[test]
-fn combine_projection_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    assert!(
-        matches!(combine_projection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn combine_projection_refuses_retained_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    assert!(
-        matches!(combine_projection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn combine_projection_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    assert!(
-        matches!(combine_projection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits)
     );
 }

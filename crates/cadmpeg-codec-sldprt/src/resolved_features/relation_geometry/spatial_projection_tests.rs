@@ -2,8 +2,6 @@ use super::ownership_tests::relation_lane;
 use super::project_spatial_relation_bindings;
 use crate::records::relation_scalars::RelationScalars;
 use crate::records::{FeatureInputOperand, FeatureInputOperandKind};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
     FeatureOperation,
@@ -11,9 +9,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 use std::collections::BTreeMap;
 
-fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"spatial relation", &arena, &policy)?;
+fn project_with_policy() {
     let sketch = SpatialSketch {
         id: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
         name: None,
@@ -52,50 +48,17 @@ fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
     let mut constraints = Vec::new();
     let mut entities = Vec::new();
     project_spatial_relation_bindings(
-        &ctx,
         &mut constraints,
         &mut entities,
         &[sketch],
         &[feature],
         &[],
         &[lane],
-    )?;
-    assert_eq!(constraints.len(), 1);
-    Ok(())
-}
-
-#[test]
-fn spatial_relation_projection_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = project_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT spatial sketch identities"));
-}
-
-#[test]
-fn spatial_relation_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "format SLDPRT spatial relation constraint identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_with_policy(policy)
-        },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "format SLDPRT spatial relation constraint identity"));
+    assert_eq!(constraints.len(), 1);
 }
 
 #[test]
-fn spatial_relation_projection_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let error = project_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT spatial sketch identities"));
+fn spatial_relation_projection_emits_one_constraint() {
+    project_with_policy();
 }
