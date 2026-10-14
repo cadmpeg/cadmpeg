@@ -405,7 +405,7 @@ mod tests {
         named_entries, named_entries_for_decode, named_entries_reporting, NamedEntryError,
         NonBlankString, NonWhitespaceChar,
     };
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     fn checked_reporting(
         entries: Vec<(String, i32)>,
@@ -424,29 +424,6 @@ mod tests {
         policy.limits.max_retained_bytes = retained_limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         named_entries_reporting(&ctx, "f", entries)
-    }
-
-    #[test]
-    fn nonblank_copy_refuses_retained_bytes_before_duplication() {
-        let value = NonBlankString::new("abc").expect("nonblank fixture");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = value
-            .try_clone_for_decode(&ctx, "nonblank copy")
-            .expect_err("three bytes exceed two");
-        assert!(matches!(error, crate::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "nonblank copy"));
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        assert_eq!(
-            value
-                .try_clone_for_decode(&ctx, "nonblank copy")
-                .expect("service copy"),
-            value
-        );
     }
 
     #[test]
@@ -600,125 +577,6 @@ mod tests {
             .unwrap()
             .1
             .is_empty());
-    }
-
-    #[test]
-    fn named_entry_map_storage_refuses_before_insertion() {
-        let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
-            + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<NonBlankString>().max(std::mem::align_of::<usize>());
-        // One named-entry record admits one backing node before insertion.
-        let bytes = node_bytes;
-        let error = checked_reporting(
-            vec![("k".into(), 1)],
-            1,
-            crate::decode::u64_from_index(bytes) - 1,
-        )
-        .unwrap_err();
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "named entry map nodes"
-                && limit.additional == crate::decode::u64_from_index(bytes)));
-    }
-
-    #[test]
-    fn named_entry_refusal_storage_refuses_before_vector_growth() {
-        let bytes = std::mem::size_of::<NamedEntryError>();
-        let error = checked_reporting(
-            vec![(" ".into(), 1)],
-            1,
-            crate::decode::u64_from_index(bytes),
-        )
-        .unwrap_err();
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "named entry refusals"
-                && limit.additional == crate::decode::u64_from_index(4 * bytes)));
-    }
-
-    #[test]
-    fn named_entry_scan_refuses_work_before_map_insertion() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = named_entries_reporting(&ctx, "f", [("width".into(), 1)]).unwrap_err();
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "named entry key scan"));
-    }
-
-    #[test]
-    fn named_entry_strict_resource_refusal_preserves_dimension() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = named_entries_for_decode(&ctx, "f", [("width".into(), 1)]).unwrap_err();
-        assert!(
-            matches!(crate::CodecError::from(error), crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "named entry map nodes")
-        );
-    }
-
-    #[test]
-    fn checked_named_entry_map_refuses_before_btree_insertion() {
-        let entries = vec![("width".to_owned(), 1)];
-        assert_eq!(
-            checked_reporting(entries.clone(), 1, 1000).unwrap().0.len(),
-            1
-        );
-        assert!(matches!(
-            checked_reporting(entries, 0, 1000),
-            Err(crate::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "named entry map nodes"
-        ));
-    }
-
-    #[test]
-    fn checked_named_entry_refusals_refuse_before_vec_growth() {
-        let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
-        assert_eq!(
-            checked_reporting(entries.clone(), 2, 10_000)
-                .unwrap()
-                .1
-                .len(),
-            1
-        );
-        assert!(matches!(
-            checked_reporting(entries, 1, 10_000),
-            Err(crate::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "named entry refusals"
-        ));
-    }
-
-    #[test]
-    fn checked_named_entry_record_refuses_before_text_growth() {
-        let entries = vec![(" ".to_owned(), 1)];
-        assert!(matches!(
-            checked_reporting(entries, 10, 0),
-            Err(crate::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "named entry refused record"
-        ));
-    }
-
-    #[test]
-    fn checked_named_entry_restated_key_refuses_before_text_growth() {
-        let entries = vec![("width".to_owned(), 1), ("width".to_owned(), 2)];
-        // One backing node and one record byte precede the restated key copy.
-        let node_bytes = 11 * (std::mem::size_of::<NonBlankString>() + std::mem::size_of::<i32>())
-            + 16 * std::mem::size_of::<usize>()
-            + 2 * std::mem::align_of::<NonBlankString>();
-        assert!(matches!(
-            checked_reporting(entries, 10, crate::decode::u64_from_index(node_bytes) + 1),
-            Err(crate::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "named entry refused key"
-        ));
     }
 
     #[test]

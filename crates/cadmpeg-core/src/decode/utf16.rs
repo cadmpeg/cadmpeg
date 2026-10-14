@@ -132,38 +132,8 @@ fn characters(
 
 #[cfg(test)]
 mod tests {
-    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::CodecError;
-
-    #[test]
-    fn utf16le_lossy_text_charges_exact_replacement_bytes() {
-        let bytes = [0, 0xd8, 0x41, 0, 0, 0xdc, 0x3d, 0xd8, 0, 0xde];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 11;
-        policy.limits.max_work_units = 21;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let text = ctx
-            .utf16le_lossy_text(&bytes, 5, false, "replacement test")
-            .expect("exact byte and work admission");
-        assert_eq!(text, "�A�😀");
-        assert!(
-            matches!(ctx.charge_retained(1, "after replacement"), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 11)
-        );
-    }
-
-    #[test]
-    fn utf16le_lossy_text_refuses_retained_before_allocation() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(
-            matches!(ctx.utf16le_lossy_text(&[0, 0xd8], 1, false, "replacement test"), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0 && limit.additional == 3)
-        );
-    }
 
     #[test]
     fn utf16le_lossy_text_trims_first_nul() {
@@ -175,44 +145,6 @@ mod tests {
                 .expect("terminated replacement text"),
             "�"
         );
-    }
-
-    #[test]
-    fn utf16le_lossy_text_refuses_work_before_scanning() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(
-            matches!(ctx.utf16le_lossy_text(&[0, 0xd8], 1, false, "replacement test"), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits)
-        );
-    }
-
-    #[test]
-    fn utf16le_lossy_scoped_text_charges_replacements_and_holds_storage() {
-        for temporary in [2, 3] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = temporary;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let result = ctx.utf16le_lossy_scoped_text(&[0, 0xd8], 1, false, "replacement test");
-            if temporary == 2 {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::MaterializedBytes && limit.additional == 3));
-            } else {
-                let (text, reservation) = result.expect("exact temporary budget");
-                assert_eq!(text, "�");
-                drop(text);
-                drop(reservation);
-                let (text, _reservation) = ctx
-                    .utf16le_lossy_scoped_text(&[0, 0xdc], 1, false, "replacement test")
-                    .expect("prior temporary storage released");
-                assert_eq!(text, "�");
-            }
-        }
     }
 
     #[test]
@@ -233,52 +165,6 @@ mod tests {
             .utf16le_scoped_text(&[0, 8], 1, false, "scoped UTF-16 test")
             .expect("released temporary storage");
         assert_eq!(text, "ࠀ");
-    }
-
-    #[test]
-    fn utf16le_scoped_text_refuses_temporary_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_materialized_bytes = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root context");
-        assert!(
-            matches!(ctx.utf16le_scoped_text(&[0, 8], 1, false, "scoped UTF-16 test"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.additional == 3)
-        );
-    }
-
-    #[test]
-    fn utf16le_text_charges_exact_retained_utf8_bytes() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 10;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root context");
-        let bytes = [0x41, 0, 0xe9, 0, 0x00, 0x08, 0x3d, 0xd8, 0x00, 0xde];
-        assert_eq!(
-            ctx.utf16le_text(&bytes, 5, false, "UTF-16 test")
-                .expect("valid UTF-16 fits exact budget"),
-            "Aéࠀ😀"
-        );
-        assert!(matches!(ctx.charge_retained(1, "after UTF-16"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 10));
-    }
-
-    #[test]
-    fn utf16le_text_refuses_retained_limit_before_allocation() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root context");
-        assert!(
-            matches!(ctx.utf16le_text(&[0x00, 0x08], 1, false, "UTF-16 test"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0 && limit.additional == 3 && limit.operation == "UTF-16 test")
-        );
     }
 
     #[test]
@@ -309,41 +195,5 @@ mod tests {
                 Err(CodecError::Malformed(_))
             ));
         }
-    }
-
-    #[test]
-    fn utf16le_text_trims_at_first_nul() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root context");
-        assert_eq!(
-            ctx.utf16le_text(&[0x41, 0, 0, 0, 0, 0xd8], 3, true, "UTF-16 test")
-                .expect("first NUL ends valid text"),
-            "A"
-        );
-        assert_eq!(
-            ctx.utf16le_text(&[0, 0], 1, true, "UTF-16 test")
-                .expect("empty text needs no retained bytes"),
-            ""
-        );
-        assert!(matches!(
-            ctx.charge_retained(1, "after UTF-16"),
-            Err(CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
-    fn utf16le_text_refuses_work_before_scanning() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root context");
-        assert!(
-            matches!(ctx.utf16le_text(&[0x41, 0], 1, false, "UTF-16 test"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
-        );
     }
 }

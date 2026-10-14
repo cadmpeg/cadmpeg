@@ -5895,26 +5895,12 @@ fn clamped_bezier_knots(
     ctx: &DecodeContext<'_>,
     degree: usize,
 ) -> Result<Vec<FiniteReal>, CodecError> {
-    let half = degree.checked_add(1).ok_or_else(|| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.collection_items_allowance(),
-                u64::MAX,
-                "FreeCAD Bezier knots",
-            ),
-        )
-    })?;
-    let count = half.checked_mul(2).ok_or_else(|| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.collection_items_allowance(),
-                u64::MAX,
-                "FreeCAD Bezier knots",
-            ),
-        )
-    })?;
+    let half = degree
+        .checked_add(1)
+        .ok_or_else(|| CodecError::malformed("FreeCAD Bezier degree overflows"))?;
+    let count = half
+        .checked_mul(2)
+        .ok_or_else(|| CodecError::malformed("FreeCAD Bezier knot count overflows"))?;
     let mut knots = ctx.collection_vec(count, "FreeCAD Bezier knots")?;
     knots.extend(std::iter::repeat_with(|| FiniteReal::ZERO).take(half));
     knots.extend(std::iter::repeat_with(|| FiniteReal::ONE).take(half));

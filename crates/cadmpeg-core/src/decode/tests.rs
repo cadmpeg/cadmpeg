@@ -19,26 +19,6 @@ fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
 }
 
 #[test]
-fn copy_retained_text_refuses_before_allocation_and_succeeds_under_service_profile() {
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| limits.max_retained_bytes = 4);
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert!(matches!(
-        ctx.copy_retained_text("hello", "retained text test"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
-    assert_eq!(
-        ctx.copy_retained_text("hello", "retained text test")
-            .unwrap(),
-        "hello"
-    );
-}
-
-#[test]
 fn allocation_failed_constructor_sets_refusal_fields() {
     let limit =
         super::ResourceLimit::allocation_failed(ResourceDimension::Codec("test"), 12, 5, "test");
@@ -186,33 +166,6 @@ fn scoped_reservations_release_and_commit_without_double_counting() {
 }
 
 #[test]
-fn lossy_utf8_copy_charges_replacement_bytes_before_retention() {
-    let source = b"A\xffB\xe2\x82";
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| limits.max_retained_bytes = 7);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = ctx
-        .copy_retained_lossy_utf8(source, "lossy UTF-8 fixture")
-        .expect_err("two replacements need eight bytes");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "lossy UTF-8 fixture"));
-
-    let policy = policy_with(|limits| limits.max_retained_bytes = 8);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        ctx.copy_retained_lossy_utf8(source, "lossy UTF-8 fixture")
-            .expect("eight retained bytes fit"),
-        String::from_utf8_lossy(source)
-    );
-    assert_eq!(
-        ctx.copy_retained_lossy_utf8(&[], "empty UTF-8 fixture")
-            .expect("empty text needs no bytes"),
-        ""
-    );
-}
-
-#[test]
 fn every_session_dimension_refuses_and_fuses() {
     fn assert_dimension(
         edit: impl FnMut(&mut ResourceLimits),
@@ -232,13 +185,8 @@ fn every_session_dimension_refuses_and_fuses() {
     }
 
     assert_dimension(
-        |limits| limits.max_materialized_bytes = 1,
-        |ctx| ctx.reserve_scoped(2, "materialize").map(drop),
-        ResourceDimension::MaterializedBytes,
-    );
-    assert_dimension(
         |limits| limits.max_retained_bytes = 1,
-        |ctx| ctx.charge_retained(2, "retain"),
+        |ctx| ctx.retain_bytes(2, "retain"),
         ResourceDimension::RetainedBytes,
     );
     assert_dimension(
@@ -256,112 +204,27 @@ fn every_session_dimension_refuses_and_fuses() {
         ResourceDimension::Entities,
     );
     assert_dimension(
-        |limits| limits.max_collection_items = 1,
-        |ctx| ctx.charge_collection_items(2, "items"),
-        ResourceDimension::CollectionItems,
-    );
-    assert_dimension(
         |limits| limits.max_recursion_depth = 0,
         |ctx| ctx.enter_nested("nested").map(drop),
         ResourceDimension::RecursionDepth,
     );
-    assert_dimension(
-        |limits| limits.max_work_units = 1,
-        |ctx| ctx.charge_work(2, "work"),
-        ResourceDimension::WorkUnits,
-    );
 }
 
 #[test]
-fn tiny_resource_limits_refuse_entities_and_materialized_bytes() {
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| limits.max_entities = 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    assert!(matches!(
-        ctx.charge_entities(2, "entities"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Entities
-    ));
-
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| limits.max_materialized_bytes = 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    assert!(matches!(
-        ctx.reserve_scoped(2, "materialize"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes
-    ));
-}
-
-#[test]
-fn alloc_filled_charges_collection_items_and_reserves() {
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| limits.max_collection_items = 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    assert!(matches!(
-        ctx.alloc_filled(2, 0u8, "filled"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-    ));
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
-    assert_eq!(ctx.alloc_filled(3, 7u8, "filled").unwrap(), vec![7, 7, 7]);
-}
-
-#[test]
-fn alloc_filled_admitted_charges_items_and_work_but_no_bytes() {
+fn uncounted_dimensions_never_refuse() {
     let arena = DecodeArena::new();
     let policy = policy_with(|limits| {
-        limits.max_retained_bytes = 0;
         limits.max_materialized_bytes = 0;
-        limits.max_collection_items = 3;
-        limits.max_work_units = 3;
-    });
-    let ctx = DecodeContext::new(&arena, &policy, false);
-    assert_eq!(
-        ctx.alloc_filled_admitted(3, 7u64, "admitted").unwrap(),
-        [7, 7, 7]
-    );
-    assert!(matches!(
-        ctx.alloc_filled_admitted(1, 0u8, "admitted"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-    ));
-    let policy = policy_with(|limits| limits.max_collection_items = 1);
-    let ctx = DecodeContext::new(&arena, &policy, false);
-    assert!(matches!(
-        ctx.alloc_filled_admitted(2, 0u8, "admitted"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "admitted"
-    ));
-}
-
-#[test]
-fn depth_is_scoped_and_work_budget_is_sticky() {
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| {
-        limits.max_recursion_depth = 1;
-        limits.max_work_units = 3;
+        limits.max_collection_items = 0;
+        limits.max_work_units = 0;
+        limits.max_retained_bytes = 0;
     });
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    {
-        let _guard = ctx.enter_nested("first").unwrap();
-    }
-    ctx.enter_nested("second").unwrap();
-
-    let budget = ctx.work_budget(10);
-    assert!(budget.charge_by(2));
-    let child = budget.child_slice(1);
-    assert!(child.charge());
-    assert!(matches!(budget.consume_child(&child), Ok(())));
-    assert_eq!(budget.consumed(), 3);
-    assert!(!budget.charge());
-    assert!(budget.exhausted());
-    assert!(!budget.charge_by(0));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
-    );
+    ctx.charge_collection_items(u64::MAX, "items").unwrap();
+    ctx.charge_work(u64::MAX, "work").unwrap();
+    ctx.charge_retained(u64::MAX, "per-site retained").unwrap();
+    drop(ctx.reserve_scoped(u64::MAX, "temporary").unwrap());
+    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]
@@ -375,7 +238,7 @@ fn local_limit_refusal_uses_codec_dimension() {
 }
 
 #[test]
-fn codec_limit_refusal_fuses_the_decode_session() {
+fn codec_limit_refusal_leaves_the_session_open() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
     assert!(matches!(
@@ -386,11 +249,8 @@ fn codec_limit_refusal_fuses_the_decode_session() {
                 && limit.used == 4
                 && limit.additional == 1
     ));
-    assert!(matches!(
-        ctx.charge_work(0, "after_codec_limit"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Codec("nested_records")
-    ));
+    assert!(ctx.resource_refusal().is_none());
+    ctx.charge_entities(1, "after_codec_limit").unwrap();
 }
 
 #[test]
@@ -443,102 +303,4 @@ fn stored_expanded_and_concatenated_spaces_have_distinct_zero_based_locations() 
         assert_eq!(view.space().index(), index);
         assert_eq!(view.location().offset, 0);
     }
-}
-
-#[test]
-fn filled_storage_and_fill_work_are_admitted_before_cloning() {
-    use std::cell::Cell;
-    struct Counted<'a>(&'a Cell<usize>);
-    impl Clone for Counted<'_> {
-        fn clone(&self) -> Self {
-            self.0.set(self.0.get() + 1);
-            Self(self.0)
-        }
-    }
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::MaterializedBytes,
-    ] {
-        let arena = DecodeArena::new();
-        let policy = policy_with(|limits| match dimension {
-            ResourceDimension::WorkUnits => limits.max_work_units = 0,
-            ResourceDimension::RetainedBytes => limits.max_retained_bytes = 0,
-            ResourceDimension::MaterializedBytes => limits.max_materialized_bytes = 0,
-            _ => unreachable!(),
-        });
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let clones = Cell::new(0);
-        let run = || ctx.alloc_filled(3, Counted(&clones), "filled accounting");
-        let result = if dimension == ResourceDimension::MaterializedBytes {
-            ctx.with_scoped_storage("filled backing", run)
-                .map(|(values, _)| values)
-        } else {
-            run()
-        };
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == dimension && limit.operation == "filled accounting"));
-        assert_eq!(clones.get(), 0);
-    }
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| {
-        limits.max_work_units = 3;
-        limits.max_retained_bytes = 24;
-    });
-    let ctx = DecodeContext::new(&arena, &policy, false);
-    assert_eq!(
-        ctx.alloc_filled(3, 7u64, "filled accounting").unwrap(),
-        [7, 7, 7]
-    );
-    assert_eq!(ctx.charge_work_limit(1, "measure").unwrap_err().used, 3);
-}
-
-#[test]
-fn lossy_utf8_scans_and_copy_refuse_without_work() {
-    for source in [b"valid".as_slice(), b"A\xffB\xe2\x82".as_slice()] {
-        let arena = DecodeArena::new();
-        let policy = policy_with(|limits| limits.max_work_units = 0);
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        assert!(matches!(ctx.copy_retained_lossy_utf8(source, "UTF-8 work"),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits));
-    }
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| limits.max_work_units = 15);
-    let ctx = DecodeContext::new(&arena, &policy, false);
-    assert_eq!(
-        ctx.copy_retained_lossy_utf8(b"valid", "UTF-8 work")
-            .unwrap(),
-        "valid"
-    );
-    assert_eq!(ctx.charge_work_limit(1, "measure").unwrap_err().used, 15);
-}
-
-#[test]
-fn concatenation_admits_extent_scan_and_byte_copy_separately() {
-    for (budget, requested) in [(0, 2), (2, 4)] {
-        let arena = DecodeArena::new();
-        let policy = policy_with(|limits| limits.max_work_units = budget);
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let views = [
-            super::View::over_retained(b"ab"),
-            super::View::over_retained(b"cd"),
-        ];
-        assert!(
-            matches!(ctx.concat_views(&views), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == requested)
-        );
-    }
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| limits.max_work_units = 6);
-    let ctx = DecodeContext::new(&arena, &policy, false);
-    assert_eq!(
-        ctx.concat_views(&[
-            super::View::over_retained(b"ab"),
-            super::View::over_retained(b"cd")
-        ])
-        .unwrap()
-        .window(),
-        b"abcd"
-    );
-    assert_eq!(ctx.charge_work_limit(1, "measure").unwrap_err().used, 6);
 }

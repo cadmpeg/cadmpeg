@@ -912,40 +912,6 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 }
 
 #[test]
-fn generated_file_parameter_layout_scales_with_the_parameter_text() {
-    // The layout context reads the parameter text itself, and one byte holds
-    // at most one field, so the input-proportional item allowance always
-    // covers the fields. A stream past the allowance base, the old fixed
-    // ceiling, still encodes.
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (empty, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty input fits the policy");
-    let fields =
-        usize::try_from(empty.collection_items_allowance()).expect("allowance base fits usize") + 1;
-    let mut parameter_body = vec![b','; fields];
-    parameter_body.push(b';');
-    let large = super::Entity {
-        type_code: 110,
-        form: 0,
-        label: "TEST",
-        status: super::EntityStatus::Independent,
-        parameter_body,
-        transform: None,
-    };
-    assert!(encode_file(
-        &[large],
-        &std::collections::BTreeMap::new(),
-        IgesVersion::V5_3,
-        0.001,
-    )
-    .is_ok());
-}
-
-#[test]
 fn generated_parameter_layout_uses_its_own_input_allowance() {
     let payload_len = 20 * 1024 * 1024;
     let mut parameter_body = format!("{payload_len}H").into_bytes();

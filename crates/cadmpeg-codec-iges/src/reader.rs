@@ -579,11 +579,7 @@ pub(crate) fn decode(
     representation: Representation,
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
-    let output = usize::try_from(ctx.collection_items_allowance())
-        .ok()
-        .map_or(native::MAX_PRODUCT_OCCURRENCES, |policy| {
-            policy.min(native::MAX_PRODUCT_OCCURRENCES)
-        });
+    let output = native::MAX_PRODUCT_OCCURRENCES;
     let depth = usize::try_from(ctx.policy().limits.max_recursion_depth)
         .ok()
         .map_or(native::MAX_PRODUCT_OCCURRENCE_DEPTH, |policy| {

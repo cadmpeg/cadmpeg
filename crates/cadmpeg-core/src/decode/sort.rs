@@ -75,26 +75,8 @@ impl DecodeContext<'_> {
 #[cfg(test)]
 mod tests {
     use super::DecodeContext;
-    use crate::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use crate::decode::{DecodeArena, DecodePolicy};
     use crate::CodecError;
-
-    #[test]
-    fn charged_unstable_sort_work_refusal_preserves_input() {
-        let mut values = [3u64, 1, 2];
-        let expected = values;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Three elements, eight bytes each, three levels, eight work units per byte.
-        policy.limits.max_work_units = 3 + 3 * 8 * 3 * 8 - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        assert!(matches!(
-            ctx.sort_unstable_by(&mut values, Ord::cmp, |_| 0, "test unstable sort"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-        ));
-        assert_eq!(values, expected);
-    }
 
     #[test]
     fn charged_unstable_sort_orders_values_without_scratch() {

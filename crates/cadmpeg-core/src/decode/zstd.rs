@@ -258,26 +258,4 @@ mod tests {
         ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse workspace")
             .expect("released workspace");
     }
-
-    #[test]
-    fn zstd_workspace_and_work_limits_remain_typed() {
-        let bytes = zstd::bulk::compress(b"payload", 0).expect("frame");
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            if dimension == ResourceDimension::MaterializedBytes {
-                policy.limits.max_materialized_bytes = 0;
-            } else {
-                policy.limits.max_work_units = 0;
-            }
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-            assert!(
-                matches!(ctx.open_zstd(root), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-            );
-        }
-    }
 }

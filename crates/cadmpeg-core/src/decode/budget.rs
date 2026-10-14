@@ -8,9 +8,8 @@ use crate::CodecError;
 
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
-    DecodePolicy, COLLECTION_ITEMS_BASE, COLLECTION_ITEMS_PER_INPUT_BYTE, DECOMPRESSED_TOTAL_BASE,
-    DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE, MATERIALIZED_PER_INPUT_BYTE,
-    RETAINED_BASE, RETAINED_PER_INPUT_BYTE, WORK_UNITS_BASE, WORK_UNITS_PER_INPUT_BYTE,
+    DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
+    MATERIALIZED_PER_INPUT_BYTE, RETAINED_BASE, RETAINED_PER_INPUT_BYTE,
 };
 use super::view::u64_from_index;
 
@@ -22,8 +21,6 @@ pub(super) struct DecodeBudget {
     decompressed: Cell<u64>,
     materialized: Cell<u64>,
     retained: Cell<u64>,
-    /// Storage charged while a storage scope is active.
-    scope: Cell<Option<ScopedTally>>,
     entities: Cell<u64>,
     collection_items: Cell<u64>,
     recursion_depth: Cell<u64>,
@@ -44,7 +41,6 @@ impl DecodeBudget {
             decompressed: Cell::new(0),
             materialized: Cell::new(0),
             retained: Cell::new(0),
-            scope: Cell::new(None),
             entities: Cell::new(0),
             collection_items: Cell::new(0),
             recursion_depth: Cell::new(0),
@@ -135,22 +131,6 @@ impl DecodeBudget {
         )
     }
 
-    pub(super) fn collection_items_allowance(&self) -> u64 {
-        self.proportional_allowance(
-            self.policy.limits.max_collection_items,
-            COLLECTION_ITEMS_BASE,
-            COLLECTION_ITEMS_PER_INPUT_BYTE,
-        )
-    }
-
-    pub(super) fn work_allowance(&self) -> u64 {
-        self.proportional_allowance(
-            self.policy.limits.max_work_units,
-            WORK_UNITS_BASE,
-            WORK_UNITS_PER_INPUT_BYTE,
-        )
-    }
-
     fn charge(
         &self,
         dimension: ResourceDimension,
@@ -161,6 +141,9 @@ impl DecodeBudget {
     ) -> Result<(), ResourceLimit> {
         if let Some(resource) = self.fuse.get() {
             return Err(resource);
+        }
+        if !dimension.is_counted() {
+            return Ok(());
         }
         let before = used.get();
         #[cfg(feature = "test-support")]
@@ -246,11 +229,7 @@ impl DecodeBudget {
             bytes,
             operation,
         )?;
-        Ok(ScopedReservation {
-            budget: self,
-            tally: ScopedTally { bytes, items: 0 },
-            operation,
-        })
+        Ok(ScopedReservation { budget: self })
     }
 
     /// Report allocator refusal after a scoped-byte reservation was recorded.
@@ -272,7 +251,7 @@ impl DecodeBudget {
             ResourceDimension::MaterializedBytes,
             ResourceFailure::AllocationFailed,
             self.materialized_allowance(),
-            self.materialized.get() - charged,
+            self.materialized.get(),
             charged,
             operation,
         )
@@ -300,33 +279,21 @@ impl DecodeBudget {
 
     pub(super) fn charge_retained_limit(
         &self,
+        _bytes: u64,
+        _operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        // Retained bytes count only at output chokepoints (`retain_bytes`).
+        // This per-site charge remains until its callers are removed.
+        self.fuse.get().map_or(Ok(()), Err)
+    }
+
+    /// Charges bytes that decoded output keeps for the rest of the session:
+    /// native record text, arena buffers, and retained source byte copies.
+    pub(super) fn retain_bytes(
+        &self,
         bytes: u64,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        if let Some(tally) = self.scope.get() {
-            let total = tally.bytes.checked_add(bytes).ok_or_else(|| {
-                self.refuse_limit(
-                    ResourceDimension::MaterializedBytes,
-                    ResourceFailure::BudgetExceeded,
-                    self.materialized_allowance(),
-                    tally.bytes,
-                    bytes,
-                    operation,
-                )
-            })?;
-            self.charge(
-                ResourceDimension::MaterializedBytes,
-                &self.materialized,
-                self.materialized_allowance(),
-                bytes,
-                operation,
-            )?;
-            self.scope.set(Some(ScopedTally {
-                bytes: total,
-                ..tally
-            }));
-            return Ok(());
-        }
         self.charge(
             ResourceDimension::RetainedBytes,
             &self.retained,
@@ -337,19 +304,11 @@ impl DecodeBudget {
     }
 
     pub(super) fn retained_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
-        let (dimension, limit, used) = if self.scope.get().is_some() {
-            (
-                ResourceDimension::MaterializedBytes,
-                self.materialized_allowance(),
-                self.materialized.get(),
-            )
-        } else {
-            (
-                ResourceDimension::RetainedBytes,
-                self.retained_allowance(),
-                self.retained.get(),
-            )
-        };
+        let (dimension, limit, used) = (
+            ResourceDimension::RetainedBytes,
+            self.retained_allowance(),
+            self.retained.get(),
+        );
         self.refuse_limit(
             dimension,
             ResourceFailure::BudgetExceeded,
@@ -375,19 +334,11 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> ResourceLimit {
-        let (dimension, current, limit) = if self.scope.get().is_some() {
-            (
-                ResourceDimension::MaterializedBytes,
-                self.materialized.get(),
-                self.materialized_allowance(),
-            )
-        } else {
-            (
-                ResourceDimension::RetainedBytes,
-                self.retained.get(),
-                self.retained_allowance(),
-            )
-        };
+        let (dimension, current, limit) = (
+            ResourceDimension::RetainedBytes,
+            self.retained.get(),
+            self.retained_allowance(),
+        );
         let prior = match current.checked_sub(charged) {
             Some(prior) => prior,
             None => current,
@@ -434,44 +385,10 @@ impl DecodeBudget {
         self.charge(
             ResourceDimension::CollectionItems,
             &self.collection_items,
-            self.collection_items_allowance(),
+            u64::MAX,
             count,
             operation,
-        )?;
-        if let Some(tally) = self.scope.get() {
-            self.scope
-                .set(Some(tally.with_items(count, self, operation)?));
-        }
-        Ok(())
-    }
-
-    /// Releases scoped items when their temporary collections are dropped.
-    fn release_collection_items(&self, items: u64, operation: &'static str) {
-        let Some(remaining) = self.collection_items.get().checked_sub(items) else {
-            self.refuse_limit(
-                ResourceDimension::CollectionItems,
-                ResourceFailure::BudgetExceeded,
-                self.collection_items_allowance(),
-                self.collection_items.get(),
-                items,
-                operation,
-            );
-            return;
-        };
-        self.collection_items.set(remaining);
-    }
-
-    /// Moves committed items into the enclosing scope, or keeps them for the session.
-    fn adopt_collection_items(
-        &self,
-        items: u64,
-        operation: &'static str,
-    ) -> Result<(), ResourceLimit> {
-        if let Some(tally) = self.scope.get() {
-            self.scope
-                .set(Some(tally.with_items(items, self, operation)?));
-        }
-        Ok(())
+        )
     }
 
     pub(super) fn collection_allocation_failed(
@@ -496,39 +413,11 @@ impl DecodeBudget {
         self.refuse_limit(
             ResourceDimension::CollectionItems,
             ResourceFailure::AllocationFailed,
-            self.collection_items_allowance(),
+            u64::MAX,
             prior,
             charged,
             operation,
         )
-    }
-
-    /// Runs `build` with no active storage scope, so its charges stay
-    /// session-retained even when an enclosing scope is active.
-    pub(super) fn session_storage<T>(&self, build: impl FnOnce() -> T) -> T {
-        struct Restore<'a> {
-            scope: &'a Cell<Option<ScopedTally>>,
-            prior: Option<ScopedTally>,
-        }
-        impl Drop for Restore<'_> {
-            fn drop(&mut self) {
-                self.scope.set(self.prior);
-            }
-        }
-        let _restore = Restore {
-            scope: &self.scope,
-            prior: self.scope.replace(None),
-        };
-        build()
-    }
-
-    pub(super) fn storage_scope(&self, operation: &'static str) -> StorageScope<'_> {
-        let prior = self.scope.replace(Some(ScopedTally::default()));
-        StorageScope {
-            budget: self,
-            prior,
-            operation,
-        }
     }
 
     pub(super) fn enter_nested(
@@ -561,190 +450,59 @@ impl DecodeBudget {
         self.charge(
             ResourceDimension::WorkUnits,
             &self.work,
-            self.work_allowance(),
+            u64::MAX,
             units,
             operation,
         )
     }
 }
 
-pub(super) struct StorageScope<'a> {
-    budget: &'a DecodeBudget,
-    prior: Option<ScopedTally>,
-    operation: &'static str,
-}
-
-impl<'a> StorageScope<'a> {
-    pub(super) fn finish(self) -> ScopedReservation<'a> {
-        let tally = self
-            .budget
-            .scope
-            .replace(Some(ScopedTally::default()))
-            .unwrap_or_default();
-        ScopedReservation {
-            budget: self.budget,
-            tally,
-            operation: self.operation,
-        }
-    }
-}
-
-impl Drop for StorageScope<'_> {
-    fn drop(&mut self) {
-        let tally = self.budget.scope.replace(self.prior).unwrap_or_default();
-        drop(ScopedReservation {
-            budget: self.budget,
-            tally,
-            operation: self.operation,
-        });
-    }
-}
-
-/// Bytes and collection items charged inside one storage scope.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct ScopedTally {
-    bytes: u64,
-    items: u64,
-}
-
-impl ScopedTally {
-    fn with_items(
-        self,
-        items: u64,
-        budget: &DecodeBudget,
-        operation: &'static str,
-    ) -> Result<Self, ResourceLimit> {
-        let total = self.items.checked_add(items).ok_or_else(|| {
-            budget.refuse_limit(
-                ResourceDimension::CollectionItems,
-                ResourceFailure::BudgetExceeded,
-                budget.collection_items_allowance(),
-                self.items,
-                items,
-                operation,
-            )
-        })?;
-        Ok(Self {
-            items: total,
-            ..self
-        })
-    }
-}
-
-/// A temporary materialization charged until it is dropped or committed.
-///
-/// The reservation holds materialized bytes and collection items. Dropping it
-/// releases both; committing it keeps the items and moves the bytes to
-/// session-retained storage.
+/// A temporary-storage reservation. Temporary storage is no longer counted;
+/// the type remains until its callers are removed.
 #[derive(Debug)]
 pub struct ScopedReservation<'a> {
     budget: &'a DecodeBudget,
-    tally: ScopedTally,
-    operation: &'static str,
 }
 
 impl ScopedReservation<'_> {
-    /// Account copied storage in this live temporary reservation.
+    /// Runs `build`; temporary storage is not counted.
     pub fn with_storage<T, E: From<CodecError>>(
         &mut self,
         build: impl FnOnce() -> Result<T, E>,
     ) -> Result<T, E> {
-        self.with_storage_error(build, |limit| E::from(CodecError::ResourceLimit(limit)))
+        build()
     }
 
-    /// Account temporary storage with a resource-only refusal channel.
+    /// Runs `build`; temporary storage is not counted.
     pub fn with_storage_limit<T>(
         &mut self,
         build: impl FnOnce() -> Result<T, ResourceLimit>,
     ) -> Result<T, ResourceLimit> {
-        self.with_storage_error(build, |limit| limit)
+        build()
     }
 
-    fn with_storage_error<T, E>(
-        &mut self,
-        build: impl FnOnce() -> Result<T, E>,
-        failure: impl FnOnce(ResourceLimit) -> E,
-    ) -> Result<T, E> {
-        let scope = self.budget.storage_scope(self.operation);
-        let value = build();
-        let mut storage = scope.finish();
-        let Some(bytes) = self.tally.bytes.checked_add(storage.tally.bytes) else {
-            return value.and_then(|_| {
-                Err(failure(self.budget.refuse_limit(
-                    ResourceDimension::MaterializedBytes,
-                    ResourceFailure::BudgetExceeded,
-                    self.budget.materialized_allowance(),
-                    self.tally.bytes,
-                    storage.tally.bytes,
-                    self.operation,
-                )))
-            });
-        };
-        let tally = match self
-            .tally
-            .with_items(storage.tally.items, self.budget, self.operation)
-        {
-            Ok(tally) => tally,
-            Err(limit) => return value.and_then(|_| Err(failure(limit))),
-        };
-        self.tally = ScopedTally { bytes, ..tally };
-        storage.tally = ScopedTally::default();
-        value
+    /// Temporary storage is not counted; reports an earlier session refusal.
+    pub fn grow_limit(&mut self, _bytes: u64) -> Result<(), ResourceLimit> {
+        self.budget.fused().map_or(Ok(()), Err)
     }
 
-    /// Increases live temporary storage and returns the resource refusal.
-    pub fn grow_limit(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
-        self.budget.charge(
-            ResourceDimension::MaterializedBytes,
-            &self.budget.materialized,
-            self.budget.materialized_allowance(),
-            bytes,
-            self.operation,
-        )?;
-        self.tally.bytes = self.tally.bytes.checked_add(bytes).ok_or_else(|| {
-            self.budget.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                self.budget.materialized_allowance(),
-                self.tally.bytes,
-                bytes,
-                self.operation,
-            )
-        })?;
-        Ok(())
-    }
-
-    /// Increases the live temporary reservation.
+    /// Temporary storage is not counted; reports an earlier session refusal.
     pub fn grow(&mut self, bytes: u64) -> Result<(), CodecError> {
         self.grow_limit(bytes).map_err(Into::into)
     }
 
-    /// Converts the temporary reservation into session-retained storage.
-    pub fn commit(mut self) -> Result<(), CodecError> {
-        let items = std::mem::take(&mut self.tally.items);
-        self.budget.adopt_collection_items(items, self.operation)?;
+    /// Temporary storage is not counted; reports an earlier session refusal.
+    pub fn commit(self) -> Result<(), CodecError> {
         self.budget
-            .charge_retained(self.tally.bytes, self.operation)
+            .fused()
+            .map_or(Ok(()), |limit| Err(limit.into()))
     }
 }
 
+// Callers still end reservations with `drop`; the empty impl keeps those
+// calls meaningful until the reservations are removed.
 impl Drop for ScopedReservation<'_> {
-    fn drop(&mut self) {
-        self.budget
-            .release_collection_items(self.tally.items, self.operation);
-        let Some(remaining) = self.budget.materialized.get().checked_sub(self.tally.bytes) else {
-            self.budget.refuse_limit(
-                ResourceDimension::MaterializedBytes,
-                ResourceFailure::BudgetExceeded,
-                self.budget.materialized_allowance(),
-                self.budget.materialized.get(),
-                self.tally.bytes,
-                self.operation,
-            );
-            return;
-        };
-        self.budget.materialized.set(remaining);
-    }
+    fn drop(&mut self) {}
 }
 
 /// A guard holding one unit of recursive nesting depth.
@@ -1114,135 +872,6 @@ mod tests {
         descend(budget, depth + 1)
     }
 
-    fn scoped_items(budget: &DecodeBudget, items: u64) -> super::ScopedReservation<'_> {
-        let mut reservation = budget
-            .reserve_scoped_limit(0, "test scoped items")
-            .expect("empty reservation fits");
-        reservation
-            .with_storage_limit(|| budget.charge_collection_items_limit(items, "test scoped items"))
-            .expect("scoped items fit");
-        reservation
-    }
-
-    #[test]
-    fn item_and_work_allowances_scale_with_input_under_the_policy_ceiling() {
-        use crate::decode::policy::{
-            COLLECTION_ITEMS_BASE, COLLECTION_ITEMS_PER_INPUT_BYTE, WORK_UNITS_BASE,
-            WORK_UNITS_PER_INPUT_BYTE,
-        };
-        const INPUT: u64 = 20 * 1024 * 1024;
-        let small = DecodeBudget::new(DecodePolicy::desktop(), 0);
-        assert_eq!(small.collection_items_allowance(), COLLECTION_ITEMS_BASE);
-        assert_eq!(small.work_allowance(), WORK_UNITS_BASE);
-
-        let large = DecodeBudget::new(DecodePolicy::desktop(), INPUT);
-        assert_eq!(
-            large.collection_items_allowance(),
-            COLLECTION_ITEMS_BASE + COLLECTION_ITEMS_PER_INPUT_BYTE * INPUT
-        );
-        assert_eq!(
-            large.work_allowance(),
-            WORK_UNITS_BASE + WORK_UNITS_PER_INPUT_BYTE * INPUT
-        );
-
-        let service = DecodeBudget::new(DecodePolicy::service(), INPUT);
-        assert_eq!(
-            service.collection_items_allowance(),
-            DecodePolicy::service().limits.max_collection_items
-        );
-        assert_eq!(
-            service.work_allowance(),
-            DecodePolicy::service().limits.max_work_units
-        );
-    }
-
-    #[test]
-    fn the_item_allowance_is_the_refusal_limit() {
-        let budget = DecodeBudget::new(DecodePolicy::desktop(), 1);
-        let allowance = budget.collection_items_allowance();
-        let failure = budget
-            .charge_collection_items_limit(allowance + 1, "test items")
-            .expect_err("a charge past the allowance refuses");
-        assert_eq!(failure.limit, allowance);
-    }
-
-    #[test]
-    fn dropped_scope_releases_its_collection_items() {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 10;
-        let budget = DecodeBudget::new(policy, 1);
-        for _ in 0..3 {
-            drop(scoped_items(&budget, 8));
-            assert_eq!(budget.collection_items.get(), 0);
-        }
-        assert!(budget.fused().is_none());
-    }
-
-    #[test]
-    fn live_scoped_items_still_count_against_the_ceiling() {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 10;
-        let budget = DecodeBudget::new(policy, 1);
-        let live = scoped_items(&budget, 8);
-        let failure = budget
-            .charge_collection_items_limit(3, "test retained items")
-            .expect_err("live scoped items hold their slots");
-        assert_eq!(failure.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(failure.used, 8);
-        drop(live);
-    }
-
-    #[test]
-    fn committed_scope_keeps_items_for_the_session() {
-        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
-        scoped_items(&budget, 5)
-            .commit()
-            .expect("commit retains scoped storage");
-        assert_eq!(budget.collection_items.get(), 5);
-    }
-
-    #[test]
-    fn commit_inside_an_outer_scope_moves_items_to_that_scope() {
-        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
-        let mut outer = budget
-            .reserve_scoped_limit(0, "test outer scope")
-            .expect("empty reservation fits");
-        outer
-            .with_storage(|| scoped_items(&budget, 4).commit())
-            .expect("inner commit fits");
-        assert_eq!(budget.collection_items.get(), 4);
-        drop(outer);
-        assert_eq!(budget.collection_items.get(), 0);
-    }
-
-    #[test]
-    fn session_storage_inside_a_scope_stays_charged() {
-        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
-        let mut scope = budget
-            .reserve_scoped_limit(0, "test outer scope")
-            .expect("empty reservation fits");
-        scope
-            .with_storage_limit(|| {
-                budget.charge_collection_items_limit(2, "test scoped items")?;
-                budget.session_storage(|| {
-                    budget.charge_collection_items_limit(3, "test session items")
-                })
-            })
-            .expect("items fit");
-        drop(scope);
-        assert_eq!(budget.collection_items.get(), 3);
-    }
-
-    #[test]
-    fn unscoped_items_remain_charged_for_the_session() {
-        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
-        budget
-            .charge_collection_items_limit(6, "test retained items")
-            .expect("retained items fit");
-        drop(scoped_items(&budget, 3));
-        assert_eq!(budget.collection_items.get(), 6);
-    }
-
     #[test]
     fn recursion_guard_is_shared_and_bounded() {
         let budget = WorkBudget::new(10_000);
@@ -1293,45 +922,6 @@ mod tests {
         assert_eq!(budget.consumed(), 1);
         assert!(!budget.charge_by(work_units(0)));
         assert!(budget.exhausted());
-    }
-
-    #[test]
-    fn session_child_consumption_charges_the_session_once() {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_work_units = 1;
-        let session = DecodeBudget::new(policy, 1);
-        let parent = WorkBudget::for_session(2, &session);
-        let child = parent.session_child_slice(1);
-        assert!(child.charge());
-        assert_eq!(session.work.get(), 1);
-        assert!(parent.consume_child(&child).is_ok());
-        assert_eq!(parent.remaining(), 1);
-        assert_eq!(session.work.get(), 1);
-        assert!(session.fused().is_none());
-    }
-
-    #[test]
-    fn scaled_session_work_preserves_local_ceiling_and_child_accounting() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 8;
-        let session = DecodeBudget::new(policy, 1);
-        let parent = WorkBudget::for_session(3, &session)
-            .with_session_work_scale(std::num::NonZeroU64::new(4).expect("nonzero work scale"));
-        let child = parent.session_child_slice(1);
-        assert!(child.charge());
-        assert_eq!(session.work.get(), 4);
-        assert!(parent.consume_child(&child).is_ok());
-        assert_eq!(parent.remaining(), 2);
-        assert_eq!(session.work.get(), 4);
-        assert!(parent.charge());
-        assert_eq!(parent.remaining(), 1);
-        assert_eq!(session.work.get(), 8);
-        assert!(!parent.charge());
-        assert!(parent.exhausted());
-        let failure = session.fused().expect("session work refusal");
-        assert_eq!(failure.dimension, super::ResourceDimension::WorkUnits);
-        assert_eq!(failure.used, 8);
-        assert_eq!(failure.additional, 4);
     }
 
     #[test]

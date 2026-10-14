@@ -223,8 +223,6 @@ pub(super) fn decode(
             ctx,
         )?;
     }
-    reservations.unresolved_placements =
-        ctx.reserve_scoped(0, "step_tessellation_unresolved_placements")?;
     for id in unresolved_containers {
         let Some(record) = exchange.records().get(&id) else {
             continue;
@@ -239,8 +237,6 @@ pub(super) fn decode(
             ctx,
         )?;
     }
-    reservations.unresolved_containers =
-        ctx.reserve_scoped(0, "step_tessellation_unresolved_containers")?;
     for (&item, placements) in &item_placements {
         if !item_bodies.get(&item).is_some_and(BTreeSet::is_empty) {
             continue;

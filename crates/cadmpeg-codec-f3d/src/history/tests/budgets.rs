@@ -889,7 +889,6 @@ fn decode_with_limits(
         bytes,
         "history",
         cadmpeg_asm::kernel_header::RefWidth::Four,
-        &policy.limits,
     )
     .unwrap_err()
 }
@@ -981,7 +980,6 @@ fn history_delta_offsets_refuse_collection_limit() {
         &bytes,
         "history",
         cadmpeg_asm::kernel_header::RefWidth::Four,
-        &policy.limits,
     )
     .unwrap_err();
     assert!(matches!(
@@ -992,45 +990,20 @@ fn history_delta_offsets_refuse_collection_limit() {
 }
 
 #[test]
-fn history_binding_work_budget_charges_state_record_cross_product() {
-    for limits in [
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-        cadmpeg_core::decode::ResourceLimits::service(),
-    ] {
-        let ceiling = limits.max_work_units.min(HISTORY_BINDING_MAX_WORK_UNITS);
-        let entries = usize::try_from(ceiling / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
-            .expect("entry budget fits usize");
-        assert_eq!(
-            complete_table_binding_cost([entries], &limits),
-            TableBindingCost::Admitted
-        );
-        assert_eq!(
-            complete_table_binding_cost([entries + 1], &limits),
-            TableBindingCost::Exceeded
-        );
-        assert_eq!(
-            complete_table_binding_cost([usize::MAX, 1], &limits),
-            TableBindingCost::Exceeded
-        );
-    }
-}
-
-#[test]
-fn history_complete_table_binding_skips_over_materialized_limit() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::service();
-    limits.max_materialized_bytes = super::super::HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY - 1;
+fn history_binding_estimate_skips_past_the_codec_bound() {
+    let entries =
+        usize::try_from(HISTORY_BINDING_MAX_WORK_UNITS / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
+            .expect("entry bound fits usize");
     assert_eq!(
-        complete_table_binding_cost([1], &limits),
+        complete_table_binding_cost([entries]),
+        TableBindingCost::Admitted
+    );
+    assert_eq!(
+        complete_table_binding_cost([entries, 1]),
         TableBindingCost::Exceeded
     );
-}
-
-#[test]
-fn history_complete_table_binding_skips_over_work_limit() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::service();
-    limits.max_work_units = HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY - 1;
     assert_eq!(
-        complete_table_binding_cost([1], &limits),
+        complete_table_binding_cost([usize::MAX, 1]),
         TableBindingCost::Exceeded
     );
 }

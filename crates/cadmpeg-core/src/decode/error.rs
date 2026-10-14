@@ -28,6 +28,18 @@ pub enum ResourceDimension {
     Codec(&'static str),
 }
 
+impl ResourceDimension {
+    /// Whether the session budget counts this dimension. Collection items,
+    /// work units, and materialized bytes are no longer counted; their
+    /// variants remain until every caller stops naming them.
+    pub(crate) const fn is_counted(self) -> bool {
+        !matches!(
+            self,
+            Self::CollectionItems | Self::WorkUnits | Self::MaterializedBytes
+        )
+    }
+}
+
 /// Why a resource request failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceFailure {
