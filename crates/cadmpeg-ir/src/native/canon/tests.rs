@@ -600,16 +600,23 @@ fn raw_native_replay_text_uses_scoped_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(json.len()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
+    let error = record
+        .serialize(CanonValue::for_record(&limited))
+        .err()
+        .unwrap()
+        .into_native(&limited);
     assert!(
         matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "serialize native record")
     );
     policy.limits.max_materialized_bytes += 1;
     let (exact, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let stored = super::super::NativeRecord::from_typed_for_decode(&exact, &record, None).unwrap();
-    assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
+    let stored = record
+        .serialize(CanonValue::for_record(&exact))
+        .ok()
+        .unwrap()
+        .into_value();
+    assert_eq!(stored["raw"], serde_json::json!([["retained"]]));
     let _released = exact
         .reserve_scoped(
             policy.limits.max_materialized_bytes,

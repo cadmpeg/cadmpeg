@@ -37,11 +37,11 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// Deepest container chain one native record field may hold.
 ///
 /// Every descent of a stored field recurses: `serde_json::from_value` carries
-/// no recursion counter, [`replay::emit`] starts one parse per container,
-/// `canon::CanonValue` enters one frame per container, and `Serialize`,
-/// [`NativeRecord::field`] and `Drop` walk the
-/// stored `Value` itself. The bound is therefore stated where a field enters
-/// the record, so every reader of a constructed record is already inside it.
+/// no recursion counter, a read of the stored text lifts the parser's limit,
+/// [`replay::emit`] starts one parse per container, and `canon::CanonValue`
+/// enters one frame per container. The bound is therefore stated where a
+/// field enters the record, so every reader of a constructed record is
+/// already inside it.
 /// It is twice the 128 containers a `serde_json` text parse admits, so every
 /// field a CADIR document can state is read back.
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
@@ -271,17 +271,19 @@ impl NativeField {
 /// [`NativeRecord::from_identity`], whose fields cannot nest. Readers of a
 /// stored record therefore descend a bounded value and measure nothing.
 ///
-/// The record holds the value it was constructed from. `serde_json::Map` is
-/// key-sorted, so the stored map is already in canonical order and the record
-/// renders its canonical text — `id` first, then the other keys sorted — on
-/// demand through [`Serialize`]. Reading a field is a map lookup and has no
-/// failing branch.
+/// The record holds its canonical compact JSON text — `id` first, then the
+/// codec-owned fields by key — and not a parsed [`Value`] tree. A `Value`
+/// tree spends a separately allocated map node, key string and enum cell on
+/// every member at every depth, an order of magnitude more than the text.
+/// Decoded files retain hundreds of thousands of native records with nested
+/// arrays, so a reader parses the members it needs on demand.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeRecord {
     /// Globally unique record identity, serialized as the leading `id` member.
     id: crate::ids::Identity,
-    /// Codec-owned fields in canonical key order, never holding `id`.
-    fields: Map<String, Value>,
+    /// Canonical compact JSON object text: `id` first, then the codec-owned
+    /// fields in key order.
+    json: Box<str>,
 }
 
 impl NativeRecord {
@@ -305,7 +307,8 @@ impl NativeRecord {
                 });
             }
         }
-        Ok(Self { id, fields })
+        let json = render(&id, &fields);
+        Ok(Self { id, json })
     }
 
     /// Build a record from an admitted identity and fields that do not nest.
@@ -324,7 +327,8 @@ impl NativeRecord {
                 stored.insert(name, value.into_value());
             }
         }
-        Self { id, fields: stored }
+        let json = render(&id, &stored);
+        Self { id, json }
     }
 
     /// Build a record by serializing one codec-owned typed record.
@@ -348,25 +352,33 @@ impl NativeRecord {
         record: &T,
         sink: Option<&dyn canon::ByteSink>,
     ) -> Result<Self, NativeConvertError> {
-        let serialized = record.serialize(canon::CanonValue::for_record_with_sink(ctx, sink));
-        ctx.charge_work(0, "construct canonical native value")?;
-        let serialized = serialized.map_err(|error| error.into_native(ctx))?;
-        let canon::Node::Object(mut fields) = serialized else {
-            return Err(NativeConvertError::NonObject);
-        };
-        let Some(Value::String(id)) = fields.remove("id") else {
-            return Err(NativeConvertError::MissingId);
-        };
-        ctx.charge_work(u64_from_index(id.len()), "admit canonical native identity")?;
-        Ok(Self {
-            id: crate::ids::Identity::new(id)?,
-            fields,
-        })
+        // The canonical value tree is temporary: the record keeps only the
+        // text rendered from it, charged once the text exists.
+        let ((id, fields), _tree) =
+            ctx.with_scoped_storage("construct canonical native record", || {
+                let serialized =
+                    record.serialize(canon::CanonValue::for_record_with_sink(ctx, sink));
+                ctx.charge_work(0, "construct canonical native value")?;
+                let serialized = serialized.map_err(|error| error.into_native(ctx))?;
+                let canon::Node::Object(mut fields) = serialized else {
+                    return Err(NativeConvertError::NonObject);
+                };
+                let Some(Value::String(id)) = fields.remove("id") else {
+                    return Err(NativeConvertError::MissingId);
+                };
+                ctx.charge_work(u64_from_index(id.len()), "admit canonical native identity")?;
+                Ok((crate::ids::Identity::new(id)?, fields))
+            })?;
+        let json = render(&id, &fields);
+        ctx.charge_retained(u64_from_index(json.len()), "serialize native record")?;
+        Ok(Self { id, json })
     }
 
     pub(crate) fn digest_unknown(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let operation = "validate digest unknown fields";
-        for key in self.fields.keys() {
+        ctx.charge_work(u64_from_index(self.json.len()), operation)?;
+        let fields = self.fields();
+        for key in fields.keys() {
             ctx.charge_work(u64_from_index(key.len()), operation)?;
             if key != "links" {
                 return Err(CodecError::Malformed(ctx.format_retained(
@@ -376,12 +388,12 @@ impl NativeRecord {
             }
         }
         ctx.charge_work(
-            u64_from_index(self.fields.len())
+            u64_from_index(fields.len())
                 .checked_mul(5)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
             operation,
         )?;
-        let links = match self.fields.get("links") {
+        let links = match fields.get("links") {
             None => &[][..],
             Some(Value::Array(links)) => links.as_slice(),
             Some(_) => {
@@ -424,10 +436,17 @@ impl NativeRecord {
         self.id.as_str()
     }
 
-    /// Borrow the codec-owned fields, excluding `id`.
+    /// Parse the codec-owned fields, excluding `id`.
+    ///
+    /// Each call builds a new [`Value`] tree from the stored text. Read one
+    /// member with [`field`](Self::field).
     #[must_use]
-    pub fn fields(&self) -> &Map<String, Value> {
-        &self.fields
+    pub fn fields(&self) -> Map<String, Value> {
+        let Value::Object(mut fields) = read_stored(&self.json) else {
+            unreachable!("a native record stores object text")
+        };
+        fields.remove("id");
+        fields
     }
 
     /// Copy codec-owned fields through the caller's storage, work and depth account.
@@ -435,7 +454,7 @@ impl NativeRecord {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Map<String, Value>, NativeConvertError> {
-        Ok(copy::fields(ctx, &self.fields)?)
+        Ok(copy::fields(ctx, &self.fields())?)
     }
 
     /// Rewrite native identity fields through their typed owner's field walk.
@@ -448,8 +467,9 @@ impl NativeRecord {
         T: crate::schema::rewrite::typed::RewriteIdentities,
         F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
     {
+        let stored = self.fields();
         let projected = ctx.with_scoped_storage("rewrite typed native fields", || {
-            let mut fields = copy::fields(ctx, &self.fields)?;
+            let mut fields = copy::fields(ctx, &stored)?;
             let key = ctx.copy_retained_text("id", "copy native record identity field")?;
             let id = ctx.copy_retained_text(self.id.as_str(), "copy native record identity")?;
             copy::insert(ctx, &mut fields, key, Value::String(id))?;
@@ -484,12 +504,21 @@ impl NativeRecord {
         Ok(copy::fields(ctx, &projected.0)?)
     }
 
-    /// One codec-owned field.
+    /// Parse one codec-owned field.
     ///
+    /// Only the named member is built; the other members are scanned past.
     /// `id` is not a codec-owned field and is never answered here.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<Value> {
-        self.fields.get(name).cloned()
+        if name == "id" {
+            return None;
+        }
+        Some(read_stored(replay::member(&self.json, name)?.get()))
+    }
+
+    /// Byte length of the stored canonical record text.
+    pub(crate) fn text_len(&self) -> usize {
+        self.json.len()
     }
 
     fn to_typed<T: DeserializeOwned>(
@@ -510,7 +539,8 @@ impl NativeRecord {
         }
     }
 
-    /// Compare a typed serialization against this record without copying its payload.
+    /// Compare a typed serialization against this record's stored text
+    /// without parsing its payload.
     /// Finite-number, distinct-key, depth and caller resource admission still apply.
     pub fn matches_typed_for_decode<T: Serialize + ?Sized>(
         &self,
@@ -567,12 +597,43 @@ impl Serialize for NativeRecord {
     /// the same way it indents every other document entity. It writes the
     /// constructors' order: `id` first, then the codec-owned fields by key.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        replay::transcode(&self.json, serializer)
+    }
+}
+
+/// Parse stored record text, which is canonical JSON.
+fn read_stored(json: &str) -> Value {
+    match replay::value(json) {
+        Ok(value) => value,
+        Err(error) => unreachable!("stored native record text is canonical JSON: {error}"),
+    }
+}
+
+/// A record's members in canonical order: `id` first, then `fields` by key.
+struct RecordText<'a> {
+    id: &'a str,
+    fields: &'a Map<String, Value>,
+}
+
+impl Serialize for RecordText<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(self.fields.len() + 1))?;
-        serde::ser::SerializeMap::serialize_entry(&mut map, "id", self.id.as_str())?;
-        for (key, value) in &self.fields {
+        serde::ser::SerializeMap::serialize_entry(&mut map, "id", self.id)?;
+        for (key, value) in self.fields {
             serde::ser::SerializeMap::serialize_entry(&mut map, key, value)?;
         }
         serde::ser::SerializeMap::end(map)
+    }
+}
+
+/// Canonical compact text of one record.
+fn render(id: &crate::ids::Identity, fields: &Map<String, Value>) -> Box<str> {
+    match serde_json::to_string(&RecordText {
+        id: id.as_str(),
+        fields,
+    }) {
+        Ok(text) => text.into_boxed_str(),
+        Err(_) => unreachable!("a JSON object of JSON values always serializes"),
     }
 }
 
