@@ -116,10 +116,8 @@ pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2];
 pub(super) fn plane_coordinates(
     points: &[Point3],
     plane: (Point3, Vector3),
-) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
-    let Some(normal) = plane.1.unit() else {
-        return Ok(None);
-    };
+) -> Option<Vec<[f64; 2]>> {
+    let normal = plane.1.unit()?;
     let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs() {
         Vector3::new(1.0, 0.0, 0.0)
     } else if normal.y.abs() <= normal.z.abs() {
@@ -127,24 +125,20 @@ pub(super) fn plane_coordinates(
     } else {
         Vector3::new(0.0, 0.0, 1.0)
     };
-    let Some(u_axis) = normal.cross(reference).unit() else {
-        return Ok(None);
-    };
-    let Some(v_axis) = normal.cross(u_axis).unit() else {
-        return Ok(None);
-    };
+    let u_axis = normal.cross(reference).unit()?;
+    let v_axis = normal.cross(u_axis).unit()?;
     let coordinates = (0..points.len())
         .map(|index| {
             let point = points[index];
             let displacement = point.vector_from(plane.0);
-            Ok([displacement.dot(u_axis), displacement.dot(v_axis)])
+            [displacement.dot(u_axis), displacement.dot(v_axis)]
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    Ok(coordinates
+        .collect::<Vec<_>>();
+    coordinates
         .iter()
         .flatten()
         .all(|coordinate| coordinate.is_finite())
-        .then_some(coordinates))
+        .then_some(coordinates)
 }
 
 pub(super) fn linear_nurbs_parameters(
@@ -2572,10 +2566,8 @@ pub(crate) fn project_geometry(
         });
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
-        let shell = match Shell::new(shell, region, Vec::new(), wire_edges, free_vertices) {
-            Ok(shell) => shell,
-            Err(message) => return Err(CodecError::Malformed(format!("{message}"))),
-        };
+        let shell = Shell::new(shell, region, Vec::new(), wire_edges, free_vertices)
+            .map_err(CodecError::malformed)?;
         free_geometry_shell = Some(shell.id.clone());
         ir.model.shells.push(shell);
     }

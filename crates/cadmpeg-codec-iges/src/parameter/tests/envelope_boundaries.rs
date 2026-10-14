@@ -304,7 +304,6 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
             &BTreeMap::new(),
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert!(analysis.groups().is_none());
 }
@@ -356,7 +355,6 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
             &BTreeMap::new(),
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &BTreeMap::new())),
@@ -398,7 +396,6 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),

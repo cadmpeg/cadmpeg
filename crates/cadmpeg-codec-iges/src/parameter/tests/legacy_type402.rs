@@ -29,7 +29,6 @@ fn type430_entity_table_boundary_follows_solid_pointer_for_both_forms() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -79,13 +78,12 @@ fn type430_entity_table_boundary_suppresses_generic_recovery_for_malformed_span(
         .find(|candidate| candidate.token_start == 1)
         .copied()
         .expect("generic recovery candidate");
-    assert!({
-        groups_for_candidate_with_context(&record, &directory, generic_candidate)
-            .expect("test-only trailing pointer allocation")
-    }
-    .expect("generic candidate groups")
-    .fully_valid()
-    .is_some());
+    assert!(
+        { groups_for_candidate_with_context(&record, &directory, generic_candidate) }
+            .expect("generic candidate groups")
+            .fully_valid()
+            .is_some()
+    );
 
     let analysis = {
         analyze_trailing_pointer_groups_for_global_table_with_context(
@@ -93,7 +91,6 @@ fn type430_entity_table_boundary_suppresses_generic_recovery_for_malformed_span(
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -144,7 +141,6 @@ fn type430_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -170,7 +166,6 @@ fn type430_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),

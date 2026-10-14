@@ -168,16 +168,14 @@ fn has_forbidden_form_63_duplicate(points: &[Point3], resolution: f64) -> bool {
     false
 }
 
-fn has_form_63_self_intersection(points: &[Point3]) -> Result<bool, CodecError> {
+fn has_form_63_self_intersection(points: &[Point3]) -> bool {
     let planar_points = (0..points.len())
         .map(|index| {
             let point = points[index];
-            Ok([point.x, point.y])
+            [point.x, point.y]
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    Ok(super::geometry::planar_polyline_has_self_intersection(
-        &planar_points,
-    ))
+        .collect::<Vec<_>>();
+    super::geometry::planar_polyline_has_self_intersection(&planar_points)
 }
 
 pub(super) fn project(
@@ -372,13 +370,13 @@ pub(super) fn project(
                     Some(z) => z,
                     None => tuple[2],
                 };
-                Ok(Point3::new(
+                Point3::new(
                     tuple[0].get() * factor,
                     tuple[1].get() * factor,
                     z.get() * factor,
-                ))
+                )
             })
-            .collect::<Result<Vec<_>, CodecError>>()?;
+            .collect::<Vec<_>>();
         let Some(positions) = definition_points
             .iter()
             .copied()
@@ -454,7 +452,7 @@ pub(super) fn project(
             push_copious_loss(&mut losses, entry, format_args!("{reason}"));
             continue;
         }
-        if entry.form == 63 && has_form_63_self_intersection(&definition_points)? {
+        if entry.form == 63 && has_form_63_self_intersection(&definition_points) {
             push_copious_loss(
                 &mut losses,
                 entry,

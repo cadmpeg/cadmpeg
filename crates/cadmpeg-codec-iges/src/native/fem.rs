@@ -114,10 +114,10 @@ pub(super) fn build(
         let record = records.get(&entry.sequence).copied();
         let native = match entry.entity_type {
             134 => node(entry, record, resolver),
-            136 => finite_element(entry, record, resolver)?,
-            138 => nodal_displacement_rotation(entry, record, resolver)?,
+            136 => finite_element(entry, record, resolver),
+            138 => nodal_displacement_rotation(entry, record, resolver),
             146 => nodal_results(entry, record, resolver)?,
-            148 => element_results(entry, record, resolver)?,
+            148 => element_results(entry, record, resolver),
             418 => nodal_load_constraint(entry, record, resolver)?,
             _ => continue,
         };
@@ -144,14 +144,10 @@ fn record_number(record: Option<&ParameterRecord>, index: usize) -> Option<f64> 
     record.and_then(|record| record.number(index))
 }
 
-fn record_string(
-    record: Option<&ParameterRecord>,
-    index: usize,
-) -> Result<Option<NativeBytes<Vec<u8>>>, CodecError> {
+fn record_string(record: Option<&ParameterRecord>, index: usize) -> Option<NativeBytes<Vec<u8>>> {
     record
         .and_then(|record| record.string(index))
-        .map(|bytes| Ok::<_, CodecError>(NativeBytes::from(bytes.to_vec())))
-        .transpose()
+        .map(|bytes| NativeBytes::from(bytes.to_vec()))
 }
 
 fn record_has_token(record: Option<&ParameterRecord>, index: usize) -> bool {
@@ -254,7 +250,7 @@ fn finite_element(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
     resolver: &ParameterResolver<'_>,
-) -> Result<NativeFemEntity, CodecError> {
+) -> NativeFemEntity {
     let sequence = entry.sequence;
     let declared_node_count = record_integer(record, 2);
     let count = complete_count(record, 2, 3, 1).filter(|count| {
@@ -279,11 +275,8 @@ fn finite_element(
     } else {
         Vec::new()
     };
-    let element_type = count
-        .map(|count| record_string(record, 3 + count))
-        .transpose()?
-        .flatten();
-    Ok(NativeFemEntity::FiniteElement {
+    let element_type = count.and_then(|count| record_string(record, 3 + count));
+    NativeFemEntity::FiniteElement {
         id: entity_id("element", sequence),
         source_entity: source_entity(sequence),
         form: entry.form,
@@ -292,7 +285,7 @@ fn finite_element(
         declared_node_count,
         nodes,
         element_type,
-    })
+    }
 }
 
 fn nodal_displacement_layout(
@@ -312,7 +305,7 @@ fn nodal_displacement_rotation(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
     resolver: &ParameterResolver<'_>,
-) -> Result<NativeFemEntity, CodecError> {
+) -> NativeFemEntity {
     let sequence = entry.sequence;
     let declared_case_count = record_integer(record, 1);
     let declared_node_count = record.and_then(|record| {
@@ -332,7 +325,7 @@ fn nodal_displacement_rotation(
     };
     let nodes = if let Some((case_count, node_count, start, stride)) = layout {
         (0..node_count)
-            .map(|node_offset| -> Result<NativeFemNodeSample, CodecError> {
+            .map(|node_offset| -> NativeFemNodeSample {
                 let base = start + node_offset * stride;
                 let identifier = record_integer(record, base);
                 let node = resolve_type(
@@ -358,19 +351,19 @@ fn nodal_displacement_rotation(
                         record_number(record, values + 5),
                     ]);
                 }
-                Ok(NativeFemNodeSample {
+                NativeFemNodeSample {
                     identifier,
                     node,
                     translations,
                     rotations,
                     values: Vec::new(),
-                })
+                }
             })
-            .collect::<Result<Vec<_>, CodecError>>()?
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
-    Ok(NativeFemEntity::NodalDisplacementRotation {
+    NativeFemEntity::NodalDisplacementRotation {
         id: entity_id("nodal-displacement-rotation", sequence),
         source_entity: source_entity(sequence),
         form: entry.form,
@@ -378,7 +371,7 @@ fn nodal_displacement_rotation(
         case_descriptions,
         declared_node_count,
         nodes,
-    })
+    }
 }
 
 fn result_value_count(form: i64) -> Option<i64> {
@@ -432,8 +425,8 @@ fn nodal_results(
                     translations: Vec::new(),
                     rotations: Vec::new(),
                     values: (0..value_count)
-                        .map(|value| Ok(record_number(record, base + 2 + value)))
-                        .collect::<Result<Vec<_>, CodecError>>()?,
+                        .map(|value| record_number(record, base + 2 + value))
+                        .collect(),
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?
@@ -492,7 +485,7 @@ fn element_results(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
     resolver: &ParameterResolver<'_>,
-) -> Result<NativeFemEntity, CodecError> {
+) -> NativeFemEntity {
     let sequence = entry.sequence;
     let declared_value_count = record_integer(record, 4);
     let declared_element_count = record_integer(record, 6);
@@ -506,11 +499,11 @@ fn element_results(
                 break;
             };
             let report_locations = (0..report_location_count)
-                .map(|offset| Ok(record_integer(record, report_start + offset)))
-                .collect::<Result<Vec<_>, CodecError>>()?;
+                .map(|offset| record_integer(record, report_start + offset))
+                .collect();
             let values = (0..result_count)
-                .map(|offset| Ok(record_number(record, value_count_index + 1 + offset)))
-                .collect::<Result<Vec<_>, CodecError>>()?;
+                .map(|offset| record_number(record, value_count_index + 1 + offset))
+                .collect();
             elements.push(NativeFemElementSample {
                 identifier: record_integer(record, cursor),
                 element: resolve_type(
@@ -534,7 +527,7 @@ fn element_results(
     } else {
         Vec::new()
     };
-    Ok(NativeFemEntity::ElementResults {
+    NativeFemEntity::ElementResults {
         id: entity_id("element-results", sequence),
         source_entity: source_entity(sequence),
         form: entry.form,
@@ -547,7 +540,7 @@ fn element_results(
         result_report_flag: record_integer(record, 5),
         declared_element_count,
         elements,
-    })
+    }
 }
 
 fn nodal_load_constraint(

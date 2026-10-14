@@ -439,10 +439,10 @@ fn new_general_note(
     subject: &Subject<'_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> Result<NativeAnnotation, CodecError> {
+) -> NativeAnnotation {
     let record = subject.record;
     let count = subject.counted_tail(12, 20, overdeclared);
-    Ok(NativeAnnotation::NewGeneralNote {
+    NativeAnnotation::NewGeneralNote {
         id: subject.id(),
         source_entity: subject.source_entity(),
         containment_size: [
@@ -464,9 +464,9 @@ fn new_general_note(
         normal_interline_spacing: record.and_then(|record| record.number(11)),
         declared_string_count: record.and_then(|record| record.integer(12)),
         strings: (0..count)
-            .map(|index| -> Result<NativeNewTextRun, CodecError> {
+            .map(|index| {
                 let start = 13 + index * 20;
-                Ok(NativeNewTextRun {
+                NativeNewTextRun {
                     fixed_or_variable: record.and_then(|record| record.integer(start)),
                     character_size: [
                         record.and_then(|record| record.number(start + 1)),
@@ -482,22 +482,22 @@ fn new_general_note(
                     // A 213 text block is the 212 layout shifted by its
                     // eight-token prefix.
                     text: subject.text_run(start + 8),
-                })
+                }
             })
-            .collect::<Result<Vec<_>, CodecError>>()?,
+            .collect(),
         transformation,
-    })
+    }
 }
 
 fn leader(
     subject: &Subject<'_>,
     transformation: Option<String>,
     overdeclared: &mut OverdeclaredCounts,
-) -> Result<NativeAnnotation, CodecError> {
+) -> NativeAnnotation {
     let record = subject.record;
     let count = subject.counted_tail_at(1, 7, 2, overdeclared);
     let z = record.and_then(|record| record.number(4));
-    Ok(NativeAnnotation::Leader {
+    NativeAnnotation::Leader {
         id: subject.id(),
         source_entity: subject.source_entity(),
         form: subject.form,
@@ -513,15 +513,15 @@ fn leader(
         ],
         segment_tails: (0..count)
             .map(|index| {
-                Ok([
+                [
                     record.and_then(|record| record.number(7 + index * 2)),
                     record.and_then(|record| record.number(8 + index * 2)),
                     z,
-                ])
+                ]
             })
-            .collect::<Result<Vec<_>, CodecError>>()?,
+            .collect::<Vec<_>>(),
         transformation,
-    })
+    }
 }
 
 fn flag_note(
@@ -674,9 +674,9 @@ pub(super) fn build(
                     general_note(&subject, transformation, overdeclared_counts)
                 }
                 AnnotationKind::NewGeneralNote => {
-                    new_general_note(&subject, transformation, overdeclared_counts)?
+                    new_general_note(&subject, transformation, overdeclared_counts)
                 }
-                AnnotationKind::Leader => leader(&subject, transformation, overdeclared_counts)?,
+                AnnotationKind::Leader => leader(&subject, transformation, overdeclared_counts),
                 AnnotationKind::FlagNote => {
                     flag_note(&subject, transformation, overdeclared_counts)
                 }
