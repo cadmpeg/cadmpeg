@@ -64,12 +64,13 @@ fn class_end_checksum_children_refuse_collection_limit() {
 }
 
 #[test]
-fn class_end_checksum_children_ceiling_is_a_resource_refusal() {
+fn class_end_checksum_children_ceiling_is_a_framing_error_without_fusing() {
     let archive = ArchiveVersion::V8;
     let cap = super::super::CHECKSUM_CHILD_CAP;
     let child = short_chunk(archive, TCODE_SHORT | 7, 0);
+    let class_end = short_chunk(archive, TCODE_CLASS_END, 0);
     let mut bytes = child.repeat(cap);
-    bytes.extend(short_chunk(archive, TCODE_CLASS_END, 0));
+    bytes.extend(&class_end);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = u64::try_from(cap + 1).expect("fixture count fits");
@@ -77,12 +78,14 @@ fn class_end_checksum_children_ceiling_is_a_resource_refusal() {
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
     let error =
         checksum_children_through_class_end(&ctx, &bytes, 0..bytes.len(), archive, "class stream")
-            .expect_err("child ceiling refuses the class-end slot");
-    assert!(matches!(error, FramingError::Resource(limit)
-        if limit.dimension == ResourceDimension::Codec("Rhino class-end checksum children")
-            && limit.limit == u64::try_from(cap).expect("fixture count fits")
-            && limit.used == limit.limit && limit.additional == 1
-            && Some(limit) == ctx.resource_refusal()));
+            .expect_err("child ceiling rejects the class-end slot");
+    assert!(
+        matches!(error, FramingError::InvalidLength { offset, value }
+        if offset == bytes.len() - class_end.len()
+            && value == i128::try_from(cap).expect("fixture count fits"))
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]
