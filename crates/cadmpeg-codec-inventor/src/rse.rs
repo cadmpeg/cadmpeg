@@ -855,7 +855,6 @@ pub(crate) fn database_band(path: &str) -> Option<StorageBand> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
     use std::io::Write as _;
 
     use cadmpeg_container::compound::CompoundSnapshot;
@@ -864,15 +863,14 @@ mod tests {
     use flate2::Compression;
 
     use super::{
-        parse_bulk_stream, parse_meta_stream, push_identity_issue, rse_issue_detail, MetaCursor,
-        MetaStreamDeclaration, RseInventory, SegmentKind, SegmentMetaState, SegmentToken,
+        parse_bulk_stream, parse_meta_stream, MetaCursor, MetaStreamDeclaration, RseInventory,
+        SegmentKind, SegmentMetaState, SegmentToken,
     };
     use cadmpeg_core::decode::DecodeContext;
-    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     #[test]
-    fn database_issue_detail_refuses_retained_limit_before_copy() {
+    fn database_issue_detail_reports_unframed_and_unreadable_streams() {
         let bytes =
             crate::test_support::test_fixtures::primary_envelope_fixture_with_broken_database();
         let arena = DecodeArena::new();
@@ -882,41 +880,13 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
         let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
         let descriptor = &mut inventory.databases[0];
-        let detail = descriptor
-            .issue_detail(&setup_ctx)
-            .expect("service admission")
-            .expect("unframed issue");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            descriptor.issue_detail(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor database issue detail"
-        ));
-
+        assert!(descriptor.issue_detail().is_some(), "unframed issue");
         descriptor.state = super::DatabaseState::Unreadable("bad".into());
-        policy.limits.max_retained_bytes = 2;
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            descriptor.issue_detail(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor database issue detail"
-        ));
-        assert_eq!(
-            descriptor
-                .issue_detail(&setup_ctx)
-                .expect("service admission"),
-            Some("bad".into())
-        );
+        assert_eq!(descriptor.issue_detail(), Some("bad".into()));
     }
 
     #[test]
-    fn dialect_declaration_refuses_retained_limit_before_marker_clone() {
+    fn dialect_declaration_survives_a_malformed_body() {
         let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
         let arena = DecodeArena::new();
         let (setup_ctx, root) =
@@ -925,310 +895,50 @@ mod tests {
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
         let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
         let meta = &mut inventory.segments[0].meta;
-        let expected = meta
-            .declaration(&setup_ctx)
-            .expect("service admission")
-            .expect("metadata declaration");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(expected.marker.len() - 1);
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            meta.declaration(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor dialect declaration marker"
-        ));
-
+        let expected = meta.declaration().expect("metadata declaration");
         *meta = SegmentMetaState::Malformed {
             declared: Some(expected.clone()),
             detail: "bad body".into(),
         };
-        assert!(matches!(
-            meta.declaration(&limited_ctx),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "retain Inventor dialect declaration marker"
-        ));
-        assert_eq!(
-            meta.declaration(&setup_ctx).expect("service admission"),
-            Some(expected)
-        );
-    }
-
-    fn inventory_refusal_operations(
-        dimension: ResourceDimension,
-        maximum_limit: u64,
-    ) -> BTreeSet<&'static str> {
-        let bytes = crate::test_support::test_fixtures::primary_envelope_fixture();
-        inventory_refusal_operations_for(&bytes, dimension, maximum_limit)
-    }
-
-    fn inventory_refusal_operations_for(
-        bytes: &[u8],
-        dimension: ResourceDimension,
-        maximum_limit: u64,
-    ) -> BTreeSet<&'static str> {
-        let arena = DecodeArena::new();
-        let (setup_ctx, root) =
-            DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-                .expect("primary envelope fits service policy");
-        let snapshot = CompoundSnapshot::new(&setup_ctx, root)
-            .expect("primary envelope compound directory parses");
-        let mut operations = BTreeSet::new();
-        let mut limit = 0;
-        for _ in 0..=maximum_limit {
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-                _ => panic!("unsupported inventory limit dimension"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-                .expect("primary envelope fits input cap");
-            if let Err(CodecError::ResourceLimit(refusal)) = RseInventory::build(&ctx, &snapshot) {
-                if refusal.dimension == dimension {
-                    operations.insert(refusal.operation);
-                    let threshold = refusal
-                        .used
-                        .checked_add(refusal.additional)
-                        .expect("bounded refusal total");
-                    assert!(threshold > limit);
-                    limit = threshold;
-                }
-            } else {
-                break;
-            }
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-            .expect("primary envelope fits service policy");
-        RseInventory::build(&ctx, &snapshot).expect("primary envelope inventory builds");
-        operations
+        assert_eq!(meta.declaration(), Some(expected));
     }
 
     #[test]
-    fn rse_inventory_stream_collections_refuse_before_insertion() {
-        let operations = inventory_refusal_operations(ResourceDimension::CollectionItems, 128);
-        for operation in [
-            "index RSe database stream",
-            "index RSe bulk stream",
-            "index RSe metadata stream",
-            "admit RSe database descriptors",
-            "pair RSe segment streams",
-            "admit RSe segment descriptors",
-            "admit RSe parsed metadata segment",
-            "admit RSe framed segments",
-        ] {
-            assert!(
-                operations.contains(operation),
-                "missing refusal at {operation}"
-            );
-        }
+    fn rse_unknown_segment_kind_keeps_its_name() {
+        assert_eq!(SegmentKind::classify("abc", None).label(), "abc");
     }
 
     #[test]
-    fn rse_inventory_paired_token_refuses_retained_limit_before_copy() {
-        let operations = inventory_refusal_operations(ResourceDimension::RetainedBytes, 1024);
-        assert!(
-            operations.contains("retain RSe paired token"),
-            "paired token copy must be admitted"
-        );
-    }
-
-    #[test]
-    fn rse_unpaired_streams_refuse_collection_and_retained_limits_before_copy() {
-        const DIRECTORY_OFFSET: usize = 512;
-        const DIRECTORY_ENTRY_LEN: usize = 128;
-        const BULK_ENTRY: usize = 6;
-        const META_ENTRY: usize = 7;
-
-        let mut metadata_only = crate::test_support::test_fixtures::primary_envelope_fixture();
-        metadata_only[DIRECTORY_OFFSET + BULK_ENTRY * DIRECTORY_ENTRY_LEN] = b'C';
-        let metadata_collections = inventory_refusal_operations_for(
-            &metadata_only,
-            ResourceDimension::CollectionItems,
-            128,
-        );
-        assert!(metadata_collections.contains("collect RSe unpaired metadata"));
-        let metadata_retained = inventory_refusal_operations_for(
-            &metadata_only,
-            ResourceDimension::RetainedBytes,
-            1024,
-        );
-        assert!(metadata_retained.contains("retain RSe unpaired metadata token"));
-
-        let mut bulk_only = crate::test_support::test_fixtures::primary_envelope_fixture();
-        bulk_only[DIRECTORY_OFFSET + META_ENTRY * DIRECTORY_ENTRY_LEN] = b'C';
-        let bulk_collections =
-            inventory_refusal_operations_for(&bulk_only, ResourceDimension::CollectionItems, 128);
-        assert!(bulk_collections.contains("collect RSe unpaired bulk"));
-        let bulk_retained =
-            inventory_refusal_operations_for(&bulk_only, ResourceDimension::RetainedBytes, 1024);
-        assert!(bulk_retained.contains("retain RSe unpaired bulk token"));
-    }
-
-    #[test]
-    fn rse_unknown_segment_kind_refuses_before_name_copy() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            SegmentKind::classify(&ctx, "abc", None),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe unknown segment kind"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        assert_eq!(
-            SegmentKind::classify(&ctx, "abc", None)
-                .expect("service policy admits kind")
-                .label(),
-            "abc"
-        );
-    }
-
-    #[test]
-    fn rse_identity_issue_refuses_collection_and_retained_limits_before_push() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        let mut issues = Vec::new();
-        assert!(matches!(
-            push_identity_issue(&ctx, &mut issues, format_args!("issue")),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit RSe segment identity issue"
-        ));
-        assert!(issues.is_empty());
-
-        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes =
-            4 + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            push_identity_issue(&ctx, &mut issues, format_args!("issue")),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe segment identity issue"
-        ));
-        assert!(issues.is_empty());
-
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        push_identity_issue(&ctx, &mut issues, format_args!("issue"))
-            .expect("service policy admits issue");
-        assert_eq!(issues, ["issue"]);
-    }
-
-    #[test]
-    fn rse_issue_detail_refuses_retained_limit_before_formatting() {
-        let error = CodecError::Malformed("bad registry".into());
-        let detail = error.to_string();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            rse_issue_detail(&ctx, error),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe issue detail"
-        ));
-
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        assert_eq!(
-            rse_issue_detail(&ctx, CodecError::Malformed("bad registry".into()))
-                .expect("service policy admits detail"),
-            detail
-        );
-    }
-
-    #[test]
-    fn segment_token_refuses_retained_limit_before_key_creation() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(matches!(
-            SegmentToken::parse(&ctx, "Mseg"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe segment token"
-        ));
-
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
-            .expect("empty root fits service policy");
-        let (_, token) = SegmentToken::parse(&ctx, "Mseg")
-            .expect("service policy admits token")
-            .expect("valid metadata name");
+    fn segment_token_parses_a_metadata_name() {
+        let (_, token) = SegmentToken::parse("Mseg").expect("valid metadata name");
         assert_eq!(token.as_str(), "seg");
     }
 
     #[test]
-    fn invalid_segment_token_skips_without_retained_charge() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits input cap");
-        assert!(SegmentToken::parse(&ctx, "M#")
-            .expect("invalid name is skipped")
-            .is_none());
+    fn invalid_segment_token_is_skipped() {
+        assert!(SegmentToken::parse("M#").is_none());
     }
 
     #[test]
-    fn metadata_utf8_field_refuses_retained_limit_before_copy() {
+    fn metadata_utf8_field_decodes() {
         let mut bytes = Vec::new();
         push_bytes(&mut bytes, "é".as_bytes());
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata field fits input cap");
-        let mut cursor = MetaCursor::new(root);
-        assert!(matches!(
-            cursor.length_prefixed_utf8(&ctx, "marker"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe metadata UTF-8 field"
-        ));
-
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("metadata field fits service policy");
         assert_eq!(
             MetaCursor::new(root)
-                .length_prefixed_utf8(&ctx, "marker")
+                .length_prefixed_utf8("marker")
                 .expect("valid UTF-8 field"),
             "é"
         );
     }
 
     #[test]
-    fn metadata_utf16_field_refuses_retained_limit_before_decode() {
+    fn metadata_utf16_field_decodes() {
         let mut bytes = Vec::new();
         push_utf16(&mut bytes, "€");
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata field fits input cap");
-        let mut cursor = MetaCursor::new(root);
-        assert!(matches!(
-            cursor.length_prefixed_utf16(&ctx, "display name"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe metadata UTF-16 field"
-        ));
-
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("metadata field fits service policy");
         assert_eq!(
@@ -1237,42 +947,6 @@ mod tests {
                 .expect("valid UTF-16 field"),
             "€"
         );
-    }
-
-    #[test]
-    fn metadata_utf16_decoding_needs_no_materialized_units() {
-        let mut bytes = Vec::new();
-        push_utf16(&mut bytes, "A");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata field fits input cap");
-        let mut cursor = MetaCursor::new(root);
-        assert_eq!(
-            cursor
-                .length_prefixed_utf16(&ctx, "display name")
-                .expect("direct UTF-16 decode needs no temporary storage"),
-            "A"
-        );
-    }
-
-    #[test]
-    fn metadata_declaration_refuses_retained_limit_before_marker_clone() {
-        let bytes = meta_fixture(false);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1,
-        );
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("metadata stream fits input cap");
-        assert!(matches!(
-            parse_meta_stream(&ctx, root),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe metadata declaration marker"
-        ));
     }
 
     #[test]

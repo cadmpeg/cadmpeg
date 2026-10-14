@@ -899,7 +899,7 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_container::compound::CompoundSnapshot;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use crate::test_support::truncation::located_truncation;
 
@@ -911,7 +911,7 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     #[test]
-    fn malformed_property_set_detail_refuses_retained_limit_before_copy() {
+    fn malformed_property_set_remains_an_inventory_entry() {
         let mut bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[0xfe, 0xff]);
         let entry_start = 512 + 3 * 128;
         let name = "ZProperty";
@@ -928,16 +928,6 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("compound input fits service policy");
         let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            super::inventory(&limited, &snapshot),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor malformed property-set detail"
-        ));
         let inventory = super::inventory(&setup, &snapshot)
             .expect("malformed property set remains an inventory entry");
         assert!(matches!(
@@ -947,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    fn dictionary_name_copies_refuse_retained_limit_before_allocation() {
+    fn dictionary_names_decode() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -966,56 +956,25 @@ mod tests {
                 .map(String::as_str),
             Some("abc")
         );
-        for (cap, operation) in [
-            (4, "retain OLE dictionary name copy"),
-            (7, "retain OLE dictionary uppercase name"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                parse_dictionary(&limited, root, Some(1200)),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-            ));
-        }
     }
 
     #[test]
-    fn unsupported_code_page_detail_requires_exact_retained_budget() {
+    fn unsupported_code_page_is_not_implemented() {
         let bytes = [0];
         let arena = DecodeArena::new();
-        let message = "OLE code page 65000 is not implemented";
-        let operation = "retain OLE unsupported code-page detail";
-        let required = u64::try_from(message.len()).expect("diagnostic length fits u64");
-        for cap in [0, required - 1, required] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-            let error = Cursor::new(root, "OLE code-page string")
-                .code_page_string(&ctx, 1, Some(65000), "value")
-                .expect_err("unsupported code page");
-            if cap < required {
-                assert!(matches!(
-                    error,
-                    CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::RetainedBytes
-                            && limit.operation == operation
-                ));
-            } else {
-                assert!(matches!(
-                    error,
-                    CodecError::NotImplemented(detail) if detail == message
-                ));
-            }
-        }
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("service context");
+        let error = Cursor::new(root, "OLE code-page string")
+            .code_page_string(&ctx, 1, Some(65000), "value")
+            .expect_err("unsupported code page");
+        assert!(matches!(
+            error,
+            CodecError::NotImplemented(detail) if detail == "OLE code page 65000 is not implemented"
+        ));
     }
 
     #[test]
-    fn code_page_string_refuses_exact_utf8_copy_before_decode() {
+    fn code_page_string_decodes() {
         let bytes = [0x80, 0];
         let arena = DecodeArena::new();
         let (service, root) =
@@ -1027,21 +986,10 @@ mod tests {
                 .expect("code-page string admitted"),
             "€"
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (limited, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            Cursor::new(root, "OLE code-page string")
-                .code_page_string(&limited, 2, Some(1252), "value"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain OLE property string"
-        ));
     }
 
     #[test]
-    fn unicode_property_string_uses_exact_utf8_budget_before_decode() {
+    fn unicode_property_string_decodes() {
         let bytes = [b'A', 0, 0, 0];
         let arena = DecodeArena::new();
         let (service, root) =
@@ -1053,47 +1001,12 @@ mod tests {
                 .expect("Unicode string admitted"),
             "A"
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        let (limited, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            Cursor::new(root, "OLE Unicode property").unicode_string(&limited, 2, "value"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain OLE Unicode property string"
-        ));
-        policy.limits.max_retained_bytes = 2;
-        let (admitted, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("exact context");
-        assert_eq!(
-            Cursor::new(root, "OLE Unicode property")
-                .unicode_string(&admitted, 2, "value")
-                .expect("exact UTF-8 bytes admitted"),
-            "A"
-        );
     }
 
     #[test]
-    fn section_collections_refuse_each_limit_before_materialization() {
+    fn property_set_stream_reads_its_section() {
         let bytes = fixture();
         let arena = DecodeArena::new();
-        for (cap, operation) in [
-            (0, "admit OLE section directories"),
-            (1, "admit OLE section FMTIDs"),
-            (2, "admit OLE property-set sections"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (limited, root) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                parse_property_set_stream(&limited, root),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-            ));
-        }
         let (service, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("service context");
@@ -1107,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn scalar_text_refuses_retained_limit_before_copy_or_format() {
+    fn scalar_text_copies_text_and_formats_numbers() {
         let text = PropertyValue::String {
             type_code: 30,
             value: "scalar".into(),
@@ -1116,30 +1029,8 @@ mod tests {
             type_code: 3,
             value: -42,
         };
-        let arena = DecodeArena::new();
-        let bytes = b"fixture";
-        let (service, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-            .expect("service context");
-        assert_eq!(
-            text.scalar_text(&service).expect("text admitted"),
-            Some("scalar".into())
-        );
-        assert_eq!(
-            number.scalar_text(&service).expect("number admitted"),
-            Some("-42".into())
-        );
-        for (value, cap) in [(&text, 5), (&number, 2)] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, _) =
-                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                value.scalar_text(&limited),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == "retain OLE scalar text"
-            ));
-        }
+        assert_eq!(text.scalar_text(), Some("scalar".into()));
+        assert_eq!(number.scalar_text(), Some("-42".into()));
     }
 
     #[test]

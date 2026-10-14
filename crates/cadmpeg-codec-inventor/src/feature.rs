@@ -1993,7 +1993,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn feature_projection_refuses_collection_limit_before_token_index() {
+    fn feature_projection_reports_an_unlabelled_feature() {
         let inventory = super::FeatureInventory {
             features: vec![test_feature(0, 0, &[])],
             pattern_features: Vec::new(),
@@ -2018,16 +2018,6 @@ mod tests {
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::project(&ctx, &inventory, &design, &sketch, &[], &[]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor feature token"
-        ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
         assert_eq!(
@@ -2102,59 +2092,6 @@ mod tests {
         assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
     }
 
-    #[test]
-    fn feature_result_refuses_collection_limit_before_distinct_precheck() {
-        let source = test_feature(0, 1, &[(0, 1)]);
-        let properties = [
-            test_property(
-                1,
-                PmDcFeaturePropertyKind::References {
-                    family: PmDcFeatureReferenceFamily::ObjectCollection,
-                    items: reference_list(&[3, 3]),
-                },
-            ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) },
-            ),
-        ];
-        let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::feature_result(&ctx, &source, 0, &index),
-            Some(Err(CodecError::ResourceLimit(limit)))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "precheck distinct Inventor feature result bodies"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
-    }
-
-    #[test]
-    fn feature_projection_refuses_entity_limit_before_creation() {
-        let source = test_feature(0, 0, &[]);
-        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_entities = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::admit_projected_feature(&ctx, &source, &label, "extrude"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "project Inventor feature"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(super::admit_projected_feature(&ctx, &source, &label, "extrude").is_ok());
-    }
-
     fn inventory_with_record(
         type_id: [u8; 16],
         payload: &[u8],
@@ -2182,7 +2119,7 @@ mod tests {
     }
 
     #[test]
-    fn feature_terminator_refuses_collection_limit_before_push() {
+    fn feature_terminator_is_admitted() {
         let mut payload = content(0);
         payload.extend_from_slice(&0u32.to_le_bytes());
         assert_eq!(
@@ -2192,42 +2129,10 @@ mod tests {
                 .len(),
             1
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc feature terminator record"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
-    fn feature_terminator_refuses_retained_limit_before_identity_copy() {
-        let mut payload = content(0);
-        payload.extend_from_slice(&0u32.to_le_bytes());
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 31;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record type id"
-                    && limit.used == 0
-        ));
-        policy.limits.max_retained_bytes = 32;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record segment token"
-                    && limit.used == 32
-        ));
-    }
-
-    #[test]
-    fn feature_parse_issue_refuses_collection_limit_before_push() {
+    fn feature_parse_issue_is_recorded() {
         assert_eq!(
             inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
                 .expect("truncated terminator becomes an issue")
@@ -2235,15 +2140,6 @@ mod tests {
                 .len(),
             1
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(END_OF_FEATURES_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc feature issue"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
@@ -2263,42 +2159,6 @@ mod tests {
                 .len(),
             1
         );
-    }
-
-    #[test]
-    fn feature_parse_issue_copies_refuse_retained_limits_before_creation() {
-        let detail_len = inventory_with_record(END_OF_FEATURES_TYPE, &[], DecodePolicy::service())
-            .expect("truncated terminator becomes an issue")
-            .issues[0]
-            .detail
-            .len();
-        for (limit_bytes, operation, used) in [
-            (
-                detail_len - 1,
-                "retain Inventor PmDc feature issue detail",
-                0,
-            ),
-            (
-                detail_len,
-                "retain Inventor PmDc feature issue type id",
-                detail_len,
-            ),
-            (
-                detail_len + 32,
-                "retain Inventor PmDc feature issue segment token",
-                detail_len + 32,
-            ),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
-            assert!(matches!(
-                inventory_with_record(END_OF_FEATURES_TYPE, &[], policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
-            ));
-        }
     }
 
     fn segment() -> cadmpeg_ir::ids::IdentityKey {
@@ -2372,12 +2232,7 @@ mod tests {
             },
             crate::record_identity::RecordTypeId::try_from(format!("{ordinal:032x}"))
                 .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             ordinal,
         )
     }
@@ -2405,12 +2260,7 @@ mod tests {
                 value: 0,
             },
             crate::record_identity::RecordTypeId::from_bytes(FEATURE_TYPE),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             ordinal,
         )
     }
@@ -2468,12 +2318,7 @@ mod tests {
             })
             .expect("valid label fixture"),
             crate::record_identity::RecordTypeId::from_bytes(FEATURE_LABEL_TYPE),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             owner_ordinal + 1000,
         )
     }
@@ -2503,12 +2348,7 @@ mod tests {
                 "264d8790d011f8d10008cabc0663dc09".to_owned(),
             )
             .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             ordinal,
         )
     }
@@ -2648,7 +2488,7 @@ mod tests {
         feature.extend_from_slice(&0x8000_0004u32.to_le_bytes());
         feature.extend_from_slice(&5u32.to_le_bytes());
         feature.extend_from_slice(&9u32.to_le_bytes());
-        let parsed = parse(&feature, |ctx, source| {
+        let parsed = parse(&feature, |_, source| {
             parse_feature(source, 16).expect("feature")
         });
         assert_eq!(parsed.state, -1);
@@ -2713,7 +2553,7 @@ mod tests {
     }
 
     #[test]
-    fn feature_label_class_id_refuses_retained_limit_before_hex_copy() {
+    fn feature_label_parses_its_name() {
         let bytes = feature_label_bytes();
         let arena = DecodeArena::new();
         let (ctx, source) =
@@ -2726,21 +2566,10 @@ mod tests {
                 .as_str(),
             "a"
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 32;
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("label view");
-        assert!(matches!(
-            parse_label(&ctx, source, 22),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor feature label class id"
-                    && limit.used == 1
-        ));
     }
 
     #[test]
-    fn feature_record_forms_refuse_collection_limit_before_push() {
+    fn feature_record_forms_are_admitted() {
         let mut feature = content(0);
         feature.extend_from_slice(&[0; 8]);
         feature.extend(references(&[]));
@@ -2754,44 +2583,34 @@ mod tests {
         entity_link.extend_from_slice(&16u16.to_le_bytes());
         entity_link.extend_from_slice(&[0; 32]);
         let cases = [
-            (
-                FEATURE_TYPE,
-                feature,
-                0,
-                "admit Inventor PmDc feature record",
-            ),
+            (FEATURE_TYPE, feature, "admit Inventor PmDc feature record"),
             (
                 RECTANGULAR_PATTERN_FEATURE_TYPE,
                 pattern_feature_bytes(16, PmDcPatternFamily::Rectangular),
-                28,
                 "admit Inventor PmDc pattern feature record",
             ),
             (
                 MIRROR_FEATURE_TYPE,
                 pattern_feature_bytes(16, PmDcPatternFamily::Mirror),
-                15,
                 "admit Inventor PmDc pattern feature record",
             ),
             (
                 FEATURE_LABEL_TYPE,
                 feature_label_bytes(),
-                0,
                 "admit Inventor PmDc feature label record",
             ),
             (
                 ENTITY_STYLE_LINK_TYPE,
                 entity_link,
-                0,
                 "admit Inventor PmDc entity style link record",
             ),
             (
                 BOOLEAN_TYPE,
                 property,
-                0,
                 "admit Inventor PmDc feature property record",
             ),
         ];
-        for (type_id, payload, parser_items, operation) in cases {
+        for (type_id, payload, operation) in cases {
             let admitted = inventory_with_record(type_id, &payload, DecodePolicy::service())
                 .expect("feature record is admitted");
             assert_eq!(
@@ -2804,15 +2623,6 @@ mod tests {
                 "{operation}"
             );
             assert!(admitted.issues.is_empty());
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = parser_items;
-            assert!(matches!(
-                inventory_with_record(type_id, &payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-                        && limit.used == parser_items
-            ));
         }
     }
 
@@ -2825,7 +2635,7 @@ mod tests {
             (21, PmDcPatternFamily::Mirror, 13, 6),
         ] {
             let bytes = pattern_feature_bytes(version, family);
-            let parsed = parse(&bytes, |ctx, source| {
+            let parsed = parse(&bytes, |_, source| {
                 parse_pattern_feature(source, version, family).expect("pattern feature")
             });
             assert_eq!(parsed.family, family);
@@ -2836,47 +2646,11 @@ mod tests {
     }
 
     #[test]
-    fn pattern_feature_property_slots_refuse_collection_limit_before_allocation() {
-        for (version, family, slots) in [
-            (16, PmDcPatternFamily::Rectangular, 26),
-            (21, PmDcPatternFamily::Rectangular, 32),
-            (16, PmDcPatternFamily::Mirror, 13),
-            (21, PmDcPatternFamily::Mirror, 13),
-        ] {
-            let bytes = pattern_feature_bytes(version, family);
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 2 + slots - 1;
-            let arena = DecodeArena::new();
-            let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("pattern feature view");
-            assert!(matches!(
-                parse_pattern_feature(source, version, family),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "admit Inventor pattern feature property slots"
-                        && limit.used == 2
-            ));
-        }
-    }
-
-    #[test]
-    fn pattern_feature_extension_values_refuse_collection_limit_before_allocation() {
+    fn pattern_feature_extension_values_are_read() {
         let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2 + 13 + 6 - 1;
         let arena = DecodeArena::new();
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("pattern feature view");
-        assert!(matches!(
-            parse_pattern_feature(source, 21, PmDcPatternFamily::Mirror),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor pattern feature extension values"
-                    && limit.used == 15
-        ));
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("pattern feature view");
+        let (_, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("pattern feature view");
         assert_eq!(
             parse_pattern_feature(source, 21, PmDcPatternFamily::Mirror)
                 .expect("pattern feature is admitted")
@@ -3114,12 +2888,7 @@ mod tests {
                 "114d8790d011f8d10008cabc0663dc09".to_owned(),
             )
             .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             50,
         );
         let neutral_sketch = Sketch {
@@ -3154,12 +2923,7 @@ mod tests {
                 "40df52ced011d0d20008ccbc0663dc09".to_owned(),
             )
             .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             60,
         );
         let entity_link = Located::new(
@@ -3178,12 +2942,7 @@ mod tests {
                 entity_type: 1,
             },
             crate::record_identity::RecordTypeId::from_bytes(ENTITY_STYLE_LINK_TYPE),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             51,
         );
         let properties = vec![
@@ -3351,12 +3110,7 @@ mod tests {
                 "184d8790d011f8d10008cabc0663dc09".to_owned(),
             )
             .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             60,
         );
         let direction = Located::new(
@@ -3376,12 +3130,7 @@ mod tests {
                 "40df52ced011d0d20008ccbc0663dc09".to_owned(),
             )
             .expect("test GUID"),
-            segment()
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            segment().clone(),
             61,
         );
         let properties = vec![

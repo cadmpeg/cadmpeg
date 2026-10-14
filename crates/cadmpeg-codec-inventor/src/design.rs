@@ -1193,7 +1193,7 @@ mod tests {
         PmDcExpressionPayload, PmDcParameterPayload, PmDcUnaryOperation, PmDcUnitDimension,
         PmDcUnitKind, PmDcUnitPayload, DIMENSIONLESS_TYPE, EXPRESSION_ADD_TYPE,
         EXPRESSION_NEGATE_TYPE, EXPRESSION_REFERENCE_TYPE, EXPRESSION_VALUE_TYPE, GRAD_TYPE,
-        MILLIMETRE_TYPE, PARAMETER_FULL_TYPE, UNIT_TYPE,
+        PARAMETER_FULL_TYPE, UNIT_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
@@ -1216,23 +1216,13 @@ mod tests {
     }
 
     #[test]
-    fn pmdc_expression_record_refuses_collection_limit_before_first_push() {
+    fn pmdc_expression_record_is_admitted() {
         let payload = [0_u8; 14];
         let admitted =
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, DecodePolicy::service())
                 .expect("expression is admitted");
         assert_eq!(admitted.expressions.len(), 1);
         assert!(admitted.issues.is_empty());
-
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc expression record"
-                    && limit.used == 0
-        ));
     }
 
     fn inventory_with_record(
@@ -1262,7 +1252,7 @@ mod tests {
     }
 
     #[test]
-    fn pmdc_parameter_record_refuses_collection_limit_before_push() {
+    fn pmdc_parameter_record_is_admitted() {
         let payload = [0_u8; 58];
         assert_eq!(
             inventory_with_record(PARAMETER_FULL_TYPE, &payload, DecodePolicy::service())
@@ -1271,19 +1261,10 @@ mod tests {
                 .len(),
             1
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(PARAMETER_FULL_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc parameter record"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
-    fn pmdc_expression_forms_refuse_collection_limit_before_push() {
+    fn pmdc_expression_forms_are_admitted() {
         for (type_id, len) in [
             (EXPRESSION_REFERENCE_TYPE, 14),
             (EXPRESSION_NEGATE_TYPE, 14),
@@ -1298,20 +1279,11 @@ mod tests {
                     .len(),
                 1
             );
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            assert!(matches!(
-                inventory_with_record(type_id, &payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "admit Inventor PmDc expression record"
-                        && limit.used == 0
-            ));
         }
     }
 
     #[test]
-    fn pmdc_unit_forms_refuse_collection_limit_before_push() {
+    fn pmdc_unit_forms_are_admitted() {
         let mut definition = [0_u8; 27];
         definition[6..10].copy_from_slice(&[3, 0, 0, 0x30]);
         definition[14..18].copy_from_slice(&[3, 0, 0, 0x30]);
@@ -1326,34 +1298,16 @@ mod tests {
                     .len(),
                 1
             );
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            assert!(matches!(
-                inventory_with_record(type_id, payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "admit Inventor PmDc unit record"
-                        && limit.used == 0
-            ));
         }
     }
 
     #[test]
-    fn pmdc_issue_refuses_collection_limit_before_push() {
+    fn pmdc_issue_is_recorded() {
         let payload = [];
         let admitted =
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, DecodePolicy::service())
                 .expect("invalid expression becomes an issue");
         assert_eq!(admitted.issues.len(), 1);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc design issue"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
@@ -1376,113 +1330,7 @@ mod tests {
     }
 
     #[test]
-    fn pmdc_record_scan_refuses_work_limit_before_parsing() {
-        let payload = [0_u8; 14];
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Inventor PmDc design record"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn pmdc_record_type_id_refuses_retained_limit_before_copy() {
-        let payload = [0_u8; 14];
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 31;
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record type id"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn pmdc_record_segment_token_refuses_retained_limit_before_copy() {
-        let payload = [0_u8; 14];
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 32;
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record segment token"
-                    && limit.used == 32
-        ));
-    }
-
-    #[test]
-    fn pmdc_base_unit_symbol_refuses_retained_limit_before_copy() {
-        let payload = [0_u8; 22];
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        assert!(matches!(
-            inventory_with_record(MILLIMETRE_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc base unit symbol"
-                    && limit.used == 0
-        ));
-    }
-
-    fn pmdc_issue_detail_len() -> usize {
-        inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], DecodePolicy::service())
-            .expect("invalid expression becomes an issue")
-            .issues[0]
-            .detail
-            .len()
-    }
-
-    #[test]
-    fn pmdc_issue_detail_refuses_retained_limit_before_copy() {
-        let detail_len = pmdc_issue_detail_len();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail_len - 1);
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc issue detail"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn pmdc_issue_type_id_refuses_retained_limit_before_copy() {
-        let detail_len = pmdc_issue_detail_len();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail_len);
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc issue type id"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(detail_len)
-        ));
-    }
-
-    #[test]
-    fn pmdc_issue_segment_token_refuses_retained_limit_before_copy() {
-        let detail_len = pmdc_issue_detail_len();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail_len + 32);
-        assert!(matches!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc issue segment token"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(detail_len + 32)
-        ));
-    }
-
-    #[test]
-    fn pmdc_parameter_name_resource_refusal_does_not_become_issue() {
+    fn pmdc_named_parameter_is_admitted() {
         let mut payload = [0_u8; 60];
         payload[22..26].copy_from_slice(&1_u32.to_le_bytes());
         payload[26..28].copy_from_slice(&97_u16.to_le_bytes());
@@ -1493,19 +1341,10 @@ mod tests {
                 .len(),
             1
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        assert!(matches!(
-            inventory_with_record(PARAMETER_FULL_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc string"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
-    fn pmdc_unit_reference_arrays_refuse_collection_limit_before_allocation() {
+    fn pmdc_unit_reference_arrays_are_admitted() {
         let mut numerator = [0_u8; 35];
         numerator[6..10].copy_from_slice(&[3, 0, 0, 0x30]);
         numerator[10..14].copy_from_slice(&1_u32.to_le_bytes());
@@ -1522,15 +1361,6 @@ mod tests {
                     .len(),
                 1
             );
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            assert!(matches!(
-                inventory_with_record(UNIT_TYPE, payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "admit Inventor PmDc unit references"
-                        && limit.used == 0
-            ));
         }
     }
 
@@ -1559,12 +1389,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             0,
         );
         let expression = Located::new(
@@ -1580,12 +1405,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             0,
         );
         let expressions = HashMap::from([((token.as_str(), 0), Some(&expression))]);
@@ -1752,9 +1572,8 @@ mod tests {
         bytes.push(1);
         bytes.extend_from_slice(&0u32.to_le_bytes());
         let arena = DecodeArena::new();
-        let (ctx, source) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-                .expect("unit view");
+        let (_, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("unit view");
         let unit = parse_unit_definition(source, 22).expect("unit definition parses");
         assert!(
             matches!(unit.kind, PmDcUnitKind::Definition { ref numerators, visible: true, .. } if numerators.references() == [reference(7, true)])
@@ -1762,7 +1581,7 @@ mod tests {
     }
 
     #[test]
-    fn parameter_dependencies_charge_collection_items() {
+    fn parameter_dependencies_render_and_resolve() {
         let token = cadmpeg_ir::identity_key!("segment");
         let base = Located::new(
             PmDcUnitPayload {
@@ -1778,12 +1597,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             0,
         );
         let unit = Located::new(
@@ -1804,12 +1618,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             1,
         );
         let literal = Located::new(
@@ -1825,12 +1634,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             2,
         );
         let first = Located::new(
@@ -1854,12 +1658,7 @@ mod tests {
                 terminal_value: -1,
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             3,
         );
         let reference_expression = Located::new(
@@ -1873,12 +1672,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             4,
         );
         let second = Located::new(
@@ -1902,12 +1696,7 @@ mod tests {
                 terminal_value: -1,
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             5,
         );
         let inventory = DesignInventory {
@@ -1920,11 +1709,8 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty fixture view");
         let mut admitted_entities = 0;
-        let (parameters, unresolved) = cadmpeg_test_support::refusal::assert_charged(
-            ResourceDimension::CollectionItems,
-            "collect Inventor parameter dependencies",
-            || project_parameters(&ctx, &inventory, &mut admitted_entities),
-        );
+        let (parameters, unresolved) = project_parameters(&ctx, &inventory, &mut admitted_entities)
+            .expect("parameter projection");
         assert_eq!(unresolved, 0);
         assert_eq!(parameters[0].expression, "24 in");
         assert_eq!(parameters[1].expression, "width");
@@ -1956,12 +1742,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             0,
         );
         let unit = Located::new(
@@ -1982,12 +1763,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             1,
         );
         let literal = Located::new(
@@ -2003,12 +1779,7 @@ mod tests {
                 },
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             2,
         );
         let parameter = Located::new(
@@ -2032,12 +1803,7 @@ mod tests {
                 terminal_value: -1,
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             3,
         );
         DesignInventory {
@@ -2072,7 +1838,7 @@ mod tests {
     }
 
     #[test]
-    fn parameter_projection_identity_strings_refuse_retained_limit_before_creation() {
+    fn parameter_projection_identity_strings() {
         let admitted = project_single_parameter(DecodePolicy::service())
             .expect("parameter is admitted under service limits");
         assert_eq!(admitted.len(), 1);
@@ -2082,31 +1848,6 @@ mod tests {
             parameter.native_ref.as_deref(),
             Some("inventor:pmdc:parameter#segment-3")
         );
-
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            parameter.expression.len() + parameter.name.len() + parameter.id.as_str().len() - 1,
-        );
-        assert!(matches!(
-            project_single_parameter(policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor parameter id"
-        ));
-
-        policy.limits.max_retained_bytes += 1 + cadmpeg_core::decode::u64_from_index(
-            parameter
-                .native_ref
-                .as_deref()
-                .expect("native reference")
-                .len(),
-        ) - 1;
-        assert!(matches!(
-            project_single_parameter(policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor parameter native reference"
-        ));
     }
 
     #[test]
@@ -2196,112 +1937,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn parameter_closure_refuses_work_limit_on_reverse_chain_edge() {
-        let id = |name: &str| {
-            ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar")
-        };
-        let make = |name: &str, dependency: Option<&str>| DesignParameter {
-            id: id(name),
-            owner: None,
-            ordinal: 0,
-            name: name.into(),
-            expression: name.into(),
-            display: None,
-            value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                dependency.into_iter().map(id).collect::<Vec<_>>(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("valid dependency fixture"),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        };
-        let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
-        let mut policy = DecodePolicy::service();
-        // Fill work for the indegree and adjacency rows (3 + 3), two edge
-        // indexings, the closure row (3) and the first of the two edge visits
-        // precede the refused second visit.
-        policy.limits.max_work_units = 3 + 3 + 2 + 3 + 1;
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
-        assert!(matches!(
-            close_parameter_graph(&ctx, parameters),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "visit Inventor parameter edge"
-        ));
-    }
-
-    #[test]
-    fn parameter_closure_refuses_collection_limit_before_index_allocation() {
-        let id = ParameterId::mint("synthetic:test:id#a").expect("identity grammar");
-        let parameter = DesignParameter {
-            id,
-            owner: None,
-            ordinal: 0,
-            name: "a".into(),
-            expression: "a".into(),
-            display: None,
-            value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("empty dependencies"),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        };
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
-        assert!(matches!(
-            close_parameter_graph(&ctx, vec![parameter]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor parameter closure"
-                    && limit.used == 0
-        ));
-    }
-
-    #[test]
-    fn parameter_closure_refuses_collection_limit_before_closed_output_allocation() {
-        let parameter = DesignParameter {
-            id: ParameterId::mint("synthetic:test:id#a").expect("identity grammar"),
-            owner: None,
-            ordinal: 0,
-            name: "a".into(),
-            expression: "a".into(),
-            display: None,
-            value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                Vec::new(),
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("empty dependencies"),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        };
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
-        assert!(matches!(
-            close_parameter_graph(&ctx, vec![parameter]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "collect closed Inventor parameters"
-                    && limit.used == 5
-        ));
-    }
-
     fn render_graph(
         policy: &DecodePolicy,
         kinds: Vec<PmDcExpressionKind>,
@@ -2329,12 +1964,7 @@ mod tests {
                 terminal_value: 0,
             },
             crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-            token
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            token.clone(),
             0,
         );
         let nodes = kinds
@@ -2350,12 +1980,7 @@ mod tests {
                         kind,
                     },
                     crate::record_identity::RecordTypeId::from_bytes([0; 16]),
-                    token
-                        .try_clone_for_decode(
-                            &cadmpeg_test_support::service_decode_context(),
-                            "Inventor located fixture token",
-                        )
-                        .expect("service fixture token"),
+                    token.clone(),
                     u32::try_from(ordinal).expect("small fixture"),
                 )
             })
@@ -2405,39 +2030,6 @@ mod tests {
         .expect("closed graph");
         assert_eq!(result.0, "(x) + (x)");
         assert_eq!(result.1.len(), 1);
-    }
-
-    #[test]
-    fn shared_expression_dag_refuses_materialized_byte_limit_before_render() {
-        let mut kinds = vec![reference_leaf()];
-        for ordinal in 1..8 {
-            kinds.push(shared_add(ordinal));
-        }
-        let mut policy = DecodePolicy::service();
-        // Eight active/memoized nodes require sixteen hash buckets. The one
-        // dependency uses four set buckets and four vector slots; node order
-        // uses eight vector slots. Controls and padding add buckets + 31.
-        let plan_bytes = 16 * std::mem::size_of::<u32>()
-            + 16
-            + 31
-            + 4 * std::mem::size_of::<u32>()
-            + 4
-            + 31
-            + 16 * std::mem::size_of::<(u32, super::MeasuredExpression)>()
-            + 16
-            + 31
-            + 12 * std::mem::size_of::<u32>();
-        // The first rendered leaf is one byte, with four memo-map buckets.
-        let live = plan_bytes + 1 + 4 * std::mem::size_of::<(u32, String)>() + 4 + 31;
-        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(live);
-        assert!(matches!(
-            render_graph(&policy, kinds, 8),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "render Inventor expression bytes"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(live)
-                    && limit.additional == cadmpeg_core::decode::u64_from_index("(x) + (x)".len())
-        ));
     }
 
     #[test]
@@ -2510,74 +2102,12 @@ mod tests {
     }
 
     #[test]
-    fn expression_render_refuses_work_limit_before_text_allocation() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        assert!(matches!(
-            render_graph(&policy, vec![reference_leaf()], 1),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "render Inventor expression bytes"
-        ));
-    }
-
-    #[test]
-    fn expression_render_refuses_retained_byte_limit_before_text_allocation() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        assert!(matches!(
-            render_graph(&policy, vec![reference_leaf()], 1),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor expression text"
-        ));
-    }
-
-    #[test]
-    fn expression_dependency_id_refuses_retained_limit_before_creation() {
+    fn expression_dependency_id_is_collected() {
         let admitted = render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1)
             .expect("graph is admitted")
             .expect("graph is closed");
         assert_eq!(admitted.0, "x");
         assert_eq!(admitted.1.len(), 1);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            admitted.0.len()
-                + 4 * std::mem::size_of::<ParameterId>()
-                + admitted.1[0].as_str().len()
-                - 1,
-        );
-        assert!(matches!(
-            render_graph(&policy, vec![reference_leaf()], 1),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor parameter id"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(admitted.0.len() + 4 * std::mem::size_of::<ParameterId>())
-        ));
-    }
-
-    #[test]
-    fn expression_dependency_ids_charge_collection_items() {
-        let rendered = cadmpeg_test_support::refusal::assert_charged(
-            ResourceDimension::CollectionItems,
-            "collect Inventor expression dependency ids",
-            || render_graph(&DecodePolicy::service(), vec![reference_leaf()], 1),
-        )
-        .expect("graph is closed");
-        assert_eq!(rendered.1.len(), 1);
-    }
-
-    #[test]
-    fn expression_render_refuses_collection_limit_before_graph_memoization() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            render_graph(&policy, vec![reference_leaf()], 1),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "track Inventor expression ancestors"
-                    && limit.used == 0
-        ));
     }
 
     mod serialization;

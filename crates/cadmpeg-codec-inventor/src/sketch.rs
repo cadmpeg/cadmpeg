@@ -2059,27 +2059,9 @@ mod tests {
     }
 
     #[test]
-    fn profile_builder_refuses_collection_limit_before_source_index() {
+    fn profile_builder_projects_a_circle() {
         let entity = circle_profile_entity();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
-        assert!(matches!(
-            super::build_profiles(&[&entity]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor profile source positions"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service profile context");
-        assert_eq!(
-            super::build_profiles(&[&entity])
-                .expect("circle profile")
-                .len(),
-            1
-        );
+        assert_eq!(super::build_profiles(&[&entity]).len(), 1);
     }
 
     fn circle_profile_entity() -> cadmpeg_ir::sketches::SketchEntity {
@@ -2098,36 +2080,7 @@ mod tests {
     }
 
     #[test]
-    fn profile_builder_refuses_collection_limits_before_circular_profile_allocations() {
-        let entity = circle_profile_entity();
-        let arena = DecodeArena::new();
-        for (cap, operation) in [
-            (1, "project Inventor circular profile"),
-            (2, "project Inventor circular profile use"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
-            assert!(matches!(
-                super::build_profiles(&[&entity]),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-            ));
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service profile context");
-        assert_eq!(
-            super::build_profiles(&[&entity])
-                .expect("circle profile")
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn line_component_refuses_collection_limit_before_queue_creation() {
+    fn line_component_collects_a_single_line() {
         let entity = cadmpeg_ir::sketches::SketchEntity::new(
             cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2")
                 .expect("entity id"),
@@ -2145,30 +2098,12 @@ mod tests {
             ("point-a", vec![0_usize]),
             ("point-b", vec![0_usize]),
         ]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
-        assert!(matches!(
-            super::line_component(0, &[&entity], &adjacency),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "queue Inventor profile line"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service profile context");
-        assert_eq!(
-            super::line_component(0, &[&entity], &adjacency)
-                .expect("line component")
-                .len(),
-            1
-        );
+        assert_eq!(super::line_component(0, &[&entity], &adjacency).len(), 1);
     }
 
     #[test]
-    fn sketch_projection_refuses_collection_limit_before_entity_index() {
-        let point = parse(&point_bytes(0, 1, [0.0, 0.0]), |ctx, source| {
+    fn sketch_projection_reports_an_entity_outside_any_sketch() {
+        let point = parse(&point_bytes(0, 1, [0.0, 0.0]), |_, source| {
             parse_entity(SketchEntityTag::Point, source, 22).expect("point record")
         });
         let inventory = SketchInventory {
@@ -2176,12 +2111,7 @@ mod tests {
             entities: vec![Located::new(
                 point,
                 crate::record_identity::RecordTypeId::from_bytes(POINT_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             transforms: Vec::new(),
@@ -2190,16 +2120,6 @@ mod tests {
             issues: Vec::new(),
         };
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            project(&ctx, &inventory, &[]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index Inventor sketch entities"
-        ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
         assert_eq!(
@@ -2220,33 +2140,23 @@ mod tests {
         sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
         sketch_bytes.extend_from_slice(&[0; 8]);
         sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
+        let sketch = parse(&sketch_bytes, |_, source| {
             parse_sketch(source, 22).expect("sketch record")
         });
-        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |ctx, source| {
+        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |_, source| {
             parse_entity(SketchEntityTag::Point, source, 22).expect("point record")
         });
         let inventory = SketchInventory {
             sketches: vec![Located::new(
                 sketch,
                 crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             entities: vec![Located::new(
                 point,
                 crate::record_identity::RecordTypeId::from_bytes(POINT_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 1,
             )],
             transforms: Vec::new(),
@@ -2280,33 +2190,23 @@ mod tests {
         sketch_bytes.extend_from_slice(&0_u32.to_le_bytes());
         sketch_bytes.extend_from_slice(&[0; 8]);
         sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
+        let sketch = parse(&sketch_bytes, |_, source| {
             parse_sketch(source, 22).expect("sketch record")
         });
-        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |ctx, source| {
+        let point = parse(&point_bytes(1, 1, [0.0, 0.0]), |_, source| {
             parse_entity(SketchEntityTag::Point, source, 22).expect("point record")
         });
         let inventory = SketchInventory {
             sketches: vec![Located::new(
                 sketch,
                 crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             entities: vec![Located::new(
                 point,
                 crate::record_identity::RecordTypeId::from_bytes(POINT_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 u32::MAX,
             )],
             transforms: Vec::new(),
@@ -2353,42 +2253,27 @@ mod tests {
         sketch_bytes.extend_from_slice(&2_u32.to_le_bytes());
         sketch_bytes.extend_from_slice(&[0; 8]);
         sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
+        let sketch = parse(&sketch_bytes, |_, source| {
             parse_sketch(source, 22).expect("sketch")
         });
         let inventory = SketchInventory {
             sketches: vec![Located::new(
                 sketch,
                 crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 2,
             )],
             entities: Vec::new(),
             transforms: vec![Located::new(
                 transform,
                 crate::record_identity::RecordTypeId::from_bytes(TRANSFORM_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             directions: vec![Located::new(
                 direction,
                 crate::record_identity::RecordTypeId::from_bytes(DIRECTION_TYPE),
-                cadmpeg_ir::identity_key!("segment")
-                    .try_clone_for_decode(
-                        &cadmpeg_test_support::service_decode_context(),
-                        "Inventor located fixture token",
-                    )
-                    .expect("service fixture token"),
+                cadmpeg_ir::identity_key!("segment"),
                 1,
             )],
             constraints: Vec::new(),
@@ -2417,77 +2302,18 @@ mod tests {
     }
 
     #[test]
-    fn sketch_constraint_projection_refuses_retained_limit_before_entity_copy() {
-        let mut bytes = constraint_header(0, 0);
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.push(1);
-        let payload = parse(&bytes, |ctx, source| {
-            parse_constraint(SketchConstraintTag::Horizontal, source, 22)
-                .expect("horizontal constraint")
-        });
-        let constraint = Located::new(
-            payload,
-            crate::record_identity::RecordTypeId::from_bytes(HORIZONTAL_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
-            0,
-        );
-        let entity = cadmpeg_ir::sketches::SketchEntity::new(
-            cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#1")
-                .expect("entity id"),
-            cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id"),
-            cadmpeg_ir::sketches::SketchGeometry::try_from(
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
-                    position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                },
-            )
-            .expect("point geometry"),
-        );
-        let entities = std::collections::HashMap::from([(("segment", 0), &entity)]);
-        let parameters = std::collections::HashMap::new();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()) - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters),
-            Some(Err(CodecError::ResourceLimit(limit)))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor sketch constraint entity id"
-        ));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service projection context");
-        assert!(
-            super::project_constraint(&ctx, &constraint, &entities, &parameters)
-                .expect("horizontal constraint projects")
-                .is_ok()
-        );
-    }
-
-    #[test]
     fn sketch_constraint_projection_refuses_entity_limit_before_creation() {
         let mut bytes = constraint_header(0, 0);
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.push(1);
-        let payload = parse(&bytes, |ctx, source| {
+        let payload = parse(&bytes, |_, source| {
             parse_constraint(SketchConstraintTag::Horizontal, source, 22)
                 .expect("horizontal constraint")
         });
         let constraint = Located::new(
             payload,
             crate::record_identity::RecordTypeId::from_bytes(HORIZONTAL_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            cadmpeg_ir::identity_key!("segment"),
             0,
         );
         let entity = cadmpeg_ir::sketches::SketchEntity::new(
@@ -2549,7 +2375,7 @@ mod tests {
     }
 
     #[test]
-    fn sketch_transform_record_refuses_collection_limit_before_push() {
+    fn sketch_transform_record_is_admitted() {
         let mut payload = content(0);
         payload.extend_from_slice(&0x8421u16.to_le_bytes());
         payload.extend_from_slice(&0x7bdeu16.to_le_bytes());
@@ -2560,55 +2386,13 @@ mod tests {
                 .len(),
             1
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc transform record"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
-    fn sketch_transform_record_refuses_retained_limit_before_identity_copy() {
-        let mut payload = content(0);
-        payload.extend_from_slice(&0x8421u16.to_le_bytes());
-        payload.extend_from_slice(&0x7bdeu16.to_le_bytes());
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 31;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record type id"
-                    && limit.used == 0
-        ));
-        policy.limits.max_retained_bytes = 32;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain Inventor PmDc record segment token"
-                    && limit.used == 32
-        ));
-    }
-
-    #[test]
-    fn sketch_parse_issue_refuses_collection_limit_before_push() {
+    fn sketch_parse_issue_is_recorded() {
         let admitted = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
             .expect("truncated transform becomes an issue");
         assert_eq!(admitted.issues.len(), 1);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(TRANSFORM_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor PmDc sketch issue"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
@@ -2631,43 +2415,7 @@ mod tests {
     }
 
     #[test]
-    fn sketch_parse_issue_copies_refuse_retained_limits_before_creation() {
-        let detail_len = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
-            .expect("truncated transform becomes an issue")
-            .issues[0]
-            .detail
-            .len();
-        for (limit_bytes, operation, used) in [
-            (
-                detail_len - 1,
-                "retain Inventor PmDc sketch issue detail",
-                0,
-            ),
-            (
-                detail_len,
-                "retain Inventor PmDc sketch issue type id",
-                detail_len,
-            ),
-            (
-                detail_len + 32,
-                "retain Inventor PmDc sketch issue segment token",
-                detail_len + 32,
-            ),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
-            assert!(matches!(
-                inventory_with_record(TRANSFORM_TYPE, &[], policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
-            ));
-        }
-    }
-
-    #[test]
-    fn sketch_record_forms_refuse_collection_limit_before_push() {
+    fn sketch_record_forms_are_admitted() {
         let mut sketch = content(0);
         sketch.extend_from_slice(&0u32.to_le_bytes());
         sketch.extend_from_slice(&0u32.to_le_bytes());
@@ -2678,23 +2426,11 @@ mod tests {
         let mut constraint = constraint_header(0, 0);
         constraint.extend_from_slice(&0u32.to_le_bytes());
         constraint.push(1);
-        for (type_id, payload, operation) in [
-            (SKETCH_TYPE, sketch, "admit Inventor PmDc sketch record"),
-            (
-                POINT_TYPE,
-                point_bytes(0, 0, [0.0, 0.0]),
-                "admit Inventor PmDc sketch entity record",
-            ),
-            (
-                DIRECTION_TYPE,
-                direction,
-                "admit Inventor PmDc direction record",
-            ),
-            (
-                HORIZONTAL_TYPE,
-                constraint,
-                "admit Inventor PmDc sketch constraint record",
-            ),
+        for (type_id, payload) in [
+            (SKETCH_TYPE, sketch),
+            (POINT_TYPE, point_bytes(0, 0, [0.0, 0.0])),
+            (DIRECTION_TYPE, direction),
+            (HORIZONTAL_TYPE, constraint),
         ] {
             let admitted = inventory_with_record(type_id, &payload, DecodePolicy::service())
                 .expect("sketch record is admitted");
@@ -2707,15 +2443,6 @@ mod tests {
                 1
             );
             assert!(admitted.issues.is_empty());
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            assert!(matches!(
-                inventory_with_record(type_id, &payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-                        && limit.used == 0
-            ));
         }
     }
 
@@ -2790,7 +2517,7 @@ mod tests {
     #[test]
     fn parses_generated_planar_geometry_branches() {
         let point = point_bytes(1, 3, [1.25, -2.5]);
-        let parsed = parse(&point, |ctx, source| {
+        let parsed = parse(&point, |_, source| {
             parse_entity(SketchEntityTag::Point, source, 22).expect("point")
         });
         assert!(matches!(
@@ -2802,7 +2529,7 @@ mod tests {
         ));
 
         let line = line_bytes(2, 3, [4, 5]);
-        let parsed = parse(&line, |ctx, source| {
+        let parsed = parse(&line, |_, source| {
             parse_entity(SketchEntityTag::Line, source, 22).expect("line")
         });
         assert!(matches!(
@@ -2817,7 +2544,7 @@ mod tests {
         circle.extend_from_slice(&4u32.to_le_bytes());
         circle.extend_from_slice(&2.5f64.to_le_bytes());
         circle.push(1);
-        let parsed = parse(&circle, |ctx, source| {
+        let parsed = parse(&circle, |_, source| {
             parse_entity(SketchEntityTag::Circle, source, 22).expect("circle")
         });
         assert!(matches!(
@@ -2834,7 +2561,7 @@ mod tests {
         ellipse.extend_from_slice(&3.0f64.to_le_bytes());
         ellipse.extend_from_slice(&2.0f64.to_le_bytes());
         ellipse.push(0);
-        let parsed = parse(&ellipse, |ctx, source| {
+        let parsed = parse(&ellipse, |_, source| {
             parse_entity(SketchEntityTag::Ellipse, source, 22).expect("ellipse")
         });
         assert!(matches!(
@@ -2871,7 +2598,7 @@ mod tests {
                     );
                 }
             }
-            let parsed = parse(&bytes, |ctx, source| {
+            let parsed = parse(&bytes, |_, source| {
                 parse_constraint(type_id, source, 22).expect(expected)
             });
             assert_eq!(
@@ -2893,7 +2620,7 @@ mod tests {
             let mut bytes = constraint_header(10, 0);
             bytes.extend_from_slice(&4u32.to_le_bytes());
             bytes.push(1);
-            let parsed = parse(&bytes, |ctx, source| {
+            let parsed = parse(&bytes, |_, source| {
                 parse_constraint(type_id, source, 22).expect("axis constraint")
             });
             assert_eq!(
@@ -2908,7 +2635,7 @@ mod tests {
         let mut bytes = legacy_constraint_header(9, 0);
         bytes.extend_from_slice(&4u32.to_le_bytes());
         bytes.extend_from_slice(&5u32.to_le_bytes());
-        let parsed = parse(&bytes, |ctx, source| {
+        let parsed = parse(&bytes, |_, source| {
             parse_constraint(SketchConstraintTag::Coincident, source, 16)
                 .expect("legacy coincident")
         });
@@ -2932,7 +2659,7 @@ mod tests {
             bytes.extend_from_slice(&5u32.to_le_bytes());
             bytes.extend_from_slice(&12u32.to_le_bytes());
             bytes.extend_from_slice(&[0; 16]);
-            parse(&bytes, |ctx, source| {
+            parse(&bytes, |_, source| {
                 parse_constraint(type_id, source, 22).expect("distance constraint")
             });
         }
@@ -2940,7 +2667,7 @@ mod tests {
         radius.extend_from_slice(&0u32.to_le_bytes());
         radius.extend_from_slice(&4u32.to_le_bytes());
         radius.extend_from_slice(&[0; 16]);
-        parse(&radius, |ctx, source| {
+        parse(&radius, |_, source| {
             parse_constraint(SketchConstraintTag::Radius, source, 22).expect("radius")
         });
 
@@ -2948,7 +2675,7 @@ mod tests {
         diameter.extend_from_slice(&0u32.to_le_bytes());
         diameter.extend_from_slice(&4u32.to_le_bytes());
         diameter.extend_from_slice(&[0; 16]);
-        parse(&diameter, |ctx, source| {
+        parse(&diameter, |_, source| {
             parse_constraint(SketchConstraintTag::Diameter, source, 22).expect("diameter")
         });
 
@@ -2959,7 +2686,7 @@ mod tests {
             let mut bytes = constraint_header(14, 0);
             bytes.extend_from_slice(&4u32.to_le_bytes());
             bytes.extend_from_slice(&5u32.to_le_bytes());
-            parse(&bytes, |ctx, source| {
+            parse(&bytes, |_, source| {
                 parse_constraint(type_id, source, 22).expect("circle relation")
             });
         }
@@ -2996,7 +2723,7 @@ mod tests {
         sketch_bytes.extend_from_slice(&2u32.to_le_bytes());
         sketch_bytes.extend_from_slice(&[0; 8]);
         sketch_bytes.extend(list(2, &[]));
-        let sketch = parse(&sketch_bytes, |ctx, source| {
+        let sketch = parse(&sketch_bytes, |_, source| {
             parse_sketch(source, 22).expect("sketch")
         });
         let points = [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]];
@@ -3010,7 +2737,7 @@ mod tests {
                         3,
                         position,
                     ),
-                    |ctx, source| parse_entity(SketchEntityTag::Point, source, 22).expect("point"),
+                    |_, source| parse_entity(SketchEntityTag::Point, source, 22).expect("point"),
                 )
             })
             .collect::<Vec<_>>();
@@ -3021,7 +2748,7 @@ mod tests {
                     3,
                     endpoints,
                 ),
-                |ctx, source| parse_entity(SketchEntityTag::Line, source, 22).expect("line"),
+                |_, source| parse_entity(SketchEntityTag::Line, source, 22).expect("line"),
             );
             let start = points[cadmpeg_core::decode::index_from_u32(endpoints[0]) - 4];
             let end = points[cadmpeg_core::decode::index_from_u32(endpoints[1]) - 4];
@@ -3039,34 +2766,19 @@ mod tests {
         let transform = Located::new(
             transform,
             crate::record_identity::RecordTypeId::from_bytes(TRANSFORM_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            cadmpeg_ir::identity_key!("segment"),
             0,
         );
         let direction = Located::new(
             direction,
             crate::record_identity::RecordTypeId::from_bytes(DIRECTION_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            cadmpeg_ir::identity_key!("segment"),
             1,
         );
         let located_sketch = Located::new(
             sketch.clone(),
             crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            cadmpeg_ir::identity_key!("segment"),
             2,
         );
         let entities = entities
@@ -3077,12 +2789,7 @@ mod tests {
                 Located::new(
                     value,
                     crate::record_identity::RecordTypeId::from_bytes(type_id),
-                    cadmpeg_ir::identity_key!("segment")
-                        .try_clone_for_decode(
-                            &cadmpeg_test_support::service_decode_context(),
-                            "Inventor located fixture token",
-                        )
-                        .expect("service fixture token"),
+                    cadmpeg_ir::identity_key!("segment"),
                     u32::try_from(index).expect("fixture value fits u32") + 3,
                 )
             })
@@ -3120,19 +2827,14 @@ mod tests {
         mapped_constraint.extend_from_slice(&0u32.to_le_bytes());
         mapped_constraint.extend_from_slice(&4u32.to_le_bytes());
         mapped_constraint.extend_from_slice(&5u32.to_le_bytes());
-        let mapped_constraint = parse(&mapped_constraint, |ctx, source| {
+        let mapped_constraint = parse(&mapped_constraint, |_, source| {
             parse_constraint(SketchConstraintTag::Coincident, source, 22)
                 .expect("mapped coincident")
         });
         inventory.constraints.push(Located::new(
             mapped_constraint,
             crate::record_identity::RecordTypeId::from_bytes(COINCIDENT_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            cadmpeg_ir::identity_key!("segment"),
             11,
         ));
         let mut sketch = sketch;
@@ -3143,12 +2845,7 @@ mod tests {
         inventory.sketches[0] = Located::new(
             sketch,
             crate::record_identity::RecordTypeId::from_bytes(SKETCH_TYPE),
-            cadmpeg_ir::identity_key!("segment")
-                .try_clone_for_decode(
-                    &cadmpeg_test_support::service_decode_context(),
-                    "Inventor located fixture token",
-                )
-                .expect("service fixture token"),
+            cadmpeg_ir::identity_key!("segment"),
             2,
         );
         let incomplete = project(&ctx, &inventory, &[]).expect("incomplete sketch projection");
