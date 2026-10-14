@@ -9,8 +9,6 @@
 
 use std::fmt;
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey,
     LoopId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
@@ -279,24 +277,6 @@ impl fmt::Display for Stem {
 
 /// Declare one minter over a const-admitted `iges:{scope}:{kind}` namespace.
 macro_rules! minter {
-    ($(#[$meta:meta])* body, $admitted:ident, $ty:ty, $scope:literal, $kind:literal) => {
-        $(#[$meta])*
-        pub(crate) fn body(stem: &Stem) -> $ty {
-            <$ty>::compose(
-                &cadmpeg_ir::identity_namespace!("iges", $scope, $kind),
-                stem.key(),
-            )
-        }
-
-        pub(crate) fn $admitted(stem: &Stem, ctx: &DecodeContext<'_>) -> Result<$ty, CodecError> {
-            let text = ctx.format_retained(
-                format_args!("iges:{}:{}#{stem}", $scope, $kind),
-                "iges generated identity",
-            )?;
-            <$ty>::try_from(text)
-                .map_err(|_| CodecError::Malformed("IGES generated identity is invalid".into()))
-        }
-    };
     ($(#[$meta:meta])* $name:ident, $ty:ty, $scope:literal, $kind:literal) => {
         $(#[$meta])*
         pub(crate) fn $name(stem: &Stem) -> $ty {
@@ -306,30 +286,11 @@ macro_rules! minter {
             )
         }
     };
-    ($(#[$meta:meta])* $name:ident, $admitted:ident, $ty:ty, $scope:literal, $kind:literal) => {
-        $(#[$meta])*
-        #[cfg(test)]
-        pub(crate) fn $name(stem: &Stem) -> $ty {
-            <$ty>::compose(
-                &cadmpeg_ir::identity_namespace!("iges", $scope, $kind),
-                stem.key(),
-            )
-        }
-            pub(crate) fn $admitted(
-                stem: &Stem,
-                ctx: &DecodeContext<'_>,
-            ) -> Result<$ty, CodecError> {
-                let text = ctx.format_retained(format_args!("iges:{}:{}#{stem}", $scope, $kind), "iges generated identity")?;
-                <$ty>::try_from(text)
-                    .map_err(|_| CodecError::Malformed("IGES generated identity is invalid".into()))
-            }
-    };
 }
 
 minter!(
     /// The body named by this key.
     body,
-    body_admitted,
     BodyId,
     "model",
     "body"
@@ -337,7 +298,6 @@ minter!(
 minter!(
     /// The coedge named by this key.
     coedge,
-    coedge_admitted,
     CoedgeId,
     "model",
     "coedge"
@@ -345,7 +305,6 @@ minter!(
 minter!(
     /// The curve named by this key.
     curve,
-    curve_admitted,
     CurveId,
     "model",
     "curve"
@@ -353,7 +312,6 @@ minter!(
 minter!(
     /// The edge named by this key.
     edge,
-    edge_admitted,
     EdgeId,
     "model",
     "edge"
@@ -361,7 +319,6 @@ minter!(
 minter!(
     /// The face named by this key.
     face,
-    face_admitted,
     FaceId,
     "model",
     "face"
@@ -369,7 +326,6 @@ minter!(
 minter!(
     /// The loop named by this key.
     r#loop,
-    loop_admitted,
     LoopId,
     "model",
     "loop"
@@ -377,7 +333,6 @@ minter!(
 minter!(
     /// The pcurve named by this key.
     pcurve,
-    pcurve_admitted,
     PcurveId,
     "model",
     "pcurve"
@@ -385,7 +340,6 @@ minter!(
 minter!(
     /// The point named by this key.
     point,
-    point_admitted,
     PointId,
     "model",
     "point"
@@ -393,7 +347,6 @@ minter!(
 minter!(
     /// The procedural curve named by this key.
     procedural_curve,
-    procedural_curve_admitted,
     ProceduralCurveId,
     "model",
     "procedural-curve"
@@ -401,7 +354,6 @@ minter!(
 minter!(
     /// The procedural surface named by this key.
     procedural_surface,
-    procedural_surface_admitted,
     ProceduralSurfaceId,
     "model",
     "procedural-surface"
@@ -409,7 +361,6 @@ minter!(
 minter!(
     /// The region named by this key.
     region,
-    region_admitted,
     RegionId,
     "model",
     "region"
@@ -417,7 +368,6 @@ minter!(
 minter!(
     /// The shell named by this key.
     shell,
-    shell_admitted,
     ShellId,
     "model",
     "shell"
@@ -425,7 +375,6 @@ minter!(
 minter!(
     /// The surface named by this key.
     surface,
-    surface_admitted,
     SurfaceId,
     "model",
     "surface"
@@ -433,7 +382,6 @@ minter!(
 minter!(
     /// The vertex named by this key.
     vertex,
-    vertex_admitted,
     VertexId,
     "model",
     "vertex"
@@ -441,7 +389,6 @@ minter!(
 minter!(
     /// The appearance named by this Directory colour definition key.
     appearance_color,
-    appearance_color_admitted,
     AppearanceId,
     "appearance",
     "color"
@@ -449,7 +396,6 @@ minter!(
 minter!(
     /// The appearance named by this standard colour number.
     appearance_standard,
-    appearance_standard_admitted,
     AppearanceId,
     "appearance",
     "standard"
@@ -457,7 +403,6 @@ minter!(
 minter!(
     /// The appearance binding named by this key.
     appearance_binding,
-    appearance_binding_admitted,
     AppearanceBindingId,
     "model",
     "appearance-binding"
@@ -466,8 +411,6 @@ minter!(
 #[cfg(test)]
 mod tests {
     use super::{directory_lookup_key, Stem, StemPieces, Word};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     #[test]
     fn directory_lookup_key_uses_stack_storage_for_full_u32_range() {
@@ -485,43 +428,6 @@ mod tests {
             directory_lookup_key("iges:model:edge#D", 1, &mut short),
             None
         );
-    }
-
-    #[test]
-    fn generated_identity_minters_charge_before_rendering_each_kind() {
-        let stem = Stem::directory(1_u32);
-        let mut low_policy = DecodePolicy::service();
-        low_policy.limits.max_retained_bytes = 0;
-        let low_arena = DecodeArena::new();
-        let (low_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &low_arena, &low_policy).expect("test setup");
-        let service_arena = DecodeArena::new();
-        let service_policy = DecodePolicy::service();
-        let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &service_arena, &service_policy)
-            .expect("test setup");
-        macro_rules! check {
-            ($old:ident, $admitted:ident) => {
-                assert!(matches!(super::$admitted(&stem, &low_ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges generated identity"));
-                assert_eq!(super::$admitted(&stem, &service_ctx).expect("test setup").as_str(), super::$old(&stem).as_str());
-            };
-        }
-        check!(body, body_admitted);
-        check!(coedge, coedge_admitted);
-        check!(curve, curve_admitted);
-        check!(edge, edge_admitted);
-        check!(face, face_admitted);
-        check!(r#loop, loop_admitted);
-        check!(pcurve, pcurve_admitted);
-        check!(point, point_admitted);
-        check!(procedural_curve, procedural_curve_admitted);
-        check!(procedural_surface, procedural_surface_admitted);
-        check!(region, region_admitted);
-        check!(shell, shell_admitted);
-        check!(surface, surface_admitted);
-        check!(vertex, vertex_admitted);
-        check!(appearance_color, appearance_color_admitted);
-        check!(appearance_standard, appearance_standard_admitted);
-        check!(appearance_binding, appearance_binding_admitted);
     }
 
     #[test]
