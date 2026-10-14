@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Replay stored JSON text into a serializer.
+//! Read stored JSON text.
 //!
 //! [`emit`] drives a serializer from the parse, reading one container at a
 //! time. Each container is a parse of its own, so the parser's own recursion
 //! limit never accumulates; the descent is counted here instead, against the
 //! one bound every native record field answers to.
+//!
+//! The other readers take native record text, whose nesting the record writer
+//! bounded: [`transcode`] writes it into a serializer in one pass, [`value`]
+//! parses it, and [`member`], [`members`] and [`Elements`] find member and
+//! element texts without building their values.
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::fmt;
 
 use serde::{de, ser};
 use serde_json::value::RawValue;
+use serde_json::Value;
 
 use super::nests_too_deep_message;
 
@@ -30,6 +37,334 @@ pub(super) fn emit<S: ser::Serializer>(
         .map_err(de_to_ser)?;
     deserializer.end().map_err(de_to_ser)?;
     Ok(emitted)
+}
+
+/// Write the JSON value held in `json` into `serializer` in one pass.
+///
+/// The text is a stored native record, which the writer bounded at
+/// [`super::MAX_NATIVE_NESTING_DEPTH`] containers per field, so the parser's
+/// recursion limit is lifted. Each value is read once, as `serializer` asks
+/// for it; [`emit`] serves a serializer that reads a value more than once.
+pub(super) fn transcode<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    deserializer.disable_recursion_limit();
+    let written = de::Deserializer::deserialize_any(&mut deserializer, Transcode(serializer))
+        .map_err(de_to_ser)?;
+    deserializer.end().map_err(de_to_ser)?;
+    Ok(written)
+}
+
+/// Writes each value it visits into a serializer.
+struct Transcode<S>(S);
+
+impl<'de, S: ser::Serializer> de::Visitor<'de> for Transcode<S> {
+    type Value = S::Ok;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        self.0.serialize_unit().map_err(ser_to_de)
+    }
+
+    fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
+        self.0.serialize_bool(value).map_err(ser_to_de)
+    }
+
+    fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+        self.0.serialize_i64(value).map_err(ser_to_de)
+    }
+
+    fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+        self.0.serialize_u64(value).map_err(ser_to_de)
+    }
+
+    fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
+        self.0.serialize_f64(value).map_err(ser_to_de)
+    }
+
+    fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        self.0.serialize_str(value).map_err(ser_to_de)
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let mut sequence = self
+            .0
+            .serialize_seq(access.size_hint())
+            .map_err(ser_to_de)?;
+        while access.next_element_seed(Element(&mut sequence))?.is_some() {}
+        ser::SerializeSeq::end(sequence).map_err(ser_to_de)
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let mut map = self
+            .0
+            .serialize_map(access.size_hint())
+            .map_err(ser_to_de)?;
+        while let Some(key) = access.next_key_seed(Key)? {
+            ser::SerializeMap::serialize_key(&mut map, key.as_ref()).map_err(ser_to_de)?;
+            access.next_value_seed(MapValue(&mut map))?;
+        }
+        ser::SerializeMap::end(map).map_err(ser_to_de)
+    }
+}
+
+/// Writes one sequence element as the parser reaches it.
+struct Element<'s, C>(&'s mut C);
+
+impl<'de, C: ser::SerializeSeq> de::DeserializeSeed<'de> for Element<'_, C> {
+    type Value = ();
+
+    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        self.0
+            .serialize_element(&Pending::new(deserializer))
+            .map_err(ser_to_de)
+    }
+}
+
+/// Writes one map value as the parser reaches it.
+struct MapValue<'s, C>(&'s mut C);
+
+impl<'de, C: ser::SerializeMap> de::DeserializeSeed<'de> for MapValue<'_, C> {
+    type Value = ();
+
+    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        self.0
+            .serialize_value(&Pending::new(deserializer))
+            .map_err(ser_to_de)
+    }
+}
+
+/// A value the parser has reached but not read, handed to a serializer.
+struct Pending<D>(RefCell<Option<D>>);
+
+impl<D> Pending<D> {
+    fn new(deserializer: D) -> Self {
+        Self(RefCell::new(Some(deserializer)))
+    }
+}
+
+impl<'de, D: de::Deserializer<'de>> ser::Serialize for Pending<D> {
+    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let deserializer = self
+            .0
+            .borrow_mut()
+            .take()
+            .ok_or_else(|| ser::Error::custom("a stored native value is read once"))?;
+        deserializer
+            .deserialize_any(Transcode(serializer))
+            .map_err(de_to_ser)
+    }
+}
+
+/// Parse the JSON value held in `json`, which the native record writer
+/// bounded at [`super::MAX_NATIVE_NESTING_DEPTH`] containers per field.
+///
+/// One pass reads the text with the parser's recursion limit lifted. An object
+/// key is plain text: the `serde_json` `Value` reader would treat a first key
+/// spelling its `RawValue` protocol token as embedded JSON.
+pub(super) fn value(json: &str) -> serde_json::Result<Value> {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    deserializer.disable_recursion_limit();
+    let value = de::DeserializeSeed::deserialize(Plain, &mut deserializer)?;
+    deserializer.end()?;
+    Ok(value)
+}
+
+/// Builds a [`Value`] whose object keys are plain text.
+#[derive(Clone, Copy)]
+struct Plain;
+
+impl<'de> de::DeserializeSeed<'de> for Plain {
+    type Value = Value;
+
+    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<Value, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> de::Visitor<'de> for Plain {
+    type Value = Value;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Value, E> {
+        Ok(Value::Null)
+    }
+
+    fn visit_bool<E: de::Error>(self, value: bool) -> Result<Value, E> {
+        Ok(Value::Bool(value))
+    }
+
+    fn visit_i64<E: de::Error>(self, value: i64) -> Result<Value, E> {
+        Ok(Value::Number(value.into()))
+    }
+
+    fn visit_u64<E: de::Error>(self, value: u64) -> Result<Value, E> {
+        Ok(Value::Number(value.into()))
+    }
+
+    fn visit_f64<E: de::Error>(self, value: f64) -> Result<Value, E> {
+        serde_json::Number::from_f64(value)
+            .map(Value::Number)
+            .ok_or_else(|| E::custom("native record text holds a non-finite number"))
+    }
+
+    fn visit_str<E: de::Error>(self, value: &str) -> Result<Value, E> {
+        Ok(Value::String(value.to_owned()))
+    }
+
+    fn visit_string<E: de::Error>(self, value: String) -> Result<Value, E> {
+        Ok(Value::String(value))
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut access: A) -> Result<Value, A::Error> {
+        let mut items = Vec::with_capacity(access.size_hint().unwrap_or(0));
+        while let Some(item) = access.next_element_seed(self)? {
+            items.push(item);
+        }
+        Ok(Value::Array(items))
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<Value, A::Error> {
+        let mut entries = serde_json::Map::new();
+        while let Some(key) = access.next_key::<String>()? {
+            let value = access.next_value_seed(self)?;
+            entries.insert(key, value);
+        }
+        Ok(Value::Object(entries))
+    }
+}
+
+/// The raw text of the member `name` of the JSON object held in `json`.
+///
+/// The other members are scanned past without being built. Text that is not
+/// an object, or holds no such member, answers `None`.
+pub(super) fn member<'a>(json: &'a str, name: &str) -> Option<&'a RawValue> {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    let found = de::Deserializer::deserialize_map(&mut deserializer, Member { name }).ok()?;
+    deserializer.end().ok()?;
+    found
+}
+
+/// The number of members of the JSON object held in `json`, or `None` when
+/// the text is not an object.
+pub(super) fn member_count(json: &str) -> Option<usize> {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    let count = de::Deserializer::deserialize_map(&mut deserializer, Count).ok()?;
+    deserializer.end().ok()?;
+    Some(count)
+}
+
+/// Counts an object's members and scans past their values.
+struct Count;
+
+impl<'de> de::Visitor<'de> for Count {
+    type Value = usize;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<usize, A::Error> {
+        let mut count = 0_usize;
+        while access.next_key::<de::IgnoredAny>()?.is_some() {
+            access.next_value::<&RawValue>()?;
+            count += 1;
+        }
+        Ok(count)
+    }
+}
+
+/// An object's member keys, each with its value text.
+pub(super) type MemberTexts<'a> = Vec<(Cow<'a, str>, &'a str)>;
+
+/// Push each member of the JSON object held in `json` onto `members`: its key
+/// and its value text. The caller reserved one slot per member. States
+/// whether `json` is an object.
+pub(super) fn members<'a>(json: &'a str, members: &mut MemberTexts<'a>) -> bool {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    de::Deserializer::deserialize_map(&mut deserializer, Members { members }).is_ok()
+        && deserializer.end().is_ok()
+}
+
+/// Collects an object's member keys and value texts.
+struct Members<'m, 'a> {
+    members: &'m mut MemberTexts<'a>,
+}
+
+impl<'a> de::Visitor<'a> for Members<'_, 'a> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: de::MapAccess<'a>>(self, mut access: A) -> Result<(), A::Error> {
+        while let Some(key) = access.next_key_seed(Key)? {
+            let value = access.next_value::<&RawValue>()?;
+            self.members.push((key, value.get()));
+        }
+        Ok(())
+    }
+}
+
+/// The element texts of one JSON array, read one at a time.
+pub(super) struct Elements<'a> {
+    /// Text after the elements already read, or `None` after the last one.
+    rest: Option<&'a str>,
+}
+
+impl<'a> Elements<'a> {
+    /// The elements of the array held in `json`, or `None` when the text is
+    /// not an array.
+    pub(super) fn of(json: &'a str) -> Option<Self> {
+        let rest = json.trim_start().strip_prefix('[')?;
+        Some(Self { rest: Some(rest) })
+    }
+}
+
+impl<'a> Iterator for Elements<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        let rest = self.rest.take()?.trim_start();
+        if rest.starts_with(']') {
+            return None;
+        }
+        let mut elements = serde_json::Deserializer::from_str(rest).into_iter::<&RawValue>();
+        let element = elements.next()?.ok()?;
+        let after = rest.get(elements.byte_offset()..)?.trim_start();
+        self.rest = Some(after.strip_prefix(',').unwrap_or(after));
+        Some(element.get())
+    }
+}
+
+/// Finds one member of an object and scans past the others.
+struct Member<'n> {
+    name: &'n str,
+}
+
+impl<'de> de::Visitor<'de> for Member<'_> {
+    type Value = Option<&'de RawValue>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let mut found = None;
+        while let Some(key) = access.next_key_seed(Key)? {
+            let value = access.next_value::<&RawValue>()?;
+            if found.is_none() && key == self.name {
+                found = Some(value);
+            }
+        }
+        Ok(found)
+    }
 }
 
 /// The refusal a container past the bound reports.
