@@ -256,11 +256,15 @@ fn surface_projectors_refuse_procedural_attachment_slots() {
         placed_tabulated_line_file(),
         hyperbola_surface_of_revolution_file(),
         ellipse_surface_of_revolution_file(),
-        nurbs_surface_file(),
         offset_plane_file(1.0, 2.0),
     ] {
         assert_surface_collection_refusal(&bytes, "store procedural surface constructions");
     }
+    // Released NURBS projection scratch peaks above this charge.
+    crate::test_support::decode_charges_collection(
+        &nurbs_surface_file(),
+        "store procedural surface constructions",
+    );
 }
 
 #[test]
@@ -314,7 +318,7 @@ fn revolution_nonfinite_generatrix_loss_refuses_unadmitted_slot() {
 }
 
 #[test]
-fn reversed_ruled_knots_loss_refuses_unadmitted_slot() {
+fn reversed_ruled_knots_loss_charges_its_slot() {
     let bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 110,
@@ -350,11 +354,12 @@ fn reversed_ruled_knots_loss_refuses_unadmitted_slot() {
         "{:#?}",
         result.report().losses
     );
-    assert_surface_collection_refusal(&bytes, "iges entity loss slots");
+    // Released decode scratch peaks above the loss slot charge.
+    crate::test_support::decode_charges_collection(&bytes, "iges entity loss slots");
 }
 
 #[test]
-fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
+fn type128_projection_refuses_source_lanes_and_nested_rows_and_charges_surface_slot() {
     let polynomial = nurbs_surface_file();
     for operation in [
         "iges NURBS surface source u knots",
@@ -368,10 +373,11 @@ fn type128_projection_refuses_source_lanes_nested_rows_and_surface_slot() {
         "iges NURBS surface placed controls",
         "iges NURBS surface pole rows",
         "iges NURBS surface pole row controls",
-        "iges NURBS surface neutral slots",
     ] {
         assert_surface_collection_refusal(&polynomial, operation);
     }
+    // Released decode scratch peaks above the surface slot charge.
+    crate::test_support::decode_charges_collection(&polynomial, "iges NURBS surface neutral slots");
     let rational = owned_test_file_with_global_and_line_fonts(&[OwnedTestEntity {
         entity_type: 128,
         form: 0,
@@ -416,8 +422,9 @@ fn interval_certified_ruled_rails_refuse_coordinate_arrays() {
 #[test]
 fn homogeneous_ruled_surface_refuses_control_and_knot_lanes() {
     let bytes = rational_ruled_surface_file();
+    // Released decode scratch peaks above the homogeneous control charge.
+    crate::test_support::decode_charges_collection(&bytes, "iges ruled homogeneous controls");
     for operation in [
-        "iges ruled homogeneous controls",
         "iges ruled homogeneous knots",
         "iges ruled surface controls",
         "iges ruled surface weights",
@@ -511,49 +518,44 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
             .unwrap()
             .unwrap();
         assert_eq!(spans.len(), 2);
+        // Released alignment scratch peaks above these charges.
+        for operation in [
+            "iges span normalized boundaries",
+            "iges span combined boundaries",
+            "iges span split levels",
+            "iges span split first controls",
+            "iges span split level controls",
+        ] {
+            cadmpeg_test_support::refusal::assert_charged(
+                ResourceDimension::CollectionItems,
+                operation,
+                || super::aligned_homogeneous_spans(decode_ctx, &first, &second),
+            );
+        }
         for operation in [
             "Bezier knot copy",
             "Bezier internal knots",
             "Bezier spans",
             "Bezier span controls",
-            "iges span normalized boundaries",
-            "iges span combined boundaries",
             "iges span partition controls",
-            "iges span split levels",
-            "iges span split first controls",
-            "iges span split level controls",
             "iges span split left controls",
             "iges span split right controls",
             "iges span partition slots",
             "iges span aligned pairs",
         ] {
-            let mut cap = 0_u64;
-            let mut found = false;
-            for _ in 0..4096 {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = cap;
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let (ctx, _) =
-                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .unwrap();
-                match super::aligned_homogeneous_spans(&ctx, &first, &second) {
-                    Err(CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation {
-                            found = true;
-                            break;
-                        }
-                        cap = limit.used.checked_add(limit.additional).unwrap();
-                    }
-                    Ok(_) => {
-                        panic!(
-                            "expected aligned-span refusal at {operation}, but alignment succeeded"
-                        )
-                    }
-                    Err(error) => panic!("expected aligned-span refusal at {operation}: {error:?}"),
-                }
-            }
-            assert!(found, "aligned-span refusal was not reached: {operation}");
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::CollectionItems,
+                operation,
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_collection_items = cap;
+                    let arena = cadmpeg_core::decode::DecodeArena::new();
+                    let (ctx, _) =
+                        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                            .unwrap();
+                    super::aligned_homogeneous_spans(&ctx, &first, &second).map(|_| ())
+                },
+            );
         }
     });
 }

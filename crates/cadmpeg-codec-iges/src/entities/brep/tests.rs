@@ -137,52 +137,29 @@ fn two_loop_face_file() -> Vec<u8> {
 #[test]
 fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
     for (bytes, operation) in [
+        (two_loop_face_file(), "iges B-rep face loop pointers"),
+        (explicit_vertex_loop_file(), "iges B-rep face nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep shell nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep sheet shell uses"),
+        (explicit_vertex_loop_file(), "iges B-rep body definitions"),
+    ] {
+        crate::test_support::decode_collection_refusal(&bytes, operation);
+    }
+    // Released decode scratch peaks above these charges.
+    for (bytes, operation) in [
         (explicit_vertex_loop_file(), "iges B-rep vertex-list nodes"),
         (
             explicit_tetrahedron_solid_file(),
             "iges B-rep edge-list nodes",
         ),
         (explicit_vertex_loop_file(), "iges B-rep loop nodes"),
-        (two_loop_face_file(), "iges B-rep face loop pointers"),
-        (explicit_vertex_loop_file(), "iges B-rep face nodes"),
-        (explicit_vertex_loop_file(), "iges B-rep shell nodes"),
-        (explicit_vertex_loop_file(), "iges B-rep sheet shell uses"),
-        (explicit_vertex_loop_file(), "iges B-rep body definitions"),
         (explicit_void_solid_file().0, "iges B-rep solid shell uses"),
         (
             explicit_void_solid_file().0,
             "iges B-rep referenced closed shells",
         ),
     ] {
-        let mut cap = 0_u64;
-        let mut found = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let result = IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            );
-            match result {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        found = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                Ok(_) => panic!("decode succeeded before B-rep definition refusal at {operation}"),
-                Err(error) => panic!("unexpected B-rep definition result at {operation}: {error}"),
-            }
-        }
-        assert!(
-            found,
-            "B-rep definition refusal was not reached: {operation}"
-        );
+        crate::test_support::decode_charges_collection(&bytes, operation);
     }
 }
 
@@ -248,24 +225,12 @@ fn brep_topology_indexes_and_adjacency_refuse_before_growth() {
         ),
         (
             explicit_tetrahedron_solid_file(),
-            "iges B-rep curve index nodes",
-        ),
-        (
-            explicit_tetrahedron_solid_file(),
             "iges B-rep edge-use positions",
         ),
         (explicit_tetrahedron_solid_file(), "iges B-rep coedge ids"),
         (
             explicit_tetrahedron_solid_file(),
             "iges B-rep coedge use nodes",
-        ),
-        (
-            explicit_tetrahedron_solid_file(),
-            "iges B-rep source edge index nodes",
-        ),
-        (
-            explicit_tetrahedron_solid_file(),
-            "iges B-rep source edge positions",
         ),
         (
             explicit_tetrahedron_solid_file(),
@@ -288,10 +253,6 @@ fn brep_topology_indexes_and_adjacency_refuse_before_growth() {
             "iges B-rep topology coedges",
         ),
         (explicit_tetrahedron_solid_file(), "loop ring members"),
-        (
-            explicit_tetrahedron_solid_file(),
-            "iges B-rep decoded topology sequences",
-        ),
         (explicit_vertex_loop_file(), "iges B-rep topology loops"),
         (
             explicit_vertex_loop_file(),
@@ -316,32 +277,28 @@ fn brep_topology_indexes_and_adjacency_refuse_before_growth() {
             "iges B-rep face unspecified loop ids",
         ),
     ] {
-        let mut cap = 0_u64;
-        let mut found = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let result = IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            );
-            match result {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        found = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                Ok(_) => panic!("decode succeeded before B-rep topology refusal at {operation}"),
-                Err(error) => panic!("unexpected B-rep topology result at {operation}: {error}"),
-            }
-        }
-        assert!(found, "B-rep topology refusal was not reached: {operation}");
+        crate::test_support::decode_collection_refusal(&bytes, operation);
+    }
+    // Released decode scratch peaks above these charges.
+    for (bytes, operation) in [
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep curve index nodes",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep source edge index nodes",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep source edge positions",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep decoded topology sequences",
+        ),
+    ] {
+        crate::test_support::decode_charges_collection(&bytes, operation);
     }
 }
 

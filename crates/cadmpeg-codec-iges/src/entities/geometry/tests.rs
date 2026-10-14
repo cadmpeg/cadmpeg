@@ -33,12 +33,13 @@ fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
-fn merged_trimming_vertex_derivations_refuse_before_accumulator_growth() {
+fn merged_trimming_vertex_derivations_charge_collection_items() {
+    // Released decode scratch peaks above this charge.
     let bytes = crate::test_support::test_surface_fixtures::bounded_plane_file();
-    assert_geometry_collection_refusal(&bytes, "iges merged boundary vertex derivations");
-    assert!(crate::IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .is_ok());
+    crate::test_support::decode_charges_collection(
+        &bytes,
+        "iges merged boundary vertex derivations",
+    );
 }
 
 #[test]
@@ -167,8 +168,9 @@ fn point_flash_and_line_projection_refuse_neutral_slots() {
 }
 
 #[test]
-fn free_wire_topology_refuses_nested_lists_and_model_slots() {
+fn free_wire_topology_charges_nested_lists_and_model_slots() {
     let bytes = crate::test_support::test_curves_and_surfaces::line_file(0);
+    // Released decode scratch peaks above these charges.
     for operation in [
         "iges free wire body regions",
         "iges free wire body slots",
@@ -176,7 +178,7 @@ fn free_wire_topology_refuses_nested_lists_and_model_slots() {
         "iges free wire region slots",
         "iges free wire shell slots",
     ] {
-        assert_geometry_collection_refusal(&bytes, operation);
+        crate::test_support::decode_charges_collection(&bytes, operation);
     }
     let service = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -233,9 +235,7 @@ fn projector_merges_refuse_decoded_loss_and_wire_growth() {
 }
 
 #[test]
-fn analytic_location_vertex_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::DecodePolicy;
-    use cadmpeg_ir::codec::DecodeFailure;
+fn analytic_location_vertex_index_charges_collection_items() {
     let bytes = crate::test_support::test_curves_and_surfaces::conic_arc_file(
         0,
         b"104,0.25,0,1,0,0,-1,0,2,0,0,1;",
@@ -244,30 +244,11 @@ fn analytic_location_vertex_index_refuses_collection_limit() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(service.ir().model.points.len(), 2);
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges analytic-surface vertex point index" {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach vertex point index at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach vertex point index within 4096 admission boundaries");
+    // Released decode scratch peaks above this charge.
+    crate::test_support::decode_charges_collection(
+        &bytes,
+        "iges analytic-surface vertex point index",
+    );
 }
 
 #[test]
