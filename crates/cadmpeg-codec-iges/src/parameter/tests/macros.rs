@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::parameter::{macro_parameter_data_with_context, MacroDataError, ParameterDefect};
+use crate::parameter::{macro_parameter_data, MacroDataError, ParameterDefect};
 
 #[test]
 fn macro_parameter_data_keeps_language_delimiters_outside_hollerith_payloads() {
     let bytes = b"306,MACRO,621,X,Y;LET $S=3Ha;b;ENDM;comment bytes";
-    let data = { macro_parameter_data_with_context(bytes, b',', b';') }.unwrap();
+    let data = { macro_parameter_data(bytes, b',', b';') }.unwrap();
 
     assert_eq!(data.defined_entity_type, 621);
     assert_eq!(data.statement_spans.len(), 3);
@@ -47,7 +47,7 @@ fn macro_parameter_data_requires_the_assigned_type_and_arguments() {
             ParameterDefect::MacroTerminatorMissing,
         ),
     ] {
-        let error = { macro_parameter_data_with_context(bytes, b',', b';') }.unwrap_err();
+        let error = { macro_parameter_data(bytes, b',', b';') }.unwrap_err();
         assert!(matches!(error, MacroDataError::Defect(found, _) if found == defect));
     }
 }
@@ -55,7 +55,7 @@ fn macro_parameter_data_requires_the_assigned_type_and_arguments() {
 #[test]
 fn macro_parameter_data_requires_nonempty_language_statements() {
     let bytes = b"306,MACRO,621,X;;ENDM;";
-    let error = { macro_parameter_data_with_context(bytes, b',', b';') }.unwrap_err();
+    let error = { macro_parameter_data(bytes, b',', b';') }.unwrap_err();
     assert!(matches!(
         error,
         MacroDataError::Defect(ParameterDefect::MacroStatementEmpty, _)

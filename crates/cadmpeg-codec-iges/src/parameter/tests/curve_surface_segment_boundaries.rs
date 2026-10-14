@@ -1,9 +1,9 @@
 use super::integer_parameter_record;
 use super::token_parameter_record;
-use crate::parameter::analyze_trailing_pointer_groups_for_global_table_with_context;
+use crate::parameter::analyze_trailing_pointer_groups_for_global_table;
 use crate::parameter::entity_primary_end;
-use crate::parameter::groups_for_candidate_with_context;
-use crate::parameter::structural_pointer_group_candidates_with_context;
+use crate::parameter::groups_for_candidate;
+use crate::parameter::structural_pointer_group_candidates;
 use crate::parameter::ParameterRecord;
 use crate::parameter::Token;
 use crate::parameter::TokenValue;
@@ -46,7 +46,7 @@ fn type114_entity_table_boundary_uses_segment_dimensions() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -97,7 +97,7 @@ fn type114_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -148,7 +148,7 @@ fn type114_malformed_segment_dimensions_do_not_enable_generic_recovery() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -253,7 +253,7 @@ fn type128_entity_table_boundary_uses_surface_indices() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -298,7 +298,7 @@ fn type128_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -347,7 +347,7 @@ fn type128_malformed_indices_do_not_enable_generic_recovery() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -453,7 +453,7 @@ fn type144_entity_table_boundary_uses_inner_boundary_count() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -494,7 +494,7 @@ fn type144_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -538,7 +538,7 @@ fn type144_malformed_inner_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -679,7 +679,7 @@ fn type143_entity_table_boundary_uses_boundary_count() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -720,7 +720,7 @@ fn type143_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -764,7 +764,7 @@ fn type143_malformed_boundary_counts_do_not_enable_generic_recovery() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -788,7 +788,7 @@ fn type140_form0_follows_five_primary_fields() {
     let record = integer_parameter_record(9, &[140, 0, 0, 1, 2, 3, 1, 1, 1, 5]);
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -818,10 +818,10 @@ fn type140_table_boundary_precedes_valid_generic_alternative() {
         (9, &source),
     ]);
     let record = integer_parameter_record(9, &[140, 0, 0, 1, 2, 2, 1, 3, 1, 5]);
-    let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
+    let valid_starts = { structural_pointer_group_candidates(&record) }
         .into_iter()
         .filter(|candidate| {
-            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+            { groups_for_candidate(&record, &directory, *candidate) }
                 .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
@@ -829,7 +829,7 @@ fn type140_table_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![5, 6]);
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -868,7 +868,7 @@ fn type140_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         ],
     );
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &wrong_field,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -883,7 +883,7 @@ fn type140_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
 
     for values in [vec![140, 0, 0, 1, 2], vec![140, 0, 0, 1, 2, 3, 1, 1, 1]] {
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &integer_parameter_record(9, &values),
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -921,7 +921,7 @@ fn type308_form0_entity_table_boundary_follows_member_count() {
         values.extend([1.into(), 1.into(), 1.into(), 5.into()]);
         let analysis_record = token_parameter_record(11, values);
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &analysis_record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -978,10 +978,10 @@ fn type308_table_boundary_precedes_valid_generic_alternative() {
             5.into(),
         ],
     );
-    let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
+    let valid_starts = { structural_pointer_group_candidates(&record) }
         .into_iter()
         .filter(|candidate| {
-            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+            { groups_for_candidate(&record, &directory, *candidate) }
                 .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
@@ -989,7 +989,7 @@ fn type308_table_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![5, 6]);
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,

@@ -91,8 +91,7 @@ fn spline_surface_patch_projects_a_bicubic_nurbs_carrier() {
     let (global, _) = crate::test_support::parse_global(&scan).unwrap();
     let (directory, parameters) = crate::test_support::with_service_context(&bytes, |ctx| {
         let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)?;
-        let parameters =
-            crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global)?;
+        let parameters = crate::parameter::assemble(&scan, &directory, &quarantined, &global)?;
         Ok::<_, CodecError>((directory, parameters))
     })
     .unwrap();

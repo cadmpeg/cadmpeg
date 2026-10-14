@@ -1,7 +1,7 @@
 use super::token_parameter_record;
 use crate::loss::IgesLossCode;
 use crate::parameter::{
-    analyze_trailing_pointer_groups_for_global_table_with_context, entity_primary_end,
+    analyze_trailing_pointer_groups_for_global_table, entity_primary_end,
     entity_primary_end_with_records, ParameterRecord, Token, TokenValue,
 };
 use crate::test_support::directory_target;
@@ -299,7 +299,7 @@ fn trailing_pointer_boundary_search_stays_linear_for_ambiguous_suffixes() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &BTreeMap::new(),
             crate::global::GlobalTable::V5Later,
@@ -350,7 +350,7 @@ fn unique_invalid_trailing_pointer_group_remains_visible() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &BTreeMap::new(),
             crate::global::GlobalTable::V5Later,
@@ -391,7 +391,7 @@ fn unique_valid_trailing_pointer_group_boundary_wins() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,

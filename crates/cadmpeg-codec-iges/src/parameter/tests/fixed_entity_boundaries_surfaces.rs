@@ -1,9 +1,9 @@
 use super::integer_parameter_record;
 use super::token_parameter_record;
-use crate::parameter::analyze_trailing_pointer_groups_for_global_table_with_context;
+use crate::parameter::analyze_trailing_pointer_groups_for_global_table;
 use crate::parameter::entity_primary_end;
-use crate::parameter::groups_for_candidate_with_context;
-use crate::parameter::structural_pointer_group_candidates_with_context;
+use crate::parameter::groups_for_candidate;
+use crate::parameter::structural_pointer_group_candidates;
 use crate::parameter::TokenValue;
 use crate::test_support::directory_target;
 use std::collections::BTreeMap;
@@ -30,7 +30,7 @@ fn analytic_surface_forms_follow_fixed_primary_boundaries() {
         let mut values = primary;
         values.extend([1, 1, 1, 3]);
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &integer_parameter_record(7, &values),
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -89,10 +89,10 @@ fn analytic_surface_table_boundaries_precede_valid_generic_alternatives() {
         let mut values = primary;
         values.extend([2, 1, 1, 1, 3]);
         let record = integer_parameter_record(7, &values);
-        let valid_starts = { structural_pointer_group_candidates_with_context(&record) }
+        let valid_starts = { structural_pointer_group_candidates(&record) }
             .into_iter()
             .filter(|candidate| {
-                { groups_for_candidate_with_context(&record, &directory, *candidate) }
+                { groups_for_candidate(&record, &directory, *candidate) }
                     .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
@@ -100,7 +100,7 @@ fn analytic_surface_table_boundaries_precede_valid_generic_alternatives() {
         assert_eq!(valid_starts, vec![expected_start, expected_start + 1]);
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -163,7 +163,7 @@ fn analytic_surface_complete_wrong_fields_keep_boundary_and_truncated_spans_do_n
         wrong.extend([1.into(), 1.into(), 1.into(), 3.into()]);
         let analysis_record = token_parameter_record(7, wrong);
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &analysis_record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -197,7 +197,7 @@ fn analytic_surface_complete_wrong_fields_keep_boundary_and_truncated_spans_do_n
             incomplete
         }] {
             let analysis = {
-                analyze_trailing_pointer_groups_for_global_table_with_context(
+                analyze_trailing_pointer_groups_for_global_table(
                     &integer_parameter_record(7, &values),
                     &directory,
                     crate::global::GlobalTable::V5Later,
@@ -263,7 +263,7 @@ fn type304_forms_use_fixed_and_counted_boundaries() {
         let directory = BTreeMap::from([(1, &association), (3, &property), (5, &source)]);
         let analysis_record = token_parameter_record(5, values);
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &analysis_record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -355,11 +355,11 @@ fn type304_table_boundary_precedes_valid_generic_alternative() {
         let mut form_directory = directory.clone();
         form_directory.insert(7, &form_source);
         let record = integer_parameter_record(7, &values);
-        let generic = { structural_pointer_group_candidates_with_context(&record) };
+        let generic = { structural_pointer_group_candidates(&record) };
         let valid_starts = generic
             .into_iter()
             .filter(|candidate| {
-                { groups_for_candidate_with_context(&record, &form_directory, *candidate) }
+                { groups_for_candidate(&record, &form_directory, *candidate) }
                     .is_some_and(|groups| groups.fully_valid().is_some())
             })
             .map(|candidate| candidate.token_start)
@@ -371,7 +371,7 @@ fn type304_table_boundary_precedes_valid_generic_alternative() {
         );
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &form_directory,
                 crate::global::GlobalTable::V5Later,
@@ -471,7 +471,7 @@ fn type304_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         let directory = BTreeMap::from([(1, &association), (3, &property), (5, &source)]);
         let analysis_record = token_parameter_record(5, wrong_fields);
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &analysis_record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -498,7 +498,7 @@ fn type304_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         for values in [truncated_primary, truncated_group] {
             let analysis_record = token_parameter_record(5, values);
             let analysis = {
-                analyze_trailing_pointer_groups_for_global_table_with_context(
+                analyze_trailing_pointer_groups_for_global_table(
                     &analysis_record,
                     &directory,
                     crate::global::GlobalTable::V5Later,
@@ -594,7 +594,7 @@ fn type310_nested_boundary_follows_character_and_motion_counts() {
     ] {
         let analysis_record = token_parameter_record(5, values);
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &analysis_record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -668,11 +668,11 @@ fn type310_nested_boundary_precedes_valid_generic_alternative() {
             5.into(),
         ],
     );
-    let generic = { structural_pointer_group_candidates_with_context(&record) };
+    let generic = { structural_pointer_group_candidates(&record) };
     let valid_starts = generic
         .into_iter()
         .filter(|candidate| {
-            { groups_for_candidate_with_context(&record, &directory, *candidate) }
+            { groups_for_candidate(&record, &directory, *candidate) }
                 .is_some_and(|groups| groups.fully_valid().is_some())
         })
         .map(|candidate| candidate.token_start)
@@ -680,7 +680,7 @@ fn type310_nested_boundary_precedes_valid_generic_alternative() {
     assert_eq!(valid_starts, vec![22, 23]);
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -744,7 +744,7 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         ],
     );
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &wrong_fields,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -870,7 +870,7 @@ fn type310_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
     ];
     for record in malformed {
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
