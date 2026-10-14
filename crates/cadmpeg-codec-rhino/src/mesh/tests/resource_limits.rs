@@ -67,7 +67,7 @@ fn mesh_per_buffer_refusal_reaches_full_decode_with_other_geometry() {
 }
 
 #[test]
-fn document_mesh_ceiling_refuses_before_copy_and_preserves_usage() {
+fn document_mesh_cap_fails_the_buffer_before_copy_and_preserves_usage() {
     let bytes = buffer(&[1, 2, 3, 4], 0);
     with_expand(&bytes, |expand| {
         let mut budget = MeshBudget::with_limit(7);
@@ -98,13 +98,11 @@ fn document_mesh_ceiling_refuses_before_copy_and_preserves_usage() {
             ArchiveVersion::V5,
         )
         .unwrap_err();
-        let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else {
-            panic!("expected unchanged codec resource refusal");
-        };
-        assert_eq!(limit.operation, "Rhino document mesh buffer bytes");
-        assert_eq!(limit.limit, 7);
-        assert_eq!(limit.used + limit.additional, 8);
-        assert_eq!(expand.ctx().resource_refusal(), Some(limit));
+        assert!(matches!(error, GeometryError::Malformed(_)));
+        assert!(error
+            .to_string()
+            .contains("document mesh buffer budget exceeded"));
+        assert_eq!(expand.ctx().resource_refusal(), None);
         assert_eq!(budget.used(), 4);
         assert_eq!(second.position(), 4);
     });

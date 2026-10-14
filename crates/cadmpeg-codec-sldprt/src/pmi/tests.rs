@@ -1373,14 +1373,19 @@ fn pmi_alias_comparison_refuses_long_semantic_strings() {
 }
 
 #[test]
-fn pmi_nested_messagepack_refuses_instead_of_malformed_map() {
-    let mut bytes = vec![0x91; 18];
-    bytes.push(0xc0);
+fn pmi_nested_messagepack_depth_cap_rejects_the_value() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let error = super::parse_value(&ctx, &bytes, &mut 0, 0).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "parse SLDPRT PMI MessagePack depth")
-    );
+    let mut within = vec![0x91; 16];
+    within.push(0xc0);
+    assert!(super::parse_value(&ctx, &within, &mut 0, 0)
+        .unwrap()
+        .is_some());
+    let mut beyond = vec![0x91; 18];
+    beyond.push(0xc0);
+    assert!(super::parse_value(&ctx, &beyond, &mut 0, 0)
+        .unwrap()
+        .is_none());
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]

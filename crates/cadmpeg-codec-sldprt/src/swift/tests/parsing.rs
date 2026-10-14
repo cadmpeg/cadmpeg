@@ -425,7 +425,7 @@ fn malformed_reference_identity_returns_decode_loss() {
 }
 
 #[test]
-fn swift_serialized_entity_depth_refuses_instead_of_unresolved_root() {
+fn swift_serialized_entity_depth_cap_leaves_the_root_unresolved() {
     let mut nested = Entity {
         class: "Leaf".into(),
         ..Default::default()
@@ -444,10 +444,10 @@ fn swift_serialized_entity_depth_refuses_instead_of_unresolved_root() {
     let mut payload = Vec::new();
     encode_entity(&nested, &mut payload);
     let ctx = cadmpeg_test_support::service_decode_context();
-    let error = parse_unique_root(&ctx, &payload).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "parse SWIFT entity")
-    );
+    // The outer root exceeds the nesting cap; each inner candidate is a
+    // second root, so no unique root remains.
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]

@@ -349,6 +349,7 @@ fn snapshot_instance_statuses<'a>(
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
+const ENTITY_BUDGET_EXCEEDED: &str = "document instance entity budget exceeded";
 
 #[derive(Debug, Clone, Copy)]
 struct ExpansionBudget {
@@ -372,58 +373,69 @@ impl ExpansionBudget {
         }
     }
 
+    /// Charges one local expansion counter. `false` means the local cap
+    /// rejects this item; the caller skips it and the decode continues.
     fn charge(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: &mut usize,
         amount: usize,
         limit: usize,
         operation: &'static str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let requested = value
             .checked_add(amount)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64_from_index(limit), u64::MAX))?;
         if requested > limit {
-            return Err(ctx.refuse_codec_limit(
-                operation,
-                u64_from_index(limit),
-                u64_from_index(requested),
-            ));
+            return Ok(false);
         }
         *value = requested;
-        Ok(())
+        Ok(true)
     }
 
     fn reference(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        Self::charge(
+    ) -> Result<(), ReferenceFailure> {
+        if Self::charge(
             ctx,
             &mut self.references,
             1,
             self.limits[0],
             "Rhino instance reference limit",
-        )
+        )? {
+            Ok(())
+        } else {
+            Err(ReferenceFailure::Semantic(
+                "document instance reference budget exceeded".to_owned(),
+            ))
+        }
     }
 
     fn member(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        Self::charge(
+    ) -> Result<(), ReferenceFailure> {
+        if Self::charge(
             ctx,
             &mut self.members,
             1,
             self.limits[1],
             "Rhino instance member limit",
-        )
+        )? {
+            Ok(())
+        } else {
+            Err(ReferenceFailure::Semantic(
+                "document instance member budget exceeded".to_owned(),
+            ))
+        }
     }
 
+    /// `false` means the local entity cap rejects this item.
     fn entities(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         amount: usize,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         Self::charge(
             ctx,
             &mut self.entities,
@@ -744,7 +756,12 @@ impl<'a> DecodeContext<'a> {
                         session, validation,
                     )?)));
                 }
-                budget.entities(session, entity_count)?;
+                if !budget.entities(session, entity_count)? {
+                    return Ok(Err(CandidateError::Admission(session.format_retained(
+                        format_args!("{ENTITY_BUDGET_EXCEEDED}"),
+                        "Rhino native admission message",
+                    )?)));
+                }
                 session.charge_entities(u64_from_index(entity_count), "rhino_instance_entities")?;
                 let annotations = candidate_storage.with_storage(|| annotations.prepare())?;
                 candidate_storage.commit()?;
@@ -2354,20 +2371,12 @@ impl<'a> DecodeContext<'a> {
         self.expand
             .ctx()
             .charge_collection_items(1, "rhino_instance_reference")?;
-        let depth_limit = session_ceiling(
-            self.expand.ctx().policy().limits.max_recursion_depth,
-            MAX_INSTANCE_DEPTH,
-        );
-        if stack.len() >= depth_limit {
-            return Err(self
-                .expand
-                .ctx()
-                .refuse_codec_limit(
-                    "Rhino instance depth limit",
-                    u64_from_index(depth_limit),
-                    u64_from_index(stack.len()) + 1,
-                )
-                .into());
+        // Session recursion depth refuses through `enter_nested`; the local
+        // nesting cap retains this one reference.
+        if stack.len() >= MAX_INSTANCE_DEPTH {
+            return Err(ReferenceFailure::Semantic(
+                "instance nesting exceeds 64 levels".to_owned(),
+            ));
         }
         let object = self
             .scan
@@ -3399,14 +3408,23 @@ impl<'a> DecodeContext<'a> {
             .push_admitted(self.expand.ctx(), format_args!("{class}: {message}"))
     }
 
-    fn charge_entities(&mut self, amount: usize) -> Result<(), cadmpeg_core::CodecError> {
+    /// Charges entities for one object. `false` means the local entity cap
+    /// rejects the object; it is reported and skipped.
+    fn charge_entities(
+        &mut self,
+        source_order: usize,
+        amount: usize,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let mut budget = self.expansion_budget;
-        budget.entities(self.expand.ctx(), amount)?;
+        if !budget.entities(self.expand.ctx(), amount)? {
+            self.scan_warning(source_order, format_args!("{ENTITY_BUDGET_EXCEEDED}"))?;
+            return Ok(false);
+        }
         self.expand
             .ctx()
             .charge_entities(u64_from_index(amount), "rhino_instance_entities")?;
         self.expansion_budget = budget;
-        Ok(())
+        Ok(true)
     }
 
     fn commit_geometry(
@@ -3440,7 +3458,9 @@ impl<'a> DecodeContext<'a> {
         };
         match decoded {
             crate::curves::DecodedGeometry::Point { position, scaled } => {
-                self.charge_entities(5)?;
+                if !self.charge_entities(source_order, 5)? {
+                    return Ok(false);
+                }
                 let body_id = {
                     let mut copied_storage =
                         ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -3547,7 +3567,9 @@ impl<'a> DecodeContext<'a> {
                     )?;
                     return Ok(false);
                 };
-                self.charge_entities(entity_count)?;
+                if !self.charge_entities(source_order, entity_count)? {
+                    return Ok(false);
+                }
                 let body_id = {
                     let mut copied_storage =
                         ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -3708,7 +3730,9 @@ impl<'a> DecodeContext<'a> {
                 crate::surfaces::DecodedSurface::Typed {
                     geometry, derived, ..
                 } => {
-                    self.charge_entities(1)?;
+                    if !self.charge_entities(source_order, 1)? {
+                        return Ok(false);
+                    }
                     let surface_id = {
                         let mut copied_storage =
                             ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -4112,7 +4136,9 @@ impl<'a> DecodeContext<'a> {
         let Some(identity) = object.identity() else {
             return Ok(false);
         };
-        self.charge_entities(1)?;
+        if !self.charge_entities(source_order, 1)? {
+            return Ok(false);
+        }
         for mut loss in mesh.losses {
             self.expand.ctx().reserve_vec(
                 &mut self.report.phase_losses,
@@ -4297,19 +4323,25 @@ impl<'a> DecodeContext<'a> {
                     !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
-                budget.entities(self.expand.ctx(), entity_count)?;
-                let committed = match self.session.validate_source_records()? {
-                    Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
-                        Ok(()) => Ok(()),
+                let committed = if budget.entities(self.expand.ctx(), entity_count)? {
+                    match self.session.validate_source_records()? {
+                        Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
+                            Ok(()) => Ok(()),
+                            Err(error) => Err(self.expand.ctx().format_retained(
+                                format_args!("{error}"),
+                                "Rhino draft admission message",
+                            )?),
+                        },
                         Err(error) => Err(self.expand.ctx().format_retained(
                             format_args!("{error}"),
-                            "Rhino draft admission message",
+                            "Rhino native admission message",
                         )?),
-                    },
-                    Err(error) => Err(self.expand.ctx().format_retained(
-                        format_args!("{error}"),
-                        "Rhino native admission message",
-                    )?),
+                    }
+                } else {
+                    Err(self.expand.ctx().format_retained(
+                        format_args!("{ENTITY_BUDGET_EXCEEDED}"),
+                        "Rhino draft admission message",
+                    )?)
                 };
                 if let Err(error) = committed {
                     self.scan_warning(

@@ -132,12 +132,10 @@ pub(super) fn nurbs_surface_parameter_within_tolerance(
     );
     // A zero charge observes the session's original sticky refusal.
     ctx.charge_work(0, OPERATION)?;
+    // Local exhaustion leaves the inversion unsolved; the caller skips the
+    // derived pcurve.
     if budget.exhausted() {
-        return Err(ctx.refuse_codec_limit(
-            OPERATION,
-            SURFACE_SOLVER_LOCAL_WORK,
-            SURFACE_SOLVER_LOCAL_WORK + 1,
-        ));
+        return Ok(None);
     }
     Ok(result?)
 }
@@ -177,12 +175,10 @@ pub(super) fn nurbs_surface_parameter_segment_chord_bound(
         ctx, surface, parameters, chord, &budget,
     );
     ctx.charge_work(0, OPERATION)?;
+    // Local exhaustion leaves the chord uncertified; the caller skips the
+    // derived pcurve.
     if budget.exhausted() {
-        return Err(ctx.refuse_codec_limit(
-            OPERATION,
-            SURFACE_SOLVER_LOCAL_WORK,
-            SURFACE_SOLVER_LOCAL_WORK + 1,
-        ));
+        return Ok(None);
     }
     result
 }
@@ -244,5 +240,74 @@ mod tests {
                 matches!(super::nurbs_surface_parameter_near_point(&ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None), Err(CodecError::ResourceLimit(limit)) if limit == original)
             );
         }
+    }
+
+    /// A dense wavy cubic patch grid whose global inversion of an off-surface
+    /// point needs more than the local solver slice.
+    fn dense_wavy_surface() -> NurbsSurface {
+        const COUNT: u32 = 80;
+        let mut knots = vec![0.0; 4];
+        knots.extend((1..COUNT - 3).map(f64::from));
+        knots.extend([f64::from(COUNT - 3); 4]);
+        NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(3, knots.clone(), false),
+            NurbsSurfaceAxis::new(3, knots, false),
+            NurbsSurfaceLanes::new(
+                (0..COUNT)
+                    .map(|u| {
+                        (0..COUNT)
+                            .map(|v| {
+                                let (u, v) = (f64::from(u), f64::from(v));
+                                Point3::new(u, v, (u * 0.7).sin() * (v * 0.9).cos())
+                            })
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
+            false,
+        )
+        .expect("fixture admission")
+        .expect("dense cubic surface")
+    }
+
+    fn unbounded_work_policy() -> DecodePolicy {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX / 2;
+        policy.limits.max_materialized_bytes = u64::MAX / 2;
+        policy.limits.max_collection_items = u64::MAX / 2;
+        policy
+    }
+
+    #[test]
+    #[ignore = "cadmpeg-ir EvaluationAdmission::work fuses the session when a session-attached work slice is exhausted"]
+    fn surface_inversion_skips_when_the_local_solver_slice_is_exhausted() {
+        let surface = dense_wavy_surface();
+        let point = Point3::new(40.5, 40.5, 50.0);
+        let arena = DecodeArena::new();
+        let policy = unbounded_work_policy();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let budget = super::surface_solver_budget(&ctx, &surface, "fixture").unwrap();
+        let solved = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
+            &ctx, &surface, point, None, 1.0e-3, &budget,
+        );
+        assert!(
+            solved.is_ok(),
+            "the session admits the local slice: {solved:?}"
+        );
+        assert!(
+            budget.exhausted(),
+            "the fixture must exhaust the local slice"
+        );
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(super::nurbs_surface_parameter_within_tolerance(
+            &ctx, &surface, point, None, 1.0e-3
+        )
+        .unwrap()
+        .is_none());
+        assert!(ctx.finish_session().is_ok());
     }
 }

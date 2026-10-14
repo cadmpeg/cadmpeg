@@ -119,7 +119,10 @@ const MAX_DOCUMENT_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub(crate) struct MeshBudget {
     used: usize,
+    /// The smaller of the document cap and the session retained-byte ceiling.
     limit: usize,
+    /// The session retained-byte ceiling alone.
+    session_limit: usize,
 }
 
 impl MeshBudget {
@@ -128,6 +131,7 @@ impl MeshBudget {
         Self {
             used: 0,
             limit: MAX_DOCUMENT_BUFFER_OUTPUT,
+            session_limit: usize::MAX,
         }
     }
 
@@ -139,12 +143,18 @@ impl MeshBudget {
                 ctx.policy().limits.max_retained_bytes,
                 MAX_DOCUMENT_BUFFER_OUTPUT,
             ),
+            session_limit: session_ceiling(ctx.policy().limits.max_retained_bytes, usize::MAX),
         }
     }
 
+    /// A document cap of `limit` bytes under an unbounded session.
     #[cfg(test)]
     pub(crate) fn with_limit(limit: usize) -> Self {
-        Self { used: 0, limit }
+        Self {
+            used: 0,
+            limit,
+            session_limit: usize::MAX,
+        }
     }
 
     /// Returns the retained-byte count, for cross-module tests.
@@ -153,19 +163,21 @@ impl MeshBudget {
         self.used
     }
 
-    /// Proves the document-local retained-byte ceiling before allocation.
-    fn admit(&self, ctx: &DecodeContext<'_>, bytes: usize) -> Result<usize, CodecError> {
+    /// Proves the document retained-byte ceiling before allocation. `None`
+    /// means the document cap rejects this buffer; exceeding the session
+    /// ceiling refuses.
+    fn admit(&self, ctx: &DecodeContext<'_>, bytes: usize) -> Result<Option<usize>, CodecError> {
         let total = self.used.checked_add(bytes).ok_or_else(|| {
             ctx.refuse_codec_limit("Rhino document mesh buffer bytes", u64::MAX, u64::MAX)
         })?;
-        if total > self.limit {
+        if total > self.session_limit {
             return Err(ctx.refuse_codec_limit(
                 "Rhino document mesh buffer bytes",
-                u64_from_index(self.limit),
+                u64_from_index(self.session_limit),
                 u64_from_index(total),
             ));
         }
-        Ok(total)
+        Ok((total <= self.limit).then_some(total))
     }
 }
 
@@ -1081,6 +1093,20 @@ fn read_buffer<'a>(
     }
     let buffer_limit = buffer_output_limit(expand);
     if declared > buffer_limit {
+        // Only the per-buffer cap is exceeded: this mesh fails, the decode
+        // continues. Exceeding the session per-expansion ceiling refuses.
+        if declared
+            <= session_ceiling(
+                expand
+                    .ctx()
+                    .policy()
+                    .limits
+                    .max_decompressed_bytes_per_expand,
+                usize::MAX,
+            )
+        {
+            return Err(error(reader.position() - 4, format!("invalid {name} size")));
+        }
         return Err(expand
             .ctx()
             .refuse_codec_limit(
@@ -1090,7 +1116,12 @@ fn read_buffer<'a>(
             )
             .into());
     }
-    let admitted_document_bytes = document_budget.admit(expand.ctx(), declared)?;
+    let Some(admitted_document_bytes) = document_budget.admit(expand.ctx(), declared)? else {
+        return Err(error(
+            reader.position() - 4,
+            "document mesh buffer budget exceeded",
+        ));
+    };
     let crc = reader.u32()?;
     let method = reader.u8()?;
     let (bytes, consumed): (Cow<'a, [u8]>, usize) = match method {
@@ -1781,6 +1812,7 @@ mod tests {
         let budget = super::MeshBudget {
             used: usize::MAX,
             limit: usize::MAX,
+            session_limit: usize::MAX,
         };
         assert!(format!(
             "{:?}",
@@ -2856,13 +2888,45 @@ mod tests {
     }
 
     #[test]
-    fn document_buffer_ceiling_refuses_before_another_channel() {
+    fn document_buffer_cap_fails_the_mesh_before_another_channel() {
         let bytes = buffer(&[1], 0);
         with_expand(&bytes, |expand| {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
             let mut document_budget = MeshBudget {
                 used: MAX_BUFFER_OUTPUT,
                 limit: MAX_BUFFER_OUTPUT,
+                session_limit: usize::MAX,
+            };
+            let error = read_buffer(
+                expand,
+                &mut reader,
+                MeshBufferSpec {
+                    expected: 1,
+                    name: "budget",
+                },
+                &mut Diagnostics::new(),
+                &mut document_budget,
+                ArchiveVersion::V8,
+            )
+            .expect_err("the document cap rejects the buffer");
+            assert!(matches!(error, GeometryError::Malformed(_)));
+            assert!(error
+                .to_string()
+                .contains("document mesh buffer budget exceeded"));
+            assert_eq!(document_budget.used(), MAX_BUFFER_OUTPUT);
+            assert_eq!(expand.ctx().resource_refusal(), None);
+        });
+    }
+
+    #[test]
+    fn session_retained_ceiling_below_the_document_cap_still_refuses() {
+        let bytes = buffer(&[1], 0);
+        with_expand(&bytes, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+            let mut document_budget = MeshBudget {
+                used: 4,
+                limit: 4,
+                session_limit: 4,
             };
             assert!(matches!(read_buffer(expand, &mut reader,
                 MeshBufferSpec { expected: 1, name: "budget" }, &mut Diagnostics::new(),
@@ -2940,9 +3004,11 @@ mod tests {
                 &mut budget,
             )
             .expect_err("second mesh exceeds aggregate budget");
-            assert!(matches!(error,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "Rhino document mesh buffer bytes"));
+            assert!(matches!(error, GeometryError::Malformed(_)));
+            assert!(error
+                .to_string()
+                .contains("document mesh buffer budget exceeded"));
+            assert_eq!(expand.ctx().resource_refusal(), None);
         });
     }
 
