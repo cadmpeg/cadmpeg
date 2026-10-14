@@ -307,6 +307,56 @@ fn closed_extrusion_reaches_brep_admission() {
     assert!(diagnostics.rejected_extrusion_bodies.is_empty());
 }
 
+#[test]
+fn extrusion_cap_past_the_segment_bound_skips_only_that_extrusion() {
+    use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition};
+    // A half turn plus 30_000 full turns needs 120_002 quarter-turn cap
+    // segments, past the 100_000 segment bound of a circular pcurve.
+    let (scan, mut ir) = admitted_extrusion_fixture();
+    let entity = &ir.model.sketch_entities[2];
+    let arc = SketchEntity::new(
+        entity.id().clone(),
+        entity.sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: Point2::new(0.5, 1.0),
+            radius: cadmpeg_ir::scalar::Length::new(0.5).expect("radius"),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.0).expect("start angle"),
+            end_angle: cadmpeg_ir::scalar::Angle::new(
+                std::f64::consts::PI + 30_000.0 * std::f64::consts::TAU,
+            )
+            .expect("end angle"),
+        })
+        .expect("arc"),
+    );
+    ir.model.sketch_entities[2] = arc;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty root admitted");
+    let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
+    let count = super::transfer_resolved_extrusion_breps(
+        &ctx,
+        &scan,
+        &mut ir,
+        &mut AnnotationBuilder::new(),
+        &mut diagnostics,
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect("a refused cap skips the extrusion");
+    assert_eq!(count, 0);
+    assert!(ir.model.bodies.is_empty());
+    assert!(ir.model.faces.is_empty());
+    assert!(ir.model.coedges.is_empty());
+    assert_eq!(diagnostics.rejected_extrusion_bodies.len(), 1);
+    let reason = &diagnostics.rejected_extrusion_bodies[0].1;
+    assert!(
+        reason.starts_with("refused extrusion cap lanes: ")
+            && reason.contains("extrusion feature 7 profile entity 2 cap"),
+        "{reason}"
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+    assert!(ctx.finish_session().is_ok());
+}
+
 fn extrusion_refuses_at_collection_boundary(operation: &'static str) {
     let mut last_refusal = None;
     for limit in 0..4096 {
