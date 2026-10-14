@@ -416,6 +416,18 @@ fn collection_refusal_reaches_parser(source: &[u8], operation: &str) {
     assert!(refused, "no collection limit refused {operation}");
 }
 
+fn parser_charges_collection_items(source: &[u8], operation: &str) {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits service policy");
+    cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        operation,
+        || crate::parse::parse_with_context(source, &ctx),
+    );
+}
+
 const VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
 const ANCHOR_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#1 {source:<part.step#shape>} {width:@100};ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 const COMPLEX_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(NAMED_UNIT(#2)SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.));#2=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);ENDSEC;END-ISO-10303-21;";
@@ -423,6 +435,15 @@ const OMITTED_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('te
 const SCHEMA_DIAGNOSTIC_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 const UNVERIFIED_LEVEL_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 const SIGNATURE_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;";
+
+macro_rules! parser_vector_charge_test {
+    ($name:ident, $source:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            parser_charges_collection_items($source, $operation);
+        }
+    };
+}
 
 macro_rules! parser_vector_limit_test {
     ($name:ident, $source:expr, $operation:literal) => {
@@ -507,13 +528,13 @@ parser_vector_limit_test!(
     VECTOR_SOURCE,
     "step_entity_index_ids"
 );
-parser_vector_limit_test!(
-    reference_id_vector_refuses_collection_limit,
+parser_vector_charge_test!(
+    reference_id_vector_charges_collection_items,
     ANCHOR_VECTOR_SOURCE,
     "step_parse_reference_ids"
 );
-parser_vector_limit_test!(
-    value_reference_id_vector_refuses_collection_limit,
+parser_vector_charge_test!(
+    value_reference_id_vector_charges_collection_items,
     ANCHOR_VECTOR_SOURCE,
     "step_parse_value_reference_ids"
 );
@@ -569,8 +590,8 @@ parser_vector_limit_test!(
     UNVERIFIED_LEVEL_SOURCE,
     "step_parse_diagnostics"
 );
-parser_vector_limit_test!(
-    signature_span_vector_refuses_collection_limit,
+parser_vector_charge_test!(
+    signature_span_vector_charges_collection_items,
     SIGNATURE_VECTOR_SOURCE,
     "step_parse_signature_spans"
 );
