@@ -6,7 +6,6 @@
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
-use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::codec::DecodeBody;
@@ -31,24 +30,20 @@ use crate::loss::{identity_statement, CatiaLossCode};
 use crate::resource;
 
 pub(crate) fn cgm_source(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     kind: &str,
     tag: u32,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    cgm_source_key(ctx, kind, format_args!("{tag:06x}"))
+    cgm_source_key(kind, format_args!("{tag:06x}"))
 }
 
 pub(crate) fn cgm_source_key(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     kind: &str,
     key: impl std::fmt::Display,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    let object_id = ctx.format_retained(
-        format_args!("cgm-{kind}:{key}"),
-        "catia_cgm_source_object_id",
-    )?;
-    let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_cgm_source_object_id", 1, 1))?;
+    let object_id = format!("cgm-{kind}:{key}");
+    let object_id = cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("CATIA CGM source object id is blank")
+    })?;
     Ok(SourceObjectAssociation {
         geometry_role: None,
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
@@ -70,9 +65,7 @@ pub(crate) fn annotate(
     tag: impl std::fmt::Display,
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "catia_annotation_format")?;
-    let tag =
-        ctx.format_scoped_text(&mut scratch, format_args!("{tag}"), "catia_annotation_tag")?;
+    let tag = tag.to_string();
     annotations.annotate(
         ctx,
         id,
@@ -109,48 +102,35 @@ pub(crate) fn neutral_model_is_admissible(
 /// A carrier is one record instance, so a report about them names the
 /// identities, not only how many there are.
 fn unresolved_carrier_ids<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &'a CadIr,
 ) -> Result<(Vec<&'a str>, Vec<&'a str>), cadmpeg_core::CodecError> {
-    let mut resolved_curves = ctx.collect_hash_set(
-        ir.model
-            .curves
-            .iter()
-            .filter(|curve| {
-                !matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-                        | CurveGeometry::Procedural { .. }
-                )
-            })
-            .map(|curve| curve.id.as_str()),
-        "catia_resolved_curve_ids",
-    )?;
-    let mut resolved_surfaces = ctx.collect_hash_set(
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                !matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                        | SurfaceGeometry::Procedural { .. }
-                )
-            })
-            .map(|surface| surface.id.as_str()),
-        "catia_resolved_surface_ids",
-    )?;
+    let mut resolved_curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            !matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+                    | CurveGeometry::Procedural { .. }
+            )
+        })
+        .map(|curve| curve.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let mut resolved_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            !matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    | SurfaceGeometry::Procedural { .. }
+            )
+        })
+        .map(|surface| surface.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
     loop {
-        let work = ir
-            .model
-            .procedural_surfaces
-            .len()
-            .checked_add(ir.model.procedural_curves.len())
-            .map(u64_from_index)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_carrier_resolution_work", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(work, "catia_carrier_resolution_work")?;
         let mut changed = false;
         for procedural in &ir.model.procedural_surfaces {
             let resolved = match procedural.definition() {
@@ -182,11 +162,7 @@ fn unresolved_carrier_ids<'a>(
             };
             if resolved {
                 if let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) {
-                    changed |= ctx.insert_hash_set(
-                        &mut resolved_surfaces,
-                        owner.as_str(),
-                        "catia_resolved_surface_ids",
-                    )?;
+                    changed |= resolved_surfaces.insert(owner.as_str());
                 }
             }
         }
@@ -220,11 +196,7 @@ fn unresolved_carrier_ids<'a>(
             };
             if resolved {
                 if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
-                    changed |= ctx.insert_hash_set(
-                        &mut resolved_curves,
-                        owner.as_str(),
-                        "catia_resolved_curve_ids",
-                    )?;
+                    changed |= resolved_curves.insert(owner.as_str());
                 }
             }
         }
@@ -232,41 +204,39 @@ fn unresolved_carrier_ids<'a>(
             break;
         }
     }
-    let curves = ctx.collect_vec(
-        ir.model
-            .curves
-            .iter()
-            .filter(|curve| {
-                matches!(
-                    curve.geometry,
-                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-                        | CurveGeometry::Procedural { .. }
-                ) && !resolved_curves.contains(curve.id.as_str())
-            })
-            .map(|curve| curve.id.as_str())
-            .chain(
-                ir.model
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.curve().is_none())
-                    .map(|edge| edge.id.as_str()),
-            ),
-        "catia_unresolved_curve_ids",
-    )?;
-    let surfaces = ctx.collect_vec(
-        ir.model
-            .surfaces
-            .iter()
-            .filter(|surface| {
-                matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                        | SurfaceGeometry::Procedural { .. }
-                ) && !resolved_surfaces.contains(surface.id.as_str())
-            })
-            .map(|surface| surface.id.as_str()),
-        "catia_unresolved_surface_ids",
-    )?;
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+                    | CurveGeometry::Procedural { .. }
+            ) && !resolved_curves.contains(curve.id.as_str())
+        })
+        .map(|curve| curve.id.as_str())
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .filter(|edge| edge.curve().is_none())
+                .map(|edge| edge.id.as_str()),
+        )
+        .collect::<Vec<_>>();
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    | SurfaceGeometry::Procedural { .. }
+            ) && !resolved_surfaces.contains(surface.id.as_str())
+        })
+        .map(|surface| surface.id.as_str())
+        .collect::<Vec<_>>();
     Ok((curves, surfaces))
 }
 
@@ -274,7 +244,7 @@ fn unresolved_carrier_ids<'a>(
 #[cfg(test)]
 fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
     crate::test_support::with_service_context(|ctx| {
-        let (curves, surfaces) = unresolved_carrier_ids(ctx, ir)?;
+        let (curves, surfaces) = unresolved_carrier_ids(ir)?;
         Ok::<_, cadmpeg_core::CodecError>((curves.len(), surfaces.len()))
     })
     .expect("service budget admits carrier count fixture")
@@ -303,27 +273,20 @@ fn carrier_clause<'a>(kind: &'a str, ids: &'a [&str]) -> impl std::fmt::Display 
 }
 
 pub(crate) fn insert_unresolved_carrier_loss(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ctx, ir)?;
+    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ir)?;
     if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
         return Ok(());
     }
-    let statement = ctx.format_retained(format_args!(
-        "The transferred model retains {} unresolved curve carriers and {} unresolved surface carriers without exact procedural constructions.{}{}",
-        unresolved_curves.len(),
-        unresolved_surfaces.len(),
-        carrier_clause("Curve", &unresolved_curves),
-        carrier_clause("Surface", &unresolved_surfaces),
-    ), "catia_unresolved_carrier_message")?;
-    let note = CatiaLossCode::GeometryUnresolvedCarriers.note_charged(
-        ctx,
-        statement,
-        "catia_unresolved_carrier_note",
-    )?;
-    ctx.reserve_vec(losses, 1, "catia_unresolved_carrier_loss")?;
+    let statement = format!("The transferred model retains {} unresolved curve carriers and {} unresolved surface carriers without exact procedural constructions.{}{}",
+    unresolved_curves.len(),
+    unresolved_surfaces.len(),
+    carrier_clause("Curve", &unresolved_curves),
+    carrier_clause("Surface", &unresolved_surfaces),);
+    let note = CatiaLossCode::GeometryUnresolvedCarriers.note(statement);
+
     losses.insert(0, note);
     Ok(())
 }
@@ -488,142 +451,106 @@ pub(crate) fn source_meta(
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
     resource::source_attribute(
-        ctx,
         &mut attributes,
         format_args!("file_size"),
         format_args!("{}", scan.data.len()),
-        "catia_source_meta_attribute",
     )?;
     resource::source_attribute(
-        ctx,
         &mut attributes,
         format_args!("outer_dir_offset"),
         format_args!("{}", scan.outer_dir_offset),
-        "catia_source_meta_attribute",
     )?;
     if let Some(dir) = &scan.inner {
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("inner_offset"),
             format_args!("{}", dir.inner),
-            "catia_source_meta_attribute",
         )?;
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("stream_count"),
             format_args!("{}", dir.descriptors.len()),
-            "catia_source_meta_attribute",
         )?;
     }
     if let Some(brep) = &scan.brep {
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("brep_stream_len"),
             format_args!("{}", brep.len()),
-            "catia_source_meta_attribute",
         )?;
         let digest = sha256(brep);
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("brep_stream_sha256"),
             format_args!("{}", LowerHex(&digest)),
-            "catia_source_meta_attribute",
         )?;
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("fbb_runs"),
             format_args!("{}", scan.census.fbb_runs),
-            "catia_source_meta_attribute",
         )?;
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("fbb_face_rows"),
             format_args!("{}", scan.census.fbb_face_rows),
-            "catia_source_meta_attribute",
         )?;
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("vertex_records"),
             format_args!("{}", scan.census.vertex_markers),
-            "catia_source_meta_attribute",
         )?;
     }
     resource::source_attribute(
-        ctx,
         &mut attributes,
         format_args!("preview_count"),
         format_args!("{}", scan.previews.len()),
-        "catia_source_meta_attribute",
     )?;
     for (index, preview) in scan.previews.iter().enumerate() {
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("preview_{index}_width"),
             format_args!("{}", preview.width),
-            "catia_source_meta_attribute",
         )?;
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("preview_{index}_height"),
             format_args!("{}", preview.height),
-            "catia_source_meta_attribute",
         )?;
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("preview_{index}_components"),
             format_args!("{}", preview.components),
-            "catia_source_meta_attribute",
         )?;
     }
     resource::source_attribute(
-        ctx,
         &mut attributes,
         format_args!("external_reference_count"),
         format_args!("{}", scan.external_references.len()),
-        "catia_source_meta_attribute",
     )?;
     for (index, reference) in scan.external_references.iter().enumerate() {
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("external_reference_{index}"),
             format_args!("{}", reference.target),
-            "catia_source_meta_attribute",
         )?;
     }
     resource::source_attribute(
-        ctx,
         &mut attributes,
         format_args!("finjpl_segment_count"),
         format_args!("{}", scan.finjpl_segments.len()),
-        "catia_source_meta_attribute",
     )?;
     for (index, segment) in scan.finjpl_segments.iter().enumerate() {
         if let Some(name) = &segment.name {
             resource::source_attribute(
-                ctx,
                 &mut attributes,
                 format_args!("finjpl_segment_{index}_name"),
                 format_args!("{name}"),
-                "catia_source_meta_attribute",
             )?;
         }
         resource::source_attribute(
-            ctx,
             &mut attributes,
             format_args!("finjpl_segment_{index}_type"),
             format_args!("0x{:08x}", segment.type_word),
-            "catia_source_meta_attribute",
         )?;
     }
     Ok(SourceMeta::classified(
@@ -635,7 +562,6 @@ pub(crate) fn source_meta(
 }
 
 pub(crate) fn build_geometry_report(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     scan: &ContainerScan,
     typed: &TypedCounts,
@@ -645,38 +571,26 @@ pub(crate) fn build_geometry_report(
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
 
-    resource::push_loss(
-        ctx,
-        &mut losses,
-        CatiaLossCode::GeometryCarrierSummary,
-        format_args!(
-            "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
+    losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
+        "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 \
          LE, millimetres, identity world placement) and {} analytic surface carrier(s) were \
          decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} \
          sphere, {} torus.",
-            ir.model.vertices.len(),
-            typed.total(),
-            typed.plane,
-            typed.cylinder,
-            typed.cone,
-            typed.sphere,
-            typed.torus
-        ),
-        "catia_geometry_report_carriers",
-    )?;
+        ir.model.vertices.len(),
+        typed.total(),
+        typed.plane,
+        typed.cylinder,
+        typed.cone,
+        typed.sphere,
+        typed.torus
+    )));
 
     if let Some(topology_failure) = topology_failure {
-        resource::push_loss(
-            ctx,
-            &mut losses,
-            CatiaLossCode::TopologyBoundaryGraphNotEmitted,
-            format_args!(
-                "The B-rep boundary graph was not emitted: {} face outer-bound row(s) in {} \
+        losses.push(CatiaLossCode::TopologyBoundaryGraphNotEmitted.note(format!(
+            "The B-rep boundary graph was not emitted: {} face outer-bound row(s) in {} \
              group(s) were detected, but {topology_failure}.",
-                scan.census.fbb_face_rows, scan.census.fbb_runs,
-            ),
-            "catia_geometry_report_topology",
-        )?;
+            scan.census.fbb_face_rows, scan.census.fbb_runs,
+        )));
     }
     let withheld_face_rows = scan.census.fbb_face_rows
         - scan
@@ -684,24 +598,18 @@ pub(crate) fn build_geometry_report(
             .fbb_face_rows
             .min(report_counts.admitted_standard_face_rows);
     if topology_failure.is_none() && scan.census.fbb_runs > 1 && withheld_face_rows > 0 {
-        resource::push_loss(ctx, &mut losses, CatiaLossCode::TopologyFbbRowsWithheld, format_args!(
+        losses.push(CatiaLossCode::TopologyFbbRowsWithheld.note(format!(
             "{withheld_face_rows} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have a source-closed edge, vertex, trim, and topology binding, and cross-group ownership remains unresolved.",
             scan.census.fbb_runs,
             report_counts.admitted_standard_face_rows,
-        ), "catia_geometry_report_withheld_rows")?;
+        )));
     }
 
     if plane_faces > 0 {
-        resource::push_loss(
-            ctx,
-            &mut losses,
-            CatiaLossCode::GeometryPlaneParametersInvalid,
-            format_args!(
-                "{plane_faces} plane surface record(s) were located but not decoded because their \
+        losses.push(CatiaLossCode::GeometryPlaneParametersInvalid.note(format!(
+            "{plane_faces} plane surface record(s) were located but not decoded because their \
              tag-bridged parameter records were absent or invalid."
-            ),
-            "catia_geometry_report_plane_parameters",
-        )?;
+        )));
     }
 
     let invalid_analytic = typed
@@ -710,61 +618,43 @@ pub(crate) fn build_geometry_report(
         .and_then(|decoded| analytic_record_count.checked_sub(decoded))
         .unwrap_or(0);
     if invalid_analytic > 0 {
-        resource::push_loss(
-            ctx,
-            &mut losses,
-            CatiaLossCode::GeometryAnalyticPayloadInvalid,
-            format_args!(
-                "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
+        losses.push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+            "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
              inline payload and were not decoded."
-            ),
-            "catia_geometry_report_invalid_analytic",
-        )?;
+        )));
     }
     if report_counts.face_local_freeform > 0 {
-        resource::push_loss(
-            ctx,
-            &mut losses,
-            CatiaLossCode::GeometryFaceLocalFreeformNotTransferred,
-            format_args!(
+        losses.push(
+            CatiaLossCode::GeometryFaceLocalFreeformNotTransferred.note(format!(
                 "{} face-local free-form carrier record(s) retain their tag, bounds, and \
                  orientation, but their aliased surface geometry is not yet transferred.",
                 report_counts.face_local_freeform,
-            ),
-            "catia_geometry_report_face_local",
-        )?;
+            )),
+        );
     }
     if report_counts.unbound_revolution > 0 {
-        resource::push_loss(
-            ctx,
-            &mut losses,
-            CatiaLossCode::GeometryRevolutionProfileUnbound,
-            format_args!(
+        losses.push(
+            CatiaLossCode::GeometryRevolutionProfileUnbound.note(format!(
                 "{} consolidated surface-of-revolution record(s) retain their profile identity, \
              orthonormal axis frame, angular chart, and profile interval, but the profile \
              identities are not yet bound to directrix curves.",
                 report_counts.unbound_revolution,
-            ),
-            "catia_geometry_report_revolution",
-        )?;
+            )),
+        );
     }
 
-    insert_unresolved_carrier_loss(ctx, ir, &mut losses)?;
+    insert_unresolved_carrier_loss(ir, &mut losses)?;
 
-    resource::push_loss(
-        ctx,
-        &mut losses,
-        CatiaLossCode::AttributesMaterialsMetadataNotTransferred,
-        format_args!(
+    losses.push(
+        CatiaLossCode::AttributesMaterialsMetadataNotTransferred.note(format!(
             "Standard circles with an exact adjacent-carrier section normal or two \
                   non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or \
                   cone generators are transferred as curves. Standard spline edges retain exact \
                   two-surface intersection constructions and their identity-bound support \
                   pcurves when present, but unbound serialized 3D NURBS caches, materials, and \
                   document metadata are not yet transferred.",
-        ),
-        "catia_geometry_report_metadata",
-    )?;
+        )),
+    );
 
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -804,7 +694,7 @@ pub(crate) fn build_metadata_fallback(
         key,
     );
     ctx.charge_entities(1, "admit CATIA retained source record")?;
-    let bytes = ctx.copy_retained(bytes, "retain CATIA raw payload")?;
+    let bytes = bytes.to_vec();
     annotate(
         ctx,
         &mut annotations,
@@ -833,7 +723,7 @@ pub(crate) fn preserve_raw_payload(
         None => (scan.data.as_ref(), "CATPart"),
     };
     ctx.charge_entities(1, "admit CATIA retained source record")?;
-    let bytes = ctx.copy_retained(bytes, "retain CATIA raw payload")?;
+    let bytes = bytes.to_vec();
     annotate(
         ctx,
         annotations,
@@ -864,51 +754,32 @@ pub(crate) fn link_payload_carriers(
         .map(|surface| surface.id.as_str())
         .chain(ir.model.curves.iter().map(|curve| curve.id.as_str()))
     {
-        let id = ctx.copy_retained_text(id, "catia_payload_link_id")?;
-        ctx.push_vec(&mut links, id, "catia_payload_links")?;
+        let id = id.to_owned();
+        links.push(id);
     }
     if links.is_empty() {
         return Ok(());
     }
     *payload.links_mut() = links;
-    resource::derived_annotation(
-        ctx,
-        annotations,
-        payload.id().as_str(),
-        "links",
-        "catia_payload_links_annotation",
-    )?;
+    annotations.derived(ctx, payload.id().as_str(), "links")?;
     Ok(())
 }
 
 pub(crate) fn build_container_report(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
-    resource::push_loss(
-        ctx,
-        &mut losses,
-        CatiaLossCode::GeometryBrepNotTransferred,
-        format_args!(
-            "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
+    losses.push(CatiaLossCode::GeometryBrepNotTransferred.note(format!(
+        "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
          applicable decoded record families transfer geometry in this codec.",
-            scan.variant.id(),
-            scan.variant.description()
-        ),
-        "catia_container_report_brep_loss",
-    )?;
+        scan.variant.id(),
+        scan.variant.description()
+    )));
 
-    resource::push_loss(
-        ctx,
-        &mut losses,
-        CatiaLossCode::TopologyGraphNotBuilt,
-        format_args!(
-            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
+    losses.push(CatiaLossCode::TopologyGraphNotBuilt.note(format!(
+        "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
                   for this file."
-        ),
-        "catia_container_report_topology_loss",
-    )?;
+    )));
 
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
@@ -965,34 +836,17 @@ pub(crate) fn rational_pcurve_arc(
         return Ok(None);
     };
     let segment_count = segment_count.get();
-    let Some(control_count) = segment_count
-        .checked_mul(2)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    let Some(knot_count) = segment_count
-        .checked_mul(2)
-        .and_then(|count| count.checked_add(4))
-    else {
-        return Ok(None);
-    };
-    ctx.charge_work(u64_from_index(segment_count), "catia_rational_arc_segments")?;
     let step = span
         / match f64_from_index(segment_count) {
             Some(value) => value,
             None => return Ok(None),
         };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        control_count,
-        "catia_rational_arc_controls",
-    )?;
+
     let mut weights = Vec::new();
-    ctx.reserve_vec(&mut weights, control_count, "catia_rational_arc_weights")?;
+
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")?;
+
     knots.extend([range[0]; 3]);
     for index in 0..segment_count {
         let start = range[0]
@@ -1045,7 +899,7 @@ pub(crate) fn rational_pcurve_arc(
         false,
     )? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
+        Err(error) => crate::nurbs::note_refusal(Err(error), refusal, record),
     }
 }
 
@@ -1059,16 +913,12 @@ pub(crate) fn quintic_jet_pcurve(
     record: impl std::fmt::Display,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let Some((full_knots, controls)) =
-        crate::nurbs::quintic_jet_bspline(ctx, degree, knots, points, first, second)?
+        crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?
     else {
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        controls.len(),
-        "catia quintic pcurve points",
-    )?;
+
     control_points.extend(
         controls
             .into_iter()
@@ -1083,7 +933,7 @@ pub(crate) fn quintic_jet_pcurve(
         false,
     )? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
+        Err(error) => crate::nurbs::note_refusal(Err(error), refusal, record),
     }
 }
 
@@ -1161,20 +1011,18 @@ mod route_tests {
 
     #[test]
     fn cgm_source_object_identity_refuses_retained_limit() {
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            super::cgm_source(ctx, "surface", 0x1234)
-        });
+        let refused =
+            crate::test_support::with_retained_limit(0, |ctx| super::cgm_source("surface", 0x1234));
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_cgm_source_object_id")
         );
-        let source = crate::test_support::with_service_context(|ctx| {
-            super::cgm_source(ctx, "surface", 0x1234)
-        })
-        .expect("service profile admits source identity");
+        let source =
+            crate::test_support::with_service_context(|ctx| super::cgm_source("surface", 0x1234))
+                .expect("service profile admits source identity");
         assert_eq!(source.object_id.as_str(), "cgm-surface:001234");
         let key = crate::test_support::with_service_context(|ctx| {
-            super::cgm_source_key(ctx, "frame", format_args!("{:010}", 23))
+            super::cgm_source_key("frame", format_args!("{:010}", 23))
         })
         .expect("service profile admits frame identity");
         assert_eq!(key.object_id.as_str(), "cgm-frame:0000000023");
@@ -1189,24 +1037,22 @@ mod route_tests {
             )
         })
         .expect("service profile admits container scan");
-        let retained = crate::test_support::with_retained_limit(0, |ctx| {
-            super::build_container_report(ctx, &scan)
-        });
+        let retained =
+            crate::test_support::with_retained_limit(0, |ctx| super::build_container_report(&scan));
         assert!(
             matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_container_report_brep_loss")
         );
         let collection = crate::test_support::with_collection_limit(0, |ctx| {
-            super::build_container_report(ctx, &scan)
+            super::build_container_report(&scan)
         });
         assert!(
             matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_container_report_brep_loss")
         );
-        let report = crate::test_support::with_service_context(|ctx| {
-            super::build_container_report(ctx, &scan)
-        })
-        .expect("service profile admits container report");
+        let report =
+            crate::test_support::with_service_context(|ctx| super::build_container_report(&scan))
+                .expect("service profile admits container report");
         assert_eq!(report.losses.len(), 2);
         assert!(report.losses[0]
             .message
@@ -1263,7 +1109,7 @@ mod route_tests {
         });
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut losses = Vec::new();
-            super::insert_unresolved_carrier_loss(ctx, &ir, &mut losses)?;
+            super::insert_unresolved_carrier_loss(&ir, &mut losses)?;
             Ok::<_, cadmpeg_core::CodecError>(losses)
         };
         assert_eq!(
@@ -1299,7 +1145,6 @@ mod route_tests {
         };
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             super::build_geometry_report(
-                ctx,
                 &ir,
                 &scan,
                 &super::TypedCounts::default(),
@@ -1367,7 +1212,7 @@ mod route_tests {
         })
         .expect("service budget admits container scan");
         let matched =
-            crate::test_support::with_service_context(|ctx| crate::dialect::classify(ctx, &scan))
+            crate::test_support::with_service_context(|ctx| crate::dialect::classify(&scan))
                 .expect("service budget admits dialect classification");
         let limited =
             crate::test_support::with_collection_limit(0, |ctx| source_meta(ctx, &scan, &matched));

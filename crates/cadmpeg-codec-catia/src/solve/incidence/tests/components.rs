@@ -77,14 +77,8 @@ fn incidence_components_join_only_through_shared_face_vertices() {
     ];
     let edge_faces = [[0, 0], [0, 0], [0, 0], [0, 0]];
     assert_eq!(
-        crate::solve::incidence::incidence_choice_components(
-            &ctx,
-            &choices,
-            &edge_faces,
-            None,
-            None
-        )
-        .expect("service resource budget"),
+        crate::solve::incidence::incidence_choice_components(&choices, &edge_faces, None, None)
+            .expect("service resource budget"),
         vec![vec![0, 1], vec![2]]
     );
 }
@@ -167,7 +161,7 @@ fn partial_incidence_constraint_joins_every_component_it_can_couple() {
     let active = [true, false, false, true, false, false];
 
     assert_eq!(
-        crate::solve::incidence::join_incidence_components_by_coupling(&ctx, components, &active)
+        crate::solve::incidence::join_incidence_components_by_coupling(components, &active)
             .expect("service resource budget"),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
     );
@@ -184,13 +178,9 @@ fn incidence_components_order_by_endpoint_branch_width() {
     ];
     let mut components = vec![vec![0, 2], vec![1], vec![3]];
 
-    crate::solve::incidence::order_incidence_components_by_branch_width(
-        &ctx,
-        &mut components,
-        &choices,
-    )
-    .expect("service resource budget")
-    .expect("valid component edges");
+    crate::solve::incidence::order_incidence_components_by_branch_width(&mut components, &choices)
+        .expect("service resource budget")
+        .expect("valid component edges");
 
     assert_eq!(components, vec![vec![3], vec![1], vec![0, 2]]);
 }
@@ -412,11 +402,10 @@ fn incidence_components_keep_fixed_face_boundaries_independent() {
     ])];
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(
-            &ctx,
             &choices,
             &edge_faces,
             Some(&fixed),
-            None,
+            None
         )
         .expect("service resource budget"),
         vec![vec![0, 1], vec![2, 3]]
@@ -432,11 +421,10 @@ fn incidence_components_keep_fixed_face_boundaries_independent() {
     ])];
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(
-            &ctx,
             &choices,
             &edge_faces,
             Some(&alternatives),
-            None,
+            None
         )
         .expect("service resource budget"),
         vec![vec![0, 1, 2, 3]]
@@ -467,7 +455,6 @@ fn incidence_components_include_overlapping_quotient_domains() {
 
     assert_eq!(
         crate::solve::incidence::incidence_choice_components(
-            &ctx,
             &choices,
             &edge_faces,
             None,
@@ -643,10 +630,10 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
     let overfilled_first_gap = [[0, 1], [1, 2], [2, 3], [4, 5], [3, 4], [0, 5]];
 
     assert!(
-        crate::solve::incidence::deferred_boundary_closes(&ctx, &domain, &valid)
+        crate::solve::incidence::deferred_boundary_closes(&domain, &valid)
             .expect("service resource budget")
     );
-    let assignment = crate::solve::incidence::deferred_boundary_assignment(&ctx, &domain, &valid)
+    let assignment = crate::solve::incidence::deferred_boundary_assignment(&domain, &valid)
         .expect("service resource budget")
         .expect("materialized deferred boundary");
     assert_eq!(
@@ -663,12 +650,10 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
             (5, 5, 0, None),
         ]
     );
-    assert!(!crate::solve::incidence::deferred_boundary_closes(
-        &ctx,
-        &domain,
-        &overfilled_first_gap
-    )
-    .expect("service resource budget"));
+    assert!(
+        !crate::solve::incidence::deferred_boundary_closes(&domain, &overfilled_first_gap)
+            .expect("service resource budget")
+    );
 }
 
 #[test]
@@ -682,7 +667,7 @@ fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
         missing_edges: vec![0, 1],
     };
     let assignment =
-        crate::solve::incidence::deferred_boundary_assignment(&ctx, &domain, &[[0, 1], [0, 1]])
+        crate::solve::incidence::deferred_boundary_assignment(&domain, &[[0, 1], [0, 1]])
             .expect("service resource budget")
             .expect("materialized deferred boundary");
 
@@ -708,7 +693,7 @@ fn deferred_boundary_materialization_refuses_match_collection_limits() {
     };
     let pairs = [[0, 1], [0, 1]];
     let materialize = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::incidence::deferred_boundary_assignment(ctx, &domain, &pairs)
+        crate::solve::incidence::deferred_boundary_assignment(&domain, &pairs)
             .map(|assignment| assignment.is_some())
     };
     for operation in ["catia_deferred_match", "catia_deferred_visit"] {
@@ -742,7 +727,7 @@ fn deferred_boundary_closure_refuses_matching_collection_limits() {
     let pairs = [[0, 1], [0, 1]];
     catia_test_context!(service_ctx);
     assert!(
-        crate::solve::incidence::deferred_boundary_closes(&service_ctx, &domain, &pairs)
+        crate::solve::incidence::deferred_boundary_closes(&domain, &pairs)
             .expect("service resource budget")
     );
 
@@ -753,7 +738,7 @@ fn deferred_boundary_closure_refuses_matching_collection_limits() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits the input limit");
-        match crate::solve::incidence::deferred_boundary_closes(&ctx, &domain, &pairs) {
+        match crate::solve::incidence::deferred_boundary_closes(&domain, &pairs) {
             Err(CodecError::ResourceLimit(error)) => {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 refused.insert(error.operation.to_owned());
@@ -788,7 +773,7 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     )];
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
             .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
@@ -804,15 +789,15 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
     .expect("forced deferred quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
 }
@@ -837,7 +822,7 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     )];
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
     let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
             .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(100);
@@ -853,9 +838,9 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
     .expect("unknown exact direction is deferred");
 
     assert_ne!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal")
     );
 }
@@ -897,27 +882,27 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     .expect("deferred gap quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.find(4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.find(5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 6))
+        crate::test_support::with_service_context(|ctx| quotient.find(6))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 7))
+        crate::test_support::with_service_context(|ctx| quotient.find(7))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal")
     );
 }
@@ -945,10 +930,10 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     ])];
     let candidates = vec![vec![[0, 0]], vec![[0, 0]]];
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 4));
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 1))
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(0, 1))
         .expect("service merge")
         .expect("first closed edge");
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 2, 3))
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(2, 3))
         .expect("service merge")
         .expect("second closed edge");
     let budget = WorkBudget::new(100);
@@ -964,9 +949,9 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
     .expect("structural quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
 }
@@ -1005,7 +990,7 @@ fn ordered_face_preparation_does_not_sign_whole_mesh_alternatives() {
     assert!(ctx.resource_refusal().is_none());
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+        crate::test_support::with_service_context(|ctx| quotient.root_count())
             .expect("service quotient traversal"),
         4
     );
@@ -1102,15 +1087,15 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     .expect("ordered component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
 }
@@ -1137,21 +1122,21 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
     .expect("unordered component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.find(4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.find(5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal")
     );
 }
@@ -1372,27 +1357,27 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
     .expect("deferred component quotient");
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.find(4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.find(5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 6))
+        crate::test_support::with_service_context(|ctx| quotient.find(6))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 7))
+        crate::test_support::with_service_context(|ctx| quotient.find(7))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal")
     );
 }
@@ -1419,7 +1404,7 @@ fn deferred_faces_share_one_endpoint_quotient() {
     };
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &choices, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
             .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
@@ -1469,7 +1454,6 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
         MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 3, 4]),
     ];
     let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
-        &ctx,
         &choices,
         4,
         &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
@@ -1515,7 +1499,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let assignment = [Some([0, 1]), Some([0, 1])];
     let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &choices, 2, &[[0, 1], [2, 3]])
+        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
             .expect("service resource budget")
             .expect("initial quotient");
     let budget = WorkBudget::new(10_000);

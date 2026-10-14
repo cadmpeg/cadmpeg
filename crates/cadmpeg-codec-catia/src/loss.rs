@@ -7,10 +7,10 @@
 //! human-readable message text, so a reworded message is not a contract change
 //! and a new drop path without a code does not compile.
 //!
-//! [`CatiaLossCode::note_charged`] is the single practical construction path for a
+//! [`CatiaLossCode::note`] is the single practical construction path for a
 //! decode-time [`LossNote`] in this crate: it fixes the loss category and
 //! severity from the code so the two cannot drift apart across sites. The
-//! caller supplies the decode context, retained message and operation name.
+//! caller supplies the per-instance message.
 //! Local codes appear on
 //! [`LossNote::code`] under the `catia` namespace.
 //!
@@ -19,7 +19,6 @@
 //! and the categories this codec spans (geometry, topology, history, attribute,
 //! container) have no honest common default.
 //!
-#[cfg(test)]
 use cadmpeg_ir::report::loss::LossKind;
 
 use cadmpeg_ir::report::{
@@ -270,7 +269,6 @@ impl CatiaLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    #[cfg(test)]
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
@@ -289,26 +287,8 @@ impl CatiaLossCode {
     /// The structured code is `catia/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    #[cfg(test)]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
-    }
-
-    pub(crate) fn note_charged(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        message: String,
-        operation: &'static str,
-    ) -> Result<LossNote, cadmpeg_core::CodecError> {
-        let namespace = ctx.copy_retained_text("catia", operation)?;
-        let code = ctx.copy_retained_text(self.code(), operation)?;
-        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
-            namespace,
-            code,
-            self.shared_taxonomy(),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?;
-        Ok(LossNote::new(kind, message).with_severity(self.severity()))
     }
 }
 

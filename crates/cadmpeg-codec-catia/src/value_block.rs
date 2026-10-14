@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -209,35 +209,27 @@ pub(crate) enum ValueField {
     },
 }
 
-pub(crate) fn copy_fields_charged(
-    ctx: &DecodeContext<'_>,
-    fields: &[ValueField],
-) -> Result<Vec<ValueField>, CodecError> {
+pub(crate) fn copy_fields_charged(fields: &[ValueField]) -> Result<Vec<ValueField>, CodecError> {
     let mut copied = Vec::new();
     for field in fields {
         let copy = match field {
             ValueField::Inline { bytes, offset } => ValueField::Inline {
-                bytes: InlineBytes(
-                    ctx.copy_slice(&bytes.0, "catia_native_value_inline_bytes")?
-                        .into(),
-                ),
+                bytes: InlineBytes(bytes.0.to_vec().into()),
                 offset: *offset,
             },
             ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-                bytes: ctx
-                    .copy_slice(bytes, "catia_native_value_field_bytes")?
-                    .into(),
+                bytes: bytes.to_vec().into(),
                 offset: *offset,
             },
             other => other.clone(),
         };
-        ctx.push_vec(&mut copied, copy, "catia_native_value_fields")?;
+        copied.push(copy);
     }
     Ok(copied)
 }
 
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
-pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
+pub(crate) fn parse(bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
     let mut blocks = Vec::<ValueBlock>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {
@@ -256,22 +248,18 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<ValueBl
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let Some(block) = parse_candidate(ctx, bytes, pos)? else {
+        let Some(block) = parse_candidate(bytes, pos)? else {
             continue;
         };
         if let Some(block_end) = block.pos.checked_add(block.total_len()) {
             enclosing_end = enclosing_end.max(block_end);
         }
-        ctx.push_vec(&mut blocks, block, "catia_value_blocks")?;
+        blocks.push(block);
     }
     Ok(blocks)
 }
 
-fn parse_candidate(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    pos: usize,
-) -> Result<Option<ValueBlock>, CodecError> {
+fn parse_candidate(bytes: &[u8], pos: usize) -> Result<Option<ValueBlock>, CodecError> {
     let Some(payload) = (|| -> Option<_> {
         let declared_len =
             usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
@@ -290,7 +278,7 @@ fn parse_candidate(
     };
     Ok(Some(ValueBlock {
         pos,
-        payload: ctx.copy_slice(payload, "catia_value_block_payload")?,
+        payload: payload.to_vec(),
     }))
 }
 
@@ -310,23 +298,7 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
     }
 }
 
-pub(crate) fn tokenize_charged(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<Vec<ValueField>, CodecError> {
-    let mut fields = Vec::new();
-    tokenize_with(
-        payload,
-        |field| ctx.push_vec(&mut fields, field, "catia_value_fields"),
-        |bytes| ctx.copy_slice(bytes, "catia_value_field_bytes"),
-    )?;
-    Ok(fields)
-}
-
-pub(crate) fn copy_field_charged(
-    ctx: &DecodeContext<'_>,
-    field: &ValueField,
-) -> Result<ValueField, CodecError> {
+pub(crate) fn copy_field_charged(field: &ValueField) -> Result<ValueField, CodecError> {
     Ok(match field {
         ValueField::SchemaSelector { ordinal, offset } => ValueField::SchemaSelector {
             ordinal: *ordinal,
@@ -346,16 +318,11 @@ pub(crate) fn copy_field_charged(
         },
         ValueField::Separator { offset } => ValueField::Separator { offset: *offset },
         ValueField::Inline { bytes, offset } => ValueField::Inline {
-            bytes: InlineBytes(
-                ctx.copy_slice(bytes.as_slice(), "catia_value_selection_inline_bytes")?
-                    .into(),
-            ),
+            bytes: InlineBytes(bytes.as_slice().to_vec().into()),
             offset: *offset,
         },
         ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-            bytes: ctx
-                .copy_slice(bytes, "catia_value_selection_string_bytes")?
-                .into(),
+            bytes: bytes.to_vec().into(),
             offset: *offset,
         },
         ValueField::Atom {

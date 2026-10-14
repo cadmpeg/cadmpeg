@@ -180,7 +180,7 @@ impl CatiaNative {
             )));
         }
         let entity_classes_by_graph_identity =
-            crate::test_support::with_service_context(|ctx| entity_class_index(ctx, &records))
+            crate::test_support::with_service_context(|ctx| entity_class_index(&records))
                 .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let (
             relation_expressions,
@@ -189,7 +189,7 @@ impl CatiaNative {
             terminal_nulls_by_graph,
             parameter_bindings,
         ) = crate::test_support::with_service_context(|ctx| {
-            semantic_entity_indices(ctx, &entity_records, &entity_classes_by_graph_identity)
+            semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity)
         })
         .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let expected_reference_signature_cohorts =
@@ -205,7 +205,6 @@ impl CatiaNative {
         let expected_schema_configuration_row_chains =
             crate::test_support::with_service_context(|ctx| {
                 derive_schema_configuration_row_chains(
-                    ctx,
                     &entity_records,
                     &entities_by_graph_identity,
                     &entity_classes_by_graph_identity,
@@ -271,10 +270,9 @@ impl CatiaNative {
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
                             let selectors = entity_table::parse_definition_schema_selectors(
-                                ctx,
                                 entity.definition_prefix(),
                             )?;
-                            definition_schema_selections(ctx, &selectors, catalog)
+                            definition_schema_selections(&selectors, catalog)
                         });
                         expected.as_ref().map_or(true, |selections| {
                             entity.definition_schema_selections != *selections
@@ -282,9 +280,9 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
-                            let fields = entity.value_fields_charged(ctx)?;
-                            let packets = entity.value_packets(ctx, &fields)?;
-                            entity_value_schema_selections(ctx, &fields, catalog, &packets)
+                            let fields = entity.value_fields();
+                            let packets = entity.value_packets(&fields);
+                            entity_value_schema_selections(&fields, catalog, &packets)
                         });
                         expected.as_ref().map_or(true, |selections| {
                             entity.value_schema_selections != *selections
@@ -292,8 +290,8 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
-                            let fields = entity.value_fields_charged(ctx)?;
-                            value_production(ctx, entity, &graph.records, &fields)
+                            let fields = entity.value_fields();
+                            value_production(entity, &graph.records, &fields)
                         });
                         expected
                             .as_ref()
@@ -305,7 +303,7 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
-                            entity_suffix_framing(ctx, entity.record_suffix())
+                            entity_suffix_framing(entity.record_suffix())
                         });
                         expected
                             .as_ref()
@@ -313,7 +311,7 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
-                            entity_suffix_schema_selection(ctx, entity.suffix_value(), catalog)
+                            entity_suffix_schema_selection(entity.suffix_value(), catalog)
                         });
                         expected.as_ref().map_or(true, |selection| {
                             entity.suffix_schema_selection != *selection
@@ -322,7 +320,6 @@ impl CatiaNative {
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
                             range_interval(
-                                ctx,
                                 entity.value_payload(),
                                 &entity.value_schema_selections,
                                 entity.suffix_value(),
@@ -344,7 +341,6 @@ impl CatiaNative {
                             != object.and_then(|object| {
                                 crate::test_support::with_service_context(|ctx| {
                                     object_production(
-                                        ctx,
                                         entity,
                                         object,
                                         &CatiaEntityReferenceIndex {
@@ -403,7 +399,7 @@ impl CatiaNative {
                     .owner_entity_id()
                     .map(|owner| {
                         crate::test_support::with_service_context(|ctx| {
-                            design_object_id(ctx, graph.byte_offset, owner)
+                            design_object_id(graph.byte_offset, owner)
                         })
                     })
                     .transpose()
@@ -499,7 +495,7 @@ impl CatiaNative {
                 .sort_by_key(|selection| selection.offset);
         }
         let design_objects = crate::test_support::with_service_context(|ctx| {
-            design_objects(ctx, &graphs, &entity_records)
+            design_objects(&graphs, &entity_records)
         })
         .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
         let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
@@ -523,7 +519,7 @@ impl CatiaNative {
             namespace.arena_as("external_references")?;
         external_references.sort_by_key(|reference| reference.byte_offset);
         let expected_external_references = crate::test_support::with_service_context(|ctx| {
-            external_reference_views(ctx, &finjpl_segments)
+            external_reference_views(&finjpl_segments)
         })
         .map_err(|_| {
             cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -544,12 +540,12 @@ impl CatiaNative {
         let mut preview_images: Vec<CatiaPreviewImage> = namespace.arena_as("preview_images")?;
         preview_images.sort_by_key(|preview| preview.byte_offset);
         let expected_preview_images =
-            crate::test_support::with_service_context(|ctx| preview_views(ctx, &finjpl_segments))
+            crate::test_support::with_service_context(|ctx| preview_views(&finjpl_segments))
                 .map_err(|_| {
-                cadmpeg_ir::NativeConvertError::InvalidOwner(
-                    "stored CATIA previews exceed service limits".to_string(),
-                )
-            })?;
+                    cadmpeg_ir::NativeConvertError::InvalidOwner(
+                        "stored CATIA previews exceed service limits".to_string(),
+                    )
+                })?;
         if preview_images != expected_preview_images {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA previews disagree with their summary segments".to_string(),

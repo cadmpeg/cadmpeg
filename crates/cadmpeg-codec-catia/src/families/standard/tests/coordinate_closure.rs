@@ -237,7 +237,6 @@ fn counted_edge_arities_are_bounded_by_remaining_bytes() {
     let oversized_row = [0x01, 0x01, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff];
     assert!(
         crate::test_support::with_service_context(|ctx| parse_edge_tables_scoped_at(
-            ctx,
             &oversized_row,
             0
         ))
@@ -246,7 +245,6 @@ fn counted_edge_arities_are_bounded_by_remaining_bytes() {
     );
     assert!(
         crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables_width(
-            ctx,
             &oversized_row,
             0,
             3
@@ -267,14 +265,12 @@ fn fbb_edge_width_requires_a_complete_counted_vertex_table() {
     bytes.extend_from_slice(&[0x01, 0x06, 0x01]);
 
     assert!(
-        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables_width(
-            ctx, &bytes, 0, 3
-        ))
-        .expect("service resource budget")
-        .is_some()
+        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables_width(&bytes, 0, 3))
+            .expect("service resource budget")
+            .is_some()
     );
     assert!(
-        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables(ctx, &bytes, 0))
+        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables(&bytes, 0))
             .expect("service resource budget")
             .is_none()
     );
@@ -314,7 +310,6 @@ fn trim_primitive_counts_are_bounded_by_remaining_bytes() {
     ];
     assert!(
         crate::test_support::with_service_context(|ctx| parse_trim_record(
-            ctx,
             &oversized_primitives,
             0,
             2
@@ -409,7 +404,6 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
     let native_support_ids = HashSet::from([70, 71]);
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
-            ctx,
             &supports,
             &native_support_ids
         ))
@@ -419,7 +413,6 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
-            ctx,
             &supports[1..],
             &HashSet::from([900])
         ))

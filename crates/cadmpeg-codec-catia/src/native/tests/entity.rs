@@ -113,26 +113,26 @@ fn definition_selection_refuses_collection_and_retained_limits() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let record = &native.entity_records[0];
     let selectors = crate::test_support::with_service_context(|ctx| {
-        crate::entity_table::parse_definition_schema_selectors(ctx, record.definition_prefix())
+        crate::entity_table::parse_definition_schema_selectors(record.definition_prefix())
     })
     .expect("service profile admits definition selectors");
     let catalog = native.catalogs.first();
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::definition_schema_selections(ctx, &selectors, catalog)
+        super::super::definition_schema_selections(&selectors, catalog)
     });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_definition_selection_entry")
     );
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::definition_schema_selections(ctx, &selectors, catalog)
+        super::super::definition_schema_selections(&selectors, catalog)
     });
     assert!(
         matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_definition_schema_selections")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::definition_schema_selections(ctx, &selectors, catalog)
+        super::super::definition_schema_selections(&selectors, catalog)
     })
     .expect("service profile admits definition selection");
     assert_eq!(admitted, record.definition_schema_selections);
@@ -242,14 +242,14 @@ fn repeated_reference_selection_refuses_retained_limit() {
     let preamble = crate::object_graph::repeated_reference_schema_preamble(&record.payload);
     let catalog = native.catalogs.first();
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::repeated_reference_schema_selection(ctx, preamble.as_ref(), catalog)
+        super::super::repeated_reference_schema_selection(preamble.as_ref(), catalog)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_repeated_reference_entry")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::repeated_reference_schema_selection(ctx, preamble.as_ref(), catalog)
+        super::super::repeated_reference_schema_selection(preamble.as_ref(), catalog)
     })
     .expect("service profile admits schema selection");
     assert_eq!(admitted, record.repeated_reference_schema_selection);
@@ -805,13 +805,13 @@ fn entity_value_selection_refuses_collection_and_retained_limits() {
     let record = &native.entity_records[0];
     let catalog = native.catalogs.first();
     let (fields, packets) = crate::test_support::with_service_context(|ctx| {
-        let fields = record.value_fields_charged(ctx)?;
+        let fields = record.value_fields();
         let packets = record.value_packets(ctx, &fields)?;
         Ok::<_, cadmpeg_core::CodecError>((fields, packets))
     })
     .expect("service profile admits value parsing");
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::entity_value_schema_selections(ctx, &fields, catalog, &packets)
+        super::super::entity_value_schema_selections(&fields, catalog, &packets)
     });
     assert!(
         matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -820,14 +820,14 @@ fn entity_value_selection_refuses_collection_and_retained_limits() {
     let retained = crate::test_support::with_retained_refusal(
         &[],
         "catia_native_value_selection_entry",
-        |ctx| super::super::entity_value_schema_selections(ctx, &fields, catalog, &packets),
+        |ctx| super::super::entity_value_schema_selections(&fields, catalog, &packets),
     );
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_value_selection_entry")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_value_schema_selections(ctx, &fields, catalog, &packets)
+        super::super::entity_value_schema_selections(&fields, catalog, &packets)
     })
     .expect("service profile admits selection projection");
     assert_eq!(admitted, record.value_schema_selections);
@@ -842,14 +842,14 @@ fn native_value_productions_refuse_catalog_and_suffix_copies() {
     let fields = crate::test_support::with_service_context(|ctx| entity.value_fields_charged(ctx))
         .expect("service profile admits value fields");
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::value_production(ctx, entity, &native.object_graphs[0].records, &fields)
+        super::super::value_production(entity, &native.object_graphs[0].records, &fields)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_value_schema_entry")
     );
     let service = crate::test_support::with_service_context(|ctx| {
-        super::super::value_production(ctx, entity, &native.object_graphs[0].records, &fields)
+        super::super::value_production(entity, &native.object_graphs[0].records, &fields)
     })
     .expect("service profile admits parameter production");
     assert_eq!(service, entity.value_production);
@@ -863,14 +863,14 @@ fn native_value_productions_refuse_catalog_and_suffix_copies() {
         }),
     };
     let nested_refusal = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::copy_suffix_schema_value(ctx, &nested)
+        super::super::copy_suffix_schema_value(&nested)
     });
     assert!(
         matches!(nested_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_suffix_class_entry")
     );
     let nested_service = crate::test_support::with_service_context(|ctx| {
-        super::super::copy_suffix_schema_value(ctx, &nested)
+        super::super::copy_suffix_schema_value(&nested)
     })
     .expect("service profile admits nested suffix value");
     assert_eq!(nested_service, nested);
@@ -972,7 +972,6 @@ fn native_definition_value_and_chain_refuse_retained_schema_copies() {
     .expect("service profile admits definition fields");
     let definition_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::value_production(
-            ctx,
             definition_entity,
             &definition_native.object_graphs[0].records,
             &definition_fields,
@@ -994,7 +993,6 @@ fn native_definition_value_and_chain_refuse_retained_schema_copies() {
             .expect("service profile admits chain fields");
     let chain_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::value_production(
-            ctx,
             chain_entity,
             &chain_native.object_graphs[0].records,
             &chain_fields,
@@ -1006,7 +1004,6 @@ fn native_definition_value_and_chain_refuse_retained_schema_copies() {
     );
     let service = crate::test_support::with_service_context(|ctx| {
         super::super::value_production(
-            ctx,
             chain_entity,
             &chain_native.object_graphs[0].records,
             &chain_fields,
@@ -1757,7 +1754,7 @@ fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_crossing_entity_value_packet());
     let packets = crate::test_support::with_service_context(|ctx| {
-        let fields = native.entity_records[0].value_fields_charged(ctx)?;
+        let fields = native.entity_records[0].value_fields();
         native.entity_records[0].value_packets(ctx, &fields)
     })
     .expect("service profile admits the crossing value packet");

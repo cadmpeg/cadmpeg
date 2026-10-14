@@ -15,7 +15,6 @@ use super::{
     CatiaRelationTypeSignature, CatiaSchemaConfigurationRecord, CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -136,10 +135,9 @@ impl CatiaEntityRecord {
 
     pub(crate) fn value_packets(
         &self,
-        ctx: &DecodeContext<'_>,
         fields: &[value_block::ValueField],
-    ) -> Result<Vec<entity_table::EntityValuePacket>, CodecError> {
-        entity_table::value_packets_charged(ctx, self.value_payload(), fields)
+    ) -> Vec<entity_table::EntityValuePacket> {
+        entity_table::value_packets(self.value_payload(), fields)
     }
 
     pub(crate) fn numeric_pair(&self) -> Option<entity_table::NumericPair> {
@@ -321,11 +319,8 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(crate) fn value_fields_charged(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Vec<value_block::ValueField>, cadmpeg_core::CodecError> {
-        value_block::tokenize_charged(ctx, self.value_payload())
+    pub(crate) fn value_fields(&self) -> Vec<value_block::ValueField> {
+        value_block::tokenize(self.value_payload())
     }
 
     pub(super) fn record_suffix(&self) -> &[u8] {
@@ -357,10 +352,10 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(super) fn parse_suffix(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+    pub(super) fn parse_suffix(&mut self) -> Result<(), CodecError> {
         let suffix = self.record_suffix();
         let value = entity_suffix_value(suffix);
-        let framing = entity_suffix_framing(ctx, suffix)?;
+        let framing = entity_suffix_framing(suffix)?;
         self.suffix = match (value, framing) {
             (Some(value), _) => Some(CatiaEntityRecordSuffix::Value(value)),
             (None, Some(framing)) => Some(CatiaEntityRecordSuffix::Framing(framing)),
@@ -527,33 +522,30 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
 }
 
 impl CatiaEntityRecordWire {
-    pub(super) fn from_charged(
-        ctx: &DecodeContext<'_>,
-        mut value: CatiaEntityRecord,
-    ) -> Result<Self, CodecError> {
+    pub(super) fn from_charged(mut value: CatiaEntityRecord) -> Result<Self, CodecError> {
         let payload = match &value.body {
             CatiaEntityRecordBody::Inline(_) => &[][..],
             CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
         };
-        let value_fields = value_block::tokenize_charged(ctx, payload)?;
-        let value_packets = entity_table::value_packets_charged(ctx, payload, &value_fields)?;
+        let value_fields = value_block::tokenize(payload);
+        let value_packets = entity_table::value_packets(payload, &value_fields);
         let signature = match value.value_production.as_ref() {
             Some(CatiaEntityValueProduction::RelationExpression(expression)) => {
-                expression.signature_charged(ctx)?
+                expression.signature_charged()?
             }
             _ => None,
         };
         let output_entity = match value.object_production.as_ref() {
             Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) => instance
                 .output_entity()
-                .map(|entity| entity.copy_charged(ctx))
+                .map(|entity| entity.copy_charged())
                 .transpose()?,
             _ => None,
         };
         let reference_signature = value
             .reference_signature
             .take()
-            .map(|signature| CatiaReferenceSignatureWire::from_charged(ctx, signature))
+            .map(|signature| CatiaReferenceSignatureWire::from_charged(signature))
             .transpose()?;
         Ok(Self::from_with_views(
             value,

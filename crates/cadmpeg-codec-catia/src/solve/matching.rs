@@ -14,25 +14,12 @@ pub(super) fn domains_have_distinct_matching<'a>(
     Ok(distinct_domain_matching_with_budget(ctx, domains, point_count, None, None)?.is_some())
 }
 
-/// Charge one matching visit to the session and to the caller's slice.
+/// Charge one matching visit to the caller's slice.
 ///
 /// Returns `false` when the caller's slice is used up; the search then ends
-/// without a matching. A session refusal is an error.
-fn charge_matching_work(
-    ctx: &DecodeContext<'_>,
-    budget: Option<&WorkBudget<'_>>,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "catia matching work")?;
-    if budget.is_some_and(|budget| budget.exhausted() || budget.remaining() == 0) {
-        return Ok(false);
-    }
-    let visit = ctx.work_budget(1);
-    if !visit.charge() {
-        // A one-unit session slice refuses only through a session refusal.
-        ctx.charge_work(0, "catia matching work")?;
-        return Ok(false);
-    }
-    Ok(budget.is_none_or(|budget| budget.consume_child(&visit).is_ok()))
+/// without a matching.
+fn charge_matching_work(budget: Option<&WorkBudget<'_>>) -> bool {
+    budget.is_none_or(|budget| !budget.exhausted() && budget.remaining() != 0 && budget.charge())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -50,7 +37,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
 ) -> Result<Option<Vec<usize>>, CodecError> {
     let mut admitted_domains = Vec::new();
     for domain in domains {
-        ctx.push_vec(&mut admitted_domains, domain, "catia_match_domains")?;
+        admitted_domains.push(domain);
     }
     let domains = admitted_domains;
     if domains.len() > point_count {
@@ -75,7 +62,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         for root in 0..domains.len() {
             if !matched[root] {
                 distance[root] = Some(0);
-                ctx.push_back(&mut queue, root, "catia_match_queue")?;
+                queue.push_back(root);
             }
         }
         let mut shortest = None;
@@ -87,7 +74,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 continue;
             }
             for &point in domains[root] {
-                if !charge_matching_work(ctx, budget)? {
+                if !charge_matching_work(budget) {
                     return Ok(None);
                 }
                 if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
@@ -99,7 +86,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 if let Some(next) = owner[point] {
                     if Some(next) != required_domain && distance[next].is_none() {
                         distance[next] = Some(root_distance + 1);
-                        ctx.push_back(&mut queue, next, "catia_match_queue")?;
+                        queue.push_back(next);
                     }
                 } else {
                     shortest = Some(root_distance);
@@ -117,7 +104,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 continue;
             }
             let mut roots = Vec::new();
-            ctx.push_vec(&mut roots, start, "catia_match_augmenting_roots")?;
+            roots.push(start);
             let mut free_point = None;
             while let Some(&root) = roots.last() {
                 let mut advanced = false;
@@ -125,7 +112,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 while cursor[root] < domains[root].len() {
                     let point = domains[root][cursor[root]];
                     cursor[root] += 1;
-                    if !charge_matching_work(ctx, budget)? {
+                    if !charge_matching_work(budget) {
                         return Ok(None);
                     }
                     if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
@@ -146,7 +133,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                                     .is_some_and(|value| distance[next] == Some(value + 1)) =>
                         {
                             incoming[next] = Some(point);
-                            ctx.push_vec(&mut roots, next, "catia_match_augmenting_roots")?;
+                            roots.push(next);
                             advanced = true;
                             break;
                         }
@@ -192,7 +179,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
         let Some(point) = point else {
             return Ok(None);
         };
-        ctx.push_vec(&mut completed, point, "catia_match_completed")?;
+        completed.push(point);
     }
     Ok(Some(completed))
 }
@@ -206,7 +193,7 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
 ) -> Result<Option<Vec<usize>>, CodecError> {
     let mut admitted_domains = Vec::new();
     for domain in domains {
-        ctx.push_vec(&mut admitted_domains, domain, "catia_match_repair_domains")?;
+        admitted_domains.push(domain);
     }
     let domains = admitted_domains;
     if domains.len() != matching.len() || domains.len() > point_count {
@@ -218,10 +205,10 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
     for (domain, &point) in matching.iter().enumerate() {
         if point < point_count && domains[domain].contains(&point) && owner[point].is_none() {
             owner[point] = Some(domain);
-            ctx.push_vec(&mut repaired, Some(point), "catia_match_repaired")?;
+            repaired.push(Some(point));
         } else {
-            ctx.push_vec(&mut repaired, None, "catia_match_repaired")?;
-            ctx.push_vec(&mut unmatched, domain, "catia_match_unmatched")?;
+            repaired.push(None);
+            unmatched.push(domain);
         }
     }
     for start in unmatched {
@@ -233,12 +220,12 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
             ctx.alloc_filled(domains.len(), None, "catia_match_repair_incoming")?;
         let mut via_domain = ctx.alloc_filled(point_count, None, "catia_match_repair_via")?;
         let mut queue = VecDeque::new();
-        ctx.push_back(&mut queue, start, "catia_match_repair_queue")?;
+        queue.push_back(start);
         seen_domains[start] = true;
         let mut free_point = None;
         while let Some(domain) = queue.pop_front() {
             for &point in domains[domain] {
-                if !charge_matching_work(ctx, budget)? {
+                if !charge_matching_work(budget) {
                     return Ok(None);
                 }
                 if point >= point_count || seen_points[point] {
@@ -253,7 +240,7 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
                 if !seen_domains[next] {
                     seen_domains[next] = true;
                     incoming_point[next] = Some(point);
-                    ctx.push_back(&mut queue, next, "catia_match_repair_queue")?;
+                    queue.push_back(next);
                 }
             }
             if free_point.is_some() {
@@ -283,7 +270,7 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
         let Some(point) = point else {
             return Ok(None);
         };
-        ctx.push_vec(&mut completed, point, "catia_match_repair_completed")?;
+        completed.push(point);
     }
     Ok(Some(completed))
 }
@@ -316,7 +303,7 @@ pub(crate) fn retain_distinct_matching_supports(
             if point >= point_count {
                 return Ok(None);
             }
-            if !charge_matching_work(ctx, budget)? {
+            if !charge_matching_work(budget) {
                 return Ok(None);
             }
             let point_node = domains.len() + point;
@@ -325,8 +312,8 @@ pub(crate) fn retain_distinct_matching_supports(
             } else {
                 (domain, point_node)
             };
-            ctx.push_vec(&mut graph[from], to, "catia_match_support_arcs")?;
-            ctx.push_vec(&mut reverse[to], from, "catia_match_support_reverse_arcs")?;
+            graph[from].push(to);
+            reverse[to].push(from);
         }
     }
 
@@ -338,23 +325,19 @@ pub(crate) fn retain_distinct_matching_supports(
         }
         visited[start] = true;
         let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, (start, 0usize), "catia_match_support_stack")?;
+        stack.push((start, 0usize));
         while let Some((node, edge_index)) = stack.pop() {
             if let Some(&next) = graph[node].get(edge_index) {
-                ctx.push_vec(
-                    &mut stack,
-                    (node, edge_index + 1),
-                    "catia_match_support_stack",
-                )?;
-                if !charge_matching_work(ctx, budget)? {
+                stack.push((node, edge_index + 1));
+                if !charge_matching_work(budget) {
                     return Ok(None);
                 }
                 if !visited[next] {
                     visited[next] = true;
-                    ctx.push_vec(&mut stack, (next, 0), "catia_match_support_stack")?;
+                    stack.push((next, 0));
                 }
             } else {
-                ctx.push_vec(&mut finish_order, node, "catia_match_support_finish_order")?;
+                finish_order.push(node);
             }
         }
     }
@@ -367,15 +350,15 @@ pub(crate) fn retain_distinct_matching_supports(
         }
         component[start] = Some(component_count);
         let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, start, "catia_match_support_component_stack")?;
+        stack.push(start);
         while let Some(node) = stack.pop() {
             for &next in &reverse[node] {
-                if !charge_matching_work(ctx, budget)? {
+                if !charge_matching_work(budget) {
                     return Ok(None);
                 }
                 if component[next].is_none() {
                     component[next] = Some(component_count);
-                    ctx.push_vec(&mut stack, next, "catia_match_support_component_stack")?;
+                    stack.push(next);
                 }
             }
         }
@@ -388,17 +371,17 @@ pub(crate) fn retain_distinct_matching_supports(
         if !matched {
             let node = domains.len() + point;
             reaches_free[node] = true;
-            ctx.push_back(&mut queue, node, "catia_match_support_free_queue")?;
+            queue.push_back(node);
         }
     }
     while let Some(node) = queue.pop_front() {
         for &previous in &reverse[node] {
-            if !charge_matching_work(ctx, budget)? {
+            if !charge_matching_work(budget) {
                 return Ok(None);
             }
             if !reaches_free[previous] {
                 reaches_free[previous] = true;
-                ctx.push_back(&mut queue, previous, "catia_match_support_free_queue")?;
+                queue.push_back(previous);
             }
         }
     }
@@ -431,12 +414,8 @@ pub(crate) fn unique_coordinate_bijection(
     ) -> Result<Option<Vec<usize>>, CodecError> {
         let mut owner = ctx.alloc_filled(slot_classes.len(), None, "catia_bijection_owners")?;
         let mut order = Vec::new();
-        ctx.reserve_vec(&mut order, domains.len(), "catia_bijection_order")?;
+
         for (vertex, domain) in domains.iter().enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(domain.len()),
-                "catia_bijection_order_keys",
-            )?;
             let count = if let Some((_, class)) =
                 forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
             {
@@ -444,16 +423,12 @@ pub(crate) fn unique_coordinate_bijection(
             } else {
                 domain
                     .iter()
-                    .try_fold(0usize, |count, class| {
-                        count.checked_add(slots_by_class[*class].len())
-                    })
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("catia_bijection_order_keys", u64::MAX - 1, u64::MAX)
-                    })?
+                    .map(|class| slots_by_class[*class].len())
+                    .sum()
             };
             order.push((count, vertex));
         }
-        ctx.sort_unstable_by(&mut order, Ord::cmp, |_| 0, "catia_bijection_order_sort")?;
+        order.sort_unstable_by(Ord::cmp);
         let mut seen_vertices =
             ctx.alloc_filled(domains.len(), 0usize, "catia_bijection_seen_vertices")?;
         let mut seen_slots =
@@ -464,7 +439,7 @@ pub(crate) fn unique_coordinate_bijection(
         for (generation, (_, start)) in order.into_iter().enumerate() {
             let generation = generation + 1;
             let mut queue = VecDeque::new();
-            ctx.push_back(&mut queue, start, "catia_bijection_queue")?;
+            queue.push_back(start);
             seen_vertices[start] = generation;
             incoming_slot[start] = None;
             let mut free_slot = None;
@@ -474,19 +449,16 @@ pub(crate) fn unique_coordinate_bijection(
                     forced.filter(|(forced_vertex, _)| *forced_vertex == vertex)
                 {
                     for &slot in &slots_by_class[class] {
-                        ctx.charge_work(1, "catia_bijection_slot_projection")?;
-                        ctx.push_vec(&mut slots, slot, "catia_bijection_visit_slots")?;
+                        slots.push(slot);
                     }
                 } else {
                     for &class in &domains[vertex] {
                         for &slot in &slots_by_class[class] {
-                            ctx.charge_work(1, "catia_bijection_slot_projection")?;
-                            ctx.push_vec(&mut slots, slot, "catia_bijection_visit_slots")?;
+                            slots.push(slot);
                         }
                     }
                 }
                 for slot in slots {
-                    ctx.charge_work(1, "catia_bijection_match_visit")?;
                     if seen_slots[slot] == generation {
                         continue;
                     }
@@ -499,7 +471,7 @@ pub(crate) fn unique_coordinate_bijection(
                     if seen_vertices[next] != generation {
                         seen_vertices[next] = generation;
                         incoming_slot[next] = Some(slot);
-                        ctx.push_back(&mut queue, next, "catia_bijection_queue")?;
+                        queue.push_back(next);
                     }
                 }
                 if free_slot.is_some() {
@@ -510,7 +482,6 @@ pub(crate) fn unique_coordinate_bijection(
                 return Ok(None);
             };
             loop {
-                ctx.charge_work(1, "catia_bijection_augmentation")?;
                 let Some(vertex) = via_vertex[slot] else {
                     return Ok(None);
                 };
@@ -522,10 +493,7 @@ pub(crate) fn unique_coordinate_bijection(
             }
         }
         let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_bijection_assignment")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(owner.len()),
-            "catia_bijection_match_assignment",
-        )?;
+
         for (slot, vertex) in owner.into_iter().enumerate() {
             let Some(vertex) = vertex else {
                 return Ok(None);
@@ -537,21 +505,11 @@ pub(crate) fn unique_coordinate_bijection(
             let Some(class) = class else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut completed, class, "catia_bijection_completed")?;
+            completed.push(class);
         }
         Ok(Some(completed))
     }
 
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(domains.len()),
-        "catia_bijection_domain_validation",
-    )?;
-    for domain in domains {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(domain.len()),
-            "catia_bijection_domain_validation",
-        )?;
-    }
     if domains.len() != points.len()
         || domains
             .iter()
@@ -562,10 +520,6 @@ pub(crate) fn unique_coordinate_bijection(
     let mut representatives = Vec::<usize>::new();
     let mut point_classes = Vec::new();
     for (point, position) in points.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(representatives.len()),
-            "catia_bijection_coordinate_comparison",
-        )?;
         let class = if let Some(class) = representatives
             .iter()
             .position(|representative| points[*representative] == *position)
@@ -573,41 +527,22 @@ pub(crate) fn unique_coordinate_bijection(
             class
         } else {
             let class = representatives.len();
-            ctx.push_vec(
-                &mut representatives,
-                point,
-                "catia_bijection_representatives",
-            )?;
+            representatives.push(point);
             class
         };
-        ctx.push_vec(&mut point_classes, class, "catia_bijection_point_classes")?;
+        point_classes.push(class);
     }
     let mut class_domains = Vec::new();
     for domain in domains {
         let mut classes = Vec::new();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(domain.len()),
-            "catia_bijection_class_projection",
-        )?;
+
         for &point in domain {
-            ctx.push_vec(
-                &mut classes,
-                point_classes[point],
-                "catia_bijection_domain_classes",
-            )?;
+            classes.push(point_classes[point]);
         }
-        ctx.sort_unstable_by(
-            &mut classes,
-            Ord::cmp,
-            |_| 0,
-            "catia_bijection_domain_classes_sort",
-        )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(classes.len()),
-            "catia_bijection_class_deduplication",
-        )?;
+        classes.sort_unstable_by(Ord::cmp);
+
         classes.dedup();
-        ctx.push_vec(&mut class_domains, classes, "catia_bijection_class_domains")?;
+        class_domains.push(classes);
     }
     let mut capacities =
         ctx.alloc_filled(representatives.len(), 0usize, "catia_bijection_capacities")?;
@@ -620,12 +555,8 @@ pub(crate) fn unique_coordinate_bijection(
     for (class, capacity) in capacities.into_iter().enumerate() {
         for _ in 0..capacity {
             let slot = slot_classes.len();
-            ctx.push_vec(&mut slot_classes, class, "catia_bijection_slot_classes")?;
-            ctx.push_vec(
-                &mut slots_by_class[class],
-                slot,
-                "catia_bijection_class_slots",
-            )?;
+            slot_classes.push(class);
+            slots_by_class[class].push(slot);
         }
     }
     let Some(classes) = matching(ctx, &class_domains, &slots_by_class, &slot_classes, None)? else {
@@ -633,7 +564,6 @@ pub(crate) fn unique_coordinate_bijection(
     };
     for (vertex, domain) in class_domains.iter().enumerate() {
         for &class in domain {
-            ctx.charge_work(1, "catia_bijection_alternate_class")?;
             if class != classes[vertex]
                 && matching(
                     ctx,
@@ -654,18 +584,14 @@ pub(crate) fn unique_coordinate_bijection(
         "catia_bijection_available",
     )?;
     for (point, class) in point_classes.into_iter().enumerate() {
-        ctx.push_vec(
-            &mut available[class],
-            point,
-            "catia_bijection_available_points",
-        )?;
+        available[class].push(point);
     }
     let mut used = ctx.alloc_filled(available.len(), 0usize, "catia_bijection_used")?;
     let mut points = Vec::new();
     for class in classes {
         let point = available[class][used[class]];
         used[class] += 1;
-        ctx.push_vec(&mut points, point, "catia_bijection_points")?;
+        points.push(point);
     }
     Ok(Some(points))
 }
@@ -677,7 +603,7 @@ mod tests {
     #[test]
     fn matching_visit_charges_the_attached_session_once() {
         crate::test_support::with_work_limit(1, |ctx| {
-            let budget = ctx.work_budget(1);
+            let budget = cadmpeg_core::decode::WorkBudget::new(1);
             assert!(
                 super::charge_matching_work(ctx, Some(&budget)).expect("one visit fits exactly")
             );
@@ -692,7 +618,7 @@ mod tests {
     #[test]
     fn used_up_caller_slice_skips_the_matching_without_fusing_the_session() {
         crate::test_support::with_service_context(|ctx| {
-            let budget = ctx.work_budget(1);
+            let budget = cadmpeg_core::decode::WorkBudget::new(1);
             let domains: [&[usize]; 2] = [&[0, 1], &[0, 1]];
             assert_eq!(
                 distinct_domain_matching_with_budget(ctx, domains, 2, Some(&budget), None)

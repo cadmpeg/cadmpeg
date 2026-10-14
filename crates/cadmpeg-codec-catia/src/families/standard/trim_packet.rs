@@ -1,7 +1,5 @@
 //! Checked trim-handle partitions and primitive expansion.
 
-use cadmpeg_core::decode::u64_from_index;
-
 use std::sync::{Arc, OnceLock};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -73,7 +71,6 @@ impl TryFrom<(usize, Vec<usize>, Vec<usize>, Vec<u32>)> for TrimPacket {
 
 impl TrimPacket {
     pub(super) fn from_lanes(
-        ctx: &DecodeContext<'_>,
         independent_count: usize,
         strip_lengths: Vec<usize>,
         fan_lengths: Vec<usize>,
@@ -84,17 +81,12 @@ impl TrimPacket {
         else {
             return Ok(None);
         };
-        let bytes = std::mem::size_of::<TrimPacketData>() + 2 * std::mem::size_of::<usize>();
-        ctx.charge_retained(u64_from_index(bytes), "catia_trim_shared_storage")?;
+
         Ok(Some(Self {
             inner: Arc::new(inner),
         }))
     }
-    pub(crate) fn try_clone_with_context(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, "catia_trim_packet_share")?;
+    pub(crate) fn try_clone_with_context(&self) -> Result<Self, CodecError> {
         Ok(self.clone())
     }
 
@@ -121,7 +113,7 @@ impl TrimPacket {
         if let Some(triangles) = self.inner.triangles.get() {
             return Ok(triangles);
         }
-        let triangles = self.expand_triangles(ctx)?;
+        let triangles = self.expand_triangles()?;
         match self.inner.triangles.set(triangles) {
             Ok(()) | Err(_) => self
                 .inner
@@ -132,65 +124,24 @@ impl TrimPacket {
         }
     }
 
-    fn expand_triangles(&self, ctx: &DecodeContext<'_>) -> Result<Vec<[u32; 3]>, CodecError> {
-        let operation = "catia_trim_expansion_work";
-        let lengths = self
-            .inner
-            .strip_lengths
-            .len()
-            .checked_add(self.inner.fan_lengths.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_work(u64_from_index(lengths), operation)?;
-        let triangle_count = self
-            .inner
-            .strip_lengths
-            .iter()
-            .chain(&self.inner.fan_lengths)
-            .try_fold(self.inner.independent_count, |count, &length| {
-                count.checked_add(match length {
-                    0 | 1 => 0,
-                    length => length - 2,
-                })
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let work = u64_from_index(triangle_count)
-            .checked_mul(3)
-            .and_then(|work| work.checked_add(u64_from_index(self.inner.handles.len())))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_work(work, operation)?;
+    fn expand_triangles(&self) -> Result<Vec<[u32; 3]>, CodecError> {
         let mut triangles = Vec::new();
         let (independent, mut remaining) = self
             .inner
             .handles
             .split_at(3 * self.inner.independent_count);
         for triple in independent.chunks_exact(3) {
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                "catia_trim_triangles",
-            )?;
-            ctx.push_vec(
-                &mut triangles,
-                [triple[0], triple[1], triple[2]],
-                "catia_trim_triangles",
-            )?;
+            triangles.push([triple[0], triple[1], triple[2]]);
         }
         for &length in &self.inner.strip_lengths {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
             for (index, triple) in strip.windows(3).enumerate() {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                    "catia_trim_triangles",
-                )?;
-                ctx.push_vec(
-                    &mut triangles,
-                    if index % 2 == 0 {
-                        [triple[0], triple[1], triple[2]]
-                    } else {
-                        [triple[1], triple[0], triple[2]]
-                    },
-                    "catia_trim_triangles",
-                )?;
+                triangles.push(if index % 2 == 0 {
+                    [triple[0], triple[1], triple[2]]
+                } else {
+                    [triple[1], triple[0], triple[2]]
+                });
             }
         }
         for &length in &self.inner.fan_lengths {
@@ -200,15 +151,7 @@ impl TrimPacket {
                 continue;
             };
             for pair in rim.windows(2) {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
-                    "catia_trim_triangles",
-                )?;
-                ctx.push_vec(
-                    &mut triangles,
-                    [center, pair[0], pair[1]],
-                    "catia_trim_triangles",
-                )?;
+                triangles.push([center, pair[0], pair[1]]);
             }
         }
         Ok(triangles)
@@ -298,7 +241,7 @@ mod tests {
         crate::test_support::with_service_context(|ctx| packet.triangles(ctx).map(|_| ()))
             .expect("initial expansion");
         let cloned =
-            crate::test_support::with_collection_limit(0, |ctx| packet.try_clone_with_context(ctx))
+            crate::test_support::with_collection_limit(0, |ctx| packet.try_clone_with_context())
                 .expect("sharing immutable lanes allocates no collection items");
         assert!(std::ptr::eq(packet.handles(), cloned.handles()));
         crate::test_support::with_collection_limit(0, |ctx| {

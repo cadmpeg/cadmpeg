@@ -1043,13 +1043,12 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     let records = vec![plane(10), plane(20), plane(30)];
 
     assert!(crate::test_support::with_service_context(|ctx| {
-        standard_plane_normals_from_face_frames(ctx, &records, &[None, None, None])
+        standard_plane_normals_from_face_frames(&records, &[None, None, None])
     })
     .expect("service resource budget")
     .is_empty());
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_plane_normals_from_face_frames(
-            ctx,
             &records,
             &[
                 Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
@@ -1057,7 +1056,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
                 Some(crate::test_support::test_b5::finite_vector([
                     0.0, 0.0, -1.0
                 ]))
-            ],
+            ]
         ))
         .expect("service resource budget"),
         HashMap::from([
@@ -1075,7 +1074,6 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     let conflicting = vec![plane(10), plane(10)];
     assert!(crate::test_support::with_service_context(|ctx| {
         standard_plane_normals_from_face_frames(
-            ctx,
             &conflicting,
             &[
                 Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
@@ -1100,7 +1098,7 @@ fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
         0.0, 0.0, 1.0,
     ]))];
     let normals = crate::test_support::with_service_context(|ctx| {
-        standard_plane_normals_from_face_frames(ctx, &records, &frames)
+        standard_plane_normals_from_face_frames(&records, &frames)
     })
     .expect("service resource budget");
     assert_eq!(normals.len(), 1);
@@ -1110,7 +1108,7 @@ fn plane_normal_candidate_and_result_maps_refuse_before_growth() {
     ] {
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, |ctx| {
-                standard_plane_normals_from_face_frames(ctx, &records, &frames)
+                standard_plane_normals_from_face_frames(&records, &frames)
             }),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == operation
@@ -1523,7 +1521,6 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_limit_curve_point_parameter(
-            ctx,
             &curve,
             Point3::new(0.0, 0.0, 0.0),
             2e-3

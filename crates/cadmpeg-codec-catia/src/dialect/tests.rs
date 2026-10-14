@@ -123,7 +123,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         })
         .expect("service resource budget");
         let matched = classify_service(&scan);
-        let charged = crate::test_support::with_service_context(|ctx| dialect_loss(ctx, &matched))
+        let charged = crate::test_support::with_service_context(|ctx| dialect_loss(&matched))
             .expect("service budget admits dialect loss")
             .is_some();
 
@@ -214,12 +214,12 @@ fn declared_version_refuses_retained_identity_limit() {
 #[test]
 fn residual_dialect_loss_refuses_retained_message_limit() {
     let matched = matched(Variant::Unknown);
-    let limited = crate::test_support::with_retained_limit(0, |ctx| dialect_loss(ctx, &matched));
+    let limited = crate::test_support::with_retained_limit(0, |ctx| dialect_loss(&matched));
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_dialect_unverified_message")
     );
-    let loss = crate::test_support::with_service_context(|ctx| dialect_loss(ctx, &matched))
+    let loss = crate::test_support::with_service_context(|ctx| dialect_loss(&matched))
         .expect("service budget admits residual loss");
     assert!(loss.is_some());
 }

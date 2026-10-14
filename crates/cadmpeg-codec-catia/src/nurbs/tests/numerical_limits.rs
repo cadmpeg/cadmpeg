@@ -206,7 +206,6 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     let mut refusal = LaneRefusals::new();
     assert_eq!(
         crate::test_support::with_service_context(|ctx| crate::nurbs::canonical_model_curve_range(
-            ctx,
             &curve,
             range,
             &mut refusal,
@@ -277,7 +276,6 @@ fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
 fn reflected_knots_include_exterior_knots_and_canonical_zero() {
     assert_eq!(
         crate::test_support::with_service_context(|ctx| reverse_knots(
-            ctx,
             &[1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0],
             [1e16, 1e16 + 2.0]
         ))
@@ -285,12 +283,8 @@ fn reflected_knots_include_exterior_knots_and_canonical_zero() {
         vec![1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0]
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| reverse_knots(
-            ctx,
-            &[-0.0, 1.0],
-            [0.0, 1.0]
-        ))
-        .expect("service profile admits reverse knots")[0]
+        crate::test_support::with_service_context(|ctx| reverse_knots(&[-0.0, 1.0], [0.0, 1.0]))
+            .expect("service profile admits reverse knots")[0]
             .to_bits(),
         0.0_f64.to_bits()
     );
@@ -432,7 +426,6 @@ fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
         .expect("fixture fits input limit");
     let h = 1e160;
     let (_, controls) = quintic_jet_bspline(
-        &ctx,
         5,
         &[0.0, h],
         &[[0.0; 3], [1.0, 0.0, 0.0]],
@@ -459,7 +452,6 @@ fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
         (2.0, f64::MAX, f64::MAX / 5.0),
     ] {
         let (_, controls) = quintic_jet_bspline(
-            &ctx,
             5,
             &[0.0, h],
             &[[0.0; 2]; 2],
@@ -479,7 +471,6 @@ fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
 fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         quintic_jet_bspline(
-            ctx,
             5,
             &[0.0, 1.0],
             &[[0.0, 0.0], [1.0, 0.0]],

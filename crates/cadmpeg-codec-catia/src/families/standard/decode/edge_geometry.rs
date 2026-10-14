@@ -353,7 +353,7 @@ pub(super) fn point_on_surface_if_supported(
     surface: &SurfaceGeometry,
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 1e-3;
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
+
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -413,7 +413,6 @@ pub(super) fn standard_spline_line(
     points: [usize; 2],
 ) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
     const TOLERANCE: f64 = 2e-3;
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
 
     let surfaces = support
         .faces
@@ -512,7 +511,6 @@ pub(super) fn standard_spline_circle(
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -604,7 +602,6 @@ pub(super) fn standard_spline_cylinder_plane(
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -743,7 +740,6 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
-    ctx.charge_work_limit(0, "catia surface membership boundary")?;
     let surfaces = support
         .faces
         .map(|face| face_surface(ir, bindings, surface_indices, face));
@@ -1037,10 +1033,10 @@ pub(super) fn standard_oriented_native_support_pcurves(
     if native_pair == endpoint_pair {
         return Ok(Some(copy_native()?));
     }
-    let (first_label, _first_label_reservation) = ctx.format_scoped(format_args!(
+    let first_label = format!(
             "standard native edge-support pcurve 0 of the edge between points {} and {}, reversed onto its edge",
             endpoint_pair[0], endpoint_pair[1]
-        ), "catia_standard_native_pcurve_reverse_label")?;
+        );
     let Some(first) = crate::nurbs::reverse_pcurve_geometry(
         ctx,
         &native.pcurves[0],
@@ -1051,10 +1047,10 @@ pub(super) fn standard_oriented_native_support_pcurves(
     else {
         return Ok(None);
     };
-    let (second_label, _second_label_reservation) = ctx.format_scoped(format_args!(
+    let second_label = format!(
             "standard native edge-support pcurve 1 of the edge between points {} and {}, reversed onto its edge",
             endpoint_pair[0], endpoint_pair[1]
-        ), "catia_standard_native_pcurve_reverse_label")?;
+        );
     let Some(second) = crate::nurbs::reverse_pcurve_geometry(
         ctx,
         &native.pcurves[1],
@@ -1162,16 +1158,14 @@ pub(super) fn build_standard_edge_curve(
             let radius = admitted_radius.get();
             let start = ir.model.points[points[0]].position().get();
             let end = ir.model.points[points[1]].position().get();
-            let mut axes = ctx.collect_vec(
-                support
-                    .faces
-                    .iter()
-                    .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-                    .filter_map(|surface| {
-                        standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-                    }),
-                "catia_standard_edge_circle_axes",
-            )?;
+            let mut axes = support
+                .faces
+                .iter()
+                .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
+                .filter_map(|surface| {
+                    standard_circle_axis_from_carrier(center, radius, &surface.geometry)
+                })
+                .collect::<Vec<_>>();
             for axis in native_support.into_iter().flat_map(|native| {
                 native.carriers.iter().filter_map(|carrier| {
                     let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
@@ -1182,11 +1176,11 @@ pub(super) fn build_standard_edge_curve(
                     standard_circle_axis_from_carrier(center, radius, surface)
                 })
             }) {
-                ctx.push_vec(&mut axes, axis, "catia_standard_edge_circle_axes")?;
+                axes.push(axis);
             }
             if axes.is_empty() {
                 if let Some(axis) = circle_axis_from_endpoints(center, radius, start, end) {
-                    ctx.push_vec(&mut axes, axis, "catia_standard_edge_circle_axes")?;
+                    axes.push(axis);
                 }
             }
             let axis = axes.first().copied();
@@ -1211,14 +1205,12 @@ pub(super) fn build_standard_edge_curve(
                         None => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                                 record: Some(
-                                    ctx.copy_retained_text(
-                                        "catia:payload:unknown#brep-stream",
-                                        "catia_standard_unknown_curve_record_id",
-                                    )
-                                    .and_then(|text| {
-                                        UnknownId::mint(text)
-                                            .map_err(cadmpeg_core::CodecError::malformed)
-                                    })?,
+                                    Ok(("catia:payload:unknown#brep-stream").to_owned()).and_then(
+                                        |text| {
+                                            UnknownId::mint(text)
+                                                .map_err(cadmpeg_core::CodecError::malformed)
+                                        },
+                                    )?,
                                 ),
                             }),
                             None,
@@ -1295,13 +1287,12 @@ pub(super) fn build_standard_edge_curve(
                 None => (
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: Some(
-                            ctx.copy_retained_text(
-                                "catia:payload:unknown#brep-stream",
-                                "catia_standard_unknown_curve_record_id",
-                            )
-                            .and_then(|text| {
-                                UnknownId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
-                            })?,
+                            Ok(("catia:payload:unknown#brep-stream").to_owned()).and_then(
+                                |text| {
+                                    UnknownId::mint(text)
+                                        .map_err(cadmpeg_core::CodecError::malformed)
+                                },
+                            )?,
                         ),
                     }),
                     None,
@@ -1350,10 +1341,8 @@ pub(super) fn build_standard_edge_curve(
                                     None => (
                                         CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                                             record: Some(
-                                                ctx.copy_retained_text(
-                                                    "catia:payload:unknown#brep-stream",
-                                                    "catia_standard_unknown_curve_record_id",
-                                                )
+                                                Ok(("catia:payload:unknown#brep-stream")
+                                                    .to_owned())
                                                 .and_then(|text| {
                                                     UnknownId::mint(text).map_err(
                                                         cadmpeg_core::CodecError::malformed,
@@ -1442,20 +1431,8 @@ pub(super) fn build_standard_edge_curve(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.origin",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.direction",
-            "catia_annotation_field",
-        )?;
+        annotations.derived(ctx, &id, "geometry.origin")?;
+        annotations.derived(ctx, &id, "geometry.direction")?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -1463,34 +1440,10 @@ pub(super) fn build_standard_edge_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
         )
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.center",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.axis",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.ref_direction",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.radius",
-            "catia_annotation_field",
-        )?;
+        annotations.derived(ctx, &id, "geometry.center")?;
+        annotations.derived(ctx, &id, "geometry.axis")?;
+        annotations.derived(ctx, &id, "geometry.ref_direction")?;
+        annotations.derived(ctx, &id, "geometry.radius")?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -1498,41 +1451,11 @@ pub(super) fn build_standard_edge_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)),
         )
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.center",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.axis",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.major_direction",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.major_radius",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.minor_radius",
-            "catia_annotation_field",
-        )?;
+        annotations.derived(ctx, &id, "geometry.center")?;
+        annotations.derived(ctx, &id, "geometry.axis")?;
+        annotations.derived(ctx, &id, "geometry.major_direction")?;
+        annotations.derived(ctx, &id, "geometry.major_radius")?;
+        annotations.derived(ctx, &id, "geometry.minor_radius")?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -1540,24 +1463,18 @@ pub(super) fn build_standard_edge_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
         )
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.axis",
-            "catia_annotation_field",
-        )?;
+        annotations.derived(ctx, &id, "geometry.axis")?;
     }
     let geometry_is_unknown = matches!(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     );
-    admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
+    admission.charge()?;
     ir.model.curves.push(Curve {
         parameter_range: None,
         id: id.try_clone_for_decode(ctx, "catia_standard_model_curve_id_copy")?,
         geometry,
-        source_object: Some(cgm_source(ctx, "edge-support", support.tag)?),
+        source_object: Some(cgm_source("edge-support", support.tag)?),
     });
     if matches!(
         &support.geometry,
@@ -1639,20 +1556,8 @@ pub(super) fn build_standard_edge_curve(
                     "standard_surface_intersection",
                     Exactness::Derived,
                 )?;
-                crate::resource::derived_annotation(
-                    ctx,
-                    annotations,
-                    &procedural_id,
-                    "curve",
-                    "catia_annotation_field",
-                )?;
-                crate::resource::derived_annotation(
-                    ctx,
-                    annotations,
-                    &procedural_id,
-                    "definition",
-                    "catia_annotation_field",
-                )?;
+                annotations.derived(ctx, &procedural_id, "curve")?;
+                annotations.derived(ctx, &procedural_id, "definition")?;
                 let Ok(context) = IntcurveSupportContext::try_new(
                     sides,
                     ordered_range(curve_parameter_range),
@@ -1660,10 +1565,7 @@ pub(super) fn build_standard_edge_curve(
                 ) else {
                     return Ok((None, None));
                 };
-                admission.reserve_entity(
-                    &mut ir.model.procedural_curves,
-                    "catia_family_emit_procedural_curves",
-                )?;
+                admission.charge()?;
                 let procedural = ProceduralCurve::new(
                     procedural_id,
                     ProceduralCurveDefinition::Intersection {
@@ -1691,13 +1593,10 @@ pub(super) fn ensure_native_edge_support_surface(
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
-    let source = cgm_source(admission.context(), "surface", surface_object_id)?;
+    let source = cgm_source("surface", surface_object_id)?;
     let mut source_match = None::<&SurfaceId>;
     let mut source_ambiguous = false;
     for surface in &ir.model.surfaces {
-        admission
-            .context()
-            .charge_work(1, "catia_native_edge_support_source_scan")?;
         if surface.source_object.as_ref() == Some(&source) {
             if source_match.is_some_and(|id| id != &surface.id) {
                 source_ambiguous = true;
@@ -1719,9 +1618,6 @@ pub(super) fn ensure_native_edge_support_surface(
         let mut geometry_match = None::<&SurfaceId>;
         let mut geometry_ambiguous = false;
         for surface in &ir.model.surfaces {
-            admission
-                .context()
-                .charge_work(1, "catia_native_edge_support_geometry_scan")?;
             if surface.geometry == *geometry {
                 if geometry_match.is_some_and(|id| id != &surface.id) {
                     geometry_ambiguous = true;
@@ -1740,13 +1636,11 @@ pub(super) fn ensure_native_edge_support_surface(
         }
     }
     let id = crate::resource::compose_u32_id(
-        admission.context(),
         &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-surface"),
         surface_object_id,
         SurfaceId::mint,
-        "catia_native_edge_support_surface_id",
     )?;
-    admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
+    admission.charge()?;
     let (geometry, procedural_id) = match carrier {
         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
             let copy = geometry
@@ -1755,11 +1649,9 @@ pub(super) fn ensure_native_edge_support_surface(
         }
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
             let procedural_id = crate::resource::compose_u32_id(
-                admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-definition"),
                 surface_object_id,
                 ProceduralSurfaceId::mint,
-                "catia_native_edge_support_definition_id",
             )?;
             (
                 SurfaceGeometry::Procedural {
@@ -1806,10 +1698,7 @@ pub(super) fn ensure_native_edge_support_surface(
             ),
             Exactness::ByteExact,
         )?;
-        admission.reserve_entity(
-            &mut ir.model.procedural_surfaces,
-            "catia_family_emit_procedural_surfaces",
-        )?;
+        admission.charge()?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(
@@ -1823,7 +1712,6 @@ pub(super) fn ensure_native_edge_support_surface(
 }
 
 pub(super) fn circle_endpoint_range_choices(
-    ctx: &DecodeContext<'_>,
     center: Point3,
     radius: f64,
     axis: UnitVector3,
@@ -1859,12 +1747,7 @@ pub(super) fn circle_endpoint_range_choices(
     if endpoints.iter().any(|angle| !angle.is_finite()) {
         return Ok(None);
     }
-    ctx.stable_sort_by(
-        &mut endpoints,
-        f64::total_cmp,
-        |_| 0,
-        "catia standard circle endpoint angles sort",
-    )?;
+    endpoints.sort_by(f64::total_cmp);
     let Some(short) = crate::nurbs::canonical_periodic_range(endpoints) else {
         return Ok(None);
     };
@@ -2071,7 +1954,7 @@ pub(super) fn native_support_circle_param_range(
     endpoints: [Point3; 2],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
     let [start, end] = endpoints;
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
+
     (|| -> Option<Result<[f64; 2], cadmpeg_core::decode::ResourceLimit>> {
         const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
@@ -2156,22 +2039,20 @@ pub(super) fn attach_standard_circles(
         let admitted_radius = radius;
         let center = center.get();
         let radius = radius.get();
-        let axes = admission.context().collect_vec(
-            support
-                .faces
-                .iter()
-                .filter_map(|face| bindings.get(*face))
-                .filter_map(|(surface_id, _, _)| {
-                    ir.model
-                        .surfaces
-                        .iter()
-                        .find(|surface| surface.id == *surface_id)
-                })
-                .filter_map(|surface| {
-                    standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-                }),
-            "catia_standard_attached_circle_axes",
-        )?;
+        let axes = support
+            .faces
+            .iter()
+            .filter_map(|face| bindings.get(*face))
+            .filter_map(|(surface_id, _, _)| {
+                ir.model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+            })
+            .filter_map(|surface| {
+                standard_circle_axis_from_carrier(center, radius, &surface.geometry)
+            })
+            .collect::<Vec<_>>();
         let Some(axis) = axes.first().copied() else {
             continue;
         };
@@ -2212,23 +2093,13 @@ pub(super) fn attach_standard_circles(
             "curve_support_60_circle",
             Exactness::ByteExact,
         )?;
-        crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &id,
-            "geometry.axis",
-            "catia_annotation_field",
-        )?;
-        admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
+        annotations.derived(admission.context(), &id, "geometry.axis")?;
+        admission.charge()?;
         ir.model.curves.push(Curve {
             parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
-            source_object: Some(cgm_source(
-                admission.context(),
-                "edge-support",
-                support.tag,
-            )?),
+            source_object: Some(cgm_source("edge-support", support.tag)?),
         });
     }
     Ok(())
@@ -2448,30 +2319,14 @@ pub(super) fn attach_standard_lines(
             "curve_support_60_line",
             Exactness::ByteExact,
         )?;
-        crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &id,
-            "geometry.origin",
-            "catia_annotation_field",
-        )?;
-        crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &id,
-            "geometry.direction",
-            "catia_annotation_field",
-        )?;
-        admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
+        annotations.derived(admission.context(), &id, "geometry.origin")?;
+        annotations.derived(admission.context(), &id, "geometry.direction")?;
+        admission.charge()?;
         ir.model.curves.push(Curve {
             parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
-            source_object: Some(cgm_source(
-                admission.context(),
-                "edge-support",
-                support.tag,
-            )?),
+            source_object: Some(cgm_source("edge-support", support.tag)?),
         });
     }
     Ok(())

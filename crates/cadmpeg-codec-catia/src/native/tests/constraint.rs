@@ -35,7 +35,6 @@ fn native_constraint_and_range_values_refuse_retained_catalog_copies() {
     .expect("service profile admits constraint fields");
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::value_production(
-            ctx,
             constraint_entity,
             &constraint_native.object_graphs[0].records,
             &fields,
@@ -62,7 +61,6 @@ fn native_constraint_and_range_values_refuse_retained_catalog_copies() {
     assert!(range_entity.range_interval.is_some());
     let range_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::range_interval(
-            ctx,
             range_entity.value_payload(),
             &range_entity.value_schema_selections,
             range_entity.suffix_value(),
@@ -77,7 +75,6 @@ fn native_constraint_and_range_values_refuse_retained_catalog_copies() {
     );
     let service = crate::test_support::with_service_context(|ctx| {
         super::super::range_interval(
-            ctx,
             range_entity.value_payload(),
             &range_entity.value_schema_selections,
             range_entity.suffix_value(),

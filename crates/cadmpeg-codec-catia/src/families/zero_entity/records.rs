@@ -3,7 +3,7 @@
 //! Decodes analytic (plane, cylinder, cone, torus) and inline non-rational
 //! NURBS surface carriers from a zero-entity record stream.
 
-use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+use cadmpeg_core::decode::index_from_u32;
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
@@ -499,7 +499,6 @@ fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usi
 }
 
 fn zero_entity_records_in_range(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityRecord>, CodecError> {
@@ -530,7 +529,7 @@ fn zero_entity_records_in_range(
             };
             end
         } else if matches!(tag, [0x34, 0xc8 | 0x5e]) {
-            let Some(end) = zero_entity_nurbs_logical_end(ctx, data, position)? else {
+            let Some(end) = zero_entity_nurbs_logical_end(data, position)? else {
                 break;
             };
             end
@@ -551,16 +550,12 @@ fn zero_entity_records_in_range(
         let Ok(ordinal) = u32::try_from(one_based_ordinal) else {
             break;
         };
-        ctx.push_vec(
-            &mut records,
-            ZeroEntityRecord {
-                pos: position,
-                end,
-                tag,
-                ordinal,
-            },
-            "catia_zero_records",
-        )?;
+        records.push(ZeroEntityRecord {
+            pos: position,
+            end,
+            tag,
+            ordinal,
+        });
         position = end;
     }
     Ok(records)
@@ -569,21 +564,16 @@ fn zero_entity_records_in_range(
 #[cfg(test)]
 fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
     crate::test_support::with_service_context(|ctx| {
-        zero_entity_records_in_range(ctx, data, 0..data.len())
+        zero_entity_records_in_range(data, 0..data.len())
     })
     .expect("test zero-entity records fit the service profile")
 }
 
-fn zero_entity_nurbs_logical_end(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    record: usize,
-) -> Result<Option<usize>, CodecError> {
-    Ok(zero_entity_nurbs_layout(ctx, data, record)?.map(|layout| layout.end))
+fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Result<Option<usize>, CodecError> {
+    Ok(zero_entity_nurbs_layout(data, record)?.map(|layout| layout.end))
 }
 
 fn zero_entity_nurbs_layout(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: usize,
 ) -> Result<Option<ZeroEntityNurbsLayout>, CodecError> {
@@ -617,7 +607,6 @@ fn zero_entity_nurbs_layout(
         for u_distinct_count in 2..=max_u_distinct {
             let u_after = knot_start.checked_add(u_distinct_count.checked_mul(13)?)?;
             let u_lane = match zero_entity_nurbs_knot_lane(
-                ctx,
                 data,
                 knot_start,
                 u_distinct_count,
@@ -627,7 +616,7 @@ fn zero_entity_nurbs_layout(
                 Ok(None) => continue,
                 Err(error) => return Some(Err(error)),
             };
-            let after_dimensions = match u32_tokens(ctx, data, u_after, 2) {
+            let after_dimensions = match u32_tokens(data, u_after, 2) {
                 Ok(Some((_, end))) => end,
                 Ok(None) => continue,
                 Err(error) => return Some(Err(error)),
@@ -645,7 +634,6 @@ fn zero_entity_nurbs_layout(
                 continue;
             }
             let v_lane = match zero_entity_nurbs_knot_lane(
-                ctx,
                 data,
                 v_start,
                 v_distinct_count,
@@ -678,7 +666,6 @@ fn zero_entity_nurbs_layout(
 }
 
 fn zero_entity_nurbs_knot_lane(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
     distinct_count: usize,
@@ -687,13 +674,6 @@ fn zero_entity_nurbs_knot_lane(
     (|| -> Option<Result<ZeroEntityNurbsKnotLane, CodecError>> {
         let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
         let mut distinct = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut distinct,
-            distinct_count,
-            "catia_zero_nurbs_distinct_knots",
-        ) {
-            return Some(Err(error));
-        }
         for index in 0..distinct_count {
             let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
             if distinct.last().is_some_and(|last| value <= *last) {
@@ -701,7 +681,7 @@ fn zero_entity_nurbs_knot_lane(
             }
             distinct.push(value);
         }
-        let (mults, end) = match u32_tokens(ctx, data, distinct_end, distinct_count) {
+        let (mults, end) = match u32_tokens(data, distinct_end, distinct_count) {
             Ok(Some(tokens)) => tokens,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -729,21 +709,19 @@ fn zero_entity_nurbs_knot_lane(
 
 /// Inventory every complete framed record in the one-based global namespace.
 pub(crate) fn zero_entity_record_inventory(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
 ) -> Result<Vec<ZeroEntityRecordIdentity>, CodecError> {
-    zero_entity_record_inventory_in_range(ctx, data, 0..data.len())
+    zero_entity_record_inventory_in_range(data, 0..data.len())
 }
 
 /// Inventory complete framed records whose extents stay inside `range`.
 pub(crate) fn zero_entity_record_inventory_in_range(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityRecordIdentity>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let records = zero_entity_records_in_range(data, range)?;
     let mut output = Vec::new();
-    ctx.reserve_vec(&mut output, records.len(), "catia_zero_record_inventory")?;
+
     for record in records {
         output.push(ZeroEntityRecordIdentity {
             pos: record.pos,
@@ -760,7 +738,7 @@ pub(crate) fn zero_entity_record_inventory_in_range(
 #[must_use]
 fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
     crate::test_support::with_service_context(|ctx| {
-        zero_entity_ownership_root_in_range(ctx, data, 0..data.len())
+        zero_entity_ownership_root_in_range(data, 0..data.len())
     })
     .expect("test ownership root fits the service profile")
 }
@@ -770,18 +748,17 @@ fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
 #[must_use]
 fn zero_entity_ownership_roots(data: &[u8]) -> Vec<ZeroEntityOwnershipRoot> {
     crate::test_support::with_service_context(|ctx| {
-        zero_entity_ownership_roots_in_range(ctx, data, 0..data.len())
+        zero_entity_ownership_roots_in_range(data, 0..data.len())
     })
     .expect("test ownership roots fit the service profile")
 }
 
 /// Decode ownership roots whose records stay inside `range`.
 pub(super) fn zero_entity_ownership_root_in_range(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Option<ZeroEntityOwnershipRoot>, CodecError> {
-    let roots = zero_entity_ownership_roots_in_range(ctx, data, range)?;
+    let roots = zero_entity_ownership_roots_in_range(data, range)?;
     Ok((roots.len() == 1)
         .then(|| roots.into_iter().next())
         .flatten())
@@ -789,11 +766,10 @@ pub(super) fn zero_entity_ownership_root_in_range(
 
 /// Decode every ownership root whose records stay inside `range`.
 pub(crate) fn zero_entity_ownership_roots_in_range(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityOwnershipRoot>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let records = zero_entity_records_in_range(data, range)?;
     let mut roots = Vec::new();
     for window in records.windows(3) {
         let candidate = (|| {
@@ -826,7 +802,7 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
             continue;
         };
         let mut face_slots = Vec::new();
-        ctx.reserve_vec(&mut face_slots, count, "catia_zero_owner_face_slots")?;
+
         let mut valid = true;
         for index in 0..count {
             let Some(offset) = index
@@ -845,17 +821,13 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
         if !valid {
             continue;
         }
-        ctx.push_vec(
-            &mut roots,
-            ZeroEntityOwnershipRoot {
-                face_roster_pos: face_roster.pos,
-                face_roster_record_ordinal: face_roster.ordinal,
-                face_slots,
-                shell_pos: shell.pos,
-                body_pos: body.pos,
-            },
-            "catia_zero_ownership_roots",
-        )?;
+        roots.push(ZeroEntityOwnershipRoot {
+            face_roster_pos: face_roster.pos,
+            face_roster_record_ordinal: face_roster.ordinal,
+            face_slots,
+            shell_pos: shell.pos,
+            body_pos: body.pos,
+        });
     }
     Ok(roots)
 }
@@ -883,18 +855,14 @@ pub(super) fn zero_entity_surfaces_in_range(
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ZeroEntitySurface>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let records = zero_entity_records_in_range(data, range)?;
     let mut surfaces = Vec::new();
     for record in records {
         if let Some(geometry) = zero_entity_surface_at(ctx, data, record.pos, refusal)? {
-            ctx.push_vec(
-                &mut surfaces,
-                ZeroEntitySurface {
-                    pos: record.pos,
-                    geometry,
-                },
-                "catia_zero_surfaces",
-            )?;
+            surfaces.push(ZeroEntitySurface {
+                pos: record.pos,
+                geometry,
+            });
         }
     }
     Ok(surfaces)
@@ -922,7 +890,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ZeroEntitySupportRun>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let records = zero_entity_records_in_range(data, range)?;
     let mut runs = Vec::new();
     let mut index = 0usize;
     while index + 1 < records.len() {
@@ -1000,7 +968,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     support.model_endpoints =
                         first?.zip(second?).map(|(first, second)| [first, second]);
                 }
-                ctx.push_vec(&mut supports, support, "catia_zero_support_occurrences")?;
+                supports.push(support);
             } else {
                 supports.clear();
                 break;
@@ -1008,50 +976,34 @@ pub(crate) fn zero_entity_support_runs_in_range(
             next += 1;
         }
         if !supports.is_empty() {
-            ctx.push_vec(
-                &mut runs,
-                ZeroEntitySupportRun {
-                    carrier_pos: carrier_record.pos,
-                    carrier_record_ordinal: carrier_record.ordinal,
-                    face: None,
-                    supports,
-                },
-                "catia_zero_support_runs",
-            )?;
+            runs.push(ZeroEntitySupportRun {
+                carrier_pos: carrier_record.pos,
+                carrier_record_ordinal: carrier_record.ordinal,
+                face: None,
+                supports,
+            });
         }
         index = next.max(index + 1);
     }
-    let mut faces = zero_entity_faces_from_records(ctx, data, &records)?;
-    let loops = zero_entity_loops_from_records(ctx, data, &records)?;
+    let mut faces = zero_entity_faces_from_records(data, &records)?;
+    let loops = zero_entity_loops_from_records(data, &records)?;
     let mut flattened_terminals = Vec::new();
     let mut face_terminals = Vec::new();
-    ctx.reserve_vec(
-        &mut face_terminals,
-        faces.len(),
-        "catia_zero_face_terminal_rows",
-    )?;
+
     for face in &faces {
         let mut terminals = Vec::new();
         if let Some(&first) = face.allocations.first() {
             for allocation in &face.allocations[1..] {
                 if let Some(terminal) = first.checked_sub(*allocation) {
-                    ctx.push_vec(&mut terminals, terminal, "catia_zero_face_terminals")?;
-                    ctx.push_vec(
-                        &mut flattened_terminals,
-                        terminal,
-                        "catia_zero_flattened_terminals",
-                    )?;
+                    terminals.push(terminal);
+                    flattened_terminals.push(terminal);
                 }
             }
         }
         face_terminals.push(terminals);
     }
     let mut loop_terminals = Vec::new();
-    ctx.reserve_vec(
-        &mut loop_terminals,
-        loops.len(),
-        "catia_zero_loop_terminals",
-    )?;
+
     for loop_record in &loops {
         loop_terminals.push(loop_record.members.terminal_id());
     }
@@ -1079,11 +1031,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
         let mut remaining_loops = loops.into_iter();
         for (face, terminals) in faces.iter_mut().zip(&face_terminals) {
             let mut face_loops = Vec::new();
-            ctx.reserve_vec(
-                &mut face_loops,
-                terminals.len(),
-                "catia_zero_bound_face_loops",
-            )?;
+
             face_loops.extend(remaining_loops.by_ref().take(terminals.len()));
             face.loops = Some(face_loops);
         }
@@ -1103,7 +1051,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
         && faces.len() == runs.len();
     if rosters_are_complete {
         for (run, mut face) in runs.iter_mut().zip(faces) {
-            bind_face_support_occurrences(ctx, &mut face, &run.supports)?;
+            bind_face_support_occurrences(&mut face, &run.supports)?;
             run.face = Some(face);
         }
     }
@@ -1111,7 +1059,6 @@ pub(crate) fn zero_entity_support_runs_in_range(
 }
 
 fn bind_face_support_occurrences(
-    ctx: &DecodeContext<'_>,
     face: &mut ZeroEntityFace,
     supports: &[ZeroEntitySupportOccurrence],
 ) -> Result<(), CodecError> {
@@ -1123,20 +1070,14 @@ fn bind_face_support_occurrences(
         if let Some(record) = supports_by_slot.get_mut(&support.face_local_slot) {
             *record = None;
         } else {
-            ctx.insert_hash_map(
-                &mut supports_by_slot,
-                support.face_local_slot,
-                Some(support.record_ordinal),
-                "catia_zero_supports_by_slot",
-            )?;
+            supports_by_slot.insert(support.face_local_slot, Some(support.record_ordinal));
         }
     }
     let mut bindings = Vec::new();
-    ctx.reserve_vec(&mut bindings, face_loops.len(), "catia_zero_binding_rows")?;
+
     for loop_record in face_loops.iter() {
         let mut row = Vec::new();
-        let count = loop_record.members.support_slots().count();
-        ctx.reserve_vec(&mut row, count, "catia_zero_binding_values")?;
+
         for slot in loop_record.members.support_slots() {
             let Some(ordinal) = supports_by_slot.get(&slot).copied().flatten() else {
                 return Ok(());
@@ -1150,7 +1091,7 @@ fn bind_face_support_occurrences(
     }
     let mut bound = HashSet::new();
     for ordinal in bindings.iter().flatten().copied() {
-        ctx.insert_hash_set(&mut bound, ordinal, "catia_zero_bound_supports")?;
+        bound.insert(ordinal);
     }
     if bound.len() != supports.len() {
         return Ok(());
@@ -1159,21 +1100,13 @@ fn bind_face_support_occurrences(
         loop_record.support_record_ordinals = support_record_ordinals;
     }
     let mut supports_by_ordinal = HashMap::new();
-    ctx.reserve_map(
-        &mut supports_by_ordinal,
-        supports.len(),
-        "catia_zero_supports_by_ordinal",
-    )?;
+
     for support in supports {
         supports_by_ordinal.insert(support.record_ordinal, support);
     }
     for loop_record in face_loops {
         let mut endpoints = Vec::new();
-        ctx.reserve_vec(
-            &mut endpoints,
-            loop_record.support_record_ordinals.len(),
-            "catia_zero_support_endpoints",
-        )?;
+
         for ordinal in &loop_record.support_record_ordinals {
             endpoints.push(
                 supports_by_ordinal
@@ -1182,7 +1115,7 @@ fn bind_face_support_occurrences(
             );
         }
         if let Some(oriented) =
-            oriented_closed_model_endpoints(ctx, &endpoints, &loop_record.forward_senses)?
+            oriented_closed_model_endpoints(&endpoints, &loop_record.forward_senses)?
         {
             loop_record.oriented_model_endpoints = oriented;
         }
@@ -1191,7 +1124,6 @@ fn bind_face_support_occurrences(
 }
 
 pub(crate) fn oriented_closed_model_endpoints(
-    ctx: &DecodeContext<'_>,
     endpoints: &[Option<[FinitePoint3; 2]>],
     forward_senses: &[bool],
 ) -> Result<Option<Vec<[FinitePoint3; 2]>>, CodecError> {
@@ -1201,11 +1133,7 @@ pub(crate) fn oriented_closed_model_endpoints(
         return Ok(None);
     }
     let mut oriented = Vec::new();
-    ctx.reserve_vec(
-        &mut oriented,
-        endpoints.len(),
-        "catia_zero_oriented_endpoint_options",
-    )?;
+
     let mut missing = None;
     for (index, (endpoints, forward)) in endpoints.iter().zip(forward_senses).enumerate() {
         let pair = endpoints.map(|[start, end]| if *forward { [start, end] } else { [end, start] });
@@ -1226,11 +1154,7 @@ pub(crate) fn oriented_closed_model_endpoints(
         oriented[index] = Some([previous[1], next[0]]);
     }
     let mut complete = Vec::new();
-    ctx.reserve_vec(
-        &mut complete,
-        oriented.len(),
-        "catia_zero_oriented_endpoints",
-    )?;
+
     for pair in oriented {
         let Some(pair) = pair else {
             return Ok(None);
@@ -1248,7 +1172,6 @@ pub(crate) fn oriented_closed_model_endpoints(
 }
 
 fn zero_entity_faces_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ZeroEntityRecord],
 ) -> Result<Vec<ZeroEntityFace>, CodecError> {
@@ -1269,7 +1192,7 @@ fn zero_entity_faces_from_records(
                 return Ok(None);
             }
             let mut allocations = Vec::new();
-            ctx.reserve_vec(&mut allocations, count, "catia_zero_face_allocations")?;
+
             for index in 0..count {
                 let Some(value) = tagged_u32(data, record.pos + 13 + index * 5) else {
                     return Ok(None);
@@ -1281,11 +1204,7 @@ fn zero_entity_faces_from_records(
             }
             let first = allocations[0];
             let mut loop_terminals = Vec::new();
-            ctx.reserve_vec(
-                &mut loop_terminals,
-                count - 1,
-                "catia_zero_face_loop_terminals",
-            )?;
+
             for allocation in &allocations[1..] {
                 let Some(terminal) = first.checked_sub(*allocation) else {
                     return Ok(None);
@@ -1313,14 +1232,13 @@ fn zero_entity_faces_from_records(
             }))
         })()?;
         if let Some(face) = face {
-            ctx.push_vec(&mut faces, face, "catia_zero_faces")?;
+            faces.push(face);
         }
     }
     Ok(faces)
 }
 
 fn zero_entity_loops_from_records(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ZeroEntityRecord],
 ) -> Result<Vec<ZeroEntityLoop>, CodecError> {
@@ -1342,11 +1260,7 @@ fn zero_entity_loops_from_records(
             }
             let edge_count = (reference_count - 1) / 2;
             let mut references = Vec::new();
-            ctx.reserve_vec(
-                &mut references,
-                reference_count,
-                "catia_zero_loop_references",
-            )?;
+
             for index in 0..reference_count {
                 let Some(value) = tagged_u32(data, record.pos + 13 + index * 5) else {
                     return Ok(None);
@@ -1354,11 +1268,7 @@ fn zero_entity_loops_from_records(
                 references.push(value);
             }
             let mut typed_references = Vec::new();
-            ctx.reserve_vec(
-                &mut typed_references,
-                edge_count,
-                "catia_zero_loop_typed_references",
-            )?;
+
             typed_references.extend(
                 references[1..reference_count - 1]
                     .iter()
@@ -1410,7 +1320,7 @@ fn zero_entity_loops_from_records(
                 return Ok(None);
             };
             let mut forward_senses = Vec::new();
-            ctx.reserve_vec(&mut forward_senses, edge_count, "catia_zero_loop_senses")?;
+
             for index in 0..edge_count {
                 let bit = index * 3;
                 let code = (0..3).fold(0, |code, offset| {
@@ -1435,7 +1345,7 @@ fn zero_entity_loops_from_records(
             }))
         })()?;
         if let Some(loop_record) = loop_record {
-            ctx.push_vec(&mut loops, loop_record, "catia_zero_loops")?;
+            loops.push(loop_record);
         }
     }
     Ok(loops)
@@ -1593,13 +1503,6 @@ fn zero_entity_support_pcurve(
             return None;
         }
         let mut distinct_knots = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut distinct_knots,
-            knot_offsets.len(),
-            "catia_zero_support_distinct_knots",
-        ) {
-            return Some(Err(error));
-        }
         for offset in knot_offsets {
             distinct_knots.push(f64_le(data, record.pos.checked_add(*offset)?)?.get());
         }
@@ -1607,13 +1510,6 @@ fn zero_entity_support_pcurve(
             return None;
         }
         let mut multiplicities = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut multiplicities,
-            distinct_knots.len(),
-            "catia_zero_support_multiplicities",
-        ) {
-            return Some(Err(error));
-        }
         for index in 0..distinct_knots.len() {
             multiplicities.push(tagged_u32(
                 data,
@@ -1633,19 +1529,8 @@ fn zero_entity_support_pcurve(
         if derived_control_count != u32::try_from(control_count).ok()? {
             return None;
         }
-        let knots =
-            match zero_entity_expand_knots(ctx, distinct_knots.iter().copied(), &multiplicities) {
-                Ok(knots) => knots,
-                Err(error) => return Some(Err(error)),
-            };
+        let knots = zero_entity_expand_knots(distinct_knots.iter().copied(), &multiplicities);
         let mut control_points = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut control_points,
-            control_count,
-            "catia_zero_support_poles",
-        ) {
-            return Some(Err(error));
-        }
         for index in 0usize..control_count {
             let at = record
                 .pos
@@ -1657,11 +1542,6 @@ fn zero_entity_support_pcurve(
         }
         let weights = if let Some(weight_start) = weight_start {
             let mut weights = Vec::new();
-            if let Err(error) =
-                ctx.reserve_vec(&mut weights, control_count, "catia_zero_support_weights")
-            {
-                return Some(Err(error));
-            }
             for index in 0usize..control_count {
                 let weight = f64_le(
                     data,
@@ -1676,7 +1556,6 @@ fn zero_entity_support_pcurve(
             None
         };
         let nurbs = match crate::nurbs::note_refusal(
-            ctx,
             match PcurveNurbs::from_checked_lanes(
                 ctx,
                 degree,
@@ -1736,11 +1615,7 @@ pub(super) fn zero_entity_neutral_pcurve(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        nurbs.pole_rows().count(),
-        "catia_zero_neutral_pcurve_poles",
-    )?;
+
     match nurbs.pole_rows() {
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
             for point in points {
@@ -1769,11 +1644,7 @@ pub(super) fn zero_entity_neutral_pcurve(
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => None,
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
             let mut weights = Vec::new();
-            ctx.reserve_vec(
-                &mut weights,
-                points.len(),
-                "catia_zero_neutral_pcurve_weights",
-            )?;
+
             weights.extend(points.iter().map(|pole| pole.weight));
             Some(weights)
         }
@@ -1782,7 +1653,6 @@ pub(super) fn zero_entity_neutral_pcurve(
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
     crate::nurbs::note_refusal(
-        ctx,
         PcurveNurbs::from_checked_lanes(
             ctx,
             nurbs.degree(),
@@ -2089,11 +1959,7 @@ fn zero_entity_lift_pcurve(
     record: &dyn std::fmt::Display,
 ) -> Result<Option<NurbsCurve>, CodecError> {
     let mut points = Vec::new();
-    ctx.reserve_vec(
-        &mut points,
-        nurbs.pole_rows().count(),
-        "catia_zero_lifted_pcurve_poles",
-    )?;
+
     let weights = match nurbs.pole_rows() {
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: source } => {
             points.extend(source.iter().map(|point| lift(point.get())));
@@ -2102,11 +1968,7 @@ fn zero_entity_lift_pcurve(
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: source } => {
             points.extend(source.iter().map(|pole| lift(pole.point.get())));
             let mut weights = Vec::new();
-            ctx.reserve_vec(
-                &mut weights,
-                source.len(),
-                "catia_zero_lifted_pcurve_weights",
-            )?;
+
             weights.extend(source.iter().map(|pole| pole.weight));
             Some(weights)
         }
@@ -2115,7 +1977,6 @@ fn zero_entity_lift_pcurve(
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
     crate::nurbs::note_refusal(
-        ctx,
         NurbsCurve::from_checked_lanes(
             ctx,
             nurbs.degree(),
@@ -2309,18 +2170,17 @@ fn zero_entity_surface_point(
 #[must_use]
 fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
     crate::test_support::with_service_context(|ctx| {
-        zero_entity_edge_strides_in_range(ctx, data, 0..data.len())
+        zero_entity_edge_strides_in_range(data, 0..data.len())
     })
     .expect("test edge strides fit the service profile")
 }
 
 /// Decode edge strides whose records stay inside `range`.
 pub(crate) fn zero_entity_edge_strides_in_range(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityEdgeStride>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let records = zero_entity_records_in_range(data, range)?;
     let mut output = Vec::new();
     for record in records {
         let parsed = (|| {
@@ -2352,7 +2212,7 @@ pub(crate) fn zero_entity_edge_strides_in_range(
             })
         })();
         if let Some(record) = parsed {
-            ctx.push_vec(&mut output, record, "catia_zero_edge_strides")?;
+            output.push(record);
         }
     }
     Ok(output)
@@ -2363,18 +2223,17 @@ pub(crate) fn zero_entity_edge_strides_in_range(
 #[must_use]
 fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
     crate::test_support::with_service_context(|ctx| {
-        zero_entity_oriented_use_pairs_in_range(ctx, data, 0..data.len())
+        zero_entity_oriented_use_pairs_in_range(data, 0..data.len())
     })
     .expect("test oriented uses fit the service profile")
 }
 
 /// Decode oriented-use pairs whose records stay inside `range`.
 pub(crate) fn zero_entity_oriented_use_pairs_in_range(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityOrientedUsePair>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let records = zero_entity_records_in_range(data, range)?;
     let mut output = Vec::new();
     for records in records.windows(3) {
         let parsed = (|| {
@@ -2424,7 +2283,7 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
             })
         })();
         if let Some(pair) = parsed {
-            ctx.push_vec(&mut output, pair, "catia_zero_oriented_use_pairs")?;
+            output.push(pair);
         }
     }
     Ok(output)
@@ -2435,18 +2294,17 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
 #[must_use]
 fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
     crate::test_support::with_service_context(|ctx| {
-        zero_entity_vertex_incidences_in_range(ctx, data, 0..data.len())
+        zero_entity_vertex_incidences_in_range(data, 0..data.len())
     })
     .expect("test vertex incidences fit the service profile")
 }
 
 /// Decode vertex incidences whose records stay inside `range`.
 pub(crate) fn zero_entity_vertex_incidences_in_range(
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
 ) -> Result<Vec<ZeroEntityVertexIncidence>, CodecError> {
-    let records = zero_entity_records_in_range(ctx, data, range)?;
+    let records = zero_entity_records_in_range(data, range)?;
     let mut output = Vec::new();
     for records in records.windows(2) {
         let parsed = (|| {
@@ -2485,7 +2343,7 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
             })
         })();
         if let Some(incidence) = parsed {
-            ctx.push_vec(&mut output, incidence, "catia_zero_vertex_incidences")?;
+            output.push(incidence);
         }
     }
     Ok(output)
@@ -2571,7 +2429,7 @@ fn zero_entity_nurbs_surface(
     record: usize,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
-    let Some(layout) = zero_entity_nurbs_layout(ctx, data, record)? else {
+    let Some(layout) = zero_entity_nurbs_layout(data, record)? else {
         return Ok(None);
     };
     let Some(pole_count) = crate::nurbs_surface_control_count(
@@ -2581,7 +2439,7 @@ fn zero_entity_nurbs_surface(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(&mut control_points, pole_count, "catia_zero_nurbs_poles")?;
+
     for pole in 0..pole_count {
         let Some(at) = pole
             .checked_mul(24)
@@ -2595,23 +2453,19 @@ fn zero_entity_nurbs_surface(
         control_points.push(point);
     }
     let u_knots = zero_entity_expand_knots(
-        ctx,
         layout.u_distinct.iter().map(|knot| knot.get()),
         &layout.u_mults,
-    )?;
+    );
     let v_knots = zero_entity_expand_knots(
-        ctx,
         layout.v_distinct.iter().map(|knot| knot.get()),
         &layout.v_mults,
-    )?;
+    );
     let mut rows = Vec::new();
-    let row_count = pole_count / index_from_u32(layout.v_count);
-    ctx.reserve_vec(&mut rows, row_count, "catia_zero_nurbs_pole_rows")?;
+
     for row in control_points.chunks(index_from_u32(layout.v_count)) {
-        rows.push(ctx.copy_slice(row, "catia_zero_nurbs_pole_row_points")?);
+        rows.push(row.to_vec());
     }
     crate::nurbs::note_refusal(
-        ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
@@ -2628,33 +2482,14 @@ fn zero_entity_nurbs_surface(
 }
 
 fn zero_entity_expand_knots(
-    ctx: &DecodeContext<'_>,
     distinct: impl Iterator<Item = f64>,
     multiplicities: &[u32],
-) -> Result<Vec<f64>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(multiplicities.len()),
-        "catia_zero_knot_expansion_scan",
-    )?;
-    let mut total = 0usize;
-    for &multiplicity in multiplicities {
-        let Ok(count) = usize::try_from(multiplicity) else {
-            return Err(ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX));
-        };
-        let Some(next) = total.checked_add(count) else {
-            return Err(ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX));
-        };
-        total = next;
-    }
-    ctx.charge_work(u64_from_index(total), "catia_zero_knot_expansion_emit")?;
+) -> Vec<f64> {
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, total, "catia_zero_expanded_knots")?;
     for (knot, &multiplicity) in distinct.zip(multiplicities) {
-        let count = usize::try_from(multiplicity)
-            .map_err(|_| ctx.refuse_codec_limit("catia_zero_expanded_knots", u64::MAX, u64::MAX))?;
-        knots.extend(std::iter::repeat_with(|| knot).take(count));
+        knots.extend(std::iter::repeat_with(|| knot).take(index_from_u32(multiplicity)));
     }
-    Ok(knots)
+    knots
 }
 
 fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
@@ -2694,7 +2529,6 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
 }
 
 fn u32_tokens(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     count: usize,
@@ -2704,7 +2538,7 @@ fn u32_tokens(
         return Ok(None);
     }
     let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, count, "catia_zero_u32_tokens")?;
+
     for _ in 0..count {
         if view.u8() != Some(0x10) {
             return Ok(None);
@@ -2848,7 +2682,7 @@ mod tests {
         let stream = zero_entity_ownership_stream(3);
         assert!(zero_entity_ownership_root(&stream).is_some());
         let limited = crate::test_support::with_collection_limit(5, |ctx| {
-            super::zero_entity_ownership_root_in_range(ctx, &stream, 0..stream.len())
+            super::zero_entity_ownership_root_in_range(&stream, 0..stream.len())
         });
         assert!(matches!(
             limited,
@@ -4231,7 +4065,7 @@ mod knot_work_tests {
             (5, "catia_zero_knot_expansion_emit"),
         ] {
             let result = crate::test_support::with_work_limit(cap, |ctx| {
-                super::zero_entity_expand_knots(ctx, [0.0, 1.0].into_iter(), &[2, 2])
+                super::zero_entity_expand_knots([0.0, 1.0].into_iter(), &[2, 2])
             });
             assert!(
                 matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -4241,7 +4075,7 @@ mod knot_work_tests {
         }
         assert_eq!(
             crate::test_support::with_work_limit(6, |ctx| {
-                super::zero_entity_expand_knots(ctx, [0.0, 1.0].into_iter(), &[2, 2])
+                super::zero_entity_expand_knots([0.0, 1.0].into_iter(), &[2, 2])
             })
             .expect("scan and emission work"),
             vec![0.0, 0.0, 1.0, 1.0]

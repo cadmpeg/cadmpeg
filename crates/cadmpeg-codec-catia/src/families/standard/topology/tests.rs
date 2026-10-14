@@ -36,7 +36,7 @@ fn standard_topology_copies_refuse_retained_bytes_before_growth() {
         logical_vertex_count: 0,
     };
     assert!(matches!(
-        with_zero_retained(|ctx| face_topology.clone_charged(ctx)),
+        with_zero_retained(|ctx| face_topology.clone()),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_topology_copy_coedges"
     ));
     let row = {
@@ -45,7 +45,7 @@ fn standard_topology_copies_refuse_retained_bytes_before_growth() {
             .expect("admitted edge row")
     };
     assert!(matches!(
-        with_zero_retained(|ctx| row.clone_charged(ctx)),
+        with_zero_retained(|ctx| row.clone()),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_edge_row_copy_handles"
     ));
     let point_topology = StandardTopologyDraft {
@@ -55,19 +55,13 @@ fn standard_topology_copies_refuse_retained_bytes_before_growth() {
         logical_vertex_count: 1,
     };
     assert!(matches!(
-        with_zero_retained(|ctx| point_topology.clone_charged(ctx)),
+        with_zero_retained(|ctx| point_topology.clone()),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_topology_copy_vertex_points"
     ));
     crate::test_support::with_service_context(|ctx| {
-        assert_eq!(
-            face_topology.clone_charged(ctx).expect("service budget"),
-            face_topology
-        );
-        assert_eq!(row.clone_charged(ctx).expect("service budget"), row);
-        assert_eq!(
-            point_topology.clone_charged(ctx).expect("service budget"),
-            point_topology
-        );
+        assert_eq!(face_topology.clone(), face_topology);
+        assert_eq!(row.clone(), row);
+        assert_eq!(point_topology.clone(), point_topology);
     });
 }
 
@@ -126,7 +120,7 @@ fn standard_topology_copy_refuses_each_nested_collection_limit() {
         vertex_points: vec![[0.0, 0.0, 0.0]],
         logical_vertex_count: 1,
     };
-    let copy = crate::test_support::with_service_context(|ctx| topology.clone_charged(ctx))
+    let copy = crate::test_support::with_service_context(|ctx| topology.clone())
         .expect("service resource budget");
     assert_eq!(copy, topology);
     // One coedge, boundary and face precede the two-handle row.
@@ -140,7 +134,7 @@ fn standard_topology_copy_refuses_each_nested_collection_limit() {
     ] {
         assert_eq!(
             standard_collection_limit_operation(limit, |ctx| {
-                topology.clone_charged(ctx)?;
+                topology.clone();
                 Ok(())
             }),
             operation
@@ -172,7 +166,7 @@ fn standard_native_vertex_binding_refuses_before_identity_and_edge_growth() {
         logical_vertex_count: 2,
     };
     let bound = crate::test_support::with_service_context(|ctx| {
-        topology.with_native_edge_vertices(ctx, &[[4, 5]])
+        topology.with_native_edge_vertices(&[[4, 5]])
     })
     .expect("service resource budget")
     .expect("native edge identities bind");
@@ -181,20 +175,20 @@ fn standard_native_vertex_binding_refuses_before_identity_and_edge_growth() {
     assert_eq!(bound.faces[0].boundaries[0].coedges[0].end_vertex, 1);
     assert_eq!(
         standard_collection_limit_operation(0, |ctx| {
-            topology.with_native_edge_vertices(ctx, &[[4, 5]])?;
+            topology.with_native_edge_vertices(&[[4, 5]])?;
             Ok(())
         }),
         "catia_standard_native_vertex_identities"
     );
     assert_eq!(
         standard_collection_limit_operation(2, |ctx| {
-            topology.with_native_edge_vertices(ctx, &[[4, 5]])?;
+            topology.with_native_edge_vertices(&[[4, 5]])?;
             Ok(())
         }),
         "catia_standard_native_edge_vertices"
     );
     assert!(crate::test_support::with_collection_limit(0, |ctx| {
-        topology.with_native_edge_vertices(ctx, &[])
+        topology.with_native_edge_vertices(&[])
     })
     .expect("invalid length requires no allocation")
     .is_none());
@@ -305,12 +299,12 @@ fn standard_endpoint_degree_entries_refuse_before_growth() {
 
     let operation = standard_collection_limit_operation(0, |ctx| {
         let mut row = Vec::new();
-        set_duplicate_degree(ctx, &mut row, 7, 1)
+        set_duplicate_degree(&mut row, 7, 1)
     });
     assert_eq!(operation, "catia_standard_endpoint_degree_entries");
     crate::test_support::with_service_context(|ctx| {
         let mut row = Vec::new();
-        set_duplicate_degree(ctx, &mut row, 7, 1).expect("service budget");
+        set_duplicate_degree(&mut row, 7, 1).expect("service budget");
         assert_eq!(row, [(7, 1)]);
     });
 }
@@ -949,7 +943,7 @@ fn body_kinds_rejects_an_overflowing_face_group_sum() {
 
     assert_eq!(
         topology
-            .body_kinds(&ctx, &[usize::MAX, 1])
+            .body_kinds(&[usize::MAX, 1])
             .expect("service resource budget"),
         None
     );
@@ -995,7 +989,7 @@ fn body_group_allocations_refuse_before_missing_edge_result() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     assert!(topology
-        .body_kinds(&ctx, &[2])
+        .body_kinds(&[2])
         .expect("service resource budget")
         .is_none());
 
@@ -1006,7 +1000,7 @@ fn body_group_allocations_refuse_before_missing_edge_result() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits the input limit");
-        match topology.body_kinds(&ctx, &[2]) {
+        match topology.body_kinds(&[2]) {
             Err(CodecError::ResourceLimit(error)) => {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 operations.insert(error.operation);
@@ -1041,9 +1035,7 @@ fn face_component_collections_refuse_before_group_result() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     assert_eq!(
-        topology
-            .face_components(&ctx)
-            .expect("service resource budget"),
+        topology.face_components().expect("service resource budget"),
         vec![vec![0, 1]]
     );
 
@@ -1054,7 +1046,7 @@ fn face_component_collections_refuse_before_group_result() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits the input limit");
-        match topology.face_components(&ctx) {
+        match topology.face_components() {
             Err(CodecError::ResourceLimit(error)) => {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 operations.insert(error.operation);
@@ -1148,10 +1140,10 @@ fn mesh_selection_reconstruction_refuses_nested_collection_limits() {
 #[test]
 fn incidence_cycles_rejects_duplicate_and_out_of_range_edges() {
     crate::test_support::with_service_context(|ctx| {
-        assert!(incidence_cycles(ctx, &[0, 0], &[[0, 0]])
+        assert!(incidence_cycles(&[0, 0], &[[0, 0]])
             .expect("service resource budget")
             .is_none());
-        assert!(incidence_cycles(ctx, &[1], &[[0, 0]])
+        assert!(incidence_cycles(&[1], &[[0, 0]])
             .expect("service resource budget")
             .is_none());
     });
@@ -1164,18 +1156,17 @@ fn incidence_cycles_refuse_before_invalid_edges_and_nested_growth() {
 
     let points = [[0, 1], [1, 0]];
     assert!(crate::test_support::with_service_context(|ctx| {
-        incidence_cycles(ctx, &[0, 1], &points)
+        incidence_cycles(&[0, 1], &points)
     })
     .expect("service resource budget")
     .is_some());
     assert!(crate::test_support::with_service_context(|ctx| {
-        incidence_cycles(ctx, &[0, 0], &points)
+        incidence_cycles(&[0, 0], &points)
     })
     .expect("service resource budget")
     .is_none());
-    let invalid = crate::test_support::with_collection_limit(0, |ctx| {
-        incidence_cycles(ctx, &[0, 0], &points)
-    });
+    let invalid =
+        crate::test_support::with_collection_limit(0, |ctx| incidence_cycles(&[0, 0], &points));
     assert!(matches!(
         invalid,
         Err(CodecError::ResourceLimit(limit))
@@ -1185,7 +1176,7 @@ fn incidence_cycles_refuse_before_invalid_edges_and_nested_growth() {
     let mut refused = HashSet::new();
     for cap in 0..20 {
         let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            incidence_cycles(ctx, &[0, 1], &points)
+            incidence_cycles(&[0, 1], &points)
         });
         if let Err(CodecError::ResourceLimit(limit)) = result {
             refused.insert(limit.operation);
@@ -1214,7 +1205,7 @@ fn incidence_cycles_refuse_work_limit_before_unseen_scan() {
     policy.limits.max_work_units = 1154;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    let result = incidence_cycles(&ctx, &[0, 1], &[[0, 1], [1, 0]]);
+    let result = incidence_cycles(&[0, 1], &[[0, 1], [1, 0]]);
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))

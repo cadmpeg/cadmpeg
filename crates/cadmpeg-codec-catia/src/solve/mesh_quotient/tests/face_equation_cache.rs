@@ -31,15 +31,9 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
     }]];
     let candidates = vec![vec![]; 3];
     let run = |ctx: &DecodeContext<'_>| {
-        let equations = possible_face_equations(ctx, &assignments)?;
+        let equations = possible_face_equations(&assignments)?;
         let mut choices = Vec::new();
-        if !possible_face_choices_with_limit(
-            ctx,
-            &assignments,
-            &equations,
-            usize::MAX,
-            &mut choices,
-        )? {
+        if !possible_face_choices_with_limit(&assignments, &equations, usize::MAX, &mut choices)? {
             return Ok(false);
         }
         let search = MeshSelectionSearch {
@@ -143,12 +137,11 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &candidates,
@@ -171,14 +164,14 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 4, 5))
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(4, 5))
         .expect("service merge")
         .expect("unrelated component merge");
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(search.face_equation_cache.borrow().len(), 1);
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 0, 4))
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(0, 4))
         .expect("service merge")
         .expect("component joined to a face port");
     assert!(search
@@ -191,7 +184,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
             cache.insert((key, Vec::new()), Vec::new());
         }
     }
-    crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2))
+    crate::test_support::with_service_context(|ctx| quotient.merge_charged(1, 2))
         .expect("service merge")
         .expect("new face-component merge");
     assert!(search

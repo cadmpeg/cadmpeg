@@ -434,7 +434,7 @@ pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let Some(native_knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
+    let Some(native_knots) = pcurve_nurbs_knots(pcurve)? else {
         return Ok(None);
     };
     if let B5Surface::Plane {
@@ -444,30 +444,28 @@ pub(super) fn lifted_curve_geometry(
         ..
     } = surface
     {
-        let knots = ctx.collect_vec(
-            native_knots.into_iter().map(FiniteReal::get),
-            "catia_b5_lifted_plane_knots",
-        )?;
+        let knots = native_knots
+            .into_iter()
+            .map(FiniteReal::get)
+            .collect::<Vec<_>>();
         let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
-        let points = ctx.collect_vec(
-            pcurve.control_points.iter().map(|uv| {
+        let points = pcurve
+            .control_points
+            .iter()
+            .map(|uv| {
                 point3(add(
                     origin,
                     add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1])),
                 ))
-            }),
-            "catia_b5_lifted_plane_points",
-        )?;
-        let weights = pcurve
-            .weights
-            .as_ref()
-            .map(|weights| {
-                ctx.collect_vec(
-                    weights.iter().copied().map(PositiveReal::get),
-                    "catia_b5_lifted_plane_weights",
-                )
             })
-            .transpose()?;
+            .collect::<Vec<_>>();
+        let weights = pcurve.weights.as_ref().map(|weights| {
+            weights
+                .iter()
+                .copied()
+                .map(PositiveReal::get)
+                .collect::<Vec<_>>()
+        });
         return Ok(cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             pcurve.degree,
@@ -826,27 +824,15 @@ pub(super) fn emit_pcurves(
                         parameter
                     }
                 });
-            admission.context().admit_btree_entry(
-                &occurrence_groups,
-                &object_id,
-                "catia_b5_pcurve_occurrence_objects",
-            )?;
+
             let ranges = occurrence_groups.entry(object_id).or_default();
             let key = parameter_range.map(|parameter| parameter.get().to_bits());
-            admission.context().admit_btree_entry(
-                ranges,
-                &key,
-                "catia_b5_pcurve_occurrence_ranges",
-            )?;
+
             let occurrences = &mut ranges
                 .entry(key)
                 .or_insert_with(|| (parameter_range, Vec::new()))
                 .1;
-            admission.context().push_vec(
-                occurrences,
-                (loop_.object_id, index),
-                "catia_b5_pcurve_occurrences",
-            )?;
+            occurrences.push((loop_.object_id, index));
         }
     }
     let mut pcurve_uses = HashMap::new();
@@ -855,15 +841,9 @@ pub(super) fn emit_pcurves(
         let range_count = ranges.len();
         for (rank, (parameter_range, occurrences)) in ranges.into_values().enumerate() {
             let id = if range_count == 1 {
-                admission.context().format_retained(
-                    format_args!("catia:b5:pcurve#{object_id}"),
-                    "catia_b5_emitted_pcurve_id",
-                )?
+                format!("catia:b5:pcurve#{object_id}")
             } else {
-                admission.context().format_retained(
-                    format_args!("catia:b5:pcurve#{object_id}@{rank}"),
-                    "catia_b5_emitted_pcurve_id",
-                )?
+                format!("catia:b5:pcurve#{object_id}@{rank}")
             };
             let id = PcurveId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
             annotate(
@@ -875,13 +855,7 @@ pub(super) fn emit_pcurves(
                 Exactness::ByteExact,
             )?;
             if *cylinder_reparameterized {
-                crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    id.as_str(),
-                    "geometry.control_points",
-                    "catia_b5_pcurve_annotation",
-                )?;
+                annotations.derived(admission.context(), id.as_str(), "geometry.control_points")?;
             }
             if graph
                 .pcurves
@@ -889,27 +863,16 @@ pub(super) fn emit_pcurves(
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    id.as_str(),
-                    "parameter_range",
-                    "catia_b5_pcurve_annotation",
-                )?;
+                annotations.derived(admission.context(), id.as_str(), "parameter_range")?;
             }
             for occurrence in occurrences {
                 let use_id =
                     id.try_clone_for_decode(admission.context(), "catia_b5_pcurve_use_id")?;
-                admission.context().insert_hash_map(
-                    &mut pcurve_uses,
-                    occurrence,
-                    (use_id, parameter_range),
-                    "catia_b5_pcurve_uses",
-                )?;
+                pcurve_uses.insert(occurrence, (use_id, parameter_range));
             }
             let geometry = geometry
                 .try_clone_for_decode(admission.context(), "catia_b5_emitted_pcurve_geometry")?;
-            admission.reserve_entity(&mut ir.model.pcurves, "catia_b5_emit_pcurves")?;
+            admission.charge()?;
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry,

@@ -188,7 +188,6 @@ fn parameter_owner_follows_one_exact_child_design_object() {
         ir.model.parameters[0].owner,
         Some(cadmpeg_ir::features::FeatureId::from(
             crate::test_support::with_service_context(|ctx| crate::ids::neutral_history_id(
-                ctx,
                 &feature_id,
                 &cadmpeg_ir::identity_component!("feature")
             ))

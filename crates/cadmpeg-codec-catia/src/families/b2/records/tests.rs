@@ -35,7 +35,7 @@ fn parsed_owner_identity_targets(
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<crate::families::b2::records::B2OwnerIdentityTarget> {
     crate::test_support::with_service_context(|ctx| {
-        super::b2_owner_identity_targets_from_records(ctx, data, records).expect("service decode")
+        super::b2_owner_identity_targets_from_records(data, records).expect("service decode")
     })
 }
 
@@ -44,7 +44,7 @@ fn parsed_owner_charts(
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<crate::families::b2::records::B2OwnerChart> {
     crate::test_support::with_service_context(|ctx| {
-        super::b2_owner_charts_from_records(ctx, data, records).expect("service decode")
+        super::b2_owner_charts_from_records(data, records).expect("service decode")
     })
 }
 
@@ -179,21 +179,21 @@ fn b2_plane_scalar_lane_and_carrier_refuse_resource_limits() {
     }
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(9, |ctx| {
-        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_plane_carriers_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_plane_scalar_lane")
     );
     let limited = crate::test_support::with_collection_limit(10, |ctx| {
-        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_plane_carriers_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_plane_carriers")
     );
     let limited = crate::test_support::with_retained_limit(79, |ctx| {
-        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_plane_carriers_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -271,14 +271,14 @@ fn b2_reference_list_entries_and_records_refuse_collection_limits() {
     let bytes = b2_reference_list_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(25, |ctx| {
-        crate::families::b2::records::b2_reference_lists_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_reference_lists_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_reference_list_entries")
     );
     let limited = crate::test_support::with_collection_limit(26, |ctx| {
-        crate::families::b2::records::b2_reference_lists_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_reference_lists_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -369,9 +369,9 @@ fn b2_owner_packet_collection_refuses_before_first_packet_storage() {
     let bytes = b2_all_compact_owner_packet_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        ctx.collect_vec(
-            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
-            "catia_a5_owner_packets",
+        Ok(
+            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+                .collect::<Vec<_>>(),
         )
     });
     assert!(matches!(
@@ -379,9 +379,9 @@ fn b2_owner_packet_collection_refuses_before_first_packet_storage() {
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
     let packets = crate::test_support::with_service_context(|ctx| {
-        ctx.collect_vec(
-            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records),
-            "catia_a5_owner_packets",
+        Ok(
+            crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+                .collect::<Vec<_>>(),
         )
     })
     .expect("service context admits the fixed owner packet");
@@ -472,7 +472,7 @@ fn fixed_owner_identity_indexes_and_targets_refuse_collection_limits() {
     let mut refused = HashSet::new();
     for limit in 0..128 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::b2_owner_identity_targets_from_records(ctx, &bytes, &records)
+            super::b2_owner_identity_targets_from_records(&bytes, &records)
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
             refused.insert(error.operation);
@@ -512,7 +512,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     ]);
 
     let edges = crate::test_support::with_service_context(|ctx| {
-        b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
+        b2_closed_owner_boundary_edges(&targets, &endpoints)
     })
     .expect("service profile admits the sort")
     .expect("four class-5e targets close a cycle");
@@ -522,7 +522,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     let mut open = endpoints.clone();
     open.insert(16, [101, 104]);
     assert!(crate::test_support::with_service_context(|ctx| {
-        b2_closed_owner_boundary_edges(ctx, &targets, &open)
+        b2_closed_owner_boundary_edges(&targets, &open)
     })
     .expect("service profile admits the sort")
     .is_none());
@@ -530,7 +530,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     let mut mixed_classes = targets.clone();
     mixed_classes[0].target_class = crate::native::CatiaOwnerIdentityClass::Vertex;
     assert!(crate::test_support::with_service_context(|ctx| {
-        b2_closed_owner_boundary_edges(ctx, &mixed_classes, &endpoints)
+        b2_closed_owner_boundary_edges(&mixed_classes, &endpoints)
     })
     .expect("service profile admits the sort")
     .is_none());
@@ -538,7 +538,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     let mut duplicate = endpoints;
     duplicate.insert(16, [100, 101]);
     assert!(crate::test_support::with_service_context(|ctx| {
-        b2_closed_owner_boundary_edges(ctx, &targets, &duplicate)
+        b2_closed_owner_boundary_edges(&targets, &duplicate)
     })
     .expect("service profile admits the sort")
     .is_none());
@@ -752,7 +752,7 @@ fn owner_chart_indexes_and_rows_refuse_collection_limits() {
     let mut refused = HashSet::new();
     for limit in 0..128 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::b2_owner_charts_from_records(ctx, &bytes, &records)
+            super::b2_owner_charts_from_records(&bytes, &records)
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
             refused.insert(error.operation);
@@ -786,7 +786,7 @@ fn b2_counted61_references_tail_and_record_refuse_limits() {
         (6, "catia_b2_counted61_records"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
+            crate::families::b2::records::b2_counted_61_from_records(&bytes, &records)
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -794,14 +794,14 @@ fn b2_counted61_references_tail_and_record_refuse_limits() {
         );
     }
     let limited = crate::test_support::with_retained_limit(15, |ctx| {
-        crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_counted_61_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_counted61_references")
     );
     let limited = crate::test_support::with_retained_limit(16, |ctx| {
-        crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_counted_61_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -839,7 +839,7 @@ fn b2_long61_members_and_record_refuse_limits() {
         (3, "catia_b2_long61_records"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
+            crate::families::b2::records::b2_long_61_from_records(&bytes, &records)
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -847,7 +847,7 @@ fn b2_long61_members_and_record_refuse_limits() {
         );
     }
     let limited = crate::test_support::with_retained_limit(5, |ctx| {
-        crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_long_61_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -908,7 +908,7 @@ fn b2_class5b5c_parser_retains_bounded_source_coordinates() {
         ],
     );
     let controls = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
             .expect("service decode")
     });
     assert_eq!(
@@ -927,21 +927,21 @@ fn b2_class5b5c_payload_and_record_refuse_limits() {
     let first_payload_len = u64::try_from(records[0].payload().expect("first class payload").len())
         .expect("fixture payload fits u64");
     let limited = crate::test_support::with_collection_limit(first_payload_len - 1, |ctx| {
-        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_class5b5c_payload")
     );
     let limited = crate::test_support::with_collection_limit(first_payload_len, |ctx| {
-        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_class5b5c_records")
     );
     let limited = crate::test_support::with_retained_limit(first_payload_len - 1, |ctx| {
-        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1033,9 +1033,7 @@ fn b2_adjacent_face_owner_indexes_and_pair_refuse_collection_limits() {
         (2, "catia_b2_adjacent_face_pairs"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::b2::records::b2_adjacent_face_owners_from_records(
-                ctx, &bytes, &records,
-            )
+            crate::families::b2::records::b2_adjacent_face_owners_from_records(&bytes, &records)
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1075,7 +1073,7 @@ fn b2_counted_owner_references_refuse_collection_limit() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let result = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_counted_owners_from_records(&bytes, &records)
     });
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1088,7 +1086,7 @@ fn b2_counted_owner_encodings_refuse_collection_limit() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let result = crate::test_support::with_collection_limit(1, |ctx| {
-        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_counted_owners_from_records(&bytes, &records)
     });
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1102,7 +1100,7 @@ fn b2_counted_owner_tail_refuses_retained_limit() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let result =
         crate::test_support::with_retained_refusal(&[], "catia_b2_counted_owner_tail", |ctx| {
-            crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+            crate::families::b2::records::b2_counted_owners_from_records(&bytes, &records)
         });
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1115,7 +1113,7 @@ fn b2_counted_owner_packets_refuse_collection_limit() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let result = crate::test_support::with_collection_limit(19, |ctx| {
-        crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_counted_owners_from_records(&bytes, &records)
     });
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1131,7 +1129,7 @@ fn b2_adjacent_counted_owners_refuse_each_collection_boundary() {
     for limit in 0..128 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
             crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
-                ctx, &bytes, &records,
+                &bytes, &records,
             )
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
@@ -1190,8 +1188,7 @@ fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
 #[test]
 fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     let records = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &b2_cone_face_stream())
-            .expect("service decode")
+        crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream()).expect("service decode")
     });
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].program.len(), 16);
@@ -1205,7 +1202,7 @@ fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     let half_angle = degenerate.len() - 8;
     degenerate[half_angle..].copy_from_slice(&0.0_f64.to_le_bytes());
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &degenerate).expect("service decode")
+        crate::families::b2::records::b2_cone_faces(&degenerate).expect("service decode")
     })
     .is_empty());
 }
@@ -1218,7 +1215,7 @@ fn b2_cone_face_program_and_output_refuse_resource_limits() {
         (16, "catia_b2_cone_faces"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::b2::records::b2_cone_faces(ctx, &bytes)
+            crate::families::b2::records::b2_cone_faces(&bytes)
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1226,7 +1223,7 @@ fn b2_cone_face_program_and_output_refuse_resource_limits() {
         );
     }
     let limited = crate::test_support::with_retained_limit(15, |ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &bytes)
+        crate::families::b2::records::b2_cone_faces(&bytes)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1246,7 +1243,7 @@ fn b2_cone_face_parser_reads_a_complete_nested_frame() {
     bytes.push(0x05);
     bytes.extend(nested);
     let records = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_cone_faces(ctx, &bytes).expect("service decode")
+        crate::families::b2::records::b2_cone_faces(&bytes).expect("service decode")
     });
     let [record] = records.as_slice() else {
         panic!("one nested cone-face chart")
@@ -1277,7 +1274,7 @@ fn b2_use_payload_references_and_rows_refuse_collection_limits() {
         let records = crate::wire::records::consolidated_records(&bytes);
         for limit in 0..128 {
             let result = crate::test_support::with_collection_limit(limit, |ctx| {
-                super::b2_use_metadata_from_records(ctx, &bytes, &records)
+                super::b2_use_metadata_from_records(&bytes, &records)
             });
             if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
                 refused.insert(error.operation);
@@ -1302,7 +1299,7 @@ fn b2_class25_scalar_lane_and_descriptor_refuse_collection_limits() {
         (2, "catia_b2_class25_descriptors"),
     ] {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
+            super::b2_class25_descriptors_from_records(&bytes, &records)
         });
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1439,14 +1436,14 @@ fn b2_revolution_profile_and_resolved_output_refuse_collection_limits() {
     let bytes = b2_resolved_revolution_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_revolution_profiles")
     );
     let limited = crate::test_support::with_collection_limit(1, |ctx| {
-        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -1855,14 +1852,14 @@ fn b2_offset_support_parser_refuses_collection_limit() {
     let bytes = b2_offset_support_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_b2_offset_supports")
     );
     let service = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records)
     })
     .expect("service profile admits offset support");
     assert_eq!(service.len(), 1);
@@ -1873,14 +1870,14 @@ fn b2_construction_offset_support_refuses_collection_limit() {
     let bytes = b2_construction_use_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_b2_construction_offset_supports")
     );
     let service = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records)
     })
     .expect("service profile admits construction offset support");
     assert_eq!(service.len(), 1);
@@ -1951,7 +1948,7 @@ fn b2_use_payload_bytes_refuse_retained_limit() {
     let bytes = b2_topology_metadata_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::b2_use_metadata_from_records(ctx, &bytes, &records)
+        super::b2_use_metadata_from_records(&bytes, &records)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))

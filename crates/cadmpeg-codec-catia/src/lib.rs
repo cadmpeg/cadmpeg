@@ -103,14 +103,11 @@ impl CodecBackend for CatiaCodec {
 
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+
         if container::looks_like_catia(prefix) {
             Ok(Confidence::High)
         } else {
@@ -124,7 +121,7 @@ impl CodecBackend for CatiaCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(ctx, root.window())?;
-        container::summarize(ctx, &scan)
+        container::summarize(&scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
