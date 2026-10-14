@@ -93,7 +93,7 @@ fn parse_all_with_paired_roots(
 }
 
 fn surface_aliases(data: &[u8]) -> Vec<super::SurfaceAlias> {
-    crate::test_support::with_service_context(|ctx| super::surface_aliases(ctx, data))
+    crate::test_support::with_service_context(|ctx| super::surface_aliases(data))
         .expect("alias fixture fits the service limits")
 }
 
@@ -114,13 +114,13 @@ fn native_payload_copy_refuses_nested_retained_and_collection_limits() {
             offset: 0,
         }],
     };
-    let retained = crate::test_support::with_retained_limit(1, |ctx| payload.copy_charged(ctx));
+    let retained = crate::test_support::with_retained_limit(1, |ctx| payload.copy_charged());
     assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_payload_blob"));
-    let collection = crate::test_support::with_collection_limit(2, |ctx| payload.copy_charged(ctx));
+    let collection = crate::test_support::with_collection_limit(2, |ctx| payload.copy_charged());
     assert!(matches!(collection, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_payload_fields"));
-    let copied = crate::test_support::with_service_context(|ctx| payload.copy_charged(ctx))
+    let copied = crate::test_support::with_service_context(|ctx| payload.copy_charged())
         .expect("service profile admits one payload field");
     assert_eq!(copied, payload);
 }
@@ -159,8 +159,7 @@ fn grouped_alias_storage_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("alias fixture fits the input limit");
-    let error =
-        super::surface_aliases(&ctx, &bytes).expect_err("group storage requires a retained copy");
+    let error = super::surface_aliases(&bytes).expect_err("group storage requires a retained copy");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "catia_alias_group_storage"));
@@ -201,16 +200,15 @@ fn object_bulk_rows_refuse_declared_count_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("bulk row fixture fits the input limit");
-    let error = super::parse_bulk_table_rows(&ctx, &bytes, 0, 1)
+    let error = super::parse_bulk_table_rows(&bytes, 0, 1)
         .expect_err("one declared row exceeds zero items");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_object_bulk_table_rows"));
-    let parsed = crate::test_support::with_service_context(|ctx| {
-        super::parse_bulk_table_rows(ctx, &bytes, 0, 1)
-    })
-    .expect("service budget")
-    .expect("one row");
+    let parsed =
+        crate::test_support::with_service_context(|ctx| super::parse_bulk_table_rows(&bytes, 0, 1))
+            .expect("service budget")
+            .expect("one row");
     assert_eq!(parsed.0.len(), 1);
 }
 

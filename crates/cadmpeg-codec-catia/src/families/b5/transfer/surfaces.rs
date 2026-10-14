@@ -3,7 +3,6 @@
 //! emit pass.
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
-use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -156,13 +155,7 @@ pub(super) fn neutral_surface(
                 record: Some(payload.try_clone_for_decode(ctx, "catia_b5_extrusion_unknown_id")?),
             }),
             // The resolved extrusion is retained by the surface plan.
-            procedure: {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<super::ResolvedExtrusionSurface>()),
-                    "catia_b5_extrusion_procedure",
-                )?;
-                Some(SurfaceProcedure::Extrusion(Box::new(extrusion)))
-            },
+            procedure: { Some(SurfaceProcedure::Extrusion(Box::new(extrusion))) },
         });
     }
     let mut procedure = None;
@@ -226,7 +219,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
             "B5 rolling-ball carrier requires a jet definition",
         ));
     };
-    let stations = ctx.copy_slice(jet.stations(), "catia_b5_rolling_ball_jet_stations")?;
+    let stations = jet.stations().to_vec();
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
         cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations, ctx)?
             .map_err(CodecError::malformed)?,
@@ -332,20 +325,16 @@ fn profile_nurbs(
         B5Profile::Line {
             point, direction, ..
         } => crate::nurbs::note_refusal(
-            ctx,
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 ctx,
                 1,
-                ctx.collect_vec(
-                    [interval[0], interval[0], interval[1], interval[1]],
-                    "catia_b5_revolution_line_profile_knots",
-                )?,
-                ctx.collect_vec(
-                    interval.into_iter().map(|parameter| {
+                vec![interval[0], interval[0], interval[1], interval[1]],
+                interval
+                    .into_iter()
+                    .map(|parameter| {
                         point3(add(coordinates(*point), scale(direction.get(), parameter)))
-                    }),
-                    "catia_b5_revolution_line_profile_points",
-                )?,
+                    })
+                    .collect::<Vec<_>>(),
                 None,
                 false,
             )?,
@@ -392,29 +381,12 @@ pub(super) fn rational_arc(
         return Ok(None);
     };
     let span_count = span_count.get();
-    let Some(control_count) = span_count
-        .checked_mul(2)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    let Some(knot_count) = control_count.checked_add(3) else {
-        return Ok(None);
-    };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        control_count,
-        "catia_b5_revolution_arc_points",
-    )?;
+
     let mut weights = Vec::new();
-    ctx.reserve_vec(
-        &mut weights,
-        control_count,
-        "catia_b5_revolution_arc_weights",
-    )?;
+
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
+
     for span in 0..span_count {
         let fraction0 = match f64_from_index(span) {
             Some(value) => value,
@@ -468,7 +440,6 @@ pub(super) fn rational_arc(
         }
     }
     crate::nurbs::note_refusal(
-        ctx,
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             2,
@@ -504,30 +475,10 @@ pub(super) fn revolve_nurbs(
         // every other degeneracy.
         let span_count = std::num::NonZeroUsize::new(truncate_f64_to_usize(span_count)?)?.get();
         let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
-        let control_count =
-            crate::nurbs_surface_control_count(profile.pole_count(), angular_count)?;
+        crate::nurbs_surface_control_count(profile.pole_count(), angular_count)?;
         let mut angles = Vec::new();
-        if let Err(error) =
-            ctx.reserve_vec(&mut angles, angular_count, "catia b5 revolution angles")
-        {
-            return Some(Err(error));
-        }
         let mut angular_weights = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut angular_weights,
-            angular_count,
-            "catia b5 revolution angular weights",
-        ) {
-            return Some(Err(error));
-        }
         let mut v_knots = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut v_knots,
-            angular_count + 3,
-            "catia b5 revolution angular knots",
-        ) {
-            return Some(Err(error));
-        }
         for span in 0..span_count {
             let fraction0 = f64_from_index(span)? / f64_from_index(span_count)?;
             let fraction1 = f64_from_index(span + 1)? / f64_from_index(span_count)?;
@@ -551,15 +502,10 @@ pub(super) fn revolve_nurbs(
             append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count)?;
         }
         let profile_weights = match profile.pole_rows() {
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                match ctx.collect_vec(
-                    points.iter().map(|point| point.weight.get()),
-                    "catia b5 revolution profile weights",
-                ) {
-                    Ok(weights) => weights,
-                    Err(error) => return Some(Err(error)),
-                }
-            }
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => points
+                .iter()
+                .map(|point| point.weight.get())
+                .collect::<Vec<_>>(),
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => match ctx.alloc_filled(
                 profile.pole_count(),
                 1.0,
@@ -570,21 +516,7 @@ pub(super) fn revolve_nurbs(
             },
         };
         let mut control_points = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut control_points,
-            control_count,
-            "catia b5 revolution control net",
-        ) {
-            return Some(Err(error));
-        }
         let mut weights = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
-            &mut weights,
-            control_count,
-            "catia b5 revolution net weights",
-        ) {
-            return Some(Err(error));
-        }
         for (index, profile_weight) in profile_weights.into_iter().enumerate() {
             let profile_point = profile.pole_rows().point_at(index)?;
             let relative = [
@@ -606,13 +538,7 @@ pub(super) fn revolve_nurbs(
             }
         }
         let row_len = angular_count;
-        let profile_knots = match ctx.copy_slice(
-            profile.knots().as_slice(),
-            "catia b5 revolution profile knots",
-        ) {
-            Ok(knots) => knots,
-            Err(error) => return Some(Err(error)),
-        };
+        let profile_knots = profile.knots().as_slice().to_vec();
         let point_rows = match ctx.copy_rows(
             &control_points,
             row_len,
@@ -632,7 +558,6 @@ pub(super) fn revolve_nurbs(
             Err(error) => return Some(Err(error)),
         };
         let surface = match crate::nurbs::note_refusal(
-            ctx,
             match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
@@ -738,27 +663,12 @@ pub(super) fn emit_surfaces(
                 u64::MAX,
             )
         })?;
-        let id = crate::resource::compose_index_id(
-            admission.context(),
-            &namespace,
-            index,
-            SurfaceId::mint,
-            "catia_b5_emitted_surface_id",
-        )?;
-        admission.context().insert_hash_map(
-            &mut surface_ids,
-            object_id,
-            id,
-            "catia_b5_emitted_surface_ids",
-        )?;
+        let id = crate::resource::compose_index_id(&namespace, index, SurfaceId::mint)?;
+        surface_ids.insert(object_id, id);
     }
     let mut face_surfaces = HashSet::new();
     for face in &graph.faces {
-        admission.context().insert_hash_set(
-            &mut face_surfaces,
-            face.surface,
-            "catia_b5_face_surface_ids",
-        )?;
+        face_surfaces.insert(face.surface);
     }
     for (object_id, plan) in surface_plan {
         let id = surface_ids[&object_id]
@@ -800,20 +710,14 @@ pub(super) fn emit_surfaces(
             },
         )?;
         if revolution_cache {
-            crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                id.as_str(),
-                "geometry",
-                "catia_b5_surface_annotation",
-            )?;
+            annotations.derived(admission.context(), id.as_str(), "geometry")?;
         }
         let model_id = id.try_clone_for_decode(admission.context(), "catia_b5_model_surface_id")?;
-        admission.reserve_entity(&mut ir.model.surfaces, "catia_b5_emit_surfaces")?;
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: model_id,
             geometry: plan.geometry,
-            source_object: Some(cgm_source(admission.context(), "surface", object_id)?),
+            source_object: Some(cgm_source("surface", object_id)?),
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
@@ -829,11 +733,9 @@ pub(super) fn emit_surfaces(
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
                 let directrix_id = crate::resource::compose_u32_id(
-                    admission.context(),
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "profile"),
                     object_id,
                     CurveId::mint,
-                    "catia_b5_profile_id",
                 )?;
                 annotate(
                     admission.context(),
@@ -843,14 +745,8 @@ pub(super) fn emit_surfaces(
                     "2d_profile_curve",
                     Exactness::Derived,
                 )?;
-                crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    directrix_id.as_str(),
-                    "geometry",
-                    "catia_b5_profile_annotation",
-                )?;
-                admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
+                annotations.derived(admission.context(), directrix_id.as_str(), "geometry")?;
+                admission.charge()?;
                 ir.model.curves.push(Curve {
                     parameter_range: None,
                     id: directrix_id.try_clone_for_decode(
@@ -863,11 +759,9 @@ pub(super) fn emit_surfaces(
                     source_object: None,
                 });
                 let procedural_id = crate::resource::compose_u32_id(
-                    admission.context(),
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "procedural-surface"),
                     object_id,
                     ProceduralSurfaceId::mint,
-                    "catia_b5_procedural_surface_id",
                 )?;
                 annotate(
                     admission.context(),
@@ -908,16 +802,11 @@ pub(super) fn emit_surfaces(
                 .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
             {
                 let procedural_id = crate::resource::compose_u32_id(
-                    admission.context(),
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "rolling-ball"),
                     object_id,
                     ProceduralSurfaceId::mint,
-                    "catia_b5_rolling_ball_id",
                 )?;
-                let carrier_tag = admission.context().format_retained(
-                    format_args!("result_carrier:{carrier_object_id:08x}"),
-                    "catia_b5_rolling_ball_carrier_tag",
-                )?;
+                let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
                 annotate(
                     admission.context(),
                     annotations,
@@ -950,11 +839,9 @@ pub(super) fn emit_surfaces(
             continue;
         };
         let procedural_id = crate::resource::compose_u32_id(
-            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "offset"),
             object_id,
             ProceduralSurfaceId::mint,
-            "catia_b5_offset_id",
         )?;
         annotate(
             admission.context(),
@@ -1002,11 +889,9 @@ fn emit_extrusion_procedure(
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let directrix_id = crate::resource::compose_u32_id(
-        admission.context(),
         &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix"),
         extrusion.directrix_object_id,
         CurveId::mint,
-        "catia_b5_extrusion_directrix_id",
     )?;
     match extrusion.directrix {
         super::ResolvedExtrusionDirectrix::Intersection {
@@ -1038,7 +923,7 @@ fn emit_extrusion_procedure(
                 "two_support_directrix",
                 Exactness::Unknown,
             )?;
-            admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
                 id: directrix_id.try_clone_for_decode(
@@ -1046,18 +931,12 @@ fn emit_extrusion_procedure(
                     "catia_b5_extrusion_directrix_record_id",
                 )?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: Some(cgm_source(
-                    admission.context(),
-                    "curve",
-                    extrusion.directrix_object_id,
-                )?),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = crate::resource::compose_u32_id(
-                admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
                 extrusion.directrix_object_id,
                 ProceduralCurveId::mint,
-                "catia_b5_extrusion_directrix_procedure_id",
             )?;
             annotate(
                 admission.context(),
@@ -1100,7 +979,7 @@ fn emit_extrusion_procedure(
                 "support_pcurve_lift",
                 Exactness::Derived,
             )?;
-            admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
                 id: directrix_id.try_clone_for_decode(
@@ -1108,11 +987,7 @@ fn emit_extrusion_procedure(
                     "catia_b5_extrusion_directrix_record_id",
                 )?,
                 geometry: curve,
-                source_object: Some(cgm_source(
-                    admission.context(),
-                    "curve",
-                    extrusion.directrix_object_id,
-                )?),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
         }
         super::ResolvedExtrusionDirectrix::Offset {
@@ -1124,11 +999,9 @@ fn emit_extrusion_procedure(
             direction,
         } => {
             let source_id = crate::resource::compose_u32_id(
-                admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-source"),
                 source_object_id,
                 CurveId::mint,
-                "catia_b5_extrusion_directrix_source_id",
             )?;
             annotate(
                 admission.context(),
@@ -1138,7 +1011,7 @@ fn emit_extrusion_procedure(
                 "support_pcurve_lift",
                 Exactness::Derived,
             )?;
-            admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
                 id: source_id.try_clone_for_decode(
@@ -1146,7 +1019,7 @@ fn emit_extrusion_procedure(
                     "catia_b5_extrusion_source_record_id",
                 )?,
                 geometry: source_curve,
-                source_object: Some(cgm_source(admission.context(), "curve", source_object_id)?),
+                source_object: Some(cgm_source("curve", source_object_id)?),
             });
             annotate(
                 admission.context(),
@@ -1156,7 +1029,7 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::Unknown,
             )?;
-            admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 parameter_range: None,
                 id: directrix_id.try_clone_for_decode(
@@ -1164,18 +1037,12 @@ fn emit_extrusion_procedure(
                     "catia_b5_extrusion_directrix_record_id",
                 )?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: Some(cgm_source(
-                    admission.context(),
-                    "curve",
-                    extrusion.directrix_object_id,
-                )?),
+                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = crate::resource::compose_u32_id(
-                admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
                 extrusion.directrix_object_id,
                 ProceduralCurveId::mint,
-                "catia_b5_extrusion_directrix_procedure_id",
             )?;
             annotate(
                 admission.context(),
@@ -1204,11 +1071,9 @@ fn emit_extrusion_procedure(
         }
     }
     let procedure_id = crate::resource::compose_u32_id(
-        admission.context(),
         &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion"),
         surface_object_id,
         ProceduralSurfaceId::mint,
-        "catia_b5_extrusion_id",
     )?;
     annotate(
         admission.context(),

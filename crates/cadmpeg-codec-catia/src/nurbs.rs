@@ -6,7 +6,6 @@
 //! interval canonicalization, and exact circular-helix fitting.
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
-use cadmpeg_core::decode::u64_from_index;
 
 type QuinticJetOutput<const N: usize> =
     Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError>;
@@ -77,30 +76,23 @@ impl LaneRefusals {
     /// Retain the identity that prevented a carrier population from merging.
     pub(crate) fn push_annotation_collision(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         error: &cadmpeg_ir::annotations::AnnotationIdentityCollision,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::SourceAnnotationCollision,
-            format_args!("{error}"),
-            "catia_annotation_collision_loss",
-        )
+    ) {
+        self.notes
+            .push(crate::loss::CatiaLossCode::SourceAnnotationCollision.note(format!("{error}")));
     }
 
     /// Record one refusal against the record that stated it.
     fn push(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(ctx, &mut self.notes,
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
-            format_args!(
-                "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
-            ), "catia_nurbs_refusal_loss")
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+            "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
+        )),
+        );
     }
 
     /// Record one refusal a lane solver stated, against the record that stated
@@ -109,42 +101,24 @@ impl LaneRefusals {
     /// This is the sink for a solver that answers "no representation" without
     /// an IR carrier error, such as a jet whose stored samples do not lower to
     /// a B-spline.
-    pub(crate) fn push_solver(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        record: impl std::fmt::Display,
-        detail: &str,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
-            format_args!(
+    pub(crate) fn push_solver(&mut self, record: impl std::fmt::Display, detail: &str) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
                 "A CATIA carrier record states lanes the reader cannot lower: {record} {detail}"
-            ),
-            "catia_solver_refusal_loss",
-        )
+            )),
+        );
     }
 
     /// Record a refused source-stated parameter range against the record that
     /// stated it.
-    fn push_range(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        record: impl std::fmt::Display,
-        range: [f64; 2],
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        crate::resource::push_loss(
-            ctx,
-            &mut self.notes,
-            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid,
-            format_args!(
+    fn push_range(&mut self, record: impl std::fmt::Display, range: [f64; 2]) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid.note(format!(
                 "A CATIA record states a parameter range the reader refuses: \
-                 {record} states [{}, {}]",
+             {record} states [{}, {}]",
                 range[0], range[1]
-            ),
-            "catia_range_refusal_loss",
-        )
+            )),
+        );
     }
 }
 
@@ -155,7 +129,6 @@ impl LaneRefusals {
 /// that does not increase is a refused record. `strict` states whether the two
 /// bounds must differ.
 fn readable_range(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     range: [f64; 2],
     strict: bool,
     refusal: &mut LaneRefusals,
@@ -169,7 +142,7 @@ fn readable_range(
     if range.into_iter().all(f64::is_finite) && ordered {
         return Ok(true);
     }
-    refusal.push_range(ctx, record, range)?;
+    refusal.push_range(record, range);
     Ok(false)
 }
 
@@ -180,7 +153,6 @@ fn readable_range(
 /// record of another kind: the reader answers `None` for the record it is
 /// reading, and the refusal travels, named, in the sink the caller owns.
 pub(crate) fn note_refusal<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
     refusal: &mut LaneRefusals,
     record: impl std::fmt::Display,
@@ -188,7 +160,7 @@ pub(crate) fn note_refusal<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(error) => {
-            refusal.push(ctx, record, &error)?;
+            refusal.push(record, &error);
             Ok(None)
         }
     }
@@ -206,7 +178,7 @@ pub(crate) fn reverse_pcurve_geometry(
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    if !readable_range(ctx, range, true, refusal, record)? {
+    if !readable_range(range, true, refusal, record)? {
         return Ok(None);
     }
     match geometry {
@@ -228,22 +200,21 @@ pub(crate) fn reverse_pcurve_geometry(
             if !pcurve_weights_are_positive(nurbs) {
                 return Ok(None);
             }
-            let reversed_knots = reverse_knots(ctx, nurbs.knots(), range)?;
+            let reversed_knots = reverse_knots(nurbs.knots(), range)?;
             let mut poles = match nurbs.pole_rows() {
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial {
-                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
+                        points: points.to_vec(),
                     }
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational {
-                        points: ctx.copy_slice(points, "catia_reverse_pcurve_poles")?,
+                        points: points.to_vec(),
                     }
                 }
             };
             poles.reverse();
             note_refusal(
-                ctx,
                 match KnotVector::new(ctx, reversed_knots)? {
                     Ok(knots) => {
                         PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
@@ -271,7 +242,7 @@ pub(crate) fn reverse_curve_geometry(
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
-    if !readable_range(ctx, range, false, refusal, record)? {
+    if !readable_range(range, false, refusal, record)? {
         return Ok(None);
     }
     if matches!(
@@ -279,7 +250,7 @@ pub(crate) fn reverse_curve_geometry(
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_))
     ) && !(range[1] - range[0]).is_finite()
     {
-        refusal.push_range(ctx, record, range)?;
+        refusal.push_range(record, range);
         return Ok(None);
     }
     match geometry {
@@ -323,20 +294,16 @@ pub(crate) fn reverse_curve_geometry(
                 )
             }))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => note_refusal(
-            ctx,
-            reverse_nurbs_curve(ctx, nurbs, range)?,
-            refusal,
-            record,
-        )
-        .map(|curve| {
-            curve.map(|curve| {
-                (
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                    range,
-                )
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            note_refusal(reverse_nurbs_curve(ctx, nurbs, range)?, refusal, record).map(|curve| {
+                curve.map(|curve| {
+                    (
+                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                        range,
+                    )
+                })
             })
-        }),
+        }
         _ => Ok(None),
     }
 }
@@ -344,11 +311,10 @@ pub(crate) fn reverse_curve_geometry(
 /// Reflect knots without summing the interval endpoints. Subtracting from
 /// the nearer endpoint preserves small spans at large parameter offsets.
 fn reverse_knots(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     knots: &[f64],
     [lower, upper]: [f64; 2],
 ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
-    let mut reversed = ctx.copy_slice(knots, "catia_reverse_knots")?;
+    let mut reversed = knots.to_vec();
     reversed.reverse();
     for knot in &mut reversed {
         let reflected = if (*knot - lower).abs() <= (upper - *knot).abs() {
@@ -368,26 +334,23 @@ pub(crate) fn reverse_nurbs_curve(
     range: [f64; 2],
 ) -> Result<Result<NurbsCurve, NurbsError>, cadmpeg_core::CodecError> {
     if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
-        let message = ctx.copy_retained_text(
-            "reversal range must be finite and ordered",
-            "catia_reverse_curve_range_error",
-        )?;
+        let message = "reversal range must be finite and ordered".to_owned();
         return Ok(Err(NurbsError::Structure(message)));
     }
     let mut poles = match curve.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
-                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
+                points: points.to_vec(),
             }
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
-                points: ctx.copy_slice(points, "catia_reverse_curve_poles")?,
+                points: points.to_vec(),
             }
         }
     };
     poles.reverse();
-    let knots = match KnotVector::new(ctx, reverse_knots(ctx, curve.knots(), range)?)? {
+    let knots = match KnotVector::new(ctx, reverse_knots(curve.knots(), range)?)? {
         Ok(knots) => knots,
         Err(error) => return Ok(Err(error)),
     };
@@ -423,13 +386,12 @@ fn domain_endpoint(parameter: f64, [lower, upper]: [f64; 2], tolerance: f64) -> 
 /// another kind. The remaining `None` exits re-read a domain the IR carrier
 /// already refined.
 pub(crate) fn canonical_model_curve_range(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-    if !readable_range(ctx, range, false, refusal, record)? {
+    if !readable_range(range, false, refusal, record)? {
         return Ok(None);
     }
     if matches!(
@@ -438,7 +400,7 @@ pub(crate) fn canonical_model_curve_range(
     ) {
         let normalized = canonical_periodic_range(range);
         if normalized.is_none() {
-            refusal.push_range(ctx, record, range)?;
+            refusal.push_range(record, range);
         }
         return Ok(normalized);
     }
@@ -481,7 +443,6 @@ pub(crate) fn canonical_model_curve_range(
 /// curve families require family-specific support-side mappings and are not
 /// admitted here.
 pub(crate) fn reverse_helix_definition(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &ProceduralCurveDefinition,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
@@ -490,11 +451,11 @@ pub(crate) fn reverse_helix_definition(
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return Ok(None);
     };
-    if !readable_range(ctx, range, true, refusal, record)? {
+    if !readable_range(range, true, refusal, record)? {
         return Ok(None);
     }
     if !(range[1] - range[0]).is_finite() {
-        refusal.push_range(ctx, record, range)?;
+        refusal.push_range(record, range);
         return Ok(None);
     }
     Ok((|| {
@@ -600,12 +561,12 @@ pub(crate) fn circular_helix_cache(
         return Ok(None);
     };
     let angle_range = helix_payload.angle_range();
-    if !readable_range(ctx, angle_range.get(), true, refusal, record)? {
+    if !readable_range(angle_range.get(), true, refusal, record)? {
         return Ok(None);
     }
     let [angle_start, angle_end] = angle_range.get();
     if !(angle_end - angle_start).is_finite() {
-        refusal.push_range(ctx, record, angle_range.get())?;
+        refusal.push_range(record, angle_range.get());
         return Ok(None);
     }
     let major = helix_payload.major();
@@ -695,16 +656,8 @@ pub(crate) fn circular_helix_cache(
             Some(value) => value,
             None => return Ok(None),
         };
-    let sample_count = segment_count
-        .checked_add(1)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
-    let sample_bytes = sample_count
-        .checked_mul(std::mem::size_of::<(f64, Point3)>())
-        .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
-    let _samples_reservation = ctx.reserve_scoped(sample_bytes, "catia_helix_samples")?;
     let mut samples = Vec::new();
-    ctx.reserve_vec(&mut samples, sample_count, "catia_helix_samples")?;
+
     for index in 0..=segment_count {
         let parameter = if index == segment_count {
             angle_range[1]
@@ -731,32 +684,21 @@ pub(crate) fn circular_helix_cache(
     }
     let sine = (step * 0.25).sin();
     let fit_tolerance = (radius * sine) * (2.0 * sine);
-    let knot_count = sample_count
-        .checked_add(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
-    let knot_bytes = knot_count
-        .checked_mul(std::mem::size_of::<f64>())
-        .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
-    ctx.charge_retained(knot_bytes, "catia_helix_knots")?;
+
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "catia_helix_knots")?;
+
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
-    let control_bytes = sample_count
-        .checked_mul(std::mem::size_of::<Point3>())
-        .map(u64_from_index)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_controls", u64::MAX, u64::MAX))?;
-    ctx.charge_retained(control_bytes, "catia_helix_controls")?;
+
     let mut controls = Vec::new();
-    ctx.reserve_vec(&mut controls, sample_count, "catia_helix_controls")?;
+
     controls.extend(samples.into_iter().map(|(_, point)| point));
     let curve = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         ctx, 1, knots, controls, None, false,
     )? {
         Ok(curve) => curve,
-        Err(error) => return note_refusal(ctx, Err(error), refusal, record),
+        Err(error) => return note_refusal(Err(error), refusal, record),
     };
     Ok(FitTolerance::try_new(fit_tolerance)
         .ok()
@@ -794,7 +736,6 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
 /// piecewise Bézier B-spline control net, in any point dimension.
 pub(crate) fn quintic_jet_bspline<const N: usize>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     points: &[[f64; N]],
@@ -813,19 +754,9 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     {
         return Ok(None);
     }
-    let control_count = knots
-        .len()
-        .checked_sub(1)
-        .and_then(|count| count.checked_mul(6))
-        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet controls", u64::MAX, u64::MAX))?;
-    let full_knot_count = knots
-        .len()
-        .checked_mul(6)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
-    let (mut controls, _controls_reservation) =
-        ctx.temporary_vec(control_count, "catia quintic jet controls")?;
+    let mut controls = Vec::new();
     let mut full_knots = Vec::new();
-    ctx.reserve_vec(&mut full_knots, full_knot_count, "catia quintic jet knots")?;
+
     full_knots.extend([knots[0]; 6]);
     for index in 0..knots.len() - 1 {
         let h = knots[index + 1] - knots[index];
@@ -874,11 +805,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         return Ok(None);
     }
     let mut finite_controls = Vec::new();
-    ctx.reserve_vec(
-        &mut finite_controls,
-        controls.len(),
-        "catia quintic jet finite controls",
-    )?;
+
     for control in controls {
         let Some(control) = FiniteVector::new(control) else {
             return Ok(None);
@@ -919,7 +846,6 @@ mod tests {
     fn quintic_jet_control_workspace_refuses_materialized_limit() {
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             quintic_jet_bspline(
-                ctx,
                 5,
                 &[0.0, 1.0],
                 &[[0.0, 0.0], [1.0, 0.0]],
@@ -943,14 +869,14 @@ mod tests {
             id: "catia:test:curve#duplicate".to_string(),
         };
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            LaneRefusals::new().push_annotation_collision(ctx, &collision)
+            LaneRefusals::new().push_annotation_collision(&collision)
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_annotation_collision_loss")
         );
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            LaneRefusals::new().push_annotation_collision(ctx, &collision)
+            LaneRefusals::new().push_annotation_collision(&collision)
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -958,7 +884,7 @@ mod tests {
         );
         let notes = crate::test_support::with_service_context(|ctx| {
             let mut refusal = LaneRefusals::new();
-            refusal.push_annotation_collision(ctx, &collision)?;
+            refusal.push_annotation_collision(&collision);
             Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
         })
         .expect("service profile admits collision note");
@@ -969,14 +895,14 @@ mod tests {
     #[test]
     fn solver_refusal_note_refuses_retained_and_collection_limits() {
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            LaneRefusals::new().push_solver(ctx, "a5 record", "jet does not close")
+            LaneRefusals::new().push_solver("a5 record", "jet does not close")
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_solver_refusal_loss")
         );
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            LaneRefusals::new().push_solver(ctx, "a5 record", "jet does not close")
+            LaneRefusals::new().push_solver("a5 record", "jet does not close")
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -984,7 +910,7 @@ mod tests {
         );
         let notes = crate::test_support::with_service_context(|ctx| {
             let mut refusal = LaneRefusals::new();
-            refusal.push_solver(ctx, "a5 record", "jet does not close")?;
+            refusal.push_solver("a5 record", "jet does not close");
             Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
         })
         .expect("service profile admits solver note");
@@ -995,14 +921,14 @@ mod tests {
     #[test]
     fn range_refusal_note_refuses_retained_and_collection_limits() {
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            LaneRefusals::new().push_range(ctx, "source range", [2.0, 1.0])
+            LaneRefusals::new().push_range("source range", [2.0, 1.0])
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_range_refusal_loss")
         );
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            LaneRefusals::new().push_range(ctx, "source range", [2.0, 1.0])
+            LaneRefusals::new().push_range("source range", [2.0, 1.0])
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1010,7 +936,7 @@ mod tests {
         );
         let notes = crate::test_support::with_service_context(|ctx| {
             let mut refusal = LaneRefusals::new();
-            refusal.push_range(ctx, "source range", [2.0, 1.0])?;
+            refusal.push_range("source range", [2.0, 1.0]);
             Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
         })
         .expect("service profile admits range note");
@@ -1032,24 +958,14 @@ mod tests {
             .expect("fixture pcurve construction admission")
         };
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            super::note_refusal(
-                ctx,
-                short_weight_lane(),
-                &mut LaneRefusals::new(),
-                "test record",
-            )
+            super::note_refusal(short_weight_lane(), &mut LaneRefusals::new(), "test record")
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_nurbs_refusal_loss")
         );
         let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            super::note_refusal(
-                ctx,
-                short_weight_lane(),
-                &mut LaneRefusals::new(),
-                "test record",
-            )
+            super::note_refusal(short_weight_lane(), &mut LaneRefusals::new(), "test record")
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1057,7 +973,7 @@ mod tests {
         );
         let notes = crate::test_support::with_service_context(|ctx| {
             let mut refusal = LaneRefusals::new();
-            let value = super::note_refusal(ctx, short_weight_lane(), &mut refusal, "test record")?;
+            let value = super::note_refusal(short_weight_lane(), &mut refusal, "test record")?;
             Ok::<_, cadmpeg_core::CodecError>((value, refusal.take_notes()))
         })
         .expect("service profile admits NURBS refusal note");
@@ -1086,7 +1002,6 @@ mod tests {
         let mut refusal = LaneRefusals::new();
         assert_eq!(
             crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                ctx,
                 &geometry,
                 [-DOMAIN_ROUNDING, 1.0 + DOMAIN_ROUNDING],
                 &mut refusal,
@@ -1110,7 +1025,6 @@ mod tests {
         ] {
             assert_eq!(
                 crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                    ctx,
                     &geometry,
                     range,
                     &mut refusal,
@@ -1123,7 +1037,6 @@ mod tests {
         for range in [[-1.0e-4, 0.5], [0.5, 1.0 + 1.0e-4]] {
             assert_eq!(
                 crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                    ctx,
                     &geometry,
                     range,
                     &mut refusal,
@@ -1135,7 +1048,6 @@ mod tests {
         }
         assert_eq!(
             crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                ctx,
                 &geometry,
                 [-1.0e-4, 1.0],
                 &mut refusal,
@@ -1150,7 +1062,6 @@ mod tests {
         // A source-stated interval that does not increase is a refused record.
         assert_eq!(
             crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                ctx,
                 &geometry,
                 [1.0, 0.0],
                 &mut refusal,
@@ -1325,7 +1236,7 @@ mod tests {
         );
         let mut refusal = LaneRefusals::new();
         let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
-            reverse_helix_definition(ctx, &definition, range, &mut refusal, "test helix")
+            reverse_helix_definition(&definition, range, &mut refusal, "test helix")
         })
         .expect("service profile admits range operation")
         .expect("reversible helix");
@@ -1724,22 +1635,20 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits input limit");
         assert!(quintic_jet_bspline(
-            &ctx,
             5,
             &[0.0, 10.0],
             &[[0.0, 0.0], [1.0, 0.0]],
             &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
-            &[[0.0, 0.0], [0.0, 0.0]],
+            &[[0.0, 0.0], [0.0, 0.0]]
         )
         .expect("service resource budget")
         .is_none());
         assert!(quintic_jet_bspline(
-            &ctx,
             5,
             &[0.0, 1.0],
             &[[f64::NAN, 0.0], [1.0, 0.0]],
             &[[1.0, 0.0], [1.0, 0.0]],
-            &[[0.0, 0.0], [0.0, 0.0]],
+            &[[0.0, 0.0], [0.0, 0.0]]
         )
         .expect("service resource budget")
         .is_none());
@@ -1828,7 +1737,6 @@ mod tests {
         };
         let first = crate::test_support::with_service_context(|ctx| {
             super::note_refusal(
-                ctx,
                 short_weight_lane(),
                 &mut refusal,
                 "consolidated_a5_03_32 at byte 64",
@@ -1837,7 +1745,6 @@ mod tests {
         .expect("service profile admits NURBS refusal note");
         let second = crate::test_support::with_service_context(|ctx| {
             super::note_refusal(
-                ctx,
                 short_weight_lane(),
                 &mut refusal,
                 "consolidated_a5_03_32 at byte 128",

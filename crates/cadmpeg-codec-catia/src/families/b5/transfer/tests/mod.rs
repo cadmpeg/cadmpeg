@@ -44,25 +44,16 @@ fn b5_annotation_admits_retained_strings_and_map_entries() {
 #[test]
 fn b5_derived_field_admits_both_exactness_entries() {
     let operations = b5_collection_refusals(|ctx| {
-        crate::resource::derived_annotation(
-            ctx,
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            "catia:b5:vertex#0",
-            "point",
-            "catia_b5_vertex_annotation",
-        )
+        cadmpeg_ir::AnnotationBuilder::new()
+            .derived(ctx, "catia:b5:vertex#0", "point")
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
     });
     assert!(operations.contains("collect source exactness entities"));
 
     let annotations = crate::test_support::with_service_context(|ctx| {
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        crate::resource::derived_annotation(
-            ctx,
-            &mut annotations,
-            "catia:b5:vertex#0",
-            "point",
-            "catia_b5_vertex_annotation",
-        )?;
+        annotations.derived(ctx, "catia:b5:vertex#0", "point")?;
         Ok::<_, cadmpeg_core::CodecError>(annotations.build())
     })
     .expect("service budget admits the field note");
@@ -133,7 +124,7 @@ fn b5_loop_orientation_charges_constraint_arrays() {
         .map(|(id, loop_)| {
             (
                 *id,
-                crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
+                crate::test_support::with_service_context(|ctx| loop_.edge_senses())
                     .expect("service budget"),
             )
         })
@@ -625,7 +616,7 @@ fn b5_loop_orientation_refuses_loop_id_collection_limit() {
         .map(|(id, loop_)| {
             (
                 *id,
-                crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
+                crate::test_support::with_service_context(|ctx| loop_.edge_senses())
                     .expect("service budget"),
             )
         })

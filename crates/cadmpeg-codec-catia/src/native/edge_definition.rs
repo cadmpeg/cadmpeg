@@ -70,12 +70,10 @@ impl Serialize for CatiaConsolidatedEdgeDefinition {
 
 impl CatiaConsolidatedEdgeDefinition {
     pub(crate) fn from_source(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let data =
             crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx,
                 definition.class.into(),
                 &definition.frame.payload,
             )?;
@@ -177,7 +175,7 @@ mod tests {
             class: ConsolidatedEdgeDefinitionClass::Class24,
         };
         let value = crate::test_support::with_service_context(|ctx| {
-            CatiaConsolidatedEdgeDefinition::from_source(ctx, source)
+            CatiaConsolidatedEdgeDefinition::from_source(source)
         })
         .expect("admitted definition");
         let data = value.data().expect("compact data");
@@ -239,14 +237,14 @@ mod tests {
         }
         let service = crate::test_support::with_service_context(|ctx| {
             crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx, 0x25, &payload,
+                0x25, &payload,
             )
         })
         .expect("service profile admits scalar lane");
         assert!(service.is_some());
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
             crate::families::consolidated::records::consolidated_edge_definition_data_charged(
-                ctx, 0x25, &payload,
+                0x25, &payload,
             )
         });
         assert!(

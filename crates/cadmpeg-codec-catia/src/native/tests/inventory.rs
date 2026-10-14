@@ -214,7 +214,7 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
     ]));
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| { crate::value_block::parse(ctx, &bytes) })
+        crate::test_support::with_service_context(|ctx| { crate::value_block::parse(&bytes) })
             .expect("service budget")
             .len(),
         1
@@ -320,7 +320,7 @@ fn native_design_inventory_excludes_alias_rows_inside_catalog_entries() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            crate::object_graph::surface_aliases(ctx, &bytes)
+            crate::object_graph::surface_aliases(&bytes)
         })
         .expect("service budget")
         .len(),
@@ -748,7 +748,7 @@ fn alias_surface_resolution_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("alias fixture fits the input limit");
     assert!(matches!(
-        super::super::projection::resolve_alias_surface_tags(&ctx, &mut rows),
+        super::super::projection::resolve_alias_surface_tags(&mut rows),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }
@@ -757,17 +757,17 @@ fn alias_surface_resolution_refuses_collection_limit() {
 fn native_alias_row_id_refuses_retained_limit() {
     let bytes = surface_alias_stream();
     let rows = crate::test_support::with_service_context(|ctx| {
-        crate::object_graph::surface_aliases(ctx, &bytes)
+        crate::object_graph::surface_aliases(&bytes)
     })
     .expect("service resource budget");
     let row = rows.first().expect("alias row").clone();
     assert!(crate::test_support::with_service_context(|ctx| {
-        super::super::CatiaAliasRow::from_source(ctx, row.clone())
+        super::super::CatiaAliasRow::from_source(row.clone())
     })
     .is_ok());
     assert!(matches!(
         crate::test_support::with_retained_limit(0, |ctx| {
-            super::super::CatiaAliasRow::from_source(ctx, row.clone())
+            super::super::CatiaAliasRow::from_source(row.clone())
         }),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
@@ -785,7 +785,7 @@ fn native_catalog_projection_refuses_id_and_entry_limits() {
         }],
     };
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::super::CatiaCatalog::from_source(ctx, catalog.clone())
+        super::super::CatiaCatalog::from_source(catalog.clone())
     };
     assert_eq!(
         crate::test_support::with_service_context(run)
@@ -814,7 +814,7 @@ fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("alias fixture fits the service input limit");
-        crate::object_graph::surface_alias_tag_map(&ctx, bytes)
+        crate::object_graph::surface_alias_tag_map(bytes)
             .expect("alias fixture fits the service resource limits")
     }
     let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
@@ -1011,7 +1011,7 @@ fn native_overlap_filter_refuses_before_inventory_mutation() {
     let mut catalogs = Vec::new();
     crate::test_support::with_work_limit(0, |ctx| {
         let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut catalogs)
+            super::super::filter_nested_inventory(&mut graphs, &mut blocks, &mut catalogs)
                 .expect_err("overlap comparison work must be admitted")
         else {
             panic!("resource refusal required")

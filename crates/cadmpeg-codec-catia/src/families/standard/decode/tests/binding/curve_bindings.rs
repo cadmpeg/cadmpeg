@@ -661,10 +661,9 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
 
 #[test]
 fn native_edge_support_match_refuses_work_limit() {
-    let source = crate::test_support::with_service_context(|ctx| {
-        crate::assemble::cgm_source(ctx, "surface", 42)
-    })
-    .expect("service profile admits source identity");
+    let source =
+        crate::test_support::with_service_context(|ctx| crate::assemble::cgm_source("surface", 42))
+            .expect("service profile admits source identity");
     let id = SurfaceId::mint("catia:test:surface#matching".to_owned()).expect("surface identity");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let mut ir = CadIr::empty();

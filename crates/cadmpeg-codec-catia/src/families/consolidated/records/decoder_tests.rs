@@ -66,13 +66,13 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
+            crate::families::consolidated::records::object_stream_vertices(&bytes)
         })
         .expect("service decode"),
         [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
     );
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::consolidated::records::object_stream_vertices(ctx, &bytes[5..])
+        crate::families::consolidated::records::object_stream_vertices(&bytes[5..])
     })
     .expect("service decode")
     .is_empty());
@@ -90,7 +90,7 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
     }
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            crate::families::consolidated::records::object_stream_vertices(ctx, &b5)
+            crate::families::consolidated::records::object_stream_vertices(&b5)
         })
         .expect("service decode"),
         [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
@@ -110,7 +110,7 @@ fn object_stream_vertex_ranges_rows_and_points_refuse_limits() {
         (2, "catia_object_stream_vertices"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::object_stream_vertices_from_records(ctx, &bytes, &records)
+            super::object_stream_vertices_from_records(&bytes, &records)
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -119,7 +119,7 @@ fn object_stream_vertex_ranges_rows_and_points_refuse_limits() {
         );
     }
     let vertices = crate::test_support::with_service_context(|ctx| {
-        crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
+        crate::families::consolidated::records::object_stream_vertices(&bytes)
     })
     .expect("service decode");
     assert_eq!(vertices.len(), 1);
@@ -791,7 +791,7 @@ fn consolidated_edge_use_rows_and_references_refuse_collection_limits() {
     let mut refused = HashSet::new();
     for limit in 0..128 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+            super::consolidated_edge_use_runs_from_records(&bytes, &records)
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
             refused.insert(error.operation);
@@ -817,7 +817,7 @@ fn consolidated_successor_definition_refuses_retained_limit() {
     let mut found = false;
     for limit in 0..128 {
         let result = crate::test_support::with_retained_limit(limit, |ctx| {
-            super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+            super::consolidated_edge_use_runs_from_records(&bytes, &records)
         });
         if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_edge_use_succeeding_definition_payload")
@@ -840,7 +840,7 @@ fn compact_owner_ordinal_selects_the_owned_edge_node() {
     let records = crate::wire::records::consolidated_records(&bytes);
     let owned = crate::test_support::with_service_context(|ctx| {
         crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-            ctx, &bytes, &records,
+            &bytes, &records,
         )
     })
     .expect("service context admits owned edge nodes");
@@ -865,7 +865,7 @@ fn consolidated_owned_edge_nodes_refuse_each_collection_boundary() {
     for limit in 0..128 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
             crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-                ctx, &bytes, &records,
+                &bytes, &records,
             )
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
@@ -1355,7 +1355,7 @@ fn analytic_circle_edge_carriers_and_retained_frames_refuse_collection_limits() 
     let mut refused = HashSet::new();
     for limit in 0..256 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::consolidated_analytic_circle_edge_runs_from_records(ctx, &bytes, &records)
+            super::consolidated_analytic_circle_edge_runs_from_records(&bytes, &records)
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
             refused.insert(error.operation);
@@ -1404,7 +1404,7 @@ fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
     let mut refused = HashSet::new();
     for limit in 0..256 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::consolidated_class25_edge_runs_from_records(ctx, &bytes, &records)
+            super::consolidated_class25_edge_runs_from_records(&bytes, &records)
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
             refused.insert(error.operation);
@@ -1644,12 +1644,12 @@ fn edge_use_resolution_does_not_index_unrelated_nodes() {
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(records.len(), 1024);
     let runs = crate::test_support::with_collection_limit(0, |ctx| {
-        super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+        super::consolidated_edge_use_runs_from_records(&bytes, &records)
     })
     .expect("unmatched node windows need no index or payload copies");
     assert!(runs.is_empty());
     let refused = crate::test_support::with_work_limit(0, |ctx| {
-        super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+        super::consolidated_edge_use_runs_from_records(&bytes, &records)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))

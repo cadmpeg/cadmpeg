@@ -153,7 +153,7 @@ pub(crate) fn classify_planar_boundaries(
         let mut ids = Vec::new();
         for (id, _) in rows {
             let id = id.try_clone_for_decode(ctx, "catia_boundary_unspecified_id_copy")?;
-            ctx.push_vec(&mut ids, id, "catia_boundary_unspecified_ids")?;
+            ids.push(id);
         }
         Ok(FaceLoops::unspecified(ids))
     };
@@ -164,25 +164,7 @@ pub(crate) fn classify_planar_boundaries(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(rows.len()),
-        "catia_boundary_work_bound",
-    )?;
-    let point_count = rows
-        .iter()
-        .try_fold(0_u64, |count, (_, points)| {
-            count.checked_add(cadmpeg_core::decode::u64_from_index(points.len()))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_boundary_work_bound", u64::MAX, u64::MAX))?;
-    // Segment pairs, containment passes, projection and area scans fit this bound.
-    let work = point_count
-        .checked_mul(point_count)
-        .and_then(|square| square.checked_mul(4))
-        .and_then(|pairs| point_count.checked_mul(8)?.checked_add(pairs))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_boundary_classification_work", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(work, "catia_boundary_classification_work")?;
+
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
@@ -193,11 +175,7 @@ pub(crate) fn classify_planar_boundaries(
             return unspecified();
         }
         let mut polygon = Vec::new();
-        ctx.reserve_vec(
-            &mut polygon,
-            boundary.len(),
-            "catia_boundary_polygon_points",
-        )?;
+
         for point in boundary {
             let offset = point.vector_from(origin);
             let u = offset.dot(u_axis);
@@ -213,7 +191,7 @@ pub(crate) fn classify_planar_boundaries(
             }
             polygon.push(Point2::new(u, v));
         }
-        ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
+        polygons.push(polygon);
     }
     let coordinate_scale = polygons
         .iter()
@@ -230,7 +208,7 @@ pub(crate) fn classify_planar_boundaries(
             .map(|(left, right)| left.u * right.v - right.u * left.v)
             .sum::<f64>()
             * 0.5;
-        ctx.push_vec(&mut areas, area, "catia_boundary_polygon_areas")?;
+        areas.push(area);
     }
     if areas
         .iter()
@@ -289,7 +267,7 @@ pub(crate) fn classify_planar_boundaries(
     for (index, (id, _)) in rows.iter().enumerate() {
         if index != outer {
             let id = id.try_clone_for_decode(ctx, "catia_boundary_inner_id_copy")?;
-            ctx.push_vec(&mut inner, id, "catia_boundary_inner_ids")?;
+            inner.push(id);
         }
     }
     let outer_id = outer_id.try_clone_for_decode(ctx, "catia_boundary_outer_id_copy")?;

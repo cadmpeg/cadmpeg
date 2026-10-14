@@ -317,7 +317,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(20.0, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
                 None,
-                false,
+                false
             )
             .expect("fixture constructor admission")
             .expect("valid NurbsCurve fixture")

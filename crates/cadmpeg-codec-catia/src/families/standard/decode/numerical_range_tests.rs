@@ -17,7 +17,6 @@ fn bezier_parameter_search_refuses_before_nodes_queue_and_parameters() {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
             let mut parameters = Vec::new();
             collect_bezier_point_parameters(
-                ctx,
                 [point; 6],
                 [0.0, 1.0],
                 point,
@@ -32,16 +31,8 @@ fn bezier_parameter_search_refuses_before_nodes_queue_and_parameters() {
     }
     crate::test_support::with_service_context(|ctx| {
         let mut parameters = Vec::new();
-        collect_bezier_point_parameters(
-            ctx,
-            [point; 6],
-            [0.0, 1.0],
-            point,
-            0.01,
-            1.0,
-            &mut parameters,
-        )
-        .expect("service budget");
+        collect_bezier_point_parameters([point; 6], [0.0, 1.0], point, 0.01, 1.0, &mut parameters)
+            .expect("service budget");
         assert!(!parameters.is_empty());
     });
 }
@@ -67,7 +58,7 @@ fn numerical_0922_quintic_keeps_both_branches() {
         .expect("fixture constructor admission")
         .expect("valid quintic curve");
         let result = crate::test_support::with_service_context(|ctx| {
-            standard_limit_curve_point_parameter(ctx, &n, Point3::new(0., 0., 0.), 2e-3)
+            standard_limit_curve_point_parameter(&n, Point3::new(0., 0., 0.), 2e-3)
         })
         .expect("service budget");
         println!("CATIA folded quintic locus d{d:e}: {result:?}");
@@ -93,7 +84,7 @@ fn numerical_0922_finite_bezier_midpoint() {
         .expect("fixture constructor admission")
         .expect("valid quintic curve");
         let result = crate::test_support::with_service_context(|ctx| {
-            standard_limit_curve_point_parameter(ctx, &n, Point3::new(x, 0.5, 0.), 2e-3)
+            standard_limit_curve_point_parameter(&n, Point3::new(x, 0.5, 0.), 2e-3)
         })
         .expect("service budget");
         println!("CATIA straight quintic at x{x:e} midpoint: {result:?}");
@@ -119,7 +110,7 @@ fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
     .expect("fixture constructor admission")
     .expect("wide finite quintic domain");
     let parameter = crate::test_support::with_service_context(|ctx| {
-        standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
+        standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
     })
     .expect("service budget")
     .expect("interior point parameter");

@@ -1,6 +1,5 @@
 //! Immutable standard topology with closed cycles and owned-table references.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, NonEmptyMembers};
 
@@ -12,14 +11,7 @@ pub(crate) struct Boundary {
 }
 
 impl Boundary {
-    pub(crate) fn new(
-        ctx: &DecodeContext<'_>,
-        coedges: NonEmptyMembers<CoedgeUse>,
-    ) -> Result<Option<Self>, CodecError> {
-        ctx.charge_work(
-            u64_from_index(coedges.len()),
-            "catia_closed_boundary_admission",
-        )?;
+    pub(crate) fn new(coedges: NonEmptyMembers<CoedgeUse>) -> Result<Option<Self>, CodecError> {
         let Some(first) = coedges.first() else {
             return Ok(None);
         };
@@ -61,23 +53,19 @@ pub(crate) struct StandardTopology {
 }
 
 impl StandardTopology {
-    pub(crate) fn new(
-        ctx: &DecodeContext<'_>,
-        draft: StandardTopologyDraft,
-    ) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn new(draft: StandardTopologyDraft) -> Result<Option<Self>, CodecError> {
         let StandardTopologyDraft {
             faces: draft_faces,
             edge_rows,
             vertex_points,
             logical_vertex_count,
         } = draft;
-        let Some(vertex_points) = ctx.collect_fallible_options(
-            vertex_points.into_iter().map(|[x, y, z]| {
-                ctx.charge_work(3, "catia_topology_coordinate_admission")?;
+        let Some(vertex_points) = vertex_points
+            .into_iter()
+            .map(|[x, y, z]| {
                 Ok::<_, CodecError>(FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z)))
-            }),
-            "catia_admitted_topology_points",
-        )?
+            })
+            .collect::<Result<Option<Vec<_>>, _>>()?
         else {
             return Ok(None);
         };
@@ -85,13 +73,10 @@ impl StandardTopology {
         for face in draft_faces {
             let mut boundaries = Vec::new();
             for boundary in face.boundaries {
-                let Some(boundary) = Boundary::new(ctx, boundary.coedges)? else {
+                let Some(boundary) = Boundary::new(boundary.coedges)? else {
                     return Ok(None);
                 };
-                ctx.charge_work(
-                    u64_from_index(boundary.coedges().len()),
-                    "catia_topology_reference_admission",
-                )?;
+
                 if boundary.coedges().iter().any(|coedge| {
                     coedge.edge_row >= edge_rows.len()
                         || coedge.start_vertex >= logical_vertex_count
@@ -99,17 +84,9 @@ impl StandardTopology {
                 }) {
                     return Ok(None);
                 }
-                ctx.push_vec(
-                    &mut boundaries,
-                    boundary,
-                    "catia_admitted_topology_boundaries",
-                )?;
+                boundaries.push(boundary);
             }
-            ctx.push_vec(
-                &mut faces,
-                FaceTopology { boundaries },
-                "catia_admitted_topology_faces",
-            )?;
+            faces.push(FaceTopology { boundaries });
         }
         Ok(Some(Self {
             faces,
@@ -170,7 +147,7 @@ mod tests {
         crate::test_support::with_service_context(|ctx| {
             for use_ in [coedge(1, 0, 0), coedge(0, 1, 1)] {
                 let invalid = draft(use_);
-                assert!(StandardTopology::new(ctx, invalid)
+                assert!(StandardTopology::new(invalid)
                     .expect("service admission")
                     .is_none());
             }
@@ -180,10 +157,10 @@ mod tests {
                 .edge_vertices(ctx)
                 .expect("checked draft access")
                 .is_none());
-            assert!(StandardTopology::new(ctx, missing_rows)
+            assert!(StandardTopology::new(missing_rows)
                 .expect("service admission")
                 .is_none());
-            let valid = StandardTopology::new(ctx, draft(coedge(0, 0, 0)))
+            let valid = StandardTopology::new(draft(coedge(0, 0, 0)))
                 .expect("service admission")
                 .expect("owned references");
             assert_eq!(
@@ -199,11 +176,11 @@ mod tests {
             for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
                 let mut invalid = draft(coedge(0, 0, 0));
                 invalid.vertex_points[0][0] = value;
-                assert!(StandardTopology::new(ctx, invalid)
+                assert!(StandardTopology::new(invalid)
                     .expect("service admission")
                     .is_none());
             }
-            assert!(StandardTopology::new(ctx, draft(coedge(0, 0, 0)))
+            assert!(StandardTopology::new(draft(coedge(0, 0, 0)))
                 .expect("service admission")
                 .is_some());
         });
@@ -218,19 +195,16 @@ mod tests {
                 vec![coedge(0, 0, 1), coedge(1, 1, 2)],
             ] {
                 assert!(Boundary::new(
-                    ctx,
                     NonEmptyMembers::try_from(invalid).expect("nonempty fixture")
                 )
                 .expect("service admission")
                 .is_none());
             }
             let cycle = vec![coedge(0, 0, 1), coedge(1, 1, 0)];
-            let boundary = Boundary::new(
-                ctx,
-                NonEmptyMembers::try_from(cycle.clone()).expect("nonempty fixture"),
-            )
-            .expect("service admission")
-            .expect("closed cycle");
+            let boundary =
+                Boundary::new(NonEmptyMembers::try_from(cycle.clone()).expect("nonempty fixture"))
+                    .expect("service admission")
+                    .expect("closed cycle");
             assert_eq!(boundary.coedges(), cycle);
         });
     }
@@ -238,7 +212,7 @@ mod tests {
     #[test]
     fn closed_boundary_admission_propagates_caller_work_refusal() {
         crate::test_support::with_work_limit(0, |ctx| {
-            let error = Boundary::new(ctx, NonEmptyMembers::one(coedge(0, 0, 0)))
+            let error = Boundary::new(NonEmptyMembers::one(coedge(0, 0, 0)))
                 .expect_err("closure scan requires work");
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("work refusal")

@@ -275,7 +275,7 @@ pub(super) fn validate_consolidated_edge_runs(
     }
     let expected_nodes = nodes.to_vec();
     let expected_identities = crate::test_support::with_service_context(|ctx| {
-        consolidated_vertex_identities(ctx, &expected_nodes)
+        consolidated_vertex_identities(&expected_nodes)
     })?;
     if expected_nodes != nodes || expected_identities != vertex_identities {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -340,7 +340,7 @@ pub(super) fn validate_native_links(
     }
     for (index, segment) in segments.iter().enumerate() {
         let parsed = crate::test_support::with_service_context(|ctx| {
-            container::finjpl_segments(ctx, &container::BodyExtent::whole(&segment.data))
+            container::finjpl_segments(&container::BodyExtent::whole(&segment.data))
         })
         .map_err(|_| {
             cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -391,7 +391,7 @@ pub(super) fn validate_native_links(
             )));
         }
         let selections = crate::test_support::with_service_context(|ctx| {
-            value_schema_selections(ctx, &block.id, block.byte_offset, &block.fields(), catalog)
+            value_schema_selections(&block.id, block.byte_offset, &block.fields(), catalog)
         })
         .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if selections != block.schema_selections {
@@ -486,7 +486,6 @@ pub(super) fn validate_native_links(
             });
             let expected_repeated_selection = crate::test_support::with_service_context(|ctx| {
                 repeated_reference_schema_selection(
-                    ctx,
                     object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
                     catalog,
                 )

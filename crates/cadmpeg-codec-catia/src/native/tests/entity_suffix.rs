@@ -22,14 +22,14 @@ fn suffix_schema_selection_refuses_retained_limit() {
     let record = &native.entity_records[0];
     let catalog = native.catalogs.first();
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+        super::super::entity_suffix_schema_selection(record.suffix_value(), catalog)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_suffix_selection_entry")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+        super::super::entity_suffix_schema_selection(record.suffix_value(), catalog)
     })
     .expect("service profile admits suffix schema selection");
     assert_eq!(admitted, record.suffix_schema_selection);
@@ -43,14 +43,14 @@ fn nested_suffix_schema_resolution_refuses_retained_limit() {
     let record = &native.entity_records[0];
     let catalog = native.catalogs.first();
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+        super::super::entity_suffix_schema_selection(record.suffix_value(), catalog)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_suffix_nested_entry")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_suffix_schema_selection(ctx, record.suffix_value(), catalog)
+        super::super::entity_suffix_schema_selection(record.suffix_value(), catalog)
     })
     .expect("service profile admits nested suffix selection");
     assert_eq!(admitted, record.suffix_schema_selection);

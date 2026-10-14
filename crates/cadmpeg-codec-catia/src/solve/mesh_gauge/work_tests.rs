@@ -63,14 +63,14 @@ fn relation_row_sort_refuses_endpoint_signature_bytes() {
         vec![vec![MeshEndpointRelationSelection::Deferred; 128]],
     );
     let result = crate::test_support::with_work_limit(30_000, |ctx| {
-        relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
+        relation_row_gauge_mapping(&state, gauge, &[0, 1])
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_relation_ordered_rows_sort"));
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            relation_row_gauge_mapping(ctx, &state, gauge, &[0, 1])
+            relation_row_gauge_mapping(&state, gauge, &[0, 1])
         })
         .expect("service work allowance"),
         Some(vec![0, 1])
@@ -142,18 +142,14 @@ fn coordinate_permutation_search_refuses_caller_work_before_enumeration() {
 fn gauge_signature_lookup_refuses_repeated_long_equal_keys() {
     let signatures = vec![vec![0usize; 128]; 2];
     let result = crate::test_support::with_work_limit(1_000, |ctx| {
-        super::intern_gauge_signatures(ctx, signatures.clone(), |key| {
-            std::mem::size_of_val(key.as_slice())
-        })
+        super::intern_gauge_signatures(ctx, signatures.clone())
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_gauge_signature_compare"));
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            super::intern_gauge_signatures(ctx, signatures, |key| {
-                std::mem::size_of_val(key.as_slice())
-            })
+            super::intern_gauge_signatures(ctx, signatures)
         })
         .expect("service comparison work"),
         vec![0, 0]
@@ -333,13 +329,13 @@ fn partial_endpoint_candidate_comparison_refuses_long_equal_keys() {
     };
     let pairs = vec![None; 128];
     let result = crate::test_support::with_work_limit(1_000, |ctx| {
-        super::canonicalize_partial_endpoint_pair_gauge(ctx, &pairs, gauge)
+        super::canonicalize_partial_endpoint_pair_gauge(&pairs, gauge)
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_gauge_partial_pair_compare"));
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            super::canonicalize_partial_endpoint_pair_gauge(ctx, &pairs, gauge)
+            super::canonicalize_partial_endpoint_pair_gauge(&pairs, gauge)
         })
         .expect("service comparison work"),
         Some(pairs)
@@ -446,7 +442,7 @@ fn candidate_equivalence_refuses_each_variable_length_comparison() {
 #[test]
 fn signature_colors_preserve_first_occurrence_order() {
     let colors = crate::test_support::with_service_context(|ctx| {
-        super::intern_gauge_signatures(ctx, [5, 3, 5, 8, 3], |_| 0)
+        super::intern_gauge_signatures(ctx, [5, 3, 5, 8, 3])
     })
     .expect("signature admission");
     assert_eq!(colors, [0, 1, 0, 2, 1]);
@@ -456,9 +452,7 @@ fn signature_colors_preserve_first_occurrence_order() {
 fn signature_interning_batches_large_key_comparisons() {
     let signatures = (0..1024).rev().map(|value| (value, vec![value; 32]));
     let colors = crate::test_support::with_work_limit(256_000_000, |ctx| {
-        super::intern_gauge_signatures(ctx, signatures, |key| {
-            key.1.len() * std::mem::size_of::<usize>()
-        })
+        super::intern_gauge_signatures(ctx, signatures)
     })
     .expect("batch sorting fits a logarithmic comparison allowance");
     assert_eq!(colors, (0..1024).collect::<Vec<_>>());

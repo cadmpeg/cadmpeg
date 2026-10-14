@@ -390,7 +390,7 @@ fn a_revolution_frame_admitted_when_read_converts_to_a_torus_without_a_second_ax
     }
     let records = crate::wire::records::consolidated_records(&bytes);
     let resolved = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+        crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
     })
     .expect("service decode");
     assert_eq!(resolved.len(), 1);
@@ -442,9 +442,7 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
         }
         let records = crate::wire::records::consolidated_records(&bytes);
         let resolved = crate::test_support::with_service_context(|ctx| {
-            crate::families::b2::records::b2_resolved_revolutions_from_records(
-                ctx, &bytes, &records,
-            )
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
         })
         .expect("service decode");
         assert_eq!(resolved.len(), 1);

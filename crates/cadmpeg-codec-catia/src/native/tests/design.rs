@@ -127,7 +127,7 @@ fn design_reference_cell_retained_limit_refuses_json_record() {
 fn native_design_objects_refuse_caller_collection_limit() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_nested_design_objects());
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+        super::super::design_objects(&native.object_graphs, &native.entity_records)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -135,14 +135,14 @@ fn native_design_objects_refuse_caller_collection_limit() {
     );
     let retained =
         crate::test_support::with_retained_refusal(&[], "catia_design_object_id", |ctx| {
-            super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+            super::super::design_objects(&native.object_graphs, &native.entity_records)
         });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_object_id")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+        super::super::design_objects(&native.object_graphs, &native.entity_records)
     })
     .expect("service profile admits design objects");
     assert_eq!(admitted, native.design_objects);
@@ -185,21 +185,21 @@ fn parallel_reference_table_refuses_nested_collection_limit() {
         .filter_map(|(index, record)| Some((record.entity_id()?, index)))
         .collect::<HashMap<_, _>>();
     let refused = crate::test_support::with_collection_limit(2, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+        super::super::design_parallel_reference_table(&fields, graph, &indices)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_row_cells")
     );
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+        super::super::design_parallel_reference_table(&fields, graph, &indices)
     });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_column_field")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+        super::super::design_parallel_reference_table(&fields, graph, &indices)
     })
     .expect("service profile admits parallel reference table");
     assert_eq!(admitted, native.design_objects[0].parallel_reference_table);

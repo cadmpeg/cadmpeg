@@ -36,7 +36,7 @@ fn counted_port_identity_maps_and_pairs_refuse_before_growth() {
     for (bytes, fbb) in fixtures {
         let run = |ctx: &DecodeContext<'_>| {
             if fbb {
-                super::fbb_global_edge_port_identities(ctx, &bytes)
+                super::fbb_global_edge_port_identities(&bytes)
             } else {
                 super::standard_global_edge_port_identities(ctx, &bytes)
             }
@@ -305,7 +305,7 @@ fn raw_visualization_points_bind_terminal_handles_by_direct_index() {
     let rows = [row(&[0, 40, 1]), row(&[1, 41, 2])];
 
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"),
+        visualization_endpoint_pairs(&bytes, &rows, &points).expect("service budget"),
         Some(vec![[0, 1], [1, 0]])
     );
 }
@@ -327,7 +327,7 @@ fn compressed_visualization_points_reuse_coordinate_prefixes() {
     let rows = [row(&[0, 20, 2]), row(&[2, 21, 3])];
 
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"),
+        visualization_endpoint_pairs(&bytes, &rows, &points).expect("service budget"),
         Some(vec![[0, 1], [1, 2]])
     );
 }
@@ -352,22 +352,20 @@ fn compressed_visualization_points_require_initial_xyz_and_exact_scalar_count() 
     let mut missing_scalar = bytes.clone();
     missing_scalar[scalar_count_at..scalar_count_at + 4].copy_from_slice(&5u32.to_le_bytes());
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &missing_scalar, &rows, &points)
-            .expect("service budget"),
+        visualization_endpoint_pairs(&missing_scalar, &rows, &points).expect("service budget"),
         None
     );
 
     bytes[19] |= 1;
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &bytes, &rows, &points).expect("service budget"),
+        visualization_endpoint_pairs(&bytes, &rows, &points).expect("service budget"),
         None
     );
 
     let mut missing_delimiter = bytes;
     missing_delimiter[20] = 0;
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &missing_delimiter, &rows, &points)
-            .expect("service budget"),
+        visualization_endpoint_pairs(&missing_delimiter, &rows, &points).expect("service budget"),
         None
     );
 }
@@ -379,16 +377,15 @@ fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
     let rows = [row(&[0, 1])];
 
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &raw_visualization_table(2, &points), &rows, &points,)
+        visualization_endpoint_pairs(&raw_visualization_table(2, &points), &rows, &points)
             .expect("service budget"),
         None
     );
     assert_eq!(
         visualization_endpoint_pairs(
-            &ctx,
             &raw_visualization_table(1, &[points[0], points[0]]),
             &rows,
-            &points,
+            &points
         )
         .expect("service budget"),
         None
@@ -397,7 +394,7 @@ fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
     let mut missing_secondary_lead = raw_visualization_table(1, &points);
     missing_secondary_lead[10] = 0;
     assert_eq!(
-        visualization_endpoint_pairs(&ctx, &missing_secondary_lead, &rows, &points)
+        visualization_endpoint_pairs(&missing_secondary_lead, &rows, &points)
             .expect("service budget"),
         None
     );
@@ -425,7 +422,7 @@ fn visualization_endpoint_bindings_refuse_before_each_collection() {
         (&compressed, "catia_compressed_visualization_bindings"),
     ] {
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            visualization_endpoint_pairs(ctx, bytes, &rows, &points)
+            visualization_endpoint_pairs(bytes, &rows, &points)
         };
         assert_eq!(
             crate::test_support::with_service_context(run).expect("service budget"),
@@ -551,7 +548,7 @@ fn handle_face_candidates_do_not_reopen_resolved_incidence() {
     let mut allowed = [vec![2], vec![2, 4], Vec::new()];
     let handles = [vec![2], vec![4, 5], vec![5]];
 
-    refine_repeated_edge_face_candidates(&ctx, &edge_faces, &mut allowed, &handles)
+    refine_repeated_edge_face_candidates(&edge_faces, &mut allowed, &handles)
         .expect("service budget")
         .expect("aligned face domains");
 
@@ -569,7 +566,7 @@ fn repeated_face_refinement_refuses_before_intersection_and_copy() {
     ] {
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             let mut allowed = [allowed_face.clone()];
-            refine_repeated_edge_face_candidates(ctx, &[[0, 0]], &mut allowed, &[vec![2]])
+            refine_repeated_edge_face_candidates(&[[0, 0]], &mut allowed, &[vec![2]])
         };
         assert_eq!(
             crate::test_support::with_service_context(run).expect("service budget"),
@@ -788,8 +785,7 @@ fn face_options_hold_the_retained_face_in_ascending_order() {
         (5, vec![1, 9]),
         (0, vec![0usize; 0]),
     ] {
-        let options =
-            FaceOptions::from_admitted(&ctx, retained, others.clone()).expect("service budget");
+        let options = FaceOptions::from_admitted(retained, others.clone()).expect("service budget");
         let mut expected = others;
         expected.push(retained);
         expected.sort_unstable();
@@ -804,19 +800,18 @@ fn face_options_order_and_deduplicate_the_admitted_faces_they_are_given() {
     catia_test_context!(ctx);
     // Unsorted, with a repeat, and holding `retained` itself. The type does
     // the filter, the sort and the dedup, so the caller states none of them.
-    let options =
-        FaceOptions::from_admitted(&ctx, 5, [9usize, 1, 5, 9, 1, 3]).expect("service budget");
+    let options = FaceOptions::from_admitted(5, [9usize, 1, 5, 9, 1, 3]).expect("service budget");
 
     assert_eq!(options.iter().collect::<Vec<_>>(), vec![1, 3, 5, 9]);
     assert_eq!(options.count(), 4);
     assert_eq!(options.first, 1);
 
     // `retained` smaller than every admitted face, still unsorted and repeated.
-    let options = FaceOptions::from_admitted(&ctx, 0, [4usize, 2, 4]).expect("service budget");
+    let options = FaceOptions::from_admitted(0, [4usize, 2, 4]).expect("service budget");
     assert_eq!(options.iter().collect::<Vec<_>>(), vec![0, 2, 4]);
 
     // Nothing admitted beyond the retained face.
-    let options = FaceOptions::from_admitted(&ctx, 7, [7usize, 7]).expect("service budget");
+    let options = FaceOptions::from_admitted(7, [7usize, 7]).expect("service budget");
     assert_eq!(options.iter().collect::<Vec<_>>(), vec![7]);
     assert_eq!(options.count(), 1);
 }

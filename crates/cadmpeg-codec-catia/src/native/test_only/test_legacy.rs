@@ -43,7 +43,7 @@ fn legacy_schema_identifiers(
     let program_offset = usize::try_from(program.byte_offset).ok()?;
     Some(
         crate::test_support::with_service_context(|ctx| {
-            legacy_entity::parse_schema_identifiers(ctx, &program.data, program_offset)
+            legacy_entity::parse_schema_identifiers(&program.data, program_offset)
         })
         .ok()?
         .into_iter()
@@ -103,7 +103,7 @@ fn legacy_schema_boundary_closes_text(
 
 fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelation) -> bool {
     let Some(parsed) = crate::test_support::with_service_context(|ctx| {
-        legacy_entity::parse_relation_signature(ctx, &relation.type_signature)
+        legacy_entity::parse_relation_signature(&relation.type_signature)
     })
     .ok()
     .flatten() else {

@@ -43,15 +43,9 @@ pub(crate) fn transfer_dimensions(
         let Some(definition) = dimension_definition(entity) else {
             continue;
         };
-        let id = pmi_id(ctx, entity.byte_offset)?;
+        let id = pmi_id(entity.byte_offset)?;
         let mut duplicate = false;
         for annotation in &ir.model.pmi {
-            let work = cadmpeg_core::decode::u64_from_index(annotation.id.as_str().len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("catia_pmi_duplicate_search", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(work, "catia_pmi_duplicate_search")?;
             if annotation.id == id {
                 duplicate = true;
                 break;
@@ -61,30 +55,20 @@ pub(crate) fn transfer_dimensions(
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
-        ctx.push_vec(
-            &mut ir.model.pmi,
-            PmiAnnotation {
-                id,
-                name: None,
-                visible: None,
-                targets: Vec::new(),
-                definition,
-            },
-            "catia_pmi_dimensions",
-        )?;
+        ir.model.pmi.push(PmiAnnotation {
+            id,
+            name: None,
+            visible: None,
+            targets: Vec::new(),
+            definition,
+        });
         transferred += 1;
     }
     Ok(transferred)
 }
 
-fn pmi_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source_offset: u64,
-) -> Result<PmiId, cadmpeg_core::CodecError> {
-    let value = ctx.format_retained(
-        format_args!("catia:model:pmi#entity-record-{source_offset:010}"),
-        "catia_pmi_dimension_id",
-    )?;
+fn pmi_id(source_offset: u64) -> Result<PmiId, cadmpeg_core::CodecError> {
+    let value = format!("catia:model:pmi#entity-record-{source_offset:010}");
     PmiId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
 }
 

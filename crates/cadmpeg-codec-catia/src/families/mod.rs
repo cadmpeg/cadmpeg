@@ -48,18 +48,6 @@ impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
         Ok(())
     }
 
-    pub(crate) fn reserve_entity<T>(
-        &mut self,
-        values: &mut Vec<T>,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.ctx
-            .charge_entities(1, "admit CATIA family model entity")?;
-        self.ctx.reserve_vec(values, 1, operation)?;
-        self.admitted += 1;
-        Ok(())
-    }
-
     pub(crate) fn admitted(&self) -> u64 {
         self.admitted
     }

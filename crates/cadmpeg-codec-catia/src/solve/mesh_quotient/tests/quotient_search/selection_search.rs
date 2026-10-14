@@ -28,12 +28,12 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         ]],
     };
     let assignments = vec![vec![assignment]];
-    let equations = possible_face_equations(&ctx, &assignments).expect("service resource budget");
+    let equations = possible_face_equations(&assignments).expect("service resource budget");
     let edge_candidates = vec![Vec::new(); 2];
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_choices: possible_face_choices(&ctx, &assignments, &equations),
+        possible_face_choices: possible_face_choices(&assignments, &equations),
         possible_face_equations: equations,
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -74,12 +74,11 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -420,12 +419,11 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -479,12 +477,11 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -538,12 +535,11 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &candidates,
@@ -566,25 +562,25 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 4))
+        crate::test_support::with_service_context(|ctx| quotient.find(4))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 5))
+        crate::test_support::with_service_context(|ctx| quotient.find(5))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+        crate::test_support::with_service_context(|ctx| quotient.root_count())
             .expect("service quotient traversal"),
         3
     );
@@ -611,12 +607,11 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(2)],
         edge_candidates: &candidates,
@@ -639,13 +634,13 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+        crate::test_support::with_service_context(|ctx| quotient.root_count())
             .expect("service quotient traversal"),
         5
     );
@@ -672,12 +667,11 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(2)],
         edge_candidates: &candidates,
@@ -704,19 +698,19 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
+        crate::test_support::with_service_context(|ctx| quotient.find(1))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
+        crate::test_support::with_service_context(|ctx| quotient.find(2))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
+        crate::test_support::with_service_context(|ctx| quotient.find(3))
             .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
+        crate::test_support::with_service_context(|ctx| quotient.find(0))
             .expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+        crate::test_support::with_service_context(|ctx| quotient.root_count())
             .expect("service quotient traversal"),
         4
     );
@@ -740,12 +734,11 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&ctx, &assignments)
+        possible_face_equations: possible_face_equations(&assignments)
             .expect("service resource budget"),
         possible_face_choices: possible_face_choices(
-            &ctx,
             &assignments,
-            &possible_face_equations(&ctx, &assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments).expect("service resource budget"),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &candidates,
@@ -764,14 +757,14 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     let mut quotient = MeshQuotient::new((0..26).map(|_| Arc::new((0..13).collect())).collect());
     for edge in 0..13 {
         crate::test_support::with_service_context(|ctx| {
-            quotient.merge_charged(ctx, edge * 2, edge * 2 + 1)
+            quotient.merge_charged(edge * 2, edge * 2 + 1)
         })
         .expect("service merge")
         .expect("closed port");
     }
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+        crate::test_support::with_service_context(|ctx| quotient.root_count())
             .expect("service quotient traversal"),
         13
     );
@@ -779,7 +772,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
+        crate::test_support::with_service_context(|ctx| quotient.root_count())
             .expect("service quotient traversal"),
         1
     );
