@@ -1029,16 +1029,15 @@ fn forwarded_anchor_lookup_finds_late_and_missing_anchors() {
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid anchor exchange");
-    {
-        assert_eq!(
-            super::forwarded_reference_uri(&exchange, "#ac"),
-            "https://example.invalid/c"
-        );
-        assert_eq!(
-            super::forwarded_reference_uri(&exchange, "#missing"),
-            "#missing"
-        );
-    };
+    let anchors = super::anchor_targets(&exchange);
+    assert_eq!(
+        super::forwarded_reference_uri(&anchors, "#ac"),
+        "https://example.invalid/c"
+    );
+    assert_eq!(
+        super::forwarded_reference_uri(&anchors, "#missing"),
+        "#missing"
+    );
 }
 
 #[test]

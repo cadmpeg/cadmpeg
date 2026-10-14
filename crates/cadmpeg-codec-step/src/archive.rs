@@ -3,6 +3,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
@@ -148,10 +149,11 @@ pub(crate) fn root_reference_notes(
 ) -> Result<Vec<String>, CodecError> {
     // CE-02: Annex A.4 makes subsidiary access a root reference operation;
     // this pass records the binding and does not import a subsidiary graph.
+    let anchors = anchor_targets(exchange);
     let mut notes = Vec::new();
     for reference in exchange.references() {
         let name = reference.name;
-        let uri = forwarded_reference_uri(exchange, &reference.uri);
+        let uri = forwarded_reference_uri(&anchors, &reference.uri);
 
         match resolve_uri(ROOT_NAME, uri)? {
             ReferenceTarget::Internal {
@@ -203,18 +205,26 @@ fn reference_note(
     note
 }
 
-fn forwarded_reference_uri<'a>(exchange: &'a crate::parse::Exchange, uri: &'a str) -> &'a str {
-    let Some(fragment) = uri.strip_prefix('#') else {
-        return uri;
-    };
+/// Anchor names mapped to their values; anchor names are unique per exchange.
+fn anchor_targets(exchange: &crate::parse::Exchange) -> HashMap<&str, &crate::parse::Value> {
     exchange
         .anchors()
         .iter()
-        .find(|anchor| anchor.name == fragment)
-        .map_or(uri, |anchor| match &anchor.value {
-            crate::parse::Value::Resource(target) => target.as_str(),
-            _ => uri,
-        })
+        .map(|anchor| (anchor.name.as_str(), &anchor.value))
+        .collect()
+}
+
+fn forwarded_reference_uri<'a>(
+    anchors: &HashMap<&str, &'a crate::parse::Value>,
+    uri: &'a str,
+) -> &'a str {
+    let Some(fragment) = uri.strip_prefix('#') else {
+        return uri;
+    };
+    match anchors.get(fragment) {
+        Some(crate::parse::Value::Resource(target)) => target.as_str(),
+        _ => uri,
+    }
 }
 
 fn has_uri_scheme(uri: &str) -> bool {
