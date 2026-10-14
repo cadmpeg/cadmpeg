@@ -768,13 +768,13 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-45. `FILL_HOLE` construction roles
 
-**Question.** Which serialized input references, fill geometry, continuity, and healing controls define a `FILL_HOLE` operation?
+**Question.** Which serialized relation assigns a source-hole boundary, fill geometry, continuity, and healing controls to each `FILL_HOLE` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `FILL_HOLE` operation label identifies" defines the body-affecting hole-fill family. A decoded operation retains two input-block references and a body-write relation, while its neutral output and construction-role assignment remain unresolved.
+**Known.** `siemens_nx.md` §7.1 "The `FILL_HOLE` operation label identifies" defines the family, owning constructor class, exact body-write relation, counted storage references, and variable-width scalar continuation. A body result is retained when independently resolved; it can be shared with a `SEW` operation without identifying a fill patch or source loop.
 
-**Need.** We must identify the source-hole boundary, fill geometry, continuity law, and healing controls to construct a complete neutral operation and bind its result body.
+**Need.** Reconstruct the complete logical relation across selected column chunks, join its source and result to independently identified pre/post topology, and assign boundary membership, fill geometry, continuity, and healing controls. Establish any physical role and transform for the scalar triple independently.
 
-**Conflict.** The operation label and body-write relation identify the family and a body-affecting result, but the two input-block references and bounded payload do not assign the source-hole, fill, continuity, or healing roles.
+**Conflict.** The header and payload selectors address column fragments; boundaries can split a scalar, row, or hexadecimal identifier. Member selectors are duplicated, and later selector groups permute contiguous storage ranges. The post-write tuple also occurs in other operation families, can be copied across many raw locations, and has no direct equality with decoded geometry anchors. The shared body lineage and unjoined GROUP values do not identify an authored hole boundary or patch.
 
 ### OM-46. `MOVE_FACE` construction roles
 

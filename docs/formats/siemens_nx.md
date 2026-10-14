@@ -2523,9 +2523,26 @@ delete-face operation. A record without the body-write frame remains native
 because the label alone does not assign a body result.
 
 The `FILL_HOLE` operation label identifies a body-affecting hole-fill
-construction. Its source-hole, fill, continuity, and healing roles remain
-unresolved until the serialized construction roles establish a complete
-operation.
+construction. Its leading nonzero class selector resolves in the owning
+one-based OM registry to `UGS::ModlSurface::FillHoleParms`, derived from
+`UGS::FEATURE_PARMS`, `UGS::OM::SubObject`, and `UGS::OM::MethodicObject`.
+A complete body-write frame retains the body-affecting result relation. A
+resolved body can also be written by another history operation; the body
+identity alone does not identify a filled face or a source loop.
+
+The operation-header and counted payload references address their own offset
+store. Each counted member retains two byte-identical selector tokens and its
+ordered row ordinal. Referenced column boundaries can split scalar encodings,
+row atoms, and text identifiers. These storage addresses do not assign
+source-hole, fill, continuity, or healing roles.
+
+A three-scalar post-write continuation uses an independent encoding for each
+finite component: a one-byte zero, shifted IEEE binary32, or shifted IEEE
+binary64. The continuation is shared with other body-writing families. Its
+position and scalar values alone do not establish a model-space point.
+
+The source-hole, fill, continuity, and healing roles remain unresolved until a
+serialized relation establishes the complete construction.
 
 The `MOVE_FACE` operation label identifies a body-affecting direct face-motion
 construction. Its selected faces and motion law remain unresolved until the
