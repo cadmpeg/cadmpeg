@@ -37,50 +37,11 @@ pub(in crate::geometry) fn finish<T>(
     }
 }
 
-fn structure(
-    ctx: &DecodeContext<'_>,
-    message: std::fmt::Arguments<'_>,
-) -> Result<ConstructionError, CodecError> {
-    Ok(NurbsError::Structure(ctx.format_retained(message, "IR NURBS refusal text")?).into())
-}
-
 impl super::NurbsAdmission for DecodeContext<'_> {
     type Error = ConstructionError;
 
-    fn collect<I, T>(
-        &self,
-        values: Vec<I>,
-        operation: &'static str,
-        convert: impl FnMut(I) -> Result<T, Self::Error>,
-    ) -> Result<Vec<T>, Self::Error> {
-        self.try_collect_retained_with(values, operation, convert)
-    }
-
-    fn reserve<T>(
-        &self,
-        values: &mut Vec<T>,
-        storage: &mut Option<cadmpeg_core::decode::ScopedReservation<'_>>,
-        operation: &'static str,
-    ) -> Result<(), Self::Error> {
-        if let Some(storage) = storage {
-            self.reserve_scoped_vec(storage, values, 1, operation)
-                .map_err(Into::into)
-        } else {
-            self.reserve_vec(values, 1, operation).map_err(Into::into)
-        }
-    }
-
-    fn copy_field(&self, field: &str) -> Result<String, Self::Error> {
-        self.copy_retained_text(field, "IR NURBS refusal field")
-            .map_err(Into::into)
-    }
-
-    fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error> {
-        self.charge_work(count, operation).map_err(Into::into)
-    }
-
-    fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error> {
-        structure(self, message).map_err(Into::into)
+    fn structure(&self, message: std::fmt::Arguments<'_>) -> Self::Error {
+        NurbsError::Structure(message.to_string()).into()
     }
 }
 
@@ -96,18 +57,9 @@ impl NurbsCurve {
         periodic: bool,
     ) -> Result<Result<Self, NurbsError>, CodecError> {
         finish((|| {
-            let mut pair_storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE {
-                Some(ctx.reserve_scoped(0, "IR NURBS paired poles")?)
-            } else {
-                None
-            };
-            let poles = super::pair_curve_lanes(
-                ctx,
-                control_points,
-                weights,
-                &mut pair_storage,
-                |index, weight| super::admit_weight(ctx, "poles", index, weight),
-            )?;
+            let poles = super::pair_curve_lanes(ctx, control_points, weights, |index, weight| {
+                super::admit_weight(ctx, "poles", index, weight)
+            })?;
             super::build_curve(ctx, degree, knots, poles, periodic)
         })())
     }
@@ -116,10 +68,9 @@ impl NurbsCurve {
 impl super::BsplineSurface {
     pub(crate) fn scale_points(
         &mut self,
-        ctx: &DecodeContext<'_>,
         scale: crate::scalar::PositiveReal,
-    ) -> Result<Result<(), NurbsError>, CodecError> {
-        scale_points(ctx, self.control_points.iter_mut().flatten(), scale)
+    ) -> Result<(), NurbsError> {
+        scale_points(self.control_points.iter_mut().flatten(), scale)
     }
 }
 
@@ -138,51 +89,35 @@ impl NurbsSurface {
                 control_points,
                 weights,
             } = lanes;
-            let mut pair_storage = if weights.is_some() && !P::RETAINS_POLE_STORAGE {
-                Some(ctx.reserve_scoped(0, "IR NURBS paired grid rows")?)
-            } else {
-                None
-            };
-            let poles = super::pair_grid_lanes(
-                ctx,
-                control_points,
-                weights,
-                &mut pair_storage,
-                |index, weight| super::admit_weight(ctx, "pole grid row", index, weight),
-            )?;
+            let poles = super::pair_grid_lanes(ctx, control_points, weights, |index, weight| {
+                super::admit_weight(ctx, "pole grid row", index, weight)
+            })?;
             super::build_surface(ctx, u, v, poles, normal_reversed)
         })())
     }
 }
 
 fn scale_points<'a>(
-    ctx: &DecodeContext<'_>,
     points: impl Iterator<Item = &'a mut FinitePoint3>,
     scale: crate::scalar::PositiveReal,
-) -> Result<Result<(), NurbsError>, CodecError> {
+) -> Result<(), NurbsError> {
     for point in points {
-        ctx.charge_work(1, "IR NURBS unit scaling work")?;
-        let Some(scaled) = point.scaled(scale) else {
-            return Ok(Err(NurbsError::Structure(ctx.copy_retained_text(
-                "control_points contains a non-finite point",
-                "IR NURBS refusal text",
-            )?)));
-        };
-        *point = scaled;
+        *point = point.scaled(scale).ok_or_else(|| {
+            NurbsError::Structure("control_points contains a non-finite point".to_owned())
+        })?;
     }
-    Ok(Ok(()))
+    Ok(())
 }
 
 impl NurbsCurve {
     pub(crate) fn scale_points(
         &mut self,
-        ctx: &DecodeContext<'_>,
         scale: crate::scalar::PositiveReal,
-    ) -> Result<Result<(), NurbsError>, CodecError> {
+    ) -> Result<(), NurbsError> {
         match &mut self.poles {
-            NurbsPoles3::Polynomial { points } => scale_points(ctx, points.iter_mut(), scale),
+            NurbsPoles3::Polynomial { points } => scale_points(points.iter_mut(), scale),
             NurbsPoles3::Rational { points } => {
-                scale_points(ctx, points.iter_mut().map(|pole| &mut pole.point), scale)
+                scale_points(points.iter_mut().map(|pole| &mut pole.point), scale)
             }
         }
     }
@@ -191,18 +126,13 @@ impl NurbsCurve {
 impl NurbsSurface {
     pub(crate) fn scale_points(
         &mut self,
-        ctx: &DecodeContext<'_>,
         scale: crate::scalar::PositiveReal,
-    ) -> Result<Result<(), NurbsError>, CodecError> {
+    ) -> Result<(), NurbsError> {
         match &mut self.poles {
-            NurbsPoleGrid::Polynomial { rows } => {
-                scale_points(ctx, rows.iter_mut().flatten(), scale)
+            NurbsPoleGrid::Polynomial { rows } => scale_points(rows.iter_mut().flatten(), scale),
+            NurbsPoleGrid::Rational { rows } => {
+                scale_points(rows.iter_mut().flatten().map(|pole| &mut pole.point), scale)
             }
-            NurbsPoleGrid::Rational { rows } => scale_points(
-                ctx,
-                rows.iter_mut().flatten().map(|pole| &mut pole.point),
-                scale,
-            ),
         }
     }
 }

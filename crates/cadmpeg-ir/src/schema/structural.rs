@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Structural serde values admitted by the caller's decode context.
+//! Structural serde values projected under the caller's depth account.
 
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, DepthGuard, ResourceLimit, ScopedReservation,
-};
+use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 use serde::ser::{
     SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
@@ -11,15 +9,14 @@ use serde::ser::{
 };
 use serde::{Serialize, Serializer};
 use serde_value::Value;
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::mem::size_of;
+use std::marker::PhantomData;
 
-/// A projected value whose reservation outlives its storage.
+/// A projected value.
 #[derive(Debug)]
 pub struct Projection<'ctx> {
     value: Value,
-    _storage: ScopedReservation<'ctx>,
+    _ctx: PhantomData<&'ctx ()>,
 }
 
 impl std::ops::Deref for Projection<'_> {
@@ -40,22 +37,12 @@ pub fn project<'ctx>(
     value: &(impl Serialize + ?Sized),
     operation: &'static str,
 ) -> Result<Projection<'ctx>, CodecError> {
-    let storage = RefCell::new(ctx.reserve_scoped(0, operation)?);
-    let refusal = RefCell::new(None);
-    let result = value.serialize(Projector {
-        ctx,
-        storage: &storage,
-        refusal: &refusal,
-        operation,
-    });
-    if let Some(limit) = refusal.into_inner() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
-    ctx.charge_work(0, operation)?;
-    let value = result.map_err(|error| error.into_codec(ctx, operation))?;
+    let value = value
+        .serialize(Projector { ctx, operation })
+        .map_err(Error::into_codec)?;
     Ok(Projection {
         value,
-        _storage: storage.into_inner(),
+        _ctx: PhantomData,
     })
 }
 
@@ -72,59 +59,30 @@ impl serde::ser::Error for Error {
     }
 }
 impl Error {
-    fn into_codec(self, ctx: &DecodeContext<'_>, operation: &'static str) -> CodecError {
+    fn into_codec(self) -> CodecError {
         match self {
             Self::Resource(error) => error,
-            Self::Serde(error) => match ctx.format_retained(
-                format_args!("structural projection failed: {error}"),
-                operation,
-            ) {
-                Ok(message) => CodecError::Malformed(message),
-                Err(error) => error,
-            },
+            Self::Serde(error) => {
+                CodecError::malformed(format_args!("structural projection failed: {error}"))
+            }
         }
     }
 }
 
 #[derive(Clone, Copy)]
-struct Projector<'s, 'ctx, 'arena> {
+struct Projector<'ctx, 'arena> {
     ctx: &'ctx DecodeContext<'arena>,
-    storage: &'s RefCell<ScopedReservation<'ctx>>,
     operation: &'static str,
-    refusal: &'s RefCell<Option<ResourceLimit>>,
 }
-impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
-    fn admit<T>(self, result: Result<T, CodecError>) -> Result<T, Error> {
-        if let Err(CodecError::ResourceLimit(limit)) = &result {
-            let mut refusal = self.refusal.borrow_mut();
-            if refusal.is_none() {
-                *refusal = Some(*limit);
-            }
-        }
-        result.map_err(Error::Resource)
-    }
+impl<'ctx, 'arena> Projector<'ctx, 'arena> {
     fn node(self) -> Result<DepthGuard<'ctx>, Error> {
-        self.ctx.charge_work(1, self.operation)?;
         Ok(self.ctx.enter_nested(self.operation)?)
     }
     fn text(self, text: &str) -> Result<Value, Error> {
         let _depth = self.node()?;
-        self.ctx
-            .charge_work(u64_from_index(text.len()), self.operation)?;
-        Ok(Value::String(self.admit(self.ctx.copy_scoped_text(
-            text,
-            &mut self.storage.borrow_mut(),
-            self.operation,
-        ))?))
+        Ok(Value::String(text.to_owned()))
     }
-    fn boxed(self, value: Value) -> Result<Box<Value>, Error> {
-        self.ctx.charge_collection_items(1, self.operation)?;
-        self.storage
-            .borrow_mut()
-            .grow(u64_from_index(size_of::<Value>()))?;
-        Ok(Box::new(value))
-    }
-    fn sequence(self, variant: Option<&'static str>) -> Result<Sequence<'s, 'ctx, 'arena>, Error> {
+    fn sequence(self, variant: Option<&'static str>) -> Result<Sequence<'ctx, 'arena>, Error> {
         let depth = self.node()?;
         let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
@@ -136,107 +94,26 @@ impl<'s, 'ctx, 'arena> Projector<'s, 'ctx, 'arena> {
             _variant_depth: variant_depth,
         })
     }
-    fn map(self, variant: Option<&'static str>) -> Result<Object<'s, 'ctx, 'arena>, Error> {
+    fn map(self, variant: Option<&'static str>) -> Result<Object<'ctx, 'arena>, Error> {
         let depth = self.node()?;
         let variant_depth = variant.map(|_| self.node()).transpose()?;
         let variant = variant.map(|name| self.text(name)).transpose()?;
         Ok(Object {
             values: BTreeMap::new(),
             key: None,
-            longest: 0,
             variant,
             projector: self,
             _depth: depth,
             _variant_depth: variant_depth,
         })
     }
-    fn entry(
-        self,
-        entries: &mut BTreeMap<Value, Value>,
-        key: Value,
-        value: Value,
-        longest: &mut u64,
-    ) -> Result<(), Error> {
-        *longest = (*longest).max(key_work(self.ctx, &key, self.operation)?);
-        let comparisons = u64_from_index(entries.len())
-            .checked_add(1)
-            .and_then(|count| count.checked_mul(*longest))
-            .ok_or_else(|| {
-                self.ctx
-                    .refuse_codec_limit(self.operation, u64::MAX - 1, u64::MAX)
-            })?;
-        self.ctx.charge_work(comparisons, self.operation)?;
-        if let Some(previous) = entries.get_mut(&key) {
-            *previous = value;
-        } else if !self.admit(self.ctx.insert_scoped_btree_map_if_vacant(
-            &mut self.storage.borrow_mut(),
-            entries,
-            key,
-            value,
-            self.operation,
-            self.operation,
-        ))? {
-            return Err(serde::ser::Error::custom(
-                "structural map lost a vacant key",
-            ));
-        }
-        Ok(())
-    }
-    fn variant(self, key: Option<Value>, value: Value) -> Result<Value, Error> {
-        let Some(key) = key else {
-            return Ok(value);
-        };
-        let mut entries = BTreeMap::new();
-        self.entry(&mut entries, key, value, &mut 0)?;
-        Ok(Value::Map(entries))
-    }
 }
 
-fn key_work(
-    ctx: &DecodeContext<'_>,
-    value: &Value,
-    operation: &'static str,
-) -> Result<u64, CodecError> {
-    let _depth = ctx.enter_nested(operation)?;
-    ctx.charge_work(1, operation)?;
-    let mut count = 1_u64;
-    match value {
-        Value::String(text) => {
-            ctx.charge_work(u64_from_index(text.len()), operation)?;
-            count = count
-                .checked_add(u64_from_index(text.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        Value::Bytes(bytes) => {
-            ctx.charge_work(u64_from_index(bytes.len()), operation)?;
-            count = count
-                .checked_add(u64_from_index(bytes.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        Value::Map(entries) => {
-            for (key, value) in entries {
-                for child in [key, value] {
-                    count = count
-                        .checked_add(key_work(ctx, child, operation)?)
-                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-                }
-            }
-        }
-        Value::Seq(values) => {
-            for value in values {
-                count = count
-                    .checked_add(key_work(ctx, value, operation)?)
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            }
-        }
-        Value::Option(Some(value)) | Value::Newtype(value) => {
-            count = count
-                .checked_add(key_work(ctx, value, operation)?)
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        }
-        _ => {}
-    }
-    Ok(count)
+fn tag_variant(key: Option<Value>, value: Value) -> Value {
+    let Some(key) = key else {
+        return value;
+    };
+    Value::Map(BTreeMap::from([(key, value)]))
 }
 
 macro_rules! project_scalar {
@@ -247,36 +124,27 @@ macro_rules! project_scalar {
         }
     )*};
 }
-impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
+impl<'ctx, 'arena> Serializer for Projector<'ctx, 'arena> {
     type Ok = Value;
     type Error = Error;
-    type SerializeSeq = Sequence<'s, 'ctx, 'arena>;
-    type SerializeTuple = Sequence<'s, 'ctx, 'arena>;
-    type SerializeTupleStruct = Sequence<'s, 'ctx, 'arena>;
-    type SerializeTupleVariant = Sequence<'s, 'ctx, 'arena>;
-    type SerializeMap = Object<'s, 'ctx, 'arena>;
-    type SerializeStruct = Object<'s, 'ctx, 'arena>;
-    type SerializeStructVariant = Object<'s, 'ctx, 'arena>;
+    type SerializeSeq = Sequence<'ctx, 'arena>;
+    type SerializeTuple = Sequence<'ctx, 'arena>;
+    type SerializeTupleStruct = Sequence<'ctx, 'arena>;
+    type SerializeTupleVariant = Sequence<'ctx, 'arena>;
+    type SerializeMap = Object<'ctx, 'arena>;
+    type SerializeStruct = Object<'ctx, 'arena>;
+    type SerializeStructVariant = Object<'ctx, 'arena>;
     project_scalar! { serialize_bool(bool) => Bool, serialize_i8(i8) => I8, serialize_i16(i16) => I16, serialize_i32(i32) => I32, serialize_i64(i64) => I64, serialize_u8(u8) => U8, serialize_u16(u16) => U16, serialize_u32(u32) => U32, serialize_u64(u64) => U64, serialize_f32(f32) => F32, serialize_f64(f64) => F64, serialize_char(char) => Char }
     fn serialize_str(self, value: &str) -> Result<Value, Error> {
         self.text(value)
     }
     fn collect_str<T: std::fmt::Display + ?Sized>(self, value: &T) -> Result<Value, Error> {
         let _depth = self.node()?;
-        let text = self.admit(self.storage.borrow_mut().with_storage(|| {
-            self.ctx
-                .format_retained(format_args!("{value}"), self.operation)
-        }))?;
-        Ok(Value::String(text))
+        Ok(Value::String(value.to_string()))
     }
     fn serialize_bytes(self, value: &[u8]) -> Result<Value, Error> {
         let _depth = self.node()?;
-        let bytes = self.admit(
-            self.storage
-                .borrow_mut()
-                .with_storage(|| self.ctx.copy_slice(value, self.operation)),
-        )?;
-        Ok(Value::Bytes(bytes))
+        Ok(Value::Bytes(value.to_vec()))
     }
     fn serialize_none(self) -> Result<Value, Error> {
         let _depth = self.node()?;
@@ -285,7 +153,7 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Value, Error> {
         let _depth = self.node()?;
         let value = value.serialize(self)?;
-        Ok(Value::Option(Some(self.boxed(value)?)))
+        Ok(Value::Option(Some(Box::new(value))))
     }
     fn serialize_unit(self) -> Result<Value, Error> {
         let _depth = self.node()?;
@@ -309,7 +177,7 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
     ) -> Result<Value, Error> {
         let _depth = self.node()?;
         let value = value.serialize(self)?;
-        Ok(Value::Newtype(self.boxed(value)?))
+        Ok(Value::Newtype(Box::new(value)))
     }
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
         self,
@@ -321,7 +189,7 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
         let _depth = self.node()?;
         let key = self.text(variant)?;
         let value = value.serialize(self)?;
-        self.variant(Some(key), value)
+        Ok(tag_variant(Some(key), value))
     }
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Error> {
         self.sequence(None)
@@ -366,39 +234,33 @@ impl<'s, 'ctx, 'arena> Serializer for Projector<'s, 'ctx, 'arena> {
     }
 }
 
-struct Sequence<'s, 'ctx, 'arena> {
+struct Sequence<'ctx, 'arena> {
     values: Vec<Value>,
     variant: Option<Value>,
-    projector: Projector<'s, 'ctx, 'arena>,
+    projector: Projector<'ctx, 'arena>,
     _depth: DepthGuard<'ctx>,
     _variant_depth: Option<DepthGuard<'ctx>>,
 }
-impl Sequence<'_, '_, '_> {
+impl Sequence<'_, '_> {
     fn field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         let value = value.serialize(self.projector)?;
-        self.projector.admit(self.projector.ctx.push_scoped_vec(
-            &mut self.projector.storage.borrow_mut(),
-            &mut self.values,
-            value,
-            self.projector.operation,
-        ))?;
+        self.values.push(value);
         Ok(())
     }
-    fn finish(self) -> Result<Value, Error> {
-        self.projector
-            .variant(self.variant, Value::Seq(self.values))
+    fn finish(self) -> Value {
+        tag_variant(self.variant, Value::Seq(self.values))
     }
 }
 macro_rules! sequence_impl {
     ($trait:ident, $field:ident) => {
-        impl $trait for Sequence<'_, '_, '_> {
+        impl $trait for Sequence<'_, '_> {
             type Ok = Value;
             type Error = Error;
             fn $field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
                 self.field(value)
             }
             fn end(self) -> Result<Value, Error> {
-                self.finish()
+                Ok(self.finish())
             }
         }
     };
@@ -408,31 +270,29 @@ sequence_impl!(SerializeTuple, serialize_element);
 sequence_impl!(SerializeTupleStruct, serialize_field);
 sequence_impl!(SerializeTupleVariant, serialize_field);
 
-struct Object<'s, 'ctx, 'arena> {
+struct Object<'ctx, 'arena> {
     values: BTreeMap<Value, Value>,
     key: Option<Value>,
-    longest: u64,
     variant: Option<Value>,
-    projector: Projector<'s, 'ctx, 'arena>,
+    projector: Projector<'ctx, 'arena>,
     _depth: DepthGuard<'ctx>,
     _variant_depth: Option<DepthGuard<'ctx>>,
 }
-impl Object<'_, '_, '_> {
+impl Object<'_, '_> {
     fn field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
         let key = self.projector.text(key)?;
         let value = value.serialize(self.projector)?;
-        self.projector
-            .entry(&mut self.values, key, value, &mut self.longest)
+        self.values.insert(key, value);
+        Ok(())
     }
     fn finish(self) -> Result<Value, Error> {
         if self.key.is_some() {
             return Err(serde::ser::Error::custom("structural map key has no value"));
         }
-        self.projector
-            .variant(self.variant, Value::Map(self.values))
+        Ok(tag_variant(self.variant, Value::Map(self.values)))
     }
 }
-impl SerializeMap for Object<'_, '_, '_> {
+impl SerializeMap for Object<'_, '_> {
     type Ok = Value;
     type Error = Error;
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Error> {
@@ -447,8 +307,8 @@ impl SerializeMap for Object<'_, '_, '_> {
             <Error as serde::ser::Error>::custom("structural map value has no key")
         })?;
         let value = value.serialize(self.projector)?;
-        self.projector
-            .entry(&mut self.values, key, value, &mut self.longest)
+        self.values.insert(key, value);
+        Ok(())
     }
     fn end(self) -> Result<Value, Error> {
         self.finish()
@@ -456,7 +316,7 @@ impl SerializeMap for Object<'_, '_, '_> {
 }
 macro_rules! object_impl {
     ($trait:ident) => {
-        impl $trait for Object<'_, '_, '_> {
+        impl $trait for Object<'_, '_> {
             type Ok = Value;
             type Error = Error;
             fn serialize_field<T: Serialize + ?Sized>(

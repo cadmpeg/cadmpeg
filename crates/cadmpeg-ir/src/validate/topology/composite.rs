@@ -25,7 +25,6 @@ pub(super) fn check(
 ) -> Result<(), CodecError> {
     let segments = BorrowedIdentities::build(ctx, |add| {
         for curve in &ir.model.curves {
-            ctx.charge_work(1, "composite curve row")?;
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {
@@ -38,26 +37,15 @@ pub(super) fn check(
     let mut active = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     let mut roots = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     for identity in segments.identities() {
-        ctx.charge_work(1, "composite curve root scan")?;
         roots.insert_unique(identity, ())?;
     }
-    let mut storage = ctx.reserve_scoped(0, "composite curve traversal")?;
     let mut ordered = Vec::new();
     for identity in roots.identities() {
-        ctx.charge_work(1, "composite curve ordered root scan")?;
-        storage.with_storage(|| {
-            ctx.push_vec(&mut ordered, identity, "composite curve ordered roots")
-        })?;
+        ordered.push(identity);
     }
-    ctx.stable_sort_by(
-        &mut ordered,
-        Ord::cmp,
-        |identity| identity.len(),
-        "sort composite curve roots",
-    )?;
+    ordered.sort_by(Ord::cmp);
     let mut stack = Vec::new();
     for root in ordered {
-        ctx.charge_work(1, "composite curve root visit")?;
         if complete.contains(ctx, root)? {
             continue;
         }
@@ -71,10 +59,8 @@ pub(super) fn check(
             next_child: 0,
             _depth: ctx.enter_nested("composite curve traversal depth")?,
         };
-        storage
-            .with_storage(|| ctx.push_vec(&mut stack, frame, "composite curve traversal frames"))?;
+        stack.push(frame);
         while let Some(frame) = stack.last_mut() {
-            ctx.charge_work(1, "composite curve frame visit")?;
             if frame.next_child >= frame.children.len() {
                 let node = frame.node;
                 stack.pop();
@@ -92,13 +78,12 @@ pub(super) fn check(
             }
             if !active.insert_unique(child, ())? {
                 crate::validate::record_finding(
-                    ctx,
                     findings,
                     Check::ReferentialIntegrity,
                     Severity::Error,
                     Some(child),
                     format_args!("composite curve graph contains a cycle"),
-                )?;
+                );
                 continue;
             }
             let frame = Frame {
@@ -107,9 +92,7 @@ pub(super) fn check(
                 next_child: 0,
                 _depth: ctx.enter_nested("composite curve traversal depth")?,
             };
-            storage.with_storage(|| {
-                ctx.push_vec(&mut stack, frame, "composite curve traversal frames")
-            })?;
+            stack.push(frame);
         }
     }
     Ok(())

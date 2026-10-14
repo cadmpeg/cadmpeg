@@ -2,16 +2,14 @@
 //! Content hashing helpers shared by codecs.
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::Write as _;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::document::{CadIr, SortedModel, SourceMeta};
-use crate::ids::comparison::key::Key;
 use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
@@ -21,39 +19,26 @@ pub mod finite_json;
 use finite_json::{write_canonical_json, CanonicalJsonError};
 
 /// Borrowed unique owners. Repeated construction references have no owner.
-pub(crate) struct ProceduralOwners<'a, 'ctx, T>(HashMap<Key<'ctx>, Option<&'a T>>);
+pub(crate) struct ProceduralOwners<'a, T>(HashMap<&'a str, Option<&'a T>>);
 
-impl<'a, T> ProceduralOwners<'a, '_, T> {
-    pub(crate) fn get(
-        &self,
-        ctx: &DecodeContext<'_>,
-        construction: &str,
-        operation: &'static str,
-    ) -> Result<Option<&'a T>, CodecError> {
-        ctx.charge_work(1, operation)?;
-        let owner = self
-            .0
-            .get(&Key::borrowed(ctx, construction, operation))
-            .copied()
-            .flatten();
-        ctx.charge_work(0, operation)?;
-        Ok(owner)
+impl<'a, T> ProceduralOwners<'a, T> {
+    pub(crate) fn get(&self, construction: &str) -> Option<&'a T> {
+        self.0.get(construction).copied().flatten()
     }
 }
 
-pub(crate) fn procedural_owners<'a: 'ctx, 'ctx, T>(
-    ctx: &'ctx DecodeContext<'_>,
+/// Index owners by construction; a repeated construction keeps no owner.
+pub(crate) fn procedural_owners<'a, T>(
     owners: impl IntoIterator<Item = (&'a str, &'a T)>,
-    operation: &'static str,
-) -> Result<(ProceduralOwners<'a, 'ctx, T>, ScopedReservation<'ctx>), CodecError> {
-    let (table, storage) = ctx.unique_index(
-        owners
-            .into_iter()
-            .map(|(key, owner)| (Key::borrowed(ctx, key, operation), owner)),
-        |_| Ok(0),
-        operation,
-    )?;
-    Ok((ProceduralOwners(table), storage))
+) -> ProceduralOwners<'a, T> {
+    let mut table = HashMap::new();
+    for (key, owner) in owners {
+        table
+            .entry(key)
+            .and_modify(|slot| *slot = None)
+            .or_insert(Some(owner));
+    }
+    ProceduralOwners(table)
 }
 
 /// Returns the SHA-256 digest of `bytes`.
@@ -67,47 +52,16 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     LowerHex(&sha256(bytes)).to_string()
 }
 
-/// Hash canonical pretty JSON under the caller's storage, work and depth limits.
-/// The digest buffer is scoped; the returned hexadecimal text is retained.
+/// Hash canonical pretty JSON under the caller's depth limit.
 pub fn canonical_json_sha256<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
     operation: &'static str,
 ) -> Result<String, DigestError> {
-    ctx.charge_work(1, operation)
-        .map_err(CanonicalJsonError::from)?;
-    let mut buffer_storage = ctx
-        .reserve_scoped(0, operation)
-        .map_err(CanonicalJsonError::from)?;
-    let mut buffer = Vec::new();
-    buffer_storage
-        .with_storage_limit(|| ctx.reserve_capacity_limit(&mut buffer, 8192, operation))
-        .map_err(|limit| CanonicalJsonError::Resource(limit.into()))?;
-    let mut hasher = Sha256::new();
-    let mut writer = CanonicalDigestWriter {
-        ctx,
-        hasher: &mut hasher,
-        buffer,
-        refusal: None,
-        operation,
-    };
-    let serialized = write_canonical_json(ctx, &mut writer, value);
-    if let Some(error) = writer.refusal.take() {
-        return Err(CanonicalJsonError::Resource(error).into());
-    }
-    serialized?;
-    if let Err(error) = writer.flush() {
-        if let Some(refusal) = writer.refusal.take() {
-            return Err(CanonicalJsonError::Resource(refusal).into());
-        }
-        return Err(DigestError::Write(error));
-    }
-    drop(writer);
-    drop(buffer_storage);
-    ctx.charge_work(32, operation)
-        .map_err(CanonicalJsonError::from)?;
+    let mut writer = DigestWriter(Sha256::new());
+    write_canonical_json(ctx, &mut writer, value)?;
     let digest =
-        digest::Sha256Digest::from_bytes_for_decode(ctx, hasher.finalize().into(), operation)
+        digest::Sha256Digest::from_bytes_for_decode(ctx, writer.0.finalize().into(), operation)
             .map_err(CanonicalJsonError::from)?;
     Ok(digest.into())
 }
@@ -192,21 +146,17 @@ pub fn document_local_sha256_without_carried(
     carried: &[&str],
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut storage = ctx.reserve_scoped(0, operation)?;
-    let unknowns =
-        storage.with_storage(|| reduced_unknowns(ctx, ir, format, source_image_id, operation))?;
-    let document = storage.with_storage(|| {
+    let unknowns = reduced_unknowns(ctx, ir, format, source_image_id, operation)?;
+    let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
             ir_version: ir.ir_version(),
-            source: source
-                .map(|source| source.normalized_digest_copy(ctx, operation))
-                .transpose()?,
+            source: source.map(SourceMeta::normalized_digest_copy),
             units: CanonicalUnitsWire::default(),
             tolerances: &ir.tolerances,
-            model: ir.model.sorted(ctx)?,
-            native: normalized_native(ctx, &ir.native, format, &unknowns, carried, operation)?,
+            model: ir.model.sorted()?,
+            native: normalized_native(&ir.native, format, &unknowns, carried),
         })
-    })?;
+    })()?;
     canonical_json_sha256(ctx, &document, operation).map_err(Into::into)
 }
 
@@ -215,48 +165,23 @@ fn reduced_unknowns(
     ir: &CadIr,
     format: &str,
     source_image_id: &str,
-    operation: &'static str,
+    _operation: &'static str,
 ) -> Result<Vec<NativeRecord>, CodecError> {
     let mut reduced = Vec::new();
-    admit_digest_key(ctx, ir.native.0.len(), format.len(), operation)?;
     if let Some(namespace) = ir.native.namespace(format) {
-        admit_digest_key(ctx, namespace.arenas().len(), "unknowns".len(), operation)?;
         if let Some(records) = namespace.arenas().get("unknowns") {
             for record in records {
                 let normalized = record.digest_unknown(ctx)?;
-                ctx.charge_work(
-                    u64_from_index(record.id().len())
-                        .checked_add(1)
-                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-                    operation,
-                )?;
+
                 if record.id() == source_image_id {
                     continue;
                 }
-                ctx.push_vec(&mut reduced, normalized, operation)?;
+                reduced.push(normalized);
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut reduced,
-        |left, right| left.id().cmp(right.id()),
-        |value| value.id().len(),
-        "sort reduced digest unknowns",
-    )?;
+    reduced.sort_by(|left, right| left.id().cmp(right.id()));
     Ok(reduced)
-}
-
-pub(crate) fn admit_digest_key(
-    ctx: &DecodeContext<'_>,
-    entries: usize,
-    longest: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let comparisons = u64_from_index(entries)
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(u64_from_index(longest)))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(comparisons, operation)
 }
 
 /// A document as the semantic digest sees it.
@@ -277,114 +202,50 @@ struct NormalizedDocument<'a> {
 /// unknown arena with `unknowns`, leaving out the `format` arenas named in
 /// `carried`, and creating that namespace when the document has none.
 fn normalized_native<'a>(
-    ctx: &DecodeContext<'_>,
     native: &'a Native,
     format: &'a str,
     unknowns: &'a [NativeRecord],
     carried: &[&str],
-    operation: &'static str,
-) -> Result<BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>, CodecError> {
+) -> BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>> {
     let mut namespaces = BTreeMap::new();
-    let mut longest_namespace = format.len();
     for (name, namespace) in &native.0 {
-        ctx.charge_work(
-            u64_from_index(format.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-            operation,
-        )?;
         let mut arenas = BTreeMap::new();
-        let mut longest_arena = "unknowns".len();
         for (arena, records) in namespace.arenas() {
-            ctx.charge_work(
-                u64_from_index(format.len())
-                    .checked_add(9)
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-                operation,
-            )?;
             if name == format && (arena == "unknowns" || carried.contains(&arena.as_str())) {
                 continue;
             }
-            longest_arena = longest_arena.max(arena.len());
-            admit_digest_key(ctx, arenas.len(), longest_arena, operation)?;
-            ctx.insert_btree_map(
-                &mut arenas,
-                arena.as_str(),
-                sorted_records(ctx, records)?,
-                operation,
-            )?;
+            arenas.insert(arena.as_str(), sorted_records(records));
         }
         if name == format {
-            admit_digest_key(ctx, arenas.len(), longest_arena, operation)?;
-            let refs = ctx.collect_vec(unknowns.iter(), operation)?;
-            ctx.insert_btree_map(&mut arenas, "unknowns", refs, operation)?;
+            let refs = unknowns.iter().collect::<Vec<_>>();
+            arenas.insert("unknowns", refs);
         }
-        longest_namespace = longest_namespace.max(name.len());
-        admit_digest_key(ctx, namespaces.len(), longest_namespace, operation)?;
-        ctx.insert_btree_map(&mut namespaces, name.as_str(), arenas, operation)?;
+        namespaces.insert(name.as_str(), arenas);
     }
-    admit_digest_key(ctx, namespaces.len(), longest_namespace, operation)?;
     if !namespaces.contains_key(format) {
         let mut arenas = BTreeMap::new();
-        let refs = ctx.collect_vec(unknowns.iter(), operation)?;
-        ctx.insert_btree_map(&mut arenas, "unknowns", refs, operation)?;
-        ctx.insert_btree_map(&mut namespaces, format, arenas, operation)?;
+        let refs = unknowns.iter().collect::<Vec<_>>();
+        arenas.insert("unknowns", refs);
+        namespaces.insert(format, arenas);
     }
-    Ok(namespaces)
+    namespaces
 }
 
-fn sorted_records<'a>(
-    ctx: &DecodeContext<'_>,
-    records: &'a [NativeRecord],
-) -> Result<Vec<&'a NativeRecord>, CodecError> {
-    let mut refs = ctx.collect_vec(records.iter(), "borrow digest native arena")?;
-    ctx.stable_sort_by(
-        &mut refs,
-        |left, right| left.id().cmp(right.id()),
-        |value| value.id().len(),
-        "sort digest native arena",
-    )?;
-    Ok(refs)
+fn sorted_records(records: &[NativeRecord]) -> Vec<&NativeRecord> {
+    let mut refs = records.iter().collect::<Vec<_>>();
+    refs.sort_by(|left, right| left.id().cmp(right.id()));
+    refs
 }
 
-struct CanonicalDigestWriter<'ctx, 'arena, 'hash> {
-    ctx: &'ctx DecodeContext<'arena>,
-    hasher: &'hash mut Sha256,
-    buffer: Vec<u8>,
-    refusal: Option<CodecError>,
-    operation: &'static str,
-}
+/// A byte sink that feeds a SHA-256 hasher.
+struct DigestWriter(Sha256);
 
-impl CanonicalDigestWriter<'_, '_, '_> {
-    fn admit(&mut self, bytes: usize) -> std::io::Result<()> {
-        if let Err(error) = self.ctx.charge_work(u64_from_index(bytes), self.operation) {
-            if self.refusal.is_none() {
-                self.refusal = Some(error);
-            }
-            return Err(std::io::Error::other("canonical digest admission refused"));
-        }
-        Ok(())
-    }
-}
-
-impl std::io::Write for CanonicalDigestWriter<'_, '_, '_> {
+impl std::io::Write for DigestWriter {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        if bytes.len() > self.buffer.capacity() - self.buffer.len() {
-            self.flush()?;
-        }
-        if bytes.len() > self.buffer.capacity() {
-            self.admit(bytes.len())?;
-            self.hasher.update(bytes);
-        } else {
-            self.admit(bytes.len())?;
-            self.buffer.extend_from_slice(bytes);
-        }
+        self.0.update(bytes);
         Ok(bytes.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        self.admit(self.buffer.len())?;
-        self.hasher.update(&self.buffer);
-        self.buffer.clear();
         Ok(())
     }
 }
@@ -770,100 +631,6 @@ mod tests {
     }
 
     #[test]
-    fn charged_document_digest_preserves_the_uncharged_digest() {
-        let ir = pinned_document();
-        let expected = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
-        let actual = document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
-            &ir,
-            ir.source.as_ref(),
-            "pin",
-            "pin:test:source-image#0",
-            "document-local SHA-256",
-        )
-        .unwrap();
-        assert_eq!(actual, expected);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(
-            matches!(document_local_sha256(&ctx, &ir, ir.source.as_ref(), "pin", "pin:test:source-image#0", "document-local SHA-256"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
-    }
-
-    #[test]
-    fn charged_document_digest_propagates_a_work_refusal() {
-        let ir = pinned_document();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = document_local_sha256(
-            &ctx,
-            &ir,
-            ir.source.as_ref(),
-            "pin",
-            "pin:test:source-image#0",
-            "document-local SHA-256",
-        )
-        .unwrap_err();
-        let CodecError::ResourceLimit(original) = error else {
-            panic!("digest must return its work refusal");
-        };
-        assert_eq!(
-            original.dimension,
-            cadmpeg_core::decode::ResourceDimension::WorkUnits
-        );
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
-    }
-
-    #[test]
-    fn document_digest_preserves_every_resource_dimension() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let ir = pinned_document_with_source();
-        for dimension in [
-            ResourceDimension::CollectionItems,
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::RetainedBytes,
-            ResourceDimension::WorkUnits,
-            ResourceDimension::RecursionDepth,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-                _ => panic!("digest uses these dimensions"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = document_local_sha256(
-                &ctx,
-                &ir,
-                ir.source.as_ref(),
-                "pin",
-                "pin:test:source-image#0",
-                "document-local SHA-256",
-            )
-            .unwrap_err();
-            let CodecError::ResourceLimit(original) = error else {
-                panic!("digest refusal must stay outside serde");
-            };
-            assert_eq!(original.dimension, dimension);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-            );
-        }
-    }
-
-    #[test]
     fn document_digest_retains_only_the_completed_hexadecimal_text() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let ir = pinned_document_with_source();
@@ -1222,8 +989,7 @@ mod tests {
             ));
         }
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 32_000_000;
+        let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let digest = document_local_sha256(
             &ctx,
@@ -1283,6 +1049,32 @@ mod tests {
                 matches!(document_local_sha256(&ctx, &ir, None, "test", "test:model:unknown#source", "orphan digest"), Err(CodecError::Malformed(message)) if message.contains("no unique owning curve"))
             );
         }
+    }
+
+    #[test]
+    fn document_digest_refuses_at_the_depth_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let ir = pinned_document_with_source();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = document_local_sha256(
+            &ctx,
+            &ir,
+            ir.source.as_ref(),
+            "pin",
+            "pin:test:source-image#0",
+            "document-local SHA-256",
+        )
+        .unwrap_err();
+        let CodecError::ResourceLimit(original) = error else {
+            panic!("digest refusal must stay outside serde");
+        };
+        assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
     }
 }
 

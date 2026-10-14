@@ -4,7 +4,7 @@
 use std::collections::{HashSet, TryReserveError};
 use std::hash::{Hash, Hasher};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 pub(super) trait Admission: Sized {
     type Error;
@@ -22,7 +22,6 @@ impl Admission for StandardAdmission {
         Ok(Index {
             values,
             admission: self,
-            _storage: None,
         })
     }
     fn work(&self, _count: usize) -> Result<(), Self::Error> {
@@ -31,31 +30,27 @@ impl Admission for StandardAdmission {
 }
 
 pub(super) struct DecodeAdmission<'ctx, 'arena> {
-    pub(super) ctx: &'ctx DecodeContext<'arena>,
-    pub(super) operation: &'static str,
+    pub(super) _ctx: &'ctx DecodeContext<'arena>,
+    pub(super) _operation: &'static str,
 }
 
 impl Admission for DecodeAdmission<'_, '_> {
     type Error = ResourceLimit;
-    fn index<T: Eq + Hash>(&self, count: usize) -> Result<Index<'_, T, Self>, Self::Error> {
-        let (values, storage) = self.ctx.temporary_set_limit(count, self.operation)?;
+    fn index<T: Eq + Hash>(&self, _count: usize) -> Result<Index<'_, T, Self>, Self::Error> {
         Ok(Index {
-            values,
+            values: HashSet::new(),
             admission: self,
-            _storage: Some(storage),
         })
     }
-    fn work(&self, count: usize) -> Result<(), Self::Error> {
-        self.ctx
-            .charge_work_limit(u64_from_index(count), self.operation)
+    fn work(&self, _count: usize) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
-/// Borrowed keys drop before their uniqueness-index reservation.
+/// Borrowed uniqueness index.
 pub(super) struct Index<'scope, T, S: Admission> {
     values: HashSet<MemberKey<'scope, T, S>>,
     admission: &'scope S,
-    _storage: Option<ScopedReservation<'scope>>,
 }
 
 impl<T: Eq + Hash, S: Admission> Index<'_, T, S> {
@@ -151,12 +146,10 @@ impl AppendAdmission for StandardAdmission {
 
 impl AppendAdmission for DecodeAdmission<'_, '_> {
     type Error = ResourceLimit;
-    fn work(&self, count: usize) -> Result<(), Self::Error> {
-        self.ctx
-            .charge_work_limit(u64_from_index(count), self.operation)
+    fn work(&self, _count: usize) -> Result<(), Self::Error> {
+        Ok(())
     }
     fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
-        self.ctx.reserve_vec_limit(values, 1, self.operation)?;
         values.push(value);
         Ok(())
     }
@@ -177,6 +170,3 @@ pub(super) fn insert<T: PartialEq, S: AppendAdmission>(
     admission.push(values, value)?;
     Ok(true)
 }
-
-#[cfg(test)]
-mod tests;

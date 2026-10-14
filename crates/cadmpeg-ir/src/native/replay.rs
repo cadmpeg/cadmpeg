@@ -250,41 +250,11 @@ pub(super) fn member<'a>(json: &'a str, name: &str) -> Option<&'a RawValue> {
     found
 }
 
-/// The number of members of the JSON object held in `json`, or `None` when
-/// the text is not an object.
-pub(super) fn member_count(json: &str) -> Option<usize> {
-    let mut deserializer = serde_json::Deserializer::from_str(json);
-    let count = de::Deserializer::deserialize_map(&mut deserializer, Count).ok()?;
-    deserializer.end().ok()?;
-    Some(count)
-}
-
-/// Counts an object's members and scans past their values.
-struct Count;
-
-impl<'de> de::Visitor<'de> for Count {
-    type Value = usize;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a JSON object")
-    }
-
-    fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<usize, A::Error> {
-        let mut count = 0_usize;
-        while access.next_key::<de::IgnoredAny>()?.is_some() {
-            access.next_value::<&RawValue>()?;
-            count += 1;
-        }
-        Ok(count)
-    }
-}
-
 /// An object's member keys, each with its value text.
 pub(super) type MemberTexts<'a> = Vec<(Cow<'a, str>, &'a str)>;
 
 /// Push each member of the JSON object held in `json` onto `members`: its key
-/// and its value text. The caller reserved one slot per member. States
-/// whether `json` is an object.
+/// and its value text. States whether `json` is an object.
 pub(super) fn members<'a>(json: &'a str, members: &mut MemberTexts<'a>) -> bool {
     let mut deserializer = serde_json::Deserializer::from_str(json);
     de::Deserializer::deserialize_map(&mut deserializer, Members { members }).is_ok()
