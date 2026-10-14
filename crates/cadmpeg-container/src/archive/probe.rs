@@ -4,33 +4,32 @@
 use super::preflight_central_directory;
 use crate::layout::{central_header, digital_signature, end_record, zip64_end, zip64_locator};
 use cadmpeg_core::{
-    decode::{u64_from_index, DecodeContext, ScopedReservation, View},
+    decode::{u64_from_index, DecodeContext, View},
     CodecError, ReadSeek,
 };
 use std::io::SeekFrom;
 
 const FOOTER_WINDOW: usize = end_record::LEN + 65_535 + zip64_locator::LEN;
 
-pub(super) fn read<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub(super) fn read(
+    ctx: &DecodeContext<'_>,
     source: &mut dyn ReadSeek,
-) -> Result<Option<(Vec<u8>, ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<Vec<u8>>, CodecError> {
     let position = source.stream_position()?;
     let result = read_inner(ctx, source);
     source.seek(SeekFrom::Start(position))?;
     result
 }
 
-fn read_inner<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn read_inner(
+    ctx: &DecodeContext<'_>,
     source: &mut dyn ReadSeek,
-) -> Result<Option<(Vec<u8>, ScopedReservation<'ctx>)>, CodecError> {
+) -> Result<Option<Vec<u8>>, CodecError> {
     let length = source.seek(SeekFrom::End(0))?;
     let tail_len = usize::try_from(length.min(u64_from_index(FOOTER_WINDOW)))
         .map_err(|_| CodecError::malformed("ZIP probe tail does not fit memory"))?;
     let tail_start = length - u64_from_index(tail_len);
-    let (tail, _tail_storage) = read_range(ctx, source, tail_start, tail_len)?;
-    ctx.charge_work(u64_from_index(tail.len()), "ZIP probe end records")?;
+    let tail = read_range(ctx, source, tail_start, tail_len)?;
     let Some(last_end) = tail.len().checked_sub(end_record::LEN) else {
         return Ok(None);
     };
@@ -57,7 +56,7 @@ fn read_inner<'ctx>(
             let Some(record) = find_zip64(ctx, source, tail_start, locator, hint)? else {
                 continue;
             };
-            let (header, _storage) = read_range(ctx, source, record, zip64_end::LEN)?;
+            let header = read_range(ctx, source, record, zip64_end::LEN)?;
             let Some(size) = View::u64_le_at(&header, zip64_end::DIRECTORY_SIZE) else {
                 continue;
             };
@@ -84,9 +83,7 @@ fn read_inner<'ctx>(
         else {
             continue;
         };
-        // A declared directory is metadata. Its storage is scoped independently
-        // of input acquisition and does not consume one collection slot per byte.
-        let (mut image, storage) = read_range(ctx, source, start, image_len)?;
+        let mut image = read_range(ctx, source, start, image_len)?;
         let end = usize::try_from(tail_start + u64_from_index(end) - start)
             .map_err(|_| CodecError::malformed("ZIP probe end offset does not fit memory"))?;
         image[end + end_record::DIRECTORY_POSITION..end + end_record::DIRECTORY_POSITION + 4]
@@ -115,7 +112,7 @@ fn read_inner<'ctx>(
             }
             continue;
         }
-        return Ok(Some((image, storage)));
+        return Ok(Some(image));
     }
     Ok(None)
 }
@@ -138,11 +135,7 @@ fn directory_start(
     let length = usize::try_from(end.min(u64_from_index(digital_signature::LEN + 65_535)))
         .map_err(|_| CodecError::malformed("ZIP signature window does not fit memory"))?;
     let window_start = end - u64_from_index(length);
-    let (window, _storage) = read_range(ctx, source, window_start, length)?;
-    ctx.charge_work(
-        u64_from_index(length),
-        "ZIP directory signature boundary search",
-    )?;
+    let window = read_range(ctx, source, window_start, length)?;
     if let Some(last) = length.checked_sub(digital_signature::LEN) {
         for offset in (0..=last).rev() {
             if window.get(offset..offset + 4) != Some(b"PK\x05\x05".as_slice()) {
@@ -184,7 +177,7 @@ fn directory_is_framed(
         if end - position < prefix {
             return Ok(false);
         }
-        let (header, _storage) = read_range(ctx, source, position, central_header::LEN)?;
+        let header = read_range(ctx, source, position, central_header::LEN)?;
         if !header.starts_with(b"PK\x01\x02") {
             return Ok(false);
         }
@@ -211,7 +204,7 @@ fn directory_is_framed(
     if end - position < u64_from_index(digital_signature::LEN) {
         return Ok(false);
     }
-    let (header, _storage) = read_range(ctx, source, position, digital_signature::LEN)?;
+    let header = read_range(ctx, source, position, digital_signature::LEN)?;
     Ok(header.starts_with(b"PK\x05\x05")
         && View::u16_le_at(&header, digital_signature::DATA_LENGTH).and_then(|size| {
             position
@@ -232,7 +225,7 @@ pub(super) fn find_zip64(
         .checked_add(u64_from_index(zip64_end::LEN))
         .is_some_and(|offset| offset <= end)
     {
-        let (header, _storage) = read_range(ctx, source, hint, zip64_end::LEN)?;
+        let header = read_range(ctx, source, hint, zip64_end::LEN)?;
         if header.starts_with(b"PK\x06\x06")
             && View::u64_le_at(&header, zip64_end::RECORD_SIZE)
                 .filter(|size| *size >= u64_from_index(zip64_end::LEN - 12))
@@ -247,14 +240,13 @@ pub(super) fn find_zip64(
     let mut scan_end = end;
     loop {
         let start = scan_end - scan_end.min(u64_from_index(FOOTER_WINDOW));
-        let (bytes, _storage) = read_range(
+        let bytes = read_range(
             ctx,
             source,
             start,
             usize::try_from(scan_end - start)
                 .map_err(|_| CodecError::malformed("ZIP64 probe window does not fit memory"))?,
         )?;
-        ctx.charge_work(u64_from_index(bytes.len()), "ZIP64 probe boundary search")?;
         if let Some(last_record) = bytes.len().checked_sub(12) {
             for offset in (0..=last_record).rev() {
                 if bytes.get(offset..offset + 4) == Some(b"PK\x06\x06".as_slice())
@@ -279,18 +271,16 @@ pub(super) fn find_zip64(
     Ok(None)
 }
 
-fn read_range<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn read_range(
+    ctx: &DecodeContext<'_>,
     source: &mut dyn ReadSeek,
     start: u64,
     length: usize,
-) -> Result<(Vec<u8>, ScopedReservation<'ctx>), CodecError> {
-    ctx.charge_work(u64_from_index(length), "read ZIP detection metadata")?;
-    let (mut bytes, storage) = ctx.scoped_vector_storage(length, "ZIP detection metadata bytes")?;
-    bytes.resize(length, 0);
+) -> Result<Vec<u8>, CodecError> {
+    let mut bytes = ctx.alloc_filled(length, 0_u8, "ZIP detection metadata bytes")?;
     source.seek(SeekFrom::Start(start))?;
     source.read_exact(&mut bytes)?;
-    Ok((bytes, storage))
+    Ok(bytes)
 }
 
 #[cfg(test)]

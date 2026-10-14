@@ -77,10 +77,6 @@ pub(crate) fn load_artifact(
 
     let max_bytes = options.policy.limits.max_input_bytes;
     ctx.complete_input(&mut file, &mut prefix)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(prefix.len()),
-        "validate CADIR input UTF-8",
-    )?;
     let text =
         String::from_utf8(prefix).map_err(|error| anyhow!("invalid CADIR UTF-8: {error}"))?;
     ctx.finish_session()?;
