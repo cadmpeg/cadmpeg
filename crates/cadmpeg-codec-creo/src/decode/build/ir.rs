@@ -441,7 +441,7 @@ fn transfer_reference_ellipses(
 }
 
 fn display_strip_error(offset: usize, detail: impl std::fmt::Display) -> CodecError {
-    CodecError::Malformed(format!(
+    CodecError::malformed(format_args!(
         "SolidPrimdata display triangle strip at byte {offset}: {detail}"
     ))
 }

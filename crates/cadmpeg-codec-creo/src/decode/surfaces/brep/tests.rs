@@ -281,19 +281,17 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
 #[test]
 fn brep_rejection_record_preserves_nested_operands_under_service_profile() {
     let mut diagnostics = BrepTransferDiagnostics::default();
-    {
-        diagnostics.reject_face_with_detail(
-            FaceAdmissionRejection::UnresolvedBoundaryVertices,
-            FaceAdmissionDetail {
-                face_id: 17,
-                boundary_half_edges: vec![crate::topology::HalfEdgeId {
-                    curve_id: 4,
-                    side: crate::topology::Side::Zero,
-                }],
-                vertex_ids: vec![9],
-            },
-        )
-    };
+    diagnostics.reject_face_with_detail(
+        FaceAdmissionRejection::UnresolvedBoundaryVertices,
+        FaceAdmissionDetail {
+            face_id: 17,
+            boundary_half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id: 4,
+                side: crate::topology::Side::Zero,
+            }],
+            vertex_ids: vec![9],
+        },
+    );
     let records = diagnostics.face_admission_rejection_records();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].id, "creo:brep:face_admission_rejection#17");
@@ -305,9 +303,7 @@ fn brep_rejection_record_preserves_nested_operands_under_service_profile() {
 #[test]
 fn face_admission_diagnostics_report_missing_surface_carrier() {
     let mut diagnostics = BrepTransferDiagnostics::default();
-    {
-        diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, 42)
-    };
+    diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, 42);
 
     let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingSurfaceCarrier);
     let samples = samples.collect::<Vec<_>>();
@@ -409,10 +405,7 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
     assert_eq!(detail.vertex_ids, vec![3, 4]);
 
     let mut diagnostics = BrepTransferDiagnostics::default();
-    {
-        diagnostics
-            .reject_face_with_detail(FaceAdmissionRejection::UnresolvedBoundaryVertices, detail)
-    };
+    diagnostics.reject_face_with_detail(FaceAdmissionRejection::UnresolvedBoundaryVertices, detail);
     let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::UnresolvedBoundaryVertices);
     let samples = samples.collect::<Vec<_>>();
     assert_eq!(count, 1);

@@ -171,4 +171,3 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         None
     );
 }
-

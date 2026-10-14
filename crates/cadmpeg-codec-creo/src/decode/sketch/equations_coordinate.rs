@@ -1409,9 +1409,7 @@ impl SectionEquationFixture {
         coordinate: SectionAxis,
         coefficient: f64,
     ) {
-        {
-            equation.add_point(point, coordinate, coefficient)
-        };
+        equation.add_point(point, coordinate, coefficient);
     }
 }
 
