@@ -1864,13 +1864,9 @@ fn gui_binding_body_identity_refuses_at_matching_retained_limit() {
 }
 
 #[test]
-fn gui_material_face_set_refuses_at_matching_collection_limit() {
+fn gui_material_face_set_charges_collection_items() {
     let bytes = topology_appearance_archive(2, true);
-    assert_gui_decode_limit_at(
-        &bytes,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "FCStd GUI material face identities",
-    );
+    crate::test_support::assert_codec_charged(&bytes, "FCStd GUI material face identities");
 }
 
 #[test]
