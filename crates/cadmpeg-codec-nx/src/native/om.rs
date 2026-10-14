@@ -1753,15 +1753,16 @@ fn stable_object_record_graph_identity(
     const RAW: u8 = 0xf2;
     const REFERENCE_NEW: u8 = 0xf3;
     const REFERENCE_BACK: u8 = 0xf4;
+    const DOMAIN: &[u8] = b"nx:om:object-record-graph\0";
 
-    let Some(seed_work) = source_entry.len().checked_add(32) else {
+    let Some(seed_work) = source_entry.len().checked_add(DOMAIN.len() + 8) else {
         return Ok(None);
     };
     let Some(()) = consume_stable_object_graph_work(ctx, graph_work, seed_work)? else {
         return Ok(None);
     };
     let mut digest = Sha256::new();
-    digest.update(b"nx:om:object-record-graph\0");
+    digest.update(DOMAIN);
     digest.update(cadmpeg_core::decode::u64_from_index(source_entry.len()).to_le_bytes());
     digest.update(source_entry.as_bytes());
 
@@ -1851,6 +1852,9 @@ fn stable_object_record_graph_identity(
                 digest.update([REFERENCE_BACK]);
                 digest.update(target_id.to_le_bytes());
             } else {
+                let Some(()) = consume_stable_object_graph_work(ctx, graph_work, 9)? else {
+                    return Ok(None);
+                };
                 map_reservation.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut node_ids,
@@ -1890,7 +1894,7 @@ fn stable_object_record_graph_identity(
             let Some(raw) = record_bytes.get(raw_cursor..) else {
                 return Ok(None);
             };
-            let Some(raw_work) = raw.len().checked_add(1) else {
+            let Some(raw_work) = raw.len().checked_add(10) else {
                 return Ok(None);
             };
             let Some(()) = consume_stable_object_graph_work(ctx, graph_work, raw_work)? else {
@@ -6503,6 +6507,77 @@ mod object_record_identity_tests {
             super::stable_object_record_identities(ctx, "/entry", records)
         })
         .unwrap()
+    }
+
+    #[test]
+    fn graph_identity_charges_the_complete_canonical_preimage() {
+        // Two nodes, one new link, one back link and four raw spans:
+        // domain(26) + entry length(8) + entry(6) + nodes(18)
+        // + links(18) + raw lengths/markers(36) + raw bytes(6) + ends(2).
+        const PREIMAGE_BYTES: usize = 120;
+        let records: [&[u8]; 2] = [
+            &[0x01, 0x02, 0x90, 0x00, 0x01, 0xa0],
+            &[0x01, 0x02, 0x90, 0x00, 0x00, 0xb0],
+        ];
+        let references = [vec![(2, 1)], vec![(2, 0)]];
+        crate::test_support::with_decode_context(|ctx| {
+            let mut work = PREIMAGE_BYTES;
+            let identity = super::stable_object_record_graph_identity(
+                ctx,
+                "/entry",
+                &records,
+                &references,
+                0,
+                &mut work,
+            )
+            .unwrap();
+            // SHA-256 of the independently assembled canonical traversal.
+            assert_eq!(identity.as_deref(), Some(
+                "nx:om:object-record:38dd4fb2bf0010eae741dfec63f1d7055e7f0fd4950414bca0d29c58eecee177"
+            ));
+            assert_eq!(work, 0);
+        });
+        crate::test_support::with_decode_context(|ctx| {
+            let mut work = PREIMAGE_BYTES - 1;
+            assert_eq!(
+                super::stable_object_record_graph_identity(
+                    ctx,
+                    "/entry",
+                    &records,
+                    &references,
+                    0,
+                    &mut work,
+                )
+                .unwrap(),
+                None
+            );
+        });
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units =
+                    cadmpeg_core::decode::u64_from_index(PREIMAGE_BYTES - 1);
+            },
+            |ctx| {
+                let mut work = PREIMAGE_BYTES;
+                let error = super::stable_object_record_graph_identity(
+                    ctx,
+                    "/entry",
+                    &records,
+                    &references,
+                    0,
+                    &mut work,
+                )
+                .unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && limit.operation == "NX object record graph identity"
+                        && limit.limit == 119 && limit.used == 109 && limit.additional == 11)
+                );
+                assert!(ctx.charge_work(0, "graph identity after refusal").is_err());
+            },
+        );
     }
 
     #[test]
