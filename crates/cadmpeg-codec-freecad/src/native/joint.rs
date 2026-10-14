@@ -500,11 +500,8 @@ mod tests {
     #[test]
     fn joint_identity_grammar_scans_refuse_at_small_work_allowance() {
         crate::test_support::with_service_context(&[], |ctx| {
-            ctx.charge_work(
-                ctx.policy().limits.max_work_units - 60,
-                "reserve joint identity work",
-            )
-            .expect("leave a small allowance");
+            ctx.charge_work(ctx.work_allowance() - 60, "reserve joint identity work")
+                .expect("leave a small allowance");
             let error = JointRecord::try_new(
                 ctx,
                 "fcstd:native:joint#Joint".to_owned(),

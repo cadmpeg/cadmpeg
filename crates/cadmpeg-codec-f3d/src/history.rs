@@ -590,6 +590,11 @@ const HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY: u64 = 192;
 /// proportional to the state-by-record cross product instead of only the
 /// final cache size.
 const HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY: u64 = 4096;
+/// Work ceiling for the complete-history binding estimate, taken as the
+/// minimum with the policy ceiling. The binding is optional enrichment, and
+/// its per-entry cache estimate understates the live memory of a deep history,
+/// so the binding keeps this bound when the session work allowance is larger.
+const HISTORY_BINDING_MAX_WORK_UNITS: u64 = 4_000_000_000;
 
 /// Whether binding every historical record table fits the decode policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -620,7 +625,9 @@ fn complete_table_binding_cost(
                 .is_some_and(|bytes| bytes <= limits.max_materialized_bytes)
                 && entries
                     .checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
-                    .is_some_and(|work| work <= limits.max_work_units)
+                    .is_some_and(|work| {
+                        work <= limits.max_work_units.min(HISTORY_BINDING_MAX_WORK_UNITS)
+                    })
         });
     if fits {
         TableBindingCost::Admitted

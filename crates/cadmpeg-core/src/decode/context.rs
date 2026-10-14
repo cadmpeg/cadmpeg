@@ -144,18 +144,26 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn per_expand_allowance(&self) -> u64 {
-        let policy_limit = self
-            .budget
-            .policy()
-            .limits
-            .max_decompressed_bytes_per_expand;
-        let Some(proportional) = DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE
-            .checked_mul(self.budget.input_bytes())
-            .and_then(|bytes| DECOMPRESSED_PER_EXPAND_BASE.checked_add(bytes))
-        else {
-            return policy_limit;
-        };
-        policy_limit.min(proportional)
+        self.budget.proportional_allowance(
+            self.budget
+                .policy()
+                .limits
+                .max_decompressed_bytes_per_expand,
+            DECOMPRESSED_PER_EXPAND_BASE,
+            DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
+        )
+    }
+
+    /// Collection items this session can hold at one time: the smaller of
+    /// the policy ceiling and the input-proportional allowance.
+    pub fn collection_items_allowance(&self) -> u64 {
+        self.budget.collection_items_allowance()
+    }
+
+    /// Work units this session can charge: the smaller of the policy ceiling
+    /// and the input-proportional allowance.
+    pub fn work_allowance(&self) -> u64 {
+        self.budget.work_allowance()
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
@@ -1322,15 +1330,13 @@ mod tests {
     #[test]
     fn try_collection_reports_allocator_refusal_after_charge() {
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = u64::MAX;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
+        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &DecodePolicy::service())
             .expect("test input fits the policy");
-        let mut values = Vec::<u8>::new();
+        // Eight items fit the item allowance; eight 2^60-byte slots exceed
+        // isize::MAX bytes, so the allocator refuses after the charge.
+        let mut values = Vec::<[u8; 1 << 60]>::new();
         let error = ctx
-            .try_collection(usize::MAX, "test collection allocation", || {
-                values.try_reserve(usize::MAX)
-            })
+            .try_collection(8, "test collection allocation", || values.try_reserve(8))
             .expect_err("a vector cannot reserve more than isize::MAX bytes");
         assert!(matches!(
             error,

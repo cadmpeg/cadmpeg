@@ -5,7 +5,8 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::{
-    complete_table_binding_cost, TableBindingCost, HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
+    complete_table_binding_cost, TableBindingCost, HISTORY_BINDING_MAX_WORK_UNITS,
+    HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
 };
 
 #[test]
@@ -981,9 +982,9 @@ fn history_binding_work_budget_charges_state_record_cross_product() {
         cadmpeg_core::decode::ResourceLimits::desktop(),
         cadmpeg_core::decode::ResourceLimits::service(),
     ] {
-        let entries =
-            usize::try_from(limits.max_work_units / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
-                .expect("entry budget fits usize");
+        let ceiling = limits.max_work_units.min(HISTORY_BINDING_MAX_WORK_UNITS);
+        let entries = usize::try_from(ceiling / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
+            .expect("entry budget fits usize");
         assert_eq!(
             complete_table_binding_cost([entries], &limits),
             TableBindingCost::Admitted

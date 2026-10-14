@@ -2622,7 +2622,7 @@ impl From<CodecError> for ResolveError {
 }
 
 fn collection_cap(budget: &DecodeContext<'_>, format_cap: usize) -> usize {
-    usize::try_from(budget.policy().limits.max_collection_items)
+    usize::try_from(budget.collection_items_allowance())
         .map_or(format_cap, |policy| policy.min(format_cap))
 }
 
