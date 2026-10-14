@@ -3522,6 +3522,21 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_enlarge_construction_envelopes",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| {
+            emit_arena(
+                ctx,
+                &m.features.feature_enlarge_construction_envelopes,
+                r,
+                ns,
+            )
+        },
+        len: |m| m.features.feature_enlarge_construction_envelopes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_surface_construction_references",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,

@@ -720,11 +720,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Question.** Which serialized input faces, extension law, extent, and copy or associativity controls define an `ENLARGE` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `ENLARGE` operation label identifies a surface-enlarge construction." defines the feature family and retains the unresolved surface-extension definition. The operation has a body-write relation in the admitted feature-history grammar.
+**Known.** `siemens_nx.md` §7.1 "The `ENLARGE` operation label identifies a surface-enlarge construction." defines the feature family and retains the unresolved surface-extension definition. The bounded native construction prefix retains a one-based `UGS::MODIFYSRF_isotrim_parms` class index, six ordered unresolved storage indices, a separate middle index, and four zero or shifted-binary64 scalar atoms. Its following body-write relation identifies the result.
 
 **Need.** We must identify the complete construction-role relation to populate the selected faces, extension law, extent, and copy or associativity controls.
 
-**Conflict.** The operation label and body-write output identify the surface-enlarge family and result body, but the current object-index and payload lanes do not assign the pre-operation face set or the extension and copy controls. Result topology does not identify those authored roles.
+**Conflict.** The operation label and body-write output identify the surface-enlarge family and result body, but the native construction indices and scalar lane do not assign the pre-operation face set or the extension and copy controls. Result topology does not identify those authored roles.
 
 ### OM-41. `EXTRACT_FACE` construction roles
 

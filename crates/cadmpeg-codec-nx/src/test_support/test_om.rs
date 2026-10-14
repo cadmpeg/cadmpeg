@@ -317,6 +317,18 @@ pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u
         }
         bytes.splice(member..member, classes);
     }
+    if operations.iter().any(|(_, label, _)| *label == "ENLARGE") {
+        let member = bytes
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let name = b"UGS::MODIFYSRF_isotrim_parms";
+        let mut class = vec![u8::try_from(name.len() + 1).unwrap()];
+        class.extend_from_slice(name);
+        class.push(0x65);
+        bytes.splice(member..member, class);
+    }
     let record_area = bytes.len() + 20;
     bytes.extend_from_slice(
         &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),

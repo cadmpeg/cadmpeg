@@ -2199,10 +2199,22 @@ The `EXTEND_SHEET` operation label identifies a surface-extension construction.
 Its selected input faces, distance, and continuation law remain unresolved.
 Output face ownership does not identify the pre-operation face selection.
 
-The `ENLARGE` operation label identifies a surface-enlarge construction. Its
-selected input faces, extension law, extent, and copy or associativity controls
-remain unresolved. Output face ownership does not identify the pre-operation
-face selection.
+The `ENLARGE` operation label identifies a surface-enlarge construction.
+Its bounded construction prefix is `parameter-class-index, 00 00 01 00,
+reference[0], reference[1], middle-index, zero[6], ff 00 05 02 a0 4c 4a
+01 05, scalar[4], 01 03 08 02, reference[2..6], ff[9], zero[4]`.
+The nonzero parameter class index is one-based in the owning OM section
+and selects `UGS::MODIFYSRF_isotrim_parms`. Each of the six references uses
+the required `f0` or `f1` payload-index grammar. The separate middle index
+uses the direct, compact, or word feature-index grammar. Each scalar is
+one zero byte or one finite shifted-binary64 atom. The ordered indices,
+exact scalar encodings, and complete prefix span are retained in
+`feature_enlarge_construction_envelopes`. References without decoded
+storage targets retain their indices; they do not acquire face identities.
+The body-write frame following the prefix is a separate result relation.
+Selected input faces, extension law, directional extents, and copy or
+associativity controls remain unresolved. Output face ownership does not
+identify the pre-operation face selection.
 
 The `EXTRACT_FACE` operation label identifies a face-extraction construction.
 When its body-write relation resolves, the result body is a sheet body. The

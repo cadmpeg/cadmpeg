@@ -59,6 +59,7 @@ use super::NxCodec;
 mod assembly_placement;
 mod body_write;
 mod dialect;
+mod enlarge;
 mod swp104;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
