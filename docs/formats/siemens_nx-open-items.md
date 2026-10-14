@@ -620,32 +620,25 @@ face or feature set assigns either group a selection role. Compact values that e
 
 **Conflict.** Different names on each side can address the same target. A profile name can lack the complete target envelope while an equal pattern name carries it. Shared target identity and preceding feature order do not identify a seed, pair names, or make physical construction-block adjacency an object relation.
 
-### OM-23. `POINT` header fields
+### OM-23. `POINT` header mode
 
-**Question.** What construction role does the `POINT` header reference have, and what does its `02|03` mode select?
+**Question.** Which authored property distinguishes the `02` and `03` alternatives of the `POINT` construction header?
 
-**Known.** `siemens_nx.md` §7.1 "The `POINT` operation payload begins with one construction header." defines the complete header grammar, canonical reference, mode values, and datum-point family.
+**Known.** `siemens_nx.md` §7.1 "The `POINT` operation payload begins with one construction header." and "The header reference selects a six-scalar lane ending in its addressed offset-store block." define the complete grammar, canonical reference, opaque mode, and exact lane ownership. The reference selects the lane's end block, while the lane crosses a physical block boundary.
 
-**Need.** We must know the roles to select the point construction method and its operand.
+**Need.** Vary construction method and Smart Object update settings independently, with repeated operations in both orders, to distinguish authored settings from occurrence or allocation order.
 
-**Conflict.** The header reference selects one bounded six-scalar lane and
-the mode selects a serialized branch, but neither field names an operand
-family or construction method. The header-to-lane boundary proves ownership
-only; it does not assign the lane to a model point, support, or other datum
-construction role.
+**Conflict.** The mode byte carries no property identity. A shared column can end one lane and begin another; a reference from another construction to its predecessor establishes storage overlap without typing the mode or creating an operation input.
 
 ### OM-24. `POINT` scalar triples
 
 **Question.** What coordinate spaces and construction roles do the two ordered scalar triples in the selected six-scalar `POINT` lane use?
 
-**Known.** `siemens_nx.md` §7.1 "The header reference selects a six-scalar lane ending in its addressed offset-store block." defines the six-scalar lane, its selected form, values, and exact boundaries. A shared target block does not identify either triple as the model-space point.
+**Known.** `siemens_nx.md` §7.1 "The header reference selects a six-scalar lane ending in its addressed offset-store block." defines the complete lane, ordered values, raw encodings, and exact boundaries. Its header selects storage and retains an opaque mode. Neither field supplies a coordinate-space or construction-role relation.
 
-**Need.** We must know the roles to construct the datum point at its authored model-space position.
+**Need.** Vary the authored point, each construction help point, name location, and datum coordinate system independently while recording the NXOpen construction and update settings before save.
 
-**Conflict.** The selected lane contains two ordered triples of finite scalar
-values and no coordinate-space, axis, unit, or role discriminator. Byte
-continuity across the preceding and selected blocks establishes one lane, not
-which triple is the authored point or how the other triple participates.
+**Conflict.** Byte continuity and matching triples elsewhere in a store do not establish model space, units, an evaluated point, a help point, or a name location. A topology export can omit datum geometry and cannot identify a native construction role from numeric equality alone.
 
 ### OM-25. `DRAFT` construction roles
 
