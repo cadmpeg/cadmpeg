@@ -121,19 +121,22 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
 
 #[test]
 fn body_member_constructor_charges_each_uniqueness_slot_once() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    // One row needs one slot in the body index and one in the native index.
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let body = crate::ids::BodyId::mint("test:model:body#member").unwrap();
     let native = cadmpeg_core::text::NonBlankString::new("native").unwrap();
-    let rows =
-        BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(body, native)], &ctx)
-            .unwrap()
-            .unwrap();
+    let rows = cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "validate body selection members",
+        || {
+            BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(body, native)], &ctx)
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    )
+    .unwrap();
     assert_eq!(rows.count(), 1);
-    assert!(ctx
-        .charge_collection_items(1, "test after body member indexes")
-        .is_err());
 }
