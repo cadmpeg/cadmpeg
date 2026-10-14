@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::evaluation::saved_body_census_evidence;
 use crate::evaluation::tests::body_neutral_feature;
 use crate::evaluation::tests::body_preserving_feature;
 use crate::evaluation::tests::complete_block_ir;
-use crate::evaluation::tests::evaluate_saved_body_census;
 use crate::evaluation::tests::model_body;
 use crate::evaluation::BodyCensusEvaluation;
 use crate::evaluation::FeatureBoundary;
@@ -65,7 +65,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
     ir.model.features.push(pattern);
 
     assert_eq!(
-        evaluate_saved_body_census(&ir),
+        saved_body_census_evidence(&ir),
         BodyCensusEvaluation::verified(vec![seed, first_copy, second_copy]).unwrap()
     );
 }
@@ -94,7 +94,7 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
     });
 
     assert!(matches!(
-        evaluate_saved_body_census(&ir),
+        saved_body_census_evidence(&ir),
         BodyCensusEvaluation::Verified { bodies }
             if bodies.as_slice() == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
     ));
@@ -129,7 +129,7 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
     ));
 
     assert_eq!(
-        evaluate_saved_body_census(&ir),
+        saved_body_census_evidence(&ir),
         BodyCensusEvaluation::Unsupported {
             feature: FeatureBoundary {
                 id: FeatureId::mint("synthetic:test:id#pattern".to_string())
@@ -176,7 +176,7 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
     ir.model.features.push(pattern);
 
     assert_eq!(
-        evaluate_saved_body_census(&ir),
+        saved_body_census_evidence(&ir),
         BodyCensusEvaluation::Unsupported {
             feature: FeatureBoundary {
                 id: FeatureId::mint("synthetic:test:id#pattern".to_string())

@@ -4,17 +4,11 @@
 use super::{IndexRow, LinkedRow, TargetRow};
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::{color::PaletteIndex, discriminators};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 
 /// Decode complete self-framed index rows from contiguous column storage.
-pub(crate) fn index_rows(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<IndexRow>, CodecError> {
+pub(crate) fn index_rows(bytes: &[u8]) -> Vec<IndexRow> {
     use super::{INDEX_MIDDLE as MIDDLE, INDEX_PREFIX as PREFIX, INDEX_SUFFIX as SUFFIX};
     let mut rows = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX index rows")?;
     let mut start = 0;
     while start + PREFIX.len() <= bytes.len() {
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
@@ -58,21 +52,17 @@ pub(crate) fn index_rows(
             index_tokens.map(|token| token.atom.into()),
             start,
         ) {
-            ctx.push_vec(&mut rows, row, "NX index rows")?;
+            rows.push(row);
         }
         start = end;
     }
-    Ok(rows)
+    rows
 }
 
 /// Decode complete linked index rows from contiguous column storage.
-pub(crate) fn linked_rows(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<LinkedRow>, CodecError> {
+pub(crate) fn linked_rows(bytes: &[u8]) -> Vec<LinkedRow> {
     use super::{ROW_SUFFIX as SUFFIX, TARGET_MIDDLE as MIDDLE};
     let mut rows = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX linked rows")?;
     let mut start = 0;
     while start + 2 <= bytes.len() {
         if bytes.get(start..start + 2) != Some(&super::LINKED_PREFIX) {
@@ -149,22 +139,18 @@ pub(crate) fn linked_rows(
             mode,
             start,
         ) {
-            ctx.push_vec(&mut rows, row, "NX linked rows")?;
+            rows.push(row);
         }
         start = end;
     }
-    Ok(rows)
+    rows
 }
 
 /// Decode complete target-index rows from contiguous column storage.
-pub(crate) fn target_rows(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Vec<TargetRow>, CodecError> {
+pub(crate) fn target_rows(bytes: &[u8]) -> Vec<TargetRow> {
     use super::TARGET_PREFIX as PREFIX;
     use super::{ROW_SUFFIX as SUFFIX, TARGET_MIDDLE as MIDDLE};
     let mut rows = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX target rows")?;
     let mut start = 0;
     while start + PREFIX.len() <= bytes.len() {
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
@@ -212,11 +198,11 @@ pub(crate) fn target_rows(
             mode,
             start,
         ) {
-            ctx.push_vec(&mut rows, row, "NX target rows")?;
+            rows.push(row);
         }
         start = end;
     }
-    Ok(rows)
+    rows
 }
 
 pub(crate) fn preceding_color(bytes: &[u8], row_offset: usize) -> Option<PaletteIndex> {
@@ -250,8 +236,7 @@ mod linked_row_color_index_tests {
         ];
         let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
         bytes.extend(row_bytes);
-        let rows =
-            crate::test_support::with_decode_context(|ctx| linked_rows(ctx, &bytes)).unwrap();
+        let rows = linked_rows(&bytes);
         let color = preceding_color(&bytes, rows[0].offset()).expect("complete prefix");
         assert_eq!(color.value(), 201);
         assert_eq!(color.display_raw(), [0x80, 201]);
@@ -268,8 +253,7 @@ mod linked_row_color_index_tests {
         ];
         let mut bytes = [1, 0xc0, 0x44, 4, 0, 0x80, 201].to_vec();
         bytes.extend(row_bytes);
-        let rows =
-            crate::test_support::with_decode_context(|ctx| target_rows(ctx, &bytes)).unwrap();
+        let rows = target_rows(&bytes);
         let color = preceding_color(&bytes, rows[0].offset()).expect("complete prefix");
         assert_eq!(color.value(), 201);
         assert_eq!(color.display_raw(), [0x80, 201]);
@@ -278,49 +262,6 @@ mod linked_row_color_index_tests {
 
 #[cfg(test)]
 mod tests {
-    fn index_row_limit_error(
-        adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> cadmpeg_core::CodecError {
-        let bytes =
-            b"\x2d\x02\x0b\x2a\x93\x8a\x03\x80\x18\x20\x20\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
-
-        crate::test_support::with_decode_context_over(bytes, adjust, |ctx| {
-            super::index_rows(ctx, bytes).expect_err("index row resource refusal")
-        })
-    }
-
-    #[test]
-    fn om_index_row_route_refuses_collection_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_collection_items = 0;
-        };
-        assert!(
-            matches!(index_row_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
-    }
-
-    #[test]
-    fn om_index_row_route_refuses_retained_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_retained_bytes = 0;
-        };
-        assert!(
-            matches!(index_row_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-        );
-    }
-
-    #[test]
-    fn om_index_row_route_refuses_work_limit() {
-        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-            policy.limits.max_work_units = 0;
-        };
-        assert!(
-            matches!(index_row_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
-    }
 
     #[test]
     fn om_offset_store_index_rows_require_complete_exact_frames() {
@@ -332,10 +273,7 @@ mod tests {
         bytes.extend_from_slice(b"gap");
         bytes.extend_from_slice(second);
 
-        let rows = crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::index_rows(ctx, &bytes)
-        })
-        .unwrap();
+        let rows = crate::om::column_row::scan::index_rows(&bytes);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].offset(), 6);
         assert_eq!(rows[0].first_index().atom.value(), 42);
@@ -367,39 +305,20 @@ mod tests {
 
         let mut null = first.to_vec();
         null[3] = 0xff;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::index_rows(ctx, &null)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::index_rows(&null).is_empty());
         let mut other_flag = first.to_vec();
         other_flag[6] = 0x04;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::index_rows(ctx, &other_flag)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::index_rows(&other_flag).is_empty());
         let mut overlong = first.to_vec();
         overlong.insert(12, 0x01);
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::index_rows(ctx, &overlong)
-        })
-        .unwrap()
-        .is_empty());
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::index_rows(ctx, &first[..first.len() - 1])
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::index_rows(&overlong).is_empty());
+        assert!(crate::om::column_row::scan::index_rows(&first[..first.len() - 1]).is_empty());
     }
 
     #[test]
     fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
         let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
-        let rows = crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::linked_rows(ctx, row)
-        })
-        .unwrap();
+        let rows = crate::om::column_row::scan::linked_rows(row);
         assert_eq!(rows.len(), 1);
         assert_eq!(
             (
@@ -433,59 +352,30 @@ mod tests {
 
         let mut null = row.to_vec();
         null[7] = 0xff;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::linked_rows(ctx, &null)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::linked_rows(&null).is_empty());
         let mut discriminator = row.to_vec();
         discriminator[6] = 0x15;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::linked_rows(ctx, &discriminator)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::linked_rows(&discriminator).is_empty());
         let mut flag = row.to_vec();
         flag[17] = 0x04;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::linked_rows(ctx, &flag)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::linked_rows(&flag).is_empty());
         let mut mode = row.to_vec();
         mode[18] = 0x06;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::linked_rows(ctx, &mode)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::linked_rows(&mode).is_empty());
         let mut mode_seven = row.to_vec();
         mode_seven[18] = 0x07;
         assert_eq!(
-            u8::from(
-                crate::test_support::with_decode_context(|ctx| {
-                    crate::om::column_row::scan::linked_rows(ctx, &mode_seven)
-                })
-                .unwrap()[0]
-                    .mode()
-            ),
+            u8::from({ crate::om::column_row::scan::linked_rows(&mode_seven) }[0].mode()),
             7
         );
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::linked_rows(ctx, &row[..row.len() - 1])
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::linked_rows(&row[..row.len() - 1]).is_empty());
     }
 
     #[test]
     fn om_offset_store_target_index_rows_require_complete_exact_frames() {
         let row =
         b"\x02\x01\x01\x01\x16\x3e\xff\xff\x90\xfe\x1e\x20\x58\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
-        let rows = crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::target_rows(ctx, row)
-        })
-        .unwrap();
+        let rows = crate::om::column_row::scan::target_rows(row);
         assert_eq!(rows.len(), 1);
         assert_eq!(
             (
@@ -509,41 +399,19 @@ mod tests {
 
         let mut null = row.to_vec();
         null[5] = 0xff;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::target_rows(ctx, &null)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::target_rows(&null).is_empty());
         let mut discriminator = row.to_vec();
         discriminator[4] = 0x17;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::target_rows(ctx, &discriminator)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::target_rows(&discriminator).is_empty());
         let mut suffix = row.to_vec();
         suffix[16] = 0x03;
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::target_rows(ctx, &suffix)
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::target_rows(&suffix).is_empty());
         let mut mode_four = row.to_vec();
         mode_four[16] = 0x04;
         assert_eq!(
-            u8::from(
-                crate::test_support::with_decode_context(|ctx| {
-                    crate::om::column_row::scan::target_rows(ctx, &mode_four)
-                })
-                .unwrap()[0]
-                    .mode()
-            ),
+            u8::from({ crate::om::column_row::scan::target_rows(&mode_four) }[0].mode()),
             4
         );
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::column_row::scan::target_rows(ctx, &row[..row.len() - 1])
-        })
-        .unwrap()
-        .is_empty());
+        assert!(crate::om::column_row::scan::target_rows(&row[..row.len() - 1]).is_empty());
     }
 }

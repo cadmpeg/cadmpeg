@@ -59,26 +59,18 @@ struct Reference {
 
 impl FeatureSwp104LeadingBranch {
     pub(super) fn from_source(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: String,
         operation_label: String,
         source_offset: u64,
         branch: Swp104PayloadLeadingBranch,
-        resolve: impl Fn(PayloadIndexToken) -> Result<Option<String>, cadmpeg_core::CodecError>,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if source_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len()))
-            .is_none()
-        {
-            return Ok(None);
-        }
-        let reference = |token| {
-            Ok(Reference {
-                token,
-                data_block: resolve(token)?,
-            })
+        resolve: impl Fn(PayloadIndexToken) -> Option<String>,
+    ) -> Option<Self> {
+        source_offset.checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len()))?;
+        let reference = |token| Reference {
+            token,
+            data_block: resolve(token),
         };
-        Ok(Some(Self {
+        Some(Self {
             id,
             operation_label,
             source_offset,
@@ -87,11 +79,9 @@ impl FeatureSwp104LeadingBranch {
             leading_zero: branch.leading_zero,
             mode: branch.mode,
             state_lane: branch.state_lane,
-            members: branch
-                .members
-                .try_map_indexed_charged(ctx, |_, item| reference(item))?,
-            terminal: reference(branch.terminal)?,
-        }))
+            members: branch.members.map_indexed(|_, item| reference(item)),
+            terminal: reference(branch.terminal),
+        })
     }
 
     fn members_offset(&self) -> u64 {
@@ -254,21 +244,9 @@ mod tests {
         operation_label: String,
         source_offset: u64,
         branch: crate::om::Swp104PayloadLeadingBranch,
-        resolve: impl Fn(
-            crate::om::reference_index::PayloadIndexToken,
-        ) -> Result<Option<String>, cadmpeg_core::CodecError>,
+        resolve: impl Fn(crate::om::reference_index::PayloadIndexToken) -> Option<String>,
     ) -> Option<FeatureSwp104LeadingBranch> {
-        crate::test_support::with_decode_context(|ctx| {
-            FeatureSwp104LeadingBranch::from_source(
-                ctx,
-                id,
-                operation_label,
-                source_offset,
-                branch,
-                resolve,
-            )
-        })
-        .unwrap()
+        FeatureSwp104LeadingBranch::from_source(id, operation_label, source_offset, branch, resolve)
     }
 
     #[test]
@@ -297,17 +275,15 @@ mod tests {
                     let record =
                         crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
                             .unwrap();
-                    let source = crate::test_support::with_decode_context(|ctx| {
-                        crate::om::swp104_payload_leading_branch(ctx, record)
-                    })
-                    .unwrap()
-                    .unwrap();
+                    let source = crate::om::swp104_payload_leading_branch(record)
+                        .unwrap()
+                        .unwrap();
                     let branch = from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),
                         1200,
                         source.clone(),
-                        |token| Ok(Some(format!("block#{}", token.value()))),
+                        |token| Some(format!("block#{}", token.value())),
                     )
                     .unwrap();
                     let wire = serde_json::to_value(&branch).unwrap();
@@ -331,7 +307,7 @@ mod tests {
                         "operation".to_owned(),
                         u64::MAX,
                         source,
-                        |_| Ok(None)
+                        |_| None
                     )
                     .is_none());
                 }

@@ -190,47 +190,30 @@ pub(super) fn operation_state_group_end_at(
 }
 
 pub(super) fn operation_state_group_at(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Result<Option<OperationStateGroup>, cadmpeg_core::CodecError> {
-    let Some((opener, count, mut cursor)) = operation_state_group_header_at(bytes, at) else {
-        return Ok(None);
-    };
-    let Some(group_end) = operation_state_group_end_at(bytes, at, end, base_offset) else {
-        return Ok(None);
-    };
-    let Some(offset) = base_offset.checked_add(at) else {
-        return Ok(None);
-    };
-    if base_offset.checked_add(group_end).is_none() {
-        return Ok(None);
-    }
-    let member_count = count.member_row_count();
-    let count_u64 = cadmpeg_core::decode::u64_from_index(member_count);
-    let operation = "NX operation-state group rows";
-    ctx.charge_work(count_u64, operation)?;
-    let mut rows = ctx.collection_vec(member_count, operation)?;
-    for _ in 0..member_count {
-        let Some((row, row_end)) = operation_state_group_row_at(bytes, cursor, base_offset) else {
-            return Ok(None);
-        };
+) -> Option<OperationStateGroup> {
+    let (opener, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
+    let group_end = operation_state_group_end_at(bytes, at, end, base_offset)?;
+    let offset = base_offset.checked_add(at)?;
+    base_offset.checked_add(group_end)?;
+    let mut rows = Vec::new();
+    for _ in 0..count.member_row_count() {
+        let (row, row_end) = operation_state_group_row_at(bytes, cursor, base_offset)?;
         rows.push(row);
         cursor = row_end;
     }
     if cursor != group_end {
-        return Ok(None);
+        return None;
     }
-    let Some(members) = StateGroupMembers::new(count, rows).ok() else {
-        return Ok(None);
-    };
-    Ok(Some(OperationStateGroup {
+    let members = StateGroupMembers::new(count, rows).ok()?;
+    Some(OperationStateGroup {
         offset,
         opener,
         members,
-    }))
+    })
 }
 
 /// A nonempty contiguous group sequence with its exact boundary suffix.
@@ -310,10 +293,7 @@ mod tests {
         end: usize,
         base_offset: usize,
     ) -> Option<super::OperationStateGroup> {
-        crate::test_support::with_decode_context(|ctx| {
-            operation_state_group_at(ctx, bytes, at, end, base_offset)
-        })
-        .unwrap()
+        operation_state_group_at(bytes, at, end, base_offset)
     }
 
     #[test]

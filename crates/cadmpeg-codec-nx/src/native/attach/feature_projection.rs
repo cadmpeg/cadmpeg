@@ -27,344 +27,165 @@ use cadmpeg_ir::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) fn body_faces<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    ir: &'a CadIr,
-    body_id: &BodyId,
-) -> Result<Option<ScopedFaces<'a, 'ctx>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
-        "NX body face body lookup",
-    )?;
-    let Some(body) = ir.model.bodies.iter().find(|body| body.id == *body_id) else {
-        return Ok(None);
-    };
+pub(super) fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
+    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
     let mut faces = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX body faces")?;
     for region_id in &body.regions {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.regions.len()),
-            "NX body face region lookup",
-        )?;
-        let Some(region) = ir
+        let region = ir
             .model
             .regions
             .iter()
-            .find(|region| region.id == *region_id && region.body == body.id)
-        else {
-            return Ok(None);
-        };
+            .find(|region| region.id == *region_id && region.body == body.id)?;
         for shell_id in &region.shells {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(ir.model.shells.len()),
-                "NX body face shell lookup",
-            )?;
-            let Some(shell) = ir
+            let shell = ir
                 .model
                 .shells
                 .iter()
-                .find(|shell| shell.id == *shell_id && shell.region == region.id)
-            else {
-                return Ok(None);
-            };
+                .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
             for face_id in shell.faces() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(ir.model.faces.len()),
-                    "NX body face lookup",
-                )?;
-                let Some(face) = ir
+                let face = ir
                     .model
                     .faces
                     .iter()
-                    .find(|face| face.id == *face_id && face.shell == shell.id)
-                else {
-                    return Ok(None);
-                };
-                ctx.reserve_scoped_vec(&mut reservation, &mut faces, 1, "NX body faces")?;
+                    .find(|face| face.id == *face_id && face.shell == shell.id)?;
                 faces.push(face);
             }
         }
     }
-    Ok(Some(ScopedFaces {
-        faces,
-        _reservation: reservation,
-    }))
+    Some(faces)
 }
 
-pub(super) struct ScopedFaces<'a, 'ctx> {
-    faces: Vec<&'a Face>,
-    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
-impl<'a> std::ops::Deref for ScopedFaces<'a, '_> {
-    type Target = [&'a Face];
-
-    fn deref(&self) -> &Self::Target {
-        &self.faces
-    }
-}
-
-pub(super) fn connected_solid_body_faces<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub(super) fn connected_solid_body_faces<'a>(
     ir: &'a CadIr,
     body_id: &BodyId,
-) -> Result<Option<ScopedFaces<'a, 'ctx>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
-        "NX connected solid body lookup",
-    )?;
-    let Some(body) = ir.model.bodies.iter().find(|body| body.id == *body_id) else {
-        return Ok(None);
-    };
+) -> Option<Vec<&'a Face>> {
+    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
     if body.kind != cadmpeg_ir::topology::BodyKind::Solid {
-        return Ok(None);
+        return None;
     }
     let [region_id] = body.regions.as_slice() else {
-        return Ok(None);
+        return None;
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.regions.len()),
-        "NX connected solid region lookup",
-    )?;
-    let Some(region) = ir
+
+    let region = ir
         .model
         .regions
         .iter()
-        .find(|region| region.id == *region_id && region.body == body.id)
-    else {
-        return Ok(None);
-    };
+        .find(|region| region.id == *region_id && region.body == body.id)?;
     let [shell_id] = region.shells.as_slice() else {
-        return Ok(None);
+        return None;
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.shells.len()),
-        "NX connected solid shell lookup",
-    )?;
-    let Some(shell) = ir
+
+    let shell = ir
         .model
         .shells
         .iter()
-        .find(|shell| shell.id == *shell_id && shell.region == region.id)
-    else {
-        return Ok(None);
-    };
+        .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
     let mut faces = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX connected solid faces")?;
     for face_id in shell.faces() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.faces.len()),
-            "NX connected solid face lookup",
-        )?;
-        let Some(face) = ir
+        let face = ir
             .model
             .faces
             .iter()
-            .find(|face| face.id == *face_id && face.shell == shell.id)
-        else {
-            return Ok(None);
-        };
-        ctx.reserve_scoped_vec(&mut reservation, &mut faces, 1, "NX connected solid faces")?;
+            .find(|face| face.id == *face_id && face.shell == shell.id)?;
         faces.push(face);
     }
-    Ok(Some(ScopedFaces {
-        faces,
-        _reservation: reservation,
-    }))
+    Some(faces)
 }
 
-pub(super) fn connected_solid_body_exists(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    body: &cadmpeg_ir::topology::Body,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
-        "NX connected solid identity scan",
-    )?;
+pub(super) fn connected_solid_body_exists(ir: &CadIr, body: &cadmpeg_ir::topology::Body) -> bool {
     let Some(body) = ir
         .model
         .bodies
         .iter()
         .find(|candidate| candidate.id == body.id)
     else {
-        return Ok(false);
+        return false;
     };
     if body.kind != BodyKind::Solid {
-        return Ok(false);
+        return false;
     }
     let [region_id] = body.regions.as_slice() else {
-        return Ok(false);
+        return false;
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.regions.len()),
-        "NX connected solid region scan",
-    )?;
+
     let Some(region) = ir
         .model
         .regions
         .iter()
         .find(|region| region.id == *region_id && region.body == body.id)
     else {
-        return Ok(false);
+        return false;
     };
     let [shell_id] = region.shells.as_slice() else {
-        return Ok(false);
+        return false;
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.shells.len()),
-        "NX connected solid shell scan",
-    )?;
+
     let Some(shell) = ir
         .model
         .shells
         .iter()
         .find(|shell| shell.id == *shell_id && shell.region == region.id)
     else {
-        return Ok(false);
+        return false;
     };
-    let face_work = shell
-        .faces()
-        .len()
-        .checked_mul(ir.model.faces.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX connected solid face scan",
-                0,
-                cadmpeg_core::decode::u64_from_index(shell.faces().len()),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(face_work),
-        "NX connected solid face scan",
-    )?;
-    Ok(shell.faces().iter().all(|face_id| {
+    shell.faces().iter().all(|face_id| {
         ir.model
             .faces
             .iter()
             .any(|face| face.id == *face_id && face.shell == shell.id)
-    }))
+    })
 }
 
-pub(super) struct ScopedSurfaceIds<'ctx> {
-    ids: BTreeSet<SurfaceId>,
-    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
-pub(super) fn selection_indices_native(
-    ctx: &DecodeContext<'_>,
-    indices: impl Iterator<Item = u32> + Clone,
-) -> Result<String, CodecError> {
-    const PREFIX: &str = "nx:om-object-indices#";
-    let mut count = 0usize;
-    let mut length = PREFIX.len();
-    for index in indices.clone() {
-        let digits = if index == 0 { 1 } else { index.ilog10() + 1 };
-        length = length
-            .checked_add(
-                usize::try_from(digits)
-                    .map_err(|_| ctx.refuse_codec_limit("NX body selection indices", 0, 1))?,
-            )
-            .and_then(|length| length.checked_add(usize::from(count != 0)))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX body selection indices", 0, 1))?;
-        count = count
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX body selection indices", 0, 1))?;
-    }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(length),
-        "NX body selection indices",
-    )?;
-    let mut text = ctx.retained_string(length, "NX body selection indices")?;
-    text.push_str(PREFIX);
+pub(super) fn selection_indices_native(indices: impl Iterator<Item = u32>) -> String {
+    let mut text = String::from("nx:om-object-indices#");
     for (ordinal, index) in indices.enumerate() {
         if ordinal != 0 {
             text.push(',');
         }
-        std::fmt::write(&mut text, format_args!("{index}")).map_err(|_| {
-            CodecError::InvalidInput("NX body selection index formatting failed".to_string())
-        })?;
+        text.push_str(&index.to_string());
     }
-    Ok(text)
+    text
 }
 
-pub(super) fn parameter_consumer_identity(
-    ctx: &DecodeContext<'_>,
-    operation_label: &str,
-) -> Result<String, CodecError> {
+pub(super) fn parameter_consumer_identity(operation_label: &str) -> String {
     match operation_label.split_once("operation-label") {
-        Some((prefix, suffix)) => ctx.format_retained(
-            format_args!("{prefix}feature{suffix}"),
-            "NX feature projection text",
-        ),
-        None => ctx.format_retained(
-            format_args!("{operation_label}"),
-            "NX feature projection text",
-        ),
+        Some((prefix, suffix)) => format!("{prefix}feature{suffix}"),
+        None => operation_label.to_owned(),
     }
 }
 
 pub(super) fn insert_parameter_property(
-    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     key: std::fmt::Arguments<'_>,
     value: String,
 ) -> Result<(), CodecError> {
-    let key = ctx.format_retained(key, "NX feature projection text")?;
-    let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+    let key = cadmpeg_core::text::NonBlankString::new(std::fmt::format(key)).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format_args!("NX parameter property key is blank"))
     })?;
-    if !properties.contains_key(&key) {
-        ctx.charge_collection_items(1, "NX parameter properties")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>() * 4,
-            ),
-            "NX parameter property node",
-        )?;
-    }
     properties.insert(key, value);
     Ok(())
 }
 
-impl std::ops::Deref for ScopedSurfaceIds<'_> {
-    type Target = BTreeSet<SurfaceId>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.ids
-    }
-}
-
-pub(super) fn body_surface_ids<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub(super) fn body_surface_ids(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_id: &BodyId,
-) -> Result<Option<ScopedSurfaceIds<'ctx>>, CodecError> {
-    let Some(faces) = body_faces(ctx, ir, body_id)? else {
+) -> Result<Option<BTreeSet<SurfaceId>>, CodecError> {
+    let Some(faces) = body_faces(ir, body_id) else {
         return Ok(None);
     };
     let mut ids = BTreeSet::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX body surface identities")?;
-    for face in faces.iter() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ids.len()),
-            "NX body surface uniqueness",
-        )?;
+    for face in &faces {
         if ids.contains(&face.surface) {
             continue;
         }
-        let surface = reservation.with_storage(|| {
-            face.surface
-                .try_clone_for_decode(ctx, "NX body surface identity copy")
-        })?;
-        reservation.with_storage(|| {
-            ctx.insert_btree_set(&mut ids, surface, "NX body surface identities")
-        })?;
+        let surface = face
+            .surface
+            .try_clone_for_decode(ctx, "NX body surface identity copy")?;
+        ids.insert(surface);
     }
-    Ok(Some(ScopedSurfaceIds {
-        ids,
-        _reservation: reservation,
-    }))
+    Ok(Some(ids))
 }
 
 /// Neutral operand family named by an NX rolling-ball blend operation.
@@ -395,10 +216,8 @@ pub(super) fn blend_feature_definition(
     let mut uniform_radii = true;
     let mut variable_radii = true;
     let mut pairs = Vec::new();
-    let mut pairs_reservation = ctx.reserve_scoped(0, "NX blend support pairs")?;
     let mut complete_pairs = true;
     for procedural in &ir.model.procedural_surfaces {
-        ctx.charge_work(1, "NX blend procedural surface scan")?;
         let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
             continue;
         };
@@ -415,7 +234,7 @@ pub(super) fn blend_feature_definition(
         if *cross_section != BlendCrossSection::Circular {
             return Ok(None);
         }
-        ctx.reserve_vec(&mut surfaces, 1, "NX blend result surfaces")?;
+
         surfaces.push(owner.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
         match radius {
             BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
@@ -439,22 +258,14 @@ pub(super) fn blend_feature_definition(
                 if first.surface == second.surface {
                     complete_pairs = false;
                 } else {
-                    ctx.charge_collection_items(1, "NX blend support pairs")?;
-                    pairs_reservation.with_storage(|| {
-                        ctx.reserve_capacity(&mut pairs, 1, "NX blend support pairs")
-                    })?;
-                    pairs.push(pairs_reservation.with_storage(|| {
-                        Ok::<_, CodecError>([
-                            first.surface.try_clone_for_decode(
-                                ctx,
-                                "NX blend first support identity copy",
-                            )?,
-                            second.surface.try_clone_for_decode(
-                                ctx,
-                                "NX blend second support identity copy",
-                            )?,
-                        ])
-                    })?);
+                    pairs.push([
+                        first
+                            .surface
+                            .try_clone_for_decode(ctx, "NX blend first support identity copy")?,
+                        second
+                            .surface
+                            .try_clone_for_decode(ctx, "NX blend second support identity copy")?,
+                    ]);
                 }
             } else {
                 complete_pairs = false;
@@ -464,12 +275,7 @@ pub(super) fn blend_feature_definition(
     if surfaces.is_empty() {
         return Ok(None);
     }
-    ctx.stable_sort_by(
-        &mut surfaces,
-        Ord::cmp,
-        |surface| surface.as_str().len(),
-        "NX blend result sort",
-    )?;
+    surfaces.sort_by(Ord::cmp);
     let radius = if constant_radii {
         if uniform_radii {
             first_radius
@@ -494,14 +300,8 @@ pub(super) fn blend_feature_definition(
     };
     let face_blend = if matches!(family, NxBlendFamily::Face) && complete_pairs {
         if let Some(sides) = blend_support_bipartition(ctx, &pairs)? {
-            let first_native = ctx.format_retained(
-                format_args!("{body}:blend-first-support-surfaces"),
-                "NX feature projection text",
-            )?;
-            let second_native = ctx.format_retained(
-                format_args!("{body}:blend-second-support-surfaces"),
-                "NX feature projection text",
-            )?;
+            let first_native = format!("{body}:blend-first-support-surfaces");
+            let second_native = format!("{body}:blend-second-support-surfaces");
             let (first_faces, _) = support_face_projection(ctx, ir, &sides.first, first_native)?;
             let (second_faces, _) = support_face_projection(ctx, ir, &sides.second, second_native)?;
             match (&first_faces, &second_faces) {
@@ -559,81 +359,43 @@ pub(super) fn blend_feature_definition(
 /// its lowest surface identity on the first side. The support graph must be
 /// complete bipartite: odd cycles and missing cross-pairs cannot be represented
 /// by one neutral face-blend operation.
-pub(super) struct ScopedBlendSides<'ctx> {
+pub(super) struct BlendSides {
     pub(super) first: Vec<SurfaceId>,
     pub(super) second: Vec<SurfaceId>,
-    pub(super) _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-pub(super) fn blend_support_bipartition<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub(super) fn blend_support_bipartition(
+    ctx: &DecodeContext<'_>,
     pairs: &[[SurfaceId; 2]],
-) -> Result<Option<ScopedBlendSides<'ctx>>, CodecError> {
+) -> Result<Option<BlendSides>, CodecError> {
     let mut adjacent = BTreeMap::<&SurfaceId, BTreeSet<&SurfaceId>>::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX blend support graph")?;
     for [first, second] in pairs {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(adjacent.len()),
-            "NX blend support graph lookup",
-        )?;
         if first == second {
             return Ok(None);
         }
         for (from, to) in [(first, second), (second, first)] {
-            if !adjacent.contains_key(from) {
-                ctx.charge_collection_items(1, "NX blend support graph nodes")?;
-                reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(&SurfaceId, BTreeSet<&SurfaceId>)>() * 4,
-                ))?;
-            }
             let neighbors = adjacent.entry(from).or_default();
             if !neighbors.contains(to) {
-                reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<&SurfaceId>() * 4,
-                ))?;
-                ctx.insert_btree_set(neighbors, to, "NX blend support graph edges")?;
+                neighbors.insert(to);
             }
         }
     }
     let mut sides = BTreeMap::<&SurfaceId, bool>::new();
     let mut pending = Vec::new();
     for seed in adjacent.keys() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(sides.len()),
-            "NX blend support side lookup",
-        )?;
         if sides.contains_key(seed) {
             continue;
         }
-        reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(&SurfaceId, bool)>() * 4,
-        ))?;
-        ctx.insert_btree_map(&mut sides, *seed, false, "NX blend support sides")?;
-        ctx.reserve_scoped_vec(&mut reservation, &mut pending, 1, "NX blend support queue")?;
+        sides.insert(*seed, false);
         pending.push(*seed);
         while let Some(surface) = pending.pop() {
             let side = sides[&surface];
             for neighbor in &adjacent[&surface] {
-                ctx.charge_work(1, "NX blend support bipartition")?;
                 match sides.get(neighbor) {
                     Some(neighbor_side) if *neighbor_side == side => return Ok(None),
                     Some(_) => {}
                     None => {
-                        reservation.grow(cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<(&SurfaceId, bool)>() * 4,
-                        ))?;
-                        ctx.insert_btree_map(
-                            &mut sides,
-                            *neighbor,
-                            !side,
-                            "NX blend support sides",
-                        )?;
-                        ctx.reserve_scoped_vec(
-                            &mut reservation,
-                            &mut pending,
-                            1,
-                            "NX blend support queue",
-                        )?;
+                        sides.insert(*neighbor, !side);
                         pending.push(*neighbor);
                     }
                 }
@@ -644,25 +406,17 @@ pub(super) fn blend_support_bipartition<'ctx>(
     let mut second = Vec::new();
     for (&surface, &second_side) in &sides {
         let output = if second_side { &mut second } else { &mut first };
-        ctx.charge_collection_items(1, "NX blend support output")?;
-        reservation.with_storage(|| ctx.reserve_capacity(output, 1, "NX blend support output"))?;
-        output.push(reservation.with_storage(|| {
-            surface.try_clone_for_decode(ctx, "NX blend support identity copy")
-        })?);
+
+        output.push(surface.try_clone_for_decode(ctx, "NX blend support identity copy")?);
     }
     for surface in &first {
         for other in &second {
-            ctx.charge_work(1, "NX blend complete support graph")?;
             if !adjacent[surface].contains(other) {
                 return Ok(None);
             }
         }
     }
-    Ok(Some(ScopedBlendSides {
-        first,
-        second,
-        _reservation: reservation,
-    }))
+    Ok(Some(BlendSides { first, second }))
 }
 
 pub(super) fn offset_surface_feature_definition(
@@ -678,10 +432,7 @@ pub(super) fn offset_surface_feature_definition(
     else {
         return Ok(None);
     };
-    let native = ctx.format_retained(
-        format_args!("{}:offset-support-surfaces", body.as_str()),
-        "NX feature projection text",
-    )?;
+    let native = format!("{}:offset-support-surfaces", body.as_str());
     let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
     let distance = senses
         .as_deref()
@@ -713,25 +464,19 @@ pub(super) fn owned_offset_surface_data<'a>(
     let Some((body, carriers)) = owned_offset_carriers(ctx, ir, outputs)? else {
         return Ok(None);
     };
-    let distance = carriers.values[0].1;
+    let distance = carriers[0].1;
     if carriers
-        .values
         .iter()
         .any(|(_, candidate)| candidate.get().to_bits() != distance.get().to_bits())
     {
         return Ok(None);
     }
-    let supports = unique_carrier_supports(ctx, &carriers.values)?;
+    let supports = unique_carrier_supports(ctx, &carriers)?;
     Ok(Some(OwnedOffsetSurfaceData {
         body,
         distance,
         supports,
     }))
-}
-
-pub(super) struct ScopedOffsetCarriers<'a, 'ctx> {
-    values: Vec<(&'a SurfaceId, FiniteReal)>,
-    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 pub(super) fn unique_carrier_supports(
@@ -740,30 +485,25 @@ pub(super) fn unique_carrier_supports(
 ) -> Result<Vec<SurfaceId>, CodecError> {
     let mut supports = Vec::new();
     for &(support, _) in carriers {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(supports.len()),
-            "NX offset support uniqueness",
-        )?;
         if supports.contains(support) {
             continue;
         }
-        ctx.reserve_vec(&mut supports, 1, "NX offset support output")?;
+
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
-    ctx.stable_sort_by(
-        &mut supports,
-        Ord::cmp,
-        |support| support.as_str().len(),
-        "NX offset support sort",
-    )?;
+    supports.sort_by(Ord::cmp);
     Ok(supports)
 }
 
-pub(super) fn owned_offset_carriers<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+/// The single output body and the offset carriers it owns, each as its support
+/// surface and offset distance.
+type OwnedOffsetCarriers<'a> = (&'a BodyId, Vec<(&'a SurfaceId, FiniteReal)>);
+
+pub(super) fn owned_offset_carriers<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     outputs: &'a [BodyId],
-) -> Result<Option<(&'a BodyId, ScopedOffsetCarriers<'a, 'ctx>)>, CodecError> {
+) -> Result<Option<OwnedOffsetCarriers<'a>>, CodecError> {
     let [body] = outputs else {
         return Ok(None);
     };
@@ -771,9 +511,7 @@ pub(super) fn owned_offset_carriers<'a, 'ctx>(
         return Ok(None);
     };
     let mut carriers = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX offset carriers")?;
     for procedural in &ir.model.procedural_surfaces {
-        ctx.charge_work(1, "NX offset procedural surface scan")?;
         let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
             continue;
         };
@@ -786,16 +524,9 @@ pub(super) fn owned_offset_carriers<'a, 'ctx>(
         };
         let support = definition_payload.support();
         let candidate = definition_payload.distance();
-        ctx.reserve_scoped_vec(&mut reservation, &mut carriers, 1, "NX offset carriers")?;
         carriers.push((support, candidate));
     }
-    Ok((!carriers.is_empty()).then_some((
-        body,
-        ScopedOffsetCarriers {
-            values: carriers,
-            _reservation: reservation,
-        },
-    )))
+    Ok((!carriers.is_empty()).then_some((body, carriers)))
 }
 
 pub(super) fn thicken_feature_definition(
@@ -812,10 +543,7 @@ pub(super) fn thicken_feature_definition(
     else {
         return Ok(None);
     };
-    let native = ctx.format_retained(
-        format_args!("{}:thicken-support-surfaces", body.as_str()),
-        "NX feature projection text",
-    )?;
+    let native = format!("{}:thicken-support-surfaces", body.as_str());
     let (faces, senses) = support_face_projection(ctx, ir, &supports, native)?;
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),
@@ -865,14 +593,13 @@ pub(super) fn owned_thicken_surface_data<'a>(
     if output_body.kind != BodyKind::Solid {
         return Ok(None);
     }
-    let distance = carriers.values[0].1;
+    let distance = carriers[0].1;
     if carriers
-        .values
         .iter()
         .all(|(_, candidate)| candidate.get().to_bits() == distance.get().to_bits())
     {
         if let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) {
-            let supports = unique_carrier_supports(ctx, &carriers.values)?;
+            let supports = unique_carrier_supports(ctx, &carriers)?;
             return Ok(Some(OwnedThickenSurfaceData {
                 body,
                 thickness: distance.abs(),
@@ -886,8 +613,7 @@ pub(super) fn owned_thicken_surface_data<'a>(
     let mut magnitude = None::<PositiveLength>;
     let mut positive = BTreeSet::new();
     let mut negative = BTreeSet::new();
-    let mut support_reservation = ctx.reserve_scoped(0, "NX thicken signed supports")?;
-    for &(support, distance) in &carriers.values {
+    for &(support, distance) in &carriers {
         let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) else {
             return Ok(None);
         };
@@ -898,20 +624,8 @@ pub(super) fn owned_thicken_surface_data<'a>(
         }
         magnitude = Some(candidate);
         if distance.get().is_sign_positive() {
-            if !positive.contains(support) {
-                ctx.charge_collection_items(1, "NX thicken positive supports")?;
-                support_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<&SurfaceId>() * 4,
-                ))?;
-            }
             positive.insert(support);
         } else {
-            if !negative.contains(support) {
-                ctx.charge_collection_items(1, "NX thicken negative supports")?;
-                support_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<&SurfaceId>() * 4,
-                ))?;
-            }
             negative.insert(support);
         }
     }
@@ -926,7 +640,6 @@ pub(super) fn owned_thicken_surface_data<'a>(
     };
     let mut supports = Vec::new();
     for support in positive {
-        ctx.reserve_vec(&mut supports, 1, "NX thicken support output")?;
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
     Ok(Some(OwnedThickenSurfaceData {
@@ -944,12 +657,7 @@ pub(super) fn support_face_projection(
     native: String,
 ) -> Result<(FaceSelection, Option<Vec<Sense>>), CodecError> {
     let mut selected = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX support face projection")?;
     for support in supports {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.faces.len()),
-            "NX support face lookup",
-        )?;
         let mut matches = ir
             .model
             .faces
@@ -961,32 +669,18 @@ pub(super) fn support_face_projection(
         if matches.next().is_some() {
             return Ok((FaceSelection::Native(native), None));
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(selected.len()),
-            "NX support face uniqueness",
-        )?;
+
         if selected.iter().any(|(id, _)| *id == face.id) {
             return Ok((FaceSelection::Native(native), None));
         }
-        ctx.charge_collection_items(1, "NX support face projection")?;
-        reservation.with_storage(|| {
-            ctx.reserve_capacity(&mut selected, 1, "NX support face projection")
-        })?;
+
         selected.push((
             face.id
                 .try_clone_for_decode(ctx, "NX support face identity copy")?,
             face.sense,
         ));
     }
-    let mut faces = Vec::new();
-    let mut senses = Vec::new();
-    for (face, sense) in selected {
-        ctx.charge_collection_items(2, "NX resolved support faces")?;
-        ctx.reserve_capacity(&mut faces, 1, "NX resolved support faces")?;
-        ctx.reserve_capacity(&mut senses, 1, "NX resolved support senses")?;
-        faces.push(face);
-        senses.push(sense);
-    }
+    let (faces, senses): (Vec<_>, Vec<_>) = selected.into_iter().unzip();
     Ok((FaceSelection::Resolved { faces, native }, Some(senses)))
 }
 
@@ -1006,103 +700,48 @@ pub(in crate::native) fn feature_source_content(
     ctx: &DecodeContext<'_>,
     payload_strings: &[&crate::native::features::FeaturePayloadString],
 ) -> Result<cadmpeg_ir::features::FeatureContent, CodecError> {
-    let mut sorted = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX feature source text order")?;
-    for &value in payload_strings {
-        ctx.reserve_scoped_vec(
-            &mut reservation,
-            &mut sorted,
-            1,
-            "NX feature source text order",
-        )?;
-        sorted.push(value);
-    }
-    ctx.stable_sort_by(
-        &mut sorted,
-        |first, second| first.source_offset.cmp(&second.source_offset),
-        |_| 0,
-        "NX feature source text sort",
-    )?;
-    let mut content = Vec::new();
-    for value in sorted {
-        let text = value.value.as_str();
-
-        ctx.charge_collection_items(1, "NX feature source text")?;
-
-        let mut owned = String::new();
-        ctx.try_reserve_retained_text(&mut owned, text.len(), "NX feature source text")?;
-        owned.push_str(text);
-        ctx.reserve_capacity(&mut content, 1, "NX feature source text")?;
-        content.push(FeatureSourceContent::Text(owned));
-    }
+    let mut sorted = payload_strings.to_vec();
+    sorted.sort_by_key(|first| first.source_offset);
+    let content = sorted
+        .into_iter()
+        .map(|value| FeatureSourceContent::Text(value.value.as_str().to_owned()))
+        .collect::<Vec<_>>();
     cadmpeg_ir::features::FeatureContent::new(content, ctx, "NX feature source content validation")
         .map_err(CodecError::from)
 }
 
 pub(super) fn simple_hole_native_properties(
-    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<String, String>,
     operation_label: &str,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     repeated_lanes: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane],
     block_references: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
     construction_groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
-) -> Result<(), CodecError> {
-    fn insert_property(
-        ctx: &DecodeContext<'_>,
-        properties: &mut BTreeMap<String, String>,
-        key: &'static str,
-        value: &str,
-    ) -> Result<(), CodecError> {
-        let bytes = std::mem::size_of::<(String, String)>()
-            .checked_add(key.len())
-            .and_then(|bytes| bytes.checked_add(value.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX simple hole native property",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                )
-            })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX simple hole native property",
-        )?;
-        ctx.insert_btree_map(
-            properties,
-            key.to_owned(),
-            value.to_owned(),
-            "NX simple hole native property",
-        )?;
-        Ok(())
+) {
+    fn insert_property(properties: &mut BTreeMap<String, String>, key: &'static str, value: &str) {
+        properties.insert(key.to_owned(), value.to_owned());
     }
     if let Some(template) = templates
         .iter()
         .find(|template| template.operation_label == operation_label)
     {
-        insert_property(ctx, properties, "simple_hole_template", &template.id)?;
+        insert_property(properties, "simple_hole_template", &template.id);
     }
     if let Some(pair) = repeated_lanes
         .iter()
         .find(|pair| pair.operation_label == operation_label)
     {
-        insert_property(
-            ctx,
-            properties,
-            "simple_hole_repeated_scalar_lane",
-            &pair.id,
-        )?;
+        insert_property(properties, "simple_hole_repeated_scalar_lane", &pair.id);
     }
     if let Some(references) = block_references
         .iter()
         .find(|references| references.operation_label == operation_label)
     {
         insert_property(
-            ctx,
             properties,
             "simple_hole_repeated_scalar_lane_block_references",
             &references.id,
-        )?;
+        );
     }
     if let Some(group) = construction_groups.iter().find(|group| {
         group
@@ -1111,9 +750,8 @@ pub(super) fn simple_hole_native_properties(
             .map(|member| &member.operation_label)
             .any(|label| label == operation_label)
     }) {
-        insert_property(ctx, properties, "simple_hole_construction_group", &group.id)?;
+        insert_property(properties, "simple_hole_construction_group", &group.id);
     }
-    Ok(())
 }
 
 pub(super) fn block_placement(
@@ -1148,22 +786,13 @@ pub(super) fn block_placement(
         Some(normal)
     }
 
-    fn plane_extent(
-        ctx: &DecodeContext<'_>,
-        band: &mut PlaneBand,
-        linear_tolerance: f64,
-    ) -> Result<Option<PlaneExtent>, CodecError> {
-        ctx.stable_sort_by(
-            &mut band.offsets,
-            f64::total_cmp,
-            |_| 0,
-            "NX block plane sort",
-        )?;
+    fn plane_extent(band: &mut PlaneBand, linear_tolerance: f64) -> Option<PlaneExtent> {
+        band.offsets.sort_by(f64::total_cmp);
         let mut first: Option<[f64; 2]> = None;
         let mut second: Option<[f64; 2]> = None;
         for &offset in &band.offsets {
             if !offset.is_finite() {
-                return Ok(None);
+                return None;
             }
             if let Some(cluster) = second.as_mut().or(first.as_mut()) {
                 if offset - cluster[0] <= linear_tolerance {
@@ -1176,20 +805,20 @@ pub(super) fn block_placement(
             } else if second.is_none() {
                 second = Some([offset, offset]);
             } else {
-                return Ok(None);
+                return None;
             }
         }
         let (Some(minimum), Some(maximum)) = (first, second) else {
-            return Ok(None);
+            return None;
         };
         if maximum[1] - minimum[0] <= linear_tolerance {
-            return Ok(None);
+            return None;
         }
-        Ok(Some(PlaneExtent {
+        Some(PlaneExtent {
             normal: band.normal,
             minimum: minimum[0],
             maximum: maximum[1],
-        }))
+        })
     }
 
     let linear_tolerance = ir.tolerances.linear.get();
@@ -1205,7 +834,7 @@ pub(super) fn block_placement(
         [] => {
             let mut unique = None;
             for candidate in &ir.model.bodies {
-                if connected_solid_body_faces(ctx, ir, &candidate.id)?.is_some()
+                if connected_solid_body_faces(ir, &candidate.id).is_some()
                     && unique.replace(&candidate.id).is_some()
                 {
                     return Ok(None);
@@ -1218,16 +847,11 @@ pub(super) fn block_placement(
         }
         _ => return Ok(None),
     };
-    let Some(faces) = connected_solid_body_faces(ctx, ir, body)? else {
+    let Some(faces) = connected_solid_body_faces(ir, body) else {
         return Ok(None);
     };
     let mut bands = Vec::<PlaneBand>::new();
-    let mut band_reservation = ctx.reserve_scoped(0, "NX block plane bands")?;
     for face in faces.iter().copied() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()),
-            "NX block plane surface lookup",
-        )?;
         let Some(geometry) = ir
             .model
             .surfaces
@@ -1247,28 +871,18 @@ pub(super) fn block_placement(
             return Ok(None);
         };
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bands.len()),
-            "NX block plane band lookup",
-        )?;
+
         let existing = bands
             .iter_mut()
             .find(|band| (1.0 - band.normal.dot(normal)).abs() <= angular_tolerance);
-        ctx.charge_collection_items(1, "NX block plane offsets")?;
+
         if let Some(band) = existing {
-            band_reservation.with_storage(|| {
-                ctx.reserve_capacity(&mut band.offsets, 1, "NX block plane offsets")
-            })?;
             band.offsets.push(offset);
         } else {
-            ctx.charge_collection_items(1, "NX block plane bands")?;
-            let mut offsets = Vec::new();
-            band_reservation
-                .with_storage(|| ctx.reserve_capacity(&mut offsets, 1, "NX block plane offsets"))?;
-            offsets.push(offset);
-            band_reservation
-                .with_storage(|| ctx.reserve_capacity(&mut bands, 1, "NX block plane bands"))?;
-            bands.push(PlaneBand { normal, offsets });
+            bands.push(PlaneBand {
+                normal,
+                offsets: vec![offset],
+            });
         }
     }
     if bands.len() != 3
@@ -1284,26 +898,21 @@ pub(super) fn block_placement(
         return Ok(None);
     };
     let (Some(first), Some(second), Some(third)) = (
-        plane_extent(ctx, first, linear_tolerance)?,
-        plane_extent(ctx, second, linear_tolerance)?,
-        plane_extent(ctx, third, linear_tolerance)?,
+        plane_extent(first, linear_tolerance),
+        plane_extent(second, linear_tolerance),
+        plane_extent(third, linear_tolerance),
     ) else {
         return Ok(None);
     };
     let mut extents = [first, second, third];
-    ctx.stable_sort_by(
-        &mut extents,
-        |left, right| {
-            right
-                .normal
-                .x
-                .total_cmp(&left.normal.x)
-                .then_with(|| right.normal.y.total_cmp(&left.normal.y))
-                .then_with(|| right.normal.z.total_cmp(&left.normal.z))
-        },
-        |_| 0,
-        "sort NX block plane extents",
-    )?;
+    extents.sort_by(|left, right| {
+        right
+            .normal
+            .x
+            .total_cmp(&left.normal.x)
+            .then_with(|| right.normal.y.total_cmp(&left.normal.y))
+            .then_with(|| right.normal.z.total_cmp(&left.normal.z))
+    });
     let permutations = [
         [0usize, 1usize, 2usize],
         [0, 2, 1],
@@ -1389,16 +998,13 @@ pub(super) fn sphere_body_projection(
         [] => {
             let mut unique = None;
             for candidate in &ir.model.bodies {
-                let Some(faces) = connected_solid_body_faces(ctx, ir, &candidate.id)? else {
+                let Some(faces) = connected_solid_body_faces(ir, &candidate.id) else {
                     continue;
                 };
                 let [face] = &faces[..] else {
                     continue;
                 };
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()),
-                    "NX sphere fallback surface scan",
-                )?;
+
                 if !ir.model.surfaces.iter().any(|surface| {
                     surface.id == face.surface
                         && matches!(
@@ -1419,16 +1025,13 @@ pub(super) fn sphere_body_projection(
         }
         _ => return Ok(None),
     };
-    let Some(faces) = connected_solid_body_faces(ctx, ir, body)? else {
+    let Some(faces) = connected_solid_body_faces(ir, body) else {
         return Ok(None);
     };
     let [face] = &faces[..] else {
         return Ok(None);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()),
-        "NX sphere surface lookup",
-    )?;
+
     let Some(surface) = ir
         .model
         .surfaces
@@ -1498,14 +1101,10 @@ pub(super) fn body_writing_unresolved_feature_definition(
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let mut body_write = false;
     for key in source_properties.keys() {
-        ctx.charge_work(1, "NX body-writing property visit")?;
         if key.len() < "body_write.".len() {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index("body_write.".len()),
-            "NX body-writing property prefix",
-        )?;
+
         if key.starts_with("body_write.") {
             body_write = true;
             break;
@@ -2019,24 +1618,15 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
 /// are resolved. A BREP record carries boundary representation rather than a
 /// replayable parametric construction; without a closed result-body relation,
 /// retaining the native definition preserves the unresolved history edge.
-pub(super) fn brep_feature_definition(
-    ctx: &DecodeContext<'_>,
-    outputs: &[BodyId],
-) -> Result<Option<FeatureDefinition>, CodecError> {
+pub(super) fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
     for (index, body) in outputs.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(index),
-            "NX BREP output uniqueness",
-        )?;
         if outputs[..index].contains(body) {
-            return Ok(None);
+            return None;
         }
     }
-    Ok(
-        (!outputs.is_empty()).then_some(FeatureDefinition::Operation(
-            FeatureOperation::StoredGeometry {},
-        )),
-    )
+    (!outputs.is_empty()).then_some(FeatureDefinition::Operation(
+        FeatureOperation::StoredGeometry {},
+    ))
 }
 
 /// Preserve a SHELL operation as a typed neutral family while its construction roles remain
@@ -2076,48 +1666,27 @@ pub(super) fn symbolic_thread_feature_definition() -> FeatureDefinition {
 }
 
 pub(super) fn native_feature_parameters(
-    ctx: &DecodeContext<'_>,
     uses: &[&crate::native::features::FeatureParameterUse],
     expressions: &[crate::native::om::ParameterFormula],
-) -> Result<BTreeMap<String, String>, CodecError> {
+) -> BTreeMap<String, String> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(expressions.len()),
-            "NX native parameter expression lookup",
-        )?;
         let Some(expression) = expressions
             .iter()
             .rev()
             .find(|expression| expression.id == parameter_use.expression)
         else {
-            return Ok(BTreeMap::new());
+            return BTreeMap::new();
         };
         if parameters.contains_key(expression.name.as_str()) {
-            return Ok(BTreeMap::new());
+            return BTreeMap::new();
         }
-        let bytes = std::mem::size_of::<(String, String)>()
-            .checked_add(expression.name.as_str().len())
-            .and_then(|bytes| bytes.checked_add(expression.expression.len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX native feature parameter",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(expression.expression.len()),
-                )
-            })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX native feature parameter",
-        )?;
-        ctx.insert_btree_map(
-            &mut parameters,
+        parameters.insert(
             expression.name.as_str().to_owned(),
             expression.expression.clone(),
-            "NX native feature parameter",
-        )?;
+        );
     }
-    Ok(parameters)
+    parameters
 }
 
 /// Resolve explicit hole outputs only from the proven segment-body namespace.
@@ -2132,40 +1701,29 @@ pub(super) fn primary_hole_outputs(
 ) -> Result<BTreeMap<String, Vec<BodyId>>, CodecError> {
     let mut outputs = BTreeMap::new();
     for template in templates {
-        ctx.charge_work(1, "NX primary hole output scan")?;
         let Some(object_index) = body_references.get(template.operation_label.as_str()) else {
             continue;
         };
         let bodies =
             feature_body_outputs(ctx, *object_index, body_bindings, bodies_by_object_index)?;
-        ctx.admit_retained_btree_record::<String, Vec<BodyId>>(
-            template.operation_label.len(),
-            "NX primary hole output map",
-        )?;
         outputs.insert(template.operation_label.clone(), bodies);
     }
     Ok(outputs)
 }
 
 pub(super) fn simple_hole_operations(
-    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
     operation_positions: &BTreeMap<&str, usize>,
-) -> Result<Option<Vec<String>>, CodecError> {
+) -> Option<Vec<String>> {
     let mut ordered_templates = Vec::new();
-    let mut reservation = ctx.reserve_scoped(0, "NX simple hole selected templates")?;
     for template in templates {
-        ctx.charge_work(1, "NX simple hole template scan")?;
         if template.form != crate::native::features::holes::SimpleHoleForm::Simple
             || template.extent != crate::native::features::holes::SimpleHoleExtent::Through
         {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(templates.len()),
-            "NX simple hole template identity scan",
-        )?;
+
         if templates
             .iter()
             .filter(|candidate| candidate.operation_label == template.operation_label)
@@ -2173,48 +1731,21 @@ pub(super) fn simple_hole_operations(
             != 1
             || !operation_positions.contains_key(template.operation_label.as_str())
         {
-            return Ok(None);
+            return None;
         }
-        ctx.reserve_scoped_vec(
-            &mut reservation,
-            &mut ordered_templates,
-            1,
-            "NX simple hole selected templates",
-        )?;
         ordered_templates.push(template);
     }
     if ordered_templates.is_empty() {
-        return Ok(None);
+        return None;
     }
-    ctx.stable_sort_by(
-        &mut ordered_templates,
-        |first, second| {
-            operation_positions
-                .get(first.operation_label.as_str())
-                .cmp(&operation_positions.get(second.operation_label.as_str()))
-                .then_with(|| first.operation_label.cmp(&second.operation_label))
-        },
-        |template| template.operation_label.len(),
-        "sort NX simple hole templates",
-    )?;
+    ordered_templates.sort_by(|first, second| {
+        operation_positions
+            .get(first.operation_label.as_str())
+            .cmp(&operation_positions.get(second.operation_label.as_str()))
+            .then_with(|| first.operation_label.cmp(&second.operation_label))
+    });
     let mut selected_group = None;
     for group in groups {
-        let comparisons = group
-            .members
-            .len()
-            .checked_mul(ordered_templates.len())
-            .and_then(|count| count.checked_mul(2))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX simple hole group membership",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(group.members.len()),
-                )
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(comparisons),
-            "NX simple hole group membership",
-        )?;
         let same_operations = group.members.iter().all(|member| {
             ordered_templates
                 .iter()
@@ -2226,15 +1757,11 @@ pub(super) fn simple_hole_operations(
                 .any(|member| member.operation_label == template.operation_label)
         });
         if same_operations && selected_group.replace(group).is_some() {
-            return Ok(None);
+            return None;
         }
     }
     let mut operations = Vec::new();
     if let Some(group) = selected_group {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(group.members.len()),
-            "NX simple hole group order",
-        )?;
         if group
             .members
             .iter()
@@ -2244,93 +1771,67 @@ pub(super) fn simple_hole_operations(
                     >= operation_positions[pair[1].operation_label.as_str()]
             })
         {
-            return Ok(None);
+            return None;
         }
         for member in group.members.iter() {
-            ctx.push_vec(
-                &mut operations,
-                ctx.copy_retained_text(&member.operation_label, "NX hole operation labels")?,
-                "NX hole operation labels",
-            )?;
+            operations.push(member.operation_label.clone());
         }
     } else {
         for template in ordered_templates {
-            ctx.push_vec(
-                &mut operations,
-                ctx.copy_retained_text(&template.operation_label, "NX hole operation labels")?,
-                "NX hole operation labels",
-            )?;
+            operations.push(template.operation_label.clone());
         }
     }
-    Ok(Some(operations))
+    Some(operations)
 }
 
 /// Select uniquely typed hole operations in feature-history order.
 pub(super) fn selected_hole_operations(
-    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     operation_positions: &BTreeMap<&str, usize>,
     accepts: impl Fn(&crate::native::features::holes::FeatureSimpleHoleTemplate) -> bool,
-) -> Result<Option<Vec<String>>, CodecError> {
+) -> Option<Vec<String>> {
     let mut operations = Vec::new();
     for template in templates {
-        ctx.charge_work(1, "NX selected hole template scan")?;
         if !accepts(template) {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(templates.len()),
-            "NX selected hole template identity scan",
-        )?;
+
         if templates
             .iter()
             .filter(|candidate| candidate.operation_label == template.operation_label)
             .count()
             == 1
         {
-            ctx.push_vec(
-                &mut operations,
-                ctx.copy_retained_text(&template.operation_label, "NX hole operation labels")?,
-                "NX hole operation labels",
-            )?;
+            operations.push(template.operation_label.clone());
         }
     }
-    if operations.is_empty() || !hole_operations_are_unique(ctx, &operations)? {
-        return Ok(None);
+    if operations.is_empty() || !hole_operations_are_unique(&operations) {
+        return None;
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(operations.len()),
-        "NX selected hole operation positions",
-    )?;
+
     if operations
         .iter()
         .any(|operation| !operation_positions.contains_key(operation.as_str()))
     {
-        return Ok(None);
+        return None;
     }
-    ctx.stable_sort_by(
-        &mut operations,
-        |first, second| {
-            operation_positions
-                .get(first.as_str())
-                .cmp(&operation_positions.get(second.as_str()))
-                .then_with(|| first.cmp(second))
-        },
-        String::len,
-        "sort NX hole operations",
-    )?;
-    Ok(Some(operations))
+    operations.sort_by(|first, second| {
+        operation_positions
+            .get(first.as_str())
+            .cmp(&operation_positions.get(second.as_str()))
+            .then_with(|| first.cmp(second))
+    });
+    Some(operations)
 }
 
 /// Return simple blind-hole operations in feature-history order. A blind
 /// operation with competing typed templates is not assignable to one body
 /// witness and remains native-only.
 pub(super) fn blind_hole_operations(
-    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     operation_positions: &BTreeMap<&str, usize>,
-) -> Result<Option<Vec<String>>, CodecError> {
-    selected_hole_operations(ctx, templates, operation_positions, |template| {
+) -> Option<Vec<String>> {
+    selected_hole_operations(templates, operation_positions, |template| {
         template.form == crate::native::features::holes::SimpleHoleForm::Simple
             && template.extent == crate::native::features::holes::SimpleHoleExtent::Blind
     })
@@ -2340,11 +1841,10 @@ pub(super) fn blind_hole_operations(
 /// Counterbore construction groups are not inferred from the scalar lanes:
 /// each operation must have its own unambiguous body and topology witness.
 pub(super) fn counterbore_operations(
-    ctx: &DecodeContext<'_>,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     operation_positions: &BTreeMap<&str, usize>,
-) -> Result<Option<Vec<String>>, CodecError> {
-    selected_hole_operations(ctx, templates, operation_positions, |template| {
+) -> Option<Vec<String>> {
+    selected_hole_operations(templates, operation_positions, |template| {
         template.form == crate::native::features::holes::SimpleHoleForm::Counterbored
             && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
             && template.start_treatment
@@ -2385,17 +1885,6 @@ pub(super) fn hole_package_projection(
     } = sources;
     let mut projection = HolePackageProjection::default();
     for use_ in uses {
-        let use_scans = uses.len().checked_mul(2).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX hole package use uniqueness",
-                0,
-                cadmpeg_core::decode::u64_from_index(uses.len()),
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(use_scans),
-            "NX hole package use uniqueness",
-        )?;
         if uses
             .iter()
             .filter(|candidate| candidate.operation_label == use_.operation_label)
@@ -2411,10 +1900,7 @@ pub(super) fn hole_package_projection(
         {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(groups.len()),
-            "NX hole package group lookup",
-        )?;
+
         let Some(group) = groups
             .iter()
             .find(|group| group.id == use_.simple_hole_construction_group)
@@ -2429,22 +1915,6 @@ pub(super) fn hole_package_projection(
         {
             continue;
         }
-        let template_scans = group
-            .members
-            .len()
-            .checked_mul(templates.len())
-            .and_then(|count| count.checked_mul(2))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX hole package template lookup",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(group.members.len()),
-                )
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(template_scans),
-            "NX hole package template lookup",
-        )?;
         let mut requests_chamfer = true;
         let mut requests_no_treatment = true;
         let mut complete_templates = true;
@@ -2483,10 +1953,7 @@ pub(super) fn hole_package_projection(
         else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(group.members.len()),
-            "NX hole package output lookup",
-        )?;
+
         if group.members.iter().any(|member| !matches!(outputs.get(&member.operation_label).map(Vec::as_slice), Some([candidate]) if candidate == body))
         {
             continue;
@@ -2534,55 +2001,27 @@ pub(super) fn hole_package_projection(
             None
         };
         for member in group.members.iter() {
-            ctx.charge_work(1, "NX hole package internal operation")?;
             if projection
                 .internal_operations
                 .contains(&member.operation_label)
             {
                 continue;
             }
-            let bytes = std::mem::size_of::<String>()
-                .checked_add(member.operation_label.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX hole package internal operations",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(member.operation_label.len()),
-                    )
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX hole package internal operations",
-            )?;
-            ctx.insert_btree_set(
-                &mut projection.internal_operations,
-                member.operation_label.clone(),
-                "NX hole package internal operations",
-            )?;
+            projection
+                .internal_operations
+                .insert(member.operation_label.clone());
         }
         insert_hole_output_body(ctx, &mut projection.outputs, &use_.operation_label, body)?;
-        ctx.admit_retained_btree_record::<String, Length>(
-            use_.operation_label.len(),
-            "NX hole package diameter map",
-        )?;
         projection
             .diameters
             .insert(use_.operation_label.clone(), diameter);
         if let Some(chamfer) = chamfer {
-            ctx.admit_retained_btree_record::<String, HoleKind>(
-                use_.operation_label.len(),
-                "NX hole package chamfer map",
-            )?;
             projection
                 .chamfers
                 .insert(use_.operation_label.clone(), chamfer);
         }
         let placements = hole_axis_placements_for_body(ctx, ir, body)?;
         if placements.len() == group.members.len() {
-            ctx.admit_retained_btree_record::<String, Vec<HolePlacement>>(
-                use_.operation_label.len(),
-                "NX hole package placement map",
-            )?;
             projection
                 .placements
                 .insert(use_.operation_label.clone(), placements);
@@ -2598,41 +2037,11 @@ pub(super) struct HoleBodyProjection {
     pub(super) counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
-pub(super) fn extend_hole_projection_map<V>(
-    ctx: &DecodeContext<'_>,
-    target: &mut BTreeMap<String, V>,
-    source: BTreeMap<String, V>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    for (key, value) in source {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(target.len()),
-            operation,
-        )?;
-        ctx.admit_btree_entry(target, &key, operation)?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, V)>()),
-            operation,
-        )?;
-        target.insert(key, value);
-    }
-    Ok(())
-}
-
-pub(super) fn hole_operations_are_unique(
-    ctx: &DecodeContext<'_>,
-    operations: &[String],
-) -> Result<bool, CodecError> {
-    for (index, operation) in operations.iter().enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(index),
-            "NX hole operation uniqueness",
-        )?;
-        if operations[..index].contains(operation) {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+pub(super) fn hole_operations_are_unique(operations: &[String]) -> bool {
+    operations
+        .iter()
+        .enumerate()
+        .all(|(index, operation)| !operations[..index].contains(operation))
 }
 
 pub(super) fn insert_hole_output_body(
@@ -2641,18 +2050,10 @@ pub(super) fn insert_hole_output_body(
     operation: &str,
     body: &BodyId,
 ) -> Result<(), CodecError> {
-    let nested_bytes = std::mem::size_of::<BodyId>();
-    ctx.admit_retained_btree_record::<String, Vec<BodyId>>(
-        operation
-            .len()
-            .checked_add(nested_bytes)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX hole output map", u64::MAX, u64::MAX))?,
-        "NX hole output map",
-    )?;
-    let mut bodies = Vec::new();
-    ctx.reserve_capacity(&mut bodies, 1, "NX hole output body")?;
-    bodies.push(body.try_clone_for_decode(ctx, "NX hole output body")?);
-    outputs.insert(operation.to_owned(), bodies);
+    outputs.insert(
+        operation.to_owned(),
+        vec![body.try_clone_for_decode(ctx, "NX hole output body")?],
+    );
     Ok(())
 }
 
@@ -2662,7 +2063,7 @@ pub(super) fn hole_body_projection(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<Option<HoleBodyProjection>, CodecError> {
-    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)? {
+    if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(None);
     }
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
@@ -2672,7 +2073,7 @@ pub(super) fn hole_body_projection(
     let mut projected_outputs = BTreeMap::new();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(None);
         };
         let Some(bores) = cylindrical_face_witnesses(ctx, ir, &body_faces)? else {
@@ -2693,10 +2094,6 @@ pub(super) fn hole_body_projection(
             let Some(diameter) = Length::new(radius * 2.0) else {
                 return Ok(None);
             };
-            ctx.admit_retained_btree_record::<String, Length>(
-                operation.len(),
-                "NX hole diameter map",
-            )?;
             diameters.insert(operation, diameter);
         }
     }
@@ -2714,7 +2111,7 @@ pub(super) fn counterbore_body_projection(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<Option<HoleBodyProjection>, CodecError> {
-    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)? {
+    if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(None);
     }
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
@@ -2730,7 +2127,7 @@ pub(super) fn counterbore_body_projection(
             // geometry to history order.
             return Ok(None);
         };
-        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(None);
         };
         let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
@@ -2743,10 +2140,6 @@ pub(super) fn counterbore_body_projection(
         let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
             return Ok(None);
         };
-        ctx.admit_retained_btree_record::<String, Length>(
-            operation.len(),
-            "NX counterbore diameter map",
-        )?;
         diameters.insert(operation.clone(), diameter);
         let (Some(diameter), Some(depth)) = (
             cadmpeg_ir::scalar::PositiveLength::new(witness.counterbore_radius * 2.0),
@@ -2754,10 +2147,6 @@ pub(super) fn counterbore_body_projection(
         ) else {
             return Ok(None);
         };
-        ctx.admit_retained_btree_record::<String, CounterboreDimensions>(
-            operation.len(),
-            "NX counterbore dimension map",
-        )?;
         counterbores.insert(operation.clone(), CounterboreDimensions { diameter, depth });
     }
     Ok(Some(HoleBodyProjection {
@@ -2774,7 +2163,7 @@ pub(super) fn blind_hole_body_projection(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<Option<HoleBodyProjection>, CodecError> {
-    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)? {
+    if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(None);
     }
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
@@ -2787,7 +2176,7 @@ pub(super) fn blind_hole_body_projection(
         let [operation] = operations.as_slice() else {
             return Ok(None);
         };
-        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(None);
         };
         let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
@@ -2800,18 +2189,10 @@ pub(super) fn blind_hole_body_projection(
         let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
             return Ok(None);
         };
-        ctx.admit_retained_btree_record::<String, Length>(
-            operation.len(),
-            "NX blind hole diameter map",
-        )?;
         diameters.insert(operation.clone(), diameter);
         let Some(depth) = cadmpeg_ir::scalar::NonZeroLength::new(witness.depth) else {
             return Ok(None);
         };
-        ctx.admit_retained_btree_record::<String, cadmpeg_ir::scalar::NonZeroLength>(
-            operation.len(),
-            "NX blind hole depth map",
-        )?;
         blind_depths.insert(operation.clone(), depth);
     }
     Ok(Some(HoleBodyProjection {
@@ -2832,7 +2213,7 @@ pub(super) fn hole_axis_placements_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
-    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)? {
+    if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(BTreeMap::new());
     }
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
@@ -2848,10 +2229,6 @@ pub(super) fn hole_axis_placements_for_operations(
         if body_placements.len() != 1 {
             continue;
         }
-        ctx.admit_retained_btree_record::<String, HolePlacement>(
-            operation.len(),
-            "NX hole placement map",
-        )?;
         placements.insert(operation.clone(), body_placements.remove(0));
     }
     Ok(placements)
@@ -2863,7 +2240,7 @@ pub(super) fn counterbore_axis_placements_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
-    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)? {
+    if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(BTreeMap::new());
     }
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
@@ -2874,7 +2251,7 @@ pub(super) fn counterbore_axis_placements_for_operations(
         let [operation] = operations.as_slice() else {
             return Ok(BTreeMap::new());
         };
-        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(BTreeMap::new());
         };
         let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
@@ -2889,10 +2266,6 @@ pub(super) fn counterbore_axis_placements_for_operations(
         ) else {
             return Ok(BTreeMap::new());
         };
-        ctx.admit_retained_btree_record::<String, HolePlacement>(
-            operation.len(),
-            "NX counterbore placement map",
-        )?;
         placements.insert(
             operation.clone(),
             HolePlacement::Axis {
@@ -2910,7 +2283,7 @@ pub(super) fn blind_hole_axis_placements_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
-    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)? {
+    if operations.is_empty() || !hole_operations_are_unique(operations) {
         return Ok(BTreeMap::new());
     }
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
@@ -2921,7 +2294,7 @@ pub(super) fn blind_hole_axis_placements_for_operations(
         let [operation] = operations.as_slice() else {
             return Ok(BTreeMap::new());
         };
-        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(BTreeMap::new());
         };
         let Some(witnesses) = blind_bore_cylinders(ctx, ir, &body_faces)? else {
@@ -2936,10 +2309,6 @@ pub(super) fn blind_hole_axis_placements_for_operations(
         ) else {
             return Ok(BTreeMap::new());
         };
-        ctx.admit_retained_btree_record::<String, HolePlacement>(
-            operation.len(),
-            "NX blind hole placement map",
-        )?;
         placements.insert(
             operation.clone(),
             HolePlacement::Directed {
@@ -2956,7 +2325,7 @@ pub(super) fn hole_axis_placements_for_body(
     ir: &CadIr,
     body: &BodyId,
 ) -> Result<Vec<HolePlacement>, CodecError> {
-    let Some(body_faces) = connected_solid_body_faces(ctx, ir, body)? else {
+    let Some(body_faces) = connected_solid_body_faces(ir, body) else {
         return Ok(Vec::new());
     };
     let Some(bores) = cylindrical_face_witnesses(ctx, ir, &body_faces)? else {
@@ -2991,15 +2360,10 @@ pub(super) fn hole_axis_placements_for_body(
         ) else {
             return Ok(Vec::new());
         };
-        ctx.reserve_vec(&mut placements, 1, "NX hole axis placements")?;
+
         placements.push(HolePlacement::Axis { origin, axis });
     }
-    ctx.stable_sort_by(
-        &mut placements,
-        |first, second| hole_placement_key(first).cmp(&hole_placement_key(second)),
-        |_| 0,
-        "sort NX hole axis placements",
-    )?;
+    placements.sort_by_key(hole_placement_key);
     Ok(placements)
 }
 
@@ -3088,30 +2452,18 @@ pub(super) fn face_one_loop(face: &Face) -> Option<&LoopId> {
 }
 
 pub(super) fn circular_loop_geometry(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     loop_id: &LoopId,
     linear_tolerance: f64,
     angular_tolerance: f64,
-) -> Result<Option<(Point3, Vector3, f64)>, CodecError> {
-    let coedge_scans = ir.model.coedges.len().checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX circular loop coedge scan",
-            0,
-            cadmpeg_core::decode::u64_from_index(ir.model.coedges.len()),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(coedge_scans),
-        "NX circular loop coedge scan",
-    )?;
+) -> Option<(Point3, Vector3, f64)> {
     if !ir
         .model
         .coedges
         .iter()
         .any(|coedge| &coedge.owner_loop == loop_id)
     {
-        return Ok(None);
+        return None;
     }
     let mut witness: Option<(Point3, Vector3, f64)> = None;
     for coedge in ir
@@ -3120,43 +2472,28 @@ pub(super) fn circular_loop_geometry(
         .iter()
         .filter(|coedge| &coedge.owner_loop == loop_id)
     {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.edges.len()),
-            "NX circular loop edge scan",
-        )?;
-        let Some(curve_id) = ir
+        let curve_id = ir
             .model
             .edges
             .iter()
             .rev()
             .find(|edge| edge.id == coedge.edge)
-            .and_then(|edge| edge.curve())
-        else {
-            return Ok(None);
-        };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.curves.len()),
-            "NX circular loop curve scan",
-        )?;
-        let Some(curve) = ir
+            .and_then(|edge| edge.curve())?;
+
+        let curve = ir
             .model
             .curves
             .iter()
             .rev()
-            .find(|curve| &curve.id == curve_id)
-        else {
-            return Ok(None);
-        };
+            .find(|curve| &curve.id == curve_id)?;
         let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &curve.geometry
         else {
-            return Ok(None);
+            return None;
         };
         let center = circle_curve.center().get();
         let axis = circle_curve.frame().axis();
         let radius = circle_curve.radius().get();
-        let Some(axis) = canonical_axis(*axis, angular_tolerance) else {
-            return Ok(None);
-        };
+        let axis = canonical_axis(*axis, angular_tolerance)?;
         if let Some((previous_center, previous_axis, previous_radius)) = witness {
             if (radius - previous_radius).abs() > linear_tolerance
                 || (1.0 - axis.dot(previous_axis).abs()) > angular_tolerance
@@ -3168,40 +2505,15 @@ pub(super) fn circular_loop_geometry(
                 .norm()
                     > linear_tolerance
             {
-                return Ok(None);
+                return None;
             }
         }
         witness = Some((center, axis, radius));
     }
-    Ok(witness)
+    witness
 }
 
-pub(super) fn same_loop_edges(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    first: &LoopId,
-    second: &LoopId,
-) -> Result<bool, CodecError> {
-    let coedge_count = ir.model.coedges.len();
-    let work = coedge_count
-        .checked_mul(coedge_count)
-        .and_then(|count| count.checked_mul(2))
-        .and_then(|count| {
-            coedge_count
-                .checked_mul(4)
-                .and_then(|scans| count.checked_add(scans))
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX loop edge comparison",
-                0,
-                cadmpeg_core::decode::u64_from_index(coedge_count),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX loop edge comparison",
-    )?;
+pub(super) fn same_loop_edges(ir: &CadIr, first: &LoopId, second: &LoopId) -> bool {
     let first_has_edges = ir
         .model
         .coedges
@@ -3213,7 +2525,7 @@ pub(super) fn same_loop_edges(
         .iter()
         .any(|coedge| &coedge.owner_loop == second);
     if first_has_edges != second_has_edges {
-        return Ok(false);
+        return false;
     }
     let first_in_second = ir
         .model
@@ -3237,7 +2549,7 @@ pub(super) fn same_loop_edges(
                 .iter()
                 .any(|other| &other.owner_loop == first && other.edge == coedge.edge)
         });
-    Ok(first_in_second && second_in_first)
+    first_in_second && second_in_first
 }
 
 pub(super) fn cylindrical_face_witnesses(
@@ -3248,19 +2560,12 @@ pub(super) fn cylindrical_face_witnesses(
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut witnesses = Vec::new();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(body_faces.len()),
-        "NX cylindrical face scan",
-    )?;
+
     for face in body_faces
         .iter()
         .copied()
         .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
     {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()),
-            "NX cylindrical surface lookup",
-        )?;
         let Some(surface) = ir
             .model
             .surfaces
@@ -3293,7 +2598,7 @@ pub(super) fn cylindrical_face_witnesses(
         let mut stations = [0.0; 2];
         for (ordinal, loop_id) in [first_loop, second_loop].into_iter().enumerate() {
             let Some((center, circle_axis, circle_radius)) =
-                circular_loop_geometry(ctx, ir, loop_id, linear_tolerance, angular_tolerance)?
+                circular_loop_geometry(ir, loop_id, linear_tolerance, angular_tolerance)
             else {
                 return Ok(None);
             };
@@ -3322,8 +2627,7 @@ pub(super) fn cylindrical_face_witnesses(
         if (first - second).abs() <= linear_tolerance {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "NX cylindrical face witnesses")?;
-        ctx.reserve_capacity(&mut witnesses, 1, "NX cylindrical face witness")?;
+
         witnesses.push(CylindricalFaceWitness {
             line_origin,
             axis,
@@ -3339,14 +2643,13 @@ pub(super) fn cylindrical_face_witnesses(
 }
 
 pub(super) fn plane_annulus_witness(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body_faces: &[&Face],
     small: &CylindricalFaceWitness,
     small_station_ordinal: usize,
     large: &CylindricalFaceWitness,
     large_station_ordinal: usize,
-) -> Result<bool, CodecError> {
+) -> bool {
     let line_origin = small.line_origin;
     let axis = small.axis;
     let station = small.stations[small_station_ordinal];
@@ -3357,18 +2660,12 @@ pub(super) fn plane_annulus_witness(
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut matches = 0;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(body_faces.len()),
-        "NX annulus face scan",
-    )?;
+
     for face in body_faces {
         if face.loops.len() != 2 {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()),
-            "NX annulus plane lookup",
-        )?;
+
         let Some(surface) = ir
             .model
             .surfaces
@@ -3408,7 +2705,7 @@ pub(super) fn plane_annulus_witness(
         let mut valid = true;
         for (ordinal, loop_id) in [first_loop, second_loop].into_iter().enumerate() {
             let Some((center, circle_axis, radius)) =
-                circular_loop_geometry(ctx, ir, loop_id, linear_tolerance, angular_tolerance)?
+                circular_loop_geometry(ir, loop_id, linear_tolerance, angular_tolerance)
             else {
                 valid = false;
                 break;
@@ -3441,24 +2738,19 @@ pub(super) fn plane_annulus_witness(
         if !valid {
             continue;
         }
-        ctx.stable_sort_by(
-            &mut boundaries,
-            |(first, _), (second, _)| first.total_cmp(second),
-            |_| 0,
-            "sort NX annulus boundaries",
-        )?;
+        boundaries.sort_by(|(first, _), (second, _)| first.total_cmp(second));
         let [(inner, inner_boundary), (outer, outer_boundary)] = boundaries.as_slice() else {
             continue;
         };
         if (inner - inner_radius).abs() <= linear_tolerance
             && (outer - outer_radius).abs() <= linear_tolerance
-            && same_loop_edges(ctx, ir, inner_boundary, inner_loop)?
-            && same_loop_edges(ctx, ir, outer_boundary, outer_loop)?
+            && same_loop_edges(ir, inner_boundary, inner_loop)
+            && same_loop_edges(ir, outer_boundary, outer_loop)
         {
             matches += 1;
         }
     }
-    Ok(matches == 1)
+    matches == 1
 }
 
 pub(super) fn counterbore_cylinders(
@@ -3474,20 +2766,6 @@ pub(super) fn counterbore_cylinders(
     }
     let linear_tolerance = ir.tolerances.linear.get();
     let angular_tolerance = ir.tolerances.angular.get();
-    let pair_work = cylinders
-        .len()
-        .checked_mul(cylinders.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX counterbore pair scan",
-                0,
-                cadmpeg_core::decode::u64_from_index(cylinders.len()),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(pair_work),
-        "NX counterbore pair scan",
-    )?;
     let mut candidates = ctx.alloc_filled(
         cylinders.len(),
         Vec::<(usize, CounterboreCylinderWitness)>::new(),
@@ -3537,15 +2815,7 @@ pub(super) fn counterbore_cylinders(
             let depth = (large_other - shared_station).abs();
             if depth <= linear_tolerance
                 || (small_other - shared_station).abs() <= linear_tolerance
-                || !plane_annulus_witness(
-                    ctx,
-                    ir,
-                    body_faces,
-                    small,
-                    small_shared,
-                    large,
-                    large_shared,
-                )?
+                || !plane_annulus_witness(ir, body_faces, small, small_shared, large, large_shared)
             {
                 continue;
             }
@@ -3556,17 +2826,7 @@ pub(super) fn counterbore_cylinders(
                 counterbore_radius: large.radius,
                 depth,
             };
-            ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
-            ctx.reserve_capacity(
-                &mut candidates[first_index],
-                1,
-                "nx counterbore candidate pair",
-            )?;
-            ctx.reserve_capacity(
-                &mut candidates[second_index],
-                1,
-                "nx counterbore candidate pair",
-            )?;
+
             candidates[first_index].push((second_index, witness));
             candidates[second_index].push((first_index, witness));
         }
@@ -3574,8 +2834,7 @@ pub(super) fn counterbore_cylinders(
     if candidates.iter().any(|candidates| candidates.len() != 1) {
         return Ok(None);
     }
-    let mut witnesses =
-        ctx.collection_vec(cylinders.len() / 2, "nx counterbore cylinder witnesses")?;
+    let mut witnesses = Vec::new();
     let mut used = ctx.alloc_filled(
         cylinders.len(),
         false,
@@ -3619,10 +2878,7 @@ pub(super) fn blind_bore_cylinders(
     let mut cap_count = 0usize;
     for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
         let cylinder_loop = &cylinder.loop_ids[station_ordinal];
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.coedges.len()),
-            "NX blind bore cylinder edge scan",
-        )?;
+
         if !ir
             .model
             .coedges
@@ -3635,13 +2891,10 @@ pub(super) fn blind_bore_cylinders(
             let Some(cap_loop) = face_one_loop(face) else {
                 continue;
             };
-            if !same_loop_edges(ctx, ir, cap_loop, cylinder_loop)? {
+            if !same_loop_edges(ir, cap_loop, cylinder_loop) {
                 continue;
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()),
-                "NX blind bore cap surface lookup",
-            )?;
+
             let Some(surface) = ir
                 .model
                 .surfaces
@@ -3662,7 +2915,7 @@ pub(super) fn blind_bore_cylinders(
                 continue;
             };
             let Some((center, circle_axis, circle_radius)) =
-                circular_loop_geometry(ctx, ir, cap_loop, linear_tolerance, angular_tolerance)?
+                circular_loop_geometry(ir, cap_loop, linear_tolerance, angular_tolerance)
             else {
                 continue;
             };
@@ -3684,13 +2937,7 @@ pub(super) fn blind_bore_cylinders(
             {
                 continue;
             }
-            cap_count = cap_count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX blind bore cap count",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(cap_count),
-                )
-            })?;
+            cap_count += 1;
             cap_station = Some((station_ordinal, *station));
         }
     }
@@ -3713,14 +2960,12 @@ pub(super) fn blind_bore_cylinders(
     } else {
         Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
     };
-    let mut witnesses = ctx.collection_vec(1, "NX blind bore witness")?;
-    witnesses.push(BlindBoreCylinderWitness {
+    Ok(Some(vec![BlindBoreCylinderWitness {
         position,
         direction,
         bore_radius: cylinder.radius,
         depth,
-    });
-    Ok(Some(witnesses))
+    }]))
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
@@ -3732,10 +2977,6 @@ pub(super) fn hole_operations_by_body(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<Option<BTreeMap<BodyId, Vec<String>>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(operations.len()),
-        "NX hole output relation scan",
-    )?;
     let related = operations
         .iter()
         .filter(|operation| outputs.contains_key(*operation))
@@ -3749,69 +2990,30 @@ pub(super) fn hole_operations_by_body(
             let Some([body]) = outputs.get(operation).map(Vec::as_slice) else {
                 return Ok(None);
             };
-            if !operations_by_body.contains_key(body) {
-                let bytes = std::mem::size_of::<(BodyId, Vec<String>)>();
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(bytes),
-                    "NX hole operation body groups",
-                )?;
+            if let Some(group) = operations_by_body.get_mut(body) {
+                group.push(operation.clone());
+            } else {
                 let body_key = body.try_clone_for_decode(ctx, "NX hole operation body identity")?;
-                ctx.insert_btree_map(
-                    &mut operations_by_body,
-                    body_key,
-                    Vec::new(),
-                    "NX hole operation body groups",
-                )?;
+                operations_by_body.insert(body_key, vec![operation.clone()]);
             }
-            let group = operations_by_body
-                .get_mut(body)
-                .ok_or_else(|| ctx.refuse_codec_limit("NX hole operation body groups", 0, 1))?;
-            ctx.charge_collection_items(1, "NX hole operations per body")?;
-            let bytes = operation.len();
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX hole operations per body",
-            )?;
-            ctx.reserve_capacity(group, 1, "NX hole operations per body")?;
-            group.push(operation.clone());
         }
         return Ok(Some(operations_by_body));
     }
 
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
-        "NX connected solid body scan",
-    )?;
     let mut selected = None;
     for body in &ir.model.bodies {
-        if connected_solid_body_exists(ctx, ir, body)? && selected.replace(body).is_some() {
+        if connected_solid_body_exists(ir, body) && selected.replace(body).is_some() {
             return Ok(None);
         }
     }
     let Some(body) = selected else {
         return Ok(None);
     };
-    ctx.charge_collection_items(1, "NX hole operation body groups")?;
-    let map_bytes = std::mem::size_of::<(BodyId, Vec<String>)>();
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(map_bytes),
-        "NX hole operation body groups",
-    )?;
-    let mut group = Vec::new();
-    for operation in operations {
-        ctx.charge_collection_items(1, "NX hole operations per body")?;
-        let bytes = operation.len();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX hole operations per body",
-        )?;
-        ctx.reserve_capacity(&mut group, 1, "NX hole operations per body")?;
-        group.push(operation.clone());
-    }
+
     Ok(Some(BTreeMap::from([(
         body.id
             .try_clone_for_decode(ctx, "NX hole operation body identity")?,
-        group,
+        operations.to_vec(),
     )])))
 }
 
@@ -3825,9 +3027,7 @@ pub(super) fn simple_hole_chamfers(
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HoleKind>, CodecError> {
     let mut operations = Vec::new();
-    let mut operation_reservation = ctx.reserve_scoped(0, "NX chamfer selected operations")?;
     for template in templates {
-        ctx.charge_work(1, "NX chamfer template scan")?;
         if !(template.form == crate::native::features::holes::SimpleHoleForm::Simple
             && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
             && template.start_treatment
@@ -3837,10 +3037,7 @@ pub(super) fn simple_hole_chamfers(
         {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(templates.len()),
-            "NX chamfer template identity scan",
-        )?;
+
         if templates
             .iter()
             .filter(|candidate| candidate.operation_label == template.operation_label)
@@ -3849,23 +3046,12 @@ pub(super) fn simple_hole_chamfers(
         {
             continue;
         }
-        let bytes = template.operation_label.len();
-        ctx.charge_collection_items(1, "NX chamfer selected operations")?;
-        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-        operation_reservation.with_storage(|| {
-            ctx.reserve_capacity(&mut operations, 1, "NX chamfer selected operations")
-        })?;
         operations.push(template.operation_label.clone());
     }
     if operations.is_empty() {
         return Ok(BTreeMap::new());
     }
-    ctx.stable_sort_by(
-        &mut operations,
-        Ord::cmp,
-        String::len,
-        "sort NX chamfer selected operations",
-    )?;
+    operations.sort_by(Ord::cmp);
     let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {
         return Ok(BTreeMap::new());
     };
@@ -3874,7 +3060,7 @@ pub(super) fn simple_hole_chamfers(
     let angular_tolerance = ir.tolerances.angular.get();
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ctx, ir, &body)? else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return Ok(BTreeMap::new());
         };
         let Some(bores) = cylindrical_face_witnesses(ctx, ir, &body_faces)? else {
@@ -3891,34 +3077,14 @@ pub(super) fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
-        let cone_count_bytes = bores
-            .len()
-            .checked_mul(std::mem::size_of::<usize>())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX chamfer cone counts",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(bores.len()),
-                )
-            })?;
-        let _cone_count_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(cone_count_bytes),
-            "NX chamfer cone counts",
-        )?;
         let mut cone_counts =
             ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?;
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
-        let mut geometry_reservation = ctx.reserve_scoped(0, "NX chamfer cone geometry")?;
         for face in body_faces
-            .faces
             .iter()
             .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
         {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(ir.model.surfaces.len()),
-                "NX chamfer cone surface scan",
-            )?;
             let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) = ir
                 .model
                 .surfaces
@@ -3935,10 +3101,7 @@ pub(super) fn simple_hole_chamfers(
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
                 return Ok(BTreeMap::new());
             }
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(bores.len()),
-                "nx chamfer bore matching",
-            )?;
+
             let mut matching_bore = None;
             let mut multiple_bores = false;
             for (ordinal, bore) in bores.iter().enumerate() {
@@ -3973,20 +3136,12 @@ pub(super) fn simple_hole_chamfers(
             };
             let mut radius_count = 0;
             for loop_id in loops {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(ir.model.coedges.len()),
-                    "NX chamfer coedge scan",
-                )?;
                 for coedge in ir
                     .model
                     .coedges
                     .iter()
                     .filter(|coedge| coedge.owner_loop == *loop_id)
                 {
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(ir.model.edges.len()),
-                        "NX chamfer edge lookup",
-                    )?;
                     let Some(curve_id) = ir
                         .model
                         .edges
@@ -3997,10 +3152,7 @@ pub(super) fn simple_hole_chamfers(
                     else {
                         continue;
                     };
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(ir.model.curves.len()),
-                        "NX chamfer curve lookup",
-                    )?;
+
                     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) = ir
                         .model
                         .curves
@@ -4028,13 +3180,7 @@ pub(super) fn simple_hole_chamfers(
             if inner.to_bits() != bore_radius.to_bits() || outer <= inner {
                 return Ok(BTreeMap::new());
             }
-            ctx.charge_collection_items(2, "nx chamfer cone geometry")?;
-            geometry_reservation.with_storage(|| {
-                ctx.reserve_capacity(&mut outer_radii, 1, "nx chamfer outer radii")
-            })?;
-            geometry_reservation.with_storage(|| {
-                ctx.reserve_capacity(&mut included_angles, 1, "nx chamfer included angles")
-            })?;
+
             outer_radii.push(outer);
             included_angles.push(half_angle * 2.0);
         }
@@ -4044,18 +3190,8 @@ pub(super) fn simple_hole_chamfers(
         {
             return Ok(BTreeMap::new());
         }
-        ctx.stable_sort_by(
-            &mut outer_radii,
-            f64::total_cmp,
-            |_| 0,
-            "sort NX chamfer outer radii",
-        )?;
-        ctx.stable_sort_by(
-            &mut included_angles,
-            f64::total_cmp,
-            |_| 0,
-            "sort NX chamfer included angles",
-        )?;
+        outer_radii.sort_by(f64::total_cmp);
+        included_angles.sort_by(f64::total_cmp);
         let (Some(&widest), Some(&narrowest), Some(&largest), Some(&smallest)) = (
             outer_radii.last(),
             outer_radii.first(),
@@ -4067,55 +3203,25 @@ pub(super) fn simple_hole_chamfers(
         if widest - narrowest > linear_tolerance || largest - smallest > angular_tolerance {
             return Ok(BTreeMap::new());
         }
+        let (Some(radius_count), Some(angle_count)) = (
+            cadmpeg_core::convert::f64_from_index(outer_radii.len()),
+            cadmpeg_core::convert::f64_from_index(included_angles.len()),
+        ) else {
+            return Ok(BTreeMap::new());
+        };
         let (Some(diameter), Some(angle)) = (
             cadmpeg_ir::scalar::PositiveLength::new(
-                2.0 * outer_radii.iter().sum::<f64>()
-                    / cadmpeg_core::convert::f64_from_index(outer_radii.len()).ok_or_else(
-                        || {
-                            ctx.refuse_codec_limit(
-                                "NX chamfer radii count",
-                                9_007_199_254_740_992,
-                                cadmpeg_core::decode::u64_from_index(outer_radii.len()),
-                            )
-                        },
-                    )?,
+                2.0 * outer_radii.iter().sum::<f64>() / radius_count,
             ),
             cadmpeg_ir::scalar::InteriorAngle::new(
-                included_angles.iter().sum::<f64>()
-                    / cadmpeg_core::convert::f64_from_index(included_angles.len()).ok_or_else(
-                        || {
-                            ctx.refuse_codec_limit(
-                                "NX chamfer angles count",
-                                9_007_199_254_740_992,
-                                cadmpeg_core::decode::u64_from_index(included_angles.len()),
-                            )
-                        },
-                    )?,
+                included_angles.iter().sum::<f64>() / angle_count,
             ),
         ) else {
             return Ok(BTreeMap::new());
         };
         let treatment = HoleKind::Chamfer { diameter, angle };
         for operation in operations {
-            let bytes = std::mem::size_of::<(String, HoleKind)>()
-                .checked_add(operation.len())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX chamfer treatments",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(operation.len()),
-                    )
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX chamfer treatments",
-            )?;
-            ctx.insert_btree_map(
-                &mut treatments,
-                operation,
-                treatment,
-                "NX chamfer treatments",
-            )?;
+            treatments.insert(operation, treatment);
         }
     }
     Ok(treatments)

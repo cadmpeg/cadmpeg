@@ -229,48 +229,35 @@ impl<B> DatumPlaneFrame<B> {
 }
 
 impl DatumPlaneFrame<()> {
-    pub(crate) fn resolve<B, E>(
+    pub(crate) fn resolve<B>(
         &self,
-        mut block: impl FnMut(u32) -> Result<Option<B>, E>,
-    ) -> Result<Option<DatumPlaneFrame<B>>, E> {
+        mut block: impl FnMut(u32) -> Option<B>,
+    ) -> Option<DatumPlaneFrame<B>> {
         let branch = match &self.branch {
             DatumPlaneBranch::Single {
                 form,
                 descriptor,
                 object,
-            } => {
-                let Some(descriptor_block) = block(descriptor.0.value())? else {
-                    return Ok(None);
-                };
-                let Some(object_block) = block(object.0.value())? else {
-                    return Ok(None);
-                };
-                DatumPlaneBranch::Single {
-                    form: *form,
-                    descriptor: (descriptor.0, descriptor_block),
-                    object: (object.0, object_block),
-                }
-            }
+            } => DatumPlaneBranch::Single {
+                form: *form,
+                descriptor: (descriptor.0, block(descriptor.0.value())?),
+                object: (object.0, block(object.0.value())?),
+            },
             DatumPlaneBranch::Double {
                 form,
                 objects: [first, second],
-            } => {
-                let Some(first_block) = block(first.0.value())? else {
-                    return Ok(None);
-                };
-                let Some(second_block) = block(second.0.value())? else {
-                    return Ok(None);
-                };
-                DatumPlaneBranch::Double {
-                    form: *form,
-                    objects: [(first.0, first_block), (second.0, second_block)],
-                }
-            }
+            } => DatumPlaneBranch::Double {
+                form: *form,
+                objects: [
+                    (first.0, block(first.0.value())?),
+                    (second.0, block(second.0.value())?),
+                ],
+            },
         };
-        Ok(Some(DatumPlaneFrame {
+        Some(DatumPlaneFrame {
             origin: self.origin,
             branch,
-        }))
+        })
     }
 }
 
@@ -421,13 +408,9 @@ mod tests {
                 [110, second_offset]
             );
             assert!(frame
-                .resolve(|index| Ok::<_, ()>((index == 0).then_some("block")))
-                .unwrap()
+                .resolve(|index| (index == 0).then_some("block"))
                 .is_none());
-            let resolved = frame
-                .resolve(|index| Ok::<_, ()>(Some(index.to_string())))
-                .unwrap()
-                .unwrap();
+            let resolved = frame.resolve(|index| Some(index.to_string())).unwrap();
             assert_eq!(
                 resolved
                     .objects()

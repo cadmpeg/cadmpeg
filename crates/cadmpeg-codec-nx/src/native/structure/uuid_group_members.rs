@@ -15,28 +15,8 @@ pub(super) struct UuidGroupMembers {
 }
 
 impl UuidGroupMembers {
-    pub(super) fn new_charged(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        occurrences: Vec<String>,
-        object_uuid_values: Vec<String>,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if occurrences.len() != object_uuid_values.len() {
-            return Ok(None);
-        }
-        let Some(occurrences) = NonEmpty::new_charged(ctx, occurrences)? else {
-            return Ok(None);
-        };
-        let Some(object_uuid_values) = NonEmpty::new_charged(ctx, object_uuid_values)? else {
-            return Ok(None);
-        };
-        Ok(Some(Self {
-            occurrences,
-            object_uuid_values,
-        }))
-    }
-
     /// Transfer the two wire-admitted lists without building another collection.
-    fn from_admitted_lists(
+    pub(super) fn from_admitted_lists(
         occurrences: Vec<String>,
         object_uuid_values: Vec<String>,
     ) -> Result<Self, &'static str> {
@@ -95,41 +75,6 @@ impl<'de> Deserialize<'de> for UuidGroupMembers {
 #[cfg(test)]
 mod tests {
     use super::UuidGroupMembers;
-
-    fn group_refusal(
-        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> cadmpeg_core::CodecError {
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                configure(policy);
-            },
-            |ctx| {
-                UuidGroupMembers::new_charged(
-                    ctx,
-                    vec!["a".into(), "b".into()],
-                    vec!["x".into(), "y".into()],
-                )
-                .unwrap_err()
-            },
-        )
-    }
-
-    #[test]
-    fn uuid_group_members_refuse_collection_limit() {
-        let error = group_refusal(|policy| policy.limits.max_collection_items = 1);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
-    }
-
-    #[test]
-    fn uuid_group_members_refuse_retained_limit() {
-        let error = group_refusal(|policy| policy.limits.max_retained_bytes = 0);
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-        );
-    }
 
     #[test]
     fn group_lists_preserve_each_order_and_require_equal_nonempty_cardinality() {

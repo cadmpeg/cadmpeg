@@ -246,8 +246,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     crate::test_support::with_decode_context(|ctx| {
         let operation_positions = BTreeMap::from([("blind", 0usize)]);
         assert_eq!(
-            blind_hole_operations(ctx, std::slice::from_ref(&template), &operation_positions)
-                .unwrap(),
+            blind_hole_operations(std::slice::from_ref(&template), &operation_positions),
             Some(vec![operation.clone()]),
         );
         let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
@@ -431,11 +430,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         };
         assert_eq!(
             counterbore_operations(
-                default_ctx,
                 std::slice::from_ref(&template),
                 &BTreeMap::from([("counterbore", 0usize)]),
-            )
-            .unwrap(),
+            ),
             Some(vec![operation.clone()]),
         );
         let competing_template = FeatureSimpleHoleTemplate {
@@ -443,11 +440,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
             ..template.clone()
         };
         assert!(counterbore_operations(
-            default_ctx,
             &[template.clone(), competing_template],
             &BTreeMap::from([("counterbore", 0usize)]),
         )
-        .unwrap()
         .is_none());
         let mut model = Model::default();
         let mut add_circle_loop =
@@ -633,70 +628,23 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         ir.model = model;
         let operations = vec![operation.clone()];
         let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
-        let body_faces = connected_solid_body_faces(default_ctx, &ir, &body)
-            .unwrap()
-            .expect("solid body faces");
+        let body_faces = connected_solid_body_faces(&ir, &body).expect("solid body faces");
         assert_eq!(body_faces.len(), 3);
         let cylinders = cylindrical_face_witnesses(default_ctx, &ir, &body_faces)
             .unwrap()
             .unwrap();
         assert_eq!(cylinders.len(), 2);
         assert!(plane_annulus_witness(
-            default_ctx,
             &ir,
             &body_faces,
             &cylinders[0],
             1,
             &cylinders[1],
             0,
-        )
-        .unwrap());
+        ));
         assert!(counterbore_cylinders(default_ctx, &ir, &body_faces)
             .unwrap()
             .is_some());
-        for dimension in [
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        ] {
-            crate::test_support::with_decode_context_over(
-                &[],
-                |policy| {
-                    if dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-                        policy.limits.max_retained_bytes = 0;
-                    } else {
-                        policy.limits.max_work_units = 0;
-                    }
-                },
-                |ctx| {
-                    let error = counterbore_cylinders(ctx, &ir, &body_faces)
-                        .err()
-                        .expect("limit refusal");
-                    assert!(
-                        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
-                    );
-                },
-            );
-        }
-        for admitted_items in [1, 5] {
-            crate::test_support::with_decode_context_over(
-                &[],
-                |policy| {
-                    policy.limits.max_collection_items = admitted_items;
-                },
-                |ctx| {
-                    let error = counterbore_body_projection(ctx, &ir, &operations, &outputs)
-                        .err()
-                        .expect(
-                            "counterbore candidate and assignment allocations exceed item limit",
-                        );
-                    assert!(matches!(
-                        error,
-                        cadmpeg_core::CodecError::ResourceLimit(limit)
-                            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                    ));
-                },
-            );
-        }
         let projection = counterbore_body_projection(default_ctx, &ir, &operations, &outputs)
             .unwrap()
             .expect("coaxial counterbore witness");

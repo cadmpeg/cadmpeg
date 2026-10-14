@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_test_support::EditableDecodeResult;
 
 const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
@@ -397,15 +396,8 @@ fn decode_retains_topology_owned_point_at_origin() {
         .expect("point record");
     put_vec3(&mut stream, point + 16, [0.0, 0.0, 0.0]);
 
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::geometry::points(ctx, &stream).unwrap().len()
-        }),
-        1
-    );
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    assert_eq!(crate::geometry::points(&stream).len(), 1);
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
             .get(NodeKind::Point, 11)
@@ -434,75 +426,6 @@ fn single_point_candidate_stream() -> Vec<u8> {
 }
 
 #[test]
-fn ordered_point_candidates_refuse_index_node_at_collection_limit() {
-    let stream = single_point_candidate_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            assert!(matches!(
-                ordered_point_candidates(ctx, &graph),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx analytic candidate index"
-            ));
-        },
-    );
-}
-
-#[test]
-fn ordered_point_candidates_refuse_output_slot_at_collection_limit() {
-    let stream = single_point_candidate_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 1;
-        },
-        |ctx| {
-            assert!(matches!(
-                ordered_point_candidates(ctx, &graph),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx ordered analytic candidates"
-            ));
-        },
-    );
-}
-
-#[test]
-fn ordered_point_candidates_refuse_scan_work_at_caller_limit() {
-    let stream = single_point_candidate_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            assert!(matches!(
-                ordered_point_candidates(ctx, &graph),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "scan NX analytic candidates"
-            ));
-        },
-    );
-}
-
-#[test]
 fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     let mut stream = topology_partition_stream();
     let first = stream
@@ -515,12 +438,8 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     put_vec3(&mut second, 16, [0.04, 0.05, 0.06]);
     stream.extend(second);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    let points = crate::test_support::with_decode_context(|ctx| {
-        ordered_point_candidates(ctx, &graph).unwrap()
-    });
+    let graph = crate::topology::Graph::parse(&stream);
+    let points = ordered_point_candidates(&graph);
     assert_eq!(points.len(), 2);
     assert_eq!(points[0].1.pos(), first);
     assert_eq!(points[0].0, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
@@ -559,21 +478,15 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     put_vec3(&mut line, 43, [0.0, 1.0, 0.0]);
     stream.extend(line);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    let surfaces = crate::test_support::with_decode_context(|ctx| {
-        ordered_surface_candidates(ctx, &graph).unwrap()
-    });
+    let graph = crate::topology::Graph::parse(&stream);
+    let surfaces = ordered_surface_candidates(&graph);
     assert_eq!(surfaces.len(), 2);
     assert_eq!(surfaces[0].1.pos(), first_surface);
     assert_eq!(surfaces[0].1.xmt(), 6);
     assert_eq!(surfaces[1].1.pos(), second_surface_offset);
     assert_eq!(surfaces[1].1.xmt(), 77);
 
-    let curves = crate::test_support::with_decode_context(|ctx| {
-        ordered_curve_candidates(ctx, &graph).unwrap()
-    });
+    let curves = ordered_curve_candidates(&graph);
     assert_eq!(curves.len(), 2);
     assert_eq!(curves[0].1.pos(), first_curve);
     assert_eq!(curves[0].1.xmt(), 9);
@@ -592,19 +505,10 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
     let mut stream = plane.clone();
     stream.extend(plane);
 
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::geometry::surfaces(ctx, &stream).unwrap().len()
-        }),
-        2
-    );
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    assert_eq!(crate::geometry::surfaces(&stream).len(), 2);
+    let graph = crate::topology::Graph::parse(&stream);
     assert!(graph.get(NodeKind::Plane, 77).is_none());
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        ordered_surface_candidates(ctx, &graph).unwrap().is_empty()
-    }));
+    assert!(ordered_surface_candidates(&graph).is_empty());
 }
 
 #[test]
@@ -1127,19 +1031,11 @@ mod intersection_charts;
 #[test]
 fn graph_analytic_candidates_do_not_scan_discarded_fallbacks() {
     let stream = single_point_candidate_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| policy.limits.max_work_units = 1,
-        |ctx| {
-            let candidates = ordered_point_candidates(ctx, &graph).unwrap();
-            assert_eq!(candidates.len(), 1);
-            assert_eq!(
-                candidates[0].0.get(),
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
-            );
-        },
+    let graph = crate::topology::Graph::parse(&stream);
+    let candidates = ordered_point_candidates(&graph);
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(
+        candidates[0].0.get(),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
 }

@@ -11,7 +11,6 @@ mod datum_payload_limits;
 mod extrude_32_limits;
 mod frame_admission;
 mod lane_wire;
-mod link_order;
 mod named_point_limits;
 mod operation_identity;
 mod parameter_limits;

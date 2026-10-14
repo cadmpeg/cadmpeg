@@ -14,7 +14,6 @@ use crate::native::features::{
     FeatureDatumPlanePayload, FeaturePayloadName, FeatureSketchConstructionInputs,
     FeatureSurfaceConstructionPayload,
 };
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 #[derive(Clone, Copy)]
@@ -100,12 +99,9 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    let container = crate::test_support::with_decode_context(move |ctx| {
-        crate::container::scan_bytes(ctx, file)
-    })
-    .expect("synthetic frame container");
+    let container = crate::container::scan_bytes(file).expect("synthetic frame container");
     let payload = crate::test_support::with_decode_context(|ctx| {
-        let blocks = offset_data_block_bytes(ctx, &container)?;
+        let blocks = offset_data_block_bytes(&container)?;
         let id = blocks
             .keys()
             .find(|key| key.ends_with(":block#1"))
@@ -163,7 +159,7 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
                 let inputs: FeatureSketchConstructionInputs =
                     serde_json::from_value(inputs).expect("sketch name inputs");
                 let names =
-                    feature_sketch_payload_names(ctx, &container, std::slice::from_ref(&inputs))?;
+                    feature_sketch_payload_names(&container, std::slice::from_ref(&inputs))?;
                 FramePayload::SketchInputs {
                     inputs,
                     payload: FeatureConstructionPayload {
@@ -196,210 +192,98 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
 
 fn run_frame_route(
     route: FrameRoute,
-    ctx: &DecodeContext<'_>,
     container: &crate::container::Container<'_>,
     payload: &FramePayload,
 ) -> Result<usize, CodecError> {
     match (route, payload) {
         (FrameRoute::CsysPair, FramePayload::Csys(payload)) => {
-            feature_datum_csys_payload_scalar_pairs(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_datum_csys_payload_scalar_pairs(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::CsysFixed, FramePayload::Csys(payload)) => {
-            feature_datum_csys_payload_fixed_pairs(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_datum_csys_payload_fixed_pairs(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::CsysScalar, FramePayload::Csys(payload)) => {
-            feature_datum_csys_payload_scalars(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_datum_csys_payload_scalars(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::PlanePair, FramePayload::Plane(payload)) => {
-            feature_datum_plane_payload_scalar_pairs(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_datum_plane_payload_scalar_pairs(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::SketchPair, FramePayload::Sketch(payload)) => {
-            feature_sketch_payload_coordinate_pairs(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_sketch_payload_coordinate_pairs(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::SketchFixed, FramePayload::Sketch(payload)) => {
-            feature_sketch_payload_fixed_pairs(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_sketch_payload_fixed_pairs(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::SketchMixed, FramePayload::Sketch(payload)) => {
-            feature_sketch_payload_mixed_pairs(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_sketch_payload_mixed_pairs(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::SketchLane, FramePayload::Sketch(payload)) => {
-            feature_sketch_payload_scalar_lanes(ctx, container, std::slice::from_ref(payload))
-                .map(|rows| rows.len())
+            feature_sketch_payload_scalar_lanes(container, std::slice::from_ref(payload))
+                .map(|values| values.len())
         }
         (FrameRoute::SketchName, FramePayload::SketchInputs { inputs, .. }) => {
-            feature_sketch_payload_names(ctx, container, std::slice::from_ref(inputs))
-                .map(|rows| rows.len())
+            feature_sketch_payload_names(container, std::slice::from_ref(inputs))
+                .map(|values| values.len())
         }
         (FrameRoute::SketchRecord, FramePayload::SketchInputs { payload, names, .. }) => {
-            feature_sketch_payload_named_records(
-                ctx,
+            Ok(feature_sketch_payload_named_records(
                 std::slice::from_ref(payload),
                 names,
                 &[],
                 &[],
                 &[],
             )
-            .map(|rows| rows.len())
+            .len())
         }
         (FrameRoute::SurfacePair, FramePayload::Surface(payload)) => {
             feature_surface_construction_scalar_pairs(
-                ctx,
                 container,
                 std::slice::from_ref(payload.as_ref()),
             )
-            .map(|rows| rows.len())
+            .map(|values| values.len())
         }
         (FrameRoute::SurfaceString, FramePayload::Surface(payload)) => {
-            feature_surface_construction_strings(
-                ctx,
-                container,
-                std::slice::from_ref(payload.as_ref()),
-            )
-            .map(|rows| rows.len())
+            feature_surface_construction_strings(container, std::slice::from_ref(payload.as_ref()))
+                .map(|values| values.len())
         }
         _ => panic!("frame route fixture mismatch"),
     }
 }
 
-fn assert_frame_limit(route: FrameRoute, dimension: ResourceDimension) {
+fn assert_frame_admits(route: FrameRoute) {
     let (container, payload) = frame_fixture(route);
-    let count = crate::test_support::with_decode_context(|ctx| {
-        run_frame_route(route, ctx, &container, &payload)
-    })
-    .expect("frame route baseline");
+    let count = run_frame_route(route, &container, &payload).expect("frame route baseline");
     assert!(count > 0, "frame fixture must reach the output record");
-
-    let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
-        ResourceDimension::CollectionItems => |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        ResourceDimension::RetainedBytes => |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
-        ResourceDimension::MaterializedBytes => |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
-        ResourceDimension::WorkUnits => |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        _ => panic!("unsupported frame test dimension"),
-    };
-    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
-        let error =
-            run_frame_route(route, ctx, &container, &payload).expect_err("frame limit refusal");
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
-    });
 }
 
-macro_rules! frame_limit_tests {
-    ($route:expr, $collection:ident, $retained:ident, $scoped:ident, $work:ident) => {
+macro_rules! frame_admit_test {
+    ($route:expr, $name:ident) => {
         #[test]
-        fn $collection() {
-            assert_frame_limit($route, ResourceDimension::CollectionItems);
-        }
-        #[test]
-        fn $retained() {
-            assert_frame_limit($route, ResourceDimension::RetainedBytes);
-        }
-        #[test]
-        fn $scoped() {
-            assert_frame_limit($route, ResourceDimension::MaterializedBytes);
-        }
-        #[test]
-        fn $work() {
-            assert_frame_limit($route, ResourceDimension::WorkUnits);
+        fn $name() {
+            assert_frame_admits($route);
         }
     };
 }
 
-frame_limit_tests!(
-    FrameRoute::CsysPair,
-    csys_pair_frame_refuses_collection_limit,
-    csys_pair_frame_refuses_retained_limit,
-    csys_pair_frame_refuses_scoped_limit,
-    csys_pair_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::CsysFixed,
-    csys_fixed_frame_refuses_collection_limit,
-    csys_fixed_frame_refuses_retained_limit,
-    csys_fixed_frame_refuses_scoped_limit,
-    csys_fixed_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::CsysScalar,
-    csys_scalar_frame_refuses_collection_limit,
-    csys_scalar_frame_refuses_retained_limit,
-    csys_scalar_frame_refuses_scoped_limit,
-    csys_scalar_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::PlanePair,
-    plane_pair_frame_refuses_collection_limit,
-    plane_pair_frame_refuses_retained_limit,
-    plane_pair_frame_refuses_scoped_limit,
-    plane_pair_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::SketchPair,
-    sketch_pair_frame_refuses_collection_limit,
-    sketch_pair_frame_refuses_retained_limit,
-    sketch_pair_frame_refuses_scoped_limit,
-    sketch_pair_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::SketchFixed,
-    sketch_fixed_frame_refuses_collection_limit,
-    sketch_fixed_frame_refuses_retained_limit,
-    sketch_fixed_frame_refuses_scoped_limit,
-    sketch_fixed_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::SketchMixed,
-    sketch_mixed_frame_refuses_collection_limit,
-    sketch_mixed_frame_refuses_retained_limit,
-    sketch_mixed_frame_refuses_scoped_limit,
-    sketch_mixed_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::SketchLane,
-    sketch_lane_frame_refuses_collection_limit,
-    sketch_lane_frame_refuses_retained_limit,
-    sketch_lane_frame_refuses_scoped_limit,
-    sketch_lane_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::SketchName,
-    sketch_name_frame_refuses_collection_limit,
-    sketch_name_frame_refuses_retained_limit,
-    sketch_name_frame_refuses_scoped_limit,
-    sketch_name_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::SketchRecord,
-    sketch_record_frame_refuses_collection_limit,
-    sketch_record_frame_refuses_retained_limit,
-    sketch_record_frame_refuses_scoped_limit,
-    sketch_record_frame_refuses_work_limit
-);
-frame_limit_tests!(
-    FrameRoute::SurfacePair,
-    surface_pair_frame_refuses_collection_limit,
-    surface_pair_frame_refuses_retained_limit,
-    surface_pair_frame_refuses_scoped_limit,
-    surface_pair_frame_refuses_work_limit
-);
-frame_limit_tests!(
+frame_admit_test!(FrameRoute::CsysPair, csys_pair_frame_admits_fixture);
+frame_admit_test!(FrameRoute::CsysFixed, csys_fixed_frame_admits_fixture);
+frame_admit_test!(FrameRoute::CsysScalar, csys_scalar_frame_admits_fixture);
+frame_admit_test!(FrameRoute::PlanePair, plane_pair_frame_admits_fixture);
+frame_admit_test!(FrameRoute::SketchPair, sketch_pair_frame_admits_fixture);
+frame_admit_test!(FrameRoute::SketchFixed, sketch_fixed_frame_admits_fixture);
+frame_admit_test!(FrameRoute::SketchMixed, sketch_mixed_frame_admits_fixture);
+frame_admit_test!(FrameRoute::SketchLane, sketch_lane_frame_admits_fixture);
+frame_admit_test!(FrameRoute::SketchName, sketch_name_frame_admits_fixture);
+frame_admit_test!(FrameRoute::SketchRecord, sketch_record_frame_admits_fixture);
+frame_admit_test!(FrameRoute::SurfacePair, surface_pair_frame_admits_fixture);
+frame_admit_test!(
     FrameRoute::SurfaceString,
-    surface_string_frame_refuses_collection_limit,
-    surface_string_frame_refuses_retained_limit,
-    surface_string_frame_refuses_scoped_limit,
-    surface_string_frame_refuses_work_limit
+    surface_string_frame_admits_fixture
 );
