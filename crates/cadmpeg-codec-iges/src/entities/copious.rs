@@ -169,11 +169,9 @@ fn has_forbidden_form_63_duplicate(points: &[Point3], resolution: f64) -> bool {
 }
 
 fn has_form_63_self_intersection(points: &[Point3]) -> bool {
-    let planar_points = (0..points.len())
-        .map(|index| {
-            let point = points[index];
-            [point.x, point.y]
-        })
+    let planar_points = points
+        .iter()
+        .map(|point| [point.x, point.y])
         .collect::<Vec<_>>();
     super::geometry::planar_polyline_has_self_intersection(&planar_points)
 }
