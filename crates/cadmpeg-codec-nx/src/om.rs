@@ -34,6 +34,7 @@ pub(crate) mod direct_reference;
 use body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
 use common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 pub(crate) mod instances;
+pub(crate) mod named_target;
 use reference_index::ReferenceIndexToken;
 pub(crate) mod control_word;
 use control_word::ControlWord24;

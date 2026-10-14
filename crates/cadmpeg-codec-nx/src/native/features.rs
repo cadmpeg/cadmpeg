@@ -22,6 +22,7 @@ pub(super) mod fset;
 pub(super) mod fset_indices;
 use self::fset::FeatureFsetReferenceGroup;
 pub(super) mod holes;
+pub(super) mod named_target;
 pub(super) mod pattern;
 pub(super) mod payload_name;
 pub(super) mod point_scalar_lane;

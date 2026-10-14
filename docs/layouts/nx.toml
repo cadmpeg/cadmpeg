@@ -2196,3 +2196,39 @@ type = "bytes[17]"
 source = "spec"
 anchor = "`class_index:u8, 00 00 01, zero[17]`"
 value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "named_construction_target_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/named_target.rs"
+kind = "byte"
+section = "7.1"
+anchor = "A canonical named-target envelope begins with"
+size = 5
+endianness = "big"
+note = "A canonical variable-width feature-object reference follows this fixed prefix."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "`e0 3c 01 16 a1`"
+value = [224, 60, 1, 22, 161]
+
+[[record]]
+name = "named_construction_name_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/named_target.rs"
+kind = "byte"
+section = "7.1"
+anchor = "A canonical named-target envelope begins with"
+size = 5
+endianness = "big"
+note = "Offsets are relative to the first byte after the variable-width reference. The name length, printable bytes, and terminator follow."
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "a7 01 66 32 03"
+value = [167, 1, 102, 50, 3]

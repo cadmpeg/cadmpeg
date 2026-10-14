@@ -59,3 +59,20 @@ pub(crate) fn attach_container_layer(
 ) -> Result<(), CodecError> {
     attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native)
 }
+
+/// Admit the deep byte contracts of retained construction target envelopes.
+pub(crate) fn admit_construction_named_targets(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+    for record in namespace
+        .arena_iter_as_for_decode::<features::named_target::FeatureConstructionNamedTarget>(
+            ctx,
+            "feature_construction_named_targets",
+        )
+    {
+        ctx.charge_work(268, "admit NX construction named-target envelope")?;
+        record?.validate_links(ctx, namespace)?;
+    }
+    Ok(())
+}

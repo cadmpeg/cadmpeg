@@ -22,6 +22,9 @@ use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
 use crate::native::features::draft::FeatureDraftConstructionIndexLane;
 use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
+use crate::native::features::named_target::{
+    feature_construction_named_targets, FeatureConstructionNamedTarget,
+};
 use crate::native::features::pattern::feature_identical_instance_output_lanes;
 use crate::native::features::pattern::feature_multi_instance_output_lanes;
 use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
@@ -424,6 +427,7 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_pattern_counted_reference_lanes: Vec<FeaturePatternCountedReferenceLane>,
     pub(super) feature_pattern_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(super) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
+    pub(super) feature_construction_named_targets: Vec<FeatureConstructionNamedTarget>,
     pub(super) feature_pattern_construction_fixed_lanes: Vec<FeaturePatternConstructionFixedLane>,
     pub(super) feature_pattern_transform_lanes: Vec<FeaturePatternTransformLane>,
     pub(super) feature_multi_instance_output_lanes: Vec<FeatureMultiInstanceOutputLane>,
@@ -1213,6 +1217,12 @@ impl NativeModel {
             feature_operation_body_reference_lanes(ctx, container)?;
         let feature_extrude_construction_profiles =
             feature_extrude_construction_profiles(ctx, &feature_extrude_profile_references)?;
+        let feature_construction_named_targets = feature_construction_named_targets(
+            ctx,
+            container,
+            &feature_pattern_construction_payloads,
+            &feature_extrude_construction_profiles,
+        )?;
         let feature_extrude_payload_32_branches =
             feature_extrude_payload_32_branches(ctx, container)?;
         let feature_extrude_32_constructions = feature_extrude_32_constructions(
@@ -1617,6 +1627,7 @@ impl NativeModel {
                 feature_pattern_counted_reference_lanes,
                 feature_pattern_construction_payloads,
                 feature_pattern_construction_strings,
+                feature_construction_named_targets,
                 feature_pattern_construction_fixed_lanes,
                 feature_pattern_transform_lanes,
                 feature_multi_instance_output_lanes,

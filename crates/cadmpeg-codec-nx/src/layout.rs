@@ -546,3 +546,27 @@ pub(crate) mod fset_parameter_prefix {
         0x00, 0x00,
     ];
 }
+
+/// Byte offsets for the `named_construction_target_prefix` record.
+///
+/// Spec §7.1. Record length 5 B.
+///
+/// ```text
+/// A canonical variable-width feature-object reference follows this fixed prefix.
+/// ```
+pub(crate) mod named_construction_target_prefix {
+    /// Stated value of `magic` (`bytes[5]`). Spec §7.1.
+    pub(crate) const MAGIC_VALUE: [u8; 5] = [0xe0, 0x3c, 0x01, 0x16, 0xa1];
+}
+
+/// Byte offsets for the `named_construction_name_prefix` record.
+///
+/// Spec §7.1. Record length 5 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the variable-width reference. The name length, printable bytes, and terminator follow.
+/// ```
+pub(crate) mod named_construction_name_prefix {
+    /// Stated value of `magic` (`bytes[5]`). Spec §7.1.
+    pub(crate) const MAGIC_VALUE: [u8; 5] = [0xa7, 0x01, 0x66, 0x32, 0x03];
+}

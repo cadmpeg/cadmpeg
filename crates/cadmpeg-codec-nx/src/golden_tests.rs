@@ -265,6 +265,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_pattern_construction_fixed_lanes",
     "feature_pattern_construction_payloads",
     "feature_pattern_construction_strings",
+    "feature_construction_named_targets",
     "feature_pattern_counted_reference_lanes",
     "feature_pattern_references",
     "feature_pattern_transform_lanes",
@@ -443,6 +444,40 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             ),
         )]),
     ));
+    f.push(("construction_named_targets", {
+        let mut graph = vec![
+            0x61, 0xf0, 2, 0xff, 0, 0xff, 1, 0xf0, 3, 0xf0, 4, 0x61, 0xf0, 5, 0xff, 0, 0xff, 1,
+            0xf0, 6, 0xf0, 7, 0xff, 0x62, 0xf0, 8, 0xf0, 9, 0xff, 0, 0, 1, 0xf0, 10, 0xff, 0xff,
+            0xff, 1,
+        ];
+        graph.extend([0, 0]);
+        let operations = [
+            (
+                b"\xff\xff\xff\xff".as_slice(),
+                "EXTRUDE",
+                vec![1, 2, 0x7e, 1, 2, 0xf0, 1, 1, 3, 0x79, 1, 2, 0xf0, 1, 0, 0],
+            ),
+            (b"\xff\xff\xff\xff".as_slice(), "Pattern Feature", graph),
+        ];
+        let profile = b"\xe0\x3c\x01\x16\xa1\x00\xa7\x01\x66\x32\x03\x09Profile\x00";
+        let pattern = b"\xe0\x3c\x01\x16\xa1\x01\xa7\x01\x66\x32\x03\x09Pattern\x00";
+        let store: [&[u8]; 10] = [
+            profile,
+            pattern,
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+            &[0],
+        ];
+        prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            composed_feature_history_payload(&operations, &store),
+        )])
+    }));
     f.push((
         "prt_with_size_framed_om_section",
         prt_with_size_framed_om_section(),
@@ -1041,7 +1076,7 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 256, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 257, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()

@@ -610,19 +610,15 @@ face or feature set assigns either group a selection role. Compact values that e
 
 **Conflict.** A source-topology tag is not a demonstrated Parasolid FACE identity. Target-label indices do not identify final FACE order. A map handle has no serialized ordinal byte and is not resolved by numeric equality with an OM block, fast-load object, feature operation, body identity, body-image index, GROUP node, or partition-local XMT identity. Creator and face-relation attributes establish feature-local topology populations without joining individual table rows to faces.
 
-### OM-22. Equal pattern and profile labels
+### OM-22. Pattern/profile named-target roles
 
-**Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
+**Question.** Which relation assigns a shared pattern/profile construction target its seed or member role and pairs the individual named members that address it?
 
-**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
+**Known.** `siemens_nx.md` §7.1 "A canonical named-target envelope begins with" defines exact names bound to canonical object references in reconstructed pattern and witnessed extrusion profile payloads. Its block resolution and ownership rules establish a construction-level association through an exact shared resolved target. Equal names in separate fields do not establish reference identity.
 
-**Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
+**Need.** Identify the shared target's construction role and an individual member relation, with a controlled change that distinguishes renaming, suppression, instance order, and target ownership.
 
-**Conflict.** A canonical line label is payload content, not a persistent
-object identity. Pattern and profile construction blocks retain separate
-operation-owned block identities; only an exact shared input block or another
-unique serialized relation can join them. Equal text labels do not provide
-that relation.
+**Conflict.** Different names on each side can address the same target. A profile name can lack the complete target envelope while an equal pattern name carries it. Shared target identity and preceding feature order do not identify a seed, pair names, or make physical construction-block adjacency an object relation.
 
 ### OM-23. `POINT` header fields
 

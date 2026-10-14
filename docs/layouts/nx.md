@@ -699,6 +699,32 @@ Parsed by:
 | 1 | 3 | `fixed_prefix` | `bytes[3]` | little | spec | `class_index:u8, 00 00 01, zero[17]` · value `[0, 0, 1]` |
 | 4 | 17 | `zeros` | `bytes[17]` | little | spec | `class_index:u8, 00 00 01, zero[17]` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 
+## `named_construction_target_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 5 B
+
+A canonical variable-width feature-object reference follows this fixed prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/named_target.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `magic` | `bytes[5]` | big | spec | `e0 3c 01 16 a1` · value `[224, 60, 1, 22, 161]` |
+
+## `named_construction_name_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 5 B
+
+Offsets are relative to the first byte after the variable-width reference. The name length, printable bytes, and terminator follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/named_target.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `magic` | `bytes[5]` | big | spec | a7 01 66 32 03 · value `[167, 1, 102, 50, 3]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
