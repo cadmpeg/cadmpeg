@@ -29,11 +29,14 @@ fn homogeneous_sum_admits_every_pole_before_reading_it() {
                 Some(([1.0, 1.0], 1.0, point))
             }),
         );
-        let limit = result.err().expect("each pole read requires admission");
+        let limit = result
+            .err()
+            .expect("each pole read requires admission")
+            .into_limit();
         assert_eq!(reads.get(), cap);
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "IR homogeneous pole traversal");
-        assert_eq!(scratch.refused(), Some(limit));
+        assert_eq!(scratch.refused(), Some(limit.into()));
         drop(scratch);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
@@ -85,9 +88,10 @@ fn homogeneous_sum_admits_exact_replay_and_preserves_cancellation() {
         if cap == 15 {
             let limit = result
                 .err()
-                .expect("exact replay needs three additional reads");
+                .expect("exact replay needs three additional reads")
+                .into_limit();
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(scratch.refused(), Some(limit));
+            assert_eq!(scratch.refused(), Some(limit.into()));
             drop(scratch);
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
@@ -153,9 +157,9 @@ fn homogeneous_weights_admit_actual_scans_and_copies() {
             let scratch = Scratch::new(&ctx);
             let result = Homogeneous::weights(&scratch, values);
             if allowance < work {
-                let original = result.unwrap_err();
+                let original = result.unwrap_err().into_limit();
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(scratch.refused(), Some(original));
+                assert_eq!(scratch.refused(), Some(original.into()));
                 drop(scratch);
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
@@ -200,8 +204,11 @@ fn homogeneous_weights_preserve_early_missing_and_empty_fuse() {
             .charge_work_limit(work + 1, "original empty weights refusal")
             .unwrap_err();
         let scratch = Scratch::new(&ctx);
-        assert_eq!(Homogeneous::weights(&scratch, &[]).unwrap_err(), original);
-        assert_eq!(scratch.refused(), Some(original));
+        assert_eq!(
+            Homogeneous::weights(&scratch, &[]).unwrap_err(),
+            original.into()
+        );
+        assert_eq!(scratch.refused(), Some(original.into()));
         drop(scratch);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
@@ -226,10 +233,12 @@ fn homogeneous_weight_storage_is_scoped_and_slots_are_admitted_once() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let scratch = Scratch::new(&ctx);
-        let original = Homogeneous::weights(&scratch, &values).unwrap_err();
+        let original = Homogeneous::weights(&scratch, &values)
+            .unwrap_err()
+            .into_limit();
         assert_eq!(original.dimension, dimension);
         assert_eq!(original.operation, "IR homogeneous output weights");
-        assert_eq!(scratch.refused(), Some(original));
+        assert_eq!(scratch.refused(), Some(original.into()));
         drop(scratch);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)

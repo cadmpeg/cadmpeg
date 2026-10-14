@@ -228,8 +228,11 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
                     &geometry_budget,
                 );
             if work_limit == 256 {
-                let first = local.expect_err("the original slice cannot admit all evaluation work");
-                assert_eq!(geometry_ctx.resource_refusal(), Some(first));
+                // The original slice cannot admit all evaluation work: the
+                // refinement is skipped and the session continues.
+                assert_eq!(local, Ok(None));
+                assert!(geometry_budget.exhausted());
+                assert!(geometry_ctx.resource_refusal().is_none());
                 return;
             }
             let local = local
@@ -1298,14 +1301,11 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 &coupled_support_budget,
                 &geometry_budget,
             );
-            if work_limit == 64 {
-                let cadmpeg_core::CodecError::ResourceLimit(first) = result.unwrap_err() else {
-                    panic!("resource refusal")
-                };
-                assert_eq!(geometry_ctx.resource_refusal(), Some(first));
-                return;
-            }
+            // At 64 units a lane slice runs out and skips that attempt; the
+            // serialized seed still completes the lane and the session
+            // continues.
             result.unwrap();
+            assert!(geometry_ctx.resource_refusal().is_none());
 
             let ProceduralCurveDefinition::Intersection { context, .. } =
                 ir.model.procedural_curves[0].definition()

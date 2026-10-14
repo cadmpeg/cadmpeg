@@ -496,7 +496,8 @@ impl<'a> WritableModel<'a> {
                                 CodecError::ResourceLimit(limit)
                             }
                             cadmpeg_ir::eval::EvaluationFailure::NoValue
-                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_) => {
+                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
                                 CodecError::malformed(format_args!(
                                     "edge {} curve has no finite start point",
                                     edge.id.as_str()
@@ -509,7 +510,8 @@ impl<'a> WritableModel<'a> {
                                 CodecError::ResourceLimit(limit)
                             }
                             cadmpeg_ir::eval::EvaluationFailure::NoValue
-                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_) => {
+                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
                                 CodecError::malformed(format_args!(
                                     "edge {} curve has no finite end point",
                                     edge.id.as_str()

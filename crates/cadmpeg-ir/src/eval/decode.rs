@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 
-use super::admission::{EvaluationAdmission, EvaluationDepthGuard};
+use super::admission::{EvaluationAdmission, EvaluationDepthGuard, EvaluationRefusal};
 use super::{CurveDerivative, EvaluationFailure};
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::NurbsCurve;
@@ -52,7 +52,7 @@ pub(super) struct Scratch<'ctx, 'arena> {
     pub(super) admission: EvaluationAdmission<'ctx, 'arena>,
     independent_depth: Cell<usize>,
     storage: RefCell<Option<ScopedReservation<'ctx>>>,
-    refusal: RefCell<Option<ResourceLimit>>,
+    refusal: RefCell<Option<EvaluationRefusal>>,
 }
 
 impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
@@ -65,53 +65,53 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         }
     }
 
-    pub(super) fn admit<T>(&self, result: Result<T, ResourceLimit>) -> Option<T> {
+    pub(super) fn admit<T>(&self, result: Result<T, impl Into<EvaluationRefusal>>) -> Option<T> {
         match result {
             Ok(value) => Some(value),
             Err(error) => {
                 let mut refusal = self.refusal.borrow_mut();
-                if refusal.is_none() {
-                    *refusal = Some(error);
+                if !matches!(*refusal, Some(EvaluationRefusal::ResourceLimit(_))) {
+                    *refusal = Some(error.into());
                 }
                 None
             }
         }
     }
 
-    /// The resource refusal recorded by an allocation, charge or evaluation.
-    pub(super) fn refused(&self) -> Option<ResourceLimit> {
-        if let Some(limit) = *self.refusal.borrow() {
-            return Some(limit);
+    /// The refusal recorded by an allocation, charge or evaluation. A session
+    /// refusal takes precedence over an exhausted work slice.
+    pub(super) fn refused(&self) -> Option<EvaluationRefusal> {
+        let recorded = *self.refusal.borrow();
+        if let Some(EvaluationRefusal::ResourceLimit(limit)) = recorded {
+            return Some(EvaluationRefusal::ResourceLimit(limit));
         }
-        let original = self
+        let refusal = self
             .admission
             .work(0, "observe geometry evaluation refusal")
-            .err();
-        if let Some(limit) = original {
-            *self.refusal.borrow_mut() = Some(limit);
-        }
-        original
+            .err()
+            .or(recorded);
+        *self.refusal.borrow_mut() = refusal;
+        refusal
     }
 
-    /// `Err` with the recorded resource refusal, or `Ok` when nothing was refused.
-    pub(super) fn unless_refused(&self) -> Result<(), ResourceLimit> {
+    /// `Err` with the recorded refusal, or `Ok` when nothing was refused.
+    pub(super) fn unless_refused(&self) -> Result<(), EvaluationRefusal> {
         self.refused().map_or(Ok(()), Err)
     }
 
-    /// The recorded resource refusal, or `absent` when a value is missing for
-    /// another reason.
+    /// The recorded refusal, or `absent` when a value is missing for another
+    /// reason.
     pub(super) fn failure<R>(&self, absent: EvaluationFailure<R>) -> EvaluationFailure<R> {
-        self.refused()
-            .map_or(absent, EvaluationFailure::ResourceLimit)
+        self.refused().map_or(absent, EvaluationFailure::from)
     }
 
-    /// The result, or the recorded resource refusal when one was recorded.
+    /// The result, or the recorded refusal when one was recorded.
     pub(super) fn settle<T, R>(
         &self,
         result: Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
         self.refused()
-            .map_or(result, |limit| Err(EvaluationFailure::ResourceLimit(limit)))
+            .map_or(result, |refusal| Err(EvaluationFailure::from(refusal)))
     }
 
     pub(super) fn filled<T: Clone>(
@@ -266,18 +266,26 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         self.admit(self.admission.enter(&self.independent_depth))
     }
 
-    pub(super) fn finish<T>(self, value: T) -> Result<T, ResourceLimit> {
-        self.unless_refused()?;
-        Ok(value)
-    }
-
-    /// Finishes an evaluation: a recorded refusal, or a resource refusal the
-    /// evaluation reports, is the outer error.
+    /// Finishes an evaluation: a recorded resource refusal, or one the
+    /// evaluation reports, is the outer error. An exhausted work slice stays
+    /// the inner [`EvaluationFailure::WorkExhausted`].
     pub(super) fn finish_evaluation<T, R>(
         self,
         result: Result<T, EvaluationFailure<R>>,
     ) -> Result<Result<T, EvaluationFailure<R>>, ResourceLimit> {
-        outer_refusal(self.finish(result)?)
+        outer_refusal(self.settle(result))
+    }
+
+    /// The optional result, or the recorded refusal when one was recorded: a
+    /// session refusal is the error and an exhausted work slice is no value.
+    pub(super) fn settle_option<T, E: From<ResourceLimit>>(
+        &self,
+        result: Result<Option<T>, E>,
+    ) -> Result<Option<T>, E> {
+        match self.refused() {
+            None => result,
+            Some(refusal) => Ok(refusal.absent()?),
+        }
     }
 }
 
@@ -425,8 +433,8 @@ pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
         .and_then(|parameter| {
             let evaluated = super::pcurve_uv_differential(&scratch, geometry, parameter)
                 .ok_or(EvaluationFailure::NoValue)?;
-            if let Some(limit) = evaluated.resource {
-                return Err(EvaluationFailure::ResourceLimit(limit));
+            if let Some(refusal) = evaluated.refusal {
+                return Err(refusal.into());
             }
             evaluated.point.map_err(EvaluationFailure::NonFinite)
         });
@@ -495,7 +503,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 self.curve.pole_count(),
                 parameter.get(),
             )
-            .map_err(EvaluationFailure::ResourceLimit)?
+            .map_err(EvaluationFailure::from)?
             .ok_or(EvaluationFailure::NoValue)?;
             let unreached = EvaluationFailure::NonFinite(super::UNREACHED_POINT);
             super::basis::fill_bspline_basis(
@@ -506,7 +514,7 @@ impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
                 parameter.get(),
                 &mut self.basis,
             )
-            .map_err(EvaluationFailure::ResourceLimit)?
+            .map_err(EvaluationFailure::from)?
             .ok_or(unreached)?;
             let poles = self.curve.pole_rows();
             let scratch = Scratch::new(ctx);

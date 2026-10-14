@@ -281,7 +281,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "cadmpeg-ir EvaluationAdmission::work fuses the session when a session-attached work slice is exhausted"]
     fn surface_inversion_skips_when_the_local_solver_slice_is_exhausted() {
         let surface = dense_wavy_surface();
         let point = Point3::new(40.5, 40.5, 50.0);

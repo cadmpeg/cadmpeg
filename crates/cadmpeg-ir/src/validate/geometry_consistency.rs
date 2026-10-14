@@ -1038,7 +1038,11 @@ fn mapped_pcurve_parameter_near_point(
         let tangent_uv = match pcurve_tangent(ctx, pcurve_geometry, parameter.get()) {
             Ok(tangent) => tangent,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
-            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
+            Err(
+                EvaluationFailure::NoValue
+                | EvaluationFailure::NonFinite(_)
+                | EvaluationFailure::WorkExhausted,
+            ) => return Ok(None),
         };
         let evaluated = if matches!(context.geometry, SurfaceGeometry::Solved(_)) {
             crate::eval::surface_partials(ctx, context.geometry, uv.u, uv.v)
@@ -1054,7 +1058,11 @@ fn mapped_pcurve_parameter_near_point(
         let partials = match evaluated {
             Ok(partials) => partials,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
-            Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return Ok(None),
+            Err(
+                EvaluationFailure::NoValue
+                | EvaluationFailure::NonFinite(_)
+                | EvaluationFailure::WorkExhausted,
+            ) => return Ok(None),
         };
         Ok(Some(Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
