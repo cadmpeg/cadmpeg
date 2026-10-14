@@ -1004,20 +1004,17 @@ mod tests {
 
     fn scan_refusal_at(operation: &str) -> cadmpeg_core::CodecError {
         let bytes = crate::test_support::zip_test::f3d_with_smbh(&[]);
-        for limit in 0..256 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let arena = DecodeArena::new();
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            if let Err(error) = super::scan(&ctx, root) {
-                if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-                    if refusal.operation == operation)
-                {
-                    return error;
-                }
-            }
-        }
-        panic!("operation {operation} did not refuse a collection limit");
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let arena = DecodeArena::new();
+                let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                super::scan(&ctx, root).map(|_| ())
+            },
+        )
     }
 
     #[test]
@@ -1044,16 +1041,32 @@ mod tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
-    #[test]
-    fn container_native_scope_index_refuses_collection_limit() {
-        let error = scan_refusal_at("index F3D native scopes");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    /// Scan `bytes` under the service policy and assert the scan charges
+    /// `operation`. Released scan scratch peaks above these charges, so no
+    /// collection ceiling makes them the refusing charge.
+    fn scan_charges(bytes: &[u8], operation: &str) {
+        cadmpeg_test_support::refusal::assert_charged(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            || {
+                let policy = DecodePolicy::service();
+                let arena = DecodeArena::new();
+                let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+                super::scan(&ctx, root).map(|_| ())
+            },
+        );
     }
 
     #[test]
-    fn container_scope_entry_index_refuses_collection_limit() {
-        let error = scan_refusal_at("index F3D scope entries");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    fn container_native_scope_index_charges_collection_items() {
+        let bytes = crate::test_support::zip_test::f3d_with_smbh(&[]);
+        scan_charges(&bytes, "index F3D native scopes");
+    }
+
+    #[test]
+    fn container_scope_entry_index_charges_collection_items() {
+        let bytes = crate::test_support::zip_test::f3d_with_smbh(&[]);
+        scan_charges(&bytes, "index F3D scope entries");
     }
 
     #[test]
@@ -1091,7 +1104,7 @@ mod tests {
     }
 
     #[test]
-    fn container_text_brep_framing_refuses_collection_limit() {
+    fn container_text_brep_framing_charges_collection_items() {
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
         crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
@@ -1099,20 +1112,7 @@ mod tests {
             .unwrap();
         zip.write_all(b"bad text BREP").unwrap();
         let bytes = zip.finish().unwrap().into_inner();
-        for limit in 0..256 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let arena = DecodeArena::new();
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            if let Err(error) = super::scan(&ctx, root) {
-                if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-                    if refusal.operation == "retain F3D text B-rep framing")
-                {
-                    return;
-                }
-            }
-        }
-        panic!("text BREP framing did not refuse a collection limit");
+        scan_charges(&bytes, "retain F3D text B-rep framing");
     }
 
     #[test]

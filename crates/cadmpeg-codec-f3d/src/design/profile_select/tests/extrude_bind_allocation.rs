@@ -150,7 +150,7 @@ fn binder_spatial_member() -> DesignExtrudeSelectionMember {
     .unwrap()
 }
 
-fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bool) {
+fn bind_fixture_extrude(policy: &DecodePolicy, mode: u8) -> Result<(), CodecError> {
     let scope = binder_scope();
     let group = binder_group();
     let sketch_id = SketchId::mint("f3d:model:sketch#1").unwrap();
@@ -191,60 +191,59 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
     };
     let arrangement_budget = WorkBudget::new(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK);
     let scope_histories = HashMap::new();
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            if retained {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            } else {
-                cadmpeg_core::decode::ResourceDimension::CollectionItems
-            },
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if retained {
-                    policy.limits.max_retained_bytes = cap;
-                } else {
-                    policy.limits.max_collection_items = cap;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut feature = binder_feature(&scope, profile.clone());
-                let curve_resolution = SketchCurveSelectionResolution {
-                    scopes: &[],
-                    groups: &[],
-                    operands: &[],
-                    placements: &[],
-                    curve_identities: &[],
-                    sketches,
-                    sketch_entities: &[],
-                    spatial_sketches,
-                    spatial_sketch_entities: &[],
-                };
-                let resolution = ExtrudeProfileResolution {
-                    entities: &[],
-                    spatial_sketches,
-                    spatial_entities: &[],
-                    histories: &[],
-                    scope_histories: &scope_histories,
-                    linear_tolerance: 0.000_001,
-                    angular_tolerance: 0.000_000_001,
-                    arrangement_budget: &arrangement_budget,
-                    ctx: &ctx,
-                };
-                bind_extrude_profile_selections(
-                    std::slice::from_mut(&mut feature),
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&group),
-                    members,
-                    sketches,
-                    &curve_resolution,
-                    resolution,
-                )
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { cadmpeg_core::decode::ResourceDimension::RetainedBytes } else { cadmpeg_core::decode::ResourceDimension::CollectionItems })));
-    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    let mut feature = binder_feature(&scope, profile);
+    let curve_resolution = SketchCurveSelectionResolution {
+        scopes: &[],
+        groups: &[],
+        operands: &[],
+        placements: &[],
+        curve_identities: &[],
+        sketches,
+        sketch_entities: &[],
+        spatial_sketches,
+        spatial_sketch_entities: &[],
+    };
+    let resolution = ExtrudeProfileResolution {
+        entities: &[],
+        spatial_sketches,
+        spatial_entities: &[],
+        histories: &[],
+        scope_histories: &scope_histories,
+        linear_tolerance: 0.000_001,
+        angular_tolerance: 0.000_000_001,
+        arrangement_budget: &arrangement_budget,
+        ctx: &ctx,
+    };
+    bind_extrude_profile_selections(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&group),
+        members,
+        sketches,
+        &curve_resolution,
+        resolution,
+    )
+}
+
+fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bool) {
+    let dimension = if retained {
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    } else {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        bind_fixture_extrude(&policy, mode)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
@@ -253,8 +252,13 @@ fn extrude_matching_group_refuses_collection_limit() {
 }
 
 #[test]
-fn extrude_resolved_selection_refuses_collection_limit() {
-    assert_extrude_binder_refusal("f3d extrude resolved selection", 1, false);
+fn extrude_resolved_selection_charges_collection_items() {
+    // Released group scratch peaks above the resolved selection charge.
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d extrude resolved selection",
+        || bind_fixture_extrude(&DecodePolicy::service(), 1),
+    );
 }
 
 #[test]
