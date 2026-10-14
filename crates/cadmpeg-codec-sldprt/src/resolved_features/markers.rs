@@ -1,6 +1,6 @@
 //! Sketch marker record decoding and profile point coordinates.
 
-use super::bindings::spatial_relation_manager_ranges_charged;
+use super::bindings::spatial_relation_manager_ranges;
 use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
@@ -15,7 +15,7 @@ use super::endpoints::{
     wide_indexed_curve_endpoint_indices,
 };
 use super::relation_loci::same_dimension_length;
-use super::relation_records::unique_relation_declaration_candidates_charged;
+use super::relation_records::unique_relation_declaration_candidates;
 use super::scalars::{feature_object_name, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
@@ -85,7 +85,7 @@ pub(crate) fn spatial_sketches(
         let mut point_candidates = Vec::new();
         for lane in lanes {
             let mut relation_ranges = Vec::new();
-            for (start, end) in spatial_relation_manager_ranges_charged(lane) {
+            for (start, end) in spatial_relation_manager_ranges(lane) {
                 if lane.scalars.iter().any(|scalar| {
                     scalar.feature_ref.as_deref() == Some(native_ref)
                         && scalar.offset > start
@@ -142,7 +142,7 @@ pub(crate) fn spatial_sketches(
                     .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
-            let Some(sketch_id) = spatial_sketch_id_charged(feature.id.as_str()) else {
+            let Some(sketch_id) = spatial_sketch_id(feature.id.as_str()) else {
                 continue;
             };
             let mut projected = Vec::new();
@@ -161,7 +161,7 @@ pub(crate) fn spatial_sketches(
             if !valid_points {
                 continue;
             }
-            let lines = spatial_line_vertices_charged(histories, record, lane).unwrap_or_default();
+            let lines = spatial_line_vertices(histories, record, lane).unwrap_or_default();
             let mut projected_lines = Vec::new();
             let mut valid_lines = true;
             for (offsets, vertices) in lines.1.chunks_exact(2).zip(lines.2.chunks_exact(2)) {
@@ -237,7 +237,7 @@ pub(crate) fn spatial_sketches(
             let Some(object) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            let vertices = spatial_vertex_coordinates_charged(object);
+            let vertices = spatial_vertex_coordinates(object);
             if vertices.len() >= 2 && vertices.len().is_multiple_of(2) {
                 candidates.push((lane, vertices));
             }
@@ -251,7 +251,7 @@ pub(crate) fn spatial_sketches(
         {
             continue;
         }
-        let Some(sketch_id) = spatial_sketch_id_charged(feature.id.as_str()) else {
+        let Some(sketch_id) = spatial_sketch_id(feature.id.as_str()) else {
             continue;
         };
         let mut projected = Vec::new();
@@ -296,7 +296,7 @@ pub(crate) fn spatial_sketches(
     (sketches, entities)
 }
 
-fn spatial_sketch_id_charged(feature_id: &str) -> Option<SpatialSketchId> {
+fn spatial_sketch_id(feature_id: &str) -> Option<SpatialSketchId> {
     const FEATURE_PREFIX: &str = ":model:feature#";
     const SKETCH_PREFIX: &str = ":model:spatial-sketch#";
     let value = if let Some(index) = feature_id.find(FEATURE_PREFIX) {
@@ -312,7 +312,7 @@ fn spatial_sketch_id_charged(feature_id: &str) -> Option<SpatialSketchId> {
 #[derive(Debug, Default)]
 struct SpatialLineVertices(usize, Vec<usize>, Vec<FinitePoint3>);
 
-fn spatial_line_vertices_charged(
+fn spatial_line_vertices(
     histories: &[crate::records::FeatureHistory],
     record: &crate::records::Feature,
     lane: &FeatureInputLane,
@@ -331,8 +331,8 @@ fn spatial_line_vertices_charged(
         .and_then(|offset| usize::try_from(offset).ok())
         .unwrap_or(lane.native_payload.len());
     let object = lane.native_payload.get(start..end)?;
-    let offsets = spatial_vertex_offsets_charged(object);
-    let vertices = spatial_vertex_coordinates_charged(object);
+    let offsets = spatial_vertex_offsets(object);
+    let vertices = spatial_vertex_coordinates(object);
     (offsets.len().is_multiple_of(2)
         && offsets.len() == vertices.len()
         && vertices
@@ -720,8 +720,8 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
 }
 
-pub(super) fn spatial_vertex_coordinates_charged(payload: &[u8]) -> Vec<FinitePoint3> {
-    let offsets = spatial_vertex_offsets_charged(payload);
+pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<FinitePoint3> {
+    let offsets = spatial_vertex_offsets(payload);
     let mut vertices = Vec::new();
     for offset in offsets {
         let Some(point) = View::f64_le_at(payload, offset + 45)
@@ -737,7 +737,7 @@ pub(super) fn spatial_vertex_coordinates_charged(payload: &[u8]) -> Vec<FinitePo
     vertices
 }
 
-pub(super) fn spatial_vertex_offsets_charged(payload: &[u8]) -> Vec<usize> {
+pub(super) fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
     let mut offsets = Vec::new();
     for (offset, bytes) in payload.windows(SPATIAL_VERTEX_PREFIX.len()).enumerate() {
         if bytes == SPATIAL_VERTEX_PREFIX
@@ -1155,7 +1155,7 @@ pub(super) fn current_geometry_locus_arc_handle_point(payload: &[u8], offset: us
     ordinary || terminal
 }
 
-pub(crate) fn relation_bindings_charged(
+pub(crate) fn relation_bindings(
     parent: &str,
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
@@ -1170,7 +1170,7 @@ pub(super) fn relation_bindings_scoped(
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let candidates = unique_relation_declaration_candidates_charged(classes, scalars, intervals);
+    let candidates = unique_relation_declaration_candidates(classes, scalars, intervals);
     let mut bindings = Vec::new();
     for (class, scalar, family) in candidates {
         let ordinal = u32::try_from(bindings.len())
@@ -1197,7 +1197,7 @@ pub(super) fn relation_bindings_scoped(
     Ok(bindings)
 }
 
-pub(crate) fn reference_cells_charged(
+pub(crate) fn reference_cells(
     scalars: &[FeatureInputScalar],
     classes: &[FeatureInputClass],
 ) -> Result<Vec<FeatureInputReference>, CodecError> {

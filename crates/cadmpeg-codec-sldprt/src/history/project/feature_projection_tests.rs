@@ -53,7 +53,7 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
 }
 
 #[test]
-fn charged_feature_ids_preserve_native_key_escaping() {
+fn feature_ids_preserve_native_key_escaping() {
     for (native, expected) in [
         ("sldprt:history:feature#1:2", "sldprt:model:feature#1:2"),
         (

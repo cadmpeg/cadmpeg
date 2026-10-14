@@ -583,7 +583,6 @@ pub(super) fn scan_intersection_carriers(
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn numerical_ranges_short_chart_chord_preserves_parameter_increment() {
         let arena = cadmpeg_core::decode::DecodeArena::new();

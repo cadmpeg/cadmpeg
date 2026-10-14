@@ -3,7 +3,7 @@
 use crate::resolved_features::terminations::compact_surface_selection_value;
 
 #[test]
-fn charged_surface_component_text_matches_native_text() {
+fn surface_component_text_matches_native_text() {
     let entries = [None, Some(0), Some(u32::MAX)].map(|local_id| {
         crate::records::FeatureInputComponentPathEntry {
             instance: None,
@@ -12,7 +12,7 @@ fn charged_surface_component_text_matches_native_text() {
         }
     });
     assert_eq!(
-        compact_surface_selection_value(&entries).expect("charged surface text"),
+        compact_surface_selection_value(&entries),
         "sldprt:feature-input:surface-component-ids:_,0,4294967295"
     );
 }

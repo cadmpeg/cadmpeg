@@ -317,10 +317,10 @@ impl SldprtNative {
         // A native field can contain 256 containers; reconstruction adds the record root.
         policy.limits.max_recursion_depth = 257;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Self::load_charged(&ctx, namespace)
+        Self::load_with_context(&ctx, namespace)
     }
 
-    pub(crate) fn load_charged(
+    pub(crate) fn load_with_context(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
@@ -1432,35 +1432,28 @@ fn repeated_circle_display_shape_valid(
         return false;
     };
     let mut previous_ordinal = None;
-    record
-        .scalar_refs()
-        .iter()
-        .enumerate()
-        .all(|(index, scalar_id)| {
-            let Some(scalar) = scalars.iter().find(|scalar| scalar.id == *scalar_id) else {
-                return false;
-            };
-            if previous_ordinal.is_some_and(|ordinal: u32| {
-                scalar.ordinal.checked_sub(ordinal) != Some(1)
-                    && !(ordinal == u32::MAX && scalar.ordinal == ordinal)
-            }) {
-                return false;
-            }
-            previous_ordinal = Some(scalar.ordinal);
-            let [operand] = scalar.operands.as_slice() else {
-                return false;
-            };
-            scalar.role == crate::records::FeatureInputScalarRole::Display
-                && operand.kind == record.operands[0].kind
-                && scalar_name_value(scalar) == Some(first_name)
-                && record.scalar_refs()[..index].iter().all(|previous_id| {
-                    scalars
-                        .iter()
-                        .find(|candidate| candidate.id == *previous_id)
-                        .and_then(|previous| previous.operands.first())
-                        .is_some_and(|previous| previous.entity_index != operand.entity_index)
-                })
-        })
+    // Every accepted scalar has one operand, so distinct display entities are a
+    // set of the accepted operand entity indices.
+    let mut entity_indices = HashSet::new();
+    record.scalar_refs().iter().all(|scalar_id| {
+        let Some(scalar) = scalars.iter().find(|scalar| scalar.id == *scalar_id) else {
+            return false;
+        };
+        if previous_ordinal.is_some_and(|ordinal: u32| {
+            scalar.ordinal.checked_sub(ordinal) != Some(1)
+                && !(ordinal == u32::MAX && scalar.ordinal == ordinal)
+        }) {
+            return false;
+        }
+        previous_ordinal = Some(scalar.ordinal);
+        let [operand] = scalar.operands.as_slice() else {
+            return false;
+        };
+        scalar.role == crate::records::FeatureInputScalarRole::Display
+            && operand.kind == record.operands[0].kind
+            && scalar_name_value(scalar) == Some(first_name)
+            && entity_indices.insert(operand.entity_index)
+    })
 }
 
 #[cfg(test)]

@@ -82,7 +82,7 @@ fn utf16_envelope_with_replacements() -> Vec<u8> {
 }
 
 #[test]
-fn charged_container_scan_preserves_utf16_envelope() {
+fn container_scan_preserves_utf16_envelope() {
     let payload = utf16_envelope_with_replacements();
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/SolidWorks", &payload));
@@ -291,7 +291,7 @@ fn parasolid_partition_selection_retains_a_compound_stream_site() {
         None,
     )
     .expect("compound stream");
-    let scan = container::completed_scan_charged(
+    let scan = container::completed_scan(
         &ctx,
         &[],
         0,
@@ -577,7 +577,7 @@ fn empty_native_block_still_requires_compressed_member_and_valid_crc() {
         .copy_from_slice(&1_u32.to_le_bytes());
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(
-        super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
+        super::try_block(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
             .unwrap()
             .is_none()
     );
@@ -586,7 +586,7 @@ fn empty_native_block_still_requires_compressed_member_and_valid_crc() {
     block[super::block_hdr::COMP_SZ..super::block_hdr::COMP_SZ + 4]
         .copy_from_slice(&0_u32.to_le_bytes());
     assert!(
-        super::try_block_budgeted(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
+        super::try_block(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
             .unwrap()
             .is_none()
     );

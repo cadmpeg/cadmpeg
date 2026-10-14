@@ -1424,7 +1424,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     Ok(())
 }
 
-pub(super) fn spatial_relation_manager_ranges_charged(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
+pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
     let mut ranges = spatial_relation_manager_candidates(lane).collect::<Vec<_>>();
     ranges.sort_unstable_by(Ord::cmp);
     ranges.dedup();
@@ -1459,7 +1459,7 @@ fn bind_detached_spatial_relation_objects(
     represented: &HashSet<String>,
     lane: &mut FeatureInputLane,
 ) -> Vec<(u64, u64, String)> {
-    let ranges = spatial_relation_manager_ranges_charged(lane);
+    let ranges = spatial_relation_manager_ranges(lane);
     if ranges.is_empty() {
         return Vec::new();
     }

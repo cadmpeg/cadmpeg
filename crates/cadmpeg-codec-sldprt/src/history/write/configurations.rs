@@ -20,7 +20,7 @@ use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
     global_parameter_owners, parameters_with_incoherent_evaluated_values,
 };
-use crate::history::project::project_configurations_charged;
+use crate::history::project::project_configurations;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 /// Resolve neutral/native configuration edit authority before writing.
@@ -97,7 +97,7 @@ pub(crate) fn prepare_configurations_for_write(
             (true, true) => {
                 let projected = native
                     .as_ref()
-                    .map(|value| project_configurations_charged(&value.feature_histories))
+                    .map(|value| project_configurations(&value.feature_histories))
                     .transpose()?
                     .unwrap_or_default();
                 if configuration_hash(&hash_ctx, &projected)? != neutral_hash {

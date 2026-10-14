@@ -641,13 +641,13 @@ fn append_joined_ids(value: &mut String, ids: impl Iterator<Item = impl std::fmt
     }
 }
 
-pub(super) fn compact_edge_path_value_charged(selection: &FeatureInputEdgeSelection) -> String {
+pub(super) fn compact_edge_path_value(selection: &FeatureInputEdgeSelection) -> String {
     let mut value = String::new();
     append_compact_edge_path(&mut value, selection);
     value
 }
 
-pub(crate) fn compact_edge_selection_set_value_charged(
+pub(crate) fn compact_edge_selection_set_value(
     selections: &[&FeatureInputEdgeSelection],
 ) -> String {
     let mut value = String::from(if selections.len() == 1 {
@@ -674,7 +674,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
     value
 }
 
-pub(crate) fn compact_body_selection_value_charged(local_body_ids: &[u32]) -> String {
+pub(crate) fn compact_body_selection_value(local_body_ids: &[u32]) -> String {
     let mut value = String::from("sldprt:feature-input:body-ids:");
     append_joined_ids(&mut value, local_body_ids.iter());
     value

@@ -101,11 +101,10 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
         let Some(data) = p.checked_add(6) else {
             continue;
         };
-        let Some(len) = cadmpeg_core::decode::bounded_len(
-            u64::from(len),
-            1,
-            buf.len().checked_sub(data).map_or(0, |len| len),
-        ) else {
+        let Some(available) = buf.len().checked_sub(data) else {
+            continue;
+        };
+        let Some(len) = cadmpeg_core::decode::bounded_len(u64::from(len), 1, available) else {
             continue;
         };
         let Some(end) = data.checked_add(len) else {
@@ -193,11 +192,10 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
         let Some(data) = p.checked_add(6) else {
             continue;
         };
-        let Some(count) = cadmpeg_core::decode::bounded_len(
-            u64::from(count),
-            4,
-            buf.len().checked_sub(data).map_or(0, |len| len),
-        ) else {
+        let Some(available) = buf.len().checked_sub(data) else {
+            continue;
+        };
+        let Some(count) = cadmpeg_core::decode::bounded_len(u64::from(count), 4, available) else {
             continue;
         };
         if count != 1 && !ATOM_WIDTHS.contains(&count) {

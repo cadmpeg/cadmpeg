@@ -81,7 +81,7 @@ fn surface_selection_face_bindings<'a>(
     selections: impl IntoIterator<Item = &'a FeatureInputSurfaceSelection>,
     feature_sources: &HashMap<&str, Option<FeatureSourceId>>,
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
-) -> Result<SurfaceSelectionFaceBindings, CodecError> {
+) -> SurfaceSelectionFaceBindings {
     let mut faces_by_identity = HashMap::new();
     for (target, identity) in face_identities {
         let entry = faces_by_identity
@@ -110,7 +110,7 @@ fn surface_selection_face_bindings<'a>(
             .cloned();
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
             &selection.components,
-        )?;
+        );
         let key = (selection.feature_ref.clone(), native);
         match bindings.entry(key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -123,7 +123,7 @@ fn surface_selection_face_bindings<'a>(
             }
         }
     }
-    Ok(bindings)
+    bindings
 }
 
 fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide> {
@@ -171,7 +171,7 @@ pub(crate) fn bind_topology_selections(
         lanes.iter().flat_map(|lane| lane.surface_selections.iter()),
         &feature_sources,
         face_identities,
-    )?;
+    );
     for feature in features {
         if let Some(scope) = feature
             .native_ref
@@ -849,8 +849,7 @@ mod tests {
                     },
                 ),
             ],
-        )
-        .unwrap();
+        );
         let key = (
             "feature".to_string(),
             "sldprt:feature-input:surface-component-ids:8,5".to_string(),
@@ -891,8 +890,7 @@ mod tests {
                     },
                 ),
             ],
-        )
-        .unwrap();
+        );
         let key = (
             "feature".to_string(),
             "sldprt:feature-input:surface-component-ids:5".to_string(),
@@ -917,8 +915,7 @@ mod tests {
                     trailing_fields: Vec::new(),
                 },
             )],
-        )
-        .unwrap();
+        );
         let key = (
             "feature".to_string(),
             "sldprt:feature-input:surface-component-ids:8,5".to_string(),

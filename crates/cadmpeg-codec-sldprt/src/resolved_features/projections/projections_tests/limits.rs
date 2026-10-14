@@ -222,7 +222,7 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("test context");
     project_compact_surface_selections(&ctx, &mut features, &[], &[])
-        .expect("charged face alias projection");
+        .expect("face alias projection");
     assert!(matches!(features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face {
