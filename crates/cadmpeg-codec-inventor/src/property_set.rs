@@ -104,46 +104,24 @@ pub(crate) enum PropertyValue<'a> {
 }
 
 impl PropertyValue<'_> {
-    pub(crate) fn scalar_text(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<String>, CodecError> {
+    pub(crate) fn scalar_text(&self) -> Option<String> {
         let text = match self {
-            Self::Signed { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Unsigned { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Float { value, .. } if value.is_finite() => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Bool { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::Filetime { value, .. } => {
-                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
-            }
-            Self::String { value, .. } => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "retain OLE scalar text",
-                )?;
-                value.clone()
-            }
-            Self::Guid { value, .. } => {
-                ctx.charge_retained(32, "retain OLE scalar text")?;
-                hex(value)
-            }
+            Self::Signed { value, .. } => value.to_string(),
+            Self::Unsigned { value, .. } => value.to_string(),
+            Self::Float { value, .. } if value.is_finite() => value.to_string(),
+            Self::Bool { value, .. } => value.to_string(),
+            Self::Filetime { value, .. } => value.to_string(),
+            Self::String { value, .. } => value.clone(),
+            Self::Guid { value, .. } => hex(value),
             Self::Empty { .. }
             | Self::Float { .. }
             | Self::Binary { .. }
             | Self::Clipboard { .. }
             | Self::Vector { .. }
             | Self::Dictionary
-            | Self::Unknown { .. } => return Ok(None),
+            | Self::Unknown { .. } => return None,
         };
-        Ok(Some(text))
+        Some(text)
     }
 }
 
@@ -175,21 +153,8 @@ pub(crate) fn inventory<'a>(
         }
         let state = match parse_property_set_stream(ctx, view) {
             Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => {
-                if !matches!(error, CodecError::ResourceLimit(_)) {
-                    ctx.charge_formatted_retained(
-                        format_args!("{error}"),
-                        "retain Inventor malformed property-set detail",
-                    )?;
-                }
-                PropertySetState::Malformed(crate::issue_detail(error)?)
-            }
+            Err(error) => PropertySetState::Malformed(crate::issue_detail(error)?),
         };
-        ctx.charge_collection_items(1, "admit Inventor property-set streams")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(stream.path().len()),
-            "retain Inventor property-set path",
-        )?;
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
             path: stream.path().into(),
@@ -229,15 +194,7 @@ pub(crate) fn parse_property_set_stream<'a>(
             "OLE property-set stream has no sections".into(),
         ));
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE section directories",
-    )?;
-    let mut directories = ctx.vector_storage(section_count, "admit OLE section directories")?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE section FMTIDs",
-    )?;
+    let mut directories = Vec::new();
     let mut fmtids = BTreeSet::new();
     for _ in 0..section_count {
         let fmtid = cursor.array("section FMTID")?;
@@ -249,18 +206,9 @@ pub(crate) fn parse_property_set_stream<'a>(
         directories.push((fmtid, cursor.offset("section offset")?));
     }
     let header_end = cursor.position();
-    ctx.stable_sort_by(
-        &mut directories,
-        |left, right| left.1.cmp(&right.1),
-        |_| 0,
-        "OLE section directories sort",
-    )?;
+    directories.sort_by_key(|left| left.1);
     let mut previous_end = header_end;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(section_count),
-        "admit OLE property-set sections",
-    )?;
-    let mut sections = ctx.vector_storage(section_count, "admit OLE property-set sections")?;
+    let mut sections = Vec::new();
     for (fmtid, offset) in directories {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
@@ -320,16 +268,8 @@ fn parse_section<'a>(
     // The directory is read entry by entry below, so the window states its own
     // bound: a directory the section cannot hold stops at the entry that runs
     // out of bytes.
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property IDs",
-    )?;
     let mut ids = BTreeSet::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property directory",
-    )?;
-    let mut directory = ctx.vector_storage(property_count, "admit OLE property directory")?;
+    let mut directory = Vec::new();
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
         if !ids.insert(id) {
@@ -346,12 +286,7 @@ fn parse_section<'a>(
         directory.push((offset, id));
     }
     let offsets_ordered = directory.windows(2).all(|pair| pair[0].0 < pair[1].0);
-    ctx.sort_unstable_by(
-        &mut directory,
-        Ord::cmp,
-        |_| 0,
-        "OLE property directory sort",
-    )?;
+    directory.sort_unstable_by(Ord::cmp);
     for pair in directory.windows(2) {
         if pair[0].0 == pair[1].0 {
             return Err(CodecError::Malformed(
@@ -362,10 +297,6 @@ fn parse_section<'a>(
     if let Some((offset, _)) = directory.first() {
         require_zero_range(bytes, directory_end, *offset, "property-directory gap")?;
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE property ranges",
-    )?;
     let ranges = directory
         .iter()
         .enumerate()
@@ -398,11 +329,7 @@ fn parse_section<'a>(
         })
         .transpose()?
         .unwrap_or_default();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(property_count),
-        "admit OLE properties",
-    )?;
-    let mut properties = ctx.vector_storage(property_count, "admit OLE properties")?;
+    let mut properties = Vec::new();
     for (id, start, end) in ranges {
         let raw = source
             .child(source.start() + start, source.start() + end)
@@ -412,15 +339,7 @@ fn parse_section<'a>(
         } else {
             parse_typed_value(ctx, raw, code_page)?
         };
-        let name = if let Some(name) = names.get(&id) {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(name.len()),
-                "retain OLE property name",
-            )?;
-            Some(name.clone())
-        } else {
-            None
-        };
+        let name = names.get(&id).cloned();
         properties.push(Property {
             id,
             name,
@@ -428,12 +347,7 @@ fn parse_section<'a>(
             raw,
         });
     }
-    ctx.stable_sort_by(
-        &mut properties,
-        |left, right| left.id.cmp(&right.id),
-        |_| 0,
-        "OLE properties sort",
-    )?;
+    properties.sort_by_key(|left| left.id);
     Ok(PropertySection {
         fmtid,
         code_page,
@@ -467,38 +381,17 @@ fn parse_dictionary(
 ) -> Result<BTreeMap<u32, String>, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property dictionary");
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE property dictionary entries",
-    )?;
     let mut names = BTreeMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE folded dictionary names",
-    )?;
     let mut folded_names = BTreeSet::new();
     for _ in 0..count {
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
         let name = cursor.code_page_string(ctx, size, code_page, "entry name")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(name.len()),
-            "retain OLE dictionary name copy",
-        )?;
         if id == 0 || names.insert(id, name.clone()).is_some() {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates or names a reserved id".into(),
             ));
         }
-        let uppercase_len = name
-            .chars()
-            .flat_map(char::to_uppercase)
-            .map(char::len_utf8)
-            .sum::<usize>();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(uppercase_len),
-            "retain OLE dictionary uppercase name",
-        )?;
         if !folded_names.insert(name.to_uppercase()) {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates a name".into(),
@@ -539,11 +432,7 @@ fn parse_vector<'a>(
     code_page: Option<u16>,
 ) -> Result<PropertyValue<'a>, CodecError> {
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "admit OLE property vector elements",
-    )?;
-    let mut values = ctx.vector_storage(count, "admit OLE property vector elements")?;
+    let mut values = Vec::new();
     for _ in 0..count {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;
@@ -820,47 +709,14 @@ fn decode_code_page(
     }
     let page = code_page.unwrap_or(1252);
     let Some(encoding) = encoding_for_code_page(page) else {
-        return Err(CodecError::NotImplemented(ctx.format_retained(
-            format_args!("OLE code page {page} is not implemented"),
-            "retain OLE unsupported code-page detail",
-        )?));
+        return Err(CodecError::NotImplemented(format!(
+            "OLE code page {page} is not implemented"
+        )));
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(content.len()),
-        "decode OLE code-page string",
-    )?;
-    let (selected_encoding, source) = encoding_rs::Encoding::for_bom(content)
-        .map_or((encoding, content), |(selected, bom_len)| {
-            (selected, &content[bom_len..])
-        });
-    let mut decoder = selected_encoding.new_decoder_without_bom_handling();
-    let mut buffer = [0_u8; 4096];
-    let mut read = 0;
-    let mut decoded_len = 0_usize;
-    loop {
-        let (result, consumed, written) =
-            decoder.decode_to_utf8_without_replacement(&source[read..], &mut buffer, true);
-        read += consumed;
-        decoded_len += written;
-        match result {
-            encoding_rs::DecoderResult::InputEmpty => break,
-            encoding_rs::DecoderResult::OutputFull => {}
-            encoding_rs::DecoderResult::Malformed(..) => {
-                return Err(CodecError::malformed(format_args!(
-                    "OLE code-page {page} string is malformed"
-                )));
-            }
-        }
-    }
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(decoded_len),
-        "retain OLE property string",
-    )?;
     let (decoded, _, malformed) = encoding.decode(content);
     if malformed {
         return Err(CodecError::malformed(format_args!(
-            "OLE code-page {} string is malformed",
-            code_page.unwrap_or(1252)
+            "OLE code-page {page} string is malformed"
         )));
     }
     Ok(decoded.into_owned())
