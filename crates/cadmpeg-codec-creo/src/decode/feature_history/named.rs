@@ -10,8 +10,7 @@ use super::draft::{
 };
 use super::knit::{filled_surface_feature_definition, knit_surface_feature_definition};
 use super::outputs::{
-    decoded_feature_reference_name, feature_reference_name, insert_feature_source_property,
-    sweep_output_kind, sweep_solid,
+    feature_reference_name, insert_feature_source_property, sweep_output_kind, sweep_solid,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -88,8 +87,8 @@ fn name_only_feature_definition(
     }
     if numbered_feature_name_has_family(kind, "Fill") {
         return Ok(Some(filled_surface_feature_definition(
-            ctx, scan, ir, feature_id,
-        )?));
+            scan, ir, feature_id,
+        )));
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return Ok(Some(thicken_feature_definition(ctx, scan, ir, feature_id)?));
@@ -212,7 +211,7 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     let Some(reference_name) = feature_reference_name(scan, feature_id) else {
         return Ok(None);
     };
-    let reference_name = decoded_feature_reference_name(ctx, reference_name)?;
+    let reference_name = String::from_utf8_lossy(reference_name);
     if reference_name == kind {
         return Ok(None);
     }
@@ -229,11 +228,7 @@ pub(super) fn extrude_feature_definition_with_profile(
 ) -> Result<IrFeatureDefinition, CodecError> {
     let profile = match unique_feature_profile_ref(ctx, scan, ir, feature_id)? {
         Some(profile) => profile,
-        None => unresolved_feature_profile_ref(
-            ctx,
-            feature_id,
-            "creo unresolved named profile identity",
-        )?,
+        None => unresolved_feature_profile_ref(feature_id),
     };
     let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
     let op = if op == BooleanOp::Unresolved && output_kind == Some(BodyKind::Sheet) {
@@ -242,7 +237,7 @@ pub(super) fn extrude_feature_definition_with_profile(
         op
     };
     let (direction, extent) =
-        linear_extrusion_extent_and_direction(ctx, scan, ir, source_carriers, feature_id)?.map_or(
+        linear_extrusion_extent_and_direction(scan, ir, source_carriers, feature_id)?.map_or(
             (
                 ExtrudeDirection::ProfileNormal {},
                 unresolved_extrude_extent(),
@@ -428,26 +423,23 @@ pub(in super::super) fn reference_named_feature_definition(
 }
 
 pub(in super::super) fn retain_native_feature_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source_properties: &mut BTreeMap<String, String>,
     definition: &IrFeatureDefinition,
     parameters: &BTreeMap<String, String>,
-) -> Result<(), CodecError> {
+) {
     if matches!(
         definition,
         IrFeatureDefinition::Operation(IrFeatureOperation::Native { .. })
     ) {
-        return Ok(());
+        return;
     }
     for (name, value) in parameters {
         insert_feature_source_property(
-            ctx,
             source_properties,
             format_args!("native_parameter.{name}"),
             value,
-        )?;
+        );
     }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -175,51 +175,35 @@ impl FaceAdmissionDetail {
     }
 
     fn unresolved_boundary(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         face_id: u32,
         loops: &[&crate::topology::Loop],
         edge_vertices: &BTreeMap<u32, [u32; 2]>,
         incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Self {
         let mut detail = Self::face(face_id);
         for half_edge in loops.iter().flat_map(|lp| lp.half_edges().iter()) {
             if edge_vertices.contains_key(&half_edge.curve_id) {
                 continue;
             }
             if detail.boundary_half_edges.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT {
-                ctx.reserve_vec(
-                    &mut detail.boundary_half_edges,
-                    1,
-                    "creo B-rep rejection boundary samples",
-                )?;
                 detail.boundary_half_edges.push(*half_edge);
             }
             if let Some(binding) = incidence.get(half_edge) {
                 if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
                     && !detail.vertex_ids.contains(&binding.start_vertex_id.get())
                 {
-                    ctx.reserve_vec(
-                        &mut detail.vertex_ids,
-                        1,
-                        "creo B-rep rejection vertex samples",
-                    )?;
                     detail.vertex_ids.push(binding.start_vertex_id.get());
                 }
                 if let Some(end_vertex_id) = binding.end_vertex_id {
                     if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
                         && !detail.vertex_ids.contains(&end_vertex_id.get())
                     {
-                        ctx.reserve_vec(
-                            &mut detail.vertex_ids,
-                            1,
-                            "creo B-rep rejection vertex samples",
-                        )?;
                         detail.vertex_ids.push(end_vertex_id.get());
                     }
                 }
             }
         }
-        Ok(detail)
+        detail
     }
 }
 
@@ -243,29 +227,17 @@ pub(in super::super) struct BrepTransferDiagnostics {
 }
 
 impl BrepTransferDiagnostics {
-    fn reject_face(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        reason: FaceAdmissionRejection,
-        face_id: u32,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.reject_face_with_detail(ctx, reason, FaceAdmissionDetail::face(face_id))
+    fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
+        self.reject_face_with_detail(reason, FaceAdmissionDetail::face(face_id));
     }
 
     fn reject_face_with_detail(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         reason: FaceAdmissionRejection,
         detail: FaceAdmissionDetail,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_vec(
-            &mut self.face_rejection_diagnostics,
-            1,
-            "creo B-rep face rejection diagnostics",
-        )?;
+    ) {
         self.face_rejection_diagnostics
             .push(FaceAdmissionDiagnostic { reason, detail });
-        Ok(())
     }
 
     /// The rejection count and bounded detail samples for a reason.
@@ -287,21 +259,12 @@ impl BrepTransferDiagnostics {
 
     pub(in super::super) fn face_admission_rejection_records(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Vec<CreoFaceAdmissionRejectionRecord>, cadmpeg_core::CodecError> {
+    ) -> Vec<CreoFaceAdmissionRejectionRecord> {
         let mut records = Vec::new();
         for diagnostic in &self.face_rejection_diagnostics {
             let detail = &diagnostic.detail;
-            let id = ctx.format_retained(
-                format_args!("creo:brep:face_admission_rejection#{}", detail.face_id),
-                "creo B-rep rejection record IDs",
-            )?;
+            let id = format!("creo:brep:face_admission_rejection#{}", detail.face_id);
             let mut boundary_half_edges = Vec::new();
-            ctx.reserve_vec(
-                &mut boundary_half_edges,
-                detail.boundary_half_edges.len(),
-                "creo B-rep rejection half edges",
-            )?;
             boundary_half_edges.extend(
                 detail
                     .boundary_half_edges
@@ -310,13 +273,7 @@ impl BrepTransferDiagnostics {
                     .map(half_edge_ref),
             );
             let mut vertex_ids = Vec::new();
-            ctx.reserve_vec(
-                &mut vertex_ids,
-                detail.vertex_ids.len(),
-                "creo B-rep rejection vertex IDs",
-            )?;
             vertex_ids.extend_from_slice(&detail.vertex_ids);
-            ctx.reserve_vec(&mut records, 1, "creo B-rep rejection records")?;
             records.push(CreoFaceAdmissionRejectionRecord {
                 id,
                 face_id: detail.face_id,
@@ -325,7 +282,7 @@ impl BrepTransferDiagnostics {
                 vertex_ids,
             });
         }
-        Ok(records)
+        records
     }
 
     pub(in super::super) fn record_coverage(
@@ -710,22 +667,16 @@ struct NeutralShellSpec {
 }
 
 fn admitted_face_components<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &'a ContainerScan,
     eligible_face_ids: &BTreeSet<u32>,
-) -> Result<Vec<&'a crate::topology::FaceComponent>, cadmpeg_core::CodecError> {
+) -> Vec<&'a crate::topology::FaceComponent> {
     let mut admitted = Vec::new();
     if !matches!(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
     ) {
-        ctx.reserve_vec(
-            &mut admitted,
-            scan.topology.face_components.len(),
-            "creo B-rep admitted component refs",
-        )?;
         admitted.extend(&scan.topology.face_components);
-        return Ok(admitted);
+        return admitted;
     }
     for component in &scan.topology.face_components {
         if component
@@ -733,11 +684,10 @@ fn admitted_face_components<'a>(
             .iter()
             .any(|face_id| eligible_face_ids.contains(face_id))
         {
-            ctx.reserve_vec(&mut admitted, 1, "creo B-rep admitted component refs")?;
             admitted.push(component);
         }
     }
-    Ok(admitted)
+    admitted
 }
 
 /// Return whether a topology face reference belongs to the model-face
@@ -755,33 +705,19 @@ fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
     ) || scan.surfaces.rows.iter().any(|row| row.id == face_id)
 }
 
-fn merge_body_components(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    components: Vec<NeutralShellSpec>,
-) -> Result<Vec<NeutralShellSpec>, cadmpeg_core::CodecError> {
+fn merge_body_components(components: Vec<NeutralShellSpec>) -> Vec<NeutralShellSpec> {
     let mut components = components.into_iter();
     let Some(mut first) = components.next() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     for component in components {
-        ctx.reserve_vec(
-            &mut first.faces,
-            component.faces.len(),
-            "creo B-rep merged component faces",
-        )?;
         first.faces.extend(component.faces);
         for curve_id in component.wire_curves {
-            ctx.insert_btree_set(
-                &mut first.wire_curves,
-                curve_id,
-                "creo B-rep merged component wire nodes",
-            )?;
+            first.wire_curves.insert(curve_id);
         }
     }
-    let mut merged = Vec::new();
-    ctx.reserve_vec(&mut merged, 1, "creo B-rep merged component records")?;
-    merged.push(first);
-    Ok(merged)
+    let merged = vec![first];
+    merged
 }
 
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
@@ -800,45 +736,32 @@ fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: u
 /// a face shell only when exactly one shell touches an endpoint and otherwise
 /// grouped in a wire shell.
 fn split_neutral_component_shells(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     faces: &[u32],
     wire_curves: &BTreeSet<u32>,
     face_adjacency: &BTreeMap<u32, BTreeSet<u32>>,
     face_vertices: &BTreeMap<u32, BTreeSet<u32>>,
     edge_vertices: &BTreeMap<u32, [u32; 2]>,
-) -> Result<Vec<NeutralShellSpec>, cadmpeg_core::CodecError> {
+) -> Vec<NeutralShellSpec> {
     let mut remaining_faces = BTreeSet::new();
     for face_id in faces {
-        ctx.insert_btree_set(
-            &mut remaining_faces,
-            *face_id,
-            "creo B-rep remaining face nodes",
-        )?;
+        remaining_faces.insert(*face_id);
     }
     let mut shell_specs = Vec::new();
     while let Some(start) = remaining_faces.pop_first() {
         let mut group = BTreeSet::new();
-        ctx.insert_btree_set(&mut group, start, "creo B-rep shell group face nodes")?;
+        group.insert(start);
         let mut pending = Vec::new();
-        ctx.reserve_vec(&mut pending, 1, "creo B-rep pending shell faces")?;
         pending.push(start);
         while let Some(face_id) = pending.pop() {
             for neighbour in face_adjacency.get(&face_id).into_iter().flatten().copied() {
                 if remaining_faces.remove(&neighbour) {
-                    ctx.insert_btree_set(
-                        &mut group,
-                        neighbour,
-                        "creo B-rep shell group face nodes",
-                    )?;
-                    ctx.reserve_vec(&mut pending, 1, "creo B-rep pending shell faces")?;
+                    group.insert(neighbour);
                     pending.push(neighbour);
                 }
             }
         }
         let mut group_faces = Vec::new();
-        ctx.reserve_vec(&mut group_faces, group.len(), "creo B-rep shell face IDs")?;
         group_faces.extend(group);
-        ctx.reserve_vec(&mut shell_specs, 1, "creo B-rep shell records")?;
         shell_specs.push(NeutralShellSpec {
             faces: group_faces,
             wire_curves: BTreeSet::new(),
@@ -861,27 +784,18 @@ fn split_neutral_component_shells(
                 .map(|(index, _)| index),
         );
         if let Some(index) = matching_shell {
-            ctx.insert_btree_set(
-                &mut shell_specs[index].wire_curves,
-                *curve_id,
-                "creo B-rep attached wire nodes",
-            )?;
+            shell_specs[index].wire_curves.insert(*curve_id);
         } else {
-            ctx.insert_btree_set(
-                &mut unattached_wire_curves,
-                *curve_id,
-                "creo B-rep unattached wire nodes",
-            )?;
+            unattached_wire_curves.insert(*curve_id);
         }
     }
     if !unattached_wire_curves.is_empty() {
-        ctx.reserve_vec(&mut shell_specs, 1, "creo B-rep shell records")?;
         shell_specs.push(NeutralShellSpec {
             faces: Vec::new(),
             wire_curves: unattached_wire_curves,
         });
     }
-    Ok(shell_specs)
+    shell_specs
 }
 
 fn component_is_closed(
@@ -931,10 +845,9 @@ fn curve_geometry_is_typed_nonlinear(geometry: &SolvedCurveGeometry) -> bool {
 }
 
 fn model_typed_nonlinear_curve_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+) -> BTreeSet<u32> {
     let mut ids = BTreeSet::new();
     for curve in &ir.model.curves {
         let Some(id) = curve
@@ -950,10 +863,10 @@ fn model_typed_nonlinear_curve_ids(
             .solved()
             .is_some_and(curve_geometry_is_typed_nonlinear)
         {
-            ctx.insert_btree_set(&mut ids, id, "creo B-rep typed curve ID nodes")?;
+            ids.insert(id);
         }
     }
-    Ok(ids)
+    ids
 }
 
 fn scalar_values_agree(first: f64, second: f64) -> bool {
@@ -1050,32 +963,28 @@ fn native_circle_loop_geometry(
 }
 
 fn ordered_two_edge_circle_loops<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loops: &[&'a crate::topology::Loop],
     polygons: &[Vec<[f64; 2]>],
     surface: &SurfaceGeometry,
     model_curves: &[Curve],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+) -> Option<Vec<&'a crate::topology::Loop>> {
     if loops.len() < 2 || loops.len() != polygons.len() {
-        return Ok(None);
+        return None;
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
-        return Ok(None);
+        return None;
     };
     let origin = plane_surface.origin().get();
     let normal = plane_surface.frame().axis().as_raw();
     let mut circle_loops = Vec::new();
     for lp in loops {
-        let Some(circle) = native_circle_loop_geometry(lp, model_curves, source_carriers) else {
-            return Ok(None);
-        };
-        ctx.reserve_vec(&mut circle_loops, 1, "creo native circle loop geometry")?;
+        let circle = native_circle_loop_geometry(lp, model_curves, source_carriers)?;
         circle_loops.push(circle);
     }
     let normal_length = normal.norm();
     if !normal_length.is_finite() || normal_length <= 0.0 {
-        return Ok(None);
+        return None;
     }
     let reference = circle_loops[0];
     if circle_loops.iter().any(|circle| {
@@ -1093,23 +1002,19 @@ fn ordered_two_edge_circle_loops<'a>(
             || !vectors_are_parallel(circle.axis, *normal)
             || distance_from_surface > EPS_GEOMETRY_AGREE * normal_length * center_scale
     }) {
-        return Ok(None);
+        return None;
     }
-    let Some(center_uv) =
-        cadmpeg_ir::eval::analytic_surface_parameters(surface, reference.center.get())
-    else {
-        return Ok(None);
-    };
+    let center_uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, reference.center.get())?;
     let center_uv = cadmpeg_ir::math::Point2::from(center_uv);
     for (circle, polygon) in circle_loops.iter().zip(polygons) {
         let [first, second] = polygon.as_slice() else {
-            return Ok(None);
+            return None;
         };
         if [first[0], first[1], second[0], second[1]]
             .into_iter()
             .any(|value| !value.is_finite())
         {
-            return Ok(None);
+            return None;
         }
         let first_delta = [first[0] - center_uv.u, first[1] - center_uv.v];
         let second_delta = [second[0] - center_uv.u, second[1] - center_uv.v];
@@ -1124,7 +1029,7 @@ fn ordered_two_edge_circle_loops<'a>(
             || !scalar_values_agree(second_radius_squared, radius_squared)
             || !scalar_values_agree(endpoints_dot, -radius_squared)
         {
-            return Ok(None);
+            return None;
         }
     }
     if circle_loops.iter().enumerate().any(|(index, first)| {
@@ -1133,29 +1038,22 @@ fn ordered_two_edge_circle_loops<'a>(
             .skip(index + 1)
             .any(|second| scalar_values_agree(first.radius, second.radius))
     }) {
-        return Ok(None);
+        return None;
     }
     let mut order = Vec::new();
     for index in 0..loops.len() {
-        ctx.reserve_vec(&mut order, 1, "creo native circle loop order")?;
         order.push(index);
     }
-    ctx.stable_sort_by(
-        order.as_mut_slice(),
-        |first, second| {
-            circle_loops[*second]
-                .radius
-                .total_cmp(&circle_loops[*first].radius)
-        },
-        |_| std::mem::size_of::<f64>(),
-        "creo ordered two edge circle loops order ordering",
-    )?;
+    order.as_mut_slice().sort_by(|first, second| {
+        circle_loops[*second]
+            .radius
+            .total_cmp(&circle_loops[*first].radius)
+    });
     let mut ordered = Vec::new();
     for index in order {
-        ctx.reserve_vec(&mut ordered, 1, "creo native ordered circle loops")?;
         ordered.push(loops[index]);
     }
-    Ok(Some(ordered))
+    Some(ordered)
 }
 
 fn native_parameter_loop_polygon(
@@ -1191,7 +1089,6 @@ fn native_parameter_loop_polygon(
         else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut segments, 1, "creo native loop pcurve segments")?;
         segments.push(endpoints);
     }
     if segments.len() < 3
@@ -1218,7 +1115,6 @@ fn native_parameter_loop_polygon(
     }
     let mut polygon = Vec::new();
     for segment in segments {
-        ctx.reserve_vec(&mut polygon, 1, "creo native loop polygon points")?;
         polygon.push(segment[0]);
     }
     Ok(Some(polygon))
@@ -1249,27 +1145,20 @@ fn ordered_native_parameter_face_loops<'a>(
         else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut polygons, 1, "creo native face loop polygons")?;
         polygons.push(polygon);
     }
     let mut copied_loops = Vec::new();
-    ctx.reserve_vec(
-        &mut copied_loops,
-        loops.len(),
-        "creo native face loop references",
-    )?;
     copied_loops.extend_from_slice(loops);
-    if let Some(ordered) = ordered_parameter_face_loops(ctx, copied_loops, &polygons)? {
+    if let Some(ordered) = ordered_parameter_face_loops(copied_loops, &polygons) {
         Ok(Some(ordered))
     } else {
-        ordered_two_edge_circle_loops(
-            ctx,
+        Ok(ordered_two_edge_circle_loops(
             loops,
             &polygons,
             surface,
             curve_evidence.model_curves,
             curve_evidence.source_carriers,
-        )
+        ))
     }
 }
 
@@ -1277,22 +1166,18 @@ fn ordered_native_parameter_face_loops<'a>(
 mod tests;
 
 fn push_native_pcurve_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: &mut NativePcurveCandidates,
     curve_id: u32,
     face_id: u32,
     endpoints: [[f64; 2]; 2],
     offset: usize,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let key = (curve_id, face_id);
-    ctx.admit_btree_entry(candidates, &key, "creo B-rep pcurve candidate nodes")?;
     let values = match candidates.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
     };
-    ctx.reserve_vec(values, 1, "creo B-rep pcurve candidates")?;
     values.push((endpoints, offset));
-    Ok(())
 }
 
 struct BrepSourceIndexes<'a> {
@@ -1302,40 +1187,26 @@ struct BrepSourceIndexes<'a> {
 }
 
 impl<'a> BrepSourceIndexes<'a> {
-    fn from_scan(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        carriers: &BTreeMap<u32, CarrierEquation>,
-        scan: &'a ContainerScan<'_>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    fn from_scan(carriers: &BTreeMap<u32, CarrierEquation>, scan: &'a ContainerScan<'_>) -> Self {
         let mut planes = BTreeMap::new();
         for (id, carrier) in carriers {
             if let CarrierEquation::Plane(plane) = carrier {
-                ctx.insert_btree_map(&mut planes, *id, *plane, "creo B-rep plane index nodes")?;
+                planes.insert(*id, *plane);
             }
         }
         let mut half_edges = BTreeMap::new();
         for half_edge in &scan.topology.half_edges {
-            ctx.insert_btree_map(
-                &mut half_edges,
-                half_edge.id,
-                half_edge,
-                "creo B-rep half-edge index nodes",
-            )?;
+            half_edges.insert(half_edge.id, half_edge);
         }
         let mut incidence = BTreeMap::new();
         for binding in &scan.topology.half_edge_vertex_incidence {
-            ctx.insert_btree_map(
-                &mut incidence,
-                binding.half_edge,
-                binding,
-                "creo B-rep incidence index nodes",
-            )?;
+            incidence.insert(binding.half_edge, binding);
         }
-        Ok(Self {
+        Self {
             planes,
             half_edges,
             incidence,
-        })
+        }
     }
 }
 
@@ -1348,25 +1219,15 @@ struct BrepFaceCandidateIndexes<'a> {
 }
 
 impl<'a> BrepFaceCandidateIndexes<'a> {
-    fn from_scan(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        scan: &'a ContainerScan<'_>,
-        ir: &CadIr,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    fn from_scan(scan: &'a ContainerScan<'_>, ir: &CadIr) -> Self {
         let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
         for lp in &scan.topology.loops {
             if let Some(face_id) = lp.face_id() {
                 let face_key = face_id.get();
-                ctx.admit_btree_entry(
-                    &loops_by_face,
-                    &face_key,
-                    "creo B-rep face-loop index nodes",
-                )?;
                 let loops = match loops_by_face.entry(face_key) {
                     std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                     std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
                 };
-                ctx.reserve_vec(loops, 1, "creo B-rep face-loop references")?;
                 loops.push(lp);
             }
         }
@@ -1378,11 +1239,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             .flat_map(|component| component.face_ids().iter().copied())
             .chain(loops_by_face.keys().copied())
         {
-            ctx.insert_btree_set(
-                &mut topology_face_reference_ids,
-                face_id,
-                "creo B-rep topology face ID nodes",
-            )?;
+            topology_face_reference_ids.insert(face_id);
         }
         let legacy_nonvisible_face_reference_count = topology_face_reference_ids
             .iter()
@@ -1398,11 +1255,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             .chain(loops_by_face.keys().copied())
             .filter(|face_id| is_neutral_face_reference(scan, *face_id))
         {
-            ctx.insert_btree_set(
-                &mut candidate_face_ids,
-                face_id,
-                "creo B-rep candidate face ID nodes",
-            )?;
+            candidate_face_ids.insert(face_id);
         }
         let mut model_surface_counts = BTreeMap::new();
         for face_id in &candidate_face_ids {
@@ -1419,12 +1272,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
                     )
                 })
                 .count();
-            ctx.insert_btree_map(
-                &mut model_surface_counts,
-                *face_id,
-                count,
-                "creo B-rep model surface count nodes",
-            )?;
+            model_surface_counts.insert(*face_id, count);
         }
         let mut boundary_curve_ids = BTreeSet::new();
         for curve_id in loops_by_face
@@ -1432,19 +1280,15 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             .flatten()
             .flat_map(|lp| lp.half_edges().iter().map(|half_edge| half_edge.curve_id))
         {
-            ctx.insert_btree_set(
-                &mut boundary_curve_ids,
-                curve_id,
-                "creo B-rep boundary curve ID nodes",
-            )?;
+            boundary_curve_ids.insert(curve_id);
         }
-        Ok(Self {
+        Self {
             loops_by_face,
             candidate_face_ids,
             model_surface_counts,
             boundary_curve_ids,
             legacy_nonvisible_face_reference_count,
-        })
+        }
     }
 }
 
@@ -1456,14 +1300,13 @@ struct BrepEdgeIndexes {
 
 impl BrepEdgeIndexes {
     fn from_rows(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         rows: &[crate::curve::CurveTopologyRow],
         native_edge_vertices: &BTreeMap<u32, [std::num::NonZeroU32; 2]>,
         solved_vertices: &BTreeMap<u32, [f64; 3]>,
         ir: &CadIr,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Self {
         let mut edge_vertices = BTreeMap::new();
-        for row in crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)? {
+        for row in crate::identity::uniquely_identified_rows(rows, |row| row.id) {
             let Some(vertices) = native_edge_vertices
                 .get(&row.id)
                 .copied()
@@ -1475,12 +1318,7 @@ impl BrepEdgeIndexes {
                 .iter()
                 .all(|vertex| solved_vertices.contains_key(vertex))
             {
-                ctx.insert_btree_map(
-                    &mut edge_vertices,
-                    row.id,
-                    vertices,
-                    "creo B-rep edge-vertex nodes",
-                )?;
+                edge_vertices.insert(row.id, vertices);
             }
         }
         let mut model_curve_counts = BTreeMap::new();
@@ -1498,25 +1336,16 @@ impl BrepEdgeIndexes {
                     )
                 })
                 .count();
-            ctx.insert_btree_map(
-                &mut model_curve_counts,
-                *curve_id,
-                count,
-                "creo B-rep model curve count nodes",
-            )?;
+            model_curve_counts.insert(*curve_id, count);
             if count <= 1 {
-                ctx.insert_btree_set(
-                    &mut admitted_edge_curves,
-                    *curve_id,
-                    "creo B-rep admitted edge ID nodes",
-                )?;
+                admitted_edge_curves.insert(*curve_id);
             }
         }
-        Ok(Self {
+        Self {
             edge_vertices,
             model_curve_counts,
             admitted_edge_curves,
-        })
+        }
     }
 }
 
@@ -1531,13 +1360,11 @@ struct BrepEligibleFaceIndexes {
 
 impl BrepEligibleFaceIndexes {
     fn from_faces(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         eligible_faces: &BTreeMap<u32, Vec<&crate::topology::Loop>>,
         topology_rows: &[crate::curve::CurveTopologyRow],
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Self {
         let mut eligible_loops = Vec::new();
         for lp in eligible_faces.values().flatten() {
-            ctx.reserve_vec(&mut eligible_loops, 1, "creo B-rep eligible loop refs")?;
             eligible_loops.push(*lp);
         }
         let mut emitted_half_edges = BTreeSet::new();
@@ -1545,19 +1372,11 @@ impl BrepEligibleFaceIndexes {
             .iter()
             .flat_map(|lp| lp.half_edges().iter().copied())
         {
-            ctx.insert_btree_set(
-                &mut emitted_half_edges,
-                half_edge,
-                "creo B-rep emitted half-edge nodes",
-            )?;
+            emitted_half_edges.insert(half_edge);
         }
         let mut face_curves = BTreeSet::new();
         for half_edge in &emitted_half_edges {
-            ctx.insert_btree_set(
-                &mut face_curves,
-                half_edge.curve_id,
-                "creo B-rep face curve ID nodes",
-            )?;
+            face_curves.insert(half_edge.curve_id);
         }
         let mut closed_single_edge_curves = BTreeSet::new();
         for curve_id in &face_curves {
@@ -1569,49 +1388,29 @@ impl BrepEligibleFaceIndexes {
             if uses.next().is_some_and(|lp| lp.half_edges().len() == 1)
                 && uses.all(|lp| lp.half_edges().len() == 1)
             {
-                ctx.insert_btree_set(
-                    &mut closed_single_edge_curves,
-                    *curve_id,
-                    "creo B-rep single-edge curve nodes",
-                )?;
+                closed_single_edge_curves.insert(*curve_id);
             }
         }
         let mut row_offsets = BTreeMap::new();
         for row in topology_rows {
-            ctx.insert_btree_map(
-                &mut row_offsets,
-                row.id,
-                row.offset,
-                "creo B-rep row-offset nodes",
-            )?;
+            row_offsets.insert(row.id, row.offset);
         }
         let mut curve_faces = BTreeMap::new();
-        for row in
-            crate::identity::uniquely_identified_rows_checked(ctx, topology_rows, |row| row.id)?
-        {
-            ctx.insert_btree_map(
-                &mut curve_faces,
-                row.id,
-                row.stored_face_ids(),
-                "creo B-rep curve-face nodes",
-            )?;
+        for row in crate::identity::uniquely_identified_rows(topology_rows, |row| row.id) {
+            curve_faces.insert(row.id, row.stored_face_ids());
         }
         let mut eligible_face_ids = BTreeSet::new();
         for face_id in eligible_faces.keys() {
-            ctx.insert_btree_set(
-                &mut eligible_face_ids,
-                *face_id,
-                "creo B-rep eligible face ID nodes",
-            )?;
+            eligible_face_ids.insert(*face_id);
         }
-        Ok(Self {
+        Self {
             emitted_half_edges,
             face_curves,
             closed_single_edge_curves,
             row_offsets,
             curve_faces,
             eligible_face_ids,
-        })
+        }
     }
 }
 
@@ -1622,14 +1421,13 @@ struct BrepBodyIndexes {
 
 impl BrepBodyIndexes {
     fn from_components(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scan: &ContainerScan,
         admitted_components: &[&crate::topology::FaceComponent],
         admitted_edge_curves: &BTreeSet<u32>,
         eligible_faces: &BTreeMap<u32, Vec<&crate::topology::Loop>>,
         eligible_face_ids: &BTreeSet<u32>,
         curve_faces: &BTreeMap<u32, [u32; 2]>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Self {
         let mut neutral_edge_curves = BTreeSet::new();
         for curve_id in admitted_components
             .iter()
@@ -1644,11 +1442,7 @@ impl BrepBodyIndexes {
                     .is_some_and(|faces| faces.iter().any(|face| eligible_face_ids.contains(face)))
             })
         {
-            ctx.insert_btree_set(
-                &mut neutral_edge_curves,
-                curve_id,
-                "creo B-rep neutral edge curve nodes",
-            )?;
+            neutral_edge_curves.insert(curve_id);
         }
         let mut body_components = Vec::new();
         for component in admitted_components {
@@ -1659,7 +1453,6 @@ impl BrepBodyIndexes {
                 .copied()
                 .filter(|face_id| eligible_faces.contains_key(face_id))
             {
-                ctx.reserve_vec(&mut faces, 1, "creo B-rep component face IDs")?;
                 faces.push(face_id);
             }
             let mut curves = BTreeSet::new();
@@ -1669,26 +1462,24 @@ impl BrepBodyIndexes {
                 .copied()
                 .filter(|curve_id| neutral_edge_curves.contains(curve_id))
             {
-                ctx.insert_btree_set(&mut curves, curve_id, "creo B-rep component wire nodes")?;
+                curves.insert(curve_id);
             }
-            ctx.reserve_vec(&mut body_components, 1, "creo B-rep component records")?;
             body_components.push(NeutralShellSpec {
                 faces,
                 wire_curves: curves,
             });
         }
-        Ok(Self {
+        Self {
             neutral_edge_curves,
             body_components,
-        })
+        }
     }
 }
 
 fn used_brep_vertices(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     neutral_edge_curves: &BTreeSet<u32>,
     edge_vertices: &BTreeMap<u32, [u32; 2]>,
-) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+) -> BTreeSet<u32> {
     let mut used_vertices = BTreeSet::new();
     for vertex_id in neutral_edge_curves
         .iter()
@@ -1696,26 +1487,16 @@ fn used_brep_vertices(
         .flatten()
         .copied()
     {
-        ctx.insert_btree_set(
-            &mut used_vertices,
-            vertex_id,
-            "creo B-rep used vertex nodes",
-        )?;
+        used_vertices.insert(vertex_id);
     }
-    Ok(used_vertices)
+    used_vertices
 }
 
-fn brep_set_at<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    map: &'a mut BTreeMap<u32, BTreeSet<u32>>,
-    key: u32,
-    operation: &'static str,
-) -> Result<&'a mut BTreeSet<u32>, cadmpeg_core::CodecError> {
-    ctx.admit_btree_entry(map, &key, operation)?;
-    Ok(match map.entry(key) {
+fn brep_set_at(map: &mut BTreeMap<u32, BTreeSet<u32>>, key: u32) -> &mut BTreeSet<u32> {
+    match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
-    })
+    }
 }
 
 struct BrepComponentTopology {
@@ -1727,73 +1508,36 @@ struct BrepComponentTopology {
 
 impl BrepComponentTopology {
     fn from_component(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         component_curves: &BTreeSet<u32>,
         face_curves: &BTreeSet<u32>,
         faces: &[u32],
         eligible_faces: &BTreeMap<u32, Vec<&crate::topology::Loop>>,
         edge_vertices: &BTreeMap<u32, [u32; 2]>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Self {
         let mut component_face_curves = BTreeSet::new();
         for curve_id in component_curves.intersection(face_curves) {
-            ctx.insert_btree_set(
-                &mut component_face_curves,
-                *curve_id,
-                "creo B-rep component face curve nodes",
-            )?;
+            component_face_curves.insert(*curve_id);
         }
         let mut wire_curves = BTreeSet::new();
         for curve_id in component_curves.difference(face_curves) {
-            ctx.insert_btree_set(
-                &mut wire_curves,
-                *curve_id,
-                "creo B-rep component wire curve nodes",
-            )?;
+            wire_curves.insert(*curve_id);
         }
         let mut face_adjacency = BTreeMap::new();
         let mut face_vertices = BTreeMap::new();
         let mut faces_by_curve = BTreeMap::new();
         let mut faces_by_vertex = BTreeMap::new();
         for face_id in faces {
-            brep_set_at(
-                ctx,
-                &mut face_adjacency,
-                *face_id,
-                "creo B-rep adjacency face nodes",
-            )?;
-            let vertices = brep_set_at(
-                ctx,
-                &mut face_vertices,
-                *face_id,
-                "creo B-rep face vertex map nodes",
-            )?;
+            brep_set_at(&mut face_adjacency, *face_id);
+            let vertices = brep_set_at(&mut face_vertices, *face_id);
             for native_loop in &eligible_faces[face_id] {
                 for half_edge in native_loop.half_edges() {
-                    let curve_faces = brep_set_at(
-                        ctx,
-                        &mut faces_by_curve,
-                        half_edge.curve_id,
-                        "creo B-rep curve incidence map nodes",
-                    )?;
-                    ctx.insert_btree_set(
-                        curve_faces,
-                        *face_id,
-                        "creo B-rep curve incident face nodes",
-                    )?;
+                    let curve_faces = brep_set_at(&mut faces_by_curve, half_edge.curve_id);
+                    curve_faces.insert(*face_id);
                     let [start, end] = edge_vertices[&half_edge.curve_id];
                     for vertex_id in [start, end] {
-                        ctx.insert_btree_set(vertices, vertex_id, "creo B-rep face vertex nodes")?;
-                        let vertex_faces = brep_set_at(
-                            ctx,
-                            &mut faces_by_vertex,
-                            vertex_id,
-                            "creo B-rep vertex incidence map nodes",
-                        )?;
-                        ctx.insert_btree_set(
-                            vertex_faces,
-                            *face_id,
-                            "creo B-rep vertex incident face nodes",
-                        )?;
+                        vertices.insert(vertex_id);
+                        let vertex_faces = brep_set_at(&mut faces_by_vertex, vertex_id);
+                        vertex_faces.insert(*face_id);
                     }
                 }
             }
@@ -1801,35 +1545,17 @@ impl BrepComponentTopology {
         for incident_faces in faces_by_curve.values().chain(faces_by_vertex.values()) {
             for (index, first) in incident_faces.iter().enumerate() {
                 for second in incident_faces.iter().skip(index + 1) {
-                    ctx.insert_btree_set(
-                        brep_set_at(
-                            ctx,
-                            &mut face_adjacency,
-                            *first,
-                            "creo B-rep adjacency face nodes",
-                        )?,
-                        *second,
-                        "creo B-rep adjacency neighbour nodes",
-                    )?;
-                    ctx.insert_btree_set(
-                        brep_set_at(
-                            ctx,
-                            &mut face_adjacency,
-                            *second,
-                            "creo B-rep adjacency face nodes",
-                        )?,
-                        *first,
-                        "creo B-rep adjacency neighbour nodes",
-                    )?;
+                    brep_set_at(&mut face_adjacency, *first).insert(*second);
+                    brep_set_at(&mut face_adjacency, *second).insert(*first);
                 }
             }
         }
-        Ok(Self {
+        Self {
             component_face_curves,
             wire_curves,
             face_adjacency,
             face_vertices,
-        })
+        }
     }
 }
 
@@ -1840,39 +1566,26 @@ struct BrepShellReferences {
 
 impl BrepShellReferences {
     fn from_shell(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         shell: &NeutralShellSpec,
         shell_id: &ShellId,
         face_shell_ids: &mut BTreeMap<u32, ShellId>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut face_ids = Vec::new();
         for face_id in &shell.faces {
-            ctx.insert_btree_map(
-                face_shell_ids,
+            face_shell_ids.insert(
                 *face_id,
-                crate::identity::copy_checked_id(
-                    ctx,
-                    shell_id.as_str(),
-                    "creo B-rep face-shell identity copies",
-                )?,
-                "creo B-rep face-shell nodes",
-            )?;
-            ctx.reserve_vec(&mut face_ids, 1, "creo B-rep shell face references")?;
+                crate::identity::copy_checked_id(shell_id.as_str())?,
+            );
             face_ids.push(crate::identity::compose_checked::<FaceId>(
-                ctx,
                 &crate::identity::VISIBGEOM_FACE,
                 *face_id,
-                "creo B-rep shell face identities",
             )?);
         }
         let mut edge_ids = Vec::new();
         for curve_id in &shell.wire_curves {
-            ctx.reserve_vec(&mut edge_ids, 1, "creo B-rep shell edge references")?;
             edge_ids.push(crate::identity::compose_checked::<EdgeId>(
-                ctx,
                 &crate::identity::VISIBGEOM_EDGE,
                 *curve_id,
-                "creo B-rep shell edge identities",
             )?);
         }
         Ok(Self { face_ids, edge_ids })
@@ -1888,57 +1601,30 @@ struct BrepFaceReferences {
 
 impl BrepFaceReferences {
     fn from_loops(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         face_id: u32,
         shell_id: &ShellId,
         loop_count: usize,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let face = crate::identity::compose_checked(
-            ctx,
-            &crate::identity::VISIBGEOM_FACE,
-            face_id,
-            "creo B-rep face identity",
-        )?;
-        let shell_id = crate::identity::copy_checked_id(
-            ctx,
-            shell_id.as_str(),
-            "creo B-rep face shell identity copy",
-        )?;
+        let face = crate::identity::compose_checked(&crate::identity::VISIBGEOM_FACE, face_id)?;
+        let shell_id = crate::identity::copy_checked_id(shell_id.as_str())?;
         let mut loop_ids = Vec::new();
         for index in 0..loop_count {
-            ctx.reserve_vec(&mut loop_ids, 1, "creo B-rep face loop IDs")?;
             let id: LoopId = if index == 0 {
-                crate::identity::compose_checked(
-                    ctx,
-                    &crate::identity::VISIBGEOM_LOOP,
-                    face_id,
-                    "creo B-rep loop identities",
-                )?
+                crate::identity::compose_checked(&crate::identity::VISIBGEOM_LOOP, face_id)?
             } else {
                 crate::identity::compose_checked(
-                    ctx,
                     &crate::identity::VISIBGEOM_LOOP,
                     format_args!("{face_id}:{index}"),
-                    "creo B-rep loop identities",
                 )?
             };
             loop_ids.push(id);
         }
         let face_loops = match loop_ids.split_first() {
             Some((outer, inner)) => {
-                let outer = crate::identity::copy_checked_id(
-                    ctx,
-                    outer.as_str(),
-                    "creo B-rep outer loop ID copy",
-                )?;
+                let outer = crate::identity::copy_checked_id(outer.as_str())?;
                 let mut inner_ids = Vec::new();
                 for id in inner {
-                    ctx.reserve_vec(&mut inner_ids, 1, "creo B-rep inner loop IDs")?;
-                    inner_ids.push(crate::identity::copy_checked_id(
-                        ctx,
-                        id.as_str(),
-                        "creo B-rep inner loop ID copies",
-                    )?);
+                    inner_ids.push(crate::identity::copy_checked_id(id.as_str())?);
                 }
                 cadmpeg_ir::topology::FaceLoops::classified(outer, inner_ids)
             }
@@ -1960,54 +1646,40 @@ fn native_loop_ring(
 ) -> Result<cadmpeg_ir::topology::LoopRing, cadmpeg_core::CodecError> {
     let mut coedge_ids = Vec::new();
     for half_edge in native_loop.half_edges() {
-        ctx.reserve_vec(&mut coedge_ids, 1, "creo B-rep ring coedge IDs")?;
         coedge_ids.push(crate::identity::compose_checked::<CoedgeId>(
-            ctx,
             &crate::identity::VISIBGEOM_COEDGE,
             format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
-            "creo B-rep ring coedge identities",
         )?);
     }
     match cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, Vec::new())
         .map_err(cadmpeg_core::CodecError::from)?
     {
         Ok(ring) => Ok(ring),
-        Err(error) => Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-            format_args!("VisibGeom face {face_id} loop ring: {error}"),
-            "creo B-rep loop ring error text",
-        )?)),
+        Err(error) => Err(cadmpeg_core::CodecError::malformed(format!(
+            "VisibGeom face {face_id} loop ring: {error}"
+        ))),
     }
 }
 
 fn push_untransferred_pcurve_loss(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     curve_id: u32,
     face_id: u32,
     record: impl std::fmt::Display,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(
-        format_args!(
-            "VisibGeom curve row {curve_id} on face {face_id} states no \
-             pcurve carrier: {record}"
-        ),
-        "creo B-rep untransferred pcurve loss text",
-    )?;
-    ctx.reserve_vec(losses, 1, "creo B-rep untransferred pcurve losses")?;
+) {
+    let message = format!(
+        "VisibGeom curve row {curve_id} on face {face_id} states no \
+     pcurve carrier: {record}"
+    );
     losses.push(crate::loss::CreoLossCode::VisibGeomCurveUntransferred.note(message));
-    Ok(())
 }
 
-fn one_coedge_pcurve_use(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: Option<PcurveUse>,
-) -> Result<Vec<PcurveUse>, cadmpeg_core::CodecError> {
+fn one_coedge_pcurve_use(value: Option<PcurveUse>) -> Vec<PcurveUse> {
     let mut pcurves = Vec::new();
     if let Some(value) = value {
-        ctx.reserve_vec(&mut pcurves, 1, "creo B-rep coedge pcurve uses")?;
         pcurves.push(value);
     }
-    Ok(pcurves)
+    pcurves
 }
 
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
@@ -2029,8 +1701,8 @@ pub(in super::super) fn transfer_native_brep(
         planes,
         half_edges,
         incidence,
-    } = BrepSourceIndexes::from_scan(ctx, &carriers, scan)?;
-    let face_orientations = native_face_orientations(ctx, scan, ir)?;
+    } = BrepSourceIndexes::from_scan(&carriers, scan);
+    let face_orientations = native_face_orientations(scan, ir);
     let solved_vertex_result = solve_topological_vertices(
         ctx,
         scan,
@@ -2079,13 +1751,12 @@ pub(in super::super) fn transfer_native_brep(
         for (face, endpoints) in faces.into_iter().zip([face_0_endpoints, face_1_endpoints]) {
             if let Some(face) = face {
                 push_native_pcurve_candidate(
-                    ctx,
                     &mut native_pcurves,
                     curve_id,
                     face.get(),
                     endpoints,
                     offset,
-                )?;
+                );
             }
         }
     }
@@ -2103,21 +1774,19 @@ pub(in super::super) fn transfer_native_brep(
         for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {
             if let Some(endpoints) = endpoints {
                 push_native_pcurve_candidate(
-                    ctx,
                     &mut native_pcurves,
                     pcurve.curve_id,
                     face_id,
                     endpoints,
                     pcurve.offset,
-                )?;
+                );
             }
         }
     }
     for pcurve in crate::curve::fc02_short_pcurve_endpoints(
-        ctx,
         &scan.curves.parameters,
         &scan.curves.topology_rows,
-    )? {
+    ) {
         let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
             scan,
             pcurve.faces.map(std::num::NonZeroU32::new),
@@ -2125,35 +1794,33 @@ pub(in super::super) fn transfer_native_brep(
             pcurve.face_0_endpoints,
         );
         push_native_pcurve_candidate(
-            ctx,
             &mut native_pcurves,
             pcurve.curve_id,
             pcurve.faces[0],
             face_0_endpoints,
             pcurve.offset,
-        )?;
+        );
     }
     let native_edge_vertices =
-        crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
+        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let BrepEdgeIndexes {
         edge_vertices,
         model_curve_counts,
         admitted_edge_curves,
     } = BrepEdgeIndexes::from_rows(
-        ctx,
         &scan.curves.topology_rows,
         &native_edge_vertices,
         solved_vertices,
         ir,
-    )?;
+    );
     let BrepFaceCandidateIndexes {
         loops_by_face,
         candidate_face_ids,
         model_surface_counts,
         boundary_curve_ids,
         legacy_nonvisible_face_reference_count,
-    } = BrepFaceCandidateIndexes::from_scan(ctx, scan, ir)?;
-    let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ctx, ir, source_carriers)?;
+    } = BrepFaceCandidateIndexes::from_scan(scan, ir);
+    let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir, source_carriers);
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: candidate_face_ids.len(),
         legacy_nonvisible_face_reference_count,
@@ -2178,23 +1845,19 @@ pub(in super::super) fn transfer_native_brep(
     let mut eligible_faces = BTreeMap::new();
     for face_id in candidate_face_ids {
         if model_surface_counts[&face_id] == 0 {
-            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingSurfaceCarrier, face_id)?;
+            diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, face_id);
             continue;
         }
         if !face_orientations.contains_key(&face_id) {
-            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingOrientation, face_id)?;
+            diagnostics.reject_face(FaceAdmissionRejection::MissingOrientation, face_id);
             continue;
         }
         if model_surface_counts[&face_id] > 1 {
-            diagnostics.reject_face(
-                ctx,
-                FaceAdmissionRejection::AmbiguousSurfaceCarrier,
-                face_id,
-            )?;
+            diagnostics.reject_face(FaceAdmissionRejection::AmbiguousSurfaceCarrier, face_id);
             continue;
         }
         let Some(loops) = loops_by_face.get(&face_id) else {
-            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingLoops, face_id)?;
+            diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
             continue;
         };
         let has_unresolved_boundary_vertices = loops.iter().any(|lp| {
@@ -2204,16 +1867,14 @@ pub(in super::super) fn transfer_native_brep(
         });
         if has_unresolved_boundary_vertices {
             diagnostics.reject_face_with_detail(
-                ctx,
                 FaceAdmissionRejection::UnresolvedBoundaryVertices,
                 FaceAdmissionDetail::unresolved_boundary(
-                    ctx,
                     face_id,
                     loops,
                     &edge_vertices,
                     &incidence,
-                )?,
-            )?;
+                ),
+            );
             continue;
         }
         let has_ambiguous_boundary_curve = loops.iter().any(|lp| {
@@ -2224,11 +1885,7 @@ pub(in super::super) fn transfer_native_brep(
             })
         });
         if has_ambiguous_boundary_curve {
-            diagnostics.reject_face(
-                ctx,
-                FaceAdmissionRejection::AmbiguousBoundaryCurve,
-                face_id,
-            )?;
+            diagnostics.reject_face(FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id);
             continue;
         }
         let mut two_edge_loops_are_proven = true;
@@ -2258,16 +1915,15 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
         if !two_edge_loops_are_proven {
-            diagnostics.reject_face(ctx, FaceAdmissionRejection::TwoEdgeParameterProof, face_id)?;
+            diagnostics.reject_face(FaceAdmissionRejection::TwoEdgeParameterProof, face_id);
             continue;
         }
         let ordered = ordered_face_loops(
-            ctx,
             loops,
             planes.get(&face_id).copied(),
             &incidence,
             solved_vertices,
-        )?;
+        );
         let ordered =
             if ordered.is_some() {
                 ordered
@@ -2295,15 +1951,10 @@ pub(in super::super) fn transfer_native_brep(
                 }
             };
         let Some(ordered) = ordered else {
-            diagnostics.reject_face(ctx, FaceAdmissionRejection::LoopOrdering, face_id)?;
+            diagnostics.reject_face(FaceAdmissionRejection::LoopOrdering, face_id);
             continue;
         };
-        ctx.insert_btree_map(
-            &mut eligible_faces,
-            face_id,
-            ordered,
-            "creo B-rep eligible face nodes",
-        )?;
+        eligible_faces.insert(face_id, ordered);
     }
     diagnostics.admitted_face_count = eligible_faces.len();
     let BrepEligibleFaceIndexes {
@@ -2313,20 +1964,19 @@ pub(in super::super) fn transfer_native_brep(
         row_offsets,
         curve_faces,
         eligible_face_ids,
-    } = BrepEligibleFaceIndexes::from_faces(ctx, &eligible_faces, &scan.curves.topology_rows)?;
-    let admitted_components = admitted_face_components(ctx, scan, &eligible_face_ids)?;
+    } = BrepEligibleFaceIndexes::from_faces(&eligible_faces, &scan.curves.topology_rows);
+    let admitted_components = admitted_face_components(scan, &eligible_face_ids);
     let BrepBodyIndexes {
         neutral_edge_curves,
         body_components,
     } = BrepBodyIndexes::from_components(
-        ctx,
         scan,
         &admitted_components,
         &admitted_edge_curves,
         &eligible_faces,
         &eligible_face_ids,
         &curve_faces,
-    )?;
+    );
     let selected_body_count = crate::topology::selected_body_count(
         scan.framing.declared_body_count,
         scan.framing.first_quilt_ptr,
@@ -2340,7 +1990,7 @@ pub(in super::super) fn transfer_native_brep(
         scan.framing.declared_body_count == Some(1) || scan.framing.first_quilt_ptr == Some(0);
     let body_components =
         if explicit_single_body && empty_component_count == 0 && !body_components.is_empty() {
-            merge_body_components(ctx, body_components)?
+            merge_body_components(body_components)
         } else {
             body_components
         };
@@ -2356,10 +2006,8 @@ pub(in super::super) fn transfer_native_brep(
             continue;
         }
         let point_id = crate::identity::compose_checked::<PointId>(
-            ctx,
             &crate::identity::VISIBGEOM_POINT,
             vertex_id,
-            "creo B-rep topological point identities",
         )?;
         annotate(
             ctx,
@@ -2373,10 +2021,9 @@ pub(in super::super) fn transfer_native_brep(
         let source_object = SourceObjectAssociation {
             geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Creo,
-            object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                format_args!("topology:vertex#{vertex_id}"),
-                "creo B-rep point source object IDs",
-            )?)
+            object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                "topology:vertex#{vertex_id}"
+            ))
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
@@ -2389,11 +2036,7 @@ pub(in super::super) fn transfer_native_brep(
         let position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(*position))
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        source_carriers.admit_point(
-            ctx,
-            ir,
-            Point::new(point_id, position, Some(source_object)),
-        )?;
+        source_carriers.admit_point(ir, Point::new(point_id, position, Some(source_object)))?;
     }
     diagnostics.body_count_mismatch =
         !body_components.is_empty() && selected_body_count != Some(body_components.len());
@@ -2417,7 +2060,7 @@ pub(in super::super) fn transfer_native_brep(
         .map(|component| component.faces.len())
         .sum();
 
-    let used_vertices = used_brep_vertices(ctx, &neutral_edge_curves, &edge_vertices)?;
+    let used_vertices = used_brep_vertices(&neutral_edge_curves, &edge_vertices);
 
     for vertex_id in used_vertices {
         if ir.model.vertices.iter().any(|item| {
@@ -2430,16 +2073,12 @@ pub(in super::super) fn transfer_native_brep(
             continue;
         }
         let vertex = crate::identity::compose_checked::<VertexId>(
-            ctx,
             &crate::identity::VISIBGEOM_VERTEX,
             vertex_id,
-            "creo B-rep vertex identities",
         )?;
         let point_id = crate::identity::compose_checked::<PointId>(
-            ctx,
             &crate::identity::VISIBGEOM_POINT,
             vertex_id,
-            "creo B-rep vertex point identities",
         )?;
         annotate(
             ctx,
@@ -2452,7 +2091,6 @@ pub(in super::super) fn transfer_native_brep(
         )?;
         ctx.charge_entities(1, "admit Creo model vertices")?;
         source_carriers.admit_vertex(
-            ctx,
             ir,
             Vertex {
                 id: vertex,
@@ -2464,10 +2102,8 @@ pub(in super::super) fn transfer_native_brep(
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
         let curve = crate::identity::compose_checked::<CurveId>(
-            ctx,
             &crate::identity::VISIBGEOM_CURVE,
             *curve_id,
-            "creo B-rep edge curve identities",
         )?;
         let points = [solved_vertices[&start], solved_vertices[&end]];
         let unbacked_closed_edge = start == end
@@ -2533,10 +2169,8 @@ pub(in super::super) fn transfer_native_brep(
             }
         };
         let id = crate::identity::compose_checked::<EdgeId>(
-            ctx,
             &crate::identity::VISIBGEOM_EDGE,
             *curve_id,
-            "creo B-rep edge identities",
         )?;
         annotate(
             ctx,
@@ -2554,26 +2188,12 @@ pub(in super::super) fn transfer_native_brep(
             Edge {
                 id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(crate::identity::copy_checked_id(
-                        ctx,
-                        curve.as_str(),
-                        "creo B-rep edge carrier curve ID copies",
-                    )?),
+                    Some(crate::identity::copy_checked_id(curve.as_str())?),
                     param_range,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: crate::identity::compose_checked(
-                    ctx,
-                    &crate::identity::VISIBGEOM_VERTEX,
-                    start,
-                    "creo B-rep edge start vertex identities",
-                )?,
-                end: crate::identity::compose_checked(
-                    ctx,
-                    &crate::identity::VISIBGEOM_VERTEX,
-                    end,
-                    "creo B-rep edge end vertex identities",
-                )?,
+                start: crate::identity::compose_checked(&crate::identity::VISIBGEOM_VERTEX, start)?,
+                end: crate::identity::compose_checked(&crate::identity::VISIBGEOM_VERTEX, end)?,
                 tolerance: None,
             },
         )?;
@@ -2596,15 +2216,14 @@ pub(in super::super) fn transfer_native_brep(
                     parameter_range: None,
                     id: curve,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: geometry_section_record(ctx, scan, offset)?,
+                        record: geometry_section_record(scan, offset)?,
                     }),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                            format_args!("VisibGeom:{curve_id}"),
-                            "creo B-rep curve source object IDs",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "VisibGeom:{curve_id}"
+                        ))
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -2625,16 +2244,12 @@ pub(in super::super) fn transfer_native_brep(
         let faces = &component.faces;
         let component_curves = &component.wire_curves;
         let body_id = crate::identity::compose_checked::<BodyId>(
-            ctx,
             &crate::identity::VISIBGEOM_BODY,
             component_index + 1,
-            "creo B-rep body identity",
         )?;
         let region_id = crate::identity::compose_checked::<RegionId>(
-            ctx,
             &crate::identity::VISIBGEOM_REGION,
             component_index + 1,
-            "creo B-rep region identity",
         )?;
         annotate(
             ctx,
@@ -2660,13 +2275,12 @@ pub(in super::super) fn transfer_native_brep(
             face_adjacency,
             face_vertices,
         } = BrepComponentTopology::from_component(
-            ctx,
             component_curves,
             &face_curves,
             faces,
             &eligible_faces,
             &edge_vertices,
-        )?;
+        );
         let closed = component_is_closed(
             &component_face_curves,
             &emitted_half_edges,
@@ -2675,30 +2289,25 @@ pub(in super::super) fn transfer_native_brep(
         );
 
         let shell_specs = split_neutral_component_shells(
-            ctx,
             faces,
             &wire_curves,
             &face_adjacency,
             &face_vertices,
             &edge_vertices,
-        )?;
+        );
 
         let mut face_shell_ids = BTreeMap::<u32, ShellId>::new();
         let mut shell_ids = Vec::new();
         for (shell_index, shell) in shell_specs.iter().enumerate() {
             let shell_id = if shell_index == 0 {
                 crate::identity::compose_checked::<ShellId>(
-                    ctx,
                     &crate::identity::VISIBGEOM_SHELL,
                     component_index + 1,
-                    "creo B-rep shell identity",
                 )?
             } else {
                 crate::identity::compose_checked::<ShellId>(
-                    ctx,
                     &crate::identity::VISIBGEOM_SHELL,
                     format_args!("{}:{}", component_index + 1, shell_index + 1),
-                    "creo B-rep shell identity",
                 )?
             };
             annotate(
@@ -2715,19 +2324,11 @@ pub(in super::super) fn transfer_native_brep(
                 continue;
             }
             let BrepShellReferences { face_ids, edge_ids } =
-                BrepShellReferences::from_shell(ctx, shell, &shell_id, &mut face_shell_ids)?;
+                BrepShellReferences::from_shell(shell, &shell_id, &mut face_shell_ids)?;
             ctx.charge_entities(1, "admit Creo model shells")?;
             let Ok(shell_entity) = Shell::new(
-                crate::identity::copy_checked_id(
-                    ctx,
-                    shell_id.as_str(),
-                    "creo B-rep shell entity ID copy",
-                )?,
-                crate::identity::copy_checked_id(
-                    ctx,
-                    region_id.as_str(),
-                    "creo B-rep shell region ID copy",
-                )?,
+                crate::identity::copy_checked_id(shell_id.as_str())?,
+                crate::identity::copy_checked_id(region_id.as_str())?,
                 face_ids,
                 edge_ids,
                 Vec::new(),
@@ -2735,28 +2336,15 @@ pub(in super::super) fn transfer_native_brep(
                 diagnostics.empty_component_count += 1;
                 continue;
             };
-            ctx.reserve_vec(&mut ir.model.shells, 1, "creo model shells")?;
             ir.model.shells.push(shell_entity);
-            ctx.reserve_vec(&mut shell_ids, 1, "creo B-rep body shell IDs")?;
             shell_ids.push(shell_id);
         }
-        let mut region_ids = Vec::new();
-        ctx.reserve_vec(&mut region_ids, 1, "creo B-rep body region IDs")?;
-        region_ids.push(crate::identity::copy_checked_id(
-            ctx,
-            region_id.as_str(),
-            "creo B-rep body region identity copy",
-        )?);
+        let region_ids = vec![crate::identity::copy_checked_id(region_id.as_str())?];
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
-            ctx,
             ir,
             Body {
-                id: crate::identity::copy_checked_id(
-                    ctx,
-                    body_id.as_str(),
-                    "creo B-rep body entity ID copy",
-                )?,
+                id: crate::identity::copy_checked_id(body_id.as_str())?,
                 kind: if !wire_curves.is_empty() {
                     BodyKind::General
                 } else if closed {
@@ -2772,13 +2360,8 @@ pub(in super::super) fn transfer_native_brep(
             },
         )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ctx.reserve_vec(&mut ir.model.regions, 1, "creo model regions")?;
         ir.model.regions.push(Region {
-            id: crate::identity::copy_checked_id(
-                ctx,
-                region_id.as_str(),
-                "creo B-rep region entity ID copy",
-            )?,
+            id: crate::identity::copy_checked_id(region_id.as_str())?,
             body: body_id,
             shells: shell_ids,
         });
@@ -2790,7 +2373,6 @@ pub(in super::super) fn transfer_native_brep(
                 loop_ids,
                 face_loops,
             } = BrepFaceReferences::from_loops(
-                ctx,
                 *face_id,
                 &face_shell_ids[face_id],
                 native_loops.len(),
@@ -2810,7 +2392,7 @@ pub(in super::super) fn transfer_native_brep(
             } else {
                 "VisibGeom"
             };
-            let surface = native_surface_id(ctx, scan, *face_id)?;
+            let surface = native_surface_id(scan, *face_id)?;
             if !ir.model.surfaces.iter().any(|item| item.id == surface) {
                 annotate(
                     ctx,
@@ -2826,23 +2408,16 @@ pub(in super::super) fn transfer_native_brep(
                     ctx,
                     ir,
                     Surface {
-                        id: crate::identity::copy_checked_id(
-                            ctx,
-                            surface.as_str(),
-                            "creo B-rep surface entity ID copies",
-                        )?,
+                        id: crate::identity::copy_checked_id(surface.as_str())?,
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                            record: geometry_section_record(ctx, scan, face_offset)?,
+                            record: geometry_section_record(scan, face_offset)?,
                         }),
                         source_object: Some(SourceObjectAssociation {
                             geometry_role: None,
                             format: cadmpeg_ir::CodecFormat::Creo,
-                            object_id: cadmpeg_core::text::NonBlankString::new(
-                                ctx.format_retained(
-                                    format_args!("VisibGeom:{face_id}"),
-                                    "creo B-rep surface source object IDs",
-                                )?,
-                            )
+                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                                "VisibGeom:{face_id}"
+                            ))
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
                                     "source object_id must not be empty",
@@ -2884,14 +2459,9 @@ pub(in super::super) fn transfer_native_brep(
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
             source_carriers.admit_face(
-                ctx,
                 ir,
                 Face {
-                    id: crate::identity::copy_checked_id(
-                        ctx,
-                        face.as_str(),
-                        "creo B-rep face entity ID copy",
-                    )?,
+                    id: crate::identity::copy_checked_id(face.as_str())?,
                     shell: shell_id,
                     surface,
                     sense: face_sense,
@@ -2904,26 +2474,15 @@ pub(in super::super) fn transfer_native_brep(
             for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
                 let ring = native_loop_ring(ctx, native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ctx.reserve_vec(&mut ir.model.loops, 1, "creo model native loops")?;
                 ir.model.loops.push(IrLoop {
-                    id: crate::identity::copy_checked_id(
-                        ctx,
-                        loop_id.as_str(),
-                        "creo B-rep model loop ID copy",
-                    )?,
-                    face: crate::identity::copy_checked_id(
-                        ctx,
-                        face.as_str(),
-                        "creo B-rep model loop face ID copy",
-                    )?,
+                    id: crate::identity::copy_checked_id(loop_id.as_str())?,
+                    face: crate::identity::copy_checked_id(face.as_str())?,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                 });
                 for half_edge in native_loop.half_edges() {
                     let id = crate::identity::compose_checked::<CoedgeId>(
-                        ctx,
                         &crate::identity::VISIBGEOM_COEDGE,
                         format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
-                        "creo B-rep coedge identities",
                     )?;
                     let twin = HalfEdgeId {
                         curve_id: half_edge.curve_id,
@@ -2931,17 +2490,11 @@ pub(in super::super) fn transfer_native_brep(
                     };
                     let radial_next = if emitted_half_edges.contains(&twin) {
                         crate::identity::compose_checked::<CoedgeId>(
-                            ctx,
                             &crate::identity::VISIBGEOM_COEDGE,
                             format_args!("{}:{}", twin.curve_id, twin.side.index()),
-                            "creo B-rep radial coedge identities",
                         )?
                     } else {
-                        crate::identity::copy_checked_id(
-                            ctx,
-                            id.as_str(),
-                            "creo B-rep self radial ID copies",
-                        )?
+                        crate::identity::copy_checked_id(id.as_str())?
                     };
                     annotate(
                         ctx,
@@ -3067,16 +2620,15 @@ pub(in super::super) fn transfer_native_brep(
                     if let Some(error) = planar_resource_error {
                         return Err(error);
                     }
-                    let refused = refusal.take_records_checked()?;
+                    let refused = refusal.take_records();
                     if pcurve_geometry.is_none() {
                         for record in refused {
                             push_untransferred_pcurve_loss(
-                                ctx,
                                 losses,
                                 half_edge.curve_id,
                                 *face_id,
                                 record,
-                            )?;
+                            );
                         }
                     }
                     let pcurve_use = pcurve_geometry
@@ -3095,12 +2647,7 @@ pub(in super::super) fn transfer_native_brep(
                                 parameter_range,
                                 None,
                             );
-                            let pcurve = crate::identity::compose_checked::<PcurveId>(
-                                ctx,
-                                &crate::identity::VISIBGEOM_PCURVE,
-                                format_args!("{}:{face_id}", half_edge.curve_id),
-                                "creo B-rep pcurve identities",
-                            )?;
+                            let pcurve = crate::identity::compose_checked::<PcurveId>(&crate::identity::VISIBGEOM_PCURVE, format_args!("{}:{face_id}", half_edge.curve_id))?;
                             if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
                                 annotate(ctx,
                                     annotations,
@@ -3116,14 +2663,11 @@ pub(in super::super) fn transfer_native_brep(
                                     ir,
                                     Pcurve {
                                         id: crate::identity::copy_checked_id(
-                                            ctx,
-                                            pcurve.as_str(),
-                                            "creo B-rep pcurve entity ID copies",
-                                        )?,
+                                            pcurve.as_str())?,
                                         geometry,
                                         metadata,
                                     },
-                                    &native_surface_id(ctx, scan, *face_id)?,
+                                    &native_surface_id(scan, *face_id)?,
                                 )?;
                             }
                             Ok(Some(PcurveUse {
@@ -3134,23 +2678,17 @@ pub(in super::super) fn transfer_native_brep(
                         })
                         .transpose()?
                         .flatten();
-                    let pcurves = one_coedge_pcurve_use(ctx, pcurve_use)?;
+                    let pcurves = one_coedge_pcurve_use(pcurve_use);
                     ctx.charge_entities(1, "admit Creo model coedges")?;
                     source_carriers.admit_coedge(
                         ctx,
                         ir,
                         Coedge {
                             id,
-                            owner_loop: crate::identity::copy_checked_id(
-                                ctx,
-                                loop_id.as_str(),
-                                "creo B-rep coedge owner loop ID copies",
-                            )?,
+                            owner_loop: crate::identity::copy_checked_id(loop_id.as_str())?,
                             edge: crate::identity::compose_checked(
-                                ctx,
                                 &crate::identity::VISIBGEOM_EDGE,
                                 half_edge.curve_id,
-                                "creo B-rep coedge edge identities",
                             )?,
                             radial_next,
                             sense: match half_edge.side {
@@ -3184,10 +2722,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             continue;
         };
         let id = crate::identity::compose_checked::<SurfaceId>(
-            ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             pair.surface_id,
-            "creo decoded model identity",
         )?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -3221,11 +2757,10 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: crate::identity::source_object_id_checked(
-                        ctx,
-                        format_args!("VisibGeom:{}", pair.surface_id),
-                        "creo source object identity",
-                    )?,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "VisibGeom:{}",
+                        pair.surface_id
+                    ))?,
                     name: None,
                     color: None,
                     visible: None,
@@ -3257,10 +2792,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 frame.axis_sign,
             );
             let id = crate::identity::compose_checked::<CurveId>(
-                ctx,
                 &crate::identity::VISIBGEOM_CURVE,
                 curve_id,
-                "creo decoded model identity",
             )?;
             if ir.model.curves.iter().any(|curve| curve.id == id) {
                 continue;
@@ -3299,11 +2832,9 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: crate::identity::source_object_id_checked(
-                            ctx,
-                            format_args!("VisibGeom:{curve_id}"),
-                            "creo source object identity",
-                        )?,
+                        object_id: crate::identity::source_object_id_checked(format_args!(
+                            "VisibGeom:{curve_id}"
+                        ))?,
                         name: None,
                         color: None,
                         visible: None,

@@ -14,81 +14,26 @@ use crate::CreoCodec;
 const EPS_PROTOTYPE_RADIUS_MM: f64 = 1.0e-8;
 
 #[test]
-fn prototype_loss_refuses_text_and_row_below_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn prototype_loss_joins_rejected_records() {
     let records = ["first".to_owned(), "second".to_owned()];
-    for (bytes, items, dimension, operation) in [
-        (
-            0,
-            u64::MAX,
-            ResourceDimension::RetainedBytes,
-            "creo prototype loss text",
-        ),
-        (
-            u64::MAX,
-            0,
-            ResourceDimension::CollectionItems,
-            "creo prototype losses",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = bytes;
-        policy.limits.max_collection_items = items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = super::push_prototype_loss(
-            &ctx,
-            &mut Vec::new(),
-            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
-            format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
-        )
-        .expect_err("below-need loss cap");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == dimension && resource.operation == operation));
-    }
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut losses = Vec::new();
     super::push_prototype_loss(
-        &ctx,
         &mut losses,
         crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
         format_args!("Prototype rejected: {}", super::JoinedLaneRecords(&records)),
-    )
-    .expect("service loss");
+    );
     assert_eq!(losses[0].message, "Prototype rejected: first; second");
 }
 
 #[test]
-fn legacy_carrier_count_node_refuses_before_first_insert() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error =
-        super::legacy_carrier_counts(&ctx, [42, 42]).expect_err("first count node exceeds limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo legacy carrier count nodes"));
-
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let counts = super::legacy_carrier_counts(&ctx, [42, 42]).expect("service counts");
+fn legacy_carrier_counts_group_repeated_carriers() {
+    let counts = super::legacy_carrier_counts([42, 42]);
     assert_eq!(counts.get(&42), Some(&2));
     assert_eq!(counts.len(), 1);
 }
 
 #[test]
-fn positional_replay_section_rows_refuse_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn positional_replay_section_rows_keep_relative_row() {
     let data = [0u8];
     let section = crate::container::Section::scan("VisibGeom".to_string(), 0, 1, None, &data)
         .expect("bounded section");
@@ -101,26 +46,12 @@ fn positional_replay_section_rows_refuse_before_vec_growth() {
         next_surface: 0,
         offset: 0,
     };
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("root section is admitted");
-        super::relative_surface_rows(&ctx, std::slice::from_ref(&row), &section.section)
-    };
-    assert_eq!(run(1).expect("one relative row admitted").len(), 1);
-    let error = run(0).expect_err("relative row needs a Vec item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo positional replay section rows"));
+    let rows = super::relative_surface_rows(std::slice::from_ref(&row), &section.section);
+    assert_eq!(rows.len(), 1);
 }
 
 #[test]
-fn prototype_vector_triples_refuse_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn prototype_vector_array_reads_triples() {
     let mut array =
         crate::surface::arrays::DimensionedScalars::empty(1, 3).expect("one test triple");
     array
@@ -137,30 +68,14 @@ fn prototype_vector_triples_refuse_before_vec_growth() {
         }],
         offset: 0,
     };
-    let data = [0u8];
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
-        super::prototype_vector_array(&ctx, &record, "i_points")
-    };
     assert_eq!(
-        run(1).expect("one triple admitted"),
+        super::prototype_vector_array(&record, "i_points"),
         Some(vec![[1.0, 2.0, 3.0]])
     );
-    let error = run(0).expect_err("triple needs one Vec item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo prototype vector triples"));
 }
 
 #[test]
-fn prototype_parameter_values_refuse_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn prototype_parameter_array_reads_values() {
     let mut array = crate::surface::arrays::CountedScalars::empty(2).expect("two test values");
     array
         .fill_values(vec![Some(0.0), Some(1.0)])
@@ -176,20 +91,10 @@ fn prototype_parameter_values_refuse_before_vec_growth() {
         }],
         offset: 0,
     };
-    let data = [0u8];
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&data, &arena, &policy).expect("root input is admitted");
-        super::prototype_parameter_array(&ctx, &record, "u_params")
-    };
-    assert_eq!(run(2).expect("two values admitted"), Some(vec![0.0, 1.0]));
-    let error = run(1).expect_err("second value exceeds one-item limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo prototype parameter values"));
+    assert_eq!(
+        super::prototype_parameter_array(&record, "u_params"),
+        Some(vec![0.0, 1.0])
+    );
 }
 
 #[test]
@@ -225,11 +130,9 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
     );
     assert!(crate::surface::prototype_cone_frame(prototype).is_some());
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            super::unique_surface_prototype_associations(ctx, &scan)
-        })
-        .expect("prototype associations")
-        .len(),
+        super::unique_surface_prototype_associations(&scan)
+            .expect("prototype associations")
+            .len(),
         1
     );
 
@@ -841,63 +744,10 @@ fn in_range_section_extent_states_its_declared_end() {
             .section;
 
     assert_eq!(section.end(), 48);
-    crate::decode::with_test_decode_ctx(|ctx| {
-        assert_eq!(super::frame_bound(ctx, &section, 8)?, 40);
-        let error =
-            super::frame_bound(ctx, &section, usize::MAX).expect_err("overrun bound is refused");
-        assert!(error.to_string().contains("VisibGeom"));
-        Ok::<(), cadmpeg_core::CodecError>(())
-    })
-    .expect("service frame-bound text admitted");
-}
-
-#[test]
-fn surface_prototype_frame_address_error_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let section =
-        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
-            .expect("section extent")
-            .section;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::frame_bound(&ctx, &section, usize::MAX)
-        .expect_err("error text exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo surface prototype frame address error")
+    assert_eq!(
+        super::frame_bound(&section, 8).expect("service frame-bound text admitted"),
+        40
     );
-}
-
-#[test]
-fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let section =
-        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
-            .expect("section extent")
-            .section;
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.framing.data = vec![0u8; 16].into();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::surface_prototype_frame_bounds(&ctx, &scan, &section, 32)
-        .expect_err("bounds error text exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo surface prototype frame bounds error")
-    );
-    crate::decode::with_test_decode_ctx(|ctx| {
-        let error = super::surface_prototype_frame_bounds(ctx, &scan, &section, 32)
-            .expect_err("declared section exceeds scanned bytes");
-        assert!(error.to_string().contains("VisibGeom"));
-        Ok::<(), cadmpeg_core::CodecError>(())
-    })
-    .expect("service error text admitted");
+    let error = super::frame_bound(&section, usize::MAX).expect_err("overrun bound is refused");
+    assert!(error.to_string().contains("VisibGeom"));
 }

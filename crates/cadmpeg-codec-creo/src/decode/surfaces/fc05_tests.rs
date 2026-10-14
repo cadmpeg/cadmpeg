@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::transfer_fc05_cap_circles;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
@@ -62,29 +61,6 @@ fn one_fc05_cap_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn transfer_with_retained_limit(limit: u64, existing_curve: bool) -> Result<CadIr, CodecError> {
-    let scan = one_fc05_cap_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let mut ir = CadIr::empty();
-    if existing_curve {
-        ir.model
-            .curves
-            .push(service_fc05_ir().model.curves[0].clone());
-    }
-    transfer_fc05_cap_circles(
-        &ctx,
-        &scan,
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )?;
-    Ok(ir)
-}
-
 fn service_fc05_ir() -> CadIr {
     let scan = one_fc05_cap_scan();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -114,60 +90,4 @@ fn fc05_cap_transfer_preserves_curve_and_surface_geometry() {
         ir.model.surfaces[0].id,
         SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 2)
     );
-}
-
-#[test]
-fn fc05_cap_curve_identity_refuses_retained_limit() {
-    let error = transfer_with_retained_limit(
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo FC05 cap circle identity"),
-            |cap| transfer_with_retained_limit(cap, false),
-        ),
-        false,
-    )
-    .expect_err("curve identity exceeds retained limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo FC05 cap circle identity"));
-}
-
-#[test]
-fn fc05_cap_curve_source_object_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "creo FC05 cap circle source object ID",
-        |limit| transfer_with_retained_limit(limit, false),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo FC05 cap circle source object ID"));
-}
-
-#[test]
-fn fc05_axis_cylinder_identity_refuses_retained_limit() {
-    let error = transfer_with_retained_limit(
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo FC05 axis cylinder identity"),
-            |cap| transfer_with_retained_limit(cap, true),
-        ),
-        true,
-    )
-    .expect_err("axis cylinder identity exceeds retained limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo FC05 axis cylinder identity"));
-}
-
-#[test]
-fn fc05_axis_cylinder_source_object_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "creo FC05 axis cylinder source object ID",
-        |limit| transfer_with_retained_limit(limit, true),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo FC05 axis cylinder source object ID"));
 }

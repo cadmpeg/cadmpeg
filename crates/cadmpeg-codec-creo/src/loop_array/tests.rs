@@ -3,8 +3,6 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -55,64 +53,8 @@ fn row(id: u8, body: &[u8]) -> Vec<u8> {
     bytes
 }
 
-fn scan_with_limits(
-    payload: &[u8],
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<super::LoopArrayScan, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("loop array fixture admitted");
-    super::scan(&ctx, payload)
-}
-
 fn scan(payload: &[u8]) -> super::LoopArrayScan {
-    scan_with_limits(payload, u64::MAX, u64::MAX).expect("service loop array scan")
-}
-
-fn assert_loop_array_collection_refusal(limit: u64, operation: &'static str) {
-    let payload = frame(1, &row(1, &[0xe2, 0x10]));
-    let error = scan_with_limits(&payload, limit, u64::MAX)
-        .expect_err("loop array exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-#[test]
-fn loop_array_refuses_frame_record_before_growth() {
-    assert_loop_array_collection_refusal(0, "creo loop array frame records");
-}
-
-#[test]
-fn loop_array_refuses_frame_before_growth() {
-    assert_loop_array_collection_refusal(1, "creo loop array frames");
-}
-
-#[test]
-fn loop_array_refuses_section_record_before_growth() {
-    assert_loop_array_collection_refusal(2, "creo loop array section records");
-}
-
-#[test]
-fn loop_array_refuses_body_before_retained_copy() {
-    let payload = frame(1, &row(1, &[0xe2, 0x10]));
-    let error = scan_with_limits(
-        &payload,
-        u64::MAX,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo loop array record body"),
-            |cap| scan_with_limits(&payload, u64::MAX, cap),
-        ),
-    )
-    .expect_err("loop array body exceeds retained limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo loop array record body"));
+    super::scan(payload)
 }
 
 #[test]
@@ -241,17 +183,9 @@ fn impossible_loop_extent_is_incomplete_not_overfull() {
 }
 
 #[test]
-fn loop_array_framing_and_token_walks_refuse_work() {
+fn loop_array_framing_reads_one_frame_and_row() {
     let bytes = frame(1, &row(1, &[0xe4]));
-    let scan = crate::test_support::assert_work_boundaries(
-        &[
-            "creo loop array discovery",
-            "creo loop frame boundaries",
-            "creo loop prototype scan",
-            "creo loop row token walk",
-        ],
-        |ctx| super::scan(ctx, &bytes),
-    );
-    assert_eq!(scan.frames.len(), 1);
-    assert_eq!(scan.records.len(), 1);
+    let parsed = scan(&bytes);
+    assert_eq!(parsed.frames.len(), 1);
+    assert_eq!(parsed.records.len(), 1);
 }

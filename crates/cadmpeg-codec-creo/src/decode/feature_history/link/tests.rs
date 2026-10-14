@@ -2,8 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
@@ -81,10 +79,8 @@ fn feature(id: &str) -> Feature {
 }
 
 fn link_service(scan: &crate::container::ContainerScan<'_>, ir: &mut CadIr) {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    link_feature_sketch_history(&ctx, scan, ir).expect("service history link");
+    crate::decode::with_test_decode_ctx(|ctx| link_feature_sketch_history(ctx, scan, ir))
+        .expect("history link");
 }
 
 #[test]
@@ -120,28 +116,7 @@ fn history_link_rejects_duplicate_sketch_feature_ids() {
 }
 
 #[test]
-fn history_link_refuses_dependency_vector_before_growth() {
-    let scan = section_scan();
-    let mut ir = CadIr::empty();
-    ir.model.features.extend([
-        feature("creo:model:feature#2"),
-        feature("creo:model:sketch_feature#7"),
-    ]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-
-    let error = link_feature_sketch_history(&ctx, &scan, &mut ir)
-        .expect_err("one sketch dependency exceeds the limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo sketch history dependencies"));
-    assert!(ir.model.features[0].dependencies.is_empty());
-}
-
-#[test]
-fn history_link_preserves_service_profile_dependency() {
+fn history_link_records_sketch_dependency() {
     let scan = section_scan();
     let mut ir = CadIr::empty();
     ir.model.features.extend([
@@ -309,47 +284,11 @@ fn ordered_binding_fixture() -> (
     (table, order, rows)
 }
 
-fn ordered_binding_limit_error(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+#[test]
+fn ordered_generated_surface_binding_keeps_identity() {
     let (table, order, rows) = ordered_binding_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = ordered_family_surface_bindings_for_feature(
-        &ctx,
-        &rows,
-        17,
-        &[table],
-        &order,
-        [9],
-        crate::surface::SurfaceKind::TorusOrSphere,
-    )
-    .expect_err("one generated surface binding exceeds the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == operation),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn ordered_generated_surface_ids_refuse_collection_limit() {
-    ordered_binding_limit_error(0, "creo bound generated surface IDs");
-}
-
-#[test]
-fn ordered_generated_surface_bindings_refuse_collection_limit() {
-    ordered_binding_limit_error(1, "creo ordered generated surface bindings");
-}
-
-#[test]
-fn ordered_generated_surface_binding_keeps_identity_under_service_policy() {
-    let (table, order, rows) = ordered_binding_fixture();
-    let bindings = crate::decode::with_test_decode_ctx(|ctx| {
+    let bindings = {
         ordered_family_surface_bindings_for_feature(
-            ctx,
             &rows,
             17,
             &[table],
@@ -357,14 +296,12 @@ fn ordered_generated_surface_binding_keeps_identity_under_service_policy() {
             [9],
             crate::surface::SurfaceKind::TorusOrSphere,
         )
-    })
-    .expect("service profile admits generated surface binding");
+    };
     assert_eq!(bindings, BTreeMap::from([(9, 43)]));
 }
 
 #[test]
-fn profile_segment_ids_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn profile_segment_ids_match_profile_entities() {
     let segment = crate::feature::definitions::FeatureSegment {
         kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
@@ -384,26 +321,8 @@ fn profile_segment_ids_refuse_collection_limit() {
         .expect("profile entity identity"),
         reversed: false,
     }]];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = profile_segment_ids(&ctx, 2, &[&segment], &profiles)
-        .expect_err("one matched profile ID exceeds the collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo profile segment ID nodes"),
-        "{error:?}"
-    );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| profile_segment_ids(
-            ctx,
-            2,
-            &[&segment],
-            &profiles
-        ))
-        .expect("service profile admits one profile ID"),
+        profile_segment_ids(2, &[&segment], &profiles),
         std::collections::BTreeSet::from([9]),
     );
 }

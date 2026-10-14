@@ -4,218 +4,9 @@ use crate::decode::analytic::vertices::{
     solve_topological_vertices,
 };
 use crate::decode::surfaces::intersection_resolve::curve_contains_points;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-
-fn service_line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    line_conic_intersections(&ctx, line, conic).expect("service intersection")
-}
-
-#[test]
-fn line_conic_second_intersection_refuses_at_collection_limit() {
-    let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            2.0,
-        )
-        .expect("circle fixture"),
-    ));
-    let secant = line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert_vertex_collection_refusal(
-        &line_conic_intersections(&ctx, &secant, &circle).expect_err("second point needs an item"),
-        "creo line-conic intersection points",
-    );
-}
-
-fn incident_line_collection_error(limit: u64) -> CodecError {
-    let first = line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
-    let second = line([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    incident_analytic_vertex_domain(&ctx, &[&first, &second])
-        .expect_err("incident candidate collection exceeds limit")
-}
-
-fn one_carrier_vertex_collection_error(limit: u64) -> CodecError {
-    let mut scan = crate::test_support::empty_container_scan();
-    let half_edge = crate::topology::HalfEdgeId {
-        curve_id: 7,
-        side: crate::topology::Side::Zero,
-    };
-    scan.topology.vertices.push(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(ctx, 1, vec![half_edge])
-        })
-        .expect("vertex admission")
-        .expect("valid vertex fixture"),
-    );
-    scan.topology.half_edges.push(crate::topology::HalfEdge {
-        id: half_edge,
-        face_id: std::num::NonZeroU32::new(5),
-        next: None,
-    });
-    let carriers = std::collections::BTreeMap::from([(
-        5,
-        crate::decode::analytic::equations::CarrierEquation::Plane(
-            crate::decode::analytic::equations::PlaneEquation {
-                origin: [0.0, 0.0, 0.0],
-                normal: [0.0, 0.0, 1.0],
-            },
-        ),
-    )]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    solve_topological_vertices(
-        &ctx,
-        &scan,
-        &cadmpeg_ir::document::CadIr::empty(),
-        &carriers,
-        &std::collections::BTreeSet::new(),
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("vertex collection exceeds limit")
-}
-
-fn assert_vertex_collection_refusal(error: &CodecError, operation: &'static str) {
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-fn conic_model_intersection_result(limit: u64) -> Result<Vec<[f64; 3]>, CodecError> {
-    let circle = |center: [f64; 3]| {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::from(center),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.0,
-            )
-            .expect("valid CircleCurve fixture"),
-        ))
-    };
-    let first = circle([0.0, 0.0, 0.0]);
-    let second = circle([2.0, 0.0, 0.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    conic_conic_intersections(&ctx, &first, &second)
-}
-
-#[test]
-fn conic_conic_intersections_refuse_model_intersection_reservation() {
-    assert_vertex_collection_refusal(
-        &conic_model_intersection_result(276).expect_err("intersection vector exceeds limit"),
-        "creo conic model intersections",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_incident_face_ids() {
-    assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(3),
-        "creo carrier incident face IDs",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_incident_carriers() {
-    assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(4),
-        "creo vertex incident carriers",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_sample_face_ids() {
-    assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(5),
-        "creo carrier rejection face IDs",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_sample_carrier_kinds() {
-    assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(6),
-        "creo carrier rejection kinds",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_sample_collection() {
-    assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(7),
-        "creo carrier rejection samples",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_carrier_point_node() {
-    let mut scan = crate::test_support::empty_container_scan();
-    let mut carriers = std::collections::BTreeMap::new();
-    let mut half_edges = Vec::new();
-    for (curve_id, face_id, axis) in [(10, 5, 0), (11, 6, 1), (12, 7, 2)] {
-        let id = crate::topology::HalfEdgeId {
-            curve_id,
-            side: crate::topology::Side::Zero,
-        };
-        half_edges.push(id);
-        scan.topology.half_edges.push(crate::topology::HalfEdge {
-            id,
-            face_id: std::num::NonZeroU32::new(face_id),
-            next: None,
-        });
-        let mut normal = [0.0; 3];
-        normal[axis] = 1.0;
-        carriers.insert(
-            face_id,
-            crate::decode::analytic::equations::CarrierEquation::Plane(
-                crate::decode::analytic::equations::PlaneEquation {
-                    origin: [0.0, 0.0, 0.0],
-                    normal,
-                },
-            ),
-        );
-    }
-    scan.topology.vertices.push(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(ctx, 1, half_edges)
-        })
-        .expect("vertex admission")
-        .expect("valid vertex fixture"),
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 18;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = solve_topological_vertices(
-        &ctx,
-        &scan,
-        &cadmpeg_ir::document::CadIr::empty(),
-        &carriers,
-        &std::collections::BTreeSet::new(),
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("carrier point node exceeds limit");
-    assert_vertex_collection_refusal(&error, "creo carrier vertex point nodes");
-}
 
 fn pcurve_vertex_case() -> (
     crate::container::ContainerScan<'static>,
@@ -255,11 +46,8 @@ fn pcurve_vertex_case() -> (
     ));
     for (vertex_id, id, face_id, end_vertex_id) in [(1, side_zero, 10, 2), (2, side_one, 11, 1)] {
         scan.topology.vertices.push(
-            crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new_for_test(ctx, vertex_id, vec![id])
-            })
-            .expect("vertex admission")
-            .expect("valid vertex fixture"),
+            crate::topology::TopologicalVertex::new_for_test(vertex_id, vec![id])
+                .expect("valid vertex fixture"),
         );
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,
@@ -310,26 +98,21 @@ fn pcurve_vertex_case() -> (
     (scan, ir, carriers)
 }
 
-fn pcurve_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertices, CodecError> {
+fn pcurve_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (scan, ir, carriers) = pcurve_vertex_case();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    solve_topological_vertices(
-        &ctx,
-        &scan,
-        &ir,
-        &carriers,
-        &std::collections::BTreeSet::new(),
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        solve_topological_vertices(
+            ctx,
+            &scan,
+            &ir,
+            &carriers,
+            &std::collections::BTreeSet::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
 }
 
-fn analytic_vertex_result(
-    limit: u64,
-    two_curves: bool,
-) -> Result<super::SolvedTopologicalVertices, CodecError> {
+fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (mut scan, mut ir, carriers) = pcurve_vertex_case();
     let make_curve = |curve_id: u32, direction: [f64; 3]| cadmpeg_ir::geometry::Curve {
         parameter_range: None,
@@ -339,55 +122,47 @@ fn analytic_vertex_result(
         source_object: None,
     };
     ir.model.curves.push(make_curve(7, [1.0, 0.0, 0.0]));
-    if two_curves {
-        let id = crate::topology::HalfEdgeId {
-            curve_id: 8,
-            side: crate::topology::Side::Zero,
-        };
-        let mut members = scan.topology.vertices[0].half_edges().to_vec();
-        members.push(id);
-        scan.topology.vertices[0] = crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(
-                ctx,
-                scan.topology.vertices[0].id.get(),
-                members,
-            )
-        })
-        .expect("orbit admission")
-        .expect("ordered orbit fixture");
-        scan.topology.half_edges.push(crate::topology::HalfEdge {
-            id,
-            face_id: std::num::NonZeroU32::new(10),
-            next: None,
-        });
-        scan.curves
-            .topology_rows
-            .push(crate::curve::CurveTopologyRow {
-                id: 8,
-                type_byte: 0,
-                feature_id: 0,
-                directions: [0x01, 0xf6],
-                faces: [std::num::NonZeroU32::new(10), None],
-                next_edges: [8, 0],
-                offset: 0,
-            });
-        ir.model.curves.push(make_curve(8, [0.0, 1.0, 0.0]));
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    solve_topological_vertices(
-        &ctx,
-        &scan,
-        &ir,
-        &carriers,
-        &std::collections::BTreeSet::new(),
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    let id = crate::topology::HalfEdgeId {
+        curve_id: 8,
+        side: crate::topology::Side::Zero,
+    };
+    let mut members = scan.topology.vertices[0].half_edges().to_vec();
+    members.push(id);
+    scan.topology.vertices[0] = crate::topology::TopologicalVertex::new_for_test(
+        scan.topology.vertices[0].id.get(),
+        members,
     )
+    .expect("ordered orbit fixture");
+    scan.topology.half_edges.push(crate::topology::HalfEdge {
+        id,
+        face_id: std::num::NonZeroU32::new(10),
+        next: None,
+    });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 8,
+            type_byte: 0,
+            feature_id: 0,
+            directions: [0x01, 0xf6],
+            faces: [std::num::NonZeroU32::new(10), None],
+            next_edges: [8, 0],
+            offset: 0,
+        });
+    ir.model.curves.push(make_curve(8, [0.0, 1.0, 0.0]));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        solve_topological_vertices(
+            ctx,
+            &scan,
+            &ir,
+            &carriers,
+            &std::collections::BTreeSet::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
 }
 
-fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertices, CodecError> {
+fn ambiguous_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (mut scan, ir, carriers) = pcurve_vertex_case();
     let side_zero = crate::topology::HalfEdgeId {
         curve_id: 8,
@@ -423,14 +198,10 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
     {
         let mut members = scan.topology.vertices[vertex_index].half_edges().to_vec();
         members.push(id);
-        scan.topology.vertices[vertex_index] = crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::TopologicalVertex::new_for_test(
-                ctx,
-                scan.topology.vertices[vertex_index].id.get(),
-                members,
-            )
-        })
-        .expect("orbit admission")
+        scan.topology.vertices[vertex_index] = crate::topology::TopologicalVertex::new_for_test(
+            scan.topology.vertices[vertex_index].id.get(),
+            members,
+        )
         .expect("ordered orbit fixture");
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,
@@ -448,21 +219,19 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
                 end_vertex_id: std::num::NonZeroU32::new(end_vertex_id),
             });
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    solve_topological_vertices(
-        &ctx,
-        &scan,
-        &ir,
-        &carriers,
-        &std::collections::BTreeSet::new(),
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        solve_topological_vertices(
+            ctx,
+            &scan,
+            &ir,
+            &carriers,
+            &std::collections::BTreeSet::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
 }
 
-fn authoritative_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertices, CodecError> {
+fn authoritative_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (mut scan, ir, carriers) = pcurve_vertex_case();
     scan.curves.pcurves.clear();
     scan.curves
@@ -473,161 +242,45 @@ fn authoritative_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVer
             samples: vec![[[1.0, 2.0], [1.0, 2.0]], [[3.0, 4.0], [3.0, 4.0]]],
             offset: 0,
         });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    solve_topological_vertices(
-        &ctx,
-        &scan,
-        &ir,
-        &carriers,
-        &std::collections::BTreeSet::new(),
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        solve_topological_vertices(
+            ctx,
+            &scan,
+            &ir,
+            &carriers,
+            &std::collections::BTreeSet::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
 }
 
 #[test]
-fn authoritative_vertex_fixture_keeps_service_result() {
-    let result = authoritative_vertex_result(1_000_000).expect("service authoritative solve");
+fn authoritative_two_chart_pcurve_places_both_vertices() {
+    let result = authoritative_vertex_result().expect("service authoritative solve");
     assert_eq!(result.diagnostics.pcurve.accepted_records, 1);
     assert_eq!(result.diagnostics.pcurve_constraints, 1);
     assert_eq!(result.points.len(), 2);
 }
 
 #[test]
-fn solve_topological_vertices_refuses_authoritative_point_node() {
-    assert_vertex_collection_refusal(
-        &authoritative_vertex_result(51).expect_err("authoritative node exceeds limit"),
-        "creo authoritative vertex point nodes",
-    );
-}
-
-#[test]
-fn ambiguous_vertex_fixture_keeps_service_result() {
-    let result = ambiguous_vertex_result(1_000_000).expect("service ambiguous solve");
+fn repeated_pcurve_endpoints_leave_both_vertices_ambiguous() {
+    let result = ambiguous_vertex_result().expect("service ambiguous solve");
     assert_eq!(result.diagnostics.pcurve.accepted_records, 2);
     assert_eq!(result.diagnostics.pcurve_ambiguous_endpoint_vertices, 2);
 }
 
 #[test]
-fn solve_topological_vertices_refuses_ambiguous_pcurve_vertex_node() {
-    assert_vertex_collection_refusal(
-        &ambiguous_vertex_result(72).expect_err("ambiguous vertex node exceeds limit"),
-        "creo ambiguous pcurve vertex nodes",
-    );
-}
-
-#[test]
-fn analytic_vertex_fixture_keeps_service_result() {
-    let result = analytic_vertex_result(1_000_000, true).expect("service analytic vertex solve");
+fn two_incident_lines_give_an_analytic_domain_vertex() {
+    let result = analytic_vertex_result().expect("service analytic vertex solve");
     assert_eq!(result.diagnostics.analytic_domain_vertices, 1);
 }
 
 #[test]
-fn solve_topological_vertices_refuses_analytic_curve_lookup_node() {
-    assert_vertex_collection_refusal(
-        &analytic_vertex_result(58, true).expect_err("lookup node exceeds limit"),
-        "creo analytic curve lookup nodes",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_incident_analytic_curve() {
-    assert_vertex_collection_refusal(
-        &analytic_vertex_result(61, true).expect_err("incident curve exceeds limit"),
-        "creo incident analytic curves",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_incident_analytic_curve_node() {
-    assert_vertex_collection_refusal(
-        &analytic_vertex_result(62, true).expect_err("incident node exceeds limit"),
-        "creo incident analytic curve nodes",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_analytic_domain_node() {
-    assert_vertex_collection_refusal(
-        &analytic_vertex_result(67, true).expect_err("domain node exceeds limit"),
-        "creo analytic vertex domain nodes",
-    );
-}
-
-#[test]
-fn pcurve_vertex_fixture_keeps_service_result() {
-    let result = pcurve_vertex_result(1_000_000).expect("service vertex solve");
+fn pcurve_endpoints_place_both_vertices() {
+    let result = pcurve_vertex_result().expect("service vertex solve");
     assert_eq!(result.diagnostics.pcurve.accepted_records, 1);
     assert_eq!(result.diagnostics.pcurve_constraints, 1);
     assert_eq!(result.points.len(), 2);
-}
-
-#[test]
-fn solve_topological_vertices_refuses_pcurve_endpoint_node() {
-    assert_vertex_collection_refusal(
-        &pcurve_vertex_result(41).expect_err("endpoint node exceeds limit"),
-        "creo vertex pcurve endpoint nodes",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_pcurve_candidate_node() {
-    assert_vertex_collection_refusal(
-        &pcurve_vertex_result(44).expect_err("candidate node exceeds limit"),
-        "creo vertex pcurve candidate nodes",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_pcurve_candidate_point() {
-    assert_vertex_collection_refusal(
-        &pcurve_vertex_result(45).expect_err("candidate point exceeds limit"),
-        "creo vertex pcurve candidate points",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_pcurve_constraint() {
-    assert_vertex_collection_refusal(
-        &pcurve_vertex_result(48).expect_err("pcurve constraint exceeds limit"),
-        "creo vertex pcurve constraints",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_endpoint_constraint() {
-    assert_vertex_collection_refusal(
-        &pcurve_vertex_result(49).expect_err("endpoint constraint exceeds limit"),
-        "creo vertex endpoint constraints",
-    );
-}
-
-#[test]
-fn solve_topological_vertices_refuses_fixed_point_node() {
-    assert_vertex_collection_refusal(
-        &pcurve_vertex_result(50).expect_err("fixed point node exceeds limit"),
-        "creo fixed vertex point nodes",
-    );
-}
-
-#[test]
-fn incident_analytic_vertex_domain_refuses_candidate_points() {
-    assert!(
-        matches!(incident_line_collection_error(0), CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo incident analytic candidates")
-    );
-}
-
-#[test]
-fn incident_analytic_vertex_domain_refuses_unique_points() {
-    assert!(
-        matches!(incident_line_collection_error(1), CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo unique analytic candidates")
-    );
 }
 
 /// Whether two finite fixture points agree.
@@ -705,14 +358,14 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     // from (-3, 0, 0) along +x, so it meets the circle of radius 2 at the
     // parameters 1 and 5.
     assert_eq!(
-        service_line_conic_intersections(&secant, &circle),
+        line_conic_intersections(&secant, &circle),
         [[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
     );
     assert_eq!(
-        service_line_conic_intersections(&tangent, &circle),
+        line_conic_intersections(&tangent, &circle),
         [[0.0, 2.0, 0.0]]
     );
-    assert!(service_line_conic_intersections(&skew, &circle).is_empty());
+    assert!(line_conic_intersections(&skew, &circle).is_empty());
 
     let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
@@ -725,7 +378,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         .expect("valid EllipseCurve fixture"),
     ));
     assert_eq!(
-        service_line_conic_intersections(&secant, &ellipse),
+        line_conic_intersections(&secant, &ellipse),
         [[-3.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
     );
 
@@ -739,11 +392,11 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         .expect("valid ParabolaCurve fixture"),
     ));
     assert_eq!(
-        service_line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
+        line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
         [[1.0, -2.0, 0.0], [1.0, 2.0, 0.0]]
     );
     assert_eq!(
-        service_line_conic_intersections(&line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]), &parabola),
+        line_conic_intersections(&line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]), &parabola),
         [[1.0, 2.0, 0.0]]
     );
 
@@ -758,13 +411,13 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         .expect("valid HyperbolaCurve fixture"),
     ));
     let hyperbola_points =
-        service_line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
+        line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
     assert_eq!(hyperbola_points.len(), 2);
     assert!(hyperbola_points.iter().all(|point| {
         agree(*point, [4.0, 3.0_f64.sqrt(), 0.0]) || agree(*point, [4.0, -3.0_f64.sqrt(), 0.0])
     }));
     assert_eq!(
-        service_line_conic_intersections(&line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]), &hyperbola),
+        line_conic_intersections(&line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]), &hyperbola),
         [[2.0, 0.0, 0.0]]
     );
 }

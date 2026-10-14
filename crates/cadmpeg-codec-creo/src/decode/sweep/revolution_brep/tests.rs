@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{push_revolution_loss, revolution_identity, transfer_resolved_revolution_breps};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point2;
@@ -279,187 +278,10 @@ fn closed_off_axis_revolution_reaches_brep_admission() {
     assert!(losses.is_empty());
 }
 
-fn revolution_refuses_at_collection_boundary(operation: &'static str) {
-    let mut last_refusal = None;
-    for limit in 0..4096 {
-        let (scan, mut ir) = closed_off_axis_revolution();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let mut losses = Vec::new();
-        let result = transfer_resolved_revolution_breps(
-            &ctx,
-            &scan,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &mut losses,
-            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation =>
-            {
-                return
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                last_refusal = Some((limit, resource.dimension, resource.operation));
-            }
-            Err(error) => {
-                panic!("unexpected revolution error at collection limit {limit}: {error:?}")
-            }
-            Ok(_) => panic!("revolution succeeded before the named {operation} refusal"),
-        }
-    }
-    panic!("the named {operation} boundary was not reached; last refusal: {last_refusal:?}");
-}
-
-fn revolution_route(ctx: &DecodeContext<'_>) -> Result<usize, cadmpeg_core::CodecError> {
-    let (scan, mut ir) = closed_off_axis_revolution();
-    transfer_resolved_revolution_breps(
-        ctx,
-        &scan,
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &mut Vec::new(),
-        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-}
-
-// These collections are charged after scoped scratch is released, so the
-// live count stays below an earlier peak and no ceiling refuses them first.
-macro_rules! revolution_collection_charge_test {
-    ($name:ident, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert_eq!(
-                crate::test_support::assert_collection_charged(&[], $operation, revolution_route),
-                1
-            );
-        }
-    };
-}
-
-macro_rules! revolution_collection_limit_test {
-    ($name:ident, $operation:literal) => {
-        #[test]
-        fn $name() {
-            revolution_refuses_at_collection_boundary($operation);
-        }
-    };
-}
-
-revolution_collection_limit_test!(
-    revolution_vertex_curves_refuse_limit,
-    "creo revolution vertex curves"
-);
-revolution_collection_limit_test!(
-    revolution_surface_geometries_refuse_limit,
-    "creo revolution surface geometries"
-);
-revolution_collection_charge_test!(
-    revolution_segment_boundaries_charge_collection_items,
-    "creo revolution segment boundaries"
-);
-revolution_collection_charge_test!(
-    revolution_boundary_rows_charge_collection_items,
-    "creo revolution boundary rows"
-);
-revolution_collection_charge_test!(
-    revolution_face_senses_charge_collection_items,
-    "creo revolution face senses"
-);
-revolution_collection_charge_test!(
-    revolution_profile_edges_charge_collection_items,
-    "creo revolution profile edges"
-);
-revolution_collection_limit_test!(
-    revolution_ring_coedges_refuse_limit,
-    "creo revolution ring coedges"
-);
-revolution_collection_limit_test!(
-    revolution_ring_validation_nodes_refuse_limit,
-    "loop ring members"
-);
-revolution_collection_limit_test!(revolution_loops_refuse_limit, "creo model revolution loops");
-revolution_collection_charge_test!(
-    revolution_coedge_pcurves_charge_collection_items,
-    "creo revolution coedge pcurves"
-);
-revolution_collection_limit_test!(
-    revolution_face_loop_ids_refuse_limit,
-    "creo revolution face loop IDs"
-);
-revolution_collection_limit_test!(
-    revolution_shell_face_ids_refuse_limit,
-    "creo revolution shell face IDs"
-);
-revolution_collection_limit_test!(
-    revolution_shells_refuse_limit,
-    "creo model revolution shells"
-);
-revolution_collection_limit_test!(
-    revolution_region_shell_ids_refuse_limit,
-    "creo revolution region shell IDs"
-);
-revolution_collection_limit_test!(
-    revolution_regions_refuse_limit,
-    "creo model revolution regions"
-);
-revolution_collection_limit_test!(
-    revolution_body_region_ids_refuse_limit,
-    "creo revolution body region IDs"
-);
-
 #[test]
-fn revolution_identity_and_copy_refuse_below_retained_limits() {
-    for operation in ["creo revolution identity", "creo revolution identity copy"] {
-        let mut reached = false;
-        let mut limit = 0_u64;
-        for _ in 0..4096 {
-            let (scan, mut ir) = closed_off_axis_revolution();
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = transfer_resolved_revolution_breps(
-                &ctx,
-                &scan,
-                &mut ir,
-                &mut AnnotationBuilder::new(),
-                &mut Vec::new(),
-                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-            );
-            if matches!(&result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation)
-            {
-                reached = true;
-                break;
-            }
-            match result {
-                Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                    assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
-                    let need = resource
-                        .used
-                        .checked_add(resource.additional)
-                        .expect("retained need");
-                    assert!(need > limit);
-                    limit = need;
-                }
-                Ok(_) => break,
-                Err(error) => panic!("unexpected resource route error: {error:?}"),
-            }
-        }
-        assert!(reached, "{operation} was not reached");
-    }
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+fn revolution_identity_composes_the_feature_and_role() {
     assert_eq!(
-        revolution_identity::<BodyId>(&ctx, 40, "body").expect("identity"),
+        revolution_identity::<BodyId>(40, "body").expect("identity"),
         BodyId::compose(
             &crate::identity::FEATURE_REVOLUTION,
             cadmpeg_ir::ids::IdentityKey::from(40).colon(cadmpeg_ir::identity_key!("body"))
@@ -468,56 +290,15 @@ fn revolution_identity_and_copy_refuse_below_retained_limits() {
 }
 
 #[test]
-fn revolution_loss_text_and_slot_refuse_named_limits() {
+fn revolution_loss_joins_the_records_into_the_message() {
     let records = vec!["first".to_owned(), "second".to_owned()];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = push_revolution_loss(
-        &ctx,
-        &mut Vec::new(),
-        40,
-        "states no face sense; its B-rep was skipped",
-        &records,
-    )
-    .expect_err("text refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
-            && resource.operation == "creo revolution rejection text")
-    );
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = push_revolution_loss(
-        &ctx,
-        &mut Vec::new(),
-        40,
-        "states no face sense; its B-rep was skipped",
-        &records,
-    )
-    .expect_err("loss slot refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo revolution losses")
-    );
-
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut losses = Vec::new();
     push_revolution_loss(
-        &ctx,
         &mut losses,
         40,
         "states no face sense; its B-rep was skipped",
         &records,
-    )
-    .expect("service loss");
+    );
     assert_eq!(
         losses[0].message,
         "Revolution feature 40 states no face sense; its B-rep was skipped: first; second"
