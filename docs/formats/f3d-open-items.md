@@ -252,6 +252,21 @@ the ordered face-selection groups.
 its payload. The physical thread construction and face selections decode
 without assigning a semantic role to that record.
 
+### DR-74. Lost-edge runs shorter than the operand list
+
+**Question.** Which operands of a counted edge group do the records of a
+shorter unresolved run name?
+
+**Known.** `f3d.md` §3.1 "An unresolved edge-selection record consists of"
+gives the record layout, the run chaining through following headers, and the
+group that a run terminates at. A run with the group's operand count carries
+one record per operand. A ten-operand group with a one-record run occurs.
+
+**Need.** A decoder must assign each unresolved record to its operand before
+it can bind a shorter run. The decoder binds only a run whose cardinality
+equals the operand count. The records of any other run stay unrepaired lost
+edge references.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

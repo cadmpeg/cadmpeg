@@ -3337,6 +3337,11 @@ fn copy_lost_edge_run_ids(
 
 /// Bind a contiguous unresolved-edge run to the construction group whose
 /// first identity wrapper terminates that run.
+///
+/// A group binds only when it has one identity chain, one terminating run,
+/// and a run cardinality equal to its operand count. Any other group keeps no
+/// lost-edge references; its unresolved records stay unrepaired and are
+/// reported as lost edge references.
 pub(crate) fn bind_lost_edge_groups(
     ctx: &DecodeContext<'_>,
     groups: &mut [DesignConstructionOperandGroup],
@@ -3356,13 +3361,7 @@ pub(crate) fn bind_lost_edge_groups(
             continue;
         };
         if identity_matches.next().is_some() {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "Fusion construction group {} has multiple identity chains",
-                    group.record_index
-                ),
-            ));
+            continue;
         }
         let Some(wrapper) = identity.wrappers().first() else {
             continue;
@@ -3383,13 +3382,7 @@ pub(crate) fn bind_lost_edge_groups(
             }
         }
         if multiple_terminals {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "Fusion construction group {} has multiple terminating lost-edge runs",
-                    group.record_index
-                ),
-            ));
+            continue;
         }
         let Some(terminal) = terminal else {
             continue;
@@ -3408,15 +3401,7 @@ pub(crate) fn bind_lost_edge_groups(
         }
         let run = &stream_edges[start..=terminal];
         if run.len() != group.members().len() {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                "Fusion construction group {} has {} operands but its lost-edge run has {} records",
-                group.record_index,
-                group.members().len(),
-                run.len()
-            ),
-            ));
+            continue;
         }
         group.lost_edge_references = copy_lost_edge_run_ids(ctx, run)?;
     }
