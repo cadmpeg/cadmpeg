@@ -186,3 +186,47 @@ fn standard_topology_serialized_faces_refuse_before_collection_growth() {
         "serialized edge faces must be charged before allocation"
     );
 }
+
+#[test]
+fn local_topology_search_exhaustion_leaves_the_candidate_unsolved() {
+    use crate::families::standard::decode::StandardTopologyFailure;
+    use crate::solve::mesh_quotient::{
+        MeshCandidateAmbiguity, MeshCandidateExhaustion, MeshCandidateFailure,
+        MeshCandidateRejection,
+    };
+
+    let exhausted = Some(MeshCandidateFailure::Exhausted(
+        MeshCandidateExhaustion::EndpointResolution,
+    ));
+    let ambiguous = Some(MeshCandidateFailure::Ambiguous(
+        MeshCandidateAmbiguity::EndpointResolution,
+    ));
+    let rejected = Some(MeshCandidateFailure::Rejected(
+        MeshCandidateRejection::InputStructure,
+    ));
+    for (search_exhausted, mesh_failure, expected) in [
+        (true, None, StandardTopologyFailure::TopologySearchExhausted),
+        (
+            true,
+            ambiguous,
+            StandardTopologyFailure::TopologySearchExhausted,
+        ),
+        (
+            false,
+            exhausted,
+            StandardTopologyFailure::TopologySearchExhausted,
+        ),
+        (
+            false,
+            ambiguous,
+            StandardTopologyFailure::AmbiguousTopologySolution,
+        ),
+        (false, rejected, StandardTopologyFailure::NoTopologySolution),
+        (false, None, StandardTopologyFailure::NoTopologySolution),
+    ] {
+        assert_eq!(
+            StandardTopologyFailure::unsolved(search_exhausted, mesh_failure),
+            expected
+        );
+    }
+}
