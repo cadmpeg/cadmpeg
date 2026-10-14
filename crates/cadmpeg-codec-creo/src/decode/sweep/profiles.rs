@@ -370,11 +370,17 @@ pub(in super::super) fn extrusion_cap_pcurve(
             start_angle,
             end_angle,
         } => {
-            let [start_angle, end_angle] = if reversed {
-                [end_angle.get(), start_angle.get()]
+            // The cap traces the forward sweep the profile area and the edge
+            // curves use: at most one turn from the start angle. An arc stored
+            // within one turn keeps its stored end angle.
+            let start = start_angle.get();
+            let sweep = forward_arc_sweep(start, end_angle.get());
+            let end = if end_angle.get() - start == sweep {
+                end_angle.get()
             } else {
-                [start_angle.get(), end_angle.get()]
+                start + sweep
             };
+            let [start_angle, end_angle] = if reversed { [end, start] } else { [start, end] };
             circular_pcurve(
                 ctx,
                 [center.u, center.v],
