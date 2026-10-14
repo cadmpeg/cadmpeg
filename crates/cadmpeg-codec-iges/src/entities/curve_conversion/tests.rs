@@ -1,54 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::CurveConversionError;
 use super::{
     angularly_equal, elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans,
     ANGULAR_TOLERANCE,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
-
-#[test]
-fn analytic_arc_conversion_refuses_each_decode_lane() {
-    for (operation, cap, parabola) in [
-        ("iges analytic arc knots", 0, false),
-        ("iges analytic arc weighted poles", 6, false),
-        ("iges parabolic arc knots", 0, true),
-        ("iges parabolic arc poles", 6, true),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        let result = if parabola {
-            parabolic_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                PositiveLength::new(1.0).expect("test setup"),
-                [0.0, 1.0],
-                &ctx,
-            )
-        } else {
-            elliptical_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                PositiveLength::new(2.0).expect("test setup"),
-                PositiveLength::new(1.0).expect("test setup"),
-                [0.0, std::f64::consts::FRAC_PI_2],
-                &ctx,
-            )
-        };
-        assert!(
-            matches!(result, Err(CurveConversionError::Resource(CodecError::ResourceLimit(limit)))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == operation)
-        );
-    }
-}
 
 /// A sweep that is a whole number of quarter turns must not gain a span from
 /// last-place noise. Expectations come from the geometry: a quarter turn is

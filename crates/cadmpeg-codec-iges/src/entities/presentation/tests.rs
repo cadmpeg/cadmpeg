@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -26,125 +24,9 @@ use crate::test_support::test_solids_and_structure::{
 use crate::IgesCodec;
 
 use super::{
-    general_note_font_valid_for_global_table, mirror_flag_valid, retained_utf8, standard_color,
+    general_note_font_valid_for_global_table, mirror_flag_valid, standard_color,
     vertical_text_flag_valid,
 };
-
-#[test]
-fn presentation_names_refuse_retained_limit_before_copy() {
-    for operation in ["iges color definition name", "iges body property name"] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = retained_utf8(&ctx, b"COLOR", operation).unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
-        );
-    }
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap(),
-        Some("COLOR".into())
-    );
-    assert_eq!(
-        retained_utf8(&ctx, b"\xff", "iges color definition name").unwrap(),
-        None
-    );
-}
-
-fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::CollectionItems,
-        operation,
-        0,
-    );
-}
-
-fn assert_presentation_retained_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::RetainedBytes,
-        operation,
-        0,
-    );
-}
-
-#[test]
-fn presentation_appearance_slots_and_copies_refuse_limits() {
-    let color = owned_test_file(&[OwnedTestEntity {
-        entity_type: 314,
-        form: 0,
-        label: "COLOR".into(),
-        status: "00000200",
-        parameters: "314,20,40,60,6Hcustom;".into(),
-    }]);
-    assert_presentation_collection_refusal(&color, "iges neutral appearance slots");
-    assert_presentation_retained_refusal(&color, "iges appearance schema");
-
-    let bound = colored_explicit_vertex_loop_file();
-    assert_presentation_collection_refusal(&bound, "iges appearance binding slots");
-    for operation in [
-        "iges appearance body ID copy",
-        "iges appearance face ID copy",
-        "iges appearance ID copy",
-        "iges appearance object type",
-    ] {
-        assert_presentation_retained_refusal(&bound, operation);
-    }
-}
-
-#[test]
-fn presentation_loss_records_refuse_slot_and_message_limits() {
-    let invalid_color = owned_test_file(&[OwnedTestEntity {
-        entity_type: 314,
-        form: 0,
-        label: "COLOR".into(),
-        status: "00010200",
-        parameters: "314,20,40,60,6Hcustom;".into(),
-    }]);
-    assert_presentation_collection_refusal(&invalid_color, "iges entity loss slots");
-    assert_presentation_retained_refusal(&invalid_color, "iges entity loss message");
-}
-
-#[test]
-fn presentation_indexes_refuse_and_definition_levels_charge_collection_items() {
-    let fonts = text_font_definition_file();
-    for operation in [
-        "iges presentation parameter index",
-        "iges presentation directory index",
-        "iges presentation font index",
-    ] {
-        assert_presentation_collection_refusal(&fonts, operation);
-    }
-    // Released decode scratch peaks above these charges.
-    crate::test_support::decode_charges_collection(&fonts, "iges presentation decoded sequences");
-    crate::test_support::decode_charges_collection(
-        &definition_levels_file(),
-        "iges presentation definition levels",
-    );
-    let color = owned_test_file(&[OwnedTestEntity {
-        entity_type: 314,
-        form: 0,
-        label: "COLOR".into(),
-        status: "00000200",
-        parameters: "314,20,40,60,6Hcustom;".into(),
-    }]);
-    assert_presentation_collection_refusal(&color, "iges presentation defined colors");
-}
 
 const GLOBAL_V4: &[u8] =
     b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";

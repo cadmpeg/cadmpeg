@@ -30,15 +30,14 @@ fn type228_standard_and_implementor_forms_share_entity_table_boundary() {
         };
 
         assert_eq!(entity_primary_end(&record, &directory), Some(6));
-        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        let analysis = {
             super::analyze_trailing_pointer_groups_for_global_table_with_context(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
-                ctx,
             )
             .expect("test-only trailing pointer analysis")
-        });
+        };
         let groups = analysis.groups().expect("Type 228 table boundary");
         assert_eq!(groups.token_start, 6);
         assert_eq!(groups.associations().copied().collect::<Vec<_>>(), vec![1]);

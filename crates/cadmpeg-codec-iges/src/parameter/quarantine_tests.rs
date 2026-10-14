@@ -11,74 +11,6 @@ use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
-#[test]
-fn parameter_quarantine_identity_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let record = super::QuarantinedParameterRecord {
-        sequence: 3,
-        ownership: super::QuarantinedCards::None {
-            directory_offset: 160,
-        },
-        failing_offset: None,
-        defect: super::ParameterDefect::NoOwnedCards,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        record.identity(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges parameter quarantine identity"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        record.identity(&ctx).unwrap(),
-        "iges:quarantine:parameter#3"
-    );
-}
-
-#[test]
-fn parameter_quarantine_loss_refuses_owned_range_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let record = super::QuarantinedParameterRecord {
-        sequence: 3,
-        ownership: super::QuarantinedCards::Owned {
-            range: 2..3,
-            bytes: Vec::new(),
-            first_offset: 160,
-        },
-        failing_offset: None,
-        defect: super::ParameterDefect::NoOwnedCards,
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        record.loss_note(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges parameter quarantine owned card range"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let loss = record.loss_note(&ctx).unwrap();
-    assert_eq!(
-        loss.provenance.unwrap().tag.as_deref(),
-        Some("D3:parameter")
-    );
-    assert!(loss.message.contains("D3 (P2 through P2)"));
-}
-
 /// Zero-based index of the Parameter Data count field in the second card.
 const PARAMETER_COUNT_FIELD: usize = 3;
 
@@ -444,4 +376,25 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         ),
         other => panic!("expected a strict refusal, got {other:?}"),
     }
+}
+
+#[test]
+fn parameter_quarantine_record_names_its_identity_and_owned_range() {
+    let record = super::QuarantinedParameterRecord {
+        sequence: 3,
+        ownership: super::QuarantinedCards::Owned {
+            range: 2..3,
+            bytes: Vec::new(),
+            first_offset: 160,
+        },
+        failing_offset: None,
+        defect: super::ParameterDefect::NoOwnedCards,
+    };
+    assert_eq!(record.identity(), "iges:quarantine:parameter#3");
+    let loss = record.loss_note().unwrap();
+    assert_eq!(
+        loss.provenance.unwrap().tag.as_deref(),
+        Some("D3:parameter")
+    );
+    assert!(loss.message.contains("D3 (P2 through P2)"));
 }

@@ -6,11 +6,7 @@ use crate::directory::SourceStatus;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeArena;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::DecodePolicy;
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 
@@ -19,16 +15,10 @@ use super::functional_level_identifier_valid;
 use super::line_font_property_code_valid;
 use super::signal_string_geometry_target;
 use crate::loss::IgesLossCode;
-use crate::test_support::test_drawing_and_trimming::admitted_containing_network_file;
 use crate::test_support::test_drawing_and_trimming::associativity_definition_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file_with_global;
-use crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file;
-use crate::test_support::test_drawing_and_trimming::flow_associativity_forms_file;
 use crate::test_support::test_drawing_and_trimming::legacy_perforated_plane_file;
-use crate::test_support::test_drawing_and_trimming::nested_subfigure_file;
-use crate::test_support::test_drawing_and_trimming::network_subfigure_file;
-use crate::test_support::test_drawing_and_trimming::units_data_file;
 use crate::test_support::test_owned::owned_test_file;
 use crate::test_support::test_owned::owned_test_file_with_global;
 use crate::test_support::test_owned::OwnedTestEntity;
@@ -48,7 +38,6 @@ use crate::test_support::test_solids_and_structure::lep_property_forms_file;
 use crate::test_support::test_solids_and_structure::patterned_instance_file;
 use crate::test_support::test_solids_and_structure::product_property_file;
 use crate::test_support::test_solids_and_structure::scalar_property_forms_file;
-use crate::test_support::test_solids_and_structure::solid_assembly_file;
 use crate::test_support::test_solids_and_structure::solid_instance_file;
 use crate::test_support::test_solids_and_structure::structure_target_rules_file;
 use crate::test_support::test_solids_and_structure::text_score_property_forms_file;
@@ -214,15 +203,8 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         .map(|sequence| (sequence, sequence + 1))
         .collect::<BTreeMap<_, _>>();
     let mut visited = std::collections::BTreeSet::new();
-    // The target table supplies the byte envelope for the traversal node storage.
-    let input = serde_json::to_vec(&targets).unwrap();
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&input, &arena, &DecodePolicy::service()).unwrap();
 
-    assert!(
-        !crate::entities::structure::single_target_cycle(1, &targets, &mut visited, &ctx,).unwrap()
-    );
+    assert!(!crate::entities::structure::single_target_cycle(1, &targets, &mut visited,).unwrap());
     assert_eq!(visited.len(), 100_000);
 
     let mut cyclic = targets;
@@ -231,109 +213,8 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         1,
         &cyclic,
         &mut std::collections::BTreeSet::new(),
-        &ctx,
     )
     .unwrap());
-}
-
-#[test]
-fn single_target_cycle_refuses_path_and_tree_nodes_before_storage() {
-    let targets = BTreeMap::from([(1_u32, 2_u32), (2, 3)]);
-    for operation in [
-        "iges structure active cycle nodes",
-        "iges structure cycle path",
-        "iges structure visited cycle nodes",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..32 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match crate::entities::structure::single_target_cycle(
-                1,
-                &targets,
-                &mut std::collections::BTreeSet::new(),
-                &ctx,
-            ) {
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                other => panic!("expected cycle storage refusal at {operation}: {other:?}"),
-            }
-        }
-        assert!(
-            reached,
-            "cycle storage refusal was not reached: {operation}"
-        );
-    }
-}
-
-#[test]
-fn array_instance_indexes_charge_and_solid_instance_indexes_refuse_unadmitted_nodes() {
-    let solid = solid_instance_file();
-    crate::test_support::decode_collection_refusal(&solid, "iges solid instance index nodes");
-    assert!(IgesCodec
-        .decode(&mut Cursor::new(&solid), &DecodeOptions::default())
-        .is_ok());
-    // Released decode scratch peaks above these charges.
-    for (bytes, operation) in [
-        (patterned_instance_file(), "iges array target index nodes"),
-        (patterned_instance_file(), "iges array mask positions"),
-    ] {
-        crate::test_support::decode_charges_collection(&bytes, operation);
-    }
-}
-
-#[test]
-fn flow_associativity_refuses_pointer_lanes_and_index_node() {
-    let bytes = flow_associativity_forms_file();
-    for operation in [
-        "iges flow connection pointers",
-        "iges flow join pointers",
-        "iges flow display pointers",
-        "iges flow continuation pointers",
-        "iges flow index nodes",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected flow collection refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "flow collection refusal was not reached: {operation}"
-        );
-    }
-    assert!(IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .is_ok());
 }
 
 #[test]
@@ -1547,181 +1428,6 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
             "IGES {version} legacy hole topology is invalid"
         );
     }
-}
-
-#[test]
-fn legacy_single_parent_face_refuses_nested_topology_storage() {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let bytes = legacy_perforated_plane_file(global);
-    for operation in [
-        "iges legacy plane boundary edges",
-        "iges legacy plane sequence list",
-        "iges legacy plane loop IDs",
-        "iges legacy plane ring coedges",
-        "iges legacy plane shell faces",
-        "iges legacy plane region shells",
-        "iges legacy plane body regions",
-    ] {
-        crate::test_support::decode_collection_refusal(&bytes, operation);
-    }
-    let mut cap = 0_u64;
-    let mut reached = false;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == "iges plane boundary active curve ID" {
-                    reached = true;
-                    break;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            _ => panic!("expected legacy plane retained refusal before the active curve copy"),
-        }
-    }
-    assert!(
-        reached,
-        "legacy plane active curve identity copy was not reached"
-    );
-    // Released decode scratch peaks above these charges.
-    for operation in [
-        "iges legacy plane child pointers",
-        "iges legacy plane boundary pointers",
-        "iges legacy plane sequence nodes",
-        "iges legacy face candidates",
-    ] {
-        crate::test_support::decode_charges_collection(&bytes, operation);
-    }
-}
-
-#[test]
-fn structure_lists_and_indexes_refuse_unadmitted_storage() {
-    for (bytes, operation) in [
-        (product_property_file(), "iges property owner sequences"),
-        (solid_assembly_file(), "iges solid assembly items"),
-        (solid_assembly_file(), "iges solid assembly index nodes"),
-        (
-            admitted_containing_network_file(),
-            "iges network definition members",
-        ),
-        (
-            network_subfigure_file(),
-            "iges network definition index nodes",
-        ),
-    ] {
-        crate::test_support::decode_collection_refusal(&bytes, operation);
-        assert!(IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-            .is_ok());
-    }
-    // Released decode scratch peaks above these charges.
-    for (bytes, operation) in [
-        (units_data_file(), "iges unit type nodes"),
-        (nested_subfigure_file(), "iges subfigure definition members"),
-        (
-            nested_subfigure_file(),
-            "iges subfigure definition index nodes",
-        ),
-    ] {
-        crate::test_support::decode_charges_collection(&bytes, operation);
-    }
-}
-
-#[test]
-fn structure_projection_refuses_attribute_and_occurrence_nodes() {
-    for (bytes, operation) in [
-        (
-            attribute_definition_forms_file(),
-            "iges attribute type nodes",
-        ),
-        (
-            attribute_definition_forms_file(),
-            "iges attribute shape descriptors",
-        ),
-        (
-            attribute_definition_forms_file(),
-            "iges attribute shape index nodes",
-        ),
-        (network_subfigure_file(), "iges network instance nodes"),
-        (
-            network_subfigure_file(),
-            "iges valid network instance nodes",
-        ),
-        (
-            owned_test_file(&[OwnedTestEntity {
-                entity_type: 408,
-                form: 0,
-                label: "MISSING".into(),
-                status: "00000000",
-                parameters: "408,99,0,0,0,1;".into(),
-            }]),
-            "iges placement rejection nodes",
-        ),
-    ] {
-        crate::test_support::decode_collection_refusal(&bytes, operation);
-    }
-    // Released decode scratch peaks above these charges.
-    for (bytes, operation) in [
-        (nested_subfigure_file(), "iges subfigure instance nodes"),
-        (
-            nested_subfigure_file(),
-            "iges valid subfigure instance nodes",
-        ),
-    ] {
-        crate::test_support::decode_charges_collection(&bytes, operation);
-    }
-}
-
-#[test]
-fn network_connect_point_lists_refuse_per_item_storage() {
-    let bytes = connected_network_subfigure_file();
-    for operation in [
-        "iges network definition connect points",
-        "iges network instance connect points",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                other => panic!("expected network connect-point refusal at {operation}: {other:?}"),
-            }
-        }
-        assert!(
-            reached,
-            "network connect-point refusal was not reached: {operation}"
-        );
-    }
-    assert!(IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .is_ok());
 }
 
 mod flow;

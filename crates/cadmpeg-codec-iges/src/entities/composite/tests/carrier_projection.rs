@@ -5,11 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::DecodePolicy;
-use cadmpeg_core::decode::ResourceDimension;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
-use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CompositeCurveSegment;
@@ -718,33 +714,6 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn composite_analytic_child_refuses_arc_lane_before_projection() {
-    let bytes = mixed_analytic_composite_curve_file();
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges analytic arc weighted poles" {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected analytic child collection refusal: {other:?}"),
-        }
-    }
-    panic!("analytic child weighted-pole refusal was not reached");
 }
 
 #[test]
