@@ -3935,7 +3935,7 @@ mod point_point_distance_family_tests {
 mod ownership_tests;
 
 #[cfg(test)]
-mod planar_budget_tests;
+mod planar_projection_tests;
 
 #[cfg(test)]
-mod spatial_budget_tests;
+mod spatial_projection_tests;

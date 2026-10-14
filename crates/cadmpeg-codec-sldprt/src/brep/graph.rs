@@ -8536,4 +8536,4 @@ mod tests {
 mod numerical_range_tests;
 
 #[cfg(test)]
-mod evaluation_admission_tests;
+mod nurbs_subset_evaluation_tests;

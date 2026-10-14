@@ -561,4 +561,4 @@ fn numerical_followup_membership_preserves_large_finite_geometry() {
     ));
 }
 
-mod admission;
+mod endpoint_probes;

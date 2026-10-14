@@ -26,7 +26,7 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeMap;
 
-mod limits;
+mod compact_selections;
 mod patterns;
 
 fn with_projection_context<R>(
