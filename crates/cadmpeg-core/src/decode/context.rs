@@ -246,6 +246,12 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_retained_limit(bytes, operation)
     }
 
+    /// Charges storage created by the closure for the whole session, even
+    /// inside an active storage scope.
+    pub(crate) fn with_session_storage<T>(&self, build: impl FnOnce() -> T) -> T {
+        self.budget.session_storage(build)
+    }
+
     /// Charges storage created by the closure as temporary until its reservation is dropped.
     pub fn with_scoped_storage<T, E: From<CodecError>>(
         &self,
