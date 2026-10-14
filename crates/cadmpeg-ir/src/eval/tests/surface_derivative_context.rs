@@ -78,7 +78,7 @@ fn surface_derivatives_use_the_existing_scratch_context() {
                 panic!("caller refusal was not returned");
             };
             assert_eq!(limit.dimension, dimension);
-            assert_eq!(scratch.refused(), Some(limit));
+            assert_eq!(scratch.refused(), Some(limit.into()));
             drop(scratch);
             assert!(matches!(ctx.finish_session(),
                 Err(CodecError::ResourceLimit(sticky)) if sticky == limit));

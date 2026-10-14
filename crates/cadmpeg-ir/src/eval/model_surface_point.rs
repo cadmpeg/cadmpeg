@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model surface point evaluation across stored and procedural carriers.
 
-use super::admission;
+use super::admission::{self, EvaluationRefusal};
 use super::cacheless_constant_rolling_ball_first_order;
 use super::cacheless_constant_rolling_ball_point;
 use super::cacheless_law_sweep_point;
@@ -18,6 +18,7 @@ use super::offset;
 use super::placed_reach;
 use super::placed_vectors;
 use super::record_u_interval;
+use super::refusal_of;
 use super::revision_surface_tail_has_current_cache;
 use super::rolling_ball_jet_point;
 use super::scale_vector;
@@ -33,7 +34,6 @@ use super::UNREACHED_POINT;
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
-use cadmpeg_core::decode::ResourceLimit;
 
 pub(super) fn model_surface_point_by_id_inner(
     admission: admission::EvaluationAdmission<'_, '_>,
@@ -51,15 +51,17 @@ pub(super) fn model_surface_point_by_id_inner(
         /// no normal, and an evaluation whose reader reads none, have no
         /// value.
         oriented_normal: Result<Vector3, EvaluationFailure<()>>,
-        /// Refusal of scratch used by the selected carrier or support.
-        resource: Option<ResourceLimit>,
+        /// Refusal of work or scratch used by the selected carrier or
+        /// support.
+        refusal: Option<EvaluationRefusal>,
     }
 
-    fn resource(limit: ResourceLimit) -> SurfaceEvaluation {
+    fn refused(refusal: impl Into<EvaluationRefusal>) -> SurfaceEvaluation {
+        let refusal = refusal.into();
         SurfaceEvaluation {
             point: Err(UNREACHED_POINT),
-            oriented_normal: Err(EvaluationFailure::ResourceLimit(limit)),
-            resource: Some(limit),
+            oriented_normal: Err(refusal.into()),
+            refusal: Some(refusal),
         }
     }
 
@@ -81,12 +83,15 @@ pub(super) fn model_surface_point_by_id_inner(
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(point)) => Err(point),
             Err(EvaluationFailure::NoValue) => return None,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(refused(limit)),
+            Err(EvaluationFailure::WorkExhausted) => {
+                return Some(refused(EvaluationRefusal::WorkExhausted))
+            }
         };
         Some(SurfaceEvaluation {
             point,
             oriented_normal: Err(EvaluationFailure::NoValue),
-            resource: None,
+            refusal: None,
         })
     }
 
@@ -98,16 +103,19 @@ pub(super) fn model_surface_point_by_id_inner(
         construction: EvaluationFailure<Point3>,
         cached: Option<SurfaceEvaluation>,
     ) -> Option<SurfaceEvaluation> {
-        if let Some(limit) = cached.as_ref().and_then(|evaluation| evaluation.resource) {
-            return Some(resource(limit));
+        if let Some(refusal) = cached.as_ref().and_then(|evaluation| evaluation.refusal) {
+            return Some(refused(refusal));
         }
         match (cached, construction) {
-            (_, EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
+            (_, EvaluationFailure::ResourceLimit(limit)) => Some(refused(limit)),
+            (_, EvaluationFailure::WorkExhausted) => {
+                Some(refused(EvaluationRefusal::WorkExhausted))
+            }
             (Some(cached), _) if cached.point.is_ok() => Some(cached),
             (_, EvaluationFailure::NonFinite(point)) => Some(SurfaceEvaluation {
                 point: Err(point),
                 oriented_normal: Err(EvaluationFailure::NonFinite(())),
-                resource: None,
+                refusal: None,
             }),
             (cached, EvaluationFailure::NoValue) => cached,
         }
@@ -151,7 +159,10 @@ pub(super) fn model_surface_point_by_id_inner(
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(point)) => Err(point),
             Err(EvaluationFailure::NoValue) => return None,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(refused(limit)),
+            Err(EvaluationFailure::WorkExhausted) => {
+                return Some(refused(EvaluationRefusal::WorkExhausted))
+            }
         };
         let oriented_normal = surface_first_order(admission, geometry, u, v)
             .map_err(|failure| failure.map(|_| ()))
@@ -162,13 +173,13 @@ pub(super) fn model_surface_point_by_id_inner(
                     .unit()
                     .ok_or(EvaluationFailure::NoValue)
             });
-        if let Err(EvaluationFailure::ResourceLimit(limit)) = oriented_normal {
-            return Some(resource(limit));
+        if let Some(refusal) = refusal_of(&oriented_normal) {
+            return Some(refused(refusal));
         }
         Some(SurfaceEvaluation {
             point,
             oriented_normal,
-            resource: None,
+            refusal: None,
         })
     }
 
@@ -190,13 +201,16 @@ pub(super) fn model_surface_point_by_id_inner(
         }
         let order = match surface_first_order(admission, geometry, u, v) {
             Ok(order) => order,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(refused(limit)),
+            Err(EvaluationFailure::WorkExhausted) => {
+                return Some(refused(EvaluationRefusal::WorkExhausted))
+            }
             Err(EvaluationFailure::NoValue) => return None,
             Err(EvaluationFailure::NonFinite(point)) => {
                 return Some(SurfaceEvaluation {
                     point: Err(point),
                     oriented_normal: Err(EvaluationFailure::NonFinite(())),
-                    resource: None,
+                    refusal: None,
                 })
             }
         };
@@ -205,13 +219,13 @@ pub(super) fn model_surface_point_by_id_inner(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
         );
         let oriented_normal = oriented_normal(order.first, reversed);
-        if let Err(EvaluationFailure::ResourceLimit(limit)) = oriented_normal {
-            return Some(resource(limit));
+        if let Some(refusal) = refusal_of(&oriented_normal) {
+            return Some(refused(refusal));
         }
         Some(SurfaceEvaluation {
             point: Ok(order.point),
             oriented_normal,
-            resource: None,
+            refusal: None,
         })
     }
 
@@ -222,17 +236,14 @@ pub(super) fn model_surface_point_by_id_inner(
         support: &SurfaceEvaluation,
         failure: EvaluationFailure<()>,
     ) -> Option<SurfaceEvaluation> {
-        if let EvaluationFailure::ResourceLimit(limit) = failure {
-            return Some(resource(limit));
-        }
-        if let Some(limit) = support.resource {
-            return Some(resource(limit));
+        if let Some(refusal) = failure.refusal().or(support.refusal) {
+            return Some(refused(refusal));
         }
         (support.point.is_err() || failure == EvaluationFailure::NonFinite(())).then_some(
             SurfaceEvaluation {
                 point: Err(Point3::new(f64::NAN, f64::NAN, f64::NAN)),
                 oriented_normal: Err(EvaluationFailure::NonFinite(())),
-                resource: None,
+                refusal: None,
             },
         )
     }
@@ -247,7 +258,7 @@ pub(super) fn model_surface_point_by_id_inner(
         let support = match index.surfaces(support.as_str(), admission) {
             Ok(Some(support)) => support,
             Ok(None) => return None,
-            Err(limit) => return Some(resource(limit)),
+            Err(limit) => return Some(refused(limit)),
         };
         let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = support.geometry.solved() else {
             return None;
@@ -284,18 +295,27 @@ pub(super) fn model_surface_point_by_id_inner(
         let order = match surface_first_order(admission, &support.geometry, boundary_u, boundary_v)
         {
             Ok(order) => order,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(refused(limit)),
+            Err(EvaluationFailure::WorkExhausted) => {
+                return Some(refused(EvaluationRefusal::WorkExhausted))
+            }
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
         };
         let partials = match order.partials() {
             Ok(partials) => partials,
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
+            Err(EvaluationFailure::ResourceLimit(limit)) => return Some(refused(limit)),
+            Err(EvaluationFailure::WorkExhausted) => {
+                return Some(refused(EvaluationRefusal::WorkExhausted))
+            }
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
         };
         let oriented_normal =
             match oriented_normal(Ok([partials.du, partials.dv]), nurbs.normal_reversed()) {
                 Ok(normal) => normal,
-                Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
+                Err(EvaluationFailure::ResourceLimit(limit)) => return Some(refused(limit)),
+                Err(EvaluationFailure::WorkExhausted) => {
+                    return Some(refused(EvaluationRefusal::WorkExhausted))
+                }
                 Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(())) => return None,
             };
         let partials = partials.into_raw();
@@ -308,7 +328,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 partials.point.z + du * partials.du.z + dv * partials.dv.z,
             )),
             oriented_normal: Ok(oriented_normal),
-            resource: None,
+            refusal: None,
         })
     }
 
@@ -326,18 +346,15 @@ pub(super) fn model_surface_point_by_id_inner(
         let budget = admission.work_slice();
         let depth_guard = match ModelEvaluationDepthGuard::enter(budget) {
             Ok(guard) => guard,
-            Err(limit) => return Some(resource(limit)),
+            Err(limit) => return Some(refused(limit)),
         };
-        if let Err(failure) = admission.model_step() {
-            return match failure {
-                EvaluationFailure::ResourceLimit(limit) => Some(resource(limit)),
-                EvaluationFailure::NoValue | EvaluationFailure::NonFinite(()) => None,
-            };
+        if let Err(failure) = admission.model_step::<()>() {
+            return failure.refusal().map(refused);
         }
         let surface = match index.surfaces(surface_id.as_str(), admission) {
             Ok(Some(surface)) => surface,
             Ok(None) => return None,
-            Err(limit) => return Some(resource(limit)),
+            Err(limit) => return Some(refused(limit)),
         };
         if !depth_guard.bind(
             ModelEvaluationIdentity::Surface(std::ptr::from_ref(surface)),
@@ -348,7 +365,7 @@ pub(super) fn model_surface_point_by_id_inner(
         let procedural = match index.procedural_surface_for_surface(surface_id.as_str(), admission)
         {
             Ok(value) => value,
-            Err(limit) => return Some(resource(limit)),
+            Err(limit) => return Some(refused(limit)),
         };
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
@@ -408,11 +425,14 @@ pub(super) fn model_surface_point_by_id_inner(
                         u,
                         v,
                     ) {
-                        Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
+                        Err(EvaluationFailure::ResourceLimit(limit)) => Some(refused(limit)),
+                        Err(EvaluationFailure::WorkExhausted) => {
+                            Some(refused(EvaluationRefusal::WorkExhausted))
+                        }
                         Ok(point) => Some(SurfaceEvaluation {
                             point: evaluated(point),
                             oriented_normal: Err(EvaluationFailure::NoValue),
-                            resource: None,
+                            refusal: None,
                         }),
                         Err(failure) => cache_fallback(
                             failure,
@@ -429,11 +449,14 @@ pub(super) fn model_surface_point_by_id_inner(
                 let construction = definition_payload.construction();
 
                 match cacheless_variable_blend_point(admission, index, definition_payload, u, v) {
-                    Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
+                    Err(EvaluationFailure::ResourceLimit(limit)) => Some(refused(limit)),
+                    Err(EvaluationFailure::WorkExhausted) => {
+                        Some(refused(EvaluationRefusal::WorkExhausted))
+                    }
                     Ok(point) => Some(SurfaceEvaluation {
                         point: evaluated(point),
                         oriented_normal: Err(EvaluationFailure::NoValue),
-                        resource: None,
+                        refusal: None,
                     }),
                     Err(failure) => cache_fallback(
                         failure,
@@ -452,7 +475,10 @@ pub(super) fn model_surface_point_by_id_inner(
                         u,
                         v,
                     ) {
-                        Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
+                        Err(EvaluationFailure::ResourceLimit(limit)) => Some(refused(limit)),
+                        Err(EvaluationFailure::WorkExhausted) => {
+                            Some(refused(EvaluationRefusal::WorkExhausted))
+                        }
                         Ok(point) => Some(SurfaceEvaluation {
                             point: evaluated(point),
                             oriented_normal: if normal {
@@ -474,7 +500,7 @@ pub(super) fn model_surface_point_by_id_inner(
                             } else {
                                 Err(EvaluationFailure::NoValue)
                             },
-                            resource: None,
+                            refusal: None,
                         }),
                         Err(failure) => cache_fallback(
                             failure.map(|()| UNREACHED_POINT),
@@ -495,7 +521,7 @@ pub(super) fn model_surface_point_by_id_inner(
             }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
                 let mut evaluation = evaluate(admission, index, source, u, v, normal)?;
-                if evaluation.resource.is_some() {
+                if evaluation.refusal.is_some() {
                     return Some(evaluation);
                 }
                 if normal {
@@ -508,8 +534,8 @@ pub(super) fn model_surface_point_by_id_inner(
                                 .unit()
                                 .ok_or(EvaluationFailure::NoValue)
                         });
-                    if let Err(EvaluationFailure::ResourceLimit(limit)) = placed_normal {
-                        return Some(resource(limit));
+                    if let Some(refusal) = refusal_of(&placed_normal) {
+                        return Some(refused(refusal));
                     }
                     evaluation.oriented_normal = placed_normal.or_else(|placed_failure| {
                         evaluation
@@ -528,6 +554,9 @@ pub(super) fn model_surface_point_by_id_inner(
                             .map_err(|evaluation_failure| match placed_failure {
                                 EvaluationFailure::NonFinite(()) => placed_failure,
                                 EvaluationFailure::NoValue => evaluation_failure,
+                                EvaluationFailure::WorkExhausted => {
+                                    EvaluationFailure::WorkExhausted
+                                }
                                 EvaluationFailure::ResourceLimit(limit) => {
                                     EvaluationFailure::ResourceLimit(limit)
                                 }
@@ -573,7 +602,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 let distance = definition_payload.distance();
                 {
                     let support = evaluate(admission, index, support, u, v, true)?;
-                    if support.resource.is_some() {
+                    if support.refusal.is_some() {
                         return Some(support);
                     }
                     match support.oriented_normal {
@@ -583,7 +612,7 @@ pub(super) fn model_surface_point_by_id_inner(
                                 &[(distance.get(), normal)],
                             )),
                             oriented_normal: Ok(normal),
-                            resource: None,
+                            refusal: None,
                         }),
                         Err(failure) => offset_without_normal(&support, failure),
                     }
@@ -598,7 +627,7 @@ pub(super) fn model_surface_point_by_id_inner(
                         .then(|| linear_nurbs_support_extension(admission, index, support, u, v))
                         .flatten()
                         .or_else(|| evaluate(admission, index, support, u, v, true))?;
-                    if support.resource.is_some() {
+                    if support.refusal.is_some() {
                         return Some(support);
                     }
                     match support.oriented_normal {
@@ -608,7 +637,7 @@ pub(super) fn model_surface_point_by_id_inner(
                                 &[(distance.get(), normal)],
                             )),
                             oriented_normal: Ok(normal),
-                            resource: None,
+                            refusal: None,
                         }),
                         Err(failure) => offset_without_normal(&support, failure),
                     }
@@ -628,18 +657,17 @@ pub(super) fn model_surface_point_by_id_inner(
             _ => direct_evaluation(admission, &surface.geometry, u, v, normal),
         };
         result.map(|evaluation| {
-            let limit = evaluation.resource.or(match evaluation.oriented_normal {
-                Err(EvaluationFailure::ResourceLimit(limit)) => Some(limit),
-                _ => None,
-            });
-            limit.map_or(evaluation, resource)
+            let refusal = evaluation
+                .refusal
+                .or_else(|| refusal_of(&evaluation.oriented_normal));
+            refusal.map_or(evaluation, refused)
         })
     }
 
     let evaluation =
         evaluate(admission, index, surface, u, v, false).ok_or(EvaluationFailure::NoValue)?;
-    if let Some(limit) = evaluation.resource {
-        return Err(EvaluationFailure::ResourceLimit(limit));
+    if let Some(refusal) = evaluation.refusal {
+        return Err(refusal.into());
     }
     evaluation.point.map_err(EvaluationFailure::NonFinite)
 }

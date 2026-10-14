@@ -606,7 +606,8 @@ fn evaluate_profile_point(
                 GeometryError::Codec(limit.into())
             }
             cadmpeg_ir::eval::EvaluationFailure::NoValue
-            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_) => {
+            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
                 error(offset, "extrusion profile cannot be evaluated")
             }
         })

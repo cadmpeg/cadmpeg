@@ -510,19 +510,18 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         )];
         let limited_ctx = cadmpeg_test_support::service_decode_context();
         let mut limited = ir.clone();
-        let error =
+        // The original slice cannot admit the typed carrier walk: the lane
+        // reports its exhausted geometry work and the session continues.
+        let exhausted =
             crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
                 &limited_ctx,
                 &mut limited,
                 &pending,
                 GEOMETRY_WORK,
             )
-            .expect_err("the original slice cannot admit the typed carrier walk");
-        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-            panic!("resource refusal")
-        };
-        assert!(matches!(limited_ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+            .expect("an exhausted geometry slice skips the lane");
+        assert!(exhausted);
+        assert!(limited_ctx.finish_session().is_ok());
         let mut seeded = ir.clone();
         let mut unseeded = ir;
         crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
@@ -532,7 +531,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             32768,
         )
         .expect("serialized seeds complete the lane within the geometry work slice");
-        let error =
+        let exhausted =
             crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
                 geometry_ctx,
                 &mut unseeded,
@@ -544,17 +543,9 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 )],
                 GEOMETRY_WORK,
             )
-            .expect_err("an unseeded inverse exceeds the geometry work slice");
-        let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
-            panic!("geometry work refusal");
-        };
-        assert_eq!(
-            refusal.dimension,
-            cadmpeg_core::decode::ResourceDimension::Codec(refusal.operation)
-        );
-        assert!(refusal.limit <= cadmpeg_core::decode::u64_from_index(GEOMETRY_WORK));
-        assert!(refusal.used + refusal.additional > refusal.limit);
-        assert_eq!(geometry_ctx.resource_refusal(), Some(refusal));
+            .expect("an unseeded inverse that exceeds the geometry work slice skips the lane");
+        assert!(exhausted);
+        assert!(geometry_ctx.resource_refusal().is_none());
 
         let pcurve_present = |ir: &cadmpeg_ir::document::CadIr| {
             let ProceduralCurveDefinition::Intersection { context, .. } =

@@ -88,7 +88,7 @@ fn trim_sweep_text<'text>(
     while !text.is_empty() {
         admission
             .work(1, "IR sweep law text whitespace")
-            .map_err(EvaluationFailure::ResourceLimit)?;
+            .map_err(EvaluationFailure::from)?;
         let Some(character) = text.chars().next() else {
             break;
         };
@@ -100,7 +100,7 @@ fn trim_sweep_text<'text>(
     while !text.is_empty() {
         admission
             .work(1, "IR sweep law text whitespace")
-            .map_err(EvaluationFailure::ResourceLimit)?;
+            .map_err(EvaluationFailure::from)?;
         let Some(character) = text.chars().next_back() else {
             break;
         };
@@ -121,7 +121,7 @@ fn split_sweep_text<'text>(
     for (index, byte) in text.as_bytes().iter().enumerate() {
         admission
             .work(1, "IR sweep law field scan")
-            .map_err(EvaluationFailure::ResourceLimit)?;
+            .map_err(EvaluationFailure::from)?;
         if *byte == delimiter {
             return Ok(Some((&text[..index], &text[index + 1..])));
         }
@@ -136,7 +136,7 @@ fn parse_sweep_number(
 ) -> Result<Option<f64>, EvaluationFailure<()>> {
     admission
         .work(u64_from_index(text.len()), "IR sweep law number parse")
-        .map_err(EvaluationFailure::ResourceLimit)?;
+        .map_err(EvaluationFailure::from)?;
     Ok(text.parse().ok())
 }
 

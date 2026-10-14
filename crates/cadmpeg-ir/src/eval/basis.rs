@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! B-spline span selection and basis recurrences.
 
-use super::admission::EvaluationAdmission;
+use super::admission::{EvaluationAdmission, EvaluationRefusal};
 use super::{decode, difference_quotient, finite_or_refusal};
 use crate::math::sum::scaled_ratio_products;
 use crate::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_core::decode::ResourceLimit;
 
 /// Knot span index of `t` for a clamped B-spline basis, or `None` when the
 /// knot vector cannot support `count` poles of the given degree.
@@ -16,7 +15,7 @@ pub(super) fn bspline_span<'ctx, 'arena: 'ctx>(
     degree: usize,
     count: usize,
     t: f64,
-) -> Result<Option<usize>, ResourceLimit> {
+) -> Result<Option<usize>, EvaluationRefusal> {
     let admission = admission.into();
     admission.work(0, "IR B-spline span search")?;
     let Some(required) = count
@@ -101,7 +100,7 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
     span: usize,
     t: f64,
     values: &mut [f64],
-) -> Result<Option<()>, ResourceLimit> {
+) -> Result<Option<()>, EvaluationRefusal> {
     let admission = admission.into();
     admission.work(0, "IR B-spline basis work")?;
     if Some(values.len()) != degree.checked_add(1) {
