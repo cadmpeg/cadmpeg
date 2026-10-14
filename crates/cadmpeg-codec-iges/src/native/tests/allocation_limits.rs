@@ -981,7 +981,7 @@ fn native_occurrence_issues_and_malformed_placements_refuse_limits() {
         &malformed_placement,
         "iges malformed occurrence placement nodes",
     );
-    assert_collection_refusal_at(
+    crate::test_support::decode_charges_collection(
         &malformed_placement,
         "iges malformed occurrence placement result slots",
     );
