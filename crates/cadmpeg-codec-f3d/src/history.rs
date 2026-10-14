@@ -8221,24 +8221,33 @@ fn historical_body_closures(
             }
         };
     }
-    let body_regions = relation_map(decode, &topology.body_regions)?;
-    let region_shells = relation_map(decode, &topology.region_shells)?;
-    let shell_faces = relation_map(decode, &topology.shell_faces)?;
-    let shell_wire_edges = relation_map(decode, &topology.shell_wire_edges)?;
-    let shell_free_vertices = relation_map(decode, &topology.shell_free_vertices)?;
-    let face_loops = relation_map(decode, &topology.face_loops)?;
-    let loop_coedges = relation_map(decode, &topology.loop_coedges)?;
-    let coedges = decode.collect_hash_map(
-        topology
-            .coedge_topology
-            .iter()
-            .map(|coedge| (coedge.coedge, coedge)),
-        "index F3D historical coedges",
-    )?;
-    let edges = decode.collect_hash_map(
-        topology.edge_vertices.iter().map(|edge| (edge.edge, edge)),
-        "index F3D historical edge vertices",
-    )?;
+    // The relation, carrier, and per-shell indexes are scratch; only the
+    // body closures are cached.
+    let mut scratch = decode.reserve_scoped(0, "index F3D historical body closures")?;
+    let body_regions = scratch.with_storage(|| relation_map(decode, &topology.body_regions))?;
+    let region_shells = scratch.with_storage(|| relation_map(decode, &topology.region_shells))?;
+    let shell_faces = scratch.with_storage(|| relation_map(decode, &topology.shell_faces))?;
+    let shell_wire_edges =
+        scratch.with_storage(|| relation_map(decode, &topology.shell_wire_edges))?;
+    let shell_free_vertices =
+        scratch.with_storage(|| relation_map(decode, &topology.shell_free_vertices))?;
+    let face_loops = scratch.with_storage(|| relation_map(decode, &topology.face_loops))?;
+    let loop_coedges = scratch.with_storage(|| relation_map(decode, &topology.loop_coedges))?;
+    let coedges = scratch.with_storage(|| {
+        decode.collect_hash_map(
+            topology
+                .coedge_topology
+                .iter()
+                .map(|coedge| (coedge.coedge, coedge)),
+            "index F3D historical coedges",
+        )
+    })?;
+    let edges = scratch.with_storage(|| {
+        decode.collect_hash_map(
+            topology.edge_vertices.iter().map(|edge| (edge.edge, edge)),
+            "index F3D historical edge vertices",
+        )
+    })?;
     let carrier = |items: &[AsmHistoricalCarrierBinding]| {
         decode.collect_hash_map(
             items
@@ -8255,10 +8264,10 @@ fn historical_body_closures(
             "index F3D historical optional carriers",
         )
     };
-    let face_surfaces = carrier(&topology.face_surfaces)?;
-    let edge_curves = optional_carrier(&topology.edge_curves)?;
-    let coedge_pcurves = optional_carrier(&topology.coedge_pcurves)?;
-    let vertex_points = carrier(&topology.vertex_points)?;
+    let face_surfaces = scratch.with_storage(|| carrier(&topology.face_surfaces))?;
+    let edge_curves = scratch.with_storage(|| optional_carrier(&topology.edge_curves))?;
+    let coedge_pcurves = scratch.with_storage(|| optional_carrier(&topology.coedge_pcurves))?;
+    let vertex_points = scratch.with_storage(|| carrier(&topology.vertex_points))?;
     let mut closures = Vec::new();
     for &body in &topology.bodies {
         let mut closure = HashSet::new();
@@ -8273,16 +8282,22 @@ fn historical_body_closures(
                 decode
                     .insert_hash_set(&mut closure, shell, "collect F3D historical body closure")
                     .map(|_| ())?;
-                let mut shell_edges = decode.collect_hash_set(
-                    history_some!(shell_wire_edges.get(&shell)).iter().copied(),
-                    "copy F3D historical shell edges",
-                )?;
-                let mut shell_vertices = decode.collect_hash_set(
-                    history_some!(shell_free_vertices.get(&shell))
-                        .iter()
-                        .copied(),
-                    "copy F3D historical shell vertices",
-                )?;
+                let wire_edges = *history_some!(shell_wire_edges.get(&shell));
+                let free_vertices = *history_some!(shell_free_vertices.get(&shell));
+                let mut shell_scratch =
+                    decode.reserve_scoped(0, "collect F3D historical shell closure")?;
+                let mut shell_edges = shell_scratch.with_storage(|| {
+                    decode.collect_hash_set(
+                        wire_edges.iter().copied(),
+                        "copy F3D historical shell edges",
+                    )
+                })?;
+                let mut shell_vertices = shell_scratch.with_storage(|| {
+                    decode.collect_hash_set(
+                        free_vertices.iter().copied(),
+                        "copy F3D historical shell vertices",
+                    )
+                })?;
                 for &face in *history_some!(shell_faces.get(&shell)) {
                     decode
                         .insert_hash_set(&mut closure, face, "collect F3D historical body closure")
@@ -8312,11 +8327,13 @@ fn historical_body_closures(
                                 .map(|_| ())?;
                             let coedge_topology = history_some!(coedges.get(&coedge));
 
-                            decode.insert_hash_set(
-                                &mut shell_edges,
-                                coedge_topology.edge,
-                                "collect F3D historical shell edges",
-                            )?;
+                            shell_scratch.with_storage(|| {
+                                decode.insert_hash_set(
+                                    &mut shell_edges,
+                                    coedge_topology.edge,
+                                    "collect F3D historical shell edges",
+                                )
+                            })?;
                             if let Some(pcurve) = coedge_pcurves.get(&coedge).copied().flatten() {
                                 decode
                                     .insert_hash_set(
@@ -8335,11 +8352,13 @@ fn historical_body_closures(
                         .map(|_| ())?;
                     let edge_topology = history_some!(edges.get(&edge));
                     for vertex in [edge_topology.start_vertex, edge_topology.end_vertex] {
-                        decode.insert_hash_set(
-                            &mut shell_vertices,
-                            vertex,
-                            "collect F3D historical shell vertices",
-                        )?;
+                        shell_scratch.with_storage(|| {
+                            decode.insert_hash_set(
+                                &mut shell_vertices,
+                                vertex,
+                                "collect F3D historical shell vertices",
+                            )
+                        })?;
                     }
                     if let Some(curve) = edge_curves.get(&edge).copied().flatten() {
                         decode
