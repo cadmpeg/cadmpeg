@@ -484,20 +484,9 @@ impl<'a> Cursor<'a> {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
         })?;
         if units > 1_048_576 {
-            if self
-                .source
-                .counted(cadmpeg_core::decode::u64_from_index(units), 2)
-                .is_none()
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "Inventor PmDc {field} UTF-16 payload is truncated"
-                )));
-            }
-            return Err(ctx.refuse_codec_limit(
-                "Inventor PmDc UTF-16 code units",
-                1_048_576,
-                cadmpeg_core::decode::u64_from_index(units),
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "Inventor PmDc {field} UTF-16 length {units} exceeds 1048576"
+            )));
         }
         crate::reader::utf16_text(
             ctx,
@@ -536,14 +525,12 @@ pub(crate) fn content_header(cursor: &mut Cursor<'_>) -> Result<PmDcContentHeade
 }
 
 pub(crate) fn reference_list(
-    ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
     marker: u16,
     field: &str,
 ) -> Result<PmDcReferenceList, CodecError> {
-    let (count, metadata) =
-        list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
-    let mut references = ctx.vector_storage(count, "admit Inventor PmDc references")?;
+    let (count, metadata) = list_preamble(cursor, marker, field)?;
+    let mut references = Vec::new();
     for _ in 0..count {
         references.push(cursor.reference("reference-list entry")?);
     }
@@ -553,11 +540,9 @@ pub(crate) fn reference_list(
 }
 
 fn list_preamble(
-    ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
     marker: u16,
     field: &str,
-    admission: &'static str,
 ) -> Result<(usize, Option<PmDcListMetadata>), CodecError> {
     let actual = [cursor.u16("list marker 0")?, cursor.u16("list marker 1")?];
     if actual != [marker, 0x3000] {
@@ -586,19 +571,16 @@ fn list_preamble(
         .ok_or_else(|| {
             CodecError::malformed("Inventor PmDc list count exceeds remaining payload")
         })?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), admission)?;
     Ok((count, metadata))
 }
 
 pub(crate) fn u32_list(
-    ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
     marker: u16,
     field: &str,
 ) -> Result<PmDcU32List, CodecError> {
-    let (count, metadata) =
-        list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
-    let mut values = ctx.vector_storage(count, "admit Inventor PmDc integers")?;
+    let (count, metadata) = list_preamble(cursor, marker, field)?;
+    let mut values = Vec::new();
     for _ in 0..count {
         values.push(cursor.u32("integer-list value")?);
     }
@@ -793,11 +775,11 @@ mod tests {
             bytes.extend_from_slice(if marker == 8 { &[0; 4] } else { &[0; 8] });
             crate::test_support::test_fixtures::parse(&bytes, |ctx, root| {
                 assert!(matches!(
-                    reference_list(ctx, &mut Cursor::new(root), marker, "test"),
+                    reference_list(&mut Cursor::new(root), marker, "test"),
                     Err(CodecError::Malformed(_))
                 ));
                 assert!(matches!(
-                    super::u32_list(ctx, &mut Cursor::new(root), marker, "test"),
+                    super::u32_list(&mut Cursor::new(root), marker, "test"),
                     Err(CodecError::Malformed(_))
                 ));
             });
