@@ -25,7 +25,7 @@ pub fn has_acis_magic(bytes: &[u8]) -> bool {
 }
 
 /// Parse the shared kernel metadata from a 32-bit ACIS binary header.
-pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
+pub fn parse(_ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeader>, CodecError> {
     if !has_acis_magic(bytes) {
         return Ok(None);
     }
@@ -43,7 +43,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeade
     let HeaderRegion {
         strings: [family, version, date],
         doubles: [scale, linear, angular],
-    } = read_string_region(ctx, bytes, acis_bf4::LEN)?;
+    } = read_string_region(bytes, acis_bf4::LEN);
     header.product_family = family;
     header.product_version = version;
     header.save_date = date;
@@ -77,11 +77,8 @@ pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> O
 
 /// Exact boundary between solved records and a legacy `delta_state` history
 /// partition.
-pub fn solved_record_limit(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<Option<usize>, CodecError> {
-    let Some((start, width)) = (|| {
+pub fn solved_record_limit(bytes: &[u8]) -> Option<usize> {
+    let (start, width) = (|| {
         if !has_acis_magic(bytes) {
             return None;
         }
@@ -90,15 +87,13 @@ pub fn solved_record_limit(
             return None;
         }
         Some((record_stream_start(bytes)?, RefWidth::Four))
-    })() else {
-        return Ok(None);
-    };
-    crate::sab::scan_history_boundary(ctx, bytes, start, width, None)
+    })()?;
+    crate::sab::scan_history_boundary(bytes, start, width, None)
 }
 
 /// Exact solved-record boundary, using an already-parsed ACIS header.
 pub fn solved_record_limit_with_header(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     bytes: &[u8],
     header: &BinaryHeader,
 ) -> Result<Option<usize>, CodecError> {
@@ -108,7 +103,12 @@ pub fn solved_record_limit_with_header(
     let Some(start) = record_stream_start_with_header(bytes, header) else {
         return Ok(None);
     };
-    crate::sab::scan_history_boundary(ctx, bytes, start, header.width, None)
+    Ok(crate::sab::scan_history_boundary(
+        bytes,
+        start,
+        header.width,
+        None,
+    ))
 }
 
 #[cfg(test)]
@@ -116,26 +116,12 @@ mod tests {
     use super::{parse, record_stream_start, solved_record_limit, MAGIC};
 
     #[test]
-    fn acis_product_string_refuses_retained_limit_before_copy() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
+    fn acis_header_reads_the_product_string() {
         let mut bytes = MAGIC.to_vec();
         bytes.resize(crate::layout::acisheader_binaryfile4::LEN, 0);
         bytes.extend_from_slice(&[7, 4]);
         bytes.extend_from_slice(b"ACIS");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
-        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        assert!(matches!(
-            parse(&limited, &bytes),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain kernel header product string"
-        ));
-        let (service, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+        let service = cadmpeg_test_support::service_decode_context();
         assert_eq!(
             parse(&service, &bytes)
                 .unwrap()
@@ -178,10 +164,6 @@ mod tests {
         assert_eq!(header.metadata.entity_count, Some(2));
         assert_eq!(header.metadata.flags, Some(13));
         assert_eq!(record_stream_start(&bytes), Some(record_start));
-        assert_eq!(
-            solved_record_limit(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("service policy admits history scan"),
-            Some(history_start)
-        );
+        assert_eq!(solved_record_limit(&bytes), Some(history_start));
     }
 }

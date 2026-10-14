@@ -233,7 +233,7 @@ pub(crate) fn classify_layers(
             crate::container::KernelFraming::as_header_ref,
         );
         add_layer(cadmpeg_asm::dialect::classify_layer(
-            ctx, header, &brep.name, instance,
+            header, &brep.name, instance,
         )?)?;
     }
     for name in crate::container::text_brep_names(scan) {
@@ -248,10 +248,9 @@ pub(crate) fn classify_layers(
                         cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
                     }
                 };
-                cadmpeg_asm::dialect::classify_layer(ctx, reference, name, instance)?
+                cadmpeg_asm::dialect::classify_layer(reference, name, instance)?
             }
             _ => cadmpeg_asm::dialect::classify_layer(
-                ctx,
                 cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
                 name,
                 instance,

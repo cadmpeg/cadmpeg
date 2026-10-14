@@ -11,7 +11,6 @@
 )]
 
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_test_support::service_decode_context;
 
 use cadmpeg_test_support::edit;
 
@@ -1544,9 +1543,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let limit = asm_header::solved_record_limit(&service_decode_context(), &bytes)
-        .expect("history scan")
-        .unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
@@ -1559,8 +1556,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let decoded = procedural_surface_resolving_refs(
         &ctx,
         &record.tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, std::slice::from_ref(record))
-            .unwrap(),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
     )
     .transpose()
     .expect("resource allocation did not fail")
@@ -1591,7 +1587,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     assert!(procedural_surface_resolving_refs(
         &ctx,
         &nested_records[0].tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, &nested_records).unwrap(),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
     )
     .transpose()
     .expect("resource allocation did not fail")

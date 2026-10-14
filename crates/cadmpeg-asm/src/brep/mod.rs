@@ -210,14 +210,10 @@ impl<'de> Deserialize<'de> for AsmBrep {
 
 impl AsmBrep {
     /// Append a disjoint, already-qualified ASM graph.
-    pub fn append(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut other: Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    pub fn append(&mut self, mut other: Self) {
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
-                $(ctx.append_vec(&mut self.$field, &mut other.$field, concat!("ASM append ", stringify!($field)))?;)+
+                $((self.$field).append(&mut other.$field);)+
             };
         }
         append_vecs!(
@@ -251,8 +247,7 @@ impl AsmBrep {
             unknowns,
             annotation_records,
         );
-        self.stats.merge(ctx, other.stats)?;
-        Ok(())
+        self.stats.merge(other.stats);
     }
 }
 
@@ -271,7 +266,7 @@ pub fn collect_owned_ids(
                 .map(|(_, value)| value)
                 .and_then(value_string)
             {
-                ctx.insert_string_set(out, id, "ASM owned ids")?;
+                out.insert(id.to_owned());
             }
             for (key, value) in fields {
                 collect_owned_ids(ctx, key, out)?;
@@ -325,30 +320,18 @@ pub fn collect_entity_adjacency(
             collect_references(ctx, item, owned, &mut references)?;
             references.remove(id);
             for reference in references {
-                insert_adjacency(ctx, out, id, &reference)?;
-                insert_adjacency(ctx, out, &reference, id)?;
+                insert_adjacency(out, id, &reference);
+                insert_adjacency(out, &reference, id);
             }
         }
     }
     Ok(())
 }
 
-fn insert_adjacency(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    out: &mut HashMap<String, HashSet<String>>,
-    owner: &str,
-    reference: &str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    if !out.contains_key(owner) {
-        let key = ctx.copy_retained_text(owner, "ASM adjacency owner")?;
-
-        ctx.reserve_map(out, 1, "ASM adjacency owners")?;
-        out.insert(key, HashSet::new());
-    }
-    if let Some(references) = out.get_mut(owner) {
-        ctx.insert_string_set(references, reference, "ASM adjacency references")?;
-    }
-    Ok(())
+fn insert_adjacency(out: &mut HashMap<String, HashSet<String>>, owner: &str, reference: &str) {
+    out.entry(owner.to_owned())
+        .or_default()
+        .insert(reference.to_owned());
 }
 
 /// The `id` field of a serialized entity map.
@@ -373,7 +356,7 @@ pub fn collect_references(
     let _depth = ctx.enter_nested("collect ASM references")?;
     match value {
         Value::String(id) if owned.contains(id) => {
-            ctx.insert_string_set(out, id, "ASM references")?;
+            out.insert(id.to_owned());
         }
         Value::Seq(items) => {
             for item in items {
@@ -420,7 +403,7 @@ pub fn remap_owned_ids(
     match value {
         Value::String(id) => {
             if let Some(replacement) = replacements.get(id) {
-                *id = ctx.copy_retained_text(replacement, "ASM remapped id")?;
+                *id = replacement.to_owned();
             }
         }
         Value::Seq(items) => {
@@ -433,7 +416,7 @@ pub fn remap_owned_ids(
             for (mut key, mut item) in entries {
                 remap_owned_ids(ctx, &mut key, replacements)?;
                 remap_owned_ids(ctx, &mut item, replacements)?;
-                ctx.insert_btree_map(fields, key, item, "ASM remapped fields")?;
+                fields.insert(key, item);
             }
         }
         Value::Option(Some(value)) | Value::Newtype(value) => {
@@ -444,18 +427,8 @@ pub fn remap_owned_ids(
     Ok(())
 }
 
-fn count_kind(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    counts: &mut std::collections::BTreeMap<String, usize>,
-    kind: &str,
-) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(count) = counts.get_mut(kind) {
-        *count += 1;
-        return Ok(());
-    }
-    let key = ctx.copy_retained_text(kind, "ASM loss kind")?;
-    ctx.insert_btree_map(counts, key, 1, "ASM loss kind")?;
-    Ok(())
+fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>, kind: &str) {
+    *counts.entry(kind.to_owned()).or_insert(0) += 1;
 }
 
 // ---- geometry carrier decode -------------------------------------------------
@@ -579,67 +552,18 @@ pub fn decode_with_header(
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
-    let record_slots = cadmpeg_core::decode::u64_from_index(records.len());
-    let record_slot_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(i64, &Record)>());
-    let record_index_bytes = record_slots
-        .checked_mul(record_slot_bytes)
-        .ok_or_else(|| ctx.refuse_codec_limit("ASM record index bytes", u64::MAX, u64::MAX))?;
-    let _record_index_reservation = ctx.reserve_scoped(record_index_bytes, "index ASM records")?;
     let mut by_index: HashMap<i64, &Record> = HashMap::new();
 
-    ctx.reserve_map(&mut by_index, records.len(), "index ASM records")?;
     for record in records {
         by_index.insert(
             i64::try_from(record.index).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "ASM record index",
-                    9_223_372_036_854_775_807,
-                    cadmpeg_core::decode::u64_from_index(record.index),
-                )
+                cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
             })?,
             record,
         );
     }
     // Subtype-definition positions, built once for every carrier resolution.
-    let token_count = records.iter().try_fold(0_u64, |count, record| {
-        let record_tokens = cadmpeg_core::decode::u64_from_index(record.tokens.len());
-        count
-            .checked_add(record_tokens)
-            .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))
-    })?;
-    ctx.charge_work(token_count, "scan ASM subtype definitions")?;
-    let definition_count = records
-        .iter()
-        .flat_map(|record| {
-            record
-                .tokens
-                .iter()
-                .enumerate()
-                .filter_map(move |(position, token)| {
-                    if !matches!(token, crate::sab::Token::SubtypeOpen) {
-                        return None;
-                    }
-                    match record.tokens.get(position + 1) {
-                        Some(
-                            crate::sab::Token::Ident(name) | crate::sab::Token::SubIdent(name),
-                        ) if name != "ref" => Some(()),
-                        _ => None,
-                    }
-                })
-        })
-        .count();
-    let definition_slots = cadmpeg_core::decode::u64_from_index(definition_count);
-    let definition_slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-        std::sync::Arc<[crate::sab::Token]>,
-        usize,
-    )>());
-    let definition_bytes = definition_slots
-        .checked_mul(definition_slot_bytes)
-        .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype index bytes", u64::MAX, u64::MAX))?;
-    let _subtype_index_reservation =
-        ctx.reserve_scoped(definition_bytes, "index ASM subtype definitions")?;
-    let token_table = nurbs::toks::SubtypeTable::from_records(ctx, records)?
+    let token_table = nurbs::toks::SubtypeTable::from_records(records)
         .with_save_format_version(header.and_then(|header| header.save_format_version));
     nurbs::toks::admit_subtype_references(ctx, records, &token_table)?;
     let save_format_major = header.and_then(crate::kernel_header::KernelHeader::save_format_major);
@@ -648,7 +572,7 @@ pub fn decode_with_header(
         .and_then(|count| i64::try_from(count).ok());
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
-    let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(ctx, records)?;
+    let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records)?;
     let mut reach = Reachable::default();
 
     let topology_context = TopologyContext {
@@ -675,8 +599,7 @@ pub fn decode_with_header(
         &mut reach,
     )?;
 
-    let (reversed_curve_refs, forward_curve_refs) =
-        classify_edge_curve_senses(ctx, records, &reach)?;
+    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach)?;
 
     emit_carrier_records(
         ctx,
@@ -691,10 +614,9 @@ pub fn decode_with_header(
         format,
     )?;
     emit_pcurves(ctx, &mut out, records, &mut carriers, &reach, format)?;
-    emit_points(ctx, &mut out, records, &reach, format)?;
-    emit_vertices(ctx, &mut out, records, &by_index, &reach, format)?;
+    emit_points(&mut out, records, &reach, format)?;
+    emit_vertices(&mut out, records, &by_index, &reach, format)?;
     emit_edges(
-        ctx,
         &mut out,
         records,
         &by_index,
@@ -719,7 +641,6 @@ pub fn decode_with_header(
     )?;
     emit_loops(ctx, &mut out, records, &by_index, &reach, format)?;
     emit_faces(
-        ctx,
         &mut out,
         records,
         &by_index,
@@ -744,10 +665,10 @@ pub fn decode_with_header(
     let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
-        count_other_records(ctx, &mut out, records, &reach, &emitted_attributes)?;
-        emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
+        count_other_records(&mut out, records, &reach, &emitted_attributes)?;
+        emit_annotation_records(&mut out, records, &by_index, &carriers, stream, format)?;
 
-        classify_body_kinds(ctx, &mut out)?;
+        classify_body_kinds(&mut out);
         clamp_edge_ranges_to_carrier_domains(ctx, &mut out)?;
     }
 
