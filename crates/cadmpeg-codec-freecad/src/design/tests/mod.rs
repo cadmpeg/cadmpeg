@@ -1792,7 +1792,6 @@ fn design_parameter_dependency_stages_refuse_at_collection_limits() {
         "fcstd parameter dependencies",
         "fcstd parameter dependency members",
         "validate distinct decoded members",
-        "fcstd ordinal owner groups",
         "fcstd owner ordinals",
         "fcstd known parameter identities",
         "fcstd emitted parameter identities",
@@ -1808,6 +1807,25 @@ fn design_parameter_dependency_stages_refuse_at_collection_limits() {
             )
         });
     }
+}
+
+#[test]
+fn design_parameter_ordinal_owner_groups_charge_collection_items() {
+    let (object, mut parameters) = parameter_dependency_fixture(false);
+    crate::test_support::with_service_context(&[], |ctx| {
+        cadmpeg_test_support::refusal::assert_charged(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "fcstd ordinal owner groups",
+            || {
+                super::bind_parameter_dependencies(
+                    ctx,
+                    &mut parameters,
+                    std::slice::from_ref(&object),
+                    &std::collections::BTreeSet::default(),
+                )
+            },
+        )
+    });
 }
 
 #[test]

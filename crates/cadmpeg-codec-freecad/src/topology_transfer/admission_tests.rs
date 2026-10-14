@@ -485,8 +485,11 @@ fn tessellation_body_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn topology_body_roots_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD topology body roots");
+fn topology_body_roots_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD topology body roots",
+    );
 }
 
 #[test]
@@ -553,8 +556,11 @@ fn indexed_polygon_parameters_refuse_at_collection_limit() {
 }
 
 #[test]
-fn region_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD region shape copy");
+fn region_shape_copy_charges_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD region shape copy",
+    );
 }
 
 #[test]
