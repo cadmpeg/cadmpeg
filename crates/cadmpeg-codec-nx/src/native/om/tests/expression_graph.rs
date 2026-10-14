@@ -36,10 +36,9 @@ fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
         expression("p6", "p4_ + 2", None),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[1]
@@ -78,10 +77,9 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
         expression("p9", "p8 + p7", None),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[2]
@@ -119,10 +117,9 @@ fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
         expression("p3", "-p1^2", None),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[1]
@@ -185,10 +182,9 @@ fn nx_expression_graph_scopes_names_to_their_expression_table() {
         ),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[1]
@@ -258,10 +254,9 @@ fn nx_expression_graph_rejects_every_duplicate_name_in_one_table() {
         ),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[0]
@@ -347,10 +342,9 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
         ),
     ];
 
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::om::evaluate_expression_graphs(ctx, &mut expressions)
-    })
-    .unwrap();
+    {
+        crate::native::om::evaluate_expression_graphs(&mut expressions);
+    };
 
     assert_eq!(
         expressions[0]
@@ -855,17 +849,13 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
         object_id: 20,
         source_offset: offset,
     };
-    let uses = crate::test_support::with_decode_context(|ctx| {
-        feature_parameter_uses(
-            ctx,
-            &[
-                binding("late", "nx:feature-history:operation-label#1-2", 1, 30),
-                binding("early", "nx:feature-history:operation-label#1-2", 0, 20),
-                binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
-            ],
-        )
-    })
-    .expect("admitted parameter uses");
+    let uses = {
+        feature_parameter_uses(&[
+            binding("late", "nx:feature-history:operation-label#1-2", 1, 30),
+            binding("early", "nx:feature-history:operation-label#1-2", 0, 20),
+            binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
+        ])
+    };
     assert_eq!(uses.len(), 2);
     assert_eq!(
         uses[0]
@@ -1084,15 +1074,13 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
             .unwrap(),
         source_offset: 900,
     };
-    let bindings = crate::test_support::with_decode_context(|ctx| {
+    let bindings = {
         crate::native::features::feature_parameter_bindings(
-            ctx,
             std::slice::from_ref(&input),
             &references,
             std::slice::from_ref(&expression),
         )
-    })
-    .expect("admitted parameter bindings");
+    };
     assert_eq!(bindings.len(), 1);
     assert_eq!(
         bindings[0].id,
@@ -1112,15 +1100,13 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
 
     let mut duplicate = expression.clone();
     duplicate.id = "nx:om-entry-9:expression#30".to_string();
-    let ambiguous = crate::test_support::with_decode_context(|ctx| {
+    let ambiguous = {
         crate::native::features::feature_parameter_bindings(
-            ctx,
             &[input],
             &references,
             &[expression, duplicate],
         )
-    })
-    .expect("ambiguous parameter binding");
+    };
     assert_eq!(ambiguous.len(), 1);
     assert_eq!(ambiguous[0].expression, None);
 }

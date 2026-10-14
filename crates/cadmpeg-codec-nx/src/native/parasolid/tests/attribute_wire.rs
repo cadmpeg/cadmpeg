@@ -136,7 +136,16 @@ fn attribute_class_use_retained_limit_refuses_borrowed_serialization() {
         attribute_definition: "definition".into(),
         inflated_offset: 8,
     };
-    let needed = "a".len() + 4 * std::mem::size_of::<cadmpeg_ir::NativeRecord>() + "id".len();
+    // The stored record text is the arena's only retained charge.
+    let mut stored = NativeNamespace::default();
+    crate::test_support::with_decode_context(|service| {
+        stored
+            .set_arena(service, "a", std::slice::from_ref(&record))
+            .unwrap();
+    });
+    let needed = serde_json::to_string(&stored.arenas()["a"][0])
+        .unwrap()
+        .len();
 
     crate::test_support::with_decode_context_over(
         &[],

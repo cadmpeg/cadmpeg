@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::parasolid::Stream;
-use cadmpeg_core::CodecError;
 
 use crate::deltas::inline_schema_fields::InlineSchemaFields;
 
@@ -11,72 +10,6 @@ fn deltas_type_45(xmt: u16) -> Vec<u8> {
     bytes.extend_from_slice(&1.25f64.to_be_bytes());
     bytes.extend_from_slice(&2.5f64.to_be_bytes());
     bytes
-}
-
-fn deltas_event_limit_error(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> CodecError {
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: deltas_type_45(10),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    crate::test_support::with_decode_context_over(
-        &streams[0].inflated,
-        |_| {},
-        |scan_ctx| {
-            let census = crate::deltas::census::walk(scan_ctx, &streams[0].inflated).unwrap();
-
-            crate::test_support::with_decode_context_over(
-                &[],
-                |policy| {
-                    configure(policy);
-                },
-                |ctx| {
-                    crate::native::parasolid::parasolid_deltas_events_with_censuses(
-                        ctx,
-                        &streams,
-                        vec![Some(census)],
-                    )
-                    .err()
-                    .expect("deltas event limit refusal")
-                },
-            )
-        },
-    )
-}
-
-#[test]
-fn deltas_event_route_refuses_collection_limit() {
-    let error = deltas_event_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-}
-
-#[test]
-fn deltas_event_route_refuses_retained_limit() {
-    let error = deltas_event_limit_error(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-}
-
-#[test]
-fn deltas_event_route_refuses_scoped_limit() {
-    let error = deltas_event_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-}
-
-#[test]
-fn deltas_event_route_refuses_work_limit() {
-    let error = deltas_event_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -109,10 +42,7 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
         },
     }];
 
-    let census = crate::test_support::with_decode_context(|ctx| {
-        crate::deltas::census::walk(ctx, &streams[0].inflated)
-    })
-    .unwrap();
+    let census = crate::deltas::census::walk(&streams[0].inflated).unwrap();
     let events = crate::test_support::with_decode_context(|ctx| {
         crate::native::parasolid::parasolid_deltas_events_with_censuses(
             ctx,

@@ -36,28 +36,6 @@ fn reversal_limit_error(
 }
 
 #[test]
-fn pcurve_reversal_route_refuses_collection_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_collection_items = 0;
-    };
-    assert!(matches!(
-        reversal_limit_error(adjust_policy),
-        cadmpeg_core::CodecError::ResourceLimit(_)
-    ));
-}
-
-#[test]
-fn pcurve_reversal_route_refuses_retained_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 0;
-    };
-    assert!(matches!(
-        reversal_limit_error(adjust_policy),
-        cadmpeg_core::CodecError::ResourceLimit(_)
-    ));
-}
-
-#[test]
 fn pcurve_reversal_route_refuses_nesting_limit() {
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
         policy.limits.max_recursion_depth = 0;

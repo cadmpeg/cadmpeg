@@ -2,8 +2,6 @@
 //! Exact forty-byte datum-plane descriptors.
 
 use super::compact::CompactIndexAtom;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PlaneDescriptor {
@@ -49,26 +47,6 @@ impl PlaneDescriptor {
             schema,
             label: label.iter().copied().map(char::from).collect(),
         })
-    }
-
-    pub(crate) fn read_charged(
-        ctx: &DecodeContext<'_>,
-        bytes: &[u8],
-    ) -> Result<Option<Self>, CodecError> {
-        let Some((identity, schema, label)) = Self::parse(bytes) else {
-            return Ok(None);
-        };
-        let identity = ctx.copy_retained(identity, "NX datum plane descriptor identity")?;
-        let label = ctx.copy_retained(label, "NX datum plane descriptor label")?;
-        let (Ok(identity), Ok(label)) = (String::from_utf8(identity), String::from_utf8(label))
-        else {
-            return Ok(None);
-        };
-        Ok(Some(Self {
-            identity,
-            schema,
-            label,
-        }))
     }
 
     pub(crate) fn from_wire(

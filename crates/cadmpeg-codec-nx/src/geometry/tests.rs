@@ -14,66 +14,18 @@ use crate::test_support::test_streams::offset_surface_topology_partition_stream;
 use crate::test_support::test_streams::topology_partition_stream;
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 fn analytic_points(stream: &[u8]) -> Vec<cadmpeg_ir::features::FinitePoint3> {
-    crate::test_support::with_decode_context(|ctx| super::points(ctx, stream).unwrap())
+    super::points(stream)
 }
 
 fn analytic_surfaces(stream: &[u8]) -> Vec<SurfaceGeometry> {
-    crate::test_support::with_decode_context(|ctx| super::surfaces(ctx, stream).unwrap())
+    super::surfaces(stream)
 }
 
 fn analytic_curves(stream: &[u8]) -> Vec<cadmpeg_ir::geometry::CurveGeometry> {
-    crate::test_support::with_decode_context(|ctx| super::curves(ctx, stream).unwrap())
-}
-
-fn single_analytic_point() -> Vec<u8> {
-    let mut stream = record(29, 40);
-    put_ref(&mut stream, 2, 11);
-    put_vec3(&mut stream, 16, [0.0, 0.0, 0.0]);
-    stream
-}
-
-#[test]
-fn analytic_point_scanner_refuses_output_slot_at_collection_limit() {
-    let stream = single_analytic_point();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            assert!(matches!(
-                super::points(ctx, &stream),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx analytic records"
-            ));
-        },
-    );
-}
-
-#[test]
-fn analytic_point_scanner_refuses_scan_work_at_caller_limit() {
-    let stream = single_analytic_point();
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            assert!(matches!(
-                super::points(ctx, &stream),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "scan NX analytic records"
-            ));
-        },
-    );
+    super::curves(stream)
 }
 
 #[test]
@@ -84,32 +36,17 @@ fn nx_offset_surface_accepts_unbounded_representable_distance() {
         .position(|window| window == [0, 60, 0, 12])
         .expect("offset record");
     put_f64(&mut stream, offset + 23, 1_001.0);
-    let surfaces = crate::test_support::with_decode_context(|ctx| {
-        crate::topology::offset_surfaces(ctx, &stream)
-    })
-    .unwrap();
+    let surfaces = crate::topology::offset_surfaces(&stream);
     let [surface] = surfaces.as_slice() else {
         panic!("offset surface")
     };
     assert_eq!(surface.state.distance().get(), 1_001_000.0);
 
     put_f64(&mut stream, offset + 23, f64::INFINITY);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(
-            ctx, &stream
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::topology::offset_surfaces(&stream).is_empty());
 
     put_f64(&mut stream, offset + 23, f64::MAX);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::offset_surfaces(
-            ctx, &stream
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::topology::offset_surfaces(&stream).is_empty());
 }
 
 #[test]
@@ -121,9 +58,7 @@ fn offset_surface_envelope_does_not_consume_the_following_record() {
     put_vec3(&mut point, 16, [0.001, 0.002, 0.003]);
     stream.extend(point);
 
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
             .get(NodeKind::OffsetSurface, 12)
@@ -142,32 +77,14 @@ fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
         .expect("blend record");
     put_f64(&mut stream, blend + 26, 0.0);
     put_f64(&mut stream, blend + 34, 0.0);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(
-            ctx, &stream
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::topology::blend_surfaces(&stream).is_empty());
 
     put_f64(&mut stream, blend + 26, 0.5e-9);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(
-            ctx, &stream
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::topology::blend_surfaces(&stream).is_empty());
 
     put_f64(&mut stream, blend + 26, f64::MAX);
     put_f64(&mut stream, blend + 34, f64::MAX);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::blend_surfaces(
-            ctx, &stream
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::topology::blend_surfaces(&stream).is_empty());
 }
 
 #[test]
@@ -178,22 +95,10 @@ fn trimmed_curves_reject_nonfinite_endpoint_witnesses() {
         .position(|window| window == [0, 133, 0, 12])
         .expect("trimmed curve");
     put_f64(&mut stream, trim + 21, f64::NAN);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::trimmed_curves(
-            ctx, &stream
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::topology::trimmed_curves(&stream).is_empty());
 
     put_f64(&mut stream, trim + 21, f64::MAX);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::trimmed_curves(
-            ctx, &stream
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::topology::trimmed_curves(&stream).is_empty());
 }
 
 #[test]
@@ -303,9 +208,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     put_vec3(&mut stream, point + 16, [1_001.0, f64::from_bits(1), 0.0]);
 
     assert_eq!(analytic_points(&stream).len(), 1);
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
+    let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
             .get(NodeKind::Point, 11)
@@ -319,12 +222,9 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     );
 
     put_vec3(&mut stream, point + 16, [f64::INFINITY, 0.0, 0.0]);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap()
-            .get(NodeKind::Point, 11)
-            .is_none()
-    );
+    assert!(crate::topology::Graph::parse(&stream)
+        .get(NodeKind::Point, 11)
+        .is_none());
 }
 
 #[test]

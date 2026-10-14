@@ -28,7 +28,6 @@ impl<S: crate::immutable_text::ImmutableText> PrintableString<S> {
 }
 
 impl PrintableString<&str> {
-    #[cfg(test)]
     pub(crate) fn into_owned(self) -> PrintableString<String> {
         PrintableString(self.0.to_owned())
     }

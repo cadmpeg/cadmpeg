@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
-    charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
+    format_feature_history_id, offset_data_block_bytes, unique_offset_data_block_id,
     visit_feature_history_operation_records,
 };
 use crate::container::Container;
@@ -14,7 +14,6 @@ use crate::om::reference_index::PayloadIndexToken;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
 /// Exact counted nullable reference field carried by a `DELETE` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -167,61 +166,42 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
 /// Decode exact `DELETE` payload reference fields and independently resolve
 /// their non-null slots without assigning a target object family.
 pub(in crate::native) fn feature_delete_reference_fields(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections()?;
     let mut fields = Vec::new();
-    let mut failure = None;
     visit_feature_history_operation_records(
-        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let projected =
-                (|| -> Result<Option<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
-                    let Some(field) = DeleteReferences::read(record.payload_view()) else {
-                        return Ok(None);
-                    };
-                    let Some(references) = field.resolve(entry_offset, |token| {
-                        charged_unique_offset_data_block(ctx, &indexed, token.value())
-                    })?
-                    else {
-                        return Ok(None);
-                    };
-                    let id = format_feature_history_id(
-                        ctx,
-                        "delete-reference-field",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    let operation_label = format_feature_history_id(
-                        ctx,
-                        "operation-label",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    ctx.reserve_vec(&mut fields, 1, "NX DELETE reference fields")?;
-                    Ok(Some(FeatureDeleteReferenceField {
-                        id,
-                        operation_label,
-                        references,
-                    }))
-                })();
-            match projected {
-                Ok(Some(field)) => fields.push(field),
-                Ok(None) => {}
-                Err(error) => failure = Some(error),
+            let projected = (|| -> Option<FeatureDeleteReferenceField> {
+                let field = DeleteReferences::read(record.payload_view())?;
+                let references = field.resolve(entry_offset, |token| {
+                    unique_offset_data_block_id(&indexed, token.value())
+                })?;
+                let id = format_feature_history_id(
+                    "delete-reference-field",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                );
+                let operation_label = format_feature_history_id(
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                );
+
+                Some(FeatureDeleteReferenceField {
+                    id,
+                    operation_label,
+                    references,
+                })
+            })();
+            if let Some(field) = projected {
+                fields.push(field);
             }
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(fields)
 }
 
@@ -232,13 +212,13 @@ pub(in crate::native) fn feature_delete_construction_payloads(
     container: &Container,
     fields: &[FeatureDeleteReferenceField],
 ) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
+    let blocks = offset_data_block_bytes(container)?;
     let mut output = Vec::new();
     for field in fields {
         let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
             continue;
         };
-        ctx.reserve_vec(&mut output, 1, "NX DELETE construction payloads")?;
+
         output.push(payload);
     }
     Ok(output)
@@ -258,32 +238,12 @@ fn delete_construction_payload_from_field(
     }) {
         return Ok(None);
     }
-
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(slots.len()),
-        "NX DELETE source block references",
-    )?;
-    let mut source_reservation = ctx.reserve_scoped(0, "NX DELETE source block references")?;
     let mut data_blocks = Vec::new();
-    source_reservation.with_storage(|| {
-        ctx.reserve_capacity(
-            &mut data_blocks,
-            slots.len(),
-            "allocate NX DELETE source block references",
-        )
-    })?;
     for reference in slots {
         let Some((_, Some(block))) = reference else {
             return Ok(None);
         };
-        let mut id = String::new();
-        ctx.try_reserve_retained_text(
-            &mut id,
-            block.len(),
-            "allocate NX DELETE source block reference",
-        )?;
-        id.push_str(block);
-        data_blocks.push(id);
+        data_blocks.push(block.clone());
     }
     let Some(store) = data_blocks
         .first()
@@ -307,19 +267,10 @@ fn delete_construction_payload_from_field(
     else {
         return Ok(None);
     };
-    let prefix = "nx:feature-history:delete-construction-payload#";
-    let id_len = prefix
-        .len()
-        .checked_add(operation_key.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE construction identity", 0, 1))?;
-    let mut id = ctx.retained_string(id_len, "NX DELETE construction identity")?;
-    write!(&mut id, "{prefix}{operation_key}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX DELETE construction identity", 0, 1))?;
     Ok(Some(FeatureDeleteConstructionPayload {
-        id,
-        operation_label: ctx
-            .copy_retained_text(&field.operation_label, "NX DELETE construction operation")?,
-        reference_field: ctx.copy_retained_text(&field.id, "NX DELETE construction reference")?,
+        id: format!("nx:feature-history:delete-construction-payload#{operation_key}"),
+        operation_label: field.operation_label.clone(),
+        reference_field: field.id.clone(),
         content,
     }))
 }
@@ -327,7 +278,6 @@ fn delete_construction_payload_from_field(
 #[cfg(test)]
 mod tests {
     use super::{DeleteReferenceFieldWire, FeatureDeleteReferenceField};
-    use cadmpeg_core::CodecError;
     use std::collections::BTreeMap;
 
     fn delete_construction_fixture() -> (
@@ -345,53 +295,6 @@ mod tests {
             })
             .collect();
         (field, blocks)
-    }
-
-    fn delete_construction_limit_error(
-        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    ) -> CodecError {
-        let (field, blocks) = delete_construction_fixture();
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                configure(policy);
-            },
-            |ctx| {
-                super::delete_construction_payload_from_field(ctx, &field, &blocks)
-                    .expect_err("DELETE construction limit refusal")
-            },
-        )
-    }
-
-    #[test]
-    fn delete_construction_refuses_collection_limit() {
-        let error =
-            delete_construction_limit_error(|policy| policy.limits.max_collection_items = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
-    }
-
-    #[test]
-    fn delete_construction_refuses_scoped_limit() {
-        let error =
-            delete_construction_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-    }
-
-    #[test]
-    fn delete_construction_refuses_retained_limit() {
-        let error = delete_construction_limit_error(|policy| policy.limits.max_retained_bytes = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
-    }
-
-    #[test]
-    fn delete_construction_refuses_work_limit() {
-        let error = delete_construction_limit_error(|policy| policy.limits.max_work_units = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     #[test]

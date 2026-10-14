@@ -149,19 +149,8 @@ impl NxLossCode {
     }
 }
 
-pub(crate) fn charge_loss_code(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    code: NxLossCode,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = "nx"
-        .len()
-        .checked_add(code.code().len())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx loss code text",
-    )
-}
+/// No-op left for its caller in `native/attach.rs`; delete both together.
+pub(crate) fn charge_loss_code(_code: NxLossCode) {}
 
 #[cfg(test)]
 mod tests {

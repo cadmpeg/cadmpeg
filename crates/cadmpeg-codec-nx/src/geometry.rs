@@ -13,8 +13,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -46,47 +45,36 @@ enum AnalyticRecord {
 /// Decode validated point records in source order.
 ///
 /// Positions are returned in millimetres. Malformed candidates are skipped.
-pub(crate) fn points(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-) -> Result<Vec<FinitePoint3>, CodecError> {
-    analytic_records(ctx, stream, |record| match record {
+pub(crate) fn points(stream: &[u8]) -> Vec<cadmpeg_ir::features::FinitePoint3> {
+    analytic_records(stream, |record| match record {
         AnalyticRecord::Point(point) => Some(point),
         AnalyticRecord::Surface(_) | AnalyticRecord::Curve(_) => None,
     })
 }
 
 /// Decode validated analytic surface records in source order.
-pub(crate) fn surfaces(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-) -> Result<Vec<SurfaceGeometry>, CodecError> {
-    analytic_records(ctx, stream, |record| match record {
+pub(crate) fn surfaces(stream: &[u8]) -> Vec<cadmpeg_ir::geometry::SurfaceGeometry> {
+    analytic_records(stream, |record| match record {
         AnalyticRecord::Surface(surface) => Some(surface),
         AnalyticRecord::Point(_) | AnalyticRecord::Curve(_) => None,
     })
 }
 
 /// Decode validated analytic curve records in source order.
-pub(crate) fn curves(
-    ctx: &DecodeContext<'_>,
-    stream: &[u8],
-) -> Result<Vec<CurveGeometry>, CodecError> {
-    analytic_records(ctx, stream, |record| match record {
+pub(crate) fn curves(stream: &[u8]) -> Vec<cadmpeg_ir::geometry::CurveGeometry> {
+    analytic_records(stream, |record| match record {
         AnalyticRecord::Curve(curve) => Some(curve),
         AnalyticRecord::Point(_) | AnalyticRecord::Surface(_) => None,
     })
 }
 
 fn analytic_records<T>(
-    ctx: &DecodeContext<'_>,
     stream: &[u8],
     mut project: impl FnMut(AnalyticRecord) -> Option<T>,
-) -> Result<Vec<T>, CodecError> {
+) -> Vec<T> {
     let mut out = Vec::new();
     let mut p = 0usize;
     while p + 2 <= stream.len() {
-        ctx.charge_work(1, "scan NX analytic records")?;
         if stream[p] != 0x00 {
             p += 1;
             continue;
@@ -108,7 +96,6 @@ fn analytic_records<T>(
         }
         if let Some((record, end)) = select_analytic_candidate(stream, candidates) {
             if let Some(record) = project(record) {
-                ctx.reserve_vec(&mut out, 1, "nx analytic records")?;
                 out.push(record);
             }
             p = end;
@@ -121,7 +108,7 @@ fn analytic_records<T>(
             p += 1;
         }
     }
-    Ok(out)
+    out
 }
 
 fn is_analytic_kind(kind: NodeKind) -> bool {

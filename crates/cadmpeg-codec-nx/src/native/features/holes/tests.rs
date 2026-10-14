@@ -13,11 +13,11 @@ fn simple_hole_construction_groups(
     lanes: &[FeatureSimpleHoleRepeatedScalarLane],
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
 ) -> Vec<FeatureSimpleHoleConstructionGroup> {
-    crate::test_support::with_decode_context(|ctx| {
+    {
         crate::native::features::holes::feature_simple_hole_construction_groups(
-            ctx, labels, lanes, references,
+            labels, lanes, references,
         )
-    })
+    }
     .expect("simple hole construction groups")
 }
 
@@ -25,12 +25,7 @@ fn hole_package_group_uses(
     lanes: &[crate::native::features::holes::FeatureHolePackageConstructionGroupLane],
     groups: &[FeatureSimpleHoleConstructionGroup],
 ) -> Vec<crate::native::features::holes::FeatureHolePackageConstructionGroupUse> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_hole_package_construction_group_uses(
-            ctx, lanes, groups,
-        )
-    })
-    .expect("hole package group uses")
+    crate::native::features::holes::feature_hole_package_construction_group_uses(lanes, groups)
 }
 
 fn simple_hole_templates(
@@ -38,10 +33,7 @@ fn simple_hole_templates(
     records: &[FeatureOperationRecord],
     strings: &[crate::native::features::FeaturePayloadString],
 ) -> Vec<crate::native::features::holes::FeatureSimpleHoleTemplate> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_simple_hole_templates(ctx, labels, records, strings)
-    })
-    .expect("simple hole templates")
+    crate::native::features::holes::feature_simple_hole_templates(labels, records, strings)
 }
 
 fn threaded_hole_templates(
@@ -49,12 +41,7 @@ fn threaded_hole_templates(
     records: &[FeatureOperationRecord],
     strings: &[crate::native::features::FeaturePayloadString],
 ) -> Vec<crate::native::features::holes::FeatureThreadedHoleTemplate> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_threaded_hole_templates(
-            ctx, labels, records, strings,
-        )
-    })
-    .expect("threaded hole templates")
+    crate::native::features::holes::feature_threaded_hole_templates(labels, records, strings)
 }
 
 #[test]
@@ -79,11 +66,7 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
     let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
-    let frames = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::symbolic_thread_text_frames(ctx, record)
-    })
-    .unwrap()
-    .expect("two text frames");
+    let frames = crate::native::features::holes::symbolic_thread_text_frames(record).unwrap();
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].marker, crate::om::OperationTextMarker::Text);
     assert_eq!(frames[0].offset, 500);
@@ -100,11 +83,7 @@ fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
     let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
-    assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::symbolic_thread_text_frames(ctx, record)
-    })
-    .unwrap()
-    .is_none());
+    assert!(crate::native::features::holes::symbolic_thread_text_frames(record).is_none());
 }
 
 fn symbolic_thread_container() -> crate::container::Container<'static> {
@@ -115,57 +94,15 @@ fn symbolic_thread_container() -> crate::container::Container<'static> {
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("symbolic thread container")
+    crate::container::scan_bytes(file).expect("symbolic thread container")
 }
 
-fn symbolic_thread_route_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn symbolic_thread_route_admits_one_thread() {
     let container = symbolic_thread_container();
-    let records = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_symbolic_threads(ctx, &container)
-    })
-    .expect("admitted symbolic thread");
+    let records = crate::native::features::holes::feature_symbolic_threads(&container)
+        .expect("admitted symbolic thread");
     assert_eq!(records.len(), 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::features::holes::feature_symbolic_threads(ctx, &container)
-                .expect_err("symbolic thread resource limit")
-        },
-    )
-}
-
-#[test]
-fn symbolic_thread_route_refuses_collection_limit() {
-    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn symbolic_thread_route_refuses_retained_limit() {
-    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn symbolic_thread_route_refuses_work_limit() {
-    let error = symbolic_thread_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }
 
 #[test]
@@ -493,151 +430,45 @@ enum TemplateRoute {
     Threaded,
 }
 
-fn template_route_refusal(
-    value: &str,
-    route: TemplateRoute,
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+fn assert_template_route_admits(value: &str, route: TemplateRoute) {
     let (label, record, string) = template_inputs(value);
-    let call = |ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                labels: &[crate::native::features::FeatureOperationLabel],
+    let call = |labels: &[crate::native::features::FeatureOperationLabel],
                 records: &[FeatureOperationRecord],
                 strings: &[crate::native::features::FeaturePayloadString]| {
         match route {
             TemplateRoute::Simple => crate::native::features::holes::feature_simple_hole_templates(
-                ctx, labels, records, strings,
+                labels, records, strings,
             )
-            .map(|values| values.len()),
+            .len(),
             TemplateRoute::Threaded => {
                 crate::native::features::holes::feature_threaded_hole_templates(
-                    ctx, labels, records, strings,
+                    labels, records, strings,
                 )
-                .map(|values| values.len())
+                .len()
             }
         }
     };
-    let admitted = crate::test_support::with_decode_context(|ctx| {
+    let admitted = {
         call(
-            ctx,
             std::slice::from_ref(&label),
             std::slice::from_ref(&record),
             std::slice::from_ref(&string),
         )
-    })
-    .expect("admitted hole template");
+    };
     assert_eq!(admitted, 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| call(ctx, &[label], &[record], &[string]).expect_err("hole template resource limit"),
-    )
 }
 
 #[test]
-fn simple_hole_template_route_refuses_collection_limit() {
-    let error = template_route_refusal(
+fn simple_hole_template_route_admits_one_template() {
+    assert_template_route_admits(
         "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
         TemplateRoute::Simple,
-        |policy| policy.limits.max_collection_items = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
 }
 
 #[test]
-fn simple_hole_template_route_refuses_retained_limit() {
-    let error = template_route_refusal(
-        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
-        TemplateRoute::Simple,
-        |policy| policy.limits.max_retained_bytes = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn simple_hole_template_route_refuses_scoped_limit() {
-    let error = template_route_refusal(
-        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
-        TemplateRoute::Simple,
-        |policy| policy.limits.max_materialized_bytes = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn simple_hole_template_route_refuses_work_limit() {
-    let error = template_route_refusal(
-        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
-        TemplateRoute::Simple,
-        |policy| policy.limits.max_work_units = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-#[test]
-fn threaded_hole_template_route_refuses_collection_limit() {
-    let error = template_route_refusal(
-        "Hole_ThreadedHole_M Profile_Blind",
-        TemplateRoute::Threaded,
-        |policy| policy.limits.max_collection_items = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn threaded_hole_template_route_refuses_retained_limit() {
-    let error = template_route_refusal(
-        "Hole_ThreadedHole_M Profile_Blind",
-        TemplateRoute::Threaded,
-        |policy| policy.limits.max_retained_bytes = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn threaded_hole_template_route_refuses_scoped_limit() {
-    let error = template_route_refusal(
-        "Hole_ThreadedHole_M Profile_Blind",
-        TemplateRoute::Threaded,
-        |policy| policy.limits.max_materialized_bytes = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn threaded_hole_template_route_refuses_work_limit() {
-    let error = template_route_refusal(
-        "Hole_ThreadedHole_M Profile_Blind",
-        TemplateRoute::Threaded,
-        |policy| policy.limits.max_work_units = 0,
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
+fn threaded_hole_template_route_admits_one_template() {
+    assert_template_route_admits("Hole_ThreadedHole_M Profile_Blind", TemplateRoute::Threaded);
 }
 
 fn repeated_scalar_lane_container() -> crate::container::Container<'static> {
@@ -654,8 +485,7 @@ fn repeated_scalar_lane_container() -> crate::container::Container<'static> {
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("repeated scalar lane container")
+    crate::container::scan_bytes(file).expect("repeated scalar lane container")
 }
 
 fn repeated_scalar_block_reference_container() -> crate::container::Container<'static> {
@@ -684,8 +514,7 @@ fn repeated_scalar_block_reference_container() -> crate::container::Container<'s
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("repeated scalar block reference container")
+    crate::container::scan_bytes(file).expect("repeated scalar block reference container")
 }
 
 fn hole_package_lane_container() -> crate::container::Container<'static> {
@@ -700,190 +529,38 @@ fn hole_package_lane_container() -> crate::container::Container<'static> {
     );
     let file =
         crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("hole package lane container")
+    crate::container::scan_bytes(file).expect("hole package lane container")
 }
 
-fn hole_package_lane_route_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn hole_package_lane_route_admits_one_lane() {
     let container = hole_package_lane_container();
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_hole_package_construction_group_lanes(
-            ctx, &container,
-        )
-    })
+    let admitted = {
+        crate::native::features::holes::feature_hole_package_construction_group_lanes(&container)
+    }
     .expect("admitted hole package lane");
     assert_eq!(admitted.len(), 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::features::holes::feature_hole_package_construction_group_lanes(
-                ctx, &container,
-            )
-            .expect_err("hole package lane resource limit")
-        },
-    )
 }
 
 #[test]
-fn hole_package_lane_route_refuses_collection_limit() {
-    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn hole_package_lane_route_refuses_retained_limit() {
-    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn hole_package_lane_route_refuses_scoped_limit() {
-    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn hole_package_lane_route_refuses_work_limit() {
-    let error = hole_package_lane_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-fn repeated_scalar_block_reference_route_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+fn repeated_scalar_block_reference_route_admits_one_reference() {
     let container = repeated_scalar_block_reference_container();
-    let admitted = crate::test_support::with_decode_context(|ctx| {
+    let admitted = {
         crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
-            ctx, &container,
+            &container,
         )
-    })
+    }
     .expect("admitted repeated scalar block references");
     assert_eq!(admitted.len(), 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
-        ctx, &container,
-    )
-    .expect_err("repeated scalar block reference resource limit")
-        },
-    )
 }
 
 #[test]
-fn repeated_scalar_block_reference_route_refuses_collection_limit() {
-    let error = repeated_scalar_block_reference_route_refusal(|policy| {
-        policy.limits.max_collection_items = 0;
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn repeated_scalar_block_reference_route_refuses_retained_limit() {
-    let error = repeated_scalar_block_reference_route_refusal(|policy| {
-        policy.limits.max_retained_bytes = 0;
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
-    let error = repeated_scalar_block_reference_route_refusal(|policy| {
-        policy.limits.max_materialized_bytes = 0;
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn repeated_scalar_block_reference_route_refuses_work_limit() {
-    let error =
-        repeated_scalar_block_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-fn repeated_scalar_lane_route_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+fn repeated_scalar_lane_route_admits_one_lane() {
     let container = repeated_scalar_lane_container();
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(ctx, &container)
-    })
-    .expect("admitted repeated scalar lane");
+    let admitted =
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(&container)
+            .expect("admitted repeated scalar lane");
     assert_eq!(admitted.len(), 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
-                ctx, &container,
-            )
-            .expect_err("repeated scalar lane resource limit")
-        },
-    )
-}
-
-#[test]
-fn repeated_scalar_lane_route_refuses_collection_limit() {
-    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn repeated_scalar_lane_route_refuses_retained_limit() {
-    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn repeated_scalar_lane_route_refuses_work_limit() {
-    let error = repeated_scalar_lane_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }
 
 #[test]
@@ -1000,64 +677,11 @@ fn simple_group_inputs() -> (
     (labels, lanes, references)
 }
 
-fn simple_group_route_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn simple_group_route_admits_one_group() {
     let (labels, lanes, references) = simple_group_inputs();
     let admitted = simple_hole_construction_groups(&labels, &lanes, &references);
     assert_eq!(admitted.len(), 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::features::holes::feature_simple_hole_construction_groups(
-                ctx,
-                &labels,
-                &lanes,
-                &references,
-            )
-            .expect_err("simple hole group resource limit")
-        },
-    )
-}
-
-#[test]
-fn simple_group_route_refuses_collection_limit() {
-    let error = simple_group_route_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn simple_group_route_refuses_retained_limit() {
-    let error = simple_group_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn simple_group_route_refuses_scoped_limit() {
-    let error = simple_group_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn simple_group_route_refuses_work_limit() {
-    let error = simple_group_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }
 
 #[test]
@@ -1310,64 +934,12 @@ fn package_use_inputs() -> (
     (lane, group)
 }
 
-fn package_use_route_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
+#[test]
+fn hole_package_use_route_admits_one_use() {
     let (lane, group) = package_use_inputs();
     let admitted =
         hole_package_group_uses(std::slice::from_ref(&lane), std::slice::from_ref(&group));
     assert_eq!(admitted.len(), 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            crate::native::features::holes::feature_hole_package_construction_group_uses(
-                ctx,
-                &[lane],
-                &[group],
-            )
-            .expect_err("hole package group use resource limit")
-        },
-    )
-}
-
-#[test]
-fn hole_package_use_route_refuses_collection_limit() {
-    let error = package_use_route_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn hole_package_use_route_refuses_retained_limit() {
-    let error = package_use_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn hole_package_use_route_refuses_scoped_limit() {
-    let error = package_use_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-    );
-}
-
-#[test]
-fn hole_package_use_route_refuses_work_limit() {
-    let error = package_use_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }
 
 #[test]
