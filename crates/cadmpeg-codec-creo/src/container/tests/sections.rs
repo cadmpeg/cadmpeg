@@ -391,29 +391,14 @@ fn expanded_section_name_refuses_before_retained_copy() {
 }
 
 #[test]
-fn expanded_section_record_refuses_before_vec_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn expanded_section_record_charges_collection_items() {
     let data = one_compressed_section();
     let section =
         super::super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
             .expect("bounded compressed section");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3 * (1 << 16);
-    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
-        .expect("compressed input is admitted");
-    let error = super::super::expanded_sections(
-        &ctx,
-        &data,
-        std::slice::from_ref(&section),
-        &mut Vec::new(),
-    )
-    .expect_err("expanded record needs another collection item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo expanded sections"));
+    crate::test_support::assert_collection_charged(&data, "creo expanded sections", |ctx| {
+        super::super::expanded_sections(ctx, &data, std::slice::from_ref(&section), &mut Vec::new())
+    });
 }
 
 #[test]
