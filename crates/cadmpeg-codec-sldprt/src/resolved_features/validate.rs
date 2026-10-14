@@ -17,7 +17,7 @@ pub(crate) fn validate_native(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
-    let native = match crate::native::SldprtNative::load_charged(ctx, namespace) {
+    let native = match crate::native::SldprtNative::load_with_context(ctx, namespace) {
         Ok(native) => native,
         Err(error) => {
             let findings = invalid_namespace(&error);

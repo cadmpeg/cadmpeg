@@ -13,7 +13,7 @@ use super::operands::{
 use super::relation_loci::{
     line_line_angle, line_line_distance, marker_point_locus,
     marker_transform_candidates_by_feature, point_line_distance_value, profile_axis_for_relation,
-    profile_loci_by_marker, profile_locus_point_charged, relation_constraint_is_inactive,
+    profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
     relation_operand_marker, same_dimension_angle, same_dimension_length,
     typed_relation_definition, typed_relation_definition_with_profile_axis,
     unoriented_line_line_angle,
@@ -1681,7 +1681,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             {
                 continue;
             }
-            let Some(known_point) = profile_locus_point_charged(&known, entities) else {
+            let Some(known_point) = profile_locus_point(&known, entities) else {
                 continue;
             };
             let mut candidates = entities

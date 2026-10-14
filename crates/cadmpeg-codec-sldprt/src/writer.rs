@@ -1412,17 +1412,17 @@ fn resolved_feature_payload(
         )));
     }
     let mut expected_lane = lane.clone();
-    expected_lane.scalars = crate::resolved_features::scalars::named_scalars_charged(
+    expected_lane.scalars = crate::resolved_features::scalars::named_scalars(
         &lane.native_payload,
         &lane.id,
         &lane.names,
     )?;
-    expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings_charged(
+    expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
         &lane.id,
         &lane.classes,
         &expected_lane.scalars,
     )?;
-    expected_lane.references = crate::resolved_features::markers::reference_cells_charged(
+    expected_lane.references = crate::resolved_features::markers::reference_cells(
         &expected_lane.scalars,
         &expected_lane.classes,
     )?;

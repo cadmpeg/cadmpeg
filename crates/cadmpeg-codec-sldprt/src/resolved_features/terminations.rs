@@ -304,7 +304,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 feature_id,
                                 lane_key,
                                 reference,
-                            )?));
+                            )));
                         }
                         if compact_extrusion_through_all_both_at(&lane.native_payload, offset) {
                             return Ok(Some(TerminationVote::ThroughAllBoth));
@@ -342,7 +342,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 format!("sldprt:feature-input:{prefix}:{lane_key}:{reference}");
                             return Ok(Some(TerminationVote::ToVertex { reference }));
                         }
-                        compact_extrusion_to_face_at(
+                        Ok(compact_extrusion_to_face_at(
                             ctx,
                             &lane.native_payload,
                             offset,
@@ -356,8 +356,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 lane_key,
                                 reference,
                             )
-                        })
-                        .transpose()
+                        }))
                     })()?;
                 if let Some(candidate) = candidate {
                     candidates.push(candidate);
@@ -465,15 +464,14 @@ fn compact_termination_face_vote(
     feature_ref: &str,
     lane_key: &str,
     offset: usize,
-) -> Result<TerminationVote, cadmpeg_core::CodecError> {
+) -> TerminationVote {
     let reference = format!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}");
     let selection = lane.surface_selections.iter().find(|selection| {
         selection.feature_ref == feature_ref
             && usize::try_from(selection.offset).ok() == Some(offset)
     });
-    let canonical_reference = selection
-        .map(|selection| compact_surface_selection_value(&selection.components))
-        .transpose()?;
+    let canonical_reference =
+        selection.map(|selection| compact_surface_selection_value(&selection.components));
     let identity = match selection {
         Some(selection) => {
             let canonical = canonical_reference.as_deref().unwrap_or_default();
@@ -496,14 +494,14 @@ fn compact_termination_face_vote(
         }
         None => reference.clone(),
     };
-    Ok(TerminationVote::Face {
+    TerminationVote::Face {
         condition,
         reference: FaceReference::Lane {
             reference,
             canonical: canonical_reference,
         },
         identity,
-    })
+    }
 }
 
 pub(super) fn is_extrusion_end_spec_owner(feature: &crate::records::Feature) -> bool {
@@ -2086,24 +2084,19 @@ fn compact_termination_reference_frame_at(payload: &[u8], marker: usize) -> Opti
 
 pub(crate) fn compact_surface_selection_value(
     components: &[FeatureInputComponentPathEntry],
-) -> Result<String, cadmpeg_core::CodecError> {
-    use std::fmt::Write;
-
+) -> String {
     const PREFIX: &str = "sldprt:feature-input:surface-component-ids:";
-    let mut value = String::new();
-    value.push_str(PREFIX);
+    let mut value = String::from(PREFIX);
     for (index, component) in components.iter().enumerate() {
         if index != 0 {
             value.push(',');
         }
         match component.local_id {
-            Some(local_id) => write!(value, "{local_id}").map_err(|_| {
-                cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface component")
-            })?,
+            Some(local_id) => value.push_str(&local_id.to_string()),
             None => value.push('_'),
         }
     }
-    Ok(value)
+    value
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
 use crate::history::project::neutral_feature_id;
-use crate::history::project::project_configurations_charged;
+use crate::history::project::project_configurations;
 use crate::history::project::project_features;
 use crate::history::project::project_semantic_notes;
 use crate::history::tests::feature;
@@ -156,7 +156,7 @@ fn standalone_history_note_projects_as_text_annotation_not_feature() {
 }
 
 #[test]
-fn charged_configuration_projection_preserves_writer_projection() {
+fn configuration_projection_preserves_writer_projection() {
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -177,10 +177,9 @@ fn charged_configuration_projection_preserves_writer_projection() {
         features: Vec::new(),
     };
     let histories = [history];
-    let charged =
-        project_configurations_charged(&histories).expect("charged configuration projection");
+    let projected = project_configurations(&histories).expect("configuration projection");
     assert_eq!(
-        charged,
+        projected,
         vec![cadmpeg_ir::features::DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId::mint(
                 "sldprt:model:configuration#name%20%23%25%20µ"
@@ -203,7 +202,7 @@ fn charged_configuration_projection_preserves_writer_projection() {
         }]
     );
     assert_eq!(
-        charged[0].id.as_str(),
+        projected[0].id.as_str(),
         "sldprt:model:configuration#name%20%23%25%20µ"
     );
 }

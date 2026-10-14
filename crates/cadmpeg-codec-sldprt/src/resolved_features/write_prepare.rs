@@ -3,12 +3,12 @@
 use super::bindings::bind_scalar_operands;
 use super::hashes::{constraint_hash, lane_hash, sketch_hash};
 use super::markers::{
-    admit_sketch_input_entities, marker_spatial_coordinate_offset, reference_cells_charged,
-    relation_bindings_charged, spatial_relation_marker_coordinates, spatial_sketches,
-    spatial_vertex_offsets_charged,
+    admit_sketch_input_entities, marker_spatial_coordinate_offset, reference_cells,
+    relation_bindings, spatial_relation_marker_coordinates, spatial_sketches,
+    spatial_vertex_offsets,
 };
 use super::names::{class_declarations, object_names};
-use super::scalars::{feature_object_name, named_scalars_charged};
+use super::scalars::{feature_object_name, named_scalars};
 use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
@@ -258,7 +258,7 @@ fn patch_spatial_sketches(
                 })();
                 let Some((object_start, object_end)) = bounds else { return Ok(None); };
                 let Some(object) = lane.native_payload.get(object_start..object_end) else { return Ok(None); };
-                let offsets = spatial_vertex_offsets_charged(object);
+                let offsets = spatial_vertex_offsets(object);
                 if native_line_entities
                     .len()
                     .checked_mul(2)
@@ -1471,9 +1471,9 @@ fn source_less_lanes(
         )?;
         lane.classes = class_declarations(&lane.native_payload, &lane.id)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
-        lane.scalars = named_scalars_charged(&lane.native_payload, &lane.id, &lane.names)?;
-        lane.relation_bindings = relation_bindings_charged(&lane.id, &lane.classes, &lane.scalars)?;
-        lane.references = reference_cells_charged(&lane.scalars, &lane.classes)?;
+        lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names)?;
+        lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars)?;
+        lane.references = reference_cells(&lane.scalars, &lane.classes)?;
         lane.sketch_entities = admit_sketch_input_entities(&lane.native_payload, &lane.id)?;
     }
     let bytes = lanes

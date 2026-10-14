@@ -1170,7 +1170,7 @@ fn project_feature_dependencies(
 }
 
 /// Project decoded native configurations under the caller's resource budget.
-pub(crate) fn project_configurations_charged(
+pub(crate) fn project_configurations(
     histories: &[FeatureHistory],
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
     let mut projected = Vec::new();

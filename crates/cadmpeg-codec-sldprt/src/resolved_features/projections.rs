@@ -1,9 +1,8 @@
 //! Parameter scalar and compact selection projection.
 
 use super::component_paths::{
-    compact_body_selection_value_charged, compact_edge_path_value_charged,
-    compact_edge_selection_set_value_charged, component_path_feature,
-    component_path_terminal_feature, ComponentPathEnd,
+    compact_body_selection_value, compact_edge_path_value, compact_edge_selection_set_value,
+    component_path_feature, component_path_terminal_feature, ComponentPathEnd,
 };
 use super::drafts::{draft_operand_candidates, same_draft_operands, DraftAnchor, DraftOperands};
 use super::holes::feature_object_byte_ranges;
@@ -709,7 +708,7 @@ pub(crate) fn project_compact_body_selections(
                     }
                     let Ok(selection) = cadmpeg_ir::features::BodySelection::local(
                         ids,
-                        compact_body_selection_value_charged(&selection.local_body_ids),
+                        compact_body_selection_value(&selection.local_body_ids),
                         ctx,
                     )?
                     else {
@@ -774,7 +773,7 @@ pub(crate) fn project_compact_edge_selections(
                 return Ok(());
             };
             let projected_edges = |selections: &[&FeatureInputEdgeSelection]| -> Result<_, cadmpeg_core::CodecError> {
-                let native = compact_edge_selection_set_value_charged(selections);
+                let native = compact_edge_selection_set_value(selections);
                 let mut generated = Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new();
                 let mut complete = true;
                 for selection in selections {
@@ -787,7 +786,7 @@ pub(crate) fn project_compact_edge_selections(
                         break;
                     };
                     let feature = feature_id.clone();
-                    let local_id = compact_edge_path_value_charged(selection);
+                    let local_id = compact_edge_path_value(selection);
                     let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id, ctx,)? else {
                         complete = false;
                         break;
@@ -1276,7 +1275,7 @@ pub(crate) fn project_compact_surface_selections(
                             break 'feature_edit;
                         }
                         for selection in feature_selections {
-                            let native = compact_surface_selection_value(&selection.components)?;
+                            let native = compact_surface_selection_value(&selection.components);
                             let generated = component_path_feature(
                                 &selection.components,
                                 &history_features,
@@ -1408,7 +1407,7 @@ pub(crate) fn project_compact_surface_selections(
                         else {
                             break 'feature_edit;
                         };
-                        let target_native = compact_surface_selection_value(&target.components)?;
+                        let target_native = compact_surface_selection_value(&target.components);
                         let target_producer = target
                             .terminal_feature_ref
                             .as_ref()
@@ -1438,7 +1437,7 @@ pub(crate) fn project_compact_surface_selections(
                                 dependencies.insert(ctx, dependency, OPERATION)?;
                             }
                         }
-                        let tool_native = compact_surface_selection_value(&tool.components)?;
+                        let tool_native = compact_surface_selection_value(&tool.components);
                         let tool_generated = tool
                             .terminal_feature_ref
                             .as_ref()
@@ -1487,7 +1486,7 @@ pub(crate) fn project_compact_surface_selections(
                         };
                         let [center_faces, side_one_faces, side_two_faces] =
                             [center_faces, side_one_faces, side_two_faces].map(|selection| -> Result<FaceSelection, cadmpeg_core::CodecError> {
-                                let native = compact_surface_selection_value(&selection.components)?;
+                                let native = compact_surface_selection_value(&selection.components);
                                 let generated = selection
                                     .terminal_feature_ref
                                     .as_ref()
@@ -1588,7 +1587,7 @@ pub(crate) fn project_compact_surface_selections(
                     }) = definition
                     {
                         const OPERATION: &str = "project SLDPRT datum offset face";
-                        let native = compact_surface_selection_value(&selection.components)?;
+                        let native = compact_surface_selection_value(&selection.components);
                         let generated = selection
                             .terminal_feature_ref
                             .as_ref()
@@ -1683,7 +1682,7 @@ pub(crate) fn project_compact_surface_selections(
                         }) => SelectionSlot::Vertex(vertex),
                         _ => break 'feature_edit,
                     };
-                    let native = compact_surface_selection_value(&selection.components)?;
+                    let native = compact_surface_selection_value(&selection.components);
                     let producer = if first_component {
                         selection.producer_feature_refs.first()
                     } else {

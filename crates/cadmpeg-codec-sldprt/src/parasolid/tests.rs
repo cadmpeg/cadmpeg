@@ -89,7 +89,7 @@ fn declared_frame_above_local_cap_is_skipped_without_allocation() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
     let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-        super::inflate_zlib_frame_budgeted(&ctx, &member, usize::try_from(declared).unwrap())
+        super::inflate_zlib_frame(&ctx, &member, usize::try_from(declared).unwrap())
     });
     assert!(result.unwrap().is_none());
     assert_eq!(allocations, 0);

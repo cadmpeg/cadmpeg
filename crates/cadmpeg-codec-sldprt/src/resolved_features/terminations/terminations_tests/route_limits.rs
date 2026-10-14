@@ -241,7 +241,7 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
 }
 
 #[test]
-fn extrusion_delimiters_do_not_bill_unvisited_successors() {
+fn extrusion_delimiters_end_every_successor_through_all() {
     let mut payload = vec![0; 64 * 128];
     let mut features = Vec::new();
     let mut names = Vec::new();

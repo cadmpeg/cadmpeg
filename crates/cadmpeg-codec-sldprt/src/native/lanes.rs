@@ -137,7 +137,7 @@ pub(crate) fn expected_lanes<'a>(
         .iter_mut()
         .chain(&mut expected_supplemental_lanes)
     {
-        let scalars = crate::resolved_features::scalars::named_scalars_charged(
+        let scalars = crate::resolved_features::scalars::named_scalars(
             &lane.native_payload,
             &lane.id,
             &lane.names,
@@ -221,12 +221,12 @@ fn rebuild_scalar_relations(
     scalars: Vec<crate::records::FeatureInputScalar>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     lane.scalars = scalars;
-    lane.relation_bindings = crate::resolved_features::markers::relation_bindings_charged(
+    lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
         &lane.id,
         &lane.classes,
         &lane.scalars,
     )?;
     lane.references =
-        crate::resolved_features::markers::reference_cells_charged(&lane.scalars, &lane.classes)?;
+        crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes)?;
     Ok(())
 }
