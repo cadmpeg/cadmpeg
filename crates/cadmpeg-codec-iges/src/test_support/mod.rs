@@ -140,6 +140,56 @@ pub(crate) fn only_match(
     layers.primary()
 }
 
+/// Decodes `bytes` under the service policy with the collection-item ceiling
+/// at which `operation` is the refusing charge, and returns that refusal.
+pub(crate) fn decode_collection_refusal(
+    bytes: &[u8],
+    operation: &str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut cadmpeg_ir::codec::DecodeOptions {
+            policy: cadmpeg_core::decode::DecodePolicy::service(),
+            ..cadmpeg_ir::codec::DecodeOptions::default()
+        },
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+    )
+}
+
+/// Decodes `bytes` under the service policy and asserts that the decode
+/// charges collection items under `operation`.
+///
+/// Use this where released scratch keeps the charge below an earlier peak,
+/// so no ceiling makes it the refusing charge.
+pub(crate) fn decode_charges_collection(
+    bytes: &[u8],
+    operation: &str,
+) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::Codec as _;
+
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        || {
+            crate::IgesCodec
+                .decode(
+                    &mut std::io::Cursor::new(bytes),
+                    &cadmpeg_ir::codec::DecodeOptions {
+                        policy: cadmpeg_core::decode::DecodePolicy::service(),
+                        ..cadmpeg_ir::codec::DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("{operation}: decode failed: {other:?}"),
+                })
+        },
+    )
+}
+
 /// Scans a test source under the service decode policy.
 pub(crate) fn scan(source: &[u8]) -> Result<crate::card::CardScan<'_>, cadmpeg_core::CodecError> {
     with_service_context(source, |ctx| crate::card::scan_with_context(source, ctx))
