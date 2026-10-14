@@ -672,7 +672,7 @@ impl SurfaceAlias {
 }
 
 /// Decode fixed surface-alias row cores from an outer body.
-pub(crate) fn surface_aliases(data: &[u8]) -> Result<Vec<SurfaceAlias>, CodecError> {
+pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
     let mut aliases = Vec::new();
     for (pos, bytes) in data.windows(MARKER.len()).enumerate() {
@@ -691,7 +691,7 @@ pub(crate) fn surface_aliases(data: &[u8]) -> Result<Vec<SurfaceAlias>, CodecErr
         let Some(lead_raw) = View::u32_le_at(data, row + alias_row::LEAD) else {
             continue;
         };
-        let group = alias_group_membership(data, pos)?;
+        let group = alias_group_membership(data, pos);
         if lead_raw & 0xff != 1 && !matches!(lead_raw, 0x8e | 0x8f | 0x0000_0133) && group.is_none()
         {
             continue;
@@ -719,7 +719,7 @@ pub(crate) fn surface_aliases(data: &[u8]) -> Result<Vec<SurfaceAlias>, CodecErr
             group,
         });
     }
-    Ok(aliases)
+    aliases
 }
 
 /// Resolve the outer persistent-surface alias closure for geometry routes.
@@ -732,7 +732,7 @@ pub(crate) fn surface_alias_tag_map(
 ) -> Result<HashMap<u32, Option<u32>>, cadmpeg_core::CodecError> {
     let paired_object_graph_roots = entity_table::paired_object_graph_roots(data)?;
     let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots)?;
-    let mut value_blocks = value_block::parse(data)?;
+    let mut value_blocks = value_block::parse(data);
     value_blocks.retain(|block| {
         !object_graphs
             .iter()
@@ -754,7 +754,7 @@ pub(crate) fn surface_alias_tag_map(
         })
         .collect::<Vec<_>>();
 
-    let mut rows = surface_aliases(data)?;
+    let mut rows = surface_aliases(data);
     rows.retain(|row| {
         let row_start = row.row_pos;
         !object_graphs
@@ -816,10 +816,7 @@ pub(crate) fn extent_contains(
             .is_some_and(|(owner_end, candidate_end)| candidate_end <= owner_end)
 }
 
-fn alias_group_membership(
-    data: &[u8],
-    marker: usize,
-) -> Result<Option<AliasGroupMembership>, CodecError> {
+fn alias_group_membership(data: &[u8], marker: usize) -> Option<AliasGroupMembership> {
     let mut candidate = None;
     for storage_len in [3usize, 4, 7, 8] {
         let Some(start) = marker.checked_sub(20 + storage_len) else {
@@ -835,27 +832,25 @@ fn alias_group_membership(
             && is_alias_group_storage_prefix(storage)
         {
             if candidate.is_some() {
-                return Ok(None);
+                return None;
             }
             candidate = Some((start, storage));
         }
     }
-    let Some((start, storage)) = candidate else {
-        return Ok(None);
-    };
+    let (start, storage) = candidate?;
     let (Some(prototype), Some(group_id), Some(target_slot)) = (
         View::u32_le_at(data, start + 2),
         View::u32_le_at(data, start + 6),
         View::u32_le_at(data, marker + 11),
     ) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(AliasGroupMembership {
+    Some(AliasGroupMembership {
         prototype,
         group_id,
         target_slot,
         storage_prefix: (storage.to_vec()).into(),
-    }))
+    })
 }
 
 pub(crate) fn is_alias_group_storage_prefix(storage: &[u8]) -> bool {
@@ -888,7 +883,7 @@ pub(crate) fn parse_all_with_paired_roots(
     paired_roots: &std::collections::HashMap<usize, usize>,
 ) -> Result<Vec<ObjectGraph>, CodecError> {
     let catalogs = catalog::parse(data);
-    let value_blocks = value_block::parse(data)?;
+    let value_blocks = value_block::parse(data);
     let mut roots = Vec::<ObjectGraph>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, data) {
@@ -1000,7 +995,7 @@ fn parse_candidate(
                 Some((child, _)) => {
                     let head_bytes = data.get(head_start..child)?;
                     let lead = *head_bytes.first()?;
-                    let head = admitted!(decode_head(head_bytes));
+                    let head = decode_head(head_bytes);
                     let payload = admitted!(decode_payload(&data[child + 6..record_end]))?;
                     (lead, ObjectRecordBody::Nested { head, payload })
                 }
@@ -1499,29 +1494,6 @@ pub(crate) fn repeated_reference_suffix(
     })
 }
 
-pub(crate) fn repeated_reference_suffix_charged(
-    payload: &ObjectPayload,
-) -> Result<Option<RepeatedReferenceSuffix>, CodecError> {
-    let Some(view) = repeated_reference_suffix_view(payload) else {
-        return Ok(None);
-    };
-    let repeated_references = view
-        .repeated
-        .iter()
-        .filter_map(|field| match field {
-            PayloadField::Reference { value, .. } => Some(*value),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    Ok(Some(RepeatedReferenceSuffix {
-        schema_preamble: view.schema_preamble,
-        repeated_references,
-        terminal_reference: view.terminal_reference,
-        first_count_offset: view.first_count_offset,
-        repeated_count_offset: view.repeated_count_offset,
-    }))
-}
-
 fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
     let mut matches = fields.windows(4).filter_map(|fields| match fields {
         [
@@ -1554,9 +1526,9 @@ fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaP
     matches.next().is_none().then_some(preamble)
 }
 
-fn decode_head(bytes: &[u8]) -> Result<Vec<HeadToken>, CodecError> {
+fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
     let Some(&lead) = bytes.first() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
     let mut tokens = Vec::new();
     tokens.push(HeadToken::Lead(lead));
@@ -1582,7 +1554,7 @@ fn decode_head(bytes: &[u8]) -> Result<Vec<HeadToken>, CodecError> {
             at += 1;
         }
     }
-    Ok(tokens)
+    tokens
 }
 
 fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -1615,10 +1587,7 @@ fn decode_payload(bytes: &[u8]) -> Result<Option<ObjectPayload>, CodecError> {
     (|| -> Option<Result<ObjectPayload, CodecError>> {
         macro_rules! admitted {
             ($result:expr) => {
-                match $result {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error)),
-                }
+                $result
             };
         }
         let mut fields = Vec::new();
@@ -1809,31 +1778,28 @@ fn parse_bulk_table_rows(
     bytes: &[u8],
     mut at: usize,
     table_count: u32,
-) -> Result<Option<(Vec<BulkTableRow>, usize)>, CodecError> {
-    (|| -> Option<Result<(Vec<BulkTableRow>, usize), CodecError>> {
-        let count = usize::try_from(table_count).ok()?;
-        let mut rows = Vec::new();
-        for _ in 0..count {
-            let offset = at;
-            if bytes.get(at) != Some(&0x81) {
-                return None;
-            }
-            at += 1;
-            let row_id = bulk_row_id(bytes, &mut at)?;
-            if bytes.get(at) != Some(&0x80) {
-                return None;
-            }
-            let handle = View::u32_le_at(bytes, at + 1)?;
-            at += 5;
-            rows.push(BulkTableRow {
-                row_id,
-                handle,
-                offset,
-            });
+) -> Option<(Vec<BulkTableRow>, usize)> {
+    let count = usize::try_from(table_count).ok()?;
+    let mut rows = Vec::new();
+    for _ in 0..count {
+        let offset = at;
+        if bytes.get(at) != Some(&0x81) {
+            return None;
         }
-        Some(Ok((rows, at)))
-    })()
-    .transpose()
+        at += 1;
+        let row_id = bulk_row_id(bytes, &mut at)?;
+        if bytes.get(at) != Some(&0x80) {
+            return None;
+        }
+        let handle = View::u32_le_at(bytes, at + 1)?;
+        at += 5;
+        rows.push(BulkTableRow {
+            row_id,
+            handle,
+            offset,
+        });
+    }
+    Some((rows, at))
 }
 
 fn bulk_row_id(bytes: &[u8], at: &mut usize) -> Option<u32> {

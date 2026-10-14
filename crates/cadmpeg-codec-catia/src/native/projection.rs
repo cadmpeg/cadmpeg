@@ -35,7 +35,7 @@ pub(crate) fn consolidated_owner_packets(
     let fixed = crate::families::b2::records::b2_owner_packets_from_records(bytes, records)
         .collect::<Vec<_>>();
     let mut owner_charts = HashMap::new();
-    for chart in crate::families::b2::records::b2_owner_charts_from_records(bytes, records)? {
+    for chart in crate::families::b2::records::b2_owner_charts_from_records(bytes, records) {
         let native_reference =
             |reference: crate::families::b2::records::B2OwnerChartBridgeReference| {
                 CatiaOwnerChartBridgeReference::new(
@@ -88,7 +88,7 @@ pub(crate) fn consolidated_owner_packets(
     }
     let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
     for target in
-        crate::families::b2::records::b2_owner_identity_targets_from_records(bytes, records)?
+        crate::families::b2::records::b2_owner_identity_targets_from_records(bytes, records)
     {
         let key = (target.source_index, target.owner_pos);
         let value = CatiaOwnerIdentityTarget {
@@ -100,8 +100,7 @@ pub(crate) fn consolidated_owner_packets(
         if let Some(targets) = identity_targets.get_mut(&key) {
             targets.push(value);
         } else {
-            let mut targets = Vec::new();
-            targets.push(value);
+            let targets = vec![value];
             identity_targets.insert(key, targets);
         }
     }
@@ -140,10 +139,9 @@ pub(crate) fn consolidated_owner_packets(
         boundary_cycles.insert(key, value);
     }
     let adjacent_counted =
-        crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(bytes, records)?;
+        crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(bytes, records);
     let mut face_nodes = HashMap::new();
-    for linked in
-        crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)?
+    for linked in crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)
     {
         face_nodes.insert(
             (linked.owner.source_index, linked.owner.pos),
@@ -161,7 +159,7 @@ pub(crate) fn consolidated_owner_packets(
         fixed_positions.insert((packet.source_index, packet.pos));
     }
     let counted_owners =
-        crate::families::b2::records::b2_counted_owners_from_records(bytes, records)?;
+        crate::families::b2::records::b2_counted_owners_from_records(bytes, records);
     let mut packets = fixed
         .into_iter()
         .map(|packet| {
@@ -369,7 +367,7 @@ pub(crate) fn consolidated_edge_nodes(
     let mut owned_nodes = HashMap::new();
     for owned in crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
         bytes, records,
-    )? {
+    ) {
         owned_nodes.insert(owned.node.pos, (owned.owner_pos, owned.allocation_ordinal));
     }
     let mut compact_endpoints = HashMap::new();
@@ -392,8 +390,7 @@ pub(crate) fn consolidated_edge_nodes(
         };
         let definition = run
             .definition
-            .map(|definition| CatiaConsolidatedEdgeDefinition::from_source(definition))
-            .transpose()?;
+            .map(CatiaConsolidatedEdgeDefinition::from_source);
         use_runs.insert(run.node.pos, (uses, definition));
     }
     let mut analytic_circles = HashMap::new();
@@ -620,12 +617,10 @@ pub(crate) fn containing_finjpl_segment(
     containing.next().is_none().then_some(segment.id.as_str())
 }
 
-pub(crate) fn preview_views(
-    segments: &[CatiaFinjplSegment],
-) -> Result<Vec<CatiaPreviewImage>, cadmpeg_core::CodecError> {
+pub(crate) fn preview_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaPreviewImage> {
     let mut views = Vec::new();
     for segment in segments {
-        for preview in container::preview_images(&segment.data)? {
+        for preview in container::preview_images(&segment.data) {
             let Some(byte_offset) = segment
                 .byte_offset
                 .checked_add(u64_from_index(preview.range.start))
@@ -645,15 +640,15 @@ pub(crate) fn preview_views(
             });
         }
     }
-    Ok(views)
+    views
 }
 
 pub(crate) fn external_reference_views(
     segments: &[CatiaFinjplSegment],
-) -> Result<Vec<CatiaExternalReference>, cadmpeg_core::CodecError> {
+) -> Vec<CatiaExternalReference> {
     let mut views = Vec::new();
     for segment in segments {
-        for reference in container::external_references(&segment.data)? {
+        for reference in container::external_references(&segment.data) {
             let Some(byte_offset) = segment
                 .byte_offset
                 .checked_add(u64_from_index(reference.offset))
@@ -670,10 +665,10 @@ pub(crate) fn external_reference_views(
             });
         }
     }
-    Ok(views)
+    views
 }
 
-pub(crate) fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) -> Result<(), CodecError> {
+pub(crate) fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
     let mut stored_by_group = HashMap::<(u32, u32), Option<u32>>::new();
     for row in rows.iter() {
         let Some(group) = row.group.as_ref() else {
@@ -701,7 +696,6 @@ pub(crate) fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) -> Result<(
             _ => None,
         };
     }
-    Ok(())
 }
 
 pub(crate) fn resolve_owner_chart_support_aliases(
@@ -757,8 +751,7 @@ pub(crate) fn validate_alias_surface_tags(
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("validation fixture fits service input limit");
-    resolve_alias_surface_tags(&mut expected)
-        .expect("validation fixture fits service resource limits");
+    resolve_alias_surface_tags(&mut expected);
     if rows
         .iter()
         .zip(expected)
@@ -798,7 +791,7 @@ pub(crate) fn value_schema_selections(
     block_byte_offset: u64,
     fields: &[value_block::ValueField],
     catalog: &CatiaCatalog,
-) -> Result<Vec<CatiaValueSchemaSelection>, cadmpeg_core::CodecError> {
+) -> Vec<CatiaValueSchemaSelection> {
     let mut selector_indices = Vec::new();
     for (index, field) in fields.iter().enumerate() {
         let value_block::ValueField::SchemaSelector { ordinal, .. } = field else {
@@ -834,11 +827,7 @@ pub(crate) fn value_schema_selections(
             .copied()
             .unwrap_or(fields.len());
         let kind = if let Some(entry) = catalog.entries.get(ordinal_index) {
-            let mut encoded_value = Vec::new();
-            for field in &fields[index + 1..value_end] {
-                let copy = value_block::copy_field_charged(field)?;
-                encoded_value.push(copy);
-            }
+            let encoded_value = fields[index + 1..value_end].to_vec();
             CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
                 class: CatiaDesignClass {
                     entry: entry.id.clone(),
@@ -859,7 +848,7 @@ pub(crate) fn value_schema_selections(
             kind,
         });
     }
-    Ok(selections)
+    selections
 }
 
 impl CatiaValueBlock {
@@ -867,19 +856,19 @@ impl CatiaValueBlock {
         block: value_block::ValueBlock,
         catalog: &CatiaCatalog,
         object_graph: Option<&CatiaObjectGraph>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Self {
         let id = format!("catia:outer:value-block#{:010}", block.pos);
         let fields = value_block::tokenize(&block.payload);
         let byte_offset = u64_from_index(block.pos);
-        let schema_selections = value_schema_selections(&id, byte_offset, &fields, catalog)?;
-        Ok(Self {
+        let schema_selections = value_schema_selections(&id, byte_offset, &fields, catalog);
+        Self {
             id,
             byte_offset,
             object_graph: object_graph.map(|graph| graph.id.clone()),
             catalog: catalog.id.clone(),
             payload: block.payload,
             schema_selections,
-        })
+        }
     }
 }
 
@@ -954,7 +943,7 @@ pub(crate) fn native_object_graph(
             byte_len: u64_from_index(record.total_len),
             lead: record.lead,
             head: record.head().to_vec(),
-            inline_body: record.inline_body().map(|bytes| bytes.to_vec()),
+            inline_body: record.inline_body().map(<[u8]>::to_vec),
             owner: roles.owner.map(CatiaObjectOwner::from),
             class: roles.class_ref.map(|class_ref| CatiaObjectClass {
                 ordinal: class_ref,
@@ -975,8 +964,7 @@ pub(crate) fn native_object_graph(
     for record in &mut records {
         record.design_object = record
             .owner_entity_id()
-            .map(|owner| design_object_id(u64_from_index(graph.pos), owner))
-            .transpose()?;
+            .map(|owner| design_object_id(u64_from_index(graph.pos), owner));
     }
     let record_indices = records
         .iter()
@@ -990,13 +978,13 @@ pub(crate) fn native_object_graph(
             .as_ref()
             .map(|storage| storage.reference);
         let (storage_record, storage_design_object) =
-            resolved_storage_link(storage_ref, &records, &record_indices)?;
+            resolved_storage_link(storage_ref, &records, &record_indices);
         let references = resolved_payload_references(
             &records[index].payload,
             &records,
             &record_indices,
             terminal_null_entity_id,
-        )?;
+        );
         let record = &mut records[index];
         if let Some(storage) = &mut record.storage {
             storage.record = storage_record;

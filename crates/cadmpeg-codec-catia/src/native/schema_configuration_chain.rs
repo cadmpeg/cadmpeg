@@ -6,7 +6,6 @@ use super::{
     CatiaTerminalNullByGraphIndex,
 };
 use crate::native::entity_record::CatiaEntityRecord;
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -103,30 +102,6 @@ impl From<CatiaSchemaConfigurationRowChain> for ChainWire {
     }
 }
 
-impl ChainWire {
-    pub(super) fn from_charged(
-        chain: CatiaSchemaConfigurationRowChain,
-    ) -> Result<Self, CodecError> {
-        let mut remaining = chain.links.into_iter().peekable();
-        let mut links = Vec::new();
-        while let Some(link) = remaining.next() {
-            let successor =
-                copy_reference(remaining.peek().map_or(&chain.terminal, |next| &next.row))?;
-            links.push(LinkWire {
-                row: link.row,
-                successor_payload_offset: link.successor_payload_offset,
-                successor,
-                intervening_entities: link.intervening_entities,
-            });
-        }
-        Ok(Self {
-            id: chain.id,
-            object_graph: chain.object_graph,
-            links,
-        })
-    }
-}
-
 impl TryFrom<ChainWire> for CatiaSchemaConfigurationRowChain {
     type Error = &'static str;
 
@@ -166,7 +141,7 @@ pub(super) fn derive_schema_configuration_row_chains(
     entities: &HashMap<(String, u32), String>,
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Result<Vec<CatiaSchemaConfigurationRowChain>, CodecError> {
+) -> Vec<CatiaSchemaConfigurationRowChain> {
     let mut row_ids = HashSet::new();
     let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
     for entity in records {
@@ -219,7 +194,7 @@ pub(super) fn derive_schema_configuration_row_chains(
         let Some(last_link) = successors.get(last_row) else {
             continue;
         };
-        let terminal = copy_reference(&last_link.successor)?;
+        let terminal = last_link.successor.clone();
         let mut chain_links = Vec::new();
         for row_id in row_ids_in_order {
             let link = successors[&row_id];
@@ -231,13 +206,13 @@ pub(super) fn derive_schema_configuration_row_chains(
                         && entity.entity_id > row_id
                         && entity.entity_id < successor_id
                 }) {
-                    let reference = charged_entity_reference(
+                    let reference = super::entity_reference(
                         graph,
                         entity.entity_id,
                         entities,
                         entity_classes,
                         terminal_nulls,
-                    )?;
+                    );
                     between.push(reference);
                 }
                 Some(between)
@@ -245,7 +220,7 @@ pub(super) fn derive_schema_configuration_row_chains(
                 None
             };
             let row =
-                charged_entity_reference(graph, row_id, entities, entity_classes, terminal_nulls)?;
+                super::entity_reference(graph, row_id, entities, entity_classes, terminal_nulls);
             chain_links.push(CatiaSchemaConfigurationRowChainLink {
                 row,
                 successor_payload_offset: link.successor_payload_offset,
@@ -273,54 +248,7 @@ pub(super) fn derive_schema_configuration_row_chains(
             terminal,
         });
     }
-    Ok(chains)
-}
-
-fn copy_reference(reference: &CatiaEntityReference) -> Result<CatiaEntityReference, CodecError> {
-    Ok(match reference {
-        CatiaEntityReference::Null { entity_id } => CatiaEntityReference::Null {
-            entity_id: *entity_id,
-        },
-        CatiaEntityReference::Unresolved { entity_id } => CatiaEntityReference::Unresolved {
-            entity_id: *entity_id,
-        },
-        CatiaEntityReference::Resolved {
-            entity_id,
-            entity,
-            class_name,
-        } => CatiaEntityReference::Resolved {
-            entity_id: *entity_id,
-            entity: entity.to_owned(),
-            class_name: class_name.as_ref().map(|name| name.to_owned()),
-        },
-    })
-}
-
-fn charged_entity_reference(
-    graph: &str,
-    entity_id: u32,
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Result<CatiaEntityReference, CodecError> {
-    if terminal_nulls.get(graph).copied() == Some(entity_id) {
-        return Ok(CatiaEntityReference::Null { entity_id });
-    }
-    let entity = entities
-        .iter()
-        .find(|((key_graph, key_id), _)| key_graph == graph && *key_id == entity_id);
-    let Some((_, entity)) = entity else {
-        return Ok(CatiaEntityReference::Unresolved { entity_id });
-    };
-    let class_name = entity_classes
-        .iter()
-        .find(|((key_graph, key_id), _)| key_graph == graph && *key_id == entity_id)
-        .map(|(_, name)| name.to_owned());
-    Ok(CatiaEntityReference::Resolved {
-        entity_id,
-        entity: entity.to_owned(),
-        class_name,
-    })
+    chains
 }
 
 #[cfg(test)]

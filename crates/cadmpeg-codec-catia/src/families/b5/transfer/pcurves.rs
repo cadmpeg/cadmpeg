@@ -434,7 +434,7 @@ pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let Some(native_knots) = pcurve_nurbs_knots(pcurve)? else {
+    let Some(native_knots) = pcurve_nurbs_knots(pcurve) else {
         return Ok(None);
     };
     if let B5Surface::Plane {

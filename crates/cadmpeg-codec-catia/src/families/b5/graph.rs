@@ -6,8 +6,7 @@ use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_i64, truncate_f64_to
 type VertexComponentOutput = Result<(HashMap<u32, usize>, Vec<usize>, bool), CodecError>;
 type CirclePcurveFields = Option<(u32, [f64; 2], f64, [f64; 2], [f64; 2])>;
 type Class1aPcurveFields = Option<(u32, [f64; 2], [f64; 2], [f64; 2], f64, [f64; 2], [f64; 2])>;
-type LoopReferencesOutput = Result<Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)>, CodecError>;
-type LoopMetadataOutput = Result<Option<(B5LoopMetadata, Vec<[i16; 3]>)>, CodecError>;
+type LoopReferencesOutput = Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)>;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -17,9 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_pcurve_uv;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    analytic::ConeSurface,
-    nurbs::{knots_strictly_increasing, NurbsSurface},
-    ProceduralSurfaceDefinition,
+    analytic::ConeSurface, nurbs::NurbsSurface, ProceduralSurfaceDefinition,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{
@@ -132,9 +129,9 @@ impl B5Graph {
     /// their unresolved-association fallback in that case.
     pub(in crate::families) fn referenced_edge_vertex_references(
         &self,
-    ) -> Result<Option<BTreeMap<u32, [u32; 2]>>, CodecError> {
+    ) -> Option<BTreeMap<u32, [u32; 2]>> {
         if !self.complete {
-            return Ok(None);
+            return None;
         }
         let mut referenced = BTreeMap::new();
         for loop_ in self.loops.values() {
@@ -144,7 +141,7 @@ impl B5Graph {
                 }
             }
         }
-        Ok(Some(referenced))
+        Some(referenced)
     }
 }
 
@@ -755,7 +752,7 @@ pub(in crate::families) struct B5Face {
 }
 
 /// Count the face incidences for each object-stream loop.
-pub(super) fn face_loop_owner_counts(faces: &[B5Face]) -> Result<HashMap<u32, usize>, CodecError> {
+pub(super) fn face_loop_owner_counts(faces: &[B5Face]) -> HashMap<u32, usize> {
     let mut owners = HashMap::new();
     for face in faces {
         for &loop_id in &face.loops {
@@ -766,7 +763,7 @@ pub(super) fn face_loop_owner_counts(faces: &[B5Face]) -> Result<HashMap<u32, us
             }
         }
     }
-    Ok(owners)
+    owners
 }
 
 /// One structurally complete class-`5f` face reference production.
@@ -828,20 +825,18 @@ pub(in crate::families) struct B5LoopMetadataExtension {
 }
 
 impl B5Loop {
-    pub(super) fn edge_senses(&self) -> Result<Vec<bool>, CodecError> {
-        Ok(self
-            .members
+    pub(super) fn edge_senses(&self) -> Vec<bool> {
+        self.members
             .iter()
             .map(|member| member.controls[0] == -1)
-            .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
     }
 
-    pub(super) fn pcurve_senses(&self) -> Result<Vec<bool>, CodecError> {
-        Ok(self
-            .members
+    pub(super) fn pcurve_senses(&self) -> Vec<bool> {
+        self.members
             .iter()
             .map(|member| member.controls[2] == -1)
-            .collect::<Vec<_>>())
+            .collect::<Vec<_>>()
     }
 }
 
@@ -867,7 +862,7 @@ fn topology_runs(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<(Range<usize>, B5Graph)>, CodecError> {
     let runs = object_stream_run_ranges(bytes)?;
-    let root_runs = topology_root_run_ranges_from_runs(bytes, &runs)?;
+    let root_runs = topology_root_run_ranges_from_runs(bytes, &runs);
     let candidates = if root_runs.is_empty() {
         &runs
     } else {
@@ -875,7 +870,7 @@ fn topology_runs(
     };
     let mut graphs = Vec::new();
     for range in candidates {
-        let population = owned_object_stream_population(bytes, range.clone(), &runs)?;
+        let population = owned_object_stream_population(bytes, range.clone(), &runs);
         if let Some(graph) = parse_flat(ctx, &population, refusal)? {
             graphs.push((range.clone(), graph));
         }
@@ -888,8 +883,8 @@ fn parse_flat(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let frames = collect_object_stream_frames(bytes)?;
-    let records = records_from_frames(bytes, &frames)?;
+    let frames = collect_object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
     parse_from_records(ctx, bytes, &records, &frames, true, refusal)
 }
 
@@ -899,7 +894,7 @@ pub(in crate::families) fn parse_from_frames(
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let records = records_from_frames(bytes, frames)?;
+    let records = records_from_frames(bytes, frames);
     parse_from_records(ctx, bytes, &records, frames, true, refusal)
 }
 
@@ -932,7 +927,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
         return Ok(None);
     }
     let class21_candidates = a8_class21_pcurves_from_frames(ctx, bytes, frames)?;
-    let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes)?;
+    let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
     let mut object_stream_pcurve_candidates = Vec::new();
     for jet in &object_stream_pcurve_jets {
         if let Some(candidate) = object_stream_pcurve_candidate(ctx, jet)? {
@@ -990,7 +985,7 @@ fn parse_from_records_with_class21(
             &mut object_stream_pcurve_candidates,
             &mut conflicting_object_stream_pcurves,
             candidate,
-        )?;
+        );
     }
     for candidate in class21_candidates {
         object_stream_pcurve_classes
@@ -1005,7 +1000,7 @@ fn parse_from_records_with_class21(
             &mut object_stream_pcurve_candidates,
             &mut conflicting_object_stream_pcurves,
             candidate,
-        )?;
+        );
     }
     let mut a8_pcurve_supports = HashMap::new();
     for (&object_id, pcurve) in &object_stream_pcurve_candidates {
@@ -1018,18 +1013,18 @@ fn parse_from_records_with_class21(
             frame.start,
             frame.end,
             frame.object_id,
-        )? {
+        ) {
             a8_headers.insert(header.object_id, header);
         }
     }
     let mut surfaces = BTreeMap::new();
     for record in records {
-        if let Some(surface) = surface_node(record, a8_headers.get(&record.object_id))? {
+        if let Some(surface) = surface_node(record, a8_headers.get(&record.object_id)) {
             surfaces.insert(record.object_id, surface);
         }
     }
     let mut conflicting_surfaces = HashSet::new();
-    for surface_id in topology_surface_references(records)? {
+    for surface_id in topology_surface_references(records) {
         if surfaces.contains_key(&surface_id) {
             continue;
         }
@@ -1039,7 +1034,7 @@ fn parse_from_records_with_class21(
         else {
             continue;
         };
-        let payload = record.payload.to_vec();
+        let payload = record.payload.clone();
         surfaces.insert(
             surface_id,
             B5Surface::Unknown {
@@ -1067,10 +1062,10 @@ fn parse_from_records_with_class21(
                 &mut conflicting_surfaces,
                 object_id,
                 B5Surface::Nurbs(surface.geometry),
-            )?;
+            );
         }
     }
-    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes)? {
+    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
         if let Some(definition) =
             crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)?
         {
@@ -1082,7 +1077,7 @@ fn parse_from_records_with_class21(
                     carrier_object_id: jet.object_id,
                     definition: Box::new(definition),
                 },
-            )?;
+            );
         }
     }
     let mut object_stream_pcurves = BTreeMap::new();
@@ -1095,7 +1090,7 @@ fn parse_from_records_with_class21(
         else {
             continue;
         };
-        let distinct_knots = pcurve.distinct_knots.to_vec();
+        let distinct_knots = pcurve.distinct_knots.clone();
         object_stream_pcurves.insert(
             object_id,
             B5ObjectStreamPcurve {
@@ -1183,7 +1178,7 @@ fn parse_from_records_with_class21(
                     B5Surface::Unknown {
                         family: record.family,
                         class: record.class,
-                        payload: record.payload.to_vec(),
+                        payload: record.payload.clone(),
                     }
                 };
                 let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
@@ -1192,12 +1187,12 @@ fn parse_from_records_with_class21(
                     &mut conflicting_surfaces,
                     offset.carrier_surface,
                     copy_surface(ctx, &carrier)?,
-                )? || !merge_surface_candidate(
+                ) || !merge_surface_candidate(
                     &mut surfaces,
                     &mut conflicting_surfaces,
                     record.object_id,
                     carrier,
-                )? {
+                ) {
                     continue;
                 }
                 let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
@@ -1220,7 +1215,7 @@ fn parse_from_records_with_class21(
                     &mut conflicting_surfaces,
                     record.object_id,
                     carrier,
-                )? && parameters_match_carrier
+                ) && parameters_match_carrier
                     && supported_surface_pcurves_match(&construction, by_id, &a8_pcurve_supports)
                     && construction
                         .support_surfaces
@@ -1260,10 +1255,10 @@ fn parse_from_records_with_class21(
     let mut pcurves = BTreeMap::new();
     for record in records {
         let pcurve = match record.class {
-            0x18 => parse_line_pcurve(record)?,
-            0x19 => parse_circle_pcurve(record)?,
-            0x1a => parse_class_1a_pcurve(record)?,
-            0x21 => parse_pcurve(record)?,
+            0x18 => parse_line_pcurve(record),
+            0x19 => parse_circle_pcurve(record),
+            0x1a => parse_class_1a_pcurve(record),
+            0x21 => parse_pcurve(record),
             _ => None,
         };
         if let Some(pcurve) = pcurve {
@@ -1272,7 +1267,7 @@ fn parse_from_records_with_class21(
     }
     let mut conflicting_pcurves = HashSet::new();
     let mut circle_candidates = BTreeMap::<u32, Vec<B5Pcurve>>::new();
-    for pcurve in circle_pcurves_from_frames(bytes, frames)? {
+    for pcurve in circle_pcurves_from_frames(bytes, frames) {
         if surfaces.contains_key(&pcurve.surface) {
             circle_candidates
                 .entry(pcurve.object_id)
@@ -1286,7 +1281,7 @@ fn parse_from_records_with_class21(
             continue;
         };
         if distinct.all(|other| other == candidate) {
-            merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate)?;
+            merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate);
         } else {
             pcurves.remove(&object_id);
             conflicting_pcurves.insert(object_id);
@@ -1301,11 +1296,11 @@ fn parse_from_records_with_class21(
         {
             continue;
         }
-        merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate)?;
+        merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate);
     }
     let mut opaque_pcurves = BTreeMap::new();
     for record in records {
-        if let Some(pcurve) = parse_opaque_pcurve(record)? {
+        if let Some(pcurve) = parse_opaque_pcurve(record) {
             opaque_pcurves.insert(record.object_id, pcurve);
         }
     }
@@ -1319,7 +1314,7 @@ fn parse_from_records_with_class21(
     }
     let mut parameter_incidences = BTreeMap::new();
     for record in records {
-        if let Some(incidence) = parameter_incidence(record)? {
+        if let Some(incidence) = parameter_incidence(record) {
             parameter_incidences.insert(record.object_id, incidence);
         }
     }
@@ -1363,7 +1358,7 @@ fn parse_from_records_with_class21(
     let source_face_count = records.iter().filter(|record| record.class == 0x5f).count();
     let mut loops = BTreeMap::new();
     for record in records.iter().filter(|record| record.class == 0x62) {
-        let Some(parsed) = parse_loop_record(record)? else {
+        let Some(parsed) = parse_loop_record(record) else {
             continue;
         };
         let Some(loop_) = parse_loop(
@@ -1380,7 +1375,7 @@ fn parse_from_records_with_class21(
     }
     let mut face_records = BTreeMap::new();
     for record in records.iter().filter(|record| record.class == 0x5f) {
-        if let Some(face) = parse_face_record(record)? {
+        if let Some(face) = parse_face_record(record) {
             face_records.insert(record.object_id, face);
         }
     }
@@ -1398,7 +1393,7 @@ fn parse_from_records_with_class21(
         .iter()
         .filter_map(|record| face_records.get(&record.object_id))
     {
-        if let Some(face) = parse_face(record, &loops, &surfaces, &surface_aliases)? {
+        if let Some(face) = parse_face(record, &loops, &surfaces, &surface_aliases) {
             faces.push(face);
         }
     }
@@ -1444,7 +1439,7 @@ fn parse_from_records_with_class21(
     }
     loops.retain(|loop_id, _| referenced_loops.contains(loop_id));
     let complete = faces.len() == source_face_count
-        && face_loop_owner_counts(&faces)?
+        && face_loop_owner_counts(&faces)
             .values()
             .all(|count| *count == 1)
         && referenced_loops.iter().all(|loop_id| {
@@ -1492,10 +1487,10 @@ fn merge_pcurve_candidate(
     pcurves: &mut BTreeMap<u32, B5Pcurve>,
     conflicts: &mut HashSet<u32>,
     candidate: B5Pcurve,
-) -> Result<(), CodecError> {
+) {
     let object_id = candidate.object_id;
     if conflicts.contains(&object_id) {
-        return Ok(());
+        return;
     }
     match pcurves.get(&object_id) {
         None => {
@@ -1507,7 +1502,6 @@ fn merge_pcurve_candidate(
             conflicts.insert(object_id);
         }
     }
-    Ok(())
 }
 
 fn merge_surface_candidate(
@@ -1515,9 +1509,9 @@ fn merge_surface_candidate(
     conflicts: &mut HashSet<u32>,
     object_id: u32,
     candidate: B5Surface,
-) -> Result<bool, CodecError> {
+) -> bool {
     if conflicts.contains(&object_id) {
-        return Ok(false);
+        return false;
     }
     match surfaces.get(&object_id) {
         None => {
@@ -1530,10 +1524,10 @@ fn merge_surface_candidate(
         Some(_) => {
             surfaces.remove(&object_id);
             conflicts.insert(object_id);
-            return Ok(false);
+            return false;
         }
     }
-    Ok(true)
+    true
 }
 
 fn unresolved_surface_candidate(surface: &B5Surface) -> bool {
@@ -1547,7 +1541,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
     Ok(match surface {
         B5Surface::UnresolvedNurbs { header, payload } => B5Surface::UnresolvedNurbs {
             header: header.clone(),
-            payload: payload.to_vec(),
+            payload: payload.clone(),
         },
         B5Surface::Unknown {
             family,
@@ -1556,7 +1550,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
         } => B5Surface::Unknown {
             family: *family,
             class: *class,
-            payload: payload.to_vec(),
+            payload: payload.clone(),
         },
         B5Surface::Nurbs(nurbs) => {
             B5Surface::Nurbs(nurbs.try_clone_for_decode(ctx, "catia_b5_copied_nurbs_surface")?)
@@ -1601,8 +1595,7 @@ fn resolve_surface_aliases(
             continue;
         };
         let unchanged = surfaces.get(&record.object_id) == Some(&candidate);
-        if merge_surface_candidate(surfaces, conflicts, record.object_id, candidate)? && !unchanged
-        {
+        if merge_surface_candidate(surfaces, conflicts, record.object_id, candidate) && !unchanged {
             changed = true;
         }
     }
@@ -1642,7 +1635,7 @@ fn object_stream_pcurve_candidate(
     ctx: &DecodeContext<'_>,
     jet: &crate::families::a5a8::records::A8Pcurve,
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    let Some((_, control_points)) = jet.bspline()? else {
+    let Some((_, control_points)) = jet.bspline() else {
         return Ok(None);
     };
     Ok(Some(B5Pcurve {
@@ -1666,7 +1659,7 @@ fn object_stream_pcurve_candidate(
 
 #[cfg(test)]
 fn a8_class21_pcurves(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<B5Pcurve>, CodecError> {
-    let frames = collect_object_stream_frames(bytes)?;
+    let frames = collect_object_stream_frames(bytes);
     a8_class21_pcurves_from_frames(ctx, bytes, &frames)
 }
 
@@ -1727,12 +1720,8 @@ fn parse_a8_class21_pcurve(
         read_values(&mut position, &mut distinct_knots)?;
         let mut knot_values = Vec::new();
         knot_values.extend(distinct_knots.iter().copied().map(FiniteReal::get));
-        match knots_strictly_increasing(&knot_values, |count| {
-            ctx.charge_work(count, "IR strict knot order")
-        }) {
-            Ok(true) => {}
-            Ok(false) => return None,
-            Err(error) => return Some(Err(error)),
+        if !crate::nurbs::strictly_increasing(&knot_values) {
+            return None;
         }
         let mut multiplicities_valid = true;
         for index in 0..knot_count {
@@ -1771,12 +1760,7 @@ fn parse_a8_class21_pcurve(
         let mut second = Vec::new();
         second.extend(ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]));
         let (_, control_points) =
-            match crate::nurbs::quintic_jet_bspline(degree, &knot_values, &points, &first, &second)
-            {
-                Ok(Some(curve)) => curve,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            crate::nurbs::quintic_jet_bspline(degree, &knot_values, &points, &first, &second)?;
         let tail = payload.get(position..)?;
         let tail_control = tail.get(..2);
         let extension_control = tail.get(34..36);
@@ -1815,9 +1799,7 @@ fn parse_a8_class21_pcurve(
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
 /// edge, keyed by the edge object id.
-pub(in crate::families) fn edge_vertex_references(
-    bytes: &[u8],
-) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+pub(in crate::families) fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
     let mut edges = BTreeMap::new();
     let mut ambiguous = HashSet::new();
 
@@ -1844,7 +1826,7 @@ pub(in crate::families) fn edge_vertex_references(
         }
     }
     edges.retain(|object_id, _| !ambiguous.contains(object_id));
-    Ok(edges)
+    edges
 }
 
 /// Return the ordered pcurve pair owned by each requested native edge's
@@ -1866,7 +1848,7 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
     bytes: &[u8],
     edge_ids: &HashSet<u32>,
     frames: &[ObjectFrame],
-) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+) -> BTreeMap<u32, [u32; 2]> {
     let mut edge_wrappers = HashMap::<u32, Option<u32>>::new();
     let mut wrappers = HashMap::<u32, Option<[u32; 2]>>::new();
     for frame in frames {
@@ -1924,7 +1906,7 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
             resolved.insert(edge, *references);
         }
     }
-    Ok(resolved)
+    resolved
 }
 
 pub(in crate::families) fn targeted_surfaces_from_frames(
@@ -1950,7 +1932,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         let Some(object_id) = surface.object_id() else {
             continue;
         };
-        merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(surface.geometry))?;
+        merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(surface.geometry));
     }
     let mut headers = HashMap::new();
     for frame in frames {
@@ -1959,7 +1941,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             frame.start,
             frame.end,
             frame.object_id,
-        )? {
+        ) {
             headers.insert(header.object_id, header);
         }
     }
@@ -1968,7 +1950,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         if !is_surface_class(frame.class) {
             continue;
         }
-        let Some(record) = record_from_frame(bytes, frame)? else {
+        let Some(record) = record_from_frame(bytes, frame) else {
             continue;
         };
 
@@ -1986,7 +1968,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             .or_insert(Some(record));
     }
     let mut rolling = HashMap::<u32, Option<B5Surface>>::new();
-    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes)? {
+    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
         let Some(definition) =
             crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)?
         else {
@@ -1999,7 +1981,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
                 carrier_object_id: jet.object_id,
                 definition: Box::new(definition),
             },
-        )?;
+        );
     }
     let mut surfaces = BTreeMap::new();
     for &object_id in object_ids {
@@ -2019,7 +2001,7 @@ fn targeted_geometry_graph(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<B5Graph>, CodecError> {
-    let frames = collect_object_stream_frames(bytes)?;
+    let frames = collect_object_stream_frames(bytes);
     targeted_geometry_graph_from_frames(ctx, bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
 }
 
@@ -2034,7 +2016,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
         if !is_targeted_geometry_class(frame.family, frame.class) {
             continue;
         }
-        let Some(record) = record_from_frame(bytes, frame)? else {
+        let Some(record) = record_from_frame(bytes, frame) else {
             continue;
         };
 
@@ -2055,7 +2037,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     for record in candidates.into_values().flatten() {
         records.push(record);
     }
-    records.sort_by(|left, right| left.offset.cmp(&right.offset));
+    records.sort_by_key(|left| left.offset);
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
 }
 
@@ -2093,7 +2075,7 @@ fn merge_targeted_surface(
     candidates: &mut HashMap<u32, Option<B5Surface>>,
     object_id: u32,
     surface: B5Surface,
-) -> Result<(), CodecError> {
+) {
     candidates
         .entry(object_id)
         .and_modify(|stored| {
@@ -2102,7 +2084,6 @@ fn merge_targeted_surface(
             }
         })
         .or_insert(Some(surface));
-    Ok(())
 }
 
 fn resolve_targeted_surface(
@@ -2169,7 +2150,7 @@ fn resolve_targeted_surface_inner(
                 ctx, record, records, headers, resolved, rolling, &visited,
             );
         }
-        return surface_node(record, headers.get(&object_id));
+        return Ok(surface_node(record, headers.get(&object_id)));
     }
 }
 
@@ -2278,7 +2259,7 @@ fn incidence_vertex_coordinates(
         let Some(roster_record) = by_id.get(&link.incidence) else {
             continue;
         };
-        let Some(incidence_records) = counted_references(roster_record, 0x05)? else {
+        let Some(incidence_records) = counted_references(roster_record, 0x05) else {
             continue;
         };
         let mut first = None;
@@ -2289,7 +2270,7 @@ fn incidence_vertex_coordinates(
                 valid = false;
                 break;
             };
-            let Some(incidence) = parameter_incidence(record)? else {
+            let Some(incidence) = parameter_incidence(record) else {
                 valid = false;
                 break;
             };
@@ -2378,69 +2359,50 @@ fn parse_vertex_incidence_link(record: &B5Record) -> Option<B5VertexIncidenceLin
     })
 }
 
-fn counted_references(record: &B5Record, class: u8) -> Result<Option<Vec<u32>>, CodecError> {
+fn counted_references(record: &B5Record, class: u8) -> Option<Vec<u32>> {
     if record.class != class {
-        return Ok(None);
+        return None;
     }
-    let Some((references, position)) = wire::tokens::counted_refs(&record.payload, true)? else {
-        return Ok(None);
-    };
-    Ok((position == record.payload.len()).then_some(references))
+    let (references, position) = wire::tokens::counted_refs(&record.payload, true)?;
+    (position == record.payload.len()).then_some(references)
 }
 
-fn parameter_incidence(record: &B5Record) -> Result<Option<B5ParameterIncidence>, CodecError> {
+fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
     if record.class != 0x06 {
-        return Ok(None);
+        return None;
     }
-    let Some(count) = record
+    let count = record
         .payload
         .first()
-        .and_then(|lead| lead.checked_sub(0x80))
-    else {
-        return Ok(None);
-    };
+        .and_then(|lead| lead.checked_sub(0x80))?;
     let count = usize::from(count);
     let mut position = 1;
-    let Some(references) = (0..count)
+    let references = (0..count)
         .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(expected) = u8::try_from(count)
+        .collect::<Option<Vec<_>>>()?;
+    let expected = u8::try_from(count)
         .ok()
-        .and_then(|count| 0x80u8.checked_add(count))
-    else {
-        return Ok(None);
-    };
+        .and_then(|count| 0x80u8.checked_add(count))?;
     if record.payload.get(position) != Some(&expected) {
-        return Ok(None);
+        return None;
     }
     position += 1;
     let mut lanes = Vec::new();
     for curve in references {
-        let Some(parameter) = f64_le(&record.payload, position) else {
-            return Ok(None);
-        };
-        let Some(next) = position.checked_add(8) else {
-            return Ok(None);
-        };
+        let parameter = f64_le(&record.payload, position)?;
+        let next = position.checked_add(8)?;
         position = next;
-        let Some(control) = wire::tokens::compact_uint(&record.payload, &mut position) else {
-            return Ok(None);
-        };
+        let control = wire::tokens::compact_uint(&record.payload, &mut position)?;
         lanes.push(B5IncidenceLane {
             curve,
             parameter,
             control,
         });
     }
-    Ok(
-        (position == record.payload.len()).then_some(B5ParameterIncidence {
-            object_id: record.object_id,
-            lanes,
-        }),
-    )
+    (position == record.payload.len()).then_some(B5ParameterIncidence {
+        object_id: record.object_id,
+        lanes,
+    })
 }
 
 fn implicit_pcurve_bindings(
@@ -2453,7 +2415,7 @@ fn implicit_pcurve_bindings(
     let mut bindings = BTreeMap::new();
     let mut ambiguous = HashSet::new();
     for record in records.iter().filter(|record| record.class == 0x62) {
-        let Some((references, _, _)) = loop_references_and_metadata(record)? else {
+        let Some((references, _, _)) = loop_references_and_metadata(record) else {
             continue;
         };
         let Some((&surface, occurrences)) = references.split_last() else {
@@ -2477,7 +2439,7 @@ fn implicit_pcurve_bindings(
                 let Some(record) = by_id.get(&reference_id) else {
                     return Ok(false);
                 };
-                Ok(parameter_incidence(record)?.is_some_and(|incidence| {
+                Ok(parameter_incidence(record).is_some_and(|incidence| {
                     incidence.lanes.iter().any(|lane| lane.curve == pcurve)
                 }))
             };
@@ -2508,7 +2470,7 @@ pub(super) fn evaluate_pcurve(
     pcurve: &B5Pcurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, CodecError> {
-    let Some(knots) = pcurve_nurbs_knots(pcurve)? else {
+    let Some(knots) = pcurve_nurbs_knots(pcurve) else {
         return Ok(None);
     };
     let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
@@ -2536,36 +2498,30 @@ pub(super) fn evaluate_pcurve(
     Ok(point.map(|point| [point.u, point.v]))
 }
 
-fn pcurve_knots(pcurve: &B5Pcurve) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<FiniteReal>> {
     let mut knots = Vec::new();
 
     for (&knot, &multiplicity) in pcurve.distinct_knots.iter().zip(&pcurve.multiplicities) {
-        let Some(multiplicity) = usize::try_from(multiplicity).ok() else {
-            return Ok(None);
-        };
+        let multiplicity = usize::try_from(multiplicity).ok()?;
         knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
     }
-    Ok(Some(knots))
+    Some(knots)
 }
 
 /// Return the knot vector in the pcurve's occurrence coordinate system. A
 /// translated knot is admitted finite, since the translation can overflow.
-pub(super) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Result<Option<Vec<FiniteReal>>, CodecError> {
-    let Some(mut knots) = pcurve_knots(pcurve)? else {
-        return Ok(None);
-    };
+pub(super) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<FiniteReal>> {
+    let mut knots = pcurve_knots(pcurve)?;
     match pcurve.parameterization {
         B5PcurveParameterization::Native => {}
         B5PcurveParameterization::Translated { native_origin } => {
             for knot in &mut knots {
-                let Some(value) = FiniteReal::new(knot.get() - native_origin.get()) else {
-                    return Ok(None);
-                };
+                let value = FiniteReal::new(knot.get() - native_origin.get())?;
                 *knot = value;
             }
         }
     }
-    Ok(Some(knots))
+    Some(knots)
 }
 
 pub(super) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[FiniteReal; 2]> {
@@ -2692,7 +2648,7 @@ fn bind_native_vertices(
         }
     }
     let mut ranked = logical_coordinates.into_iter().collect::<Vec<_>>();
-    ranked.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    ranked.sort_unstable_by_key(|(left, _)| *left);
     let mut logical_vertex_indices = HashMap::new();
     let mut logical_vertices = Vec::new();
     for (rank, (object_id, point)) in ranked.into_iter().enumerate() {
@@ -3468,15 +3424,15 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
 fn surface_node(
     record: &B5Record,
     header: Option<&crate::families::a5a8::records::A8SurfaceHeader>,
-) -> Result<Option<B5Surface>, CodecError> {
+) -> Option<B5Surface> {
     if let Some(surface) = parse_surface(record) {
-        return Ok(Some(surface));
+        return Some(surface);
     }
     if record.family != 0xa8 || record.class != 0x34 {
-        return Ok(None);
+        return None;
     }
-    let payload = record.payload.to_vec();
-    Ok(Some(match header {
+    let payload = record.payload.clone();
+    Some(match header {
         Some(header) => B5Surface::UnresolvedNurbs {
             header: header.clone(),
             payload,
@@ -3486,7 +3442,7 @@ fn surface_node(
             class: record.class,
             payload,
         },
-    }))
+    })
 }
 
 fn surface_alias_target(record: &B5Record) -> Option<u32> {
@@ -4147,7 +4103,11 @@ fn parse_extrusion_directrix(
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
 ) -> Result<Option<B5ExtrusionDirectrix>, CodecError> {
     if record.family == 0xb5 && record.class == 0x24 {
-        return parse_surface_curve_directrix(record, records, object_stream_pcurves);
+        return Ok(parse_surface_curve_directrix(
+            record,
+            records,
+            object_stream_pcurves,
+        ));
     }
     if record.family == 0xb5 && record.class == 0x14 {
         return parse_offset_curve_directrix(ctx, record, records, object_stream_pcurves);
@@ -4215,7 +4175,7 @@ fn parse_extrusion_directrix(
     else {
         return Ok(None);
     };
-    let Some(first_range) = analytic_pcurve_range(first)? else {
+    let Some(first_range) = analytic_pcurve_range(first) else {
         return Ok(None);
     };
     Ok(Some(B5ExtrusionDirectrix::Intersection {
@@ -4233,7 +4193,7 @@ fn parse_surface_curve_directrix(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
-) -> Result<Option<B5ExtrusionDirectrix>, CodecError> {
+) -> Option<B5ExtrusionDirectrix> {
     let parsed = (|| -> Option<_> {
         (record.family == 0xb5 && record.class == 0x24 && record.payload.first() == Some(&0x81))
             .then_some(())?;
@@ -4253,25 +4213,17 @@ fn parse_surface_curve_directrix(
         }
         Some((pcurve, start, end, interval))
     })();
-    let Some((pcurve, start, end, interval)) = parsed else {
-        return Ok(None);
-    };
+    let (pcurve, start, end, interval) = parsed?;
     let (surface, pcurve_range) = if let Some(candidate) = object_stream_pcurves.get(&pcurve) {
         (candidate.surface, candidate.parameter_range)
     } else {
-        let Some(pcurve_record) = records.get(&pcurve) else {
-            return Ok(None);
-        };
-        let Some(surface) = pcurve_surface_reference(pcurve_record) else {
-            return Ok(None);
-        };
-        let Some(range) = analytic_pcurve_range(pcurve_record)? else {
-            return Ok(None);
-        };
+        let pcurve_record = records.get(&pcurve)?;
+        let surface = pcurve_surface_reference(pcurve_record)?;
+        let range = analytic_pcurve_range(pcurve_record)?;
         (surface, range)
     };
     let parameter_range = [start, end];
-    Ok(parameter_range
+    parameter_range
         .into_iter()
         .all(|value| {
             cadmpeg_ir::math::parameter_in_domain(
@@ -4284,7 +4236,7 @@ fn parse_surface_curve_directrix(
             object_id: record.object_id,
             support: (surface, pcurve, parameter_range),
             parameter_range: interval,
-        }))
+        })
 }
 
 fn parse_offset_curve_directrix(
@@ -4364,18 +4316,18 @@ fn pcurve_surface_reference(record: &B5Record) -> Option<u32> {
     wire::tokens::object_ref(&record.payload, &mut position, true)
 }
 
-fn analytic_pcurve_range(record: &B5Record) -> Result<Option<[FiniteReal; 2]>, CodecError> {
+fn analytic_pcurve_range(record: &B5Record) -> Option<[FiniteReal; 2]> {
     let pcurve = match record.class {
-        0x18 => parse_line_pcurve(record)?,
-        0x19 => parse_circle_pcurve(record)?,
+        0x18 => parse_line_pcurve(record),
+        0x19 => parse_circle_pcurve(record),
         _ => None,
     };
-    Ok(pcurve.and_then(|pcurve| {
+    pcurve.and_then(|pcurve| {
         Some([
             *pcurve.distinct_knots.first()?,
             *pcurve.distinct_knots.last()?,
         ])
-    }))
+    })
 }
 
 fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
@@ -4709,95 +4661,90 @@ fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f
     )
 }
 
-fn parse_pcurve(record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> {
-    (|| -> Option<Result<B5Pcurve, CodecError>> {
-        if record.family != 0xb5 || record.class != 0x21 || record.payload.first() != Some(&0x81) {
-            return None;
-        }
-        let mut position = 1;
-        let surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-        if record.payload.get(position) != Some(&0x01) {
-            return None;
-        }
-        position += 1;
-        let degree = wire::tokens::compact_uint(&record.payload, &mut position)?;
-        if !matches!(degree, 1 | 2 | 5)
-            || record.payload.get(position..position + 2) != Some(&[0x01, 0x01])
-        {
-            return None;
-        }
-        position += 2;
-        let knot_count =
-            usize::try_from(wire::tokens::compact_uint(&record.payload, &mut position)?).ok()?;
-        if knot_count != 2 || record.payload.get(position) != Some(&0x01) {
-            return None;
-        }
-        position += 1;
-        let mut view = View::over_retained(&record.payload);
-        view.seek(position)?;
-        let mut distinct_knots = Vec::new();
-        for _ in 0..knot_count {
-            let knot = FiniteReal::new(view.f64_le()?)?;
-            distinct_knots.push(knot);
-        }
-        position = view.position();
-        if !distinct_knots.windows(2).all(|pair| pair[0] < pair[1]) {
-            return None;
-        }
-        let mut multiplicities = Vec::new();
-        for _ in 0..knot_count {
-            let multiplicity = wire::tokens::compact_uint(&record.payload, &mut position)?;
-            multiplicities.push(multiplicity);
-        }
-        let endpoint_multiplicity = degree + 1;
-        if multiplicities != [endpoint_multiplicity; 2] {
-            return None;
-        }
-        let pole_count = endpoint_multiplicity;
-        view.seek(position)?;
-        let mut control_points = Vec::new();
-        for _ in 0..pole_count {
-            let u = view.f64_le()?;
-            let v = view.f64_le()?;
-            let point = FiniteVector::new([u, v])?;
-            control_points.push(point);
-        }
-        position = view.position();
-        let tail = record.payload.get(position..)?;
-        let suffix_scalar = PositiveReal::new(f64_le(tail, 10)?.get())?;
-        let native_origin = *distinct_knots.first()?;
-        let native_span = distinct_knots[1].get() - native_origin.get();
-        if tail.len() != 36
-            || tail.get(..2) != Some(&[0x05, 0x05])
-            || f64_le(tail, 2)?.get() != 0.0
-            || suffix_scalar.get().to_bits() != native_span.to_bits()
-            || f64_le(tail, 18)?.get() != 1.0
-            || f64_le(tail, 26)?.get() != 0.0
-            || tail.get(34..) != Some(&[0x00, 0x07])
-        {
-            return None;
-        }
-        Some(Ok(B5Pcurve {
-            object_id: record.object_id,
-            surface,
-            degree,
-            distinct_knots,
-            multiplicities,
-            control_points,
-            weights: None,
-            parameter_range: None,
-            parameterization: B5PcurveParameterization::Translated { native_origin },
-            class_21_suffix_scalar: Some(suffix_scalar),
-            lifted_endpoints: None,
-        }))
-    })()
-    .transpose()
+fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    if record.family != 0xb5 || record.class != 0x21 || record.payload.first() != Some(&0x81) {
+        return None;
+    }
+    let mut position = 1;
+    let surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
+    if record.payload.get(position) != Some(&0x01) {
+        return None;
+    }
+    position += 1;
+    let degree = wire::tokens::compact_uint(&record.payload, &mut position)?;
+    if !matches!(degree, 1 | 2 | 5)
+        || record.payload.get(position..position + 2) != Some(&[0x01, 0x01])
+    {
+        return None;
+    }
+    position += 2;
+    let knot_count =
+        usize::try_from(wire::tokens::compact_uint(&record.payload, &mut position)?).ok()?;
+    if knot_count != 2 || record.payload.get(position) != Some(&0x01) {
+        return None;
+    }
+    position += 1;
+    let mut view = View::over_retained(&record.payload);
+    view.seek(position)?;
+    let mut distinct_knots = Vec::new();
+    for _ in 0..knot_count {
+        let knot = FiniteReal::new(view.f64_le()?)?;
+        distinct_knots.push(knot);
+    }
+    position = view.position();
+    if !distinct_knots.windows(2).all(|pair| pair[0] < pair[1]) {
+        return None;
+    }
+    let mut multiplicities = Vec::new();
+    for _ in 0..knot_count {
+        let multiplicity = wire::tokens::compact_uint(&record.payload, &mut position)?;
+        multiplicities.push(multiplicity);
+    }
+    let endpoint_multiplicity = degree + 1;
+    if multiplicities != [endpoint_multiplicity; 2] {
+        return None;
+    }
+    let pole_count = endpoint_multiplicity;
+    view.seek(position)?;
+    let mut control_points = Vec::new();
+    for _ in 0..pole_count {
+        let u = view.f64_le()?;
+        let v = view.f64_le()?;
+        let point = FiniteVector::new([u, v])?;
+        control_points.push(point);
+    }
+    position = view.position();
+    let tail = record.payload.get(position..)?;
+    let suffix_scalar = PositiveReal::new(f64_le(tail, 10)?.get())?;
+    let native_origin = *distinct_knots.first()?;
+    let native_span = distinct_knots[1].get() - native_origin.get();
+    if tail.len() != 36
+        || tail.get(..2) != Some(&[0x05, 0x05])
+        || f64_le(tail, 2)?.get() != 0.0
+        || suffix_scalar.get().to_bits() != native_span.to_bits()
+        || f64_le(tail, 18)?.get() != 1.0
+        || f64_le(tail, 26)?.get() != 0.0
+        || tail.get(34..) != Some(&[0x00, 0x07])
+    {
+        return None;
+    }
+    Some(B5Pcurve {
+        object_id: record.object_id,
+        surface,
+        degree,
+        distinct_knots,
+        multiplicities,
+        control_points,
+        weights: None,
+        parameter_range: None,
+        parameterization: B5PcurveParameterization::Translated { native_origin },
+        class_21_suffix_scalar: Some(suffix_scalar),
+        lifted_endpoints: None,
+    })
 }
 
-fn parse_circle_pcurve(record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> {
-    let Some((surface, center, radius, range, angles)) = parse_circle_pcurve_fields(record) else {
-        return Ok(None);
-    };
+fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    let (surface, center, radius, range, angles) = parse_circle_pcurve_fields(record)?;
     rational_arc_pcurve(crate::families::b5::graph::RationalArcPcurveInputs {
         record,
         surface,
@@ -4841,12 +4788,9 @@ fn parse_circle_pcurve_fields(record: &B5Record) -> CirclePcurveFields {
     ))
 }
 
-fn parse_class_1a_pcurve(record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> {
-    let Some((surface, center, reference_x, reference_y, radius, range, angles)) =
-        parse_class_1a_pcurve_fields(record)
-    else {
-        return Ok(None);
-    };
+fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    let (surface, center, reference_x, reference_y, radius, range, angles) =
+        parse_class_1a_pcurve_fields(record)?;
     rational_arc_pcurve(crate::families::b5::graph::RationalArcPcurveInputs {
         record,
         surface,
@@ -4915,9 +4859,7 @@ struct RationalArcPcurveInputs<'input0> {
     angle_range: [f64; 2],
 }
 
-fn rational_arc_pcurve(
-    inputs: RationalArcPcurveInputs<'_>,
-) -> Result<Option<B5Pcurve>, CodecError> {
+fn rational_arc_pcurve(inputs: RationalArcPcurveInputs<'_>) -> Option<B5Pcurve> {
     let RationalArcPcurveInputs {
         record,
         surface,
@@ -4933,15 +4875,12 @@ fn rational_arc_pcurve(
     let [start_angle, end_angle] = angle_range;
     let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
     if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
-        return Ok(None);
+        return None;
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
-    else {
-        return Ok(None);
-    };
+    let span_count = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)?;
     let span_count = span_count.get();
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
@@ -4951,26 +4890,14 @@ fn rational_arc_pcurve(
     distinct_knots.push(start);
     multiplicities.push(3);
     for span in 0..span_count {
-        let fraction0 = match f64_from_index(span) {
-            Some(value) => value,
-            None => return Ok(None),
-        } / match f64_from_index(span_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
-        let fraction1 = match f64_from_index(span + 1) {
-            Some(value) => value,
-            None => return Ok(None),
-        } / match f64_from_index(span_count) {
-            Some(value) => value,
-            None => return Ok(None),
-        };
+        let fraction0 = f64_from_index(span)? / f64_from_index(span_count)?;
+        let fraction1 = f64_from_index(span + 1)? / f64_from_index(span_count)?;
         let angle0 = start_angle + (end_angle - start_angle) * fraction0;
         let angle1 = start_angle + (end_angle - start_angle) * fraction1;
         let middle = (angle0 + angle1) * 0.5;
         let middle_weight = ((angle1 - angle0) * 0.5).cos();
         if middle_weight <= f64::EPSILON {
-            return Ok(None);
+            return None;
         }
         if span == 0 {
             control_points.push([
@@ -4999,9 +4926,7 @@ fn rational_arc_pcurve(
             let knot = if ordinary.is_finite() {
                 ordinary
             } else {
-                let Some(knot) = cadmpeg_ir::math::interpolate(start, end, fraction1) else {
-                    return Ok(None);
-                };
+                let knot = cadmpeg_ir::math::interpolate(start, end, fraction1)?;
                 knot.get()
             };
             distinct_knots.push(knot);
@@ -5010,28 +4935,19 @@ fn rational_arc_pcurve(
     }
     distinct_knots.push(end);
     multiplicities.push(3);
-    let Some(distinct_knots) = distinct_knots
+    let distinct_knots = distinct_knots
         .into_iter()
         .map(FiniteReal::new)
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(weights) = weights
+        .collect::<Option<Vec<_>>>()?;
+    let weights = weights
         .into_iter()
         .map(PositiveReal::new)
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(control_points) = control_points
+        .collect::<Option<Vec<_>>>()?;
+    let control_points = control_points
         .into_iter()
         .map(FiniteVector::new)
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    Ok(Some(B5Pcurve {
+        .collect::<Option<Vec<_>>>()?;
+    Some(B5Pcurve {
         object_id: record.object_id,
         surface,
         degree: 2,
@@ -5043,23 +4959,21 @@ fn rational_arc_pcurve(
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
-    }))
+    })
 }
 
-fn parse_opaque_pcurve(record: &B5Record) -> Result<Option<B5OpaquePcurve>, CodecError> {
-    if parse_class_1a_pcurve(record)?.is_some() {
-        return Ok(None);
+fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
+    if parse_class_1a_pcurve(record).is_some() {
+        return None;
     }
-    let Some(surface) = parse_opaque_pcurve_surface(record) else {
-        return Ok(None);
-    };
-    Ok(Some(B5OpaquePcurve {
+    let surface = parse_opaque_pcurve_surface(record)?;
+    Some(B5OpaquePcurve {
         object_id: record.object_id,
         surface,
         class: record.class,
-        payload: record.payload.to_vec(),
+        payload: record.payload.clone(),
         sphere_great_circle: None,
-    }))
+    })
 }
 
 fn parse_opaque_pcurve_surface(record: &B5Record) -> Option<u32> {
@@ -5207,10 +5121,7 @@ fn sphere_great_circle_point(
     FinitePoint3::new(Point3::from(point))
 }
 
-fn circle_pcurves_from_frames(
-    bytes: &[u8],
-    frames: &[ObjectFrame],
-) -> Result<Vec<B5Pcurve>, CodecError> {
+fn circle_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
     for frame in frames {
         if frame.family != 0xb5 || frame.class != 0x19 {
@@ -5223,20 +5134,20 @@ fn circle_pcurves_from_frames(
             object_id: frame.object_id,
             payload: bytes[frame.start + 8..frame.end].to_vec(),
         };
-        if let Some(pcurve) = parse_circle_pcurve(&record)? {
+        if let Some(pcurve) = parse_circle_pcurve(&record) {
             pcurves.push(pcurve);
         }
     }
-    Ok(pcurves)
+    pcurves
 }
 
-fn parse_line_pcurve(record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> {
+fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     let Some((surface, start, end, [Some(start_point), Some(end_point)])) =
         parse_line_pcurve_fields(record)
     else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(B5Pcurve {
+    Some(B5Pcurve {
         object_id: record.object_id,
         surface,
         degree: 1,
@@ -5248,7 +5159,7 @@ fn parse_line_pcurve(record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> 
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
-    }))
+    })
 }
 
 fn parse_line_pcurve_fields(
@@ -5314,11 +5225,11 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
         .expect("service budget")
 }
 
-fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Result<Vec<B5Record>, CodecError> {
+fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
     records_from_frames_budgeted(bytes, frames, None)
 }
 
-/// Dependency-admission fixpoint with an optional session work budget.
+/// Dependency-admission fixpoint with an optional local work budget.
 ///
 /// The dependency candidates are indexed once by object identity. Earlier
 /// passes rescanned every frame for every newly discovered dependency, which
@@ -5328,32 +5239,27 @@ fn records_from_frames_budgeted(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> Result<Vec<B5Record>, CodecError> {
-    let (mut records, candidates) =
-        framed_records_and_dependency_candidates(bytes, frames, budget)?;
+) -> Vec<B5Record> {
+    let (mut records, candidates) = framed_records_and_dependency_candidates(bytes, frames, budget);
     admit_dependency_records(bytes, &mut records, &candidates, budget)
 }
 
 /// Materialize one already-indexed topology population.
 ///
-/// The caller has already charged the frame index. This path charges each
-/// topology record as it is materialized, then charges each admitted
-/// dependency in the existing closure fixpoint.
+/// Each materialized topology record and each admitted dependency in the
+/// closure fixpoint spends one unit of the local work budget.
 fn records_from_indexed_frames_budgeted(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> Result<Option<Vec<B5Record>>, CodecError> {
-    let Some((mut records, candidates)) =
-        indexed_topology_records_and_dependency_candidates(bytes, frames, budget)?
-    else {
-        return Ok(None);
-    };
-    let records = admit_dependency_records(bytes, &mut records, &candidates, budget)?;
+) -> Option<Vec<B5Record>> {
+    let (mut records, candidates) =
+        indexed_topology_records_and_dependency_candidates(bytes, frames, budget)?;
+    let records = admit_dependency_records(bytes, &mut records, &candidates, budget);
     if budget.is_some_and(WorkBudget::exhausted) {
-        Ok(None)
+        None
     } else {
-        Ok(Some(records))
+        Some(records)
     }
 }
 
@@ -5362,7 +5268,7 @@ fn admit_dependency_records(
     records: &mut Vec<B5Record>,
     candidates: &DependencyCandidates,
     budget: Option<&WorkBudget<'_>>,
-) -> Result<Vec<B5Record>, CodecError> {
+) -> Vec<B5Record> {
     let mut existing = HashSet::new();
     let mut pending = HashSet::new();
     for record in records.iter() {
@@ -5397,10 +5303,10 @@ fn admit_dependency_records(
         if found.is_empty() {
             break;
         }
-        found.sort_unstable_by(|left, right| left.start.cmp(&right.start));
+        found.sort_unstable_by_key(|left| left.start);
         pending.clear();
         for frame in found {
-            let Some(candidate) = record_from_frame(bytes, &frame)? else {
+            let Some(candidate) = record_from_frame(bytes, &frame) else {
                 continue;
             };
             admitted.insert(candidate.object_id);
@@ -5415,7 +5321,7 @@ fn admit_dependency_records(
             records.push(candidate);
         }
     }
-    Ok(std::mem::take(records))
+    std::mem::take(records)
 }
 
 /// Build the topology records and the exact dependency index in one frame
@@ -5425,9 +5331,9 @@ fn framed_records_and_dependency_candidates(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> Result<(Vec<B5Record>, DependencyCandidates), CodecError> {
+) -> (Vec<B5Record>, DependencyCandidates) {
     if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
-        return Ok((Vec::new(), HashMap::new()));
+        return (Vec::new(), HashMap::new());
     }
 
     let mut records = Vec::<(usize, B5Record)>::new();
@@ -5463,7 +5369,7 @@ fn framed_records_and_dependency_candidates(
                 }
             }
         }
-        let Some(record) = record_from_frame(bytes, frame)? else {
+        let Some(record) = record_from_frame(bytes, frame) else {
             continue;
         };
         seen.insert(frame.object_id, *frame);
@@ -5478,7 +5384,7 @@ fn framed_records_and_dependency_candidates(
     for (_, record) in records {
         ordered.push(record);
     }
-    Ok((ordered, candidates))
+    (ordered, candidates)
 }
 
 /// Build topology records and dependency candidates from an existing frame
@@ -5488,7 +5394,7 @@ fn indexed_topology_records_and_dependency_candidates(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> Result<Option<(Vec<B5Record>, DependencyCandidates)>, CodecError> {
+) -> Option<(Vec<B5Record>, DependencyCandidates)> {
     let mut records = Vec::<(usize, B5Record)>::new();
     let mut seen = HashMap::<u32, ObjectFrame>::new();
     let mut candidates = DependencyCandidates::new();
@@ -5513,7 +5419,7 @@ fn indexed_topology_records_and_dependency_candidates(
             continue;
         }
         if budget.is_some_and(|budget| !budget.charge()) {
-            return Ok(None);
+            return None;
         }
         if let Some(previous) = seen.get(&frame.object_id) {
             if previous.class == frame.class {
@@ -5525,9 +5431,7 @@ fn indexed_topology_records_and_dependency_candidates(
                 }
             }
         }
-        let Some(record) = record_from_frame(bytes, frame)? else {
-            return Ok(None);
-        };
+        let record = record_from_frame(bytes, frame)?;
         seen.insert(frame.object_id, *frame);
         records.push((frame.end, record));
     }
@@ -5540,7 +5444,7 @@ fn indexed_topology_records_and_dependency_candidates(
     for (_, record) in records {
         ordered.push(record);
     }
-    Ok(Some((ordered, candidates)))
+    Some((ordered, candidates))
 }
 
 fn same_object_frame(bytes: &[u8], left: &ObjectFrame, right: &ObjectFrame) -> bool {
@@ -5557,17 +5461,15 @@ fn frame_payload<'a>(bytes: &'a [u8], frame: &ObjectFrame) -> Option<&'a [u8]> {
     bytes.get(frame.start.checked_add(header)?..frame.end)
 }
 
-fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Result<Option<B5Record>, CodecError> {
-    let Some(payload) = frame_payload(bytes, frame) else {
-        return Ok(None);
-    };
-    Ok(Some(B5Record {
+fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
+    let payload = frame_payload(bytes, frame)?;
+    Some(B5Record {
         offset: frame.start,
         family: frame.family,
         class: frame.class,
         object_id: frame.object_id,
         payload: payload.to_vec(),
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -5712,10 +5614,8 @@ pub(in crate::families) fn object_stream_frames(
     }
 }
 
-pub(in crate::families) fn collect_object_stream_frames(
-    bytes: &[u8],
-) -> Result<Vec<ObjectFrame>, CodecError> {
-    Ok(object_stream_frames(bytes).collect::<Vec<_>>())
+pub(in crate::families) fn collect_object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
+    object_stream_frames(bytes).collect::<Vec<_>>()
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs.
@@ -5737,7 +5637,7 @@ fn object_stream_run_ranges(bytes: &[u8]) -> Result<Vec<Range<usize>>, CodecErro
             }
             let coordinate_end = position.checked_add(15).filter(|&end| end <= bytes.len());
             let allocation_end = if let Some(end) = coordinate_end {
-                crate::wire::records::scan_vertex_record_ranges(&bytes[position..end])?
+                crate::wire::records::scan_vertex_record_ranges(&bytes[position..end])
                     .eq(std::iter::once(0..15))
                     .then_some(end)
             } else {
@@ -5766,17 +5666,14 @@ fn topology_root_run_ranges(bytes: &[u8]) -> Result<Vec<Range<usize>>, CodecErro
     topology_root_run_ranges_from_runs(bytes, &runs)
 }
 
-fn topology_root_run_ranges_from_runs(
-    bytes: &[u8],
-    runs: &[Range<usize>],
-) -> Result<Vec<Range<usize>>, CodecError> {
+fn topology_root_run_ranges_from_runs(bytes: &[u8], runs: &[Range<usize>]) -> Vec<Range<usize>> {
     let mut roots = Vec::new();
     for range in runs {
         if object_stream_frames(&bytes[range.clone()]).any(is_topology_root_frame) {
             roots.push(range.clone());
         }
     }
-    Ok(roots)
+    roots
 }
 
 fn is_topology_root_frame(frame: ObjectFrame) -> bool {
@@ -5785,11 +5682,11 @@ fn is_topology_root_frame(frame: ObjectFrame) -> bool {
 }
 
 /// Partition one logical stream into independently resolved object populations.
-pub(in crate::families) fn object_stream_populations<'stream>(
-    stream: &'stream [u8],
-) -> Result<Vec<std::borrow::Cow<'stream, [u8]>>, CodecError> {
+pub(in crate::families) fn object_stream_populations(
+    stream: &[u8],
+) -> Result<Vec<std::borrow::Cow<'_, [u8]>>, CodecError> {
     let runs = object_stream_run_ranges(stream)?;
-    let topology_runs = topology_root_run_ranges_from_runs(stream, &runs)?;
+    let topology_runs = topology_root_run_ranges_from_runs(stream, &runs);
     let mut owned_populations = HashMap::new();
     let mut claimed_isolated_ids = HashSet::new();
     for range in &topology_runs {
@@ -5798,7 +5695,7 @@ pub(in crate::families) fn object_stream_populations<'stream>(
         for frame in object_stream_frames(&stream[range.clone()]) {
             root_ids.insert(frame.object_id);
         }
-        let population = owned_object_stream_population(stream, range.clone(), &runs)?;
+        let population = owned_object_stream_population(stream, range.clone(), &runs);
 
         for frame in object_stream_frames(&population) {
             if !root_ids.contains(&frame.object_id) {
@@ -5923,7 +5820,7 @@ pub(in crate::families) fn select_object_stream_population(
     let mut runs = Vec::new();
     for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
         let stream = stream.as_ref();
-        let frames = collect_object_stream_frames(stream)?;
+        let frames = collect_object_stream_frames(stream);
         if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
             return Ok(exhausted());
         }
@@ -5966,7 +5863,7 @@ pub(in crate::families) fn select_object_stream_population(
         for run in &runs {
             let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
             let records =
-                records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget)?;
+                records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget);
             if budget.is_some_and(WorkBudget::exhausted) {
                 return Ok(exhausted());
             }
@@ -5982,13 +5879,13 @@ pub(in crate::families) fn select_object_stream_population(
     let selected_stream = streams[selected.stream_index].as_ref();
     let selected_frames = &stream_frames[selected.stream_index][selected.frame_range.clone()];
     let Some(selected_records) =
-        records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)?
+        records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)
     else {
         return Ok(exhausted());
     };
     let mut census_records = Vec::new();
     for record in &selected_records {
-        let payload = record.payload.to_vec();
+        let payload = record.payload.clone();
         census_records.push(B5Record {
             offset: record.offset,
             family: record.family,
@@ -6003,7 +5900,7 @@ pub(in crate::families) fn select_object_stream_population(
         }
         let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
         let records =
-            records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget)?;
+            records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget);
         if budget.is_some_and(WorkBudget::exhausted) {
             return Ok(exhausted());
         }
@@ -6023,7 +5920,7 @@ pub(in crate::families) fn select_object_stream_population(
         record.offset -= selected.range.start;
     }
     if topology {
-        let referenced = topology_surface_references(&records)?;
+        let referenced = topology_surface_references(&records);
         let mut owned_ids = HashSet::new();
         for record in &records {
             owned_ids.insert(record.object_id);
@@ -6084,7 +5981,7 @@ pub(in crate::families) fn select_object_stream_population(
             }
         }
         if source.len() != selected.range.len() {
-            records = records_from_frames(&source, &frames)?;
+            records = records_from_frames(&source, &frames);
         }
     }
     Ok(ObjectStreamSelection::Selected {
@@ -6102,11 +5999,11 @@ fn owned_object_stream_population<'stream>(
     stream: &'stream [u8],
     topology_run: Range<usize>,
     runs: &[Range<usize>],
-) -> Result<std::borrow::Cow<'stream, [u8]>, CodecError> {
+) -> std::borrow::Cow<'stream, [u8]> {
     let run = &stream[topology_run.clone()];
-    let run_frames = collect_object_stream_frames(run)?;
-    let run_records = records_from_frames(run, &run_frames)?;
-    let referenced = topology_surface_references(&run_records)?;
+    let run_frames = collect_object_stream_frames(run);
+    let run_records = records_from_frames(run, &run_frames);
+    let referenced = topology_surface_references(&run_records);
     let mut owned_ids = HashSet::new();
     for record in &run_records {
         owned_ids.insert(record.object_id);
@@ -6145,10 +6042,10 @@ fn owned_object_stream_population<'stream>(
         isolated_values.push(value);
     }
     let mut isolated = isolated_values;
-    isolated.sort_by(|left, right| left.start.cmp(&right.start));
+    isolated.sort_by_key(|left| left.start);
 
     if isolated.is_empty() {
-        return Ok(std::borrow::Cow::Borrowed(run));
+        return std::borrow::Cow::Borrowed(run);
     }
     let mut population = run.to_vec();
     for range in isolated {
@@ -6156,7 +6053,7 @@ fn owned_object_stream_population<'stream>(
 
         population.extend_from_slice(frame);
     }
-    Ok(std::borrow::Cow::Owned(population))
+    std::borrow::Cow::Owned(population)
 }
 
 fn record_references(record: &B5Record) -> impl Iterator<Item = u32> + '_ {
@@ -6165,7 +6062,7 @@ fn record_references(record: &B5Record) -> impl Iterator<Item = u32> + '_ {
     (0..count).map_while(move |_| wire::tokens::object_ref(&record.payload, &mut position, true))
 }
 
-fn topology_surface_references(records: &[B5Record]) -> Result<HashSet<u32>, CodecError> {
+fn topology_surface_references(records: &[B5Record]) -> HashSet<u32> {
     let mut surfaces = HashSet::new();
     for record in records {
         let reference = match record.class {
@@ -6177,7 +6074,7 @@ fn topology_surface_references(records: &[B5Record]) -> Result<HashSet<u32>, Cod
             surfaces.insert(reference);
         }
     }
-    Ok(surfaces)
+    surfaces
 }
 
 fn is_referenced_geometry_class(family: u8, class: u8) -> bool {
@@ -6248,17 +6145,13 @@ fn parse_face(
     loops: &BTreeMap<u32, B5Loop>,
     surfaces: &BTreeMap<u32, B5Surface>,
     surface_aliases: &BTreeMap<u32, u32>,
-) -> Result<Option<B5Face>, CodecError> {
+) -> Option<B5Face> {
     let references = &record.references;
-    let Some(&surface) = references.first() else {
-        return Ok(None);
-    };
+    let &surface = references.first()?;
     if !surfaces.contains_key(&surface) {
-        return Ok(None);
+        return None;
     }
-    let Some(canonical_surface) = canonical_surface_id(surface_aliases, surface) else {
-        return Ok(None);
-    };
+    let canonical_surface = canonical_surface_id(surface_aliases, surface)?;
     let mut loop_ids = Vec::new();
     for &reference in &references[1..] {
         if loops.contains_key(&reference) {
@@ -6270,26 +6163,26 @@ fn parse_face(
                 // A distinct surface reference is a multi-surface variant. Its
                 // composition is not represented by the neutral Face type, so
                 // keep the typed record but withhold the face from topology.
-                return Ok(None);
+                return None;
             }
             // A face may repeat its carrier through an alias identity. This is
             // the same carrier incidence, not a multi-surface face.
         }
     }
     if loop_ids.is_empty() {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(B5Face {
+    Some(B5Face {
         object_id: record.object_id,
         surface,
         loops: loop_ids,
         terminal_control: record.terminal_control,
-    }))
+    })
 }
 
-fn parse_face_record(record: &B5Record) -> Result<Option<B5FaceRecord>, CodecError> {
+fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
     if record.class != 0x5f {
-        return Ok(None);
+        return None;
     }
     if let Some(count) = record
         .payload
@@ -6297,35 +6190,28 @@ fn parse_face_record(record: &B5Record) -> Result<Option<B5FaceRecord>, CodecErr
         .and_then(|lead| lead.checked_sub(0x80))
     {
         if count == 0 {
-            return Ok(None);
+            return None;
         }
         let mut position = 1;
-        let Some(references) = (0..count)
+        let references = (0..count)
             .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(None);
-        };
+            .collect::<Option<Vec<_>>>()?;
         let Some(&[terminal_control]) = record.payload.get(position..) else {
-            return Ok(None);
+            return None;
         };
-        let Some(terminal_control) = B5FramingControl::from_byte(terminal_control) else {
-            return Ok(None);
-        };
-        Ok(Some(B5FaceRecord {
+        let terminal_control = B5FramingControl::from_byte(terminal_control)?;
+        Some(B5FaceRecord {
             object_id: record.object_id,
             references,
             terminal_control: Some(terminal_control),
-        }))
+        })
     } else {
-        let Some(references) = uncounted_references(&record.payload)? else {
-            return Ok(None);
-        };
-        Ok((!references.is_empty()).then_some(B5FaceRecord {
+        let references = uncounted_references(&record.payload)?;
+        (!references.is_empty()).then_some(B5FaceRecord {
             object_id: record.object_id,
             references,
             terminal_control: None,
-        }))
+        })
     }
 }
 
@@ -6344,14 +6230,14 @@ fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
 
 pub(in crate::families) fn typed_face_records_from_records(
     records: &[B5Record],
-) -> Result<BTreeMap<u32, B5FaceRecord>, CodecError> {
+) -> BTreeMap<u32, B5FaceRecord> {
     let mut faces = BTreeMap::new();
     for record in records {
-        if let Some(face) = parse_face_record(record)? {
+        if let Some(face) = parse_face_record(record) {
             faces.insert(record.object_id, face);
         }
     }
-    Ok(faces)
+    faces
 }
 
 /// Read every structurally complete loop record independently of target
@@ -6369,14 +6255,14 @@ fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
 
 pub(in crate::families) fn typed_loop_records_from_records(
     records: &[B5Record],
-) -> Result<BTreeMap<u32, B5Loop>, CodecError> {
+) -> BTreeMap<u32, B5Loop> {
     let mut loops = BTreeMap::new();
     for record in records {
-        if let Some(loop_) = parse_loop_record(record)? {
+        if let Some(loop_) = parse_loop_record(record) {
             loops.insert(record.object_id, loop_);
         }
     }
-    Ok(loops)
+    loops
 }
 
 /// Read every structurally complete physical-edge record independently of
@@ -6387,21 +6273,19 @@ fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
     let records =
         crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
             .expect("service budget");
-    crate::test_support::with_service_context(|ctx| {
-        typed_edge_records_from_records(&records).expect("service decode")
-    })
+    crate::test_support::with_service_context(|ctx| typed_edge_records_from_records(&records))
 }
 
 pub(in crate::families) fn typed_edge_records_from_records(
     records: &[B5Record],
-) -> Result<BTreeMap<u32, B5Edge>, CodecError> {
+) -> BTreeMap<u32, B5Edge> {
     let mut edges = BTreeMap::new();
     for record in records {
         if let Some(edge) = parse_edge(record) {
             edges.insert(record.object_id, edge);
         }
     }
-    Ok(edges)
+    edges
 }
 
 /// Read every structurally complete vertex-incidence link independently of
@@ -6413,20 +6297,20 @@ fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidence
         crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
             .expect("service budget");
     crate::test_support::with_service_context(|ctx| {
-        typed_vertex_incidence_links_from_records(&records).expect("service decode")
+        typed_vertex_incidence_links_from_records(&records)
     })
 }
 
 pub(in crate::families) fn typed_vertex_incidence_links_from_records(
     records: &[B5Record],
-) -> Result<BTreeMap<u32, B5VertexIncidenceLink>, CodecError> {
+) -> BTreeMap<u32, B5VertexIncidenceLink> {
     let mut links = BTreeMap::new();
     for record in records {
         if let Some(link) = parse_vertex_incidence_link(record) {
             links.insert(record.object_id, link);
         }
     }
-    Ok(links)
+    links
 }
 
 /// Read every structurally complete class-`21` pcurve independently of
@@ -6443,14 +6327,14 @@ fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
 
 pub(in crate::families) fn typed_class_21_pcurves_from_records(
     records: &[B5Record],
-) -> Result<BTreeMap<u32, B5Pcurve>, CodecError> {
+) -> BTreeMap<u32, B5Pcurve> {
     let mut pcurves = BTreeMap::new();
     for record in records {
-        if let Some(pcurve) = parse_pcurve(record)? {
+        if let Some(pcurve) = parse_pcurve(record) {
             pcurves.insert(record.object_id, pcurve);
         }
     }
-    Ok(pcurves)
+    pcurves
 }
 
 /// Read every structurally complete parameter incidence independently of
@@ -6468,14 +6352,14 @@ fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidenc
 
 pub(in crate::families) fn typed_parameter_incidences_from_records(
     records: &[B5Record],
-) -> Result<BTreeMap<u32, B5ParameterIncidence>, CodecError> {
+) -> BTreeMap<u32, B5ParameterIncidence> {
     let mut incidences = BTreeMap::new();
     for record in records {
-        if let Some(incidence) = parameter_incidence(record)? {
+        if let Some(incidence) = parameter_incidence(record) {
             incidences.insert(record.object_id, incidence);
         }
     }
-    Ok(incidences)
+    incidences
 }
 
 /// Read every structurally complete vertex-incidence roster independently of
@@ -6493,14 +6377,14 @@ fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
 
 pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
     records: &[B5Record],
-) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
+) -> BTreeMap<u32, Vec<u32>> {
     let mut rosters = BTreeMap::new();
     for record in records {
-        if let Some(members) = counted_references(record, 0x05)? {
+        if let Some(members) = counted_references(record, 0x05) {
             rosters.insert(record.object_id, members);
         }
     }
-    Ok(rosters)
+    rosters
 }
 
 /// Read each face's leading surface reference independently of its loop grammar.
@@ -6516,7 +6400,7 @@ fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
 pub(in crate::families) fn face_surface_references_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
-) -> Result<Vec<(u32, u32)>, CodecError> {
+) -> Vec<(u32, u32)> {
     let mut references = Vec::new();
     for frame in frames {
         if frame.family != 0xb5 || frame.class != 0x5f {
@@ -6535,7 +6419,7 @@ pub(in crate::families) fn face_surface_references_from_frames(
         };
         references.push((frame.object_id, surface));
     }
-    Ok(references)
+    references
 }
 
 /// Return positive face-to-edge ownership from structurally complete face and
@@ -6544,8 +6428,8 @@ pub(in crate::families) fn face_surface_references_from_frames(
 pub(in crate::families) fn edge_face_references_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
-) -> Result<HashMap<u32, HashSet<u32>>, CodecError> {
-    let records = records_from_frames(bytes, frames)?;
+) -> HashMap<u32, HashSet<u32>> {
+    let records = records_from_frames(bytes, frames);
     let mut edge_ids = HashSet::new();
     for record in records
         .iter()
@@ -6553,26 +6437,21 @@ pub(in crate::families) fn edge_face_references_from_frames(
     {
         edge_ids.insert(record.object_id);
     }
-    let loops = typed_loop_records_from_records(&records)?;
+    let loops = typed_loop_records_from_records(&records);
     let mut owners = HashMap::<u32, HashSet<u32>>::new();
-    for (face, record) in typed_face_records_from_records(&records)? {
+    for (face, record) in typed_face_records_from_records(&records) {
         for loop_id in record.references.iter().skip(1) {
             let Some(loop_record) = loops.get(loop_id) else {
                 continue;
             };
             for member in &loop_record.members {
                 if edge_ids.contains(&member.edge) {
-                    if !owners.contains_key(&member.edge) {
-                        owners.insert(member.edge, HashSet::new());
-                    }
-                    if let Some(row) = owners.get_mut(&member.edge) {
-                        row.insert(face);
-                    }
+                    owners.entry(member.edge).or_default().insert(face);
                 }
             }
         }
     }
-    Ok(owners)
+    owners
 }
 
 fn parse_loop(
@@ -6603,16 +6482,12 @@ fn parse_loop(
     Some(record.clone())
 }
 
-fn parse_loop_record(record: &B5Record) -> Result<Option<B5Loop>, CodecError> {
-    let Some((references, metadata, edge_controls)) = loop_references_and_metadata(record)? else {
-        return Ok(None);
-    };
-    let Some(&surface) = references.last() else {
-        return Ok(None);
-    };
+fn parse_loop_record(record: &B5Record) -> Option<B5Loop> {
+    let (references, metadata, edge_controls) = loop_references_and_metadata(record)?;
+    let &surface = references.last()?;
     let pairs = &references[..references.len() - 1];
     if pairs.len() / 2 != edge_controls.len() {
-        return Ok(None);
+        return None;
     }
     let members = pairs
         .chunks_exact(2)
@@ -6623,12 +6498,12 @@ fn parse_loop_record(record: &B5Record) -> Result<Option<B5Loop>, CodecError> {
             controls,
         })
         .collect::<Vec<_>>();
-    Ok(Some(B5Loop {
+    Some(B5Loop {
         object_id: record.object_id,
         members,
         metadata,
         surface,
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -6642,36 +6517,27 @@ fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
 
 fn loop_references_and_metadata(record: &B5Record) -> LoopReferencesOutput {
     if record.class != 0x62 {
-        return Ok(None);
+        return None;
     }
     let mut position = 0;
-    let Some(count) = counted_cardinality(&record.payload, &mut position) else {
-        return Ok(None);
-    };
+    let count = counted_cardinality(&record.payload, &mut position)?;
     if count < 3 || count % 2 == 0 {
-        return Ok(None);
+        return None;
     }
-    let Some(references) = (0..count)
+    let references = (0..count)
         .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+        .collect::<Option<Vec<_>>>()?;
     let edge_count = (count - 1) / 2;
     if counted_cardinality(&record.payload, &mut position) != Some(edge_count) {
-        return Ok(None);
+        return None;
     }
-    let Some(bytes) = record.payload.get(position..) else {
-        return Ok(None);
-    };
-    let Some((metadata, edge_controls)) = loop_metadata(bytes, edge_count)? else {
-        return Ok(None);
-    };
-    Ok(Some((references, metadata, edge_controls)))
+    let bytes = record.payload.get(position..)?;
+    let (metadata, edge_controls) = loop_metadata(bytes, edge_count)?;
+    Some((references, metadata, edge_controls))
 }
 
-fn loop_metadata(bytes: &[u8], edge_count: usize) -> LoopMetadataOutput {
-    let Some((controls_end, framing_controls)) = (|| {
+fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
+    let (controls_end, framing_controls) = (|| {
         let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
         let controls_end = 3usize.checked_add(controls_len)?;
         let framing_controls = [
@@ -6679,13 +6545,11 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> LoopMetadataOutput {
             B5FramingControl::from_byte(*bytes.get(1)?)?,
         ];
         Some((controls_end, framing_controls))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     if bytes.get(2) != Some(&0x03) || controls_end > bytes.len() {
-        return Ok(None);
+        return None;
     }
-    let Some(edge_controls) = bytes[3..controls_end]
+    let edge_controls = bytes[3..controls_end]
         .chunks_exact(6)
         .map(|controls| {
             let mut view = View::over_retained(controls);
@@ -6695,10 +6559,7 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> LoopMetadataOutput {
                 .all(|control| matches!(control, -1 | 1))
                 .then_some(controls)
         })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+        .collect::<Option<Vec<_>>>()?;
     let extension = (|| -> Option<_> {
         Some(match bytes.get(controls_end..)? {
             [0x01] => None,
@@ -6738,16 +6599,14 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> LoopMetadataOutput {
             _ => return None,
         })
     })();
-    let Some(extension) = extension else {
-        return Ok(None);
-    };
-    Ok(Some((
+    let extension = extension?;
+    Some((
         B5LoopMetadata {
             framing_controls,
             extension,
         },
         edge_controls,
-    )))
+    ))
 }
 
 fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
@@ -6760,16 +6619,14 @@ fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
     }
 }
 
-fn uncounted_references(bytes: &[u8]) -> Result<Option<Vec<u32>>, CodecError> {
+fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
     let mut position = 0;
     let mut references = Vec::new();
     while position < bytes.len() {
-        let Some(reference) = wire::tokens::object_ref(bytes, &mut position, true) else {
-            return Ok(None);
-        };
+        let reference = wire::tokens::object_ref(bytes, &mut position, true)?;
         references.push(reference);
     }
-    Ok(Some(references))
+    Some(references)
 }
 
 #[cfg(test)]

@@ -434,9 +434,7 @@ fn reference_signature_program(
                 program.push(ReferenceSignatureInstruction::OpenCall {
                     offset: signature_offset + start,
                 });
-                let Some(next_depth) = call_depth.checked_add(1) else {
-                    return None;
-                };
+                let next_depth = call_depth.checked_add(1)?;
                 call_depth = next_depth;
                 expects_operand = true;
                 at += 1;
@@ -460,12 +458,8 @@ fn reference_signature_program(
                 continue;
             }
             b'#' if !expects_operand => {
-                let Some(selector_offset) = start.checked_add(1) else {
-                    return None;
-                };
-                let Some(&selector_byte) = bytes.get(selector_offset) else {
-                    return None;
-                };
+                let selector_offset = start.checked_add(1)?;
+                let &selector_byte = bytes.get(selector_offset)?;
                 let selector = match selector_byte {
                     byte @ b'0'..=b'9' => byte - b'0',
                     byte @ b'A'..=b'F' => byte - b'A' + 10,
@@ -584,29 +578,6 @@ pub(crate) enum EntityValuePacket {
 }
 
 impl EntityValuePacket {
-    pub(crate) fn copy_charged(&self) -> Result<Self, CodecError> {
-        match self {
-            Self::Numeric {
-                offset,
-                prefix_atoms,
-                type_selector,
-                layout_atom,
-                value_atom,
-                items,
-                terminator_count,
-            } => Ok(Self::Numeric {
-                offset: *offset,
-                prefix_atoms: *prefix_atoms,
-                type_selector: *type_selector,
-                layout_atom: *layout_atom,
-                value_atom: *value_atom,
-                items: items.to_vec(),
-                terminator_count: *terminator_count,
-            }),
-            other => Ok(other.clone()),
-        }
-    }
-
     /// Complete byte range occupied by this packet within its value payload.
     pub(crate) fn byte_range(&self) -> Option<std::ops::Range<usize>> {
         match self {
@@ -773,7 +744,7 @@ fn parse_numeric_value_packet(
     payload: &[u8],
     offset: usize,
 ) -> Option<(EntityValuePacket, std::ops::Range<usize>)> {
-    let Some((prefix0, prefix1, selector, layout_atom, value_atom, mut at)) = (|| {
+    let (prefix0, prefix1, selector, layout_atom, value_atom, mut at) = (|| {
         let (prefix0, at) = compact_atom(payload, offset)?;
         let (prefix1, at) = compact_atom(payload, at)?;
         (payload.get(at) == Some(&0xe8)).then_some(())?;
@@ -782,23 +753,15 @@ fn parse_numeric_value_packet(
         let (layout_atom, at) = one_byte_atom(payload, at + 4)?;
         let (value_atom, at) = one_byte_atom(payload, at)?;
         Some((prefix0, prefix1, selector, layout_atom, value_atom, at))
-    })() else {
-        return None;
-    };
+    })()?;
     let mut items = Vec::new();
     let mut binary64_count = 0usize;
     loop {
-        let Some(&code) = payload.get(at) else {
-            return None;
-        };
+        let &code = payload.get(at)?;
         match code {
             0xe6 => {
-                let Some(end) = at.checked_add(9) else {
-                    return None;
-                };
-                let Some(bits) = View::u64_le_at(payload, at + 1) else {
-                    return None;
-                };
+                let end = at.checked_add(9)?;
+                let bits = View::u64_le_at(payload, at + 1)?;
                 items.push(NumericPacketItem::Binary64 { bits, offset: at });
                 binary64_count += 1;
                 at = end;
@@ -894,10 +857,10 @@ pub(crate) fn parse_runs(
     ctx: &DecodeContext<'_>,
     data: &[u8],
 ) -> Result<Vec<Vec<EntityRecord>>, CodecError> {
-    let candidate_runs = parse_candidate_runs(data)?;
+    let candidate_runs = parse_candidate_runs(data);
     let mut runs = Vec::new();
     for candidates in candidate_runs {
-        let Some(identities) = unique_monotone_run(&candidates)? else {
+        let Some(identities) = unique_monotone_run(&candidates) else {
             continue;
         };
         let mut records = Vec::new();
@@ -923,8 +886,8 @@ pub(crate) fn paired_object_graph_roots(
     data: &[u8],
 ) -> Result<std::collections::HashMap<usize, usize>, CodecError> {
     let mut roots = std::collections::HashMap::new();
-    for candidates in parse_candidate_runs(data)? {
-        if unique_monotone_run(&candidates)?.is_none() {
+    for candidates in parse_candidate_runs(data) {
+        if unique_monotone_run(&candidates).is_none() {
             continue;
         }
         let Some(end) = candidates
@@ -940,7 +903,7 @@ pub(crate) fn paired_object_graph_roots(
     Ok(roots)
 }
 
-fn parse_candidate_runs(data: &[u8]) -> Result<Vec<Vec<EntityRecordCandidates>>, CodecError> {
+fn parse_candidate_runs(data: &[u8]) -> Vec<Vec<EntityRecordCandidates>> {
     let mut roots = Vec::new();
     let mut enclosing_end = 0usize;
     for pos in data
@@ -959,7 +922,7 @@ fn parse_candidate_runs(data: &[u8]) -> Result<Vec<Vec<EntityRecordCandidates>>,
         if end <= enclosing_end {
             continue;
         }
-        if let Some(candidate) = parse_candidate_variants(data, pos)? {
+        if let Some(candidate) = parse_candidate_variants(data, pos) {
             enclosing_end = enclosing_end.max(end);
             roots.push(candidate);
         }
@@ -972,12 +935,11 @@ fn parse_candidate_runs(data: &[u8]) -> Result<Vec<Vec<EntityRecordCandidates>>,
         }) {
             run.push(candidate);
         } else {
-            let mut run = Vec::new();
-            run.push(candidate);
+            let run = vec![candidate];
             candidate_runs.push(run);
         }
     }
-    Ok(candidate_runs)
+    candidate_runs
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1031,14 +993,10 @@ struct MonotonePathState {
     predecessor: Option<usize>,
 }
 
-fn unique_monotone_run(
-    records: &[EntityRecordCandidates],
-) -> Result<Option<Vec<EntityIdentityCandidate>>, CodecError> {
-    let Some(first) = records.first().map(|record| &record.identities) else {
-        return Ok(None);
-    };
+fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityIdentityCandidate>> {
+    let first = records.first().map(|record| &record.identities)?;
     if first.is_empty() {
-        return Ok(None);
+        return None;
     }
     let mut previous = Vec::new();
 
@@ -1081,7 +1039,7 @@ fn unique_monotone_run(
             }
         }
         if layer.is_empty() {
-            return Ok(None);
+            return None;
         }
 
         layers.push(std::mem::replace(&mut previous, layer));
@@ -1092,14 +1050,11 @@ fn unique_monotone_run(
         .fold(PathCount::None, |count, state| count.join(state.path_count))
         != PathCount::One
     {
-        return Ok(None);
+        return None;
     }
-    let Some(mut state_index) = final_layer
+    let mut state_index = final_layer
         .iter()
-        .position(|state| state.path_count == PathCount::One)
-    else {
-        return Ok(None);
-    };
+        .position(|state| state.path_count == PathCount::One)?;
     let mut result = Vec::new();
 
     for layer in std::iter::once(final_layer).chain(layers.iter().rev()) {
@@ -1110,74 +1065,60 @@ fn unique_monotone_run(
         }
     }
     result.reverse();
-    Ok(Some(result))
+    Some(result)
 }
 
-fn parse_candidate_variants(
-    data: &[u8],
-    pos: usize,
-) -> Result<Option<EntityRecordCandidates>, CodecError> {
-    (|| -> Option<Result<EntityRecordCandidates, CodecError>> {
-        let total_len = usize::try_from(View::u32_le_at(data, pos.checked_add(2)?)?).ok()?;
-        let end = pos.checked_add(total_len)?;
-        if total_len < 12 || end > data.len() {
-            return None;
-        }
+fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandidates> {
+    let total_len = usize::try_from(View::u32_le_at(data, pos.checked_add(2)?)?).ok()?;
+    let end = pos.checked_add(total_len)?;
+    if total_len < 12 || end > data.len() {
+        return None;
+    }
 
-        let lead = *data.get(pos + 6)?;
-        if lead == 0x03 && data.get(pos + 7..pos + 9) != Some(&[0x7c, 0x06]) {
-            let identities = match identity_candidates(data, pos + 7, end, true) {
-                Ok(identities) => identities,
-                Err(error) => return Some(Err(error)),
-            };
-            if !identities.is_empty() {}
-            return (!identities.is_empty()).then_some(Ok(EntityRecordCandidates {
-                pos,
-                total_len,
-                lead,
-                layout: EntityRecordLayout::Inline,
-                identities,
-            }));
-        }
-        if total_len < 19
-            || lead > 0x02
-            || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
-        {
-            return None;
-        }
-        let definition_len = View::u32_le_at(data, pos + 9)?;
-        let definition_len_usize = usize::try_from(definition_len).ok()?;
-        let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
-        if definition_len_usize < 11 || definition_end > end {
-            return None;
-        }
-        let definition_start = pos + 13;
-        let value_len = View::u32_le_at(data, definition_end + 2)?;
-        let value_len_usize = usize::try_from(value_len).ok()?;
-        let value_end = definition_end.checked_add(value_len_usize)?;
-        if value_len_usize < 6 || value_end > end {
-            return None;
-        }
-        let identities = match identity_candidates(data, definition_start, definition_end, true) {
-            Ok(identities) => identities,
-            Err(error) => return Some(Err(error)),
-        };
-        if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
-            return None;
-        }
-        if !identities.is_empty() {}
-        (!identities.is_empty()).then_some(Ok(EntityRecordCandidates {
+    let lead = *data.get(pos + 6)?;
+    if lead == 0x03 && data.get(pos + 7..pos + 9) != Some(&[0x7c, 0x06]) {
+        let identities = identity_candidates(data, pos + 7, end, true);
+        return (!identities.is_empty()).then_some(EntityRecordCandidates {
             pos,
             total_len,
             lead,
-            layout: EntityRecordLayout::Nested {
-                definition_end,
-                value_end,
-            },
+            layout: EntityRecordLayout::Inline,
             identities,
-        }))
-    })()
-    .transpose()
+        });
+    }
+    if total_len < 19
+        || lead > 0x02
+        || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
+    {
+        return None;
+    }
+    let definition_len = View::u32_le_at(data, pos + 9)?;
+    let definition_len_usize = usize::try_from(definition_len).ok()?;
+    let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
+    if definition_len_usize < 11 || definition_end > end {
+        return None;
+    }
+    let definition_start = pos + 13;
+    let value_len = View::u32_le_at(data, definition_end + 2)?;
+    let value_len_usize = usize::try_from(value_len).ok()?;
+    let value_end = definition_end.checked_add(value_len_usize)?;
+    if value_len_usize < 6 || value_end > end {
+        return None;
+    }
+    let identities = identity_candidates(data, definition_start, definition_end, true);
+    if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
+        return None;
+    }
+    (!identities.is_empty()).then_some(EntityRecordCandidates {
+        pos,
+        total_len,
+        lead,
+        layout: EntityRecordLayout::Nested {
+            definition_end,
+            value_end,
+        },
+        identities,
+    })
 }
 
 fn identity_candidates(
@@ -1185,10 +1126,10 @@ fn identity_candidates(
     start: usize,
     end: usize,
     skip_fixed_fields: bool,
-) -> Result<Vec<EntityIdentityCandidate>, CodecError> {
+) -> Vec<EntityIdentityCandidate> {
     let mut identities = Vec::new();
     if end < start {
-        return Ok(identities);
+        return identities;
     }
 
     let mut at = start;
@@ -1226,7 +1167,7 @@ fn identity_candidates(
             _ => at += 1,
         }
     }
-    Ok(identities)
+    identities
 }
 
 fn materialize_record(
@@ -1266,9 +1207,7 @@ fn materialize_record(
     }
 }
 
-pub(crate) fn parse_definition_schema_selectors(
-    prefix: &[u8],
-) -> Result<Vec<DefinitionSchemaSelector>, CodecError> {
+pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<DefinitionSchemaSelector> {
     let mut selectors = Vec::new();
     let mut at = 0;
     while at < prefix.len() {
@@ -1283,7 +1222,7 @@ pub(crate) fn parse_definition_schema_selectors(
             at += 1;
         }
     }
-    Ok(selectors)
+    selectors
 }
 
 pub(crate) fn parse_numeric_pair(payload: &[u8]) -> Option<NumericPair> {

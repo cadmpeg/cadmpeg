@@ -79,7 +79,7 @@ fn decode_over_routes(
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
-        let report = build_container_report(&scan)?;
+        let report = build_container_report(&scan);
         return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 
@@ -123,7 +123,7 @@ fn decode_over_routes(
     }
 
     let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
-    let report = build_container_report(&scan)?;
+    let report = build_container_report(&scan);
     finish_decode(
         ctx,
         crate::decode::FinishDecodeInputs {
@@ -254,7 +254,7 @@ fn finish_decode(
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
-    )?;
+    );
     let modeling_object_records = native
         .object_graphs
         .iter()
@@ -880,7 +880,7 @@ fn finish_decode(
                     parser,
                     boolean,
                     opened,
-                    typed + usize::from(expression.signature_charged()?.is_some()),
+                    typed + usize::from(expression.signature().is_some()),
                 ))
             },
         )?;
@@ -1320,7 +1320,7 @@ fn finish_decode(
         let Some(expression) = entity.relation_expression() else {
             continue;
         };
-        if expression.signature_charged()?.is_some() {
+        if expression.signature().is_some() {
             typed_relation_expression_entities.insert(entity.id.as_str());
         }
     }
@@ -3646,9 +3646,9 @@ impl ModelingGraphScope {
 fn modeling_graph_scope(
     has_outer_declarations: bool,
     graphs: &[CatiaObjectGraph],
-) -> Result<ModelingGraphScope, CodecError> {
+) -> ModelingGraphScope {
     if !has_outer_declarations {
-        return Ok(ModelingGraphScope::Unscoped);
+        return ModelingGraphScope::Unscoped;
     }
     let mut part_graphs = graphs.iter().filter(|graph| {
         graph
@@ -3656,10 +3656,10 @@ fn modeling_graph_scope(
             .as_ref()
             .is_some_and(|container| container.class_name == "CATPrtCont")
     });
-    Ok(match (part_graphs.next(), part_graphs.next()) {
+    match (part_graphs.next(), part_graphs.next()) {
         (Some(graph), None) => ModelingGraphScope::Scoped(graph.id.clone()),
         _ => ModelingGraphScope::Unresolved,
-    })
+    }
 }
 
 /// The single site that finishes a decode and charges dialect admission loss.
@@ -3677,8 +3677,8 @@ fn decode_result(
     unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
     ir.source = Some(crate::assemble::source_meta(ctx, scan, matched)?);
-    body.notes = crate::container::notes(scan)?;
-    if let Some(loss) = crate::dialect::dialect_loss(matched)? {
+    body.notes = crate::container::notes(scan);
+    if let Some(loss) = crate::dialect::dialect_loss(matched) {
         body.losses.push(loss);
     }
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);

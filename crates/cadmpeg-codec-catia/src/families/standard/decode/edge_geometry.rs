@@ -1405,13 +1405,7 @@ pub(super) fn build_standard_edge_curve(
     } else {
         None
     };
-    let id = standard_id(
-        ctx,
-        "curve",
-        format_args!("{}", support.pos),
-        CurveId::mint,
-        "catia_standard_edge_curve_identity",
-    )?;
+    let id = standard_id("curve", format_args!("{}", support.pos), CurveId::mint)?;
     annotate(
         ctx,
         annotations,
@@ -1541,11 +1535,9 @@ pub(super) fn build_standard_edge_curve(
             });
             if let Some(curve_parameter_range) = curve_parameter_range {
                 let procedural_id = standard_id(
-                    ctx,
                     "intersection",
                     format_args!("{}", support.pos),
                     ProceduralCurveId::mint,
-                    "catia_standard_intersection_identity",
                 )?;
                 annotate(
                     ctx,
@@ -1717,7 +1709,7 @@ pub(super) fn circle_endpoint_range_choices(
     axis: UnitVector3,
     start: Point3,
     end: Point3,
-) -> Result<Option<CircleRangeChoices>, CodecError> {
+) -> Option<CircleRangeChoices> {
     const ENDPOINT_TOLERANCE: f64 = 2e-3;
 
     if !radius.is_finite()
@@ -1725,13 +1717,13 @@ pub(super) fn circle_endpoint_range_choices(
         || (start.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
         || (end.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
     {
-        return Ok(None);
+        return None;
     }
     if start.distance(end) <= ENDPOINT_TOLERANCE {
-        return Ok(Some(CircleRangeChoices {
+        return Some(CircleRangeChoices {
             ranges: [[0.0, std::f64::consts::TAU], [0.0; 2]],
             len: 1,
-        }));
+        });
     }
     let axis = axis.recharted_by_largest_component();
     let reference = cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
@@ -1745,22 +1737,18 @@ pub(super) fn circle_endpoint_range_choices(
     };
     let mut endpoints = [angle(start), angle(end)];
     if endpoints.iter().any(|angle| !angle.is_finite()) {
-        return Ok(None);
+        return None;
     }
     endpoints.sort_by(f64::total_cmp);
-    let Some(short) = crate::nurbs::canonical_periodic_range(endpoints) else {
-        return Ok(None);
-    };
-    let Some(long) = crate::nurbs::canonical_periodic_range([
+    let short = crate::nurbs::canonical_periodic_range(endpoints)?;
+    let long = crate::nurbs::canonical_periodic_range([
         endpoints[1],
         endpoints[0] + std::f64::consts::TAU,
-    ]) else {
-        return Ok(None);
-    };
-    Ok(Some(CircleRangeChoices {
+    ])?;
+    Some(CircleRangeChoices {
         ranges: [short, long],
         len: 2,
-    }))
+    })
 }
 
 pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>(
@@ -2064,13 +2052,7 @@ pub(super) fn attach_standard_circles(
             continue;
         }
         let index = ir.model.curves.len();
-        let id = standard_id(
-            admission.context(),
-            "circle",
-            format_args!("{index}"),
-            CurveId::mint,
-            "catia_standard_attached_circle_identity",
-        )?;
+        let id = standard_id("circle", format_args!("{index}"), CurveId::mint)?;
         let Some(ref_direction) = UnitVector3::new(
             cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
         ) else {
@@ -2299,13 +2281,7 @@ pub(super) fn attach_standard_lines(
             continue;
         };
         let index = ir.model.curves.len();
-        let id = standard_id(
-            admission.context(),
-            "line",
-            format_args!("{index}"),
-            CurveId::mint,
-            "catia_standard_attached_line_identity",
-        )?;
+        let id = standard_id("line", format_args!("{index}"), CurveId::mint)?;
         let Ok(payload) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
         else {
             continue;

@@ -82,7 +82,7 @@ pub(crate) fn copy_intcurve_support_context(
     let [first, second, third] = context
         .discontinuities()
         .each_ref()
-        .map(|lane| lane.to_vec());
+        .map(std::clone::Clone::clone);
     IntcurveSupportContext::from_parts(
         [left?, right?],
         context.parameter_range(),

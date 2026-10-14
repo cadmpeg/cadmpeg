@@ -159,7 +159,7 @@ pub(crate) fn transfer_parameters(
         let Some(expression) = expression_entity.relation_expression() else {
             continue;
         };
-        let Some(signature) = expression.signature_charged()? else {
+        let Some(signature) = expression.signature() else {
             continue;
         };
         let mut transferred = Vec::new();
@@ -233,7 +233,7 @@ pub(crate) fn transfer_parameters(
             && used_inputs.len() == signature.inputs.len()
             && dependencies.len() == signature.inputs.len();
         let type_checked_expression = (if formula_type_complete {
-            evaluate_formula_expression_with_mode_charged(
+            parse_formula_expression_with_mode(
                 ctx,
                 &expression.expression.value,
                 &type_bindings,
@@ -247,11 +247,7 @@ pub(crate) fn transfer_parameters(
                 .is_some_and(|source_type| value.satisfies_source_type(source_type))
         });
         let evaluated_expression = (if formula_complete {
-            evaluate_formula_expression_charged(
-                ctx,
-                &expression.expression.value,
-                &expression_bindings,
-            )?
+            parse_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
         } else {
             None
         })
@@ -547,7 +543,7 @@ pub(crate) fn transfer_parameters(
         .collect::<std::collections::HashSet<String>>();
     let transferred = candidates.len();
     let mut parameters = candidates.into_values().collect::<Vec<_>>();
-    parameters.sort_by(|left, right| left.source_order.cmp(&right.source_order));
+    parameters.sort_by_key(|left| left.source_order);
     for (ordinal, candidate) in parameters.iter_mut().enumerate() {
         let Some(ordinal) = u32::try_from(ordinal).ok() else {
             return Ok(FormulaTransfer::default());
@@ -1109,7 +1105,7 @@ fn legacy_relation_evaluation<'a>(
     let symbols = if relation.inputs.is_empty() {
         None
     } else {
-        Some(crate::native::relation_symbols(&relation.expression)?)
+        Some(crate::native::relation_symbols(&relation.expression))
     };
     let mut bindings = BTreeMap::new();
     let mut dependencies = Vec::new();
@@ -1153,7 +1149,7 @@ fn legacy_relation_evaluation<'a>(
             parameter_id.try_clone_for_decode(ctx, "catia_legacy_formula_dependency_id")?;
         dependencies.push(dependency);
     }
-    let Some(evaluated) = evaluate_formula_expression_charged(ctx, expression, &bindings)? else {
+    let Some(evaluated) = parse_formula_expression(ctx, expression, &bindings)? else {
         return Ok(None);
     };
     let Some(source_type_kind) = canonical_parameter_type(source_type) else {
@@ -1206,10 +1202,10 @@ fn outer_container_in_scope(
     }
 }
 
-fn resolved_legacy_type<'a>(
-    run: &'a crate::native::CatiaLegacyEntityRun,
+fn resolved_legacy_type(
+    run: &crate::native::CatiaLegacyEntityRun,
     mut entity_id: u32,
-) -> Result<Option<(&'a str, bool)>, cadmpeg_core::CodecError> {
+) -> Result<Option<(&str, bool)>, cadmpeg_core::CodecError> {
     let mut steps = 0usize;
     let mut selected = false;
     loop {
@@ -1474,7 +1470,7 @@ fn relation_program_output_candidate(
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
 ) -> Result<Option<(FormulaProgramCandidate, FormulaParameterCandidate)>, cadmpeg_core::CodecError>
 {
-    let Some(signature) = expression.signature_charged()? else {
+    let Some(signature) = expression.signature() else {
         return Ok(None);
     };
     if inputs.len() != signature.inputs.len()
@@ -1526,7 +1522,7 @@ fn relation_program_output_candidate(
         input_parameters.push((candidate.parameter, candidate.parameter_type));
     }
 
-    let type_checked_expression = evaluate_formula_expression_with_mode_charged(
+    let type_checked_expression = parse_formula_expression_with_mode(
         ctx,
         &expression.expression.value,
         &type_bindings,
@@ -1537,11 +1533,7 @@ fn relation_program_output_candidate(
             .is_some_and(|source_type| value.satisfies_source_type(source_type))
     });
     let evaluated_expression = (if all_inputs_complete {
-        evaluate_formula_expression_charged(
-            ctx,
-            &expression.expression.value,
-            &expression_bindings,
-        )?
+        parse_formula_expression(ctx, &expression.expression.value, &expression_bindings)?
     } else {
         None
     })
@@ -1763,7 +1755,10 @@ fn copy_design_parameter(
             Some(cadmpeg_ir::features::ParameterPmi {
                 subtype,
                 precision: pmi.precision,
-                display_text: pmi.display_text.as_ref().map(|value| value.to_owned()),
+                display_text: pmi
+                    .display_text
+                    .as_ref()
+                    .map(std::borrow::ToOwned::to_owned),
                 basic: pmi.basic,
                 inspection: pmi.inspection,
                 reference_only: pmi.reference_only,
@@ -1772,7 +1767,10 @@ fn copy_design_parameter(
         }
         None => None,
     };
-    let native_ref = source.native_ref.as_ref().map(|value| value.to_owned());
+    let native_ref = source
+        .native_ref
+        .as_ref()
+        .map(std::borrow::ToOwned::to_owned);
     Ok(DesignParameter {
         id,
         owner,
@@ -2360,12 +2358,11 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 when_false
             }
         } else {
-            self.merge_static_values(&when_true, &when_false)?
+            Self::merge_static_values(&when_true, &when_false)?
         })
     }
 
     fn merge_static_values(
-        &mut self,
         left: &EvaluatedFormulaValue,
         right: &EvaluatedFormulaValue,
     ) -> Option<EvaluatedFormulaValue> {
@@ -2949,7 +2946,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ) => EvaluatedFormulaValue::Scalar(
                     if self.evaluate || (self.static_check && value.is_known() && needle.is_known())
                     {
-                        let index = self.search_string(value.value(), needle.value(), 0, true)?;
+                        let index = Self::search_string(value.value(), needle.value(), 0, true)?;
                         finite_scalar(f64_from_i64(index)?)?
                     } else {
                         static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -2968,7 +2965,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && known) {
                             let index =
-                                self.search_string(value.value(), needle.value(), start, true)?;
+                                Self::search_string(value.value(), needle.value(), start, true)?;
                             finite_scalar(f64_from_i64(index)?)?
                         } else {
                             static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -2982,7 +2979,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ) => {
                     let start = self.string_index(*start)?;
                     EvaluatedFormulaValue::Scalar(if self.evaluate {
-                        let index = self.search_string(
+                        let index = Self::search_string(
                             value.value(),
                             needle.value(),
                             start,
@@ -3007,8 +3004,8 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                         && length_value.known_value().is_some();
                     let string_value = if self.evaluate || (self.static_check && known) {
                         let end = start.checked_add(length)?;
-                        let start = self.string_boundary(value.value(), start)?;
-                        let end = self.string_boundary(value.value(), end)?;
+                        let start = Self::string_boundary(value.value(), start)?;
+                        let end = Self::string_boundary(value.value(), end)?;
                         value.value()[start..end].to_owned()
                     } else {
                         String::new()
@@ -3052,7 +3049,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         usize::try_from(truncate_f64_to_i64(value.value())?).ok()
     }
 
-    fn string_boundary(&mut self, value: &str, index: usize) -> Option<usize> {
+    fn string_boundary(value: &str, index: usize) -> Option<usize> {
         if index == value.chars().count() {
             Some(value.len())
         } else {
@@ -3060,25 +3057,19 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         }
     }
 
-    fn search_string(
-        &mut self,
-        value: &str,
-        needle: &str,
-        start: usize,
-        forward: bool,
-    ) -> Option<i64> {
+    fn search_string(value: &str, needle: &str, start: usize, forward: bool) -> Option<i64> {
         let character_count = value.chars().count();
         if start > character_count {
             return Some(-1);
         }
         let byte_offset = if forward {
-            let start_byte = self.string_boundary(value, start)?;
+            let start_byte = Self::string_boundary(value, start)?;
             value[start_byte..]
                 .find(needle)
                 .map(|offset| start_byte + offset)
         } else {
             let end_character = character_count.checked_sub(start)?;
-            let end_byte = self.string_boundary(value, end_character)?;
+            let end_byte = Self::string_boundary(value, end_character)?;
             value[..end_byte].rfind(needle)
         };
         byte_offset.map_or(Some(-1), |offset| {
@@ -3756,15 +3747,15 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     }
 }
 
-fn evaluate_formula_expression_charged<'a>(
+fn parse_formula_expression<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
 ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-    evaluate_formula_expression_with_mode_charged(ctx, source, bindings, true)
+    parse_formula_expression_with_mode(ctx, source, bindings, true)
 }
 
-fn evaluate_formula_expression_with_mode_charged<'a>(
+fn parse_formula_expression_with_mode<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
@@ -3787,10 +3778,8 @@ fn evaluate_formula_expression<'a>(
     source: &'a str,
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
 ) -> Option<EvaluatedFormulaValue> {
-    crate::test_support::with_service_context(|ctx| {
-        evaluate_formula_expression_charged(ctx, source, bindings)
-    })
-    .expect("service profile admits formula parser fixture")
+    crate::test_support::with_service_context(|ctx| parse_formula_expression(ctx, source, bindings))
+        .expect("service profile admits formula parser fixture")
 }
 
 #[cfg(test)]
@@ -3800,7 +3789,7 @@ fn evaluate_formula_expression_with_mode<'a>(
     evaluate: bool,
 ) -> Option<EvaluatedFormulaValue> {
     crate::test_support::with_service_context(|ctx| {
-        evaluate_formula_expression_with_mode_charged(ctx, source, bindings, evaluate)
+        parse_formula_expression_with_mode(ctx, source, bindings, evaluate)
     })
     .expect("service profile admits formula parser fixture")
 }
@@ -4033,7 +4022,7 @@ mod parser_tests {
     #[test]
     fn formula_parser_literal_refuses_retained_limit() {
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            super::evaluate_formula_expression_charged(ctx, "\"text\"", &BTreeMap::new())
+            super::parse_formula_expression(ctx, "\"text\"", &BTreeMap::new())
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -4053,8 +4042,7 @@ mod parser_tests {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root fits input limit");
-        let refused =
-            super::evaluate_formula_expression_charged(&ctx, "true ? 1 ; 2", &BTreeMap::new());
+        let refused = super::parse_formula_expression(&ctx, "true ? 1 ; 2", &BTreeMap::new());
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_formula_expression_depth")
@@ -4063,7 +4051,7 @@ mod parser_tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root fits input limit");
-        let refused = super::evaluate_formula_expression_charged(&ctx, "1", &BTreeMap::new());
+        let refused = super::parse_formula_expression(&ctx, "1", &BTreeMap::new());
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_formula_expression_scan")
@@ -4077,7 +4065,7 @@ mod parser_tests {
             (2, "catia_formula_scalar_arguments"),
         ] {
             let refused = crate::test_support::with_collection_limit(cap, |ctx| {
-                super::evaluate_formula_expression_charged(ctx, "min(1,2)", &BTreeMap::new())
+                super::parse_formula_expression(ctx, "min(1,2)", &BTreeMap::new())
             });
             assert!(
                 matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -4103,7 +4091,7 @@ mod parser_tests {
             ("ToUpper(\"é\")", 2, "catia_formula_string_case"),
         ] {
             let refused = crate::test_support::with_retained_refusal(&[], operation, |ctx| {
-                super::evaluate_formula_expression_charged(ctx, expression, &BTreeMap::new())
+                super::parse_formula_expression(ctx, expression, &BTreeMap::new())
             });
             assert!(
                 matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -4124,7 +4112,7 @@ mod parser_tests {
             EvaluatedFormulaValue::String(EvaluatedFormulaString::known("text".to_string())),
         )]);
         let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            super::evaluate_formula_expression_charged(ctx, "#1_", &bindings)
+            super::parse_formula_expression(ctx, "#1_", &bindings)
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -4135,12 +4123,7 @@ mod parser_tests {
             EvaluatedFormulaValue::Boolean(EvaluatedFormulaBoolean::unknown()),
         )]);
         let refused = crate::test_support::with_retained_limit(2, |ctx| {
-            super::evaluate_formula_expression_with_mode_charged(
-                ctx,
-                "#1_ ? \"a\" ; \"a\"",
-                &bindings,
-                false,
-            )
+            super::parse_formula_expression_with_mode(ctx, "#1_ ? \"a\" ; \"a\"", &bindings, false)
         });
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -4595,8 +4578,7 @@ mod parser_tests {
         for (depth, accepted) in [(128, true), (129, false)] {
             let expression = format!("{}1{}", "true ? ".repeat(depth), " ; 1".repeat(depth));
             crate::test_support::with_service_context(|ctx| {
-                let result =
-                    super::evaluate_formula_expression_charged(ctx, &expression, &bindings);
+                let result = super::parse_formula_expression(ctx, &expression, &bindings);
                 assert_eq!(
                     result
                         .expect("the local depth ceiling is not a session refusal")

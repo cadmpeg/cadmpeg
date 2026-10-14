@@ -91,8 +91,7 @@ impl DesignFeatureTransfer {
                 design_object,
                 &design_objects,
                 &self.feature_ids,
-            )?
-            else {
+            ) else {
                 continue;
             };
             if parameter.owner.is_none() {
@@ -185,8 +184,7 @@ impl DesignFeatureTransfer {
                 parent_object,
                 &design_objects,
                 &self.feature_ids,
-            )?
-            else {
+            ) else {
                 continue;
             };
             let Some(parent_ordinal) = feature_ordinals.get(parent) else {
@@ -203,7 +201,7 @@ impl DesignFeatureTransfer {
         }
         let mut cyclic = Vec::new();
         for feature in parents.keys() {
-            if !feature_parent_chain_is_acyclic(feature, &parents)? {
+            if !feature_parent_chain_is_acyclic(feature, &parents) {
                 let id = feature.try_clone_for_decode(ctx, "catia_feature_cyclic_id")?;
                 cyclic.push(id);
             }
@@ -262,8 +260,7 @@ impl DesignFeatureTransfer {
                     target_object,
                     &design_objects,
                     &self.feature_ids,
-                )?
-                else {
+                ) else {
                     continue;
                 };
                 if target == &feature.id || seen.contains(target) {
@@ -561,17 +558,17 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
 fn feature_parent_chain_is_acyclic(
     feature_id: &FeatureId,
     parents: &HashMap<FeatureId, FeatureId>,
-) -> Result<bool, CodecError> {
+) -> bool {
     let mut current = feature_id;
     let mut traversed = 0usize;
     while let Some(parent) = parents.get(current) {
         traversed += 1;
         if traversed > parents.len() {
-            return Ok(false);
+            return false;
         }
         current = parent;
     }
-    Ok(true)
+    true
 }
 
 /// Resolve the nearest transferred feature on one exact owner chain.
@@ -584,20 +581,18 @@ fn nearest_feature_for_design_object<'a>(
     start: &str,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     feature_ids: &'a HashMap<String, FeatureId>,
-) -> Result<Option<&'a FeatureId>, CodecError> {
+) -> Option<&'a FeatureId> {
     let mut current = Some(start);
     let mut traversed = 0usize;
 
     while let Some(current_id) = current {
         traversed += 1;
         if traversed > design_objects.len() {
-            return Ok(None);
+            return None;
         }
-        let Some(object) = design_objects.get(current_id).copied() else {
-            return Ok(None);
-        };
+        let object = design_objects.get(current_id).copied()?;
         if let Some(feature) = feature_ids.get(current_id) {
-            return Ok(Some(feature));
+            return Some(feature);
         }
         current = object
             .owner_design_object
@@ -605,7 +600,7 @@ fn nearest_feature_for_design_object<'a>(
             .filter(|parent| *parent != current_id);
     }
 
-    Ok(None)
+    None
 }
 
 /// Transfer exact owner-bound reference history nodes.
@@ -650,7 +645,7 @@ pub(crate) fn transfer_design_features(
         .iter()
         .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
-        let plane_candidate = principal_plane_candidate(object, &records)?;
+        let plane_candidate = principal_plane_candidate(object, &records);
         let sketch_owner = sketch_candidate(object, &records);
         let reference_plane = reference_plane_candidate(object, &records);
         let native_operation = native_operation_candidate(object, &records);
@@ -959,7 +954,7 @@ fn transfer_native_operation(
         sources.design_objects,
         sources.object_ids,
     )?;
-    let definition = native_operation_definition(kind, &object.id)?;
+    let definition = native_operation_definition(kind, &object.id);
     let feature_id = FeatureId::from(neutral_history_id(
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
@@ -1011,11 +1006,8 @@ fn transfer_native_operation(
 /// proves the family identity; it does not prove profile, axis, extent,
 /// result, edge group, pattern seed, pattern axis, pattern angle, pattern
 /// count, or operation-specific dependency roles.
-fn native_operation_definition(
-    kind: NativeOperationClass,
-    native_ref: &str,
-) -> Result<FeatureDefinition, CodecError> {
-    Ok(match kind {
+fn native_operation_definition(kind: NativeOperationClass, native_ref: &str) -> FeatureDefinition {
+    match kind {
         NativeOperationClass::PrismEndLimitLength
         | NativeOperationClass::PrismThickThin1
         | NativeOperationClass::PrismThickThin2 => {
@@ -1058,7 +1050,7 @@ fn native_operation_definition(
                 family: UnresolvedFamily::Fillet,
             })
         }
-    })
+    }
 }
 
 /// Exact source properties and records retained for one native operation.
@@ -1101,7 +1093,7 @@ fn native_operation_definition_properties(
                 object.id.as_str(),
                 design_objects,
                 native_operation_object_ids,
-            )?
+            )
         {
             owned_objects.push(*candidate);
         }
@@ -1244,29 +1236,29 @@ fn native_operation_owner_chain_reaches(
     operation_object_id: &str,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> Result<bool, CodecError> {
+) -> bool {
     let mut current = Some(design_object_id);
     let mut traversed = 0usize;
     while let Some(current_id) = current {
         traversed += 1;
         if traversed > design_objects.len() {
-            return Ok(false);
+            return false;
         }
         if current_id == operation_object_id {
-            return Ok(true);
+            return true;
         }
         if native_operation_object_ids.contains(current_id) {
-            return Ok(false);
+            return false;
         }
         let Some(object) = design_objects.get(current_id).copied() else {
-            return Ok(false);
+            return false;
         };
         current = object
             .owner_design_object
             .as_deref()
             .filter(|parent| *parent != current_id);
     }
-    Ok(false)
+    false
 }
 
 fn property_prefix(
@@ -1867,31 +1859,18 @@ struct PrincipalPlaneCandidate<'a> {
 fn principal_plane_candidate<'a>(
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
-) -> Result<Option<PrincipalPlaneCandidate<'a>>, CodecError> {
-    if object.owner_record.is_none() {
-        return Ok(None);
-    }
-    let Some(declarations) = object
+) -> Option<PrincipalPlaneCandidate<'a>> {
+    object.owner_record.as_ref()?;
+    let declarations = object
         .fields
         .iter()
         .map(|field| records.get(field.as_str()).copied())
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
-    let Some(first) = declarations.first() else {
-        return Ok(None);
-    };
-    let Some(class_name) = first.class_name() else {
-        return Ok(None);
-    };
-    let Some(class_entry) = first.class_entry() else {
-        return Ok(None);
-    };
-    let Some(plane) = principal_plane(class_name) else {
-        return Ok(None);
-    };
-    Ok(declarations
+        .collect::<Option<Vec<_>>>()?;
+    let first = declarations.first()?;
+    let class_name = first.class_name()?;
+    let class_entry = first.class_entry()?;
+    let plane = principal_plane(class_name)?;
+    declarations
         .iter()
         .all(|record| {
             record.class_name() == Some(class_name)
@@ -1903,7 +1882,7 @@ fn principal_plane_candidate<'a>(
             declarations,
             plane,
             declaration_class: class_name,
-        }))
+        })
 }
 
 fn sketch_candidate<'a>(

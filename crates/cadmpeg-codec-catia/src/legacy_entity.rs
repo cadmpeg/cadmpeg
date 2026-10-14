@@ -2,7 +2,6 @@
 //! Identity framing for the pre-`7C05` design stream.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::container;
@@ -148,19 +147,16 @@ pub(crate) struct LegacyRelationSignature {
 impl LegacyRelationSignature {
     pub(crate) fn into_parts(
         self,
-    ) -> Result<
-        (
-            Vec<LegacyRelationParameter>,
-            Option<LegacyRelationParameter>,
-            String,
-        ),
-        cadmpeg_core::CodecError,
-    > {
+    ) -> (
+        Vec<LegacyRelationParameter>,
+        Option<LegacyRelationParameter>,
+        String,
+    ) {
         let (output, result_type) = match self.result {
             LegacyRelationResult::Void { output } => (Some(output), "VoidType".to_owned()),
             LegacyRelationResult::Typed(result_type) => (None, result_type),
         };
-        Ok((self.inputs, output, result_type))
+        (self.inputs, output, result_type)
     }
 
     #[cfg(test)]
@@ -434,29 +430,29 @@ impl LegacyEntityRun {
 }
 
 /// Parse complete legacy identity runs terminated by the fixed schema-catalog opener.
-pub(crate) fn parse_runs(data: &[u8]) -> Result<Vec<LegacyEntityRun>, CodecError> {
-    let directory_offset = container::outer_stream_directory_range(data)?.map(|range| range.start);
+pub(crate) fn parse_runs(data: &[u8]) -> Vec<LegacyEntityRun> {
+    let directory_offset = container::outer_stream_directory_range(data).map(|range| range.start);
     parse_runs_with_directory_offset(data, directory_offset)
 }
 
 fn parse_runs_with_directory_offset(
     data: &[u8],
     directory_offset: Option<usize>,
-) -> Result<Vec<LegacyEntityRun>, CodecError> {
+) -> Vec<LegacyEntityRun> {
     let mut runs = Vec::new();
     for catalog_offset in memchr::memmem::find_iter(data, CATALOG_OPEN) {
-        if let Some(run) = parse_run_before(data, catalog_offset, directory_offset)? {
+        if let Some(run) = parse_run_before(data, catalog_offset, directory_offset) {
             runs.push(run);
         }
     }
-    Ok(runs)
+    runs
 }
 
 fn parse_run_before(
     data: &[u8],
     catalog_offset: usize,
     directory_offset: Option<usize>,
-) -> Result<Option<LegacyEntityRun>, CodecError> {
+) -> Option<LegacyEntityRun> {
     let mut identities = data[..catalog_offset]
         .windows(6)
         .enumerate()
@@ -484,11 +480,9 @@ fn parse_run_before(
         .rposition(|pair| pair[0].entity_id >= pair[1].entity_id)
         .map_or(0, |index| index + 1);
     identities.drain(..suffix_start);
-    let Some(&first_identity) = identities.first() else {
-        return Ok(None);
-    };
+    let &first_identity = identities.first()?;
     if first_identity.entity_id != 1 {
-        return Ok(None);
+        return None;
     }
     let mut role_selectors = Vec::new();
     let mut text_fields = Vec::new();
@@ -497,18 +491,18 @@ fn parse_run_before(
         let end = identities
             .get(index + 1)
             .map_or(catalog_offset, |next| next.offset);
-        let mut interval_roles = parse_role_selectors(data, start, end, identity.entity_id)?;
+        let mut interval_roles = parse_role_selectors(data, start, end, identity.entity_id);
         let mut interval_fields =
-            parse_text_fields(data, start, end, identity.entity_id, &interval_roles)?;
+            parse_text_fields(data, start, end, identity.entity_id, &interval_roles);
 
         text_fields.append(&mut interval_fields);
 
         role_selectors.append(&mut interval_roles);
     }
-    let relations = parse_relations(&text_fields, &identities)?;
-    let schema_fields = parse_schema_fields(data, &role_selectors, &text_fields)?;
+    let relations = parse_relations(&text_fields, &identities);
+    let schema_fields = parse_schema_fields(data, &role_selectors, &text_fields);
     let synchronous_states =
-        parse_synchronous_states(data, &role_selectors, &identities, catalog_offset)?;
+        parse_synchronous_states(data, &role_selectors, &identities, catalog_offset);
     let mut type_descriptors = Vec::new();
     let mut scalar_values = Vec::new();
     let mut string_values = Vec::new();
@@ -518,24 +512,24 @@ fn parse_run_before(
         let end = identities
             .get(index + 1)
             .map_or(catalog_offset, |next| next.offset);
-        let mut interval_types = parse_type_descriptors(data, start, end, identity.entity_id)?;
+        let mut interval_types = parse_type_descriptors(data, start, end, identity.entity_id);
 
         type_descriptors.append(&mut interval_types);
-        let mut interval_scalars = parse_scalar_values(data, start, end, identity.entity_id)?;
+        let mut interval_scalars = parse_scalar_values(data, start, end, identity.entity_id);
 
         scalar_values.append(&mut interval_scalars);
-        let mut interval_strings = parse_string_values(data, start, end, identity.entity_id)?;
+        let mut interval_strings = parse_string_values(data, start, end, identity.entity_id);
 
         string_values.append(&mut interval_strings);
-        let mut interval_integers = parse_integer_values(data, start, end, identity.entity_id)?;
+        let mut interval_integers = parse_integer_values(data, start, end, identity.entity_id);
 
         integer_values.append(&mut interval_integers);
     }
-    bind_value_names(data, &role_selectors, &text_fields, &mut scalar_values)?;
-    bind_value_names(data, &role_selectors, &text_fields, &mut string_values)?;
-    bind_value_names(data, &role_selectors, &text_fields, &mut integer_values)?;
-    let schema_program = parse_schema_program(data, catalog_offset, directory_offset)?;
-    Ok(Some(LegacyEntityRun {
+    bind_value_names(data, &role_selectors, &text_fields, &mut scalar_values);
+    bind_value_names(data, &role_selectors, &text_fields, &mut string_values);
+    bind_value_names(data, &role_selectors, &text_fields, &mut integer_values);
+    let schema_program = parse_schema_program(data, catalog_offset, directory_offset);
+    Some(LegacyEntityRun {
         catalog_offset,
         schema_program,
         first_identity,
@@ -549,15 +543,15 @@ fn parse_run_before(
         scalar_values,
         string_values,
         integer_values,
-    }))
+    })
 }
 
 fn parse_schema_program(
     data: &[u8],
     catalog_offset: usize,
     directory_offset: Option<usize>,
-) -> Result<Option<LegacySchemaProgram>, CodecError> {
-    let Some((offset, boundary_offset, boundary, source)) = (|| {
+) -> Option<LegacySchemaProgram> {
+    let (offset, boundary_offset, boundary, source) = (|| {
         let prefix_offset = catalog_offset.checked_add(CATALOG_OPEN.len())?;
         let offset = prefix_offset.checked_add(SCHEMA_PROGRAM_PREFIX.len())?;
         if data.get(prefix_offset..offset)? != SCHEMA_PROGRAM_PREFIX {
@@ -595,23 +589,21 @@ fn parse_schema_program(
             boundary,
             data.get(offset..boundary_offset)?,
         ))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     let bytes = source.to_vec();
-    Ok(Some(LegacySchemaProgram {
+    Some(LegacySchemaProgram {
         offset,
         boundary_offset,
         boundary,
-        identifiers: parse_schema_identifiers(&bytes, offset)?,
+        identifiers: parse_schema_identifiers(&bytes, offset),
         bytes,
-    }))
+    })
 }
 
 pub(crate) fn parse_schema_identifiers(
     bytes: &[u8],
     program_offset: usize,
-) -> Result<Vec<LegacySchemaIdentifier>, CodecError> {
+) -> Vec<LegacySchemaIdentifier> {
     let mut identifiers = Vec::new();
     for (relative, first) in bytes.iter().enumerate() {
         let Some((offset, value)) = (|| {
@@ -636,7 +628,7 @@ pub(crate) fn parse_schema_identifiers(
         };
         identifiers.push(identifier);
     }
-    Ok(identifiers)
+    identifiers
 }
 
 fn parse_synchronous_states(
@@ -644,8 +636,8 @@ fn parse_synchronous_states(
     roles: &[LegacyRoleSelector],
     identities: &[LegacyEntityIdentity],
     catalog_offset: usize,
-) -> Result<Vec<LegacyRelationSynchronousState>, CodecError> {
-    Ok(roles
+) -> Vec<LegacyRelationSynchronousState> {
+    roles
         .iter()
         .filter_map(|role| {
             let at = role.end_offset()?;
@@ -691,7 +683,7 @@ fn parse_synchronous_states(
                 synchronous,
             })
         })
-        .collect::<Vec<_>>())
+        .collect::<Vec<_>>()
 }
 
 fn parse_type_descriptors(
@@ -699,7 +691,7 @@ fn parse_type_descriptors(
     start: usize,
     end: usize,
     entity_id: u32,
-) -> Result<Vec<LegacyTypeDescriptor>, CodecError> {
+) -> Vec<LegacyTypeDescriptor> {
     let mut descriptors = Vec::new();
     for relative in memchr::memmem::find_iter(&data[start..end], TYPE_OPEN) {
         let Some((offset, name, selector)) = (|| {
@@ -734,7 +726,7 @@ fn parse_type_descriptors(
             value,
         });
     }
-    Ok(descriptors)
+    descriptors
 }
 
 fn parse_scalar_values(
@@ -742,7 +734,7 @@ fn parse_scalar_values(
     start: usize,
     end: usize,
     entity_id: u32,
-) -> Result<Vec<LegacyScalarValue>, CodecError> {
+) -> Vec<LegacyScalarValue> {
     let mut values = [
         (NAMED_SCALAR_OPEN, LegacyScalarEncoding::Named84),
         (SCALAR_OPEN, LegacyScalarEncoding::Standalone85),
@@ -786,7 +778,7 @@ fn parse_scalar_values(
             at -= 1;
         }
     }
-    Ok(values)
+    values
 }
 
 /// A stored value packet that can carry a unique co-owned `name` text field.
@@ -851,7 +843,7 @@ fn bind_value_names<Value: LegacyNamedValue>(
     roles: &[LegacyRoleSelector],
     fields: &[LegacyTextField],
     values: &mut [Value],
-) -> Result<(), CodecError> {
+) {
     let mut counts = std::collections::HashMap::<u32, usize>::new();
     for value in values.iter() {
         if let Some(count) = counts.get_mut(&value.entity_id()) {
@@ -870,7 +862,6 @@ fn bind_value_names<Value: LegacyNamedValue>(
             value.bind_name(name.offset, name.value.clone());
         }
     }
-    Ok(())
 }
 
 fn parse_string_values(
@@ -878,7 +869,7 @@ fn parse_string_values(
     start: usize,
     end: usize,
     entity_id: u32,
-) -> Result<Vec<LegacyStringValue>, CodecError> {
+) -> Vec<LegacyStringValue> {
     let mut values = Vec::new();
     for relative in memchr::memmem::find_iter(&data[start..end], STRING_OPEN) {
         let Some((offset, value)) = (|| {
@@ -905,7 +896,7 @@ fn parse_string_values(
             value: value.to_owned(),
         });
     }
-    Ok(values)
+    values
 }
 
 fn parse_integer_values(
@@ -913,8 +904,8 @@ fn parse_integer_values(
     start: usize,
     end: usize,
     entity_id: u32,
-) -> Result<Vec<LegacyIntegerValue>, CodecError> {
-    Ok(memchr::memmem::find_iter(&data[start..end], INTEGER_OPEN)
+) -> Vec<LegacyIntegerValue> {
+    memchr::memmem::find_iter(&data[start..end], INTEGER_OPEN)
         .filter_map(|relative| {
             let offset = start + relative;
             let payload = offset.checked_add(INTEGER_OPEN.len())?;
@@ -945,7 +936,7 @@ fn parse_integer_values(
                 value,
             })
         })
-        .collect::<Vec<_>>())
+        .collect::<Vec<_>>()
 }
 
 fn unique_value_name<'a>(
@@ -1009,7 +1000,7 @@ fn unique_evaluated_value_name<'a>(
 fn parse_relations(
     fields: &[LegacyTextField],
     identities: &[LegacyEntityIdentity],
-) -> Result<Vec<LegacyRelation>, CodecError> {
+) -> Vec<LegacyRelation> {
     let mut relations = Vec::new();
     let mut start = 0;
     while start < fields.len() {
@@ -1078,7 +1069,7 @@ fn parse_relations(
             Some((expression, signature))
         });
         if let Some((expression, type_signature)) = pair {
-            if let Some(signature) = parse_relation_signature(&type_signature.value)? {
+            if let Some(signature) = parse_relation_signature(&type_signature.value) {
                 let body_selector = relation_role_selector(expression, "body");
                 let parameter_selector = relation_role_selector(type_signature, "param");
                 let relation = LegacyRelation {
@@ -1102,7 +1093,7 @@ fn parse_relations(
         }
         start = end;
     }
-    Ok(relations)
+    relations
 }
 
 fn relation_role_selector(field: &LegacyTextField, role_name: &str) -> Option<u32> {
@@ -1128,41 +1119,31 @@ fn relation_parameter_entity(
 }
 
 /// Parse a complete legacy relation type signature.
-pub(crate) fn parse_relation_signature(
-    source: &str,
-) -> Result<Option<LegacyRelationSignature>, CodecError> {
+pub(crate) fn parse_relation_signature(source: &str) -> Option<LegacyRelationSignature> {
     let source = source.strip_suffix('\n').unwrap_or(source);
-    let Some((clauses, result_type)) = source.rsplit_once(") : ") else {
-        return Ok(None);
-    };
-    let Some(clauses) = clauses.strip_prefix('(') else {
-        return Ok(None);
-    };
+    let (clauses, result_type) = source.rsplit_once(") : ")?;
+    let clauses = clauses.strip_prefix('(')?;
     let result_type = result_type.trim();
     if result_type.is_empty() {
-        return Ok(None);
+        return None;
     }
     let mut inputs = Vec::new();
     let mut output = None;
     let mut names = std::collections::HashSet::new();
     if !clauses.trim().is_empty() {
         for clause in clauses.split(',') {
-            let Some((parameter, role_type)) = clause.split_once(':') else {
-                return Ok(None);
-            };
+            let (parameter, role_type) = clause.split_once(':')?;
             let parameter = parameter.trim();
             let role_type = role_type.trim();
             let (output_role, value_type) = if let Some(value_type) = role_type.strip_prefix("#In")
             {
                 (false, value_type.trim())
             } else {
-                let Some(value_type) = role_type.strip_prefix("#Out") else {
-                    return Ok(None);
-                };
+                let value_type = role_type.strip_prefix("#Out")?;
                 (true, value_type.trim())
             };
             if parameter.is_empty() || value_type.is_empty() || names.contains(parameter) {
-                return Ok(None);
+                return None;
             }
             names.insert(parameter);
             let parameter = LegacyRelationParameter {
@@ -1171,7 +1152,7 @@ pub(crate) fn parse_relation_signature(
             };
             if output_role {
                 if output.replace(parameter).is_some() {
-                    return Ok(None);
+                    return None;
                 }
             } else {
                 inputs.push(parameter);
@@ -1179,16 +1160,14 @@ pub(crate) fn parse_relation_signature(
         }
     }
     let result = if result_type == "VoidType" {
-        let Some(output) = output else {
-            return Ok(None);
-        };
+        let output = output?;
         LegacyRelationResult::Void { output }
     } else if output.is_none() {
         LegacyRelationResult::Typed(result_type.to_owned())
     } else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(LegacyRelationSignature { inputs, result }))
+    Some(LegacyRelationSignature { inputs, result })
 }
 
 fn parse_text_fields(
@@ -1197,7 +1176,7 @@ fn parse_text_fields(
     end: usize,
     entity_id: u32,
     role_selectors: &[LegacyRoleSelector],
-) -> Result<Vec<LegacyTextField>, CodecError> {
+) -> Vec<LegacyTextField> {
     let mut fields = Vec::new();
     for relative in memchr::memmem::find_iter(&data[start..end], TEXT_OPEN) {
         let Some((offset, encoding, value)) = (|| {
@@ -1211,8 +1190,7 @@ fn parse_text_fields(
         let role = role_selectors
             .iter()
             .find(|role| role.end_offset() == Some(offset))
-            .map(|role| role.copy_charged())
-            .transpose()?;
+            .cloned();
         let field = LegacyTextField {
             offset,
             entity_id,
@@ -1222,25 +1200,10 @@ fn parse_text_fields(
         };
         fields.push(field);
     }
-    Ok(fields)
+    fields
 }
 
 impl LegacyRoleSelector {
-    fn copy_charged(&self) -> Result<Self, CodecError> {
-        let name = match &self.name {
-            LegacyRoleName::Literal(name) => LegacyRoleName::Literal(name.to_owned()),
-            LegacyRoleName::Selector(selector) => LegacyRoleName::Selector(*selector),
-        };
-        Ok(Self {
-            offset: self.offset,
-            entity_id: self.entity_id,
-            name,
-            encoding: self.encoding,
-            selector: self.selector,
-            field_code: self.field_code,
-        })
-    }
-
     fn end_offset(&self) -> Option<usize> {
         self.offset
             .checked_add(self.name.byte_len())?
@@ -1255,7 +1218,7 @@ fn parse_schema_fields(
     data: &[u8],
     roles: &[LegacyRoleSelector],
     text_fields: &[LegacyTextField],
-) -> Result<Vec<LegacySchemaField>, CodecError> {
+) -> Vec<LegacySchemaField> {
     let mut fields = Vec::new();
     for pair in roles.windows(2) {
         let Some((offset, role, boundary, field_code, payload)) = (|| {
@@ -1310,7 +1273,7 @@ fn parse_schema_fields(
         };
         fields.push(field);
     }
-    Ok(fields)
+    fields
 }
 
 fn parse_role_selectors(
@@ -1318,7 +1281,7 @@ fn parse_role_selectors(
     start: usize,
     end: usize,
     entity_id: u32,
-) -> Result<Vec<LegacyRoleSelector>, CodecError> {
+) -> Vec<LegacyRoleSelector> {
     let mut roles = Vec::new();
     for offset in start..end {
         let Some((name, encoding, selector)) = (|| {
@@ -1490,7 +1453,7 @@ fn parse_role_selectors(
             .then(|| View::u16_le_at(data, offset + 1))?
         });
     }
-    Ok(roles)
+    roles
 }
 
 pub(crate) fn valid_identifier(name: &str) -> bool {

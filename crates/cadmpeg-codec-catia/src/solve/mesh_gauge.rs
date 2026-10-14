@@ -58,7 +58,7 @@ fn canonicalize_topology_boundary_gauges(
         })
     }
 
-    fn rotate_to_minimum(coedges: &mut NonEmptyMembers<CoedgeUse>) -> Result<(), CodecError> {
+    fn rotate_to_minimum(coedges: &mut NonEmptyMembers<CoedgeUse>) {
         let len = coedges.len();
         let cycle = coedges.as_slice();
         let key = |start: usize| {
@@ -75,12 +75,11 @@ fn canonicalize_topology_boundary_gauges(
         if best != 0 {
             coedges.rotate_left(best);
         }
-        Ok(())
     }
 
     for face in &mut topology.faces {
         for boundary in &mut face.boundaries {
-            rotate_to_minimum(&mut boundary.coedges)?;
+            rotate_to_minimum(&mut boundary.coedges);
             let reversed = boundary.coedges.as_slice().to_vec();
             let mut reversed = NonEmptyMembers::<CoedgeUse>::try_from(reversed)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -91,7 +90,7 @@ fn canonicalize_topology_boundary_gauges(
                 coedge.reversed = !coedge.reversed;
                 std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
             }
-            rotate_to_minimum(&mut reversed)?;
+            rotate_to_minimum(&mut reversed);
 
             if signature(&reversed)
                 .cmp(signature(&boundary.coedges))
@@ -271,7 +270,7 @@ mod boundary_tests {
     }
 }
 
-fn normalized_endpoint_options(options: &[[usize; 2]]) -> Result<Vec<[usize; 2]>, CodecError> {
+fn normalized_endpoint_options(options: &[[usize; 2]]) -> Vec<[usize; 2]> {
     let mut normalized = Vec::new();
     for &mut_pair in options {
         let mut pair = mut_pair;
@@ -280,7 +279,7 @@ fn normalized_endpoint_options(options: &[[usize; 2]]) -> Result<Vec<[usize; 2]>
     }
     normalized.sort_unstable_by(Ord::cmp);
     normalized.dedup();
-    Ok(normalized)
+    normalized
 }
 
 fn mesh_edge_gauge_base_key(
@@ -288,38 +287,38 @@ fn mesh_edge_gauge_base_key(
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_geometry: &[MeshEdgeGeometry],
-) -> Result<Option<MeshEdgeGaugeBaseKey>, CodecError> {
+) -> Option<MeshEdgeGaugeBaseKey> {
     let (Some(row), Some(&faces), Some(&geometry)) = (
         edge_rows.get(edge),
         edge_faces.get(edge),
         edge_geometry.get(edge),
     ) else {
-        return Ok(None);
+        return None;
     };
     let mut faces = faces;
     faces.sort_unstable_by(Ord::cmp);
-    Ok(Some((
+    Some((
         row.kind(),
         row.boundary_layout(),
         geometry,
         row.handles().len(),
         faces,
-    )))
+    ))
 }
 
 fn mapped_normalized_endpoint_options(
     options: &[[usize; 2]],
     permutation: &[usize],
-) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+) -> Option<Vec<[usize; 2]>> {
     let mut mapped = Vec::new();
     for pair in options {
         let (Some(&left), Some(&right)) = (permutation.get(pair[0]), permutation.get(pair[1]))
         else {
-            return Ok(None);
+            return None;
         };
         mapped.push([left, right]);
     }
-    Ok(Some(normalized_endpoint_options(&mapped)?))
+    Some(normalized_endpoint_options(&mapped))
 }
 
 fn coordinate_find(
@@ -361,7 +360,7 @@ fn enumerate_coordinate_permutations(
     let _depth = ctx.enter_nested("catia_gauge_permutation_depth")?;
 
     if index == points.len() {
-        let copy = current.to_vec();
+        let copy = current.clone();
         output.push(copy);
         return Ok(());
     }
@@ -380,15 +379,15 @@ fn enumerate_coordinate_permutations(
 }
 
 /// Return `value!`, or `None` when it exceeds `limit`.
-fn bounded_factorial(value: usize, limit: usize) -> Result<Option<usize>, CodecError> {
+fn bounded_factorial(value: usize, limit: usize) -> Option<usize> {
     let mut result = 1usize;
     for factor in 2..=value {
         match result.checked_mul(factor) {
             Some(next) if next <= limit => result = next,
-            _ => return Ok(None),
+            _ => return None,
         }
     }
-    Ok(Some(result))
+    Some(result)
 }
 
 fn intern_gauge_signatures<T: Ord>(
@@ -457,8 +456,7 @@ pub(super) fn build_mesh_coordinate_gauge(
     let mut edge_bases = Vec::new();
     let mut groups = BTreeMap::<MeshEdgeGaugeBaseKey, Vec<usize>>::new();
     for edge in 0..edge_rows.len() {
-        let Some(key) = mesh_edge_gauge_base_key(edge, edge_rows, edge_faces, edge_geometry)?
-        else {
+        let Some(key) = mesh_edge_gauge_base_key(edge, edge_rows, edge_faces, edge_geometry) else {
             return identity();
         };
         edge_bases.push(key);
@@ -466,7 +464,7 @@ pub(super) fn build_mesh_coordinate_gauge(
     }
     let mut normalized_options = Vec::new();
     for options in edge_candidates {
-        let normalized = normalized_endpoint_options(options)?;
+        let normalized = normalized_endpoint_options(options);
         normalized_options.push(normalized);
     }
     let mut parent = Vec::new();
@@ -558,13 +556,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         ctx,
         option_records.iter().map(|(edge, _)| row_colors[*edge]),
     )?;
-    let refinement_limit = point_count
-        .checked_add(edge_rows.len())
-        .and_then(|count| count.checked_add(option_records.len()))
-        .and_then(|count| count.checked_add(1))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_gauge_refinement_limit", u64::MAX, u64::MAX)
-        })?;
+    let refinement_limit = point_count + edge_rows.len() + option_records.len() + 1;
     for _ in 0..refinement_limit {
         let mut option_signatures = Vec::new();
 
@@ -620,10 +612,10 @@ pub(super) fn build_mesh_coordinate_gauge(
                     if edge_identity_evidence[edge] {
                         continue;
                     }
-                    let original = normalized_options[edge].to_vec();
+                    let original = normalized_options[edge].clone();
                     original_unbound.push(original);
                     if let Some(mapped) =
-                        mapped_normalized_endpoint_options(&edge_candidates[edge], permutation)?
+                        mapped_normalized_endpoint_options(&edge_candidates[edge], permutation)
                     {
                         mapped_unbound.push(mapped);
                     }
@@ -635,8 +627,8 @@ pub(super) fn build_mesh_coordinate_gauge(
                 }
                 for &edge in edges.iter().filter(|edge| edge_identity_evidence[**edge]) {
                     let mapped =
-                        mapped_normalized_endpoint_options(&edge_candidates[edge], permutation)?;
-                    let original = normalized_options[edge].to_vec();
+                        mapped_normalized_endpoint_options(&edge_candidates[edge], permutation);
+                    let original = normalized_options[edge].clone();
                     if mapped != Some(original) {
                         return Ok(false);
                     }
@@ -670,8 +662,7 @@ pub(super) fn build_mesh_coordinate_gauge(
         let mut identity_order = Vec::new();
 
         identity_order.extend(0..point_count);
-        let mut local_orders = Vec::new();
-        local_orders.push(identity_order);
+        let mut local_orders = vec![identity_order];
         let mut bounded = true;
         for class in color_classes.values() {
             if class.len() == 1 {
@@ -680,7 +671,7 @@ pub(super) fn build_mesh_coordinate_gauge(
             let remaining_limit = MAX_COORDINATE_GAUGE_PERMUTATIONS / local_orders.len();
             // A class with more orders than the permutation limit leaves this
             // component with the identity gauge only.
-            if bounded_factorial(class.len(), remaining_limit)?.is_none() {
+            if bounded_factorial(class.len(), remaining_limit).is_none() {
                 bounded = false;
                 break;
             }
@@ -699,7 +690,7 @@ pub(super) fn build_mesh_coordinate_gauge(
 
             for permutation in &local_orders {
                 for order in &class_orders {
-                    let mut permutation = permutation.to_vec();
+                    let mut permutation = permutation.clone();
 
                     for (&source, &target) in class.iter().zip(order) {
                         permutation[source] = target;
@@ -739,34 +730,30 @@ pub(super) fn build_mesh_coordinate_gauge(
 fn mapped_endpoint_pair(
     pair: Option<[usize; 2]>,
     permutation: Option<&[usize]>,
-) -> Result<Option<[usize; 2]>, CodecError> {
-    let Some(mut pair) = pair else {
-        return Ok(None);
-    };
+) -> Option<[usize; 2]> {
+    let mut pair = pair?;
     if let Some(permutation) = permutation {
         let (Some(&left), Some(&right)) = (permutation.get(pair[0]), permutation.get(pair[1]))
         else {
-            return Ok(None);
+            return None;
         };
         pair = [left, right];
     }
     pair.sort_unstable_by(Ord::cmp);
-    Ok(Some(pair))
+    Some(pair)
 }
 
 fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
     pairs: &[Option<[usize; 2]>],
     gauge: MeshCandidateGauge<'_>,
     permutation: Option<&[usize]>,
-) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+) -> Option<Vec<Option<[usize; 2]>>> {
     let edge_count = pairs.len();
     let mut canonical = Vec::new();
     for pair in pairs.iter().copied() {
         let mapped = match pair {
             Some(pair) => {
-                let Some(mapped) = mapped_endpoint_pair(Some(pair), permutation)? else {
-                    return Ok(None);
-                };
+                let mapped = mapped_endpoint_pair(Some(pair), permutation)?;
                 Some(mapped)
             }
             None => None,
@@ -779,7 +766,7 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
         || gauge.edge_candidates.len() != edge_count
         || gauge.edge_identity_evidence.len() != edge_count
     {
-        return Ok(Some(canonical));
+        return Some(canonical);
     }
 
     let mut source_groups = BTreeMap::<MeshEdgeGaugeKey, Vec<usize>>::new();
@@ -788,22 +775,14 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
         if gauge.edge_identity_evidence[edge] {
             continue;
         }
-        let Some(base) =
-            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)?
-        else {
-            return Ok(None);
-        };
-        let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge])?;
+        let base =
+            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)?;
+        let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge]);
         let target_options = match permutation {
             Some(permutation) => {
-                let Some(mapped) =
-                    mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?
-                else {
-                    return Ok(None);
-                };
-                mapped
+                mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?
             }
-            None => source_options.to_vec(),
+            None => source_options.clone(),
         };
         let source_key = (base, target_options);
         source_groups.entry(source_key).or_default().push(edge);
@@ -812,11 +791,9 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
     }
 
     for (key, group) in source_groups {
-        let Some(mut slots) = target_groups.remove(&key) else {
-            return Ok(None);
-        };
+        let mut slots = target_groups.remove(&key)?;
         if slots.len() != group.len() {
-            return Ok(None);
+            return None;
         }
         slots.sort_unstable_by(Ord::cmp);
         let mut ordered = Vec::new();
@@ -829,32 +806,26 @@ fn canonicalize_partial_endpoint_pair_gauge_with_permutation(
         }
     }
     if !target_groups.is_empty() {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(canonical))
+    Some(canonical)
 }
 
 fn canonicalize_partial_endpoint_pair_gauge(
     pairs: &[Option<[usize; 2]>],
     gauge: MeshCandidateGauge<'_>,
-) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
-    let Some(mut canonical) =
-        canonicalize_partial_endpoint_pair_gauge_with_permutation(pairs, gauge, None)?
-    else {
-        return Ok(None);
-    };
+) -> Option<Vec<Option<[usize; 2]>>> {
+    let mut canonical =
+        canonicalize_partial_endpoint_pair_gauge_with_permutation(pairs, gauge, None)?;
     if let Some(coordinate_gauge) = gauge.coordinate_gauge {
         for permutations in &coordinate_gauge.components {
-            let mut best = canonical.to_vec();
+            let mut best = canonical.clone();
             for permutation in permutations {
-                let Some(candidate) = canonicalize_partial_endpoint_pair_gauge_with_permutation(
+                let candidate = canonicalize_partial_endpoint_pair_gauge_with_permutation(
                     &canonical,
                     gauge,
                     Some(permutation),
-                )?
-                else {
-                    return Ok(None);
-                };
+                )?;
                 if candidate < best {
                     best = candidate;
                 }
@@ -862,28 +833,24 @@ fn canonicalize_partial_endpoint_pair_gauge(
             canonical = best;
         }
     }
-    Ok(Some(canonical))
+    Some(canonical)
 }
 
 pub(super) fn canonicalize_complete_endpoint_pairs(
     pairs: &[[usize; 2]],
     gauge: MeshCandidateGauge<'_>,
-) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+) -> Option<Vec<[usize; 2]>> {
     let mut partial = Vec::new();
     for &pair in pairs {
         partial.push(Some(pair));
     }
-    let Some(canonical) = canonicalize_partial_endpoint_pair_gauge(&partial, gauge)? else {
-        return Ok(None);
-    };
+    let canonical = canonicalize_partial_endpoint_pair_gauge(&partial, gauge)?;
     let mut complete = Vec::new();
     for pair in canonical {
-        let Some(pair) = pair else {
-            return Ok(None);
-        };
+        let pair = pair?;
         complete.push(pair);
     }
-    Ok(Some(complete))
+    Some(complete)
 }
 
 fn canonicalize_mesh_edge_row_gauges(
@@ -964,10 +931,7 @@ fn canonicalize_mesh_edge_row_gauges(
         }
         let mut source_option_keys = Vec::new();
         for options in gauge.edge_candidates {
-            let key = match normalized_endpoint_options(options) {
-                Ok(key) => key,
-                Err(error) => return Some(Err(error)),
-            };
+            let key = normalized_endpoint_options(options);
             source_option_keys.push(key);
         }
         let mut source_groups = BTreeMap::<MeshTopologyEdgeGaugeKey, Vec<usize>>::new();
@@ -982,26 +946,21 @@ fn canonicalize_mesh_edge_row_gauges(
                 row.boundary_layout(),
                 gauge.edge_geometry[edge],
                 row.handles().len(),
-                incident_faces[edge].to_vec(),
+                incident_faces[edge].clone(),
             );
             let target_options = match permutation {
-                Some(permutation) => match mapped_normalized_endpoint_options(
-                    &gauge.edge_candidates[edge],
-                    permutation,
-                ) {
-                    Ok(Some(options)) => options,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                },
-                None => source_option_keys[edge].to_vec(),
+                Some(permutation) => {
+                    mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?
+                }
+                None => source_option_keys[edge].clone(),
             };
-            let base_copy = match Ok(base.4.to_vec()) {
+            let base_copy = match Ok(base.4.clone()) {
                 Ok(faces) => (base.0, base.1, base.2, base.3, faces),
                 Err(error) => return Some(Err(error)),
             };
             let source_key = (base_copy, target_options);
             source_groups.entry(source_key).or_default().push(edge);
-            let source_options = source_option_keys[edge].to_vec();
+            let source_options = source_option_keys[edge].clone();
             let target_key = (base, source_options);
             target_groups.entry(target_key).or_default().push(edge);
         }
@@ -1025,19 +984,7 @@ fn canonicalize_mesh_edge_row_gauges(
                 return None;
             }
             slots.sort_unstable_by(Ord::cmp);
-            let mut ordered = group.to_vec();
-            for &edge in &ordered {
-                if std::mem::size_of_val(&endpoint_keys[edge])
-                    .checked_add(std::mem::size_of_val(usage[edge].as_slice()))
-                    .is_none()
-                {
-                    return Some(Err(ctx.refuse_codec_limit(
-                        "catia_mesh_edge_gauge_ordered_sort",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )));
-                }
-            }
+            let mut ordered = group.clone();
             ordered.sort_unstable_by(|left, right| {
                 endpoint_keys[*left]
                     .cmp(&endpoint_keys[*right])
@@ -1056,7 +1003,7 @@ fn canonicalize_mesh_edge_row_gauges(
             return Some(Ok(topology));
         }
 
-        let mut permuting = row_permutation.to_vec();
+        let mut permuting = row_permutation.clone();
         let mut new_rows = std::mem::take(&mut topology.edge_rows);
         for old_edge in 0..edge_count {
             while permuting[old_edge] != old_edge {
@@ -1067,9 +1014,7 @@ fn canonicalize_mesh_edge_row_gauges(
         }
         for (edge, row) in new_rows.iter_mut().enumerate() {
             if normalize_rows[edge] {
-                if let Err(error) = row.normalize_handles() {
-                    return Some(Err(error));
-                }
+                row.normalize_handles();
             }
         }
         for coedge in topology
@@ -1247,7 +1192,7 @@ fn permute_mesh_coordinate_labels(
     .transpose()
 }
 
-fn mesh_topology_gauge_key(topology: &StandardTopologyDraft) -> Result<Vec<u64>, CodecError> {
+fn mesh_topology_gauge_key(topology: &StandardTopologyDraft) -> Vec<u64> {
     let mut key = Vec::new();
     key.push(u64_from_index(topology.vertex_points.len()));
     for point in &topology.vertex_points {
@@ -1278,7 +1223,7 @@ fn mesh_topology_gauge_key(topology: &StandardTopologyDraft) -> Result<Vec<u64>,
             }
         }
     }
-    Ok(key)
+    key
 }
 
 fn canonicalize_mesh_coordinate_gauges(
@@ -1307,7 +1252,7 @@ fn canonicalize_mesh_coordinate_gauges(
                 return Ok(None);
             };
             candidate = canonical;
-            let key = mesh_topology_gauge_key(&candidate)?;
+            let key = mesh_topology_gauge_key(&candidate);
             let improves = if let Some((best_key, _)) = &best {
                 key < *best_key
             } else {
@@ -1862,7 +1807,7 @@ pub(super) fn canonicalize_endpoint_relation_state(
     assigned: &[Option<[usize; 2]>],
     gauge: MeshCandidateGauge<'_>,
 ) -> Result<Option<MeshEndpointRelationStateSignature>, CodecError> {
-    let mut state = raw_endpoint_relation_state_signature(domains, assigned)?;
+    let mut state = raw_endpoint_relation_state_signature(domains, assigned);
 
     let gauge_point_count = gauge.coordinate_gauge.and_then(|coordinate_gauge| {
         coordinate_gauge
@@ -1882,9 +1827,9 @@ pub(super) fn canonicalize_endpoint_relation_state(
         .copied()
         .max()
     {
-        point.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_relation_point_count", u64::MAX, u64::MAX)
-        })?
+        point
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("catia endpoint relation point index overflows"))?
     } else {
         0
     };
@@ -1900,7 +1845,7 @@ pub(super) fn canonicalize_endpoint_relation_state(
             if permutations.len() <= 1 {
                 continue;
             }
-            let mut best = copy_endpoint_relation_state(&state)?;
+            let mut best = copy_endpoint_relation_state(&state);
             for permutation in permutations {
                 let Some(candidate) = map_endpoint_relation_state(ctx, &state, gauge, permutation)?
                 else {
@@ -1918,8 +1863,8 @@ pub(super) fn canonicalize_endpoint_relation_state(
 
 fn copy_endpoint_relation_state(
     state: &MeshEndpointRelationStateSignature,
-) -> Result<MeshEndpointRelationStateSignature, CodecError> {
-    let assigned = state.0.to_vec();
+) -> MeshEndpointRelationStateSignature {
+    let assigned = state.0.clone();
     let mut domains = Vec::new();
     for row in &state.1 {
         let mut choices = Vec::new();
@@ -1930,15 +1875,15 @@ fn copy_endpoint_relation_state(
                     assignments,
                     edge_pairs,
                 } => MeshEndpointRelationSelection::Enumerated {
-                    assignments: assignments.to_vec(),
-                    edge_pairs: edge_pairs.to_vec(),
+                    assignments: assignments.clone(),
+                    edge_pairs: edge_pairs.clone(),
                 },
             };
             choices.push(copied);
         }
         domains.push(choices);
     }
-    Ok((assigned, domains))
+    (assigned, domains)
 }
 
 fn map_endpoint_relation_state(
@@ -1957,7 +1902,7 @@ fn map_endpoint_relation_state(
         };
         let pair = match pair {
             Some(pair) => {
-                let Some(pair) = mapped_endpoint_pair(Some(pair), Some(permutation))? else {
+                let Some(pair) = mapped_endpoint_pair(Some(pair), Some(permutation)) else {
                     return Ok(None);
                 };
                 Some(pair)
@@ -1991,15 +1936,14 @@ fn map_endpoint_relation_state(
                         {
                             return Ok(None);
                         }
-                        let Some(pair) = mapped_endpoint_pair(Some(pair), Some(permutation))?
-                        else {
+                        let Some(pair) = mapped_endpoint_pair(Some(pair), Some(permutation)) else {
                             return Ok(None);
                         };
                         mapped_pairs.push((target, pair));
                     }
                     mapped_pairs.sort_unstable_by(Ord::cmp);
                     MeshEndpointRelationSelection::Enumerated {
-                        assignments: assignments.to_vec(),
+                        assignments: assignments.clone(),
                         edge_pairs: mapped_pairs,
                     }
                 }
@@ -2007,23 +1951,6 @@ fn map_endpoint_relation_state(
             choices.push(mapped);
         }
 
-        for selection in &choices {
-            if let MeshEndpointRelationSelection::Enumerated {
-                assignments,
-                edge_pairs,
-            } = selection
-            {
-                std::mem::size_of_val(assignments.as_slice())
-                    .checked_add(std::mem::size_of_val(edge_pairs.as_slice()))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "catia_relation_mapped_choices_sort",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-            }
-        }
         choices.sort_unstable_by(Ord::cmp);
         domains.push(choices);
     }
@@ -2058,13 +1985,13 @@ fn relation_row_gauge_mapping(
             continue;
         }
         let Some(base) =
-            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)?
+            mesh_edge_gauge_base_key(edge, gauge.edge_rows, gauge.edge_faces, gauge.edge_geometry)
         else {
             return Ok(None);
         };
-        let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge])?;
+        let source_options = normalized_endpoint_options(&gauge.edge_candidates[edge]);
         let Some(target_options) =
-            mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)?
+            mapped_normalized_endpoint_options(&gauge.edge_candidates[edge], permutation)
         else {
             return Ok(None);
         };
@@ -2095,7 +2022,7 @@ fn relation_row_gauge_mapping(
         }
         let mut ordered = Vec::new();
         for edge in source {
-            let Some(signature) = relation_row_signature(state, edge, permutation)? else {
+            let Some(signature) = relation_row_signature(state, edge, permutation) else {
                 return Ok(None);
             };
             ordered.push((signature, edge));
@@ -2115,16 +2042,12 @@ fn relation_row_signature(
     state: &MeshEndpointRelationStateSignature,
     edge: usize,
     permutation: &[usize],
-) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+) -> Option<Vec<Option<[usize; 2]>>> {
     let mut signature = Vec::new();
-    let Some(&edge_pair) = state.0.get(edge) else {
-        return Ok(None);
-    };
+    let &edge_pair = state.0.get(edge)?;
     let assigned = match edge_pair {
         Some(pair) => {
-            let Some(mapped) = mapped_endpoint_pair(Some(pair), Some(permutation))? else {
-                return Ok(None);
-            };
+            let mapped = mapped_endpoint_pair(Some(pair), Some(permutation))?;
             Some(mapped)
         }
         None => None,
@@ -2139,17 +2062,15 @@ fn relation_row_signature(
                     continue;
                 }
                 if value.is_some() {
-                    return Ok(None);
+                    return None;
                 }
-                let Some(mapped) = mapped_endpoint_pair(Some(pair), Some(permutation))? else {
-                    return Ok(None);
-                };
+                let mapped = mapped_endpoint_pair(Some(pair), Some(permutation))?;
                 value = Some(mapped);
             }
             signature.push(value);
         }
     }
-    Ok(Some(signature))
+    Some(signature)
 }
 
 #[test]

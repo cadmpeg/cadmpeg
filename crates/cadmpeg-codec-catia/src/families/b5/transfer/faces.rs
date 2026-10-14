@@ -136,13 +136,7 @@ pub(super) fn orient_loop_members(
     for loop_id in &loop_ids {
         let node = node_by_loop[loop_id];
         for (member, &sense) in graph.loops[loop_id].members.iter().zip(&reversed[loop_id]) {
-            if !uses.contains_key(&member.edge) {
-                uses.insert(member.edge, Vec::new());
-            }
-            let Some(occurrences) = uses.get_mut(&member.edge) else {
-                return Ok(None);
-            };
-            occurrences.push((node, sense));
+            uses.entry(member.edge).or_default().push((node, sense));
         }
     }
     let mut constraints = ctx.alloc_filled(
@@ -200,7 +194,7 @@ pub(super) fn orient_loop_members(
         let Some(senses) = reversed.remove(&loop_id) else {
             return Ok(None);
         };
-        let pcurve_senses = graph.loops[&loop_id].pcurve_senses()?;
+        let pcurve_senses = graph.loops[&loop_id].pcurve_senses();
         let members = senses
             .into_iter()
             .zip(pcurve_senses)
@@ -234,51 +228,39 @@ fn b5_planar_loop_points(
     loop_orientation: &OrientedLoop,
     surface_id: &SurfaceId,
     pcurve_uses: &PcurveUses,
-) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
-    let Some(surface) = ir
+) -> Option<Vec<Point3>> {
+    let surface = ir
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == *surface_id)
-    else {
-        return Ok(None);
-    };
+        .find(|surface| surface.id == *surface_id)?;
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
-        return Ok(None);
+        return None;
     };
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
-    let Some(loop_) = graph.loops.get(&loop_id) else {
-        return Ok(None);
-    };
+    let loop_ = graph.loops.get(&loop_id)?;
     let mut points = Vec::new();
 
     for member in loop_orientation.member_order() {
         let edge = loop_.members[member].edge;
-        let Some(mut endpoints) = graph.vertices.edge_points(edge) else {
-            return Ok(None);
-        };
+        let mut endpoints = graph.vertices.edge_points(edge)?;
         if loop_orientation.members[member].reversed {
             endpoints.swap(0, 1);
         }
         let [start, end] = endpoints.map(|point| Point3::new(point[0], point[1], point[2]));
-        let Some((pcurve_id, parameter_range)) = pcurve_uses.get(&(loop_id, member)) else {
-            return Ok(None);
-        };
+        let (pcurve_id, parameter_range) = pcurve_uses.get(&(loop_id, member))?;
         if parameter_range[0] == parameter_range[1] {
-            return Ok(None);
+            return None;
         }
-        let Some(pcurve) = ir
+        let pcurve = ir
             .model
             .pcurves
             .iter()
-            .find(|pcurve| pcurve.id == *pcurve_id)
-        else {
-            return Ok(None);
-        };
+            .find(|pcurve| pcurve.id == *pcurve_id)?;
         let PcurveGeometry::Line(line_pcurve) = &pcurve.geometry else {
-            return Ok(None);
+            return None;
         };
         let uv_origin = line_pcurve.origin().as_raw();
         let direction = line_pcurve.direction().as_raw();
@@ -293,11 +275,11 @@ fn b5_planar_loop_points(
         let reverse_error = lifted[1].distance(start).max(lifted[0].distance(end));
         let error = forward_error.min(reverse_error);
         if !error.is_finite() || error > 2e-3 {
-            return Ok(None);
+            return None;
         }
         points.push(start);
     }
-    Ok(Some(points))
+    Some(points)
 }
 
 /// The face's loop ids and their classification, built once from the loop
@@ -314,10 +296,9 @@ fn b5_face_loops(
     let mut ids = Vec::new();
 
     for loop_id in &face.loops {
-        let id = crate::resource::compose_index_id(
+        let id = crate::resource::compose_u32_id(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "loop"),
-            usize::try_from(*loop_id)
-                .map_err(|_| ctx.refuse_codec_limit("catia_b5_face_loop_id", u64::MAX, u64::MAX))?,
+            *loop_id,
             LoopId::mint,
         )?;
         ids.push(id);
@@ -345,7 +326,7 @@ fn b5_face_loops(
             return unspecified();
         };
         let Some(points) =
-            b5_planar_loop_points(ir, graph, *loop_id, orientation, surface_id, pcurve_uses)?
+            b5_planar_loop_points(ir, graph, *loop_id, orientation, surface_id, pcurve_uses)
         else {
             return unspecified();
         };
@@ -406,7 +387,7 @@ pub(super) fn emit_faces(
     let pcurve_uses = emitted.pcurve_uses;
     let edge_id_map = emitted.edge_ids;
     let ownership = &plan.ownership;
-    let components = ownership.components()?;
+    let components = ownership.components();
     let loop_orientation = &plan.loop_orientation;
 
     let body_id = crate::resource::compose_index_id(
@@ -476,8 +457,7 @@ pub(super) fn emit_faces(
             body_id.try_clone_for_decode(admission.context(), "catia_b5_region_body_id")?;
         let region_shell_id =
             shell_id.try_clone_for_decode(admission.context(), "catia_b5_region_shell_id")?;
-        let mut region_shells = Vec::new();
-        region_shells.push(region_shell_id);
+        let region_shells = vec![region_shell_id];
         admission.charge()?;
         ir.model.regions.push(Region {
             id: region_record_id,
@@ -497,15 +477,9 @@ pub(super) fn emit_faces(
         }
         let mut shell_faces = Vec::new();
         for face in component_faces {
-            let face_id = crate::resource::compose_index_id(
+            let face_id = crate::resource::compose_u32_id(
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
-                usize::try_from(graph.faces[*face].object_id).map_err(|_| {
-                    admission.context().refuse_codec_limit(
-                        "catia_b5_shell_face_id",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                graph.faces[*face].object_id,
                 FaceId::mint,
             )?;
             shell_faces.push(face_id);
@@ -523,13 +497,9 @@ pub(super) fn emit_faces(
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
-        let face_id = crate::resource::compose_index_id(
+        let face_id = crate::resource::compose_u32_id(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
-            usize::try_from(face.object_id).map_err(|_| {
-                admission
-                    .context()
-                    .refuse_codec_limit("catia_b5_face_id", u64::MAX, u64::MAX)
-            })?,
+            face.object_id,
             FaceId::mint,
         )?;
         let shell_id = crate::resource::compose_index_id(
@@ -578,15 +548,9 @@ pub(super) fn emit_faces(
         for loop_id_value in &face.loops {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
-            let loop_id = crate::resource::compose_index_id(
+            let loop_id = crate::resource::compose_u32_id(
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "loop"),
-                usize::try_from(*loop_id_value).map_err(|_| {
-                    admission.context().refuse_codec_limit(
-                        "catia_b5_emitted_loop_id",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
+                *loop_id_value,
                 LoopId::mint,
             )?;
             let mut coedge_ids_by_member = Vec::new();
