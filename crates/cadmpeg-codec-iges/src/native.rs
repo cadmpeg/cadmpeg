@@ -2278,14 +2278,14 @@ pub(crate) fn store(
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
             continue;
         };
-        let data = match crate::parameter::macro_parameter_data_with_context(
+        let data = match crate::parameter::macro_parameter_data(
             &record.bytes,
             global.parameter_delimiter,
             global.record_delimiter,
         ) {
             Ok(data) => data,
             Err(MacroDataError::Defect(_, _)) => continue,
-            Err(MacroDataError::Refusal(error)) => return Err(error),
+            Err(MacroDataError::Error(error)) => return Err(error),
         };
         let Some(first) = data.statement_spans.first() else {
             continue;

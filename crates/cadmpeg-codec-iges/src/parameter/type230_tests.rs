@@ -30,7 +30,7 @@ fn type230_form1_entity_table_boundary_follows_island_count() {
 
     assert_eq!(entity_primary_end(&record, &directory), Some(10));
     let analysis = {
-        super::analyze_trailing_pointer_groups_for_global_table_with_context(
+        super::analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,

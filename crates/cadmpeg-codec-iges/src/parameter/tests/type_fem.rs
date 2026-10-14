@@ -8,9 +8,8 @@ use std::collections::BTreeMap;
 use super::{directory_target_with_form, integer_parameter_record};
 
 use crate::parameter::{
-    analyze_trailing_pointer_groups_for_global_table_with_context, entity_primary_end,
-    groups_for_candidate_with_context, structural_pointer_group_candidates_with_context,
-    ParameterRecord, Token, TokenValue,
+    analyze_trailing_pointer_groups_for_global_table, entity_primary_end, groups_for_candidate,
+    structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
 
 fn token_record(sequence: u32, values: &[TokenValue]) -> ParameterRecord {
@@ -86,7 +85,7 @@ fn fixed_and_counted_fem_boundaries_stop_before_pointer_groups() {
     for (case_index, (_entry, record, expected_end)) in cases.into_iter().enumerate() {
         assert_eq!(entity_primary_end(&record, &directory), Some(expected_end));
         let groups = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -138,11 +137,11 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             .collect();
         directory.insert(sequence, &target);
         let record = integer_parameter_record(sequence, values);
-        let candidates = { structural_pointer_group_candidates_with_context(&record) };
+        let candidates = { structural_pointer_group_candidates(&record) };
         assert!(
             candidates.iter().any(|candidate| {
                 candidate.token_start < expected_end && {
-                    groups_for_candidate_with_context(&record, &directory, *candidate)
+                    groups_for_candidate(&record, &directory, *candidate)
                 }
                 .is_some_and(|groups| groups.fully_valid().is_some())
             }),
@@ -150,7 +149,7 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
         );
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -259,7 +258,7 @@ fn malformed_fem_counted_spans_do_not_enable_generic_recovery() {
         let record = token_record(sequence, &values);
         assert_eq!(entity_primary_end(&record, &directory), Some(values.len()));
         assert!({
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -281,7 +280,7 @@ fn element_results_boundary_rejects_an_incomplete_variable_item() {
         Some(record.tokens.len())
     );
     assert!({
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,

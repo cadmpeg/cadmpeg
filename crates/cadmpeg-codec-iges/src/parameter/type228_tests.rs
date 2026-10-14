@@ -31,7 +31,7 @@ fn type228_standard_and_implementor_forms_share_entity_table_boundary() {
 
         assert_eq!(entity_primary_end(&record, &directory), Some(6));
         let analysis = {
-            super::analyze_trailing_pointer_groups_for_global_table_with_context(
+            super::analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,

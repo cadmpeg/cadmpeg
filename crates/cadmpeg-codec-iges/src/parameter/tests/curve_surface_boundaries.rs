@@ -1,4 +1,4 @@
-use crate::parameter::analyze_trailing_pointer_groups_for_global_table_with_context;
+use crate::parameter::analyze_trailing_pointer_groups_for_global_table;
 use crate::parameter::entity_primary_end;
 use crate::parameter::ParameterRecord;
 use crate::parameter::Token;
@@ -43,7 +43,7 @@ fn type126_entity_table_boundary_uses_k_and_degree() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -102,7 +102,7 @@ fn type126_entity_table_boundary_precedes_valid_generic_alternative() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -157,7 +157,7 @@ fn type126_malformed_k_or_degree_does_not_enable_generic_recovery() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -204,7 +204,7 @@ fn type112_entity_table_boundary_uses_segment_count() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -257,7 +257,7 @@ fn type112_entity_table_boundary_precedes_valid_generic_alternatives() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -312,7 +312,7 @@ fn type112_malformed_segment_count_does_not_enable_generic_recovery() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -388,7 +388,7 @@ fn type106_entity_table_boundary_uses_interpretation_width() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -428,7 +428,7 @@ fn type106_form_interpretation_mismatch_does_not_enable_generic_recovery() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -464,7 +464,7 @@ fn type106_form63_rejects_nonplanar_interpretation_for_boundary_recovery() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,
@@ -514,7 +514,7 @@ fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
         };
 
         let analysis = {
-            analyze_trailing_pointer_groups_for_global_table_with_context(
+            analyze_trailing_pointer_groups_for_global_table(
                 &record,
                 &directory,
                 crate::global::GlobalTable::V5Later,
@@ -552,7 +552,7 @@ fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
     };
 
     let analysis = {
-        analyze_trailing_pointer_groups_for_global_table_with_context(
+        analyze_trailing_pointer_groups_for_global_table(
             &record,
             &directory,
             crate::global::GlobalTable::V5Later,

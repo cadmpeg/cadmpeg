@@ -94,36 +94,7 @@ pub(crate) struct TrailingPointerGroups {
 }
 
 impl TrailingPointerGroups {
-    fn fully_valid_with_context(&self) -> Option<ResolvedGroups> {
-        if self
-            .association_pointers
-            .iter()
-            .chain(&self.property_pointers)
-            .any(|pointer| pointer.resolved.is_none())
-        {
-            return None;
-        }
-        let mut associations = Vec::new();
-        for pointer in &self.association_pointers {
-            if let Some(sequence) = pointer.resolved {
-                associations.push(sequence);
-            }
-        }
-        let mut properties = Vec::new();
-        for pointer in &self.property_pointers {
-            if let Some(sequence) = pointer.resolved {
-                properties.push(sequence);
-            }
-        }
-        Some(ResolvedGroups {
-            token_start: self.token_start,
-            associations,
-            properties,
-        })
-    }
-
-    #[cfg(test)]
-    fn fully_valid(self) -> Option<ResolvedGroups> {
+    fn fully_valid(&self) -> Option<ResolvedGroups> {
         Some(ResolvedGroups {
             token_start: self.token_start,
             associations: self
@@ -185,10 +156,9 @@ impl TrailingPointerAnalysis {
     fn candidate_count(&self, record: &ParameterRecord, primary_end: Option<usize>) -> usize {
         match self {
             Self::Macro => 0,
-            Self::Unambiguous(_) => primary_end.map_or_else(
-                || structural_pointer_group_candidates_with_context(record).len(),
-                |_| 1,
-            ),
+            Self::Unambiguous(_) => {
+                primary_end.map_or_else(|| structural_pointer_group_candidates(record).len(), |_| 1)
+            }
             Self::Ambiguous { candidates, .. } => *candidates,
             Self::SingleInvalid(_) => 1,
         }
@@ -566,7 +536,7 @@ pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
     })
 }
 
-fn analyze_trailing_pointer_groups_for_global_table_with_context(
+fn analyze_trailing_pointer_groups_for_global_table(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
@@ -600,11 +570,7 @@ fn analyze_trailing_pointer_groups_with_records_for_global_table(
         .get(&record.directory_sequence)
         .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
     if !is_attribute_table_instance {
-        return analyze_trailing_pointer_groups_for_global_table_with_context(
-            record,
-            directory,
-            global_table,
-        );
+        return analyze_trailing_pointer_groups_for_global_table(record, directory, global_table);
     }
     let primary_end =
         entity_primary_end_with_records_for_global_table(record, directory, records, global_table);
@@ -628,7 +594,7 @@ fn analyze_trailing_pointer_groups_from_end(
             candidates.extend(candidate);
             candidates
         }
-        None => structural_pointer_group_candidates_with_context(record),
+        None => structural_pointer_group_candidates(record),
     };
     if candidates.len() > 1 {
         let mut invalid = [0_usize; 2];
@@ -686,8 +652,8 @@ fn analyze_trailing_pointer_groups_from_end(
             valid: 0,
         };
     };
-    match groups_for_candidate_with_context(record, directory, *candidate) {
-        Some(groups) => match groups.fully_valid_with_context() {
+    match groups_for_candidate(record, directory, *candidate) {
+        Some(groups) => match groups.fully_valid() {
             Some(resolved) => TrailingPointerAnalysis::Unambiguous(resolved),
             None => TrailingPointerAnalysis::SingleInvalid(groups),
         },
@@ -2513,9 +2479,7 @@ fn pointer_group_candidate_with_prefix(
     })
 }
 
-fn structural_pointer_group_candidates_with_context(
-    record: &ParameterRecord,
-) -> Vec<PointerGroupCandidate> {
+fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerGroupCandidate> {
     let non_integer_prefix = non_integer_prefix(record);
     let mut candidates = Vec::new();
     for association_count_index in 1..record.tokens.len() {
@@ -2539,7 +2503,7 @@ fn non_integer_prefix(record: &ParameterRecord) -> Vec<usize> {
     prefix
 }
 
-fn groups_for_candidate_with_context(
+fn groups_for_candidate(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
     candidate: PointerGroupCandidate,
@@ -2753,10 +2717,10 @@ impl QuarantinedParameterRecord {
     }
 }
 
-/// A tokenizer stop: a source defect, or a resource refusal that is not one.
+/// A tokenizer stop: a source defect at an offset, or a codec error.
 enum TokenizeFailure {
     Defect(ParameterDefect, usize),
-    Refusal(CodecError),
+    Error(CodecError),
 }
 
 fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
@@ -3066,7 +3030,7 @@ fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
 #[derive(Debug)]
 pub(crate) enum MacroDataError {
     Defect(ParameterDefect, usize),
-    Refusal(CodecError),
+    Error(CodecError),
 }
 
 impl From<(ParameterDefect, usize)> for MacroDataError {
@@ -3077,11 +3041,11 @@ impl From<(ParameterDefect, usize)> for MacroDataError {
 
 impl From<CodecError> for MacroDataError {
     fn from(error: CodecError) -> Self {
-        Self::Refusal(error)
+        Self::Error(error)
     }
 }
 
-pub(crate) fn macro_parameter_data_with_context(
+pub(crate) fn macro_parameter_data(
     bytes: &[u8],
     parameter_delimiter: u8,
     record_delimiter: u8,
@@ -3191,10 +3155,12 @@ fn tokenize_macro(
     parameter_delimiter: u8,
     record_delimiter: u8,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    let data = macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter)
-        .map_err(|error| match error {
-            MacroDataError::Defect(defect, offset) => TokenizeFailure::Defect(defect, offset),
-            MacroDataError::Refusal(error) => TokenizeFailure::Refusal(error),
+    let data =
+        macro_parameter_data(bytes, parameter_delimiter, record_delimiter).map_err(|error| {
+            match error {
+                MacroDataError::Defect(defect, offset) => TokenizeFailure::Defect(defect, offset),
+                MacroDataError::Error(error) => TokenizeFailure::Error(error),
+            }
         })?;
     let mut tokens = vec![Token {
         value: TokenValue::Integer(306),
@@ -3823,7 +3789,7 @@ fn range_to_cards(range: Range<u32>) -> Vec<u32> {
     cards
 }
 
-pub(crate) fn assemble_with_context(
+pub(crate) fn assemble(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     quarantined_directory: &[QuarantinedDirectoryRecord],
@@ -3874,7 +3840,7 @@ pub(crate) fn assemble_with_context(
         };
         let (tokens, record_end) = match tokenized {
             Ok(value) => value,
-            Err(TokenizeFailure::Refusal(error)) => return Err(error),
+            Err(TokenizeFailure::Error(error)) => return Err(error),
             Err(TokenizeFailure::Defect(defect, offset)) => {
                 quarantined.push(quarantine(
                     entry,

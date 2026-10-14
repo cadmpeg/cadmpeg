@@ -273,7 +273,7 @@ impl<'a> PhysicalParse<'a> {
             trailing_pointer_analysis,
             quarantined: quarantined_parameters,
             recoveries: parameter_recoveries,
-        } = parameter::assemble_with_context(&scan, &directory, &quarantined_directory, &global)?;
+        } = parameter::assemble(&scan, &directory, &quarantined_directory, &global)?;
         let conditional_losses = global
             .conditional_double_precision_losses(parameter::uses_double_precision(&parameters));
 
