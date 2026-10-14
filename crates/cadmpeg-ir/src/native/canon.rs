@@ -28,7 +28,8 @@ use super::{nests_too_deep_message, MAX_NATIVE_NESTING_DEPTH};
 // serde_json's RawValue Serialize protocol. The RawValue owner fixtures check
 // this spelling against the dependency's actual serializer.
 const RAW_VALUE_STRUCT: &str = "$serde_json::private::RawValue";
-const WORK: &str = "construct canonical native value";
+/// The depth-account operation of the canonical native value walk.
+pub(super) const WORK: &str = "construct canonical native value";
 
 /// One serialized value: any value, or an object kept apart so the record
 /// assembler can hoist its `id` member.

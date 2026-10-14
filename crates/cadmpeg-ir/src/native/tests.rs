@@ -1078,3 +1078,67 @@ fn native_field_copy_and_typed_rewrite_refuse_at_the_depth_limit() {
     assert_eq!(rewritten["name"], serde_json::json!("test:model:body#one"));
     assert!(!rewritten.contains_key("id"));
 }
+
+#[test]
+fn typed_read_parses_the_stored_text_and_states_the_message_without_position() {
+    use crate::native::NativeConvertError;
+    #[derive(Debug, serde::Deserialize)]
+    struct Record {
+        id: crate::ids::Identity,
+        value: u32,
+    }
+    let ctx = super::test_ctx();
+    let read = NativeRecord::from_typed(&serde_json::json!({
+        "id": "test:native:record#typed", "value": 7,
+    }))
+    .unwrap()
+    .to_typed::<Record>(&ctx)
+    .unwrap();
+    assert_eq!(
+        (read.id.as_str(), read.value),
+        ("test:native:record#typed", 7)
+    );
+    let refused = serde_json::json!({"id": "test:native:record#typed", "value": "seven"});
+    let error = NativeRecord::from_typed(&refused)
+        .unwrap()
+        .to_typed::<Record>(&ctx)
+        .unwrap_err();
+    let NativeConvertError::ReadRecord { id, source } = error else {
+        panic!("record error context");
+    };
+    assert_eq!(id.as_str(), "test:native:record#typed");
+    assert_eq!(
+        source.to_string(),
+        serde_json::from_value::<Record>(refused)
+            .unwrap_err()
+            .to_string()
+    );
+    assert!(source.is_data());
+}
+
+#[test]
+fn typed_read_holds_one_depth_frame_per_stored_container_level() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let record = NativeRecord::from_typed(&serde_json::json!({
+        "id": "test:native:record#nested", "value": [["]"], {"[": 1}],
+    }))
+    .unwrap();
+    for (limit, admitted) in [(2, false), (3, true)] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = record.to_typed::<serde_json::Value>(&ctx);
+        if admitted {
+            assert_eq!(result.unwrap()["value"][1]["["], serde_json::json!(1));
+        } else {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                cadmpeg_core::CodecError::from(result.unwrap_err())
+            else {
+                panic!("depth refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+            assert_eq!((limit.limit, limit.used), (2, 2));
+        }
+    }
+}
