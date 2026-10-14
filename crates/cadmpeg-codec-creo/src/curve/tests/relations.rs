@@ -922,15 +922,19 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
         ))
     );
     let excessive_power_depth = format!("{}2", "2^".repeat(129));
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<f64>(
-            ctx,
-            &excessive_power_depth,
-            &values,
-            RelationEvaluationContext::default()
-        ))
-        .is_err()
-    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert_eq!(
+            crate::curve::parse_relation_expression::<f64>(
+                ctx,
+                &excessive_power_depth,
+                &values,
+                RelationEvaluationContext::default()
+            )
+            .expect("the power-depth ceiling is not a decode failure"),
+            None
+        );
+        assert!(ctx.resource_refusal().is_none());
+    });
     let long_unary_chain = format!("{}1", "-".repeat(1024));
     assert_eq!(evaluate_expression(&long_unary_chain, &values), Some(1.0));
 }
