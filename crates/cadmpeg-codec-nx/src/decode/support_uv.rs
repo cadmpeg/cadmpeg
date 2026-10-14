@@ -3208,27 +3208,55 @@ mod tests {
     }
 
     #[test]
-    fn support_uv_completion_propagates_geometry_work_refusal() {
+    fn support_uv_completion_skips_at_local_geometry_work_limit() {
         crate::test_support::with_decode_context(|ctx| {
             let support_budget = ctx.work_budget(10);
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 0);
             assert!(!geometry_budget.charge());
+            assert!(geometry_budget.exhausted());
             let mut ir = CadIr::empty();
             let mut endpoint_witnesses = BTreeMap::new();
 
-            assert!(matches!(
-                complete_support_uv_with_budget_and_endpoint_witnesses(
-                    ctx,
-                    &mut ir,
-                    &[],
-                    (&support_budget, &geometry_budget),
-                    (&support_budget, &geometry_budget),
-                    &mut endpoint_witnesses,
-                ),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::Codec("nx adaptive geometry work")
-            ));
+            complete_support_uv_with_budget_and_endpoint_witnesses(
+                ctx,
+                &mut ir,
+                &[],
+                (&support_budget, &geometry_budget),
+                (&support_budget, &geometry_budget),
+                &mut endpoint_witnesses,
+            )
+            .expect("an exhausted local geometry slice skips completion");
+            assert!(endpoint_witnesses.is_empty());
+            assert!(ctx.resource_refusal().is_none());
         });
+    }
+
+    #[test]
+    fn support_uv_completion_propagates_session_work_refusal() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let support_budget = ctx.work_budget(10);
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                assert!(!geometry_budget.charge());
+                let mut ir = CadIr::empty();
+                let mut endpoint_witnesses = BTreeMap::new();
+
+                assert!(matches!(
+                    complete_support_uv_with_budget_and_endpoint_witnesses(
+                        ctx,
+                        &mut ir,
+                        &[],
+                        (&support_budget, &geometry_budget),
+                        (&support_budget, &geometry_budget),
+                        &mut endpoint_witnesses,
+                    ),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::WorkUnits
+                ));
+            },
+        );
     }
 
     #[test]
@@ -3527,23 +3555,51 @@ mod tests {
 
     #[test]
     fn empty_support_uv_phases_preserve_the_first_refusal() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                assert!(!geometry_budget.charge());
+                let first = geometry_budget
+                    .resource_refusal()
+                    .expect("session work refusal");
+                let support_budget = ctx.work_budget(100);
+                let mut ir = CadIr::empty();
+                assert!(
+                    matches!(super::complete_ext11_support_uv_with_budget(ctx, &mut ir, &[], &geometry_budget),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+                );
+                assert!(
+                    matches!(super::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                    ctx, &mut ir, &[], &std::collections::BTreeSet::new(), &support_budget, &geometry_budget, false),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn empty_support_uv_phases_skip_at_local_geometry_work_limit() {
         crate::test_support::with_decode_context(|ctx| {
             let geometry_budget = GeometryWorkBudget::from_context(ctx, 0);
             assert!(!geometry_budget.charge());
-            let first = geometry_budget
-                .resource_refusal()
-                .expect("geometry refusal");
+            assert!(geometry_budget.resource_refusal().is_none());
             let support_budget = ctx.work_budget(100);
             let mut ir = CadIr::empty();
-            assert!(
-                matches!(super::complete_ext11_support_uv_with_budget(ctx, &mut ir, &[], &geometry_budget),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
-            );
-            assert!(
-                matches!(super::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
-                ctx, &mut ir, &[], &std::collections::BTreeSet::new(), &support_budget, &geometry_budget, false),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
-            );
+            super::complete_ext11_support_uv_with_budget(ctx, &mut ir, &[], &geometry_budget)
+                .expect("an exhausted local slice skips serialized completion");
+            super::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                ctx,
+                &mut ir,
+                &[],
+                &std::collections::BTreeSet::new(),
+                &support_budget,
+                &geometry_budget,
+                false,
+            )
+            .expect("an exhausted local slice skips lane validation");
+            assert!(ctx.resource_refusal().is_none());
         });
     }
 }

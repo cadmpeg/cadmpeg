@@ -465,6 +465,42 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
 }
 
 #[test]
+fn decode_leaves_a_nonconverging_nonlinear_solve_block_unsolved() {
+    // x*x+1=0 has no real root: every line-search probe from a small
+    // nonzero seed is valid and none improves the residual.
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04x=0.0000001\0SOLVE\0x*x+1=0\0FOR x\0"
+        .to_vec();
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("the nonlinear solver ceiling is not a decode failure");
+
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
+    assert!(native.fields()["solve_blocks"][0]["solutions"][0].is_null());
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT.as_str()
+        ),
+        0
+    );
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::CurveExpressionSolveUnresolved.kind()
+        && loss
+            .message
+            .contains("1 active curve-equation simultaneous-solve block(s)")));
+}
+
+#[test]
 fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x06x=0[mm]\0y=0[mm]\0SOLVE\0\

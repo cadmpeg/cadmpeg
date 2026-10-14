@@ -455,13 +455,11 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
         &[],
         |_| {},
         |ctx| {
-            let error =
+            let lane =
                 super::decode_arithmetic(ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries)
-                    .err()
-                    .expect("local work limit");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols")
-            );
+                    .expect("local work limit skips the lane");
+            assert!(lane.is_none());
+            assert!(ctx.resource_refusal().is_none());
         },
     );
 }
@@ -953,7 +951,7 @@ fn jt_lossless_component_uses_scoped_storage() {
 }
 
 #[test]
-fn jt_arithmetic_local_work_refusal_is_structured() {
+fn jt_arithmetic_local_work_limit_skips_the_lane() {
     let entries = vec![
         super::ProbabilityEntry {
             symbol: 0,
@@ -966,11 +964,33 @@ fn jt_arithmetic_local_work_refusal_is_structured() {
         &[],
         |_| {},
         |ctx| {
-            let error = super::decode_arithmetic(ctx, &[], 0, 700_000, &entries)
+            let lane = super::decode_arithmetic(ctx, &[], 0, 700_000, &entries)
+                .expect("the lookup ceiling skips the lane");
+            assert!(lane.is_none());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
+fn jt_arithmetic_admitted_lane_charges_session_work() {
+    let entries = vec![
+        super::ProbabilityEntry {
+            symbol: 0,
+            occurrence_count: 1,
+            value: 0
+        };
+        2
+    ];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = super::decode_arithmetic(ctx, &[], 0, 1, &entries)
                 .err()
-                .unwrap();
+                .expect("session work ceiling refuses the lookups");
             assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols" && limit.limit == 64_000_000)
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
             );
         },
     );

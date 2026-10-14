@@ -929,21 +929,22 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
 }
 
 #[test]
-fn circular_pcurve_refuses_unbounded_span_before_allocation() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn circular_pcurve_skips_unbounded_span_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    for (start, end, requested) in [
-        (0.0, 100_001.0 * std::f64::consts::FRAC_PI_2, 100_001),
-        (0.0, 1.0e20, u64::MAX),
-        (0.0, f64::INFINITY, u64::MAX),
-        (-f64::MAX, f64::MAX, u64::MAX),
+    for (start, end) in [
+        (0.0, 100_001.0 * std::f64::consts::FRAC_PI_2),
+        (0.0, 1.0e20),
+        (0.0, f64::INFINITY),
+        (-f64::MAX, f64::MAX),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        // One slot admits the refusal record; the pcurve lanes need far more.
+        policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let error = super::circular_pcurve(
+        let pcurve = super::circular_pcurve(
             &ctx,
             [0.0, 0.0],
             1.0,
@@ -952,19 +953,17 @@ fn circular_pcurve_refuses_unbounded_span_before_allocation() {
             &"oversized arc",
             &mut refusal,
         )
-        .expect_err("segment ceiling refuses before allocation");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("segment resource refusal expected");
-        };
-        assert_eq!(
-            limit.dimension,
-            ResourceDimension::Codec("creo circular pcurve segments")
+        .expect("the segment ceiling skips the arc before allocation");
+        assert!(pcurve.is_none());
+        assert!(ctx.resource_refusal().is_none());
+        let records = refusal.take_records();
+        assert_eq!(records.len(), 1);
+        assert!(
+            records[0].starts_with("creo circular pcurve record for oversized arc: ")
+                && records[0].contains("100000 quarter-turn segments"),
+            "{}",
+            records[0]
         );
-        assert_eq!(limit.operation, "creo circular pcurve segments");
-        assert_eq!(limit.limit, 100_000);
-        assert_eq!(limit.used + limit.additional, requested);
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(refusal.take_records().is_empty());
     }
 }
 
@@ -1229,7 +1228,7 @@ fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
 }
 
 #[test]
-fn nurbs_profile_local_depth_ceiling_refuses() {
+fn nurbs_profile_local_depth_ceiling_leaves_the_span_unsampled() {
     let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
         2,
@@ -1249,7 +1248,7 @@ fn nurbs_profile_local_depth_ceiling_refuses() {
             cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
         let mut points = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
-        let error = super::append_nurbs_profile_span(
+        let sampled = super::append_nurbs_profile_span(
             ctx,
             &mut evaluator,
             &curve,
@@ -1264,22 +1263,22 @@ fn nurbs_profile_local_depth_ceiling_refuses() {
             &mut points,
             &mut storage,
         )
-        .expect_err("local depth must refuse");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile sampling ceiling")
-        );
+        .expect("the local depth ceiling is not a decode failure");
+        assert_eq!(sampled, None);
+        assert!(points.is_empty());
+        assert!(ctx.resource_refusal().is_none());
     });
 }
 
 #[test]
-fn nurbs_profile_local_point_ceiling_refuses() {
+fn nurbs_profile_local_point_ceiling_leaves_the_span_unsampled() {
     let curve = linear_profile_curve();
     crate::decode::with_test_decode_ctx(|ctx| {
         let mut evaluator =
             cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(ctx, &curve).expect("evaluator");
         let mut points = vec![[0.0, 0.0]; 262_145];
         let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
-        let error = super::append_nurbs_profile_span(
+        let sampled = super::append_nurbs_profile_span(
             ctx,
             &mut evaluator,
             &curve,
@@ -1294,11 +1293,10 @@ fn nurbs_profile_local_point_ceiling_refuses() {
             &mut points,
             &mut storage,
         )
-        .expect_err("local points must refuse");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo NURBS profile point ceiling")
-        );
+        .expect("the local point ceiling is not a decode failure");
+        assert_eq!(sampled, None);
         assert_eq!(points.len(), 262_145);
+        assert!(ctx.resource_refusal().is_none());
     });
 }
 
@@ -1314,17 +1312,14 @@ fn nurbs_profile_polyline_refuses_temporary_bytes() {
 }
 
 #[test]
-fn nurbs_profile_point_append_refuses_before_growth_at_the_common_ceiling() {
+fn nurbs_profile_point_append_stops_before_growth_at_the_common_ceiling() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let mut points = vec![[0.0; 2]; super::MAX_NURBS_PROFILE_POINTS];
         let mut storage = ctx.reserve_scoped(0, "test points").expect("storage");
-        let error = super::append_nurbs_profile_point(ctx, &mut storage, &mut points, [1.0; 2])
-            .expect_err("all point append paths share the ceiling");
-        let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
-            panic!("point ceiling refusal");
-        };
-        assert_eq!(resource.operation, "creo NURBS profile point ceiling");
-        assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
+        let appended = super::append_nurbs_profile_point(ctx, &mut storage, &mut points, [1.0; 2])
+            .expect("all point append paths share the ceiling");
+        assert_eq!(appended, None);
+        assert!(ctx.resource_refusal().is_none());
         assert_eq!(points.len(), super::MAX_NURBS_PROFILE_POINTS);
         assert_eq!(points.last(), Some(&[0.0; 2]));
     });

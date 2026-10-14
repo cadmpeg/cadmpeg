@@ -536,8 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn nurbs_closest_parameter_refuses_local_geometry_work_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
+    fn nurbs_closest_parameter_skips_at_local_geometry_work_limit() {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
         let curve = NurbsCurve::from_lanes(
@@ -559,12 +558,10 @@ mod tests {
                 None,
                 &budget,
             );
-            let limit = result.expect_err("closest-parameter search exceeds zero local work");
-            assert_eq!(
-                limit.dimension,
-                ResourceDimension::Codec("nx adaptive geometry work")
-            );
-            assert_eq!(ctx.resource_refusal(), Some(limit));
+            let parameter = result.expect("zero local work skips the search");
+            assert_eq!(parameter, None);
+            assert!(budget.exhausted());
+            assert!(ctx.resource_refusal().is_none());
         });
     }
 }

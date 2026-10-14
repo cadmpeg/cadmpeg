@@ -2642,14 +2642,7 @@ impl RelationUnitParser<'_> {
     fn primary(&mut self) -> Option<RelationUnit> {
         self.whitespace();
         if self.source.get(self.cursor) == Some(&b'(') {
-            if self.nesting >= MAX_EXPRESSION_NESTING {
-                let error = self.ctx.refuse_codec_limit(
-                    "creo relation unit depth",
-                    cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
-                    cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
-                );
-                self.admit::<()>(Err(error))?;
-            }
+            (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
             let _depth = self.admit(self.ctx.enter_nested("creo relation unit depth"))?;
             self.cursor += 1;
             self.nesting += 1;
@@ -5871,14 +5864,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         if self.source.get(self.cursor) != Some(&b'^') {
             return Some(value);
         }
-        if self.nesting >= MAX_EXPRESSION_NESTING {
-            let error = self.ctx.refuse_codec_limit(
-                "creo relation nesting ceiling",
-                cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
-                cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
-            );
-            self.admit::<()>(Err(error))?;
-        }
+        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
         let _depth = self.admit(self.ctx.enter_nested("creo relation exponent depth"))?;
         self.admit(self.ctx.charge_work(1, "creo relation exponent work"))?;
         self.cursor += 1;
@@ -5893,14 +5879,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.whitespace();
         let mut value = match self.source.get(self.cursor)? {
             b'(' => {
-                if self.nesting >= MAX_EXPRESSION_NESTING {
-                    let error = self.ctx.refuse_codec_limit(
-                        "creo relation nesting ceiling",
-                        cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
-                        cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
-                    );
-                    self.admit::<()>(Err(error))?;
-                }
+                (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
                 let _depth = self.admit(self.ctx.enter_nested("creo relation group depth"))?;
                 self.admit(self.ctx.charge_work(1, "creo relation group work"))?;
                 self.cursor += 1;
@@ -6005,14 +5984,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             let copied = self.values.get(&key)?.clone_admitted(self.ctx);
             return self.admit(copied);
         }
-        if self.nesting >= MAX_EXPRESSION_NESTING {
-            let error = self.ctx.refuse_codec_limit(
-                "creo relation nesting ceiling",
-                cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
-                cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
-            );
-            self.admit::<()>(Err(error))?;
-        }
+        (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
         let (function, scope) = creo_relation_function(name)?;
         let _depth = self.admit(self.ctx.enter_nested("creo relation function depth"))?;
         self.admit(self.ctx.charge_work(1, "creo relation function work"))?;
@@ -7265,7 +7237,6 @@ fn refine_nonlinear_solution(
         }
         let base_norm = nonlinear_residual_norm(&residuals, &residuals);
         let mut accepted = None;
-        let mut valid_candidate = false;
         let mut scale = 1.0;
         for _ in 0..MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS {
             ctx.charge_work(1, "creo nonlinear line-search work")?;
@@ -7283,7 +7254,6 @@ fn refine_nonlinear_solution(
                     &candidate,
                     context,
                 )? {
-                    valid_candidate = true;
                     let candidate_norm = nonlinear_residual_norm(&candidate_residuals, &residuals);
                     if nonlinear_residuals_converged(&candidate_residuals)
                         || candidate_norm < base_norm
@@ -7295,15 +7265,9 @@ fn refine_nonlinear_solution(
             }
             scale *= 0.5;
         }
+        // A line search that finds no improving step leaves the block unsolved.
         let Some((candidate, candidate_residuals)) = accepted else {
-            if !valid_candidate {
-                return Ok(None);
-            }
-            return Err(ctx.refuse_codec_limit(
-                "creo nonlinear line-search ceiling",
-                cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS),
-                cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS) + 1,
-            ));
+            return Ok(None);
         };
         point = candidate;
         residuals = candidate_residuals;
@@ -7313,12 +7277,9 @@ fn refine_nonlinear_solution(
             return Ok(None);
         }
     }
+    // A block that has not converged at the iteration ceiling stays unsolved.
     if !nonlinear_residuals_converged(&residuals) {
-        return Err(ctx.refuse_codec_limit(
-            "creo nonlinear iteration ceiling",
-            cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS),
-            cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS) + 1,
-        ));
+        return Ok(None);
     }
     let Some(mut rank_rows) = nonlinear_jacobian_rows(
         ctx,
