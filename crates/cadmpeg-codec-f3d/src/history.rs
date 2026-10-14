@@ -287,7 +287,8 @@ pub(crate) fn decode(
     bind_snapshot_revision_ids(ctx, &mut states)?;
     bind_historical_entity_versions(ctx, &mut states)?;
     let record_table_binding_budget_exceeded =
-        bind_complete_record_tables(ctx, &mut states, bytes, width, limits)?;
+        bind_complete_record_tables(ctx, &mut states, bytes, width, limits)?
+            == TableBindingCost::Exceeded;
     if states.is_empty() {
         return Ok(None);
     }
@@ -574,8 +575,8 @@ fn bind_historical_entity_versions(
 /// Historical topology caches retain normalized records, topology entities,
 /// incidence links, and geometry measurements while Design projection runs.
 /// This conservative per-entry bound checks that temporary cache against the
-/// caller's materialization policy. A binding that exceeds either limit
-/// refuses through the caller context before the topology cache is built.
+/// caller's materialization policy. A binding that exceeds either limit is
+/// skipped before the topology cache is built.
 // One live entity can retain its 16-byte version pair, one 8-byte family slot,
 // one 48-byte coedge link (the largest topology link), one 56-byte curve-axis
 // measurement (the largest geometry measurement), one 8-byte ownership member,
@@ -590,77 +591,42 @@ const HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY: u64 = 192;
 /// final cache size.
 const HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY: u64 = 4096;
 
-#[cfg(test)]
-fn complete_table_binding_budget_exceeded(
-    table_lengths: impl IntoIterator<Item = usize>,
-    limits: &cadmpeg_core::decode::ResourceLimits,
-) -> bool {
-    table_lengths
-        .into_iter()
-        .try_fold(0_u64, |total, length| {
-            total.checked_add(u64::try_from(length).ok()?)
-        })
-        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY))
-        .is_none_or(|bytes| bytes > limits.max_materialized_bytes)
+/// Whether binding every historical record table fits the decode policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TableBindingCost {
+    /// The estimated cache and work fit the policy ceilings.
+    Admitted,
+    /// The estimate exceeds a policy ceiling; historical topology is skipped.
+    Exceeded,
 }
 
-#[cfg(test)]
-fn history_topology_work_budget_exceeded(
+/// Estimate the complete-history binding from the per-state table lengths.
+///
+/// The estimate is compared against the absolute policy ceilings before any
+/// cache is built. Exceeding it skips the optional historical topology; the
+/// decode continues and reports the skip.
+fn complete_table_binding_cost(
     table_lengths: impl IntoIterator<Item = usize>,
     limits: &cadmpeg_core::decode::ResourceLimits,
-) -> bool {
-    table_lengths
+) -> TableBindingCost {
+    let fits = table_lengths
         .into_iter()
         .try_fold(0_u64, |total, length| {
-            total.checked_add(u64::try_from(length).ok()?)
+            total.checked_add(u64_from_index(length))
         })
-        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
-        .is_none_or(|work| work > limits.max_work_units)
-}
-
-fn admit_complete_table_binding_budget(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    mut table_lengths: impl ExactSizeIterator<Item = usize>,
-    limits: &cadmpeg_core::decode::ResourceLimits,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let state_count = u64_from_index(table_lengths.len());
-    ctx.charge_work(state_count, "check F3D complete history topology")?;
-    let entries = table_lengths.try_fold(0_u64, |total, length| {
-        total.checked_add(u64_from_index(length))
-    });
-    let bytes = entries
-        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "bind F3D complete history topology bytes",
-                limits.max_materialized_bytes,
-                u64::MAX,
-            )
-        })?;
-    if bytes > limits.max_materialized_bytes {
-        return Err(ctx.refuse_codec_limit(
-            "bind F3D complete history topology bytes",
-            limits.max_materialized_bytes,
-            bytes,
-        ));
+        .is_some_and(|entries| {
+            entries
+                .checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY)
+                .is_some_and(|bytes| bytes <= limits.max_materialized_bytes)
+                && entries
+                    .checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
+                    .is_some_and(|work| work <= limits.max_work_units)
+        });
+    if fits {
+        TableBindingCost::Admitted
+    } else {
+        TableBindingCost::Exceeded
     }
-    let work = entries
-        .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "bind F3D complete history topology work",
-                limits.max_work_units,
-                u64::MAX,
-            )
-        })?;
-    if work > limits.max_work_units {
-        return Err(ctx.refuse_codec_limit(
-            "bind F3D complete history topology work",
-            limits.max_work_units,
-            work,
-        ));
-    }
-    Ok(())
 }
 
 fn bind_complete_record_tables(
@@ -669,9 +635,9 @@ fn bind_complete_record_tables(
     bytes: &[u8],
     width: RefWidth,
     limits: &cadmpeg_core::decode::ResourceLimits,
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> Result<TableBindingCost, cadmpeg_core::CodecError> {
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
-        return Ok(false);
+        return Ok(TableBindingCost::Admitted);
     };
     let active_limit =
         cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
@@ -681,23 +647,29 @@ fn bind_complete_record_tables(
         Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
             return Err(error.into_codec_error())
         }
-        Err(_) => return Ok(false),
+        Err(_) => return Ok(TableBindingCost::Admitted),
     };
-    admit_complete_table_binding_budget(
-        ctx,
+    ctx.charge_work(
+        u64_from_index(states.len()),
+        "check F3D complete history topology",
+    )?;
+    if complete_table_binding_cost(
         states.iter().map(|state| state.entity_versions.len()),
         limits,
-    )?;
+    ) == TableBindingCost::Exceeded
+    {
+        return Ok(TableBindingCost::Exceeded);
+    }
     let insert_only = insert_only_active_record_count(ctx, states)?;
     let archived_count = archived_active_record_count(ctx, states)?;
     let Some(active_count) = archived_count.or(insert_only) else {
-        return Ok(false);
+        return Ok(TableBindingCost::Admitted);
     };
     if insert_only.is_some() && framed.len() != active_count {
-        return Ok(false);
+        return Ok(TableBindingCost::Admitted);
     }
     let Some(active_records) = framed.get(..active_count) else {
-        return Ok(false);
+        return Ok(TableBindingCost::Admitted);
     };
     let mut archived_frames = HashMap::new();
     for record in states
@@ -706,16 +678,16 @@ fn bind_complete_record_tables(
         .filter(|record| record.revision_id.is_some())
     {
         let Some(revision_id) = record.revision_id else {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         };
         let Some(offset) = usize::try_from(record.byte_offset).ok() else {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         };
         let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         };
         if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         }
         let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
             Ok(records) => records,
@@ -725,26 +697,26 @@ fn bind_complete_record_tables(
             Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
                 return Err(error.into_codec_error())
             }
-            Err(_) => return Ok(false),
+            Err(_) => return Ok(TableBindingCost::Admitted),
         };
         if framed.len() != 1 {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         }
         let Some(framed) = framed.pop() else {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         };
         if framed.name != record.name() {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         }
 
         ctx.reserve_map(&mut archived_frames, 1, "retain F3D archived record frame")?;
         if archived_frames.insert(revision_id, framed).is_some() {
-            return Ok(false);
+            return Ok(TableBindingCost::Admitted);
         }
     }
     let Some(archive) = historical_record_archive(ctx, states, active_records, archived_frames)?
     else {
-        return Ok(false);
+        return Ok(TableBindingCost::Admitted);
     };
     let mut complete = true;
     for state in states.iter_mut() {
@@ -788,7 +760,7 @@ fn bind_complete_record_tables(
             state.topology_cache = crate::history_records::AsmTopologyCache::Absent;
         }
     }
-    Ok(false)
+    Ok(TableBindingCost::Admitted)
 }
 
 fn topology_entity_slots(
