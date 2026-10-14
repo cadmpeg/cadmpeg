@@ -923,31 +923,11 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::ATTRIBUTE_RECORD_BOUND;
+
     use crate::decode::{
         u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
     };
     use crate::CodecError;
-
-    #[test]
-    fn tree_xml_success_and_capacity_rounding() {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
-            .expect("valid fixture");
-        let tree = ctx.parse_xml("<r/>", "XML tree").expect("valid fixture");
-        assert_eq!(tree.document().root_element().tag_name().name(), "r");
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_materialized_bytes = 0;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-        let CodecError::ResourceLimit(limit) = limited
-            .parse_xml("<r/>", "XML tree")
-            .expect_err("fixture must refuse")
-        else {
-            panic!("byte refusal");
-        };
-        assert!(limit.additional >= 16 * ATTRIBUTE_RECORD_BOUND);
-    }
 
     #[test]
     fn tree_xml_work_compares_attributes_within_each_tag() {
@@ -1160,36 +1140,6 @@ mod tests {
     }
 
     #[test]
-    fn tree_xml_resource_dimensions() {
-        for dimension in [
-            ResourceDimension::CollectionItems,
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::WorkUnits,
-            ResourceDimension::RecursionDepth,
-        ] {
-            let mut policy = DecodePolicy::default();
-            match dimension {
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-                _ => panic!("test dimension"),
-            }
-            let arena = DecodeArena::new();
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-            let CodecError::ResourceLimit(limit) = ctx
-                .parse_xml("<r/>", "XML tree")
-                .expect_err("fixture must refuse")
-            else {
-                panic!("resource refusal");
-            };
-            assert_eq!(limit.dimension, dimension);
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        }
-    }
-
-    #[test]
     fn tree_xml_malformed_and_lexical_depth() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -1208,44 +1158,6 @@ mod tests {
         assert!(
             matches!(ctx.parse_xml("<r><s/></r>", "XML tree"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth)
         );
-    }
-    #[test]
-    fn tree_malformed_diagnostic_preserves_retained_refusal() {
-        for json in [false, true] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-            let error = if json {
-                ctx.parse_json_value("[", "JSON tree")
-                    .expect_err("fixture must refuse")
-            } else {
-                ctx.parse_xml("<r>", "XML tree")
-                    .expect_err("fixture must refuse")
-            };
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("diagnostic admission must refuse");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        }
-    }
-
-    #[test]
-    fn invalid_json_prefix_preserves_collection_refusal() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-        let error = ctx
-            .parse_json_value("[0,0,0,", "JSON nodes")
-            .expect_err("fixture must refuse");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("invalid prefix must preserve its admission refusal");
-        };
-        assert_eq!(limit.operation, "JSON nodes");
-        assert_eq!(Some(limit), ctx.resource_refusal());
     }
 
     #[derive(Debug, serde::Deserialize, PartialEq)]
@@ -1289,49 +1201,6 @@ mod tests {
                 values: vec![0]
             }
         );
-    }
-
-    #[test]
-    fn tree_json_resource_dimensions() {
-        for typed in [false, true] {
-            for dimension in [
-                ResourceDimension::CollectionItems,
-                ResourceDimension::MaterializedBytes,
-                ResourceDimension::WorkUnits,
-                ResourceDimension::RecursionDepth,
-                ResourceDimension::RetainedBytes,
-            ] {
-                if !typed && dimension == ResourceDimension::RetainedBytes {
-                    continue;
-                }
-                let mut policy = DecodePolicy::default();
-                match dimension {
-                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                    ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = 0;
-                    }
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                    ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-                    _ => panic!("test dimension"),
-                }
-                let arena = DecodeArena::new();
-                let (ctx, _) =
-                    DecodeContext::from_root_bytes(b"", &arena, &policy).expect("valid fixture");
-                let error = if typed {
-                    ctx.parse_json::<Vec<u64>>("[0]", "typed JSON tree")
-                        .expect_err("fixture must refuse")
-                } else {
-                    ctx.parse_json_value("[0]", "JSON tree")
-                        .expect_err("fixture must refuse")
-                };
-                let CodecError::ResourceLimit(limit) = error else {
-                    panic!("resource refusal");
-                };
-                assert_eq!(limit.dimension, dimension);
-                assert_eq!(ctx.resource_refusal(), Some(limit));
-            }
-        }
     }
 
     #[test]

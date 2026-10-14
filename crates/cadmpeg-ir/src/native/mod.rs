@@ -370,7 +370,7 @@ impl NativeRecord {
                 Ok((crate::ids::Identity::new(id)?, fields))
             })?;
         let json = render(&id, &fields);
-        ctx.charge_retained(u64_from_index(json.len()), "serialize native record")?;
+        ctx.retain_bytes(u64_from_index(json.len()), "serialize native record")?;
         Ok(Self { id, json })
     }
 

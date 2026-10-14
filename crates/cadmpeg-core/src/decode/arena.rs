@@ -24,8 +24,7 @@ impl DecodeArena {
     /// The returned slice is stable: later `alloc` calls never invalidate it.
     pub fn alloc(&self, ctx: &DecodeContext<'_>, bytes: Box<[u8]>) -> Result<&[u8], CodecError> {
         let mut buffers = self.buffers.borrow_mut();
-        // The arena holds every buffer until the session ends.
-        ctx.with_session_storage(|| ctx.reserve_vec(&mut buffers, 1, "arena registry"))?;
+        ctx.reserve_vec(&mut buffers, 1, "arena registry")?;
         let buffer = OwnedBuffer(NonNull::from(Box::leak(bytes)));
         let pointer = buffer.0;
         buffers.push(buffer);

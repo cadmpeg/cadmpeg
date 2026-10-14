@@ -4871,7 +4871,7 @@ fn decode_asm_history(
             header.width
         });
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    crate::history::decode(ctx, bytes, &history_brep.name, width, &ctx.policy().limits)
+    crate::history::decode(ctx, bytes, &history_brep.name, width)
 }
 
 fn collect_related_indices<'a>(

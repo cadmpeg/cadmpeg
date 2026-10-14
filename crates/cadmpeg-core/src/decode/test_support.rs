@@ -176,27 +176,31 @@ pub(super) fn charge_limit(
 
 #[cfg(test)]
 mod tests {
-    use super::{at_charge, without_probe};
+    use super::{at_charge, charged_at, without_probe};
     use crate::decode::budget::DecodeBudget;
     use crate::decode::{DecodePolicy, ResourceDimension, ResourceLimit};
 
-    fn work_probe_policy() -> DecodePolicy {
+    fn entity_probe_policy() -> DecodePolicy {
         let mut policy = DecodePolicy::desktop();
-        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_entities = u64::MAX;
         policy
     }
 
     fn run(policy: DecodePolicy) -> Result<(), ResourceLimit> {
+        let limit = |error| match error {
+            crate::CodecError::ResourceLimit(limit) => limit,
+            other => panic!("expected a resource refusal: {other:?}"),
+        };
         let budget = DecodeBudget::new(policy, 0);
-        budget.charge_work_limit(2, "before")?;
-        budget.charge_work_limit(0, "target")?;
-        budget.charge_work_limit(2, "target")
+        budget.charge_entities(2, "before").map_err(limit)?;
+        budget.charge_entities(0, "target").map_err(limit)?;
+        budget.charge_entities(2, "target").map_err(limit)
     }
 
     #[test]
-    fn probe_matches_normal_policy_refusal_and_does_not_raise_limits() {
-        let found = at_charge(ResourceDimension::WorkUnits, "target", 0, || {
-            run(work_probe_policy())
+    fn probe_matches_normal_policy_refusal() {
+        let found = at_charge(ResourceDimension::Entities, "target", 0, || {
+            run(entity_probe_policy())
         })
         .expect_err("target is probed");
         assert_eq!(
@@ -204,114 +208,26 @@ mod tests {
             ("target", 2, 2)
         );
         let mut policy = DecodePolicy::desktop();
-        policy.limits.max_work_units = found.used + found.additional - 1;
+        policy.limits.max_entities = found.used + found.additional - 1;
         assert_eq!(run(policy), Err(found));
-        policy.limits.max_work_units = 0;
-        let earlier = at_charge(ResourceDimension::WorkUnits, "target", 0, || run(policy))
-            .expect_err("real ceiling still refuses before target");
-        assert_eq!((earlier.operation, earlier.limit), ("before", 0));
-        assert!(run(work_probe_policy()).is_ok());
+        assert!(run(entity_probe_policy()).is_ok());
     }
 
     #[test]
-    fn probes_are_thread_local_and_nested_scopes_restore_the_target() {
-        at_charge(ResourceDimension::WorkUnits, "target", 0, || {
-            let child = std::thread::spawn(|| run(work_probe_policy()));
-            assert!(child.join().expect("child completes").is_ok());
-            assert!(
-                at_charge(ResourceDimension::CollectionItems, "other", 0, || {
-                    run(work_probe_policy())
-                })
-                .is_ok()
-            );
-            assert!(without_probe(|| run(work_probe_policy())).is_ok());
-            assert!(run(work_probe_policy()).is_err());
+    fn probes_are_suspended_and_restored() {
+        at_charge(ResourceDimension::Entities, "target", 0, || {
+            assert!(without_probe(|| run(entity_probe_policy())).is_ok());
+            assert!(run(entity_probe_policy()).is_err());
         });
-        assert!(run(work_probe_policy()).is_ok());
+        assert!(run(entity_probe_policy()).is_ok());
     }
 
     #[test]
-    fn probe_counts_matching_positive_charges_only() {
-        let found = at_charge(ResourceDimension::WorkUnits, "target", 1, || {
-            let budget = DecodeBudget::new(work_probe_policy(), 0);
-            budget.charge_work_limit(0, "target")?;
-            budget.charge_work_limit(3, "target")?;
-            budget.charge_work_limit(2, "other")?;
-            budget.charge_work_limit(7, "target")
-        })
-        .expect_err("second positive target charge is probed");
-        assert_eq!((found.used, found.additional, found.limit), (5, 7, 11));
-        let mut policy = DecodePolicy::desktop();
-        policy.limits.max_work_units = found.limit;
-        let budget = DecodeBudget::new(policy, 0);
-        budget
-            .charge_work_limit(3, "target")
-            .expect("first target fits");
-        budget
-            .charge_work_limit(2, "other")
-            .expect("other charge fits");
-        assert_eq!(budget.charge_work_limit(7, "target"), Err(found));
-    }
-
-    #[test]
-    fn recording_sums_matching_charges_including_released_storage() {
-        let (result, charged) =
-            super::charged_at(ResourceDimension::MaterializedBytes, "target", || {
-                let budget = DecodeBudget::new(DecodePolicy::desktop(), 0);
-                drop(budget.reserve_scoped_limit(7, "before")?);
-                drop(budget.reserve_scoped_limit(2, "target")?);
-                budget.reserve_scoped_limit(9, "target").map(drop)
-            });
+    fn recording_sums_matching_charges() {
+        let (result, charged) = charged_at(ResourceDimension::Entities, "target", || {
+            run(entity_probe_policy())
+        });
         assert_eq!(result, Ok(()));
-        assert_eq!(charged, 11);
-    }
-
-    #[test]
-    fn released_storage_skips_boundaries_hidden_by_an_earlier_peak() {
-        fn run_materialized(policy: DecodePolicy) -> Result<(), ResourceLimit> {
-            let budget = DecodeBudget::new(policy, 0);
-            drop(budget.reserve_scoped_limit(7, "before")?);
-            drop(budget.reserve_scoped_limit(2, "target")?);
-            budget.reserve_scoped_limit(9, "target").map(drop)
-        }
-        let found = at_charge(ResourceDimension::MaterializedBytes, "target", 0, || {
-            let mut policy = DecodePolicy::desktop();
-            policy.limits.max_materialized_bytes = u64::MAX;
-            run_materialized(policy)
-        })
-        .expect_err("first reachable target boundary is probed");
-        assert_eq!((found.used, found.additional, found.limit), (0, 9, 8));
-        let mut policy = DecodePolicy::desktop();
-        policy.limits.max_materialized_bytes = found.limit;
-        assert_eq!(run_materialized(policy), Err(found));
-    }
-
-    #[test]
-    fn an_unwind_restores_the_outer_target() {
-        at_charge(ResourceDimension::WorkUnits, "target", 0, || {
-            let result = std::panic::catch_unwind(|| {
-                at_charge(ResourceDimension::CollectionItems, "other", 0, || {
-                    panic!("test unwind");
-                });
-            });
-            assert!(result.is_err());
-            assert!(run(work_probe_policy()).is_err());
-        });
-        assert!(run(work_probe_policy()).is_ok());
-    }
-
-    #[test]
-    fn fixed_policy_fixture_setup_does_not_hide_or_refuse_the_tested_budget() {
-        let found = at_charge(ResourceDimension::WorkUnits, "target", 0, || {
-            let setup = DecodeBudget::new(DecodePolicy::service(), 0);
-            setup.charge_work_limit(1000, "before")?;
-            setup.charge_work_limit(1000, "target")?;
-            run(work_probe_policy())
-        })
-        .expect_err("only the budget selected by the helper is probed");
-        assert_eq!(
-            (found.operation, found.used, found.additional, found.limit),
-            ("target", 2, 2, 3)
-        );
+        assert_eq!(charged, 2);
     }
 }

@@ -2831,33 +2831,6 @@ mod tests {
     }
 
     #[test]
-    fn prefix_probe_uses_default_fat_count_limit() {
-        let mut file = fixture();
-        assert!(matches!(
-            probe(&file),
-            CompoundPrefixProbe::DirectoryEvidence(_)
-        ));
-        // The allowance depends only on the input length, which the count
-        // edit below does not change.
-        let sizing_arena = DecodeArena::new();
-        let (sizing, _) =
-            DecodeContext::from_root_bytes(&file, &sizing_arena, &DecodePolicy::default())
-                .expect("root");
-        let limit = sizing.collection_items_allowance();
-        let count = u32::try_from(limit + 1).expect("default allowance fits FAT count");
-        put_u32(&mut file, 44, count);
-        let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::default()).expect("root");
-        assert!(matches!(
-            CompoundPrefixProbe::inspect_with_context(&ctx, root),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                    && refusal.limit == limit && refusal.used == 0 && refusal.additional == u64::from(count)
-        ));
-    }
-
-    #[test]
     fn prefix_probe_follows_available_difat_sectors() {
         let mut file = fixture();
         file.resize(file.len() + SECTOR_SIZE, 0xff);

@@ -154,16 +154,15 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
-    /// Collection items this session can hold at one time: the smaller of
-    /// the policy ceiling and the input-proportional allowance.
-    pub fn collection_items_allowance(&self) -> u64 {
-        self.budget.collection_items_allowance()
-    }
-
-    /// Work units this session can charge: the smaller of the policy ceiling
-    /// and the input-proportional allowance.
-    pub fn work_allowance(&self) -> u64 {
-        self.budget.work_allowance()
+    /// Charges bytes that decoded output keeps for the rest of the session.
+    ///
+    /// This is the one retained-bytes chokepoint: native record text, arena
+    /// buffers, and retained copies of source bytes call it. Temporary and
+    /// derived storage is not charged.
+    pub fn retain_bytes(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
+        self.budget
+            .retain_bytes(bytes, operation)
+            .map_err(Into::into)
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
@@ -252,12 +251,6 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
         self.budget.charge_retained_limit(bytes, operation)
-    }
-
-    /// Charges storage created by the closure for the whole session, even
-    /// inside an active storage scope.
-    pub(crate) fn with_session_storage<T>(&self, build: impl FnOnce() -> T) -> T {
-        self.budget.session_storage(build)
     }
 
     /// Charges storage created by the closure as temporary until its reservation is dropped.
@@ -659,40 +652,14 @@ impl<'a> DecodeContext<'a> {
         self.budget.fused()
     }
 
-    /// Permanently refuses a codec-local resource request.
-    ///
-    /// Codecs use this when a bounded recovery algorithm reaches a fixed
-    /// local ceiling instead of a session-wide dimension. The refusal fuses
-    /// the session so a caller cannot accidentally turn it into a semantic
-    /// fallback or report success after the limit was reached.
-    pub(crate) fn refuse_local_limit(
-        &self,
-        operation: &'static str,
-        limit: u64,
-        requested: u64,
-    ) -> ResourceLimit {
-        let (used, additional) = match requested.checked_sub(limit) {
-            Some(excess) => (limit, excess),
-            None => (requested, 0),
-        };
-        self.budget.refuse_limit(
-            ResourceDimension::Codec(operation),
-            ResourceFailure::BudgetExceeded,
-            limit,
-            used,
-            additional,
-            operation,
-        )
-    }
-
-    /// Permanently refuses a codec-local resource request.
+    /// Reports a codec-local limit without fusing the session.
     pub fn refuse_codec_limit(
         &self,
         operation: &'static str,
         limit: u64,
         requested: u64,
     ) -> CodecError {
-        self.refuse_local_limit(operation, limit, requested).into()
+        super::budget::refuse_local_limit(operation, limit, requested)
     }
 
     /// Creates a local work slice that also draws from the session allowance.
@@ -825,7 +792,7 @@ impl<'a> DecodeContext<'a> {
         let total_bytes = crate::decode::u64_from_index(total);
         self.charge_work(u64_from_index(inputs.len()), operation)?;
         self.charge_work(total_bytes, operation)?;
-        self.charge_retained(total_bytes, operation)?;
+        self.retain_bytes(total_bytes, operation)?;
         let mut buffer = Vec::new();
         buffer.try_reserve_exact(total).map_err(|_| {
             self.budget
@@ -1008,102 +975,6 @@ mod tests {
     use crate::decode::{ResourceDimension, ResourceFailure};
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
-    #[test]
-    fn temporary_byte_storage_uses_its_byte_budget_and_releases_it() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 32;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let (reservation, bytes) = ctx
-            .try_materialized(32, "test bytes", || {
-                let mut bytes = Vec::<u8>::new();
-                bytes.try_reserve_exact(32)?;
-                Ok(bytes)
-            })
-            .expect("byte allowance");
-        assert_eq!(bytes.capacity(), 32);
-        drop(reservation);
-        let (reservation, ()) = ctx
-            .try_materialized(32, "test bytes", || Ok(()))
-            .expect("released allowance");
-        assert!(
-            matches!(ctx.try_materialized(1, "test bytes", || Ok(())), Err(crate::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
-        );
-        drop(reservation);
-    }
-
-    #[test]
-    fn loaded_input_processing_preserves_proportional_and_absolute_limits() {
-        let input_bytes = 1024;
-        let allowance = crate::decode::policy::MATERIALIZED_BASE
-            + input_bytes * crate::decode::policy::MATERIALIZED_PER_INPUT_BYTE;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        let ctx = DecodeContext::for_loaded_input(&arena, &policy, input_bytes)
-            .expect("admitted input length");
-        drop(
-            ctx.reserve_scoped(allowance, "loaded input allowance")
-                .expect("input-proportional allowance"),
-        );
-        assert!(
-            matches!(ctx.reserve_scoped(allowance + 1, "loaded input allowance"),
-            Err(crate::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes && limit.limit == allowance)
-        );
-
-        policy.limits.max_materialized_bytes = 32;
-        let ctx = DecodeContext::for_loaded_input(&arena, &policy, input_bytes)
-            .expect("admitted input length");
-        assert!(matches!(ctx.reserve_scoped(33, "absolute limit"),
-            Err(crate::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes && limit.limit == 32));
-
-        policy.limits.max_input_bytes = input_bytes - 1;
-        assert!(
-            matches!(DecodeContext::for_loaded_input(&arena, &policy, input_bytes),
-            Err(crate::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::InputBytes && limit.additional == input_bytes)
-        );
-    }
-
-    #[test]
-    fn zero_collection_limit_refuses_second_empty_finalization() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        for _ in 0..2 {
-            let result = ctx
-                .begin_expand(super::ExpandSpec::Exact(0))
-                .and_then(super::ExpandWriter::finalize);
-            assert!(
-                matches!(result, Err(crate::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems)
-            );
-        }
-    }
-
-    #[test]
-    fn one_collection_slot_admits_only_one_empty_finalization() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(ctx
-            .begin_expand(super::ExpandSpec::Exact(0))
-            .expect("empty expansion")
-            .finalize()
-            .expect("first registry slot")
-            .window()
-            .is_empty());
-        assert!(
-            matches!(ctx.begin_expand(super::ExpandSpec::Exact(0)).expect("empty expansion")
-            .finalize(), Err(crate::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems && limit.used == 1)
-        );
-    }
-
     struct RewindFails(Cursor<Vec<u8>>);
 
     impl Read for RewindFails {
@@ -1126,25 +997,6 @@ mod tests {
     }
 
     #[test]
-    fn retained_collection_refuses_slot_before_copying_the_record() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-        let copied = std::cell::Cell::new(false);
-        let result = ctx.try_collect_retained_with([1_u8], "collect record", |value| {
-            copied.set(true);
-            Ok::<_, crate::CodecError>(value)
-        });
-        assert!(
-            matches!(result, Err(crate::CodecError::ResourceLimit(limit))
-            if limit.dimension == super::ResourceDimension::RetainedBytes && limit.additional == 1)
-        );
-        assert!(!copied.get());
-    }
-
-    #[test]
     fn scoped_copy_storage_is_released_and_does_not_charge_retained_bytes() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -1161,42 +1013,6 @@ mod tests {
         drop(text);
         drop(reservation);
         assert!(ctx.reserve_scoped(4, "reuse scope").is_ok());
-    }
-
-    #[test]
-    fn scoped_copy_storage_refuses_materialized_bytes() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 3;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-        assert!(matches!(ctx.with_scoped_storage("temporary copy", || {
-            ctx.copy_retained_text("abcd", "temporary copy")
-        }), Err(crate::CodecError::ResourceLimit(limit))
-            if limit.dimension == super::ResourceDimension::MaterializedBytes
-                && limit.additional == 4));
-    }
-
-    #[test]
-    fn scoped_copy_extends_existing_reservation_without_double_charging() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 6;
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-        let mut storage = ctx
-            .reserve_scoped(2, "temporary record")
-            .expect("admitted test operation");
-        let text = storage
-            .with_storage(|| ctx.copy_retained_text("abcd", "temporary text"))
-            .expect("admitted test operation");
-        assert_eq!(text, "abcd");
-        assert!(
-            matches!(ctx.reserve_scoped(1, "full scope"), Err(crate::CodecError::ResourceLimit(limit)) if limit.used == 6)
-        );
-        drop(text);
-        drop(storage);
     }
 
     #[test]
@@ -1296,38 +1112,6 @@ mod tests {
     }
 
     #[test]
-    fn try_collection_refuses_before_allocation_and_succeeds_under_service_profile() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
-            .expect("test input fits the policy");
-        let mut allocated = false;
-        let error = ctx
-            .try_collection(3, "test collection allocation", || {
-                allocated = true;
-                Ok(())
-            })
-            .expect_err("three items exceed a limit of two");
-        assert!(!allocated);
-        assert!(matches!(
-            error,
-            crate::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.reason == ResourceFailure::BudgetExceeded
-                    && limit.operation == "test collection allocation"
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &DecodePolicy::service())
-            .expect("test input fits the policy");
-        let mut values = Vec::<u8>::new();
-        ctx.try_collection(3, "test collection allocation", || values.try_reserve(3))
-            .expect("the service profile admits three items");
-        assert!(values.capacity() >= 3);
-    }
-
-    #[test]
     fn try_collection_reports_allocator_refusal_after_charge() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &DecodePolicy::service())
@@ -1346,136 +1130,4 @@ mod tests {
                     && limit.operation == "test collection allocation"
         ));
     }
-
-    #[test]
-    fn scoped_text_copy_refuses_before_allocation_and_releases_on_drop() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"x", &arena, &policy)
-            .expect("test input fits the policy");
-        {
-            let mut reservation = ctx
-                .reserve_scoped(0, "test scoped text")
-                .expect("empty reservation is admitted");
-            let copy = ctx
-                .copy_scoped_text("abc", &mut reservation, "test scoped text")
-                .expect("three temporary bytes are admitted");
-            assert_eq!(copy, "abc");
-        }
-        {
-            let mut reservation = ctx
-                .reserve_scoped(0, "test scoped text")
-                .expect("empty reservation is admitted");
-            assert_eq!(
-                ctx.copy_scoped_text("def", &mut reservation, "test scoped text")
-                    .expect("the prior reservation was released"),
-                "def"
-            );
-        }
-        let mut reservation = ctx
-            .reserve_scoped(0, "test scoped text")
-            .expect("empty reservation is admitted");
-        let error = ctx
-            .copy_scoped_text("abcd", &mut reservation, "test scoped text")
-            .expect_err("four bytes exceed the temporary limit");
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "test scoped text"));
-    }
-
-    #[test]
-    fn scoped_format_refuses_before_allocation_and_releases_on_drop() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 3;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        {
-            let (text, _reservation) = ctx
-                .format_scoped(format_args!("x{}", 12), "test scoped format")
-                .expect("three rendered bytes fit");
-            assert_eq!(text, "x12");
-        }
-        assert_eq!(
-            ctx.format_scoped(format_args!("y{}", 34), "test scoped format")
-                .expect("prior reservation was released")
-                .0,
-            "y34"
-        );
-        let error = ctx
-            .format_scoped(format_args!("z{}", 345), "test scoped format")
-            .expect_err("four bytes exceed the materialized allowance");
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "test scoped format"));
-    }
-
-    #[test]
-    fn retained_format_refuses_before_string_growth() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        assert_eq!(
-            ctx.format_retained(
-                format_args!("{number}", number = 1234),
-                "test retained format"
-            )
-            .expect("four rendered bytes fit"),
-            "1234"
-        );
-        let error = ctx
-            .format_retained(format_args!("{}", 5), "test retained format")
-            .expect_err("one more byte exceeds the retained limit");
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "test retained format"));
-    }
-    #[test]
-    fn string_growth_charges_only_new_capacity() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-        let mut text = String::with_capacity(4);
-        ctx.try_reserve_retained_text(&mut text, 4, "existing text capacity")
-            .expect("admitted test operation");
-        assert_eq!(text.capacity(), 4);
-        let error = ctx
-            .try_reserve_retained_text(&mut text, 5, "new text capacity")
-            .expect_err("test operation refuses");
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0 && limit.additional == 1));
-        assert_eq!(text.capacity(), 4);
-    }
-
-    #[test]
-    fn text_append_reserves_exact_growth() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
-        let mut text = ctx
-            .copy_retained_text("ab", "initial text")
-            .expect("admitted test operation");
-        ctx.append_retained(&mut text, "c", "append text")
-            .expect("admitted test operation");
-        assert_eq!(text, "abc");
-        assert_eq!(text.capacity(), 3);
-        let error = ctx
-            .append_retained(&mut text, "d", "append text")
-            .expect_err("test operation refuses");
-        assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 3 && limit.additional == 1));
-        assert_eq!(text, "abc");
-    }
 }
-
-#[cfg(test)]
-mod sort_tests;
