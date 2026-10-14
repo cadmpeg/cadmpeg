@@ -504,32 +504,28 @@ fn root_reference_notes_use_the_contextually_parsed_exchange() {
 }
 
 #[test]
-fn root_reference_note_refuses_collection_limit() {
+fn root_reference_note_charges_collection_items() {
     let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let bytes = step_zip(&[
         (ROOT_NAME, root, CompressionMethod::Stored),
         ("parts/child.p21", b"child", CompressionMethod::Stored),
     ]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let service = cadmpeg_core::decode::DecodePolicy::service();
-    let (service_ctx, view) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &service)
-            .expect("ZIP fits the service profile");
-    let opened = super::open_root(&service_ctx, view).expect("open ZIP root");
-    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &service_ctx)
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("ZIP fits the service profile");
+    let opened = super::open_root(&ctx, view).expect("open ZIP root");
+    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &ctx)
         .expect("parse root under the service context");
-    let mut limited = service;
-    limited.limits.max_collection_items = 2;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &limited)
-        .expect("ZIP fits the limited profile");
-    let error = root_reference_notes(&ctx, &opened.archive, &exchange)
-        .expect_err("two URI components leave no item for the note");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "step_zip_reference_notes"
-    ));
+    let notes = cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "step_zip_reference_notes",
+        || root_reference_notes(&ctx, &opened.archive, &exchange),
+    );
+    assert_eq!(
+        notes,
+        vec!["internal resource #10 -> parts/child.p21#target"]
+    );
 }
 
 #[test]
