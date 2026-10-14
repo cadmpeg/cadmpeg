@@ -694,7 +694,11 @@ fn occurrence_duplicate_finding_refuses_collection_limit() {
             101,
             "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
         ));
-    let error = occurrence_error(native, 2, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D native validation findings",
+        |cap| Err::<(), cadmpeg_core::CodecError>(occurrence_error(native.clone(), cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
