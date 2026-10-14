@@ -719,11 +719,19 @@ complete `m_` member declaration begins with one storage token and one owner
 token in that order. Null storage or base tokens, truncated tokens, and a zero
 or null class reference do not form a complete class tail. A zero base token
 denotes the root. A complete member head requires nonnull storage and a nonzero owner.
+The complete member head ends immediately after the owner token. This boundary
+requires neither a terminal marker nor a record-area pointer. Token widths are
+selected by their prefixes; bytes after the owner do not belong to the head.
+A final head retains both complete tokens when its owner joins the proven
+same-section class registry. An incomplete token, null storage, or zero, null,
+or out-of-range owner does not establish a complete head.
+
 The decoded token values are registry metadata, not object-record identities
 or field values. Within a bounded registry lane, a complete member head can be
 followed by separate declarations with plain printable names. Each declaration
 has the same length framing, a storage token, and a nonzero owner token that
-joins a class in the same section. The declarations must consume the bounded
+joins a class in the same section. Bytes after a final complete head do not
+supply a bound for a following plain-name declaration lane. The declarations must consume the bounded
 post-member bytes exactly. They are independent fields, including when their
 owners differ from the preceding member's owner. Incomplete or legacy declarations retain their raw trailing
 bytes without being promoted to a complete registry layout. Declaration order

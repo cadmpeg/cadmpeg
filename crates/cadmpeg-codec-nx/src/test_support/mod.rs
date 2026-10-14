@@ -5,6 +5,7 @@
 //! Native projection fixtures use checked source tokens.
 #![allow(clippy::unwrap_used)]
 
+pub(crate) mod final_member_registry;
 pub(crate) mod native_references;
 pub(crate) mod rmfastload;
 pub(crate) mod studio_surface;

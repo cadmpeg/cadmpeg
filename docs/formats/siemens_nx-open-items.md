@@ -696,14 +696,6 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Note.** Create controlled native variants that change one continuity setting, add one section, add one guide, or reverse one string independently. Query the authored section and guide collectors before save. Compare the complete operation and allocation. Body-write relations select outputs; incomplete output topology and an empty interchange sibling supply no input-ownership witness.
 
-### OM-37. Final field declaration in a pointerless OM section
-
-**Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?
-
-**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`" defines the product record and the bounded registry suffix through the next length-framed `m_` declaration. A section-relative `u32 LE` word after the type registry is a record-area pointer only when its forward target remains inside the section, starts with the three control words and product record, and is unique. When valid, that pointer bounds the complete field registry.
-
-**Need.** We must know the terminal marker or alternate boundary for the final field declaration when no valid record-area pointer exists. A pointerless section cannot establish a complete field registry from the settled byte structure alone.
-
 ### OM-38. `SWP104` leading construction roles
 
 **Question.** Which sweep parameters and selections do the four scalars, mode, counted member references, state lane, and terminal reference encode?
@@ -941,6 +933,16 @@ assigns control geometry, continuity, or terminal semantics.
 **Known.** `siemens_nx.md` §7.1 "`RMFastLoad` uses entry-relative physical column storage." defines the unique boundary array and complete terminal triple table. Boundaries can split complete product strings and logical rows. The terminal and class-registry counts are independent; none of the three token positions supplies a universal section-local class selector.
 
 **Need.** Identify independently discriminated logical fields and their native identity relations. Preserve opaque bytes until a complete row supplies the required selector or relation.
+
+### OM-62. Plain declarations after the final complete member head
+
+**Question.** Which independent boundary delimits a plain-name declaration lane after the final complete `m_` head?
+
+**Known.** `siemens_nx.md` §3.3 "The complete member head ends immediately after the owner token." defines the self-delimiting head. A bounded lane between consecutive member heads can contain independently framed plain-name declarations whose owner tokens join same-section classes.
+
+**Need.** Identify an independent bound and an exact lane grammar for plain-name declarations after the final head.
+
+**Conflict.** A complete head proves its own end. It does not prove where a following plain-name declaration lane ends. A complete-looking next declaration alone does not establish that lane.
 
 ## 3. Assembly and material data
 

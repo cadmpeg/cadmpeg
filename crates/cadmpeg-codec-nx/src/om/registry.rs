@@ -341,7 +341,7 @@ fn field_registry_start(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
             if registry_declaration_at(bytes, probe, end, b"UGS::").is_some() {
                 return None;
             }
-            if field_definition_at(bytes, probe, end).is_some() {
+            if registry_declaration_at(bytes, probe, end, b"m_").is_some() {
                 return Some(probe);
             }
         }
@@ -432,12 +432,12 @@ pub(super) fn field_definitions<'a>(
         .checked_add(256)
         .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
         .min(end);
-    while let Some((definition, at)) = (search..limit)
-        .find_map(|at| field_definition_at(bytes, at, end).map(|definition| (definition, at)))
-    {
-        let next = at + definition.name.len() + 2;
-        search = next;
-        limit = search
+    while let Some((definition, at)) = (search..limit).find_map(|at| {
+        field_definition_at(bytes, at, end, owner_count).map(|definition| (definition, at))
+    }) {
+        let core_end = at + definition.name.len() + 2;
+        search = at + definition.name.len() + 1 + definition.registry_tail.len();
+        limit = core_end
             .checked_add(256)
             .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
             .min(end);
@@ -458,8 +458,8 @@ pub(super) fn all_field_definitions<'a>(
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
-        if let Some(definition) = field_definition_at(bytes, at, end) {
-            at += definition.name.len() + 2;
+        if let Some(definition) = field_definition_at(bytes, at, end, owner_count) {
+            at += definition.name.len() + 1 + definition.registry_tail.len();
             ctx.reserve_vec(&mut out, 1, "nx all field definitions")?;
             out.push(definition);
         } else {
@@ -575,13 +575,28 @@ fn bound_field_registry_tails<'a>(bytes: &'a [u8], definitions: &mut [FieldDefin
     }
 }
 
-fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefinition<'_>> {
+fn field_definition_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    owner_count: Option<NonZeroUsize>,
+) -> Option<FieldDefinition<'_>> {
     let declaration = registry_declaration_at(bytes, at, end, b"m_")?;
     let name_end = declaration.name_end();
+    let tail_end = if let Some(count) = owner_count {
+        let (layout, width) = field_registry_layout_at(bytes.get(name_end..end)?)?;
+        if usize::try_from(layout.owner_class.get()).ok()? > count.get() {
+            return None;
+        }
+        name_end.checked_add(width)?
+    } else {
+        // A partial legacy registry proves the counted name, not its owner.
+        name_end.checked_add(1)?
+    };
     Some(FieldDefinition {
         offset: declaration.offset,
         name: declaration.name,
-        registry_tail: &bytes[name_end..=name_end],
+        registry_tail: bytes.get(name_end..tail_end)?,
     })
 }
 

@@ -1,0 +1,364 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "18",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [],
+        "coedges": [],
+        "configurations": [],
+        "curves": [],
+        "drawings": [],
+        "edges": [],
+        "faces": [],
+        "features": [],
+        "loops": [],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_definitions": [],
+        "regions": [],
+        "semantic_annotations": [],
+        "shells": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [],
+        "tessellations": [],
+        "vertices": [],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "class_definitions": [
+            {
+              "id": "nx:om-entry-0:class#160",
+              "name": "UGS::OM::RootObject",
+              "ordinal": 0,
+              "registry_base_class": 0,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 220
+              },
+              "registry_storage_code": 56,
+              "registry_suffix": "00101112131415161701",
+              "schema_fingerprint": "1011121314151617",
+              "section_offset": 204,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 236,
+              "trailing_code": 56
+            },
+            {
+              "id": "nx:om-entry-0:class#191",
+              "name": "UGS::OM::ChildObject",
+              "ordinal": 1,
+              "registry_base_class": 1,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 220
+              },
+              "registry_storage_code": 202,
+              "registry_suffix": "c901202122232425262701",
+              "schema_fingerprint": "2021222324252627",
+              "section_offset": 204,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 267,
+              "trailing_code": 128
+            },
+            {
+              "id": "nx:om-entry-0:class#290",
+              "name": "UGS::OM::RootObject",
+              "ordinal": 0,
+              "registry_base_class": 0,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 350
+              },
+              "registry_storage_code": 56,
+              "registry_suffix": "00101112131415161701",
+              "schema_fingerprint": "1011121314151617",
+              "section_offset": 334,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 366,
+              "trailing_code": 56
+            },
+            {
+              "id": "nx:om-entry-0:class#32",
+              "name": "UGS::OM::RootObject",
+              "ordinal": 0,
+              "registry_base_class": 0,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 92
+              },
+              "registry_storage_code": 56,
+              "registry_suffix": "00101112131415161701",
+              "schema_fingerprint": "1011121314151617",
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 108,
+              "trailing_code": 56
+            },
+            {
+              "id": "nx:om-entry-0:class#321",
+              "name": "UGS::OM::ChildObject",
+              "ordinal": 1,
+              "registry_base_class": 1,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 350
+              },
+              "registry_storage_code": 202,
+              "registry_suffix": "c901202122232425262701",
+              "schema_fingerprint": "2021222324252627",
+              "section_offset": 334,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 397,
+              "trailing_code": 128
+            },
+            {
+              "id": "nx:om-entry-0:class#422",
+              "name": "UGS::OM::RootObject",
+              "ordinal": 0,
+              "registry_base_class": 0,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 482
+              },
+              "registry_storage_code": 56,
+              "registry_suffix": "00101112131415161701",
+              "schema_fingerprint": "1011121314151617",
+              "section_offset": 466,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 498,
+              "trailing_code": 56
+            },
+            {
+              "id": "nx:om-entry-0:class#453",
+              "name": "UGS::OM::ChildObject",
+              "ordinal": 1,
+              "registry_base_class": 1,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 482
+              },
+              "registry_storage_code": 202,
+              "registry_suffix": "c901202122232425262701",
+              "schema_fingerprint": "2021222324252627",
+              "section_offset": 466,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 529,
+              "trailing_code": 128
+            },
+            {
+              "id": "nx:om-entry-0:class#63",
+              "name": "UGS::OM::ChildObject",
+              "ordinal": 1,
+              "registry_base_class": 1,
+              "registry_reference": 1,
+              "registry_reference_declaration": {
+                "code": 2,
+                "name": "UGS::OM::Meta",
+                "source_offset": 92
+              },
+              "registry_storage_code": 202,
+              "registry_suffix": "c901202122232425262701",
+              "schema_fingerprint": "2021222324252627",
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 139,
+              "trailing_code": 128
+            }
+          ],
+          "field_definitions": [
+            {
+              "id": "nx:om-entry-0:field#225",
+              "name": "m_final",
+              "ordinal": 0,
+              "registry_owner_class": 1,
+              "registry_storage_code": 209,
+              "registry_suffix": "d08000",
+              "section_offset": 204,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 301,
+              "trailing_code": 128
+            },
+            {
+              "id": "nx:om-entry-0:field#355",
+              "name": "m_final",
+              "ordinal": 0,
+              "registry_owner_class": 2,
+              "registry_storage_code": 14303,
+              "registry_suffix": "37dea00001",
+              "section_offset": 334,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 431,
+              "trailing_code": 160
+            },
+            {
+              "id": "nx:om-entry-0:field#487",
+              "name": "m_final",
+              "ordinal": 0,
+              "registry_owner_class": 2,
+              "registry_storage_code": 904,
+              "registry_suffix": "8702",
+              "section_offset": 466,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 563,
+              "trailing_code": 131
+            },
+            {
+              "id": "nx:om-entry-0:field#97",
+              "name": "m_final",
+              "ordinal": 0,
+              "registry_owner_class": 1,
+              "registry_storage_code": 120,
+              "registry_suffix": "01",
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 173,
+              "trailing_code": 120
+            }
+          ]
+        }
+      },
+      "source": {
+        "attributes": {
+          "deltas_streams": "0",
+          "directory_entries": "1",
+          "file_size": "609",
+          "footer_entry_count": "0",
+          "footer_fingerprint": "00000000",
+          "footer_offset": "595",
+          "header_entry_count": "1",
+          "jpeg_preview_count": "0",
+          "partition_streams": "0",
+          "plain_streams": "0"
+        },
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr"
+            }
+          }
+        }
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr"
+          }
+        }
+      },
+      "losses": [
+        {
+          "code": {
+            "code": "geometry.not-transferred",
+            "kind": "geometry_not_transferred",
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
+          "severity": "blocking"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: file tag 0, footer offset 595, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+        "NX object model: 4 size-framed section(s), 8 class declaration(s), 4 field declaration(s)"
+      ],
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
+    },
+    "source_fidelity": {
+      "annotations": {}
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "76",
+          "region": "HEADER"
+        },
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "part-payload",
+        "size": {
+          "form": "exact",
+          "size": 519
+        }
+      }
+    ],
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr"
+        }
+      }
+    },
+    "notes": [
+      "SPLMSSTR container: file tag 0, footer offset 595, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
+      "NX object model: 4 size-framed section(s), 8 class declaration(s), 4 field declaration(s)"
+    ]
+  }
+}

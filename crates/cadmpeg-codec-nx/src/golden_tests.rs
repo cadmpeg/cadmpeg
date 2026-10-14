@@ -414,6 +414,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     // geometry. The payload is uncompressed, so this snapshot pins no
     // compressor output.
     f.push(("legacy_cfb_with_ug_part", legacy_cfb_with_ug_part()));
+    f.push((
+        "final_member_registry_heads",
+        crate::test_support::final_member_registry::prt(),
+    ));
 
     // Self-contained `.prt` images.
     f.push(("single_part_prt", single_part_prt()));

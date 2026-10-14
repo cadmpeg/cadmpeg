@@ -1332,7 +1332,8 @@ pub(super) struct FieldDefinition {
     ordinal: u32,
     /// First registry-token byte serialized immediately after the name (legacy field name).
     trailing_code: u8,
-    /// Exact bytes between this declaration core and the next member declaration.
+    /// Registry bytes after the first token byte. The final complete head ends
+    /// after its owner; a nonfinal declaration can retain a bounded suffix.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     registry_suffix: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the containing OM section signature.
@@ -1377,7 +1378,8 @@ struct FieldDefinitionWire {
         deserialize_with = "deserialize_registry_owner_class"
     )]
     registry_owner_class: Option<u32>,
-    /// Exact bytes between this declaration core and the next member declaration.
+    /// Registry bytes after the first token byte. The final complete head ends
+    /// after its owner; a nonfinal declaration can retain a bounded suffix.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     registry_suffix: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the containing OM section signature.

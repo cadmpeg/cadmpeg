@@ -215,7 +215,7 @@ fn separates_complete_reference_class_and_member_regions() {
         )
     })
     .unwrap();
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].name, "m_first");
     assert_eq!(
         crate::om::registry::field_registry_layout(fields[0].registry_tail)
@@ -232,7 +232,8 @@ fn separates_complete_reference_class_and_member_regions() {
             .get(),
         2
     );
-    assert_eq!(fields[2].name, "m_tail");
+    // The final candidate's owner 3 cannot join this two-class registry.
+    assert!(fields.iter().all(|field| field.name != "m_tail"));
 
     let mut one_byte_gap = bytes;
     one_byte_gap[member_start - 1] = 0x28;
@@ -304,7 +305,80 @@ fn splits_bounded_plain_declaration_with_a_different_owner() {
         &bytes[1 + b"m_displayMarker".len()..next_start]
     );
     assert_eq!(fields[2].offset, next_start);
-    assert_eq!(fields[2].registry_tail, &[0x01]);
+    assert_eq!(fields[2].registry_tail, &[0x01, 0x01]);
+}
+
+#[test]
+fn final_member_head_ends_after_complete_owner_without_a_pointer() {
+    for tail in [
+        &[0x78, 0x01][..],
+        &[0x80, 0xd0, 0x26][..],
+        &[0xa0, 0x37, 0xde, 0x02][..],
+        &[0x83, 0x87, 0x80, 0xa5][..],
+    ] {
+        let mut bytes = Vec::new();
+        append_declaration(&mut bytes, b"m_final", tail);
+        let end = bytes.len();
+        append_declaration(&mut bytes, b"first_record_area", &[0x80, 0xcf, 0x02]);
+        let fields = crate::test_support::with_decode_context(|ctx| {
+            super::field_definitions(
+                ctx,
+                &bytes,
+                0,
+                bytes.len(),
+                std::num::NonZeroUsize::new(206),
+            )
+        })
+        .unwrap();
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].registry_tail, tail);
+        assert_eq!(
+            fields[0].offset + 1 + fields[0].name.len() + fields[0].registry_tail.len(),
+            end
+        );
+        // The later plain-name frame lacks an independently bounded lane.
+        let mut changed_bytes = bytes.clone();
+        changed_bytes[end] ^= 1;
+        let changed = crate::test_support::with_decode_context(|ctx| {
+            super::field_definitions(
+                ctx,
+                &changed_bytes,
+                0,
+                changed_bytes.len(),
+                std::num::NonZeroUsize::new(206),
+            )
+        })
+        .unwrap();
+        assert_eq!(fields, changed);
+    }
+}
+
+#[test]
+fn member_admission_requires_complete_nonnull_tokens_and_scoped_owner() {
+    for tail in [
+        &[0x80][..],
+        &[0xa0, 0x37][..],
+        &[0x80, 0xd0][..],
+        &[0xff, 0x01][..],
+        &[0x78, 0x00][..],
+        &[0x78, 0xff][..],
+        &[0x78, 0x03][..],
+        &[0x78, 0x80][..],
+    ] {
+        let mut bytes = Vec::new();
+        append_declaration(&mut bytes, b"m_unowned", tail);
+        let fields = crate::test_support::with_decode_context(|ctx| {
+            super::all_field_definitions(
+                ctx,
+                &bytes,
+                0,
+                bytes.len(),
+                std::num::NonZeroUsize::new(2),
+            )
+        })
+        .unwrap();
+        assert!(fields.is_empty(), "invalid member head: {tail:02x?}");
+    }
 }
 
 #[test]
