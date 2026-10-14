@@ -1992,9 +1992,15 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                 if body in pairs and words[body] == "{":
                     contents = words[body + 1:pairs[body]]
                     for parameter in range(len(parameters) - 2):
-                        if parameters[parameter + 1:parameter + 3] == [":", "ResourceLimit"]:
+                        # A carrier stores the limit, or the evaluation refusal
+                        # that holds it, in its refusal field.
+                        if (parameters[parameter + 1:parameter + 3] == [":", "ResourceLimit"]
+                                or parameters[parameter + 1:parameter + 6]
+                                == [":", "impl", "Into", "<", "EvaluationRefusal"]):
                             limit = parameters[parameter]
-                            if any(contents[offset:offset + 6] == ["resource", ":", "Some", "(", limit, ")"]
+                            if any(contents[offset:offset + 6] in (
+                                    ["resource", ":", "Some", "(", limit, ")"],
+                                    ["refusal", ":", "Some", "(", limit, ")"])
                                    for offset in range(len(contents) - 5)):
                                 retained.setdefault(path, set()).add((owner, name))
             result_type = next((word for word in output if re.fullmatch(r"[A-Za-z_]\w*", word)
