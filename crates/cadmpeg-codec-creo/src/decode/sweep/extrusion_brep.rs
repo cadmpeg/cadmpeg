@@ -311,6 +311,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let mut cap_refusal = crate::lane_refusal::LaneRefusals::new();
+        let mut missing_cap = None;
         let mut unprojectable = false;
         for (entity_index, entity) in profiles
             .iter()
@@ -338,6 +340,22 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 unprojectable = true;
                 break;
             }
+            // Both caps of this body use this entity with the same orientation
+            // and endpoints, so one probe states both cap pcurves.
+            if extrusion_cap_pcurve(
+                ctx,
+                &sketch_geometry,
+                entity.reversed(),
+                entity.start(),
+                entity.end(),
+                &format_args!("extrusion feature {feature_id} profile entity {entity_index} cap"),
+                &mut cap_refusal,
+            )?
+            .is_none()
+                && missing_cap.is_none()
+            {
+                missing_cap = Some(entity_index);
+            }
         }
         let records = refusal.take_records_checked()?;
         if !records.is_empty() {
@@ -356,6 +374,33 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         }
         if unprojectable {
+            continue;
+        }
+        let cap_records = cap_refusal.take_records_checked()?;
+        if !cap_records.is_empty() {
+            // The probe states every cap before the first record of this body
+            // reaches the model, so a refused cap leaves no partial body.
+            push_rejected_extrusion(
+                ctx,
+                diagnostics,
+                copy_id!(body_id),
+                format_args!(
+                    "refused extrusion cap lanes: {}",
+                    JoinedLaneRecords(&cap_records)
+                ),
+            )?;
+            continue;
+        }
+        if let Some(entity_index) = missing_cap {
+            push_rejected_extrusion(
+                ctx,
+                diagnostics,
+                copy_id!(body_id),
+                format_args!(
+                    "extrusion feature {feature_id} profile entity {entity_index} cap states no \
+                     pcurve geometry"
+                ),
+            )?;
             continue;
         }
         let forward_caps = profiles[0].area() > 0.0;
@@ -778,8 +823,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         )?;
                         let records = refusal.take_records_checked()?;
                         if !records.is_empty() {
-                            // The shell of this body already declares this cap
-                            // face, so the model cannot omit the pcurve.
+                            // The probe before this body admitted this cap
+                            // pcurve, so a refused or absent cap here breaks
+                            // that invariant.
                             return Err(cadmpeg_core::CodecError::malformed(refused_lane_message(
                                 ctx, &record, &records,
                             )?));
@@ -850,8 +896,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         )?;
                         let records = refusal.take_records_checked()?;
                         if !records.is_empty() {
-                            // The shell of this body already declares this cap
-                            // face, so the model cannot omit the pcurve.
+                            // The probe before this body admitted this cap
+                            // pcurve, so a refused or absent cap here breaks
+                            // that invariant.
                             return Err(cadmpeg_core::CodecError::malformed(refused_lane_message(
                                 ctx, &record, &records,
                             )?));
