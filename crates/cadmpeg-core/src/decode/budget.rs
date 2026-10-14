@@ -21,7 +21,8 @@ pub(super) struct DecodeBudget {
     decompressed: Cell<u64>,
     materialized: Cell<u64>,
     retained: Cell<u64>,
-    scoped_storage: Cell<Option<u64>>,
+    /// Storage charged while a storage scope is active.
+    scope: Cell<Option<ScopedTally>>,
     entities: Cell<u64>,
     collection_items: Cell<u64>,
     recursion_depth: Cell<u64>,
@@ -42,7 +43,7 @@ impl DecodeBudget {
             decompressed: Cell::new(0),
             materialized: Cell::new(0),
             retained: Cell::new(0),
-            scoped_storage: Cell::new(None),
+            scope: Cell::new(None),
             entities: Cell::new(0),
             collection_items: Cell::new(0),
             recursion_depth: Cell::new(0),
@@ -161,6 +162,8 @@ impl DecodeBudget {
             ));
         }
         used.set(before + amount);
+        #[cfg(feature = "test-support")]
+        super::test_support::record_charge(dimension, operation, amount);
         Ok(())
     }
 
@@ -221,7 +224,7 @@ impl DecodeBudget {
         )?;
         Ok(ScopedReservation {
             budget: self,
-            bytes,
+            tally: ScopedTally { bytes, items: 0 },
             operation,
         })
     }
@@ -276,13 +279,13 @@ impl DecodeBudget {
         bytes: u64,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        if let Some(current) = self.scoped_storage.get() {
-            let total = current.checked_add(bytes).ok_or_else(|| {
+        if let Some(tally) = self.scope.get() {
+            let total = tally.bytes.checked_add(bytes).ok_or_else(|| {
                 self.refuse_limit(
                     ResourceDimension::MaterializedBytes,
                     ResourceFailure::BudgetExceeded,
                     self.materialized_allowance(),
-                    current,
+                    tally.bytes,
                     bytes,
                     operation,
                 )
@@ -294,7 +297,10 @@ impl DecodeBudget {
                 bytes,
                 operation,
             )?;
-            self.scoped_storage.set(Some(total));
+            self.scope.set(Some(ScopedTally {
+                bytes: total,
+                ..tally
+            }));
             return Ok(());
         }
         self.charge(
@@ -307,7 +313,7 @@ impl DecodeBudget {
     }
 
     pub(super) fn retained_size_overflow_limit(&self, operation: &'static str) -> ResourceLimit {
-        let (dimension, limit, used) = if self.scoped_storage.get().is_some() {
+        let (dimension, limit, used) = if self.scope.get().is_some() {
             (
                 ResourceDimension::MaterializedBytes,
                 self.materialized_allowance(),
@@ -345,7 +351,7 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> ResourceLimit {
-        let (dimension, current, limit) = if self.scoped_storage.get().is_some() {
+        let (dimension, current, limit) = if self.scope.get().is_some() {
             (
                 ResourceDimension::MaterializedBytes,
                 self.materialized.get(),
@@ -407,7 +413,41 @@ impl DecodeBudget {
             self.policy.limits.max_collection_items,
             count,
             operation,
-        )
+        )?;
+        if let Some(tally) = self.scope.get() {
+            self.scope
+                .set(Some(tally.with_items(count, self, operation)?));
+        }
+        Ok(())
+    }
+
+    /// Releases scoped items when their temporary collections are dropped.
+    fn release_collection_items(&self, items: u64, operation: &'static str) {
+        let Some(remaining) = self.collection_items.get().checked_sub(items) else {
+            self.refuse_limit(
+                ResourceDimension::CollectionItems,
+                ResourceFailure::BudgetExceeded,
+                self.policy.limits.max_collection_items,
+                self.collection_items.get(),
+                items,
+                operation,
+            );
+            return;
+        };
+        self.collection_items.set(remaining);
+    }
+
+    /// Moves committed items into the enclosing scope, or keeps them for the session.
+    fn adopt_collection_items(
+        &self,
+        items: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        if let Some(tally) = self.scope.get() {
+            self.scope
+                .set(Some(tally.with_items(items, self, operation)?));
+        }
+        Ok(())
     }
 
     pub(super) fn collection_allocation_failed(
@@ -440,7 +480,7 @@ impl DecodeBudget {
     }
 
     pub(super) fn storage_scope(&self, operation: &'static str) -> StorageScope<'_> {
-        let prior = self.scoped_storage.replace(Some(0));
+        let prior = self.scope.replace(Some(ScopedTally::default()));
         StorageScope {
             budget: self,
             prior,
@@ -487,20 +527,20 @@ impl DecodeBudget {
 
 pub(super) struct StorageScope<'a> {
     budget: &'a DecodeBudget,
-    prior: Option<u64>,
+    prior: Option<ScopedTally>,
     operation: &'static str,
 }
 
 impl<'a> StorageScope<'a> {
     pub(super) fn finish(self) -> ScopedReservation<'a> {
-        let bytes = self
+        let tally = self
             .budget
-            .scoped_storage
-            .replace(Some(0))
-            .map_or(0, std::convert::identity);
+            .scope
+            .replace(Some(ScopedTally::default()))
+            .unwrap_or_default();
         ScopedReservation {
             budget: self.budget,
-            bytes,
+            tally,
             operation: self.operation,
         }
     }
@@ -508,24 +548,55 @@ impl<'a> StorageScope<'a> {
 
 impl Drop for StorageScope<'_> {
     fn drop(&mut self) {
-        let bytes = self
-            .budget
-            .scoped_storage
-            .replace(self.prior)
-            .map_or(0, std::convert::identity);
+        let tally = self.budget.scope.replace(self.prior).unwrap_or_default();
         drop(ScopedReservation {
             budget: self.budget,
-            bytes,
+            tally,
             operation: self.operation,
         });
     }
 }
 
+/// Bytes and collection items charged inside one storage scope.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ScopedTally {
+    bytes: u64,
+    items: u64,
+}
+
+impl ScopedTally {
+    fn with_items(
+        self,
+        items: u64,
+        budget: &DecodeBudget,
+        operation: &'static str,
+    ) -> Result<Self, ResourceLimit> {
+        let total = self.items.checked_add(items).ok_or_else(|| {
+            budget.refuse_limit(
+                ResourceDimension::CollectionItems,
+                ResourceFailure::BudgetExceeded,
+                budget.policy.limits.max_collection_items,
+                self.items,
+                items,
+                operation,
+            )
+        })?;
+        Ok(Self {
+            items: total,
+            ..self
+        })
+    }
+}
+
 /// A temporary materialization charged until it is dropped or committed.
+///
+/// The reservation holds materialized bytes and collection items. Dropping it
+/// releases both; committing it keeps the items and moves the bytes to
+/// session-retained storage.
 #[derive(Debug)]
 pub struct ScopedReservation<'a> {
     budget: &'a DecodeBudget,
-    bytes: u64,
+    tally: ScopedTally,
     operation: &'static str,
 }
 
@@ -554,20 +625,27 @@ impl ScopedReservation<'_> {
         let scope = self.budget.storage_scope(self.operation);
         let value = build();
         let mut storage = scope.finish();
-        let Some(bytes) = self.bytes.checked_add(storage.bytes) else {
+        let Some(bytes) = self.tally.bytes.checked_add(storage.tally.bytes) else {
             return value.and_then(|_| {
                 Err(failure(self.budget.refuse_limit(
                     ResourceDimension::MaterializedBytes,
                     ResourceFailure::BudgetExceeded,
                     self.budget.materialized_allowance(),
-                    self.bytes,
-                    storage.bytes,
+                    self.tally.bytes,
+                    storage.tally.bytes,
                     self.operation,
                 )))
             });
         };
-        self.bytes = bytes;
-        storage.bytes = 0;
+        let tally = match self
+            .tally
+            .with_items(storage.tally.items, self.budget, self.operation)
+        {
+            Ok(tally) => tally,
+            Err(limit) => return value.and_then(|_| Err(failure(limit))),
+        };
+        self.tally = ScopedTally { bytes, ..tally };
+        storage.tally = ScopedTally::default();
         value
     }
 
@@ -580,12 +658,12 @@ impl ScopedReservation<'_> {
             bytes,
             self.operation,
         )?;
-        self.bytes = self.bytes.checked_add(bytes).ok_or_else(|| {
+        self.tally.bytes = self.tally.bytes.checked_add(bytes).ok_or_else(|| {
             self.budget.refuse_limit(
                 ResourceDimension::MaterializedBytes,
                 ResourceFailure::BudgetExceeded,
                 self.budget.materialized_allowance(),
-                self.bytes,
+                self.tally.bytes,
                 bytes,
                 self.operation,
             )
@@ -598,21 +676,26 @@ impl ScopedReservation<'_> {
         self.grow_limit(bytes).map_err(Into::into)
     }
 
-    /// Converts the temporary reservation into session-retained bytes.
-    pub fn commit(self) -> Result<(), CodecError> {
-        self.budget.charge_retained(self.bytes, self.operation)
+    /// Converts the temporary reservation into session-retained storage.
+    pub fn commit(mut self) -> Result<(), CodecError> {
+        let items = std::mem::take(&mut self.tally.items);
+        self.budget.adopt_collection_items(items, self.operation)?;
+        self.budget
+            .charge_retained(self.tally.bytes, self.operation)
     }
 }
 
 impl Drop for ScopedReservation<'_> {
     fn drop(&mut self) {
-        let Some(remaining) = self.budget.materialized.get().checked_sub(self.bytes) else {
+        self.budget
+            .release_collection_items(self.tally.items, self.operation);
+        let Some(remaining) = self.budget.materialized.get().checked_sub(self.tally.bytes) else {
             self.budget.refuse_limit(
                 ResourceDimension::MaterializedBytes,
                 ResourceFailure::BudgetExceeded,
                 self.budget.materialized_allowance(),
                 self.budget.materialized.get(),
-                self.bytes,
+                self.tally.bytes,
                 self.operation,
             );
             return;
@@ -986,6 +1069,75 @@ mod tests {
             return depth;
         };
         descend(budget, depth + 1)
+    }
+
+    fn scoped_items(budget: &DecodeBudget, items: u64) -> super::ScopedReservation<'_> {
+        let mut reservation = budget
+            .reserve_scoped_limit(0, "test scoped items")
+            .expect("empty reservation fits");
+        reservation
+            .with_storage_limit(|| budget.charge_collection_items_limit(items, "test scoped items"))
+            .expect("scoped items fit");
+        reservation
+    }
+
+    #[test]
+    fn dropped_scope_releases_its_collection_items() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 10;
+        let budget = DecodeBudget::new(policy, 1);
+        for _ in 0..3 {
+            drop(scoped_items(&budget, 8));
+            assert_eq!(budget.collection_items.get(), 0);
+        }
+        assert!(budget.fused().is_none());
+    }
+
+    #[test]
+    fn live_scoped_items_still_count_against_the_ceiling() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 10;
+        let budget = DecodeBudget::new(policy, 1);
+        let live = scoped_items(&budget, 8);
+        let failure = budget
+            .charge_collection_items_limit(3, "test retained items")
+            .expect_err("live scoped items hold their slots");
+        assert_eq!(failure.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(failure.used, 8);
+        drop(live);
+    }
+
+    #[test]
+    fn committed_scope_keeps_items_for_the_session() {
+        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
+        scoped_items(&budget, 5)
+            .commit()
+            .expect("commit retains scoped storage");
+        assert_eq!(budget.collection_items.get(), 5);
+    }
+
+    #[test]
+    fn commit_inside_an_outer_scope_moves_items_to_that_scope() {
+        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
+        let mut outer = budget
+            .reserve_scoped_limit(0, "test outer scope")
+            .expect("empty reservation fits");
+        outer
+            .with_storage(|| scoped_items(&budget, 4).commit())
+            .expect("inner commit fits");
+        assert_eq!(budget.collection_items.get(), 4);
+        drop(outer);
+        assert_eq!(budget.collection_items.get(), 0);
+    }
+
+    #[test]
+    fn unscoped_items_remain_charged_for_the_session() {
+        let budget = DecodeBudget::new(DecodePolicy::default(), 1);
+        budget
+            .charge_collection_items_limit(6, "test retained items")
+            .expect("retained items fit");
+        drop(scoped_items(&budget, 3));
+        assert_eq!(budget.collection_items.get(), 6);
     }
 
     #[test]

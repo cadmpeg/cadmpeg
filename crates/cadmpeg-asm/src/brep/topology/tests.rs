@@ -477,7 +477,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
 }
 
 #[test]
-fn model_pcurve_parameter_range_refuses_collection_limit() {
+fn model_pcurve_parameter_range_charges_collection_items() {
     let records = [
         ref_record(0, "face", &[-1, -1, -1, -1, 1]),
         ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
@@ -522,28 +522,34 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
             )
         })
         .collect();
-    let error = with_collection_limit(18, |ctx| {
-        let table = nurbs::toks::SubtypeTable::from_records(ctx, &records)
-            .expect("subtype table fits limit");
-        let mut out = AsmBrep::default();
-        let mut carriers = Carriers::default();
-        let mut reach = Reachable {
-            faces: HashSet::from([0]),
-            ..Reachable::default()
-        };
-        walk_reachable_topology(
-            TopologyContext {
-                ctx,
-                by_index: &by_index,
-                token_table: &table,
-                purpose: DecodePurpose::Model,
-                format: crate::asm_format!("f3d"),
-            },
-            &mut out,
-            &mut carriers,
-            &mut reach,
-        )
-        .expect_err("parameter-range map exceeds collection limit")
-    });
-    assert_collection_refusal(&error, "ASM topology pcurve_parameter_ranges");
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "ASM topology pcurve_parameter_ranges",
+        || {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let ctx = &ctx;
+            let table = nurbs::toks::SubtypeTable::from_records(ctx, &records)?;
+            let mut out = AsmBrep::default();
+            let mut carriers = Carriers::default();
+            let mut reach = Reachable {
+                faces: HashSet::from([0]),
+                ..Reachable::default()
+            };
+            walk_reachable_topology(
+                TopologyContext {
+                    ctx,
+                    by_index: &by_index,
+                    token_table: &table,
+                    purpose: DecodePurpose::Model,
+                    format: crate::asm_format!("f3d"),
+                },
+                &mut out,
+                &mut carriers,
+                &mut reach,
+            )
+        },
+    );
 }
