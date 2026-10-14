@@ -280,9 +280,13 @@ pub(super) fn type_registry<'a>(
     start: usize,
     end: usize,
 ) -> Result<TypeRegistry<'a>, CodecError> {
-    let span = end
-        .checked_sub(start)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx type registry range", 0, 1))?;
+    // An inverted range holds no declarations and yields an empty registry.
+    let Some(span) = end.checked_sub(start) else {
+        return Ok(TypeRegistry {
+            definitions: Vec::new(),
+            field_start: start,
+        });
+    };
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(span),
         "nx type registry scan",

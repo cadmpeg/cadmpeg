@@ -246,3 +246,16 @@ fn field_search_offset_overflow_refuses_record() {
         ));
     });
 }
+
+#[test]
+fn inverted_type_registry_range_yields_an_empty_registry() {
+    let mut bytes = Vec::new();
+    append_declaration(&mut bytes, b"UGS::OM::RootObject", &[0]);
+    crate::test_support::with_decode_context(|ctx| {
+        let registry = crate::om::registry::type_registry(ctx, &bytes, 8, 4)
+            .expect("an inverted range is not a decode failure");
+        assert!(registry.definitions.is_empty());
+        assert_eq!(registry.field_start, 8);
+        assert!(ctx.resource_refusal().is_none());
+    });
+}

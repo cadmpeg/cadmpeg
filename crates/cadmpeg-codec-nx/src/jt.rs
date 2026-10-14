@@ -1043,23 +1043,16 @@ fn decode_arithmetic<'a>(
         if value_count > MAX_ARITHMETIC_VALUES {
             return None;
         }
-        let Some(work) = entries.len().checked_mul(value_count) else {
-            return Some(Err(ctx.refuse_codec_limit(
-                "decode JT arithmetic symbols",
-                u64::MAX - 1,
-                u64::MAX,
-            )));
-        };
-        let budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK));
-        if !budget.charge_by(work) {
-            let error = match ctx.resource_refusal() {
-                Some(limit) => CodecError::ResourceLimit(limit),
-                None => ctx.refuse_codec_limit(
-                    "decode JT arithmetic symbols",
-                    cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK),
-                    cadmpeg_core::decode::u64_from_index(work),
-                ),
-            };
+        // A lane above the lookup ceiling is left undecoded; the session
+        // still pays for the lookups of every admitted lane.
+        let work = entries
+            .len()
+            .checked_mul(value_count)
+            .filter(|work| *work <= MAX_ARITHMETIC_WORK)?;
+        if let Err(error) = ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "decode JT arithmetic symbols",
+        ) {
             return Some(Err(error));
         }
         let total: u32 = entries
