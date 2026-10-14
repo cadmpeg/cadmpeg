@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::tests::{
-    assert_codec_collection_refusal, assert_codec_retained_refusal, triangulated_face_archive,
-};
+use super::tests::{assert_codec_retained_refusal, triangulated_face_archive};
 use super::{
     connected_components, copy_shape_for_transfer, pcurve_geometry, pcurve_loss,
     source_topology_indices, transform_curve, transform_surface, Builder, PcurveGeometryError,
@@ -38,16 +36,16 @@ TShapes 0";
 }
 
 #[test]
-fn unowned_triangulation_nodes_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn unowned_triangulation_nodes_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &unowned_triangulation_archive(),
         "FreeCAD unowned triangulation nodes",
     );
 }
 
 #[test]
-fn unowned_triangulation_triangles_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn unowned_triangulation_triangles_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &unowned_triangulation_archive(),
         "FreeCAD unowned triangulation triangles",
     );
@@ -75,40 +73,43 @@ fn placed_triangulation_source_refuses_at_retained_limit() {
 }
 
 #[test]
-fn placed_triangulation_nodes_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn placed_triangulation_nodes_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD placed triangulation nodes",
     );
 }
 
 #[test]
-fn placed_triangulation_triangles_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn placed_triangulation_triangles_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD placed triangulation triangles",
     );
 }
 
 #[test]
-fn polygonal_surface_vertices_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn polygonal_surface_vertices_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD polygonal surface vertices",
     );
 }
 
 #[test]
-fn polygonal_surface_triangles_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn polygonal_surface_triangles_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD polygonal surface triangles",
     );
 }
 
 #[test]
-fn tessellation_faces_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD tessellation faces");
+fn tessellation_faces_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD tessellation faces",
+    );
 }
 
 #[test]
@@ -411,16 +412,16 @@ TShapes 0";
 }
 
 #[test]
-fn placed_triangulation_normals_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn placed_triangulation_normals_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_with_normals_archive(),
         "FreeCAD placed triangulation normals",
     );
 }
 
 #[test]
-fn unowned_triangulation_normals_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn unowned_triangulation_normals_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &unowned_triangulation_with_normals_archive(),
         "FreeCAD unowned triangulation normals",
     );
@@ -451,13 +452,16 @@ fn triangulated_surface_emitted_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn triangulated_surface_set_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD emitted surfaces");
+fn triangulated_surface_set_charges_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD emitted surfaces",
+    );
 }
 
 #[test]
-fn emitted_triangulations_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn emitted_triangulations_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD emitted triangulations",
     );
@@ -493,21 +497,24 @@ fn topology_body_roots_charge_collection_items() {
 }
 
 #[test]
-fn shell_face_uses_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD shell face uses");
+fn shell_face_uses_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD shell face uses",
+    );
 }
 
 #[test]
-fn face_connectivity_edge_keys_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn face_connectivity_edge_keys_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD face connectivity edge keys",
     );
 }
 
 #[test]
-fn face_connectivity_vertex_keys_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn face_connectivity_vertex_keys_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD face connectivity vertex keys",
     );
@@ -530,26 +537,32 @@ fn face_connectivity_vertex_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn wire_edge_uses_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD wire edge uses");
+fn wire_edge_uses_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD wire edge uses",
+    );
 }
 
 #[test]
-fn loop_coedge_ids_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD loop coedge IDs");
+fn loop_coedge_ids_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD loop coedge IDs",
+    );
 }
 
 #[test]
-fn indexed_polygon_points_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn indexed_polygon_points_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD indexed polygon points",
     );
 }
 
 #[test]
-fn indexed_polygon_parameters_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(
+fn indexed_polygon_parameters_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
         &triangulated_face_archive(),
         "FreeCAD indexed polygon parameters",
     );
@@ -564,23 +577,35 @@ fn region_shape_copy_charges_collection_items() {
 }
 
 #[test]
-fn shell_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD shell shape copy");
+fn shell_shape_copy_charges_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD shell shape copy",
+    );
 }
 
 #[test]
-fn face_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD face shape copy");
+fn face_shape_copy_charges_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD face shape copy",
+    );
 }
 
 #[test]
-fn wire_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD wire shape copy");
+fn wire_shape_copy_charges_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD wire shape copy",
+    );
 }
 
 #[test]
-fn edge_shape_copy_refuses_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD edge shape copy");
+fn edge_shape_copy_charges_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD edge shape copy",
+    );
 }
 
 #[test]
@@ -787,13 +812,16 @@ triangulated_identity_refusal!(
 );
 
 #[test]
-fn cached_edges_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD cached edges");
+fn cached_edges_charge_collection_items() {
+    crate::test_support::assert_codec_charged(&triangulated_face_archive(), "FreeCAD cached edges");
 }
 
 #[test]
-fn cached_vertices_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD cached vertices");
+fn cached_vertices_charge_collection_items() {
+    crate::test_support::assert_codec_charged(
+        &triangulated_face_archive(),
+        "FreeCAD cached vertices",
+    );
 }
 
 fn empty_builder<'a, 'c, 'r>(
