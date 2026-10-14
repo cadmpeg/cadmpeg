@@ -1054,33 +1054,36 @@ fn compact_endpoint_indexes_scopes_and_memo_refuse_collection_limits() {
 
 #[test]
 fn fixed_owner_boundary_indexes_and_nested_targets_refuse_collection_limits() {
-    use std::collections::HashSet;
+    use cadmpeg_core::decode::ResourceDimension;
 
-    let mut refused = HashSet::new();
-    for bytes in [
-        b2_fixed_owner_boundary_cycle_stream().0,
-        b2_fixed_owner_boundary_face_node_cycle_stream().0,
+    let bytes = b2_fixed_owner_boundary_face_node_cycle_stream().0;
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::consolidated_owner_boundary_cycles_from_records(ctx, &bytes, &records)
+    };
+    for operation in [
+        "catia_owner_boundary_target_entries",
+        "catia_owner_boundary_cycles",
     ] {
-        let records = crate::wire::records::consolidated_records(&bytes);
-        for limit in 0..256 {
-            let result = crate::test_support::with_collection_limit(limit, |ctx| {
-                super::consolidated_owner_boundary_cycles_from_records(ctx, &bytes, &records)
-            });
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-                refused.insert(error.operation);
-            }
-        }
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| crate::test_support::with_collection_limit(cap, decode),
+        );
     }
+    // Released scope scratch peaks above these charges.
     for operation in [
         "catia_owner_boundary_endpoints",
         "catia_owner_boundary_face_nodes",
         "catia_owner_boundary_record_indices",
         "catia_owner_boundary_record_sources",
-        "catia_owner_boundary_target_entries",
         "catia_owner_boundary_target_groups",
-        "catia_owner_boundary_cycles",
     ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
+        cadmpeg_test_support::refusal::assert_charged(
+            ResourceDimension::CollectionItems,
+            operation,
+            || crate::test_support::with_service_context(decode),
+        );
     }
 }
 
