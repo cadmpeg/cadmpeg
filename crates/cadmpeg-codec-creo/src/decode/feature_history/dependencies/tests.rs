@@ -486,36 +486,27 @@ fn reconciliation_ir_for_ordering() -> CadIr {
     ir
 }
 
-fn feature_order_collection_error(limit: u64, operation: &'static str) {
+fn feature_order_collection_error(operation: &'static str) {
     let scan = crate::test_support::empty_container_scan();
-    let mut ir = reconciliation_ir_for_ordering();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
-        .expect_err("two feature indices exceed the collection limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == operation),
-        "{error:?}"
-    );
+    crate::test_support::collection_refusal_at(&[], operation, |ctx| {
+        let mut ir = reconciliation_ir_for_ordering();
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+    });
 }
 
 #[test]
 fn remaining_feature_order_refuses_collection_limit() {
-    feature_order_collection_error(6, "creo remaining feature order");
+    feature_order_collection_error("creo remaining feature order");
 }
 
 #[test]
 fn ordered_feature_indices_refuse_collection_limit() {
-    feature_order_collection_error(8, "creo ordered feature indices");
+    feature_order_collection_error("creo ordered feature indices");
 }
 
 #[test]
 fn preceding_feature_identity_nodes_refuse_collection_limit() {
-    feature_order_collection_error(10, "creo preceding feature identity nodes");
+    feature_order_collection_error("creo preceding feature identity nodes");
 }
 
 #[test]
@@ -552,18 +543,11 @@ fn regeneration_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn regeneration_edge_limit_error(
-    collection: Option<u64>,
-    retained: Option<u64>,
-    operation: &'static str,
-) {
+fn regeneration_edge_limit_error(retained: Option<u64>, operation: &'static str) {
     let scan = regeneration_scan();
     let mut ir = reconciliation_ir_for_ordering();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    if let Some(limit) = collection {
-        policy.limits.max_collection_items = limit;
-    }
     if retained.is_some() {
         policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
@@ -599,7 +583,6 @@ fn regeneration_parent_id_refuses_retained_limit() {
     let parent = "creo:model:feature#3".len();
     let child = "creo:model:feature#10".len();
     regeneration_edge_limit_error(
-        None,
         Some(cadmpeg_core::decode::u64_from_index(parent * 2 + child)),
         "creo regeneration parent IDs",
     );
@@ -610,25 +593,30 @@ fn regeneration_child_id_refuses_retained_limit() {
     let parent = "creo:model:feature#3".len();
     let child = "creo:model:feature#10".len();
     regeneration_edge_limit_error(
-        None,
         Some(cadmpeg_core::decode::u64_from_index(parent * 3 + child)),
         "creo regeneration child IDs",
     );
 }
 
 #[test]
-fn regeneration_edges_refuse_collection_limit() {
-    // The dependency uniqueness index admits one borrowed member first.
-    regeneration_edge_limit_error(Some(10), None, "creo regeneration edges");
+fn regeneration_edges_charge_collection_items() {
+    let scan = regeneration_scan();
+    crate::test_support::assert_collection_charged(&[], "creo regeneration edges", |ctx| {
+        let mut ir = reconciliation_ir_for_ordering();
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+    });
 }
 
 #[test]
 fn regeneration_parent_nodes_refuse_collection_limit() {
-    // The dependency uniqueness index stores one borrowed member.
-    regeneration_edge_limit_error(
-        Some(11),
-        None,
+    let scan = regeneration_scan();
+    crate::test_support::collection_refusal_at(
+        &[],
         "install decoded feature regeneration parent",
+        |ctx| {
+            let mut ir = reconciliation_ir_for_ordering();
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        },
     );
 }
 
@@ -645,18 +633,11 @@ fn regeneration_fixture_preserves_parent_relation_under_service_policy() {
     assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
 }
 
-fn reconciled_native_dependency_error(
-    collection: Option<u64>,
-    retained: Option<u64>,
-    operation: &'static str,
-) {
+fn reconciled_native_dependency_error(retained: Option<u64>, operation: &'static str) {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_emitted_parent();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    if let Some(limit) = collection {
-        policy.limits.max_collection_items = limit;
-    }
     if retained.is_some() {
         policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
@@ -696,7 +677,6 @@ fn reconciled_native_dependency_error(
 #[test]
 fn reconciled_native_dependency_id_refuses_retained_limit() {
     reconciled_native_dependency_error(
-        None,
         Some(cadmpeg_core::decode::u64_from_index(
             "creo:model:feature#3".len() + "creo:model:feature#10".len(),
         )),
@@ -706,7 +686,11 @@ fn reconciled_native_dependency_id_refuses_retained_limit() {
 
 #[test]
 fn reconciled_native_dependencies_refuse_collection_limit() {
-    reconciled_native_dependency_error(Some(9), None, "creo reconciled native dependencies");
+    let scan = crate::test_support::empty_container_scan();
+    crate::test_support::collection_refusal_at(&[], "creo reconciled native dependencies", |ctx| {
+        let mut ir = reconciliation_ir_with_emitted_parent();
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::from([(10, vec![3])]))
+    });
 }
 
 #[test]
@@ -776,23 +760,13 @@ fn reconciled_generated_dependency_refuses_before_retained_id() {
 #[test]
 fn reconciled_generated_dependency_refuses_before_owned_row() {
     let scan = crate::test_support::empty_container_scan();
-    let mut ir = reconciliation_ir_with_generated_dependency();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = crate::decode::feature_history::dependencies::reconcile_feature_links(
-        &ctx,
-        &scan,
-        &mut ir,
-        &BTreeMap::new(),
-    )
-    .expect_err("the seventh collection item owns the generated dependency");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && resource.operation == "creo reconciled generated dependencies")
+    crate::test_support::collection_refusal_at(
+        &[],
+        "creo reconciled generated dependencies",
+        |ctx| {
+            let mut ir = reconciliation_ir_with_generated_dependency();
+            super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        },
     );
 }
 
