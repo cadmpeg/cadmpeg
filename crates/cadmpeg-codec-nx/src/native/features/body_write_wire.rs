@@ -4,7 +4,7 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use super::FeatureOperationBodyWrite;
-use crate::om::body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
+use crate::om::body_write::{BodyWriteFrame, BodyWriteIndex};
 use serde::{Deserialize, Serialize};
 
 /// Exact body-write frame retained from one feature operation.
@@ -31,8 +31,8 @@ pub(super) struct BodyWriteWire {
     raw_group_node: NativeBytes<Vec<u8>>,
     /// Absolute offset of the GROUP-node token.
     group_node_source_offset: u64,
-    /// Tagged body-image field discriminator.
-    endpoint_tag: u8,
+    /// One-based class ordinal in the owning section, naming `UGS::CM_BREF_DATA`.
+    endpoint_class_index: u8,
     /// Offset-store object containing the body's serialized image.
     body_image_object_index: u32,
     /// Unambiguous offset-store block selected by the body-image object index.
@@ -63,7 +63,7 @@ struct BodyWriteRef<'a> {
     group_node: u32,
     raw_group_node: NativeBytes<&'a [u8]>,
     group_node_source_offset: u64,
-    endpoint_tag: u8,
+    endpoint_class_index: u8,
     body_image_object_index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     body_image_data_block: Option<&'a str>,
@@ -86,7 +86,7 @@ impl Serialize for FeatureOperationBodyWrite {
             group_node: group.value(),
             raw_group_node: (group.raw()).into(),
             group_node_source_offset: self.frame.group_node_offset(),
-            endpoint_tag: self.frame.endpoint_tag().code(),
+            endpoint_class_index: self.frame.endpoint_class_index().get(),
             body_image_object_index: image.value(),
             body_image_data_block: self.body_image_data_block.as_deref(),
             raw_body_image_object_index: (image.raw()).into(),
@@ -110,7 +110,7 @@ impl From<FeatureOperationBodyWrite> for BodyWriteWire {
             group_node: value.frame.group_node().value(),
             raw_group_node: (value.frame.group_node().raw().to_vec()).into(),
             group_node_source_offset: value.frame.group_node_offset(),
-            endpoint_tag: value.frame.endpoint_tag().code(),
+            endpoint_class_index: value.frame.endpoint_class_index().get(),
             body_image_object_index: value.frame.body_image().value(),
             body_image_data_block: value.body_image_data_block,
             raw_body_image_object_index: (value.frame.body_image().raw().to_vec()).into(),
@@ -134,7 +134,8 @@ impl TryFrom<BodyWriteWire> for FeatureOperationBodyWrite {
         let frame = BodyWriteFrame::<u64>::new(
             wire.body_identity,
             group,
-            BodyImageTag::try_from(wire.endpoint_tag)?,
+            std::num::NonZeroU8::new(wire.endpoint_class_index)
+                .ok_or("endpoint_class_index must be nonzero")?,
             image,
             wire.source_offset,
         )
@@ -166,7 +167,7 @@ mod tests {
     use super::super::FeatureOperationBodyWrite;
     use super::BodyWriteWire;
 
-    const WIRE: &str = r#"{"id":"write","operation_record":"record","ordinal":0,"body_identity":255,"group_node":0,"raw_group_node":"a00000","group_node_source_offset":103,"endpoint_tag":21,"body_image_object_index":0,"body_image_data_block":"block","raw_body_image_object_index":"f10000","body_image_object_index_source_offset":111,"byte_len":15,"source_offset":100}"#;
+    const WIRE: &str = r#"{"id":"write","operation_record":"record","ordinal":0,"body_identity":255,"group_node":0,"raw_group_node":"a00000","group_node_source_offset":103,"endpoint_class_index":21,"body_image_object_index":0,"body_image_data_block":"block","raw_body_image_object_index":"f10000","body_image_object_index_source_offset":111,"byte_len":15,"source_offset":100}"#;
 
     #[test]
     fn body_write_borrowed_wire_matches_owned_bytes() {
@@ -193,10 +194,16 @@ mod tests {
     fn body_write_wire_preserves_alias_tokens_and_checks_derived_fields() {
         let write: FeatureOperationBodyWrite = serde_json::from_str(WIRE).unwrap();
         assert_eq!(serde_json::to_string(&write).unwrap(), WIRE);
+        for index in [1, 17, 20, 255] {
+            let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
+            wire["endpoint_class_index"] = serde_json::json!(index);
+            let write: FeatureOperationBodyWrite = serde_json::from_value(wire).unwrap();
+            assert_eq!(write.frame.endpoint_class_index().get(), index);
+        }
         for (field, value) in [
             ("group_node", serde_json::json!(1)),
             ("raw_group_node", serde_json::json!("8000")),
-            ("endpoint_tag", serde_json::json!(17)),
+            ("endpoint_class_index", serde_json::json!(0)),
             ("body_image_object_index", serde_json::json!(1)),
             ("raw_body_image_object_index", serde_json::json!("ff")),
             ("group_node_source_offset", serde_json::json!(104)),

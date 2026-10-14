@@ -224,23 +224,23 @@ fn every_body_identity_opens_a_body_write_frame() {
     };
     assert_eq!(write.body_identity(), 0x11);
     assert_eq!(write.group_node().value(), 0xa9);
-    assert_eq!(write.endpoint_tag().code(), 0x10);
+    assert_eq!(write.endpoint_class_index().get(), 0x10);
     assert_eq!(write.body_image().value(), 0x693);
 
-    for endpoint_tag in [0x12, 0x15] {
+    for endpoint_class_index in [0x11, 0x12, 0x14, 0x15, 0xff] {
         let mut generation = payload;
-        generation[9] = endpoint_tag;
+        generation[9] = endpoint_class_index;
         let writes = operation_body_write_frames(
             OperationPayload::new(&generation, record.payload_offset(), record.name()).unwrap(),
         );
         let [write] = writes.as_slice() else {
             panic!("generation body-write frame");
         };
-        assert_eq!(write.endpoint_tag().code(), endpoint_tag);
+        assert_eq!(write.endpoint_class_index().get(), endpoint_class_index);
     }
 
     let mut invalid_endpoint = payload;
-    invalid_endpoint[9] = 0x11;
+    invalid_endpoint[9] = 0;
     assert!(operation_body_write_frames(
         OperationPayload::new(&invalid_endpoint, record.payload_offset(), record.name()).unwrap()
     )

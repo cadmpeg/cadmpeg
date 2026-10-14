@@ -3388,8 +3388,8 @@ fn attach_feature_operations(
             insert_source_property(
                 ctx,
                 &mut source_properties,
-                format_args!("body_write.{ordinal}.endpoint_tag"),
-                format_args!("{}", write.frame.endpoint_tag().code()),
+                format_args!("body_write.{ordinal}.endpoint_class_index"),
+                format_args!("{}", write.frame.endpoint_class_index().get()),
             )?;
             insert_source_property(
                 ctx,
@@ -5410,6 +5410,11 @@ fn attach_feature_operations(
                 .id
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
+            let first_write = operation_body_writes[0];
+            let result_id = result_topology_id(ctx, key, Some(first_write.ordinal))?;
+            let mut bodies = Vec::new();
+            let mut members = FeatureResultGroupMembers::default();
+            let mut members_valid = true;
             for write in operation_body_writes {
                 const BODY_PREFIX: &str = "nx:feature-history:body-identity#";
                 let result_members = operation_body_write_result_group_members(
@@ -5434,23 +5439,53 @@ fn attach_feature_operations(
                 let body = cadmpeg_core::text::NonBlankString::new(body_text).ok_or_else(|| {
                     CodecError::malformed("NX feature result body identity is blank")
                 })?;
-                let mut bodies = Vec::new();
-                ctx.reserve_capacity(&mut bodies, 1, "allocate NX feature result bodies")?;
-                bodies.push(body);
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(bodies.len()),
+                    "NX feature result body union",
+                )?;
+                if !bodies.contains(&body) {
+                    ctx.reserve_capacity(&mut bodies, 1, "allocate NX feature result bodies")?;
+                    bodies.push(body);
+                }
+                for (target, incoming) in [
+                    (&mut members.faces, result_members.faces),
+                    (&mut members.edges, result_members.edges),
+                    (&mut members.vertices, result_members.vertices),
+                ] {
+                    members_valid &= append_distinct_result_members(ctx, target, incoming)?;
+                }
+            }
+            let native = if operation_body_writes.len() == 1 {
+                first_write.id.as_str()
+            } else {
+                label.id.as_str()
+            };
+            if members_valid {
                 let mut native_ref =
-                    ctx.retained_string(write.id.len(), "NX result topology native reference")?;
-                native_ref.push_str(&write.id);
+                    ctx.retained_string(native.len(), "NX result topology native reference")?;
+                native_ref.push_str(native);
                 append_feature_result_topology(
                     ctx,
                     ir,
                     PendingFeatureResult {
-                        result_id: result_topology_id(ctx, key, Some(write.ordinal))?,
+                        result_id,
                         output_of: &id,
                         bodies,
-                        members: result_members,
+                        members,
                         native_ref,
                     },
                     losses,
+                )?;
+            } else {
+                crate::loss::charge_loss_code(ctx, NxLossCode::FeatureOutputLineageIncomplete)?;
+                let message = ctx.format_retained(
+                    format_args!("Feature result {result_id} has repeated GROUP member claims; native operation {} is retained", label.id),
+                    "NX unusable feature result diagnostic",
+                )?;
+                ctx.push_vec(
+                    losses,
+                    NxLossCode::FeatureOutputLineageIncomplete.note(message),
+                    "NX unusable feature result losses",
                 )?;
             }
         } else if !deletes_body {
@@ -5553,6 +5588,41 @@ struct FeatureResultGroupMembers {
     faces: Vec<cadmpeg_core::text::NonBlankString>,
     edges: Vec<cadmpeg_core::text::NonBlankString>,
     vertices: Vec<cadmpeg_core::text::NonBlankString>,
+}
+
+/// Union independently distinct GROUP lists in stable write/member order.
+/// A repeated claim within one list remains invalid, including when another
+/// write already supplied that identity.
+fn append_distinct_result_members(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<cadmpeg_core::text::NonBlankString>,
+    incoming: Vec<cadmpeg_core::text::NonBlankString>,
+) -> Result<bool, CodecError> {
+    let (distinct, _reservation) = ctx.with_scoped_storage(
+        "NX result member distinctness",
+        || -> Result<bool, CodecError> {
+            let mut seen = BTreeSet::new();
+            for member in &incoming {
+                if !ctx.insert_btree_set(&mut seen, member, "NX result member distinctness")? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        },
+    )?;
+    if !distinct {
+        return Ok(false);
+    }
+    for member in incoming {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(target.len()),
+            "NX result member union",
+        )?;
+        if !target.contains(&member) {
+            ctx.push_vec(target, member, "NX result member union")?;
+        }
+    }
+    Ok(true)
 }
 
 fn result_topology_id(

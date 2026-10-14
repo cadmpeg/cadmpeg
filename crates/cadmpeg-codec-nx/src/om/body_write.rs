@@ -2,7 +2,10 @@
 //! Exact body-write relation tokens and immutable frame positions.
 
 use super::state_index::StateIndexToken;
+use std::num::NonZeroU8;
 use std::ops::Add;
+
+pub(crate) const BODY_IMAGE_CLASS: &str = "UGS::CM_BREF_DATA";
 
 /// Canonical feature indices plus the packed and f1 operation-reference forms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,39 +39,10 @@ impl BodyWriteIndex {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BodyImageTag {
-    Form10,
-    Form12,
-    Form15,
-}
-
-impl BodyImageTag {
-    pub(crate) fn code(self) -> u8 {
-        match self {
-            Self::Form10 => 0x10,
-            Self::Form12 => 0x12,
-            Self::Form15 => 0x15,
-        }
-    }
-}
-
-impl TryFrom<u8> for BodyImageTag {
-    type Error = &'static str;
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x10 => Ok(Self::Form10),
-            0x12 => Ok(Self::Form12),
-            0x15 => Ok(Self::Form15),
-            _ => Err("endpoint_tag: unsupported body-image tag"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BodyWriteFrame<O> {
     body_identity: u8,
     group_node: BodyWriteIndex,
-    endpoint_tag: BodyImageTag,
+    endpoint_class_index: NonZeroU8,
     body_image: BodyWriteIndex,
     offset: O,
 }
@@ -80,8 +54,14 @@ impl<O> BodyWriteFrame<O> {
     pub(crate) fn group_node(&self) -> BodyWriteIndex {
         self.group_node
     }
-    pub(crate) fn endpoint_tag(&self) -> BodyImageTag {
-        self.endpoint_tag
+    pub(crate) fn endpoint_class_index(&self) -> NonZeroU8 {
+        self.endpoint_class_index
+    }
+    /// Resolve the selector in the complete owning section registry.
+    pub(crate) fn selects_body_image_class(&self, classes: &[super::TypeDefinition<'_>]) -> bool {
+        classes
+            .get(usize::from(self.endpoint_class_index.get()) - 1)
+            .is_some_and(|class| class.name == BODY_IMAGE_CLASS)
     }
     pub(crate) fn body_image(&self) -> BodyWriteIndex {
         self.body_image
@@ -112,14 +92,14 @@ macro_rules! positioned_frame {
             pub(crate) fn new(
                 body_identity: u8,
                 group_node: BodyWriteIndex,
-                endpoint_tag: BodyImageTag,
+                endpoint_class_index: NonZeroU8,
                 body_image: BodyWriteIndex,
                 offset: $offset,
             ) -> Option<Self> {
                 let frame = Self {
                     body_identity,
                     group_node,
-                    endpoint_tag,
+                    endpoint_class_index,
                     body_image,
                     offset,
                 };
@@ -134,7 +114,32 @@ positioned_frame!(u64);
 
 #[cfg(test)]
 mod tests {
-    use super::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
+    use super::{BodyWriteFrame, BodyWriteIndex};
+    use std::num::NonZeroU8;
+
+    #[test]
+    fn body_image_class_indices_resolve_the_one_based_owner_registry() {
+        let classes = [
+            super::super::TypeDefinition {
+                offset: 10,
+                name: "UGS::OTHER",
+                registry_tail: &[],
+            },
+            super::super::TypeDefinition {
+                offset: 20,
+                name: "UGS::CM_BREF_DATA",
+                registry_tail: &[],
+            },
+        ];
+        let object = BodyWriteIndex::from_wire(1, &[1]).unwrap();
+        for (index, admitted) in [(1, false), (2, true), (3, false), (255, false)] {
+            let frame =
+                BodyWriteFrame::<usize>::new(11, object, NonZeroU8::new(index).unwrap(), object, 0)
+                    .unwrap();
+            assert_eq!(frame.selects_body_image_class(&classes), admitted);
+            assert!(!frame.selects_body_image_class(&[]));
+        }
+    }
 
     #[test]
     fn body_write_indices_preserve_packed_aliases_and_canonical_feature_widths() {
@@ -168,8 +173,14 @@ mod tests {
     fn body_write_frames_derive_offsets_and_bound_their_complete_end() {
         let group = BodyWriteIndex::from_wire(0, &[0xa0, 0, 0]).unwrap();
         let image = BodyWriteIndex::from_wire(0, &[0xf1, 0, 0]).unwrap();
-        let frame =
-            BodyWriteFrame::<usize>::new(255, group, BodyImageTag::Form15, image, 100).unwrap();
+        let frame = BodyWriteFrame::<usize>::new(
+            255,
+            group,
+            std::num::NonZeroU8::new(0x15).unwrap(),
+            image,
+            100,
+        )
+        .unwrap();
         assert_eq!(frame.group_node_offset(), 103);
         assert_eq!(frame.body_image_offset(), 111);
         assert_eq!(frame.end_offset(), 115);
@@ -177,7 +188,7 @@ mod tests {
         assert!(BodyWriteFrame::<usize>::new(
             0,
             group,
-            BodyImageTag::Form10,
+            std::num::NonZeroU8::new(0x10).unwrap(),
             image,
             usize::MAX - 15
         )
@@ -185,24 +196,30 @@ mod tests {
         assert!(BodyWriteFrame::<usize>::new(
             0,
             group,
-            BodyImageTag::Form10,
+            std::num::NonZeroU8::new(0x10).unwrap(),
             image,
             usize::MAX - 14
         )
         .is_none());
-        assert!(
-            BodyWriteFrame::<u64>::new(0, group, BodyImageTag::Form12, image, u64::MAX - 15)
-                .is_some()
-        );
-        assert!(
-            BodyWriteFrame::<u64>::new(0, group, BodyImageTag::Form12, image, u64::MAX - 14)
-                .is_none()
-        );
-        for tag in [0x10, 0x12, 0x15] {
-            assert_eq!(BodyImageTag::try_from(tag).unwrap().code(), tag);
-        }
-        for tag in [0, 0x11, 0x13, 0xff] {
-            assert!(BodyImageTag::try_from(tag).is_err());
+        assert!(BodyWriteFrame::<u64>::new(
+            0,
+            group,
+            std::num::NonZeroU8::new(0x12).unwrap(),
+            image,
+            u64::MAX - 15
+        )
+        .is_some());
+        assert!(BodyWriteFrame::<u64>::new(
+            0,
+            group,
+            std::num::NonZeroU8::new(0x12).unwrap(),
+            image,
+            u64::MAX - 14
+        )
+        .is_none());
+        assert!(NonZeroU8::new(0).is_none());
+        for index in 1..=u8::MAX {
+            assert_eq!(NonZeroU8::new(index).unwrap().get(), index);
         }
     }
 }

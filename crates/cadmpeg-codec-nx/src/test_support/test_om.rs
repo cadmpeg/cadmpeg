@@ -292,6 +292,31 @@ fn push_feature_operation(bytes: &mut Vec<u8>, object_indices: &[u8], label: &st
 /// label, typed_payload)`.
 pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u8>)]) -> Vec<u8> {
     let mut bytes = size_framed_om_section();
+    if operations.iter().any(|(_, _, payload)| {
+        payload
+            .windows(4)
+            .any(|bytes| bytes == [0x97, 0x75, 0x01, 0x02])
+    }) {
+        // Synthetic body writes use one-based class index 16.
+        // Keep the two existing declarations first, then complete their owner registry.
+        let member = bytes
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let mut classes = Vec::new();
+        for ordinal in 3..=16 {
+            let name = if ordinal == 16 {
+                "UGS::CM_BREF_DATA".to_owned()
+            } else {
+                format!("UGS::BodyWriteFixture{ordinal}")
+            };
+            classes.push(u8::try_from(name.len() + 1).unwrap());
+            classes.extend_from_slice(name.as_bytes());
+            classes.push(0x65);
+        }
+        bytes.splice(member..member, classes);
+    }
     let record_area = bytes.len() + 20;
     bytes.extend_from_slice(
         &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),

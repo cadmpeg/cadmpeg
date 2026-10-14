@@ -83,5 +83,15 @@ pub(crate) fn admit_construction_records(
     {
         record?;
     }
+    for arena in [
+        "feature_operation_body_writes",
+        "feature_unlabeled_operation_body_writes",
+    ] {
+        for record in
+            namespace.arena_iter_as_for_decode::<features::FeatureOperationBodyWrite>(ctx, arena)
+        {
+            record?;
+        }
+    }
     features::surface_allocation::admit_surface_allocations(ctx, namespace)
 }

@@ -31,7 +31,7 @@ pub(crate) mod block_construction;
 pub(crate) mod body_write;
 pub(crate) mod common_frame;
 pub(crate) mod direct_reference;
-use body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
+use body_write::{BodyWriteFrame, BodyWriteIndex};
 use common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 pub(crate) mod instances;
 pub(crate) mod named_target;
@@ -3220,10 +3220,10 @@ pub(crate) fn operation_body_references(
     Ok(references)
 }
 
-/// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_tag index ff` frame.
+/// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_class_index index ff` frame.
 ///
-/// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
-/// `15` select the body-image field across the supported schema generations.
+/// Both object indices are non-null and canonical. The endpoint class index
+/// is nonzero; native extraction resolves it against the owning section.
 pub(crate) fn operation_body_write_frames(
     ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
@@ -3271,14 +3271,14 @@ fn operation_body_write_frame_at(
     let group_node = BodyWriteIndex::read(payload.get(marker + 3..)?)?;
     let first_end = marker + 3 + group_node.raw().len();
     (payload.get(first_end..first_end + 4) == Some(&[0x97, 0x75, 0x01, 0x02])).then_some(())?;
-    let endpoint_tag = BodyImageTag::try_from(*payload.get(first_end + 4)?).ok()?;
+    let endpoint_class_index = NonZeroU8::new(*payload.get(first_end + 4)?)?;
     let image_at = first_end + 5;
     let body_image = BodyWriteIndex::read(payload.get(image_at..)?)?;
     (payload.get(image_at + body_image.raw().len()) == Some(&0xff)).then_some(())?;
     BodyWriteFrame::<usize>::new(
         body_identity,
         group_node,
-        endpoint_tag,
+        endpoint_class_index,
         body_image,
         payload_offset.checked_add(marker)?,
     )

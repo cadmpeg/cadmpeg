@@ -35,7 +35,7 @@ fn native_body_write(id: &str) -> crate::native::features::FeatureOperationBodyW
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             17,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
-            crate::om::body_write::BodyImageTag::Form10,
+            std::num::NonZeroU8::new(0x10).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
             0,
         )
@@ -279,7 +279,7 @@ fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
     write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
         write.frame.body_identity(),
         write.frame.group_node(),
-        write.frame.endpoint_tag(),
+        write.frame.endpoint_class_index(),
         crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(),
         write.frame.offset(),
     )
@@ -404,7 +404,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     write_b.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
         write_b.frame.body_identity(),
         crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
-        write_b.frame.endpoint_tag(),
+        write_b.frame.endpoint_class_index(),
         write_b.frame.body_image(),
         write_b.frame.offset(),
     )
@@ -640,7 +640,10 @@ fn repeated_body_identity_builds_output_lineage() {
         std::slice::from_ref(&extrude.id)
     );
     assert_eq!(block.source_properties["body_write.0.body_identity"], "17");
-    assert_eq!(block.source_properties["body_write.0.endpoint_tag"], "16");
+    assert_eq!(
+        block.source_properties["body_write.0.endpoint_class_index"],
+        "16"
+    );
     assert_eq!(
         extrude.source_properties["body_write.0.body_identity"],
         "17"
@@ -684,5 +687,29 @@ fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
             crate::loss::NxLossCode::FeatureOutputLineageIncomplete.kind()
         );
         assert!(losses[0].message.contains("nx:history:write#1"));
+    });
+}
+
+#[test]
+fn result_member_union_preserves_order_and_rejects_repeated_claims() {
+    crate::test_support::with_decode_context(|ctx| {
+        let a = cadmpeg_core::nonblank_literal!("nx:s4:face#40");
+        let b = cadmpeg_core::nonblank_literal!("nx:s4:face#41");
+        let c = cadmpeg_core::nonblank_literal!("nx:s4:face#42");
+        let mut target = vec![a.clone(), b.clone()];
+        assert!(crate::native::attach::append_distinct_result_members(
+            ctx,
+            &mut target,
+            vec![b.clone(), c.clone()],
+        )
+        .unwrap());
+        assert_eq!(target, [a, b.clone(), c]);
+        assert!(!crate::native::attach::append_distinct_result_members(
+            ctx,
+            &mut target,
+            vec![b.clone(), b],
+        )
+        .unwrap());
+        assert_eq!(target.len(), 3);
     });
 }

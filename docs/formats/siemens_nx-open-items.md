@@ -710,11 +710,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Question.** Which serialized bodies, opening faces, thickness, side, offset mode, corner join, and intersection policies define a `SHELL` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `SHELL` operation label identifies a thin-wall shell construction." defines the feature family and retains the neutral shell definition with unresolved construction fields. The operation record, body-history relations, and topology graph remain independently available.
+**Known.** `siemens_nx.md` §7.1 "The `SHELL` operation label identifies a thin-wall shell construction." defines the feature family and retains the neutral shell definition with unresolved construction fields. The leading owning-section class selector names `UGS::HOLLOW_PARMS`; the body-write endpoint selector names `UGS::CM_BREF_DATA` through the same one-based registry. The operation record, body-history relations, and topology graph remain independently available.
 
 **Need.** We must identify the complete construction-role relation to populate the shell input bodies, removed faces, wall thickness, outward side, offset mode, corner join, and intersection policies.
 
-**Conflict.** The operation label identifies the shell family but does not assign roles to its object-index fields, body-write output, or result topology. Output body ownership does not identify the pre-operation bodies or opening faces, and the current scalar and reference lanes do not provide a unique thickness, side, mode, join, or intersection-policy witness.
+**Conflict.** The operation label identifies the shell family but does not assign roles to its object-index fields, body-write output, or result topology. Output body ownership does not identify the pre-operation bodies or opening faces, and the current scalar and reference lanes do not provide a unique thickness, side, mode, join, or intersection-policy witness. The first shifted-binary64 field is not a wall-thickness witness. Six following variable-width atoms and two binary controls lack assigned semantic roles. The four-byte atom reading must be established for this field family; the assembly-matrix and sketch-field readings do not supply that assignment.
 
 ### OM-40. `ENLARGE` construction roles
 

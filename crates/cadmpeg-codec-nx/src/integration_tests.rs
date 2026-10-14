@@ -57,6 +57,7 @@ use cadmpeg_ir::geometry::{
 use super::NxCodec;
 
 mod assembly_placement;
+mod body_write;
 mod dialect;
 mod swp104;
 

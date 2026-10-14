@@ -1563,7 +1563,7 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
                 0x0b,
                 crate::om::body_write::BodyWriteIndex::from_wire(0x66a4, &[0xa0, 0x66, 0xa4])
                     .unwrap(),
-                crate::om::body_write::BodyImageTag::try_from(0x10).unwrap(),
+                std::num::NonZeroU8::new(0x10).unwrap(),
                 crate::om::body_write::BodyWriteIndex::from_wire(0x43, &[0x43]).unwrap(),
                 100,
             )
@@ -1575,10 +1575,10 @@ fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
         }]
     );
 
-    let mut invalid_endpoint_tag = bytes;
-    invalid_endpoint_tag[10] = 0x11;
+    let mut invalid_endpoint_class_index = bytes;
+    invalid_endpoint_class_index[10] = 0x11;
     let nested_record = crate::om::operation_record::OperationBodyInput::new(
-        &invalid_endpoint_tag,
+        &invalid_endpoint_class_index,
         record.offset(),
         record.payload_start(),
         record.name(),
@@ -1601,7 +1601,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
             let frame = crate::om::body_write::BodyWriteFrame::<usize>::new(
                 0x17,
                 crate::om::body_write::BodyWriteIndex::from_wire(0x123, &[0x81, 0x23]).unwrap(),
-                crate::om::body_write::BodyImageTag::try_from(0x10).unwrap(),
+                std::num::NonZeroU8::new(0x10).unwrap(),
                 crate::om::body_write::BodyWriteIndex::from_wire(0x645, &[0x86, 0x45]).unwrap(),
                 100,
             )

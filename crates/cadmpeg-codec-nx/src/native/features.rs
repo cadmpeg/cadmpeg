@@ -4164,9 +4164,23 @@ pub(super) fn feature_unlabeled_operation_body_writes(
     visit_feature_history_unlabeled_operation_records(
         ctx,
         container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
+        |section, section_key, entry_offset, operation_ordinal, record| {
             let decoded = crate::om::unlabeled_operation_body_write_frames(ctx, record)?;
-            for (ordinal, write) in decoded.into_iter().enumerate() {
+            let class_work = decoded
+                .len()
+                .checked_mul(crate::om::body_write::BODY_IMAGE_CLASS.len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("resolve NX body-write endpoint classes", 0, 1)
+                })?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(class_work),
+                "resolve NX body-write endpoint classes",
+            )?;
+            for (ordinal, write) in decoded
+                .into_iter()
+                .filter(|write| write.selects_body_image_class(&section.types))
+                .enumerate()
+            {
                 let Some(offset) =
                     entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
                 else {
@@ -4175,7 +4189,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                 let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
                     write.body_identity(),
                     write.group_node(),
-                    write.endpoint_tag(),
+                    write.endpoint_class_index(),
                     write.body_image(),
                     offset,
                 ) else {
@@ -4229,7 +4243,7 @@ pub(super) fn feature_operation_body_writes(
     visit_feature_history_operation_records(
         ctx,
         container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
+        |section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
@@ -4240,7 +4254,27 @@ pub(super) fn feature_operation_body_writes(
                     return;
                 }
             };
-            for (ordinal, write) in decoded.into_iter().enumerate() {
+            if let Err(error) = decoded
+                .len()
+                .checked_mul(crate::om::body_write::BODY_IMAGE_CLASS.len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("resolve NX body-write endpoint classes", 0, 1)
+                })
+                .and_then(|work| {
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(work),
+                        "resolve NX body-write endpoint classes",
+                    )
+                })
+            {
+                failure = Some(error);
+                return;
+            }
+            for (ordinal, write) in decoded
+                .into_iter()
+                .filter(|write| write.selects_body_image_class(&section.types))
+                .enumerate()
+            {
                 let Some(offset) =
                     entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
                 else {
@@ -4249,7 +4283,7 @@ pub(super) fn feature_operation_body_writes(
                 let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
                     write.body_identity(),
                     write.group_node(),
-                    write.endpoint_tag(),
+                    write.endpoint_class_index(),
                     write.body_image(),
                     offset,
                 ) else {

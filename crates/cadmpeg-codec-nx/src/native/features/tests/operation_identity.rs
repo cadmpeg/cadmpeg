@@ -99,7 +99,7 @@ fn body_segment_join_refusal(
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
-            crate::om::body_write::BodyImageTag::Form12,
+            std::num::NonZeroU8::new(0x12).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
             0,
         )
@@ -201,7 +201,7 @@ fn body_partition_join_refusal(
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
-            crate::om::body_write::BodyImageTag::Form12,
+            std::num::NonZeroU8::new(0x12).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
             0,
         )
@@ -714,6 +714,30 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
             ));
         },
     );
+}
+
+#[test]
+fn operation_body_write_requires_the_complete_owning_class_registry() {
+    for (class_index, count) in [(0, 0), (1, 0), (16, 1), (17, 0), (255, 0)] {
+        let frame = vec![1, 2, 11, 49, 0x97, 0x75, 1, 2, class_index, 65, 255];
+        let payload = composed_feature_history_payload(&[(&[255; 4], "SHELL", frame)], &[]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(
+                ctx,
+                prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+            )
+        })
+        .unwrap();
+        let writes = crate::test_support::with_decode_context(|ctx| {
+            feature_operation_body_writes(ctx, &container)
+        })
+        .unwrap();
+        assert_eq!(writes.len(), count, "class index {class_index}");
+        if let Some(write) = writes.first() {
+            assert_eq!(write.frame.endpoint_class_index().get(), 16);
+            assert_eq!(write.ordinal, 0);
+        }
+    }
 }
 
 #[test]
@@ -1352,7 +1376,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
-            crate::om::body_write::BodyImageTag::Form12,
+            std::num::NonZeroU8::new(0x12).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(1519, &[0x85, 0xef]).unwrap(),
             0,
         )
@@ -1517,7 +1541,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).unwrap(),
-            crate::om::body_write::BodyImageTag::Form10,
+            std::num::NonZeroU8::new(0x10).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).unwrap(),
             9,
         )
@@ -1571,7 +1595,7 @@ fn body_group_partition_refusal(
         frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
             11,
             crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).expect("group token"),
-            crate::om::body_write::BodyImageTag::Form10,
+            std::num::NonZeroU8::new(0x10).unwrap(),
             crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).expect("image token"),
             9,
         )
