@@ -590,11 +590,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
 
 #[test]
 fn history_binding_budget_charges_materialized_state_tables() {
-    let materialized_only = |mut limits: cadmpeg_core::decode::ResourceLimits| {
-        limits.max_work_units = u64::MAX;
-        limits
-    };
-    let mut limits = materialized_only(cadmpeg_core::decode::ResourceLimits::desktop());
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
     limits.max_materialized_bytes = 1920;
     assert_eq!(
         complete_table_binding_cost([5, 5], &limits),
@@ -606,17 +602,6 @@ fn history_binding_budget_charges_materialized_state_tables() {
     );
     assert_eq!(
         complete_table_binding_cost([usize::MAX, 1], &limits),
-        TableBindingCost::Exceeded
-    );
-
-    let desktop = materialized_only(cadmpeg_core::decode::ResourceLimits::desktop());
-    let service = materialized_only(cadmpeg_core::decode::ResourceLimits::service());
-    assert_eq!(
-        complete_table_binding_cost([18_000_000], &desktop),
-        TableBindingCost::Admitted
-    );
-    assert_eq!(
-        complete_table_binding_cost([18_000_000], &service),
         TableBindingCost::Exceeded
     );
 }

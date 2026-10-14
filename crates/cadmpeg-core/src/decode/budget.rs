@@ -8,8 +8,9 @@ use crate::CodecError;
 
 use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
-    DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
-    MATERIALIZED_PER_INPUT_BYTE, RETAINED_BASE, RETAINED_PER_INPUT_BYTE,
+    DecodePolicy, COLLECTION_ITEMS_BASE, COLLECTION_ITEMS_PER_INPUT_BYTE, DECOMPRESSED_TOTAL_BASE,
+    DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE, MATERIALIZED_PER_INPUT_BYTE,
+    RETAINED_BASE, RETAINED_PER_INPUT_BYTE, WORK_UNITS_BASE, WORK_UNITS_PER_INPUT_BYTE,
 };
 use super::view::u64_from_index;
 
@@ -56,15 +57,28 @@ impl DecodeBudget {
         self.fuse.get()
     }
 
-    pub(super) fn decompression_allowance(&self) -> u64 {
-        let policy_limit = self.policy.limits.max_decompressed_bytes_total;
-        let Some(proportional) = DECOMPRESSED_TOTAL_PER_INPUT_BYTE
+    /// The smaller of a policy ceiling and `base + per_input_byte * input`.
+    pub(super) fn proportional_allowance(
+        &self,
+        ceiling: u64,
+        base: u64,
+        per_input_byte: u64,
+    ) -> u64 {
+        let Some(proportional) = per_input_byte
             .checked_mul(self.input_bytes.get())
-            .and_then(|bytes| DECOMPRESSED_TOTAL_BASE.checked_add(bytes))
+            .and_then(|amount| base.checked_add(amount))
         else {
-            return policy_limit;
+            return ceiling;
         };
-        policy_limit.min(proportional)
+        ceiling.min(proportional)
+    }
+
+    pub(super) fn decompression_allowance(&self) -> u64 {
+        self.proportional_allowance(
+            self.policy.limits.max_decompressed_bytes_total,
+            DECOMPRESSED_TOTAL_BASE,
+            DECOMPRESSED_TOTAL_PER_INPUT_BYTE,
+        )
     }
 
     pub(super) fn input_bytes(&self) -> u64 {
@@ -106,25 +120,35 @@ impl DecodeBudget {
     }
 
     fn materialized_allowance(&self) -> u64 {
-        let policy_limit = self.policy.limits.max_materialized_bytes;
-        let Some(proportional) = MATERIALIZED_PER_INPUT_BYTE
-            .checked_mul(self.input_bytes.get())
-            .and_then(|bytes| MATERIALIZED_BASE.checked_add(bytes))
-        else {
-            return policy_limit;
-        };
-        policy_limit.min(proportional)
+        self.proportional_allowance(
+            self.policy.limits.max_materialized_bytes,
+            MATERIALIZED_BASE,
+            MATERIALIZED_PER_INPUT_BYTE,
+        )
     }
 
     fn retained_allowance(&self) -> u64 {
-        let policy_limit = self.policy.limits.max_retained_bytes;
-        let Some(proportional) = RETAINED_PER_INPUT_BYTE
-            .checked_mul(self.input_bytes.get())
-            .and_then(|bytes| RETAINED_BASE.checked_add(bytes))
-        else {
-            return policy_limit;
-        };
-        policy_limit.min(proportional)
+        self.proportional_allowance(
+            self.policy.limits.max_retained_bytes,
+            RETAINED_BASE,
+            RETAINED_PER_INPUT_BYTE,
+        )
+    }
+
+    pub(super) fn collection_items_allowance(&self) -> u64 {
+        self.proportional_allowance(
+            self.policy.limits.max_collection_items,
+            COLLECTION_ITEMS_BASE,
+            COLLECTION_ITEMS_PER_INPUT_BYTE,
+        )
+    }
+
+    pub(super) fn work_allowance(&self) -> u64 {
+        self.proportional_allowance(
+            self.policy.limits.max_work_units,
+            WORK_UNITS_BASE,
+            WORK_UNITS_PER_INPUT_BYTE,
+        )
     }
 
     fn charge(
@@ -410,7 +434,7 @@ impl DecodeBudget {
         self.charge(
             ResourceDimension::CollectionItems,
             &self.collection_items,
-            self.policy.limits.max_collection_items,
+            self.collection_items_allowance(),
             count,
             operation,
         )?;
@@ -427,7 +451,7 @@ impl DecodeBudget {
             self.refuse_limit(
                 ResourceDimension::CollectionItems,
                 ResourceFailure::BudgetExceeded,
-                self.policy.limits.max_collection_items,
+                self.collection_items_allowance(),
                 self.collection_items.get(),
                 items,
                 operation,
@@ -472,7 +496,7 @@ impl DecodeBudget {
         self.refuse_limit(
             ResourceDimension::CollectionItems,
             ResourceFailure::AllocationFailed,
-            self.policy.limits.max_collection_items,
+            self.collection_items_allowance(),
             prior,
             charged,
             operation,
@@ -537,7 +561,7 @@ impl DecodeBudget {
         self.charge(
             ResourceDimension::WorkUnits,
             &self.work,
-            self.policy.limits.max_work_units,
+            self.work_allowance(),
             units,
             operation,
         )
@@ -594,7 +618,7 @@ impl ScopedTally {
             budget.refuse_limit(
                 ResourceDimension::CollectionItems,
                 ResourceFailure::BudgetExceeded,
-                budget.policy.limits.max_collection_items,
+                budget.collection_items_allowance(),
                 self.items,
                 items,
                 operation,
@@ -1098,6 +1122,48 @@ mod tests {
             .with_storage_limit(|| budget.charge_collection_items_limit(items, "test scoped items"))
             .expect("scoped items fit");
         reservation
+    }
+
+    #[test]
+    fn item_and_work_allowances_scale_with_input_under_the_policy_ceiling() {
+        use crate::decode::policy::{
+            COLLECTION_ITEMS_BASE, COLLECTION_ITEMS_PER_INPUT_BYTE, WORK_UNITS_BASE,
+            WORK_UNITS_PER_INPUT_BYTE,
+        };
+        const INPUT: u64 = 20 * 1024 * 1024;
+        let small = DecodeBudget::new(DecodePolicy::desktop(), 0);
+        assert_eq!(small.collection_items_allowance(), COLLECTION_ITEMS_BASE);
+        assert_eq!(small.work_allowance(), WORK_UNITS_BASE);
+
+        let large = DecodeBudget::new(DecodePolicy::desktop(), INPUT);
+        assert_eq!(
+            large.collection_items_allowance(),
+            COLLECTION_ITEMS_BASE + COLLECTION_ITEMS_PER_INPUT_BYTE * INPUT
+        );
+        assert_eq!(
+            large.work_allowance(),
+            WORK_UNITS_BASE + WORK_UNITS_PER_INPUT_BYTE * INPUT
+        );
+
+        let service = DecodeBudget::new(DecodePolicy::service(), INPUT);
+        assert_eq!(
+            service.collection_items_allowance(),
+            DecodePolicy::service().limits.max_collection_items
+        );
+        assert_eq!(
+            service.work_allowance(),
+            DecodePolicy::service().limits.max_work_units
+        );
+    }
+
+    #[test]
+    fn the_item_allowance_is_the_refusal_limit() {
+        let budget = DecodeBudget::new(DecodePolicy::desktop(), 1);
+        let allowance = budget.collection_items_allowance();
+        let failure = budget
+            .charge_collection_items_limit(allowance + 1, "test items")
+            .expect_err("a charge past the allowance refuses");
+        assert_eq!(failure.limit, allowance);
     }
 
     #[test]
