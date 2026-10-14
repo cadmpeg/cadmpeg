@@ -641,7 +641,19 @@ fn bind_complete_record_tables(
     };
     let active_limit =
         cadmpeg_asm::asm_header::solved_record_limit(ctx, bytes)?.unwrap_or(bytes.len());
-    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width, None) {
+    // The framed record stream, the archived frames, and the revision archive
+    // are scratch for this binding; only the per-state topology is retained.
+    let mut scratch = ctx.reserve_scoped(0, "bind F3D complete history tables")?;
+    let framed = match scratch.with_storage(|| {
+        Ok::<_, cadmpeg_core::CodecError>(cadmpeg_asm::sab::frame(
+            ctx,
+            bytes,
+            start,
+            active_limit,
+            width,
+            None,
+        ))
+    })? {
         Ok(records) => records,
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
         Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
@@ -689,7 +701,11 @@ fn bind_complete_record_tables(
         if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
             return Ok(TableBindingCost::Admitted);
         }
-        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
+        let mut framed = match scratch.with_storage(|| {
+            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_asm::sab::frame(
+                ctx, bytes, offset, limit, width, None,
+            ))
+        })? {
             Ok(records) => records,
             Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
                 return Err(error.into())
@@ -709,31 +725,39 @@ fn bind_complete_record_tables(
             return Ok(TableBindingCost::Admitted);
         }
 
-        ctx.reserve_map(&mut archived_frames, 1, "retain F3D archived record frame")?;
+        scratch.with_storage(|| {
+            ctx.reserve_map(&mut archived_frames, 1, "retain F3D archived record frame")
+        })?;
         if archived_frames.insert(revision_id, framed).is_some() {
             return Ok(TableBindingCost::Admitted);
         }
     }
-    let Some(archive) = historical_record_archive(ctx, states, active_records, archived_frames)?
+    let Some(archive) = scratch
+        .with_storage(|| historical_record_archive(ctx, states, active_records, archived_frames))?
     else {
         return Ok(TableBindingCost::Admitted);
     };
     let mut complete = true;
     for state in states.iter_mut() {
-        let Some(records) = materialize_record_table(ctx, state, &archive)? else {
+        // One state's record table and decoded B-rep are scratch; only its
+        // topology is retained.
+        let mut state_scratch = ctx.reserve_scoped(0, "decode F3D historical state")?;
+        let Some(records) =
+            state_scratch.with_storage(|| materialize_record_table(ctx, state, &archive))?
+        else {
             complete = false;
             break;
         };
-        let decoded =
-            match crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT)
-            {
-                Ok(decoded) => decoded,
-                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => {
-                    complete = false;
-                    break;
-                }
-            };
+        let decoded = match state_scratch.with_storage(|| {
+            crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT)
+        }) {
+            Ok(decoded) => decoded,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => {
+                complete = false;
+                break;
+            }
+        };
         let Some(topology) = historical_topology_with_tags(ctx, &decoded)? else {
             complete = false;
             break;
@@ -747,7 +771,10 @@ fn bind_complete_record_tables(
         // feature selection and need not survive projection finalization.
         for state in states {
             if let Some(topology) = state.topology() {
-                let slots = topology_entity_slots(ctx, topology)?;
+                let (slots, _slots_storage) = ctx
+                    .with_scoped_storage("index F3D historical topology slots", || {
+                        topology_entity_slots(ctx, topology)
+                    })?;
                 state
                     .entity_versions
                     .retain(|version| slots.contains(&version.entity_ref));
@@ -1069,9 +1096,14 @@ fn historical_transition(
         return Ok(None);
     };
     let previous_topology = previous.and_then(|state| state.topology());
-    let current_versions = historical_version_map(ctx, &current.entity_versions)?;
+    // The version maps and record keys are scratch for this transition.
+    let mut scratch = ctx.reserve_scoped(0, "index F3D transition versions")?;
+    let current_versions =
+        scratch.with_storage(|| historical_version_map(ctx, &current.entity_versions))?;
     let previous_versions = match previous {
-        Some(state) => historical_version_map(ctx, &state.entity_versions)?,
+        Some(state) => {
+            scratch.with_storage(|| historical_version_map(ctx, &state.entity_versions))?
+        }
         None => BTreeMap::new(),
     };
     let delta = |current: &[i64], previous: &[i64]| {
@@ -1085,14 +1117,18 @@ fn historical_transition(
     };
     let empty = AsmHistoricalTopology::default();
     let previous_topology = previous_topology.unwrap_or(&empty);
-    let current_record_keys = ctx.collect_vec(
-        current_versions.keys().copied(),
-        "collect F3D transition version keys",
-    )?;
-    let previous_record_keys = ctx.collect_vec(
-        previous_versions.keys().copied(),
-        "collect F3D transition version keys",
-    )?;
+    let current_record_keys = scratch.with_storage(|| {
+        ctx.collect_vec(
+            current_versions.keys().copied(),
+            "collect F3D transition version keys",
+        )
+    })?;
+    let previous_record_keys = scratch.with_storage(|| {
+        ctx.collect_vec(
+            previous_versions.keys().copied(),
+            "collect F3D transition version keys",
+        )
+    })?;
     Ok(Some(AsmHistoricalTransition {
         previous_state_id: previous.map(|state| state.state_id),
         records: entity_delta(
@@ -1148,14 +1184,19 @@ fn entity_delta(
     let previous_count = u64::try_from(previous.len()).map_err(|_| {
         ctx.refuse_codec_limit("index F3D previous transition entities", 0, u64::MAX)
     })?;
-    let current = ctx.collect_btree_set(
-        current.iter().copied(),
-        "index F3D current transition entities",
-    )?;
-    let previous = ctx.collect_btree_set(
-        previous.iter().copied(),
-        "index F3D previous transition entities",
-    )?;
+    let mut scratch = ctx.reserve_scoped(0, "index F3D transition entities")?;
+    let current = scratch.with_storage(|| {
+        ctx.collect_btree_set(
+            current.iter().copied(),
+            "index F3D current transition entities",
+        )
+    })?;
+    let previous = scratch.with_storage(|| {
+        ctx.collect_btree_set(
+            previous.iter().copied(),
+            "index F3D previous transition entities",
+        )
+    })?;
     let work = current_count
         .checked_add(previous_count)
         .ok_or_else(|| ctx.refuse_codec_limit("compare F3D transition entities", 0, u64::MAX))?;
