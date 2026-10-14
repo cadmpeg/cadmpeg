@@ -548,7 +548,7 @@ fn scratch_fill_admits_each_clone_before_it_runs() {
         assert_eq!(clones.get(), allowance);
         if allowance < 3 {
             assert!(result.is_none());
-            let original = scratch.refused().unwrap();
+            let original = scratch.refused().unwrap().into_limit();
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.operation, "scratch fill clones");
             drop(scratch);
@@ -597,7 +597,7 @@ fn scratch_collect_admits_each_iterator_read_before_it_runs() {
         assert_eq!(reads.get(), allowance);
         if allowance < 3 {
             assert!(result.is_none());
-            let original = scratch.refused().unwrap();
+            let original = scratch.refused().unwrap().into_limit();
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.operation, "scratch collect reads");
             drop(scratch);
@@ -649,7 +649,7 @@ fn scratch_collect_stops_at_absence_and_observes_a_fused_empty_session() {
         ),
         None
     );
-    assert_eq!(scratch.refused(), Some(original));
+    assert_eq!(scratch.refused(), Some(original.into()));
     drop(scratch);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
@@ -670,7 +670,8 @@ fn uncharged_scratch_reports_an_allocation_refusal_instead_of_no_value() {
         .is_none());
     let refusal = scratch
         .refused()
-        .expect("the allocation refusal is recorded");
+        .expect("the allocation refusal is recorded")
+        .into_limit();
     assert_eq!(refusal.reason, ResourceFailure::AllocationFailed);
     assert_eq!(refusal.operation, "IR test scratch");
     assert!(matches!(
@@ -758,8 +759,8 @@ fn scratch_completion_observes_refusals_from_other_context_operations() {
                 .unwrap(),
             _ => unreachable!(),
         };
-        assert_eq!(scratch.refused(), Some(original));
-        assert_eq!(scratch.unless_refused(), Err(original));
+        assert_eq!(scratch.refused(), Some(original.into()));
+        assert_eq!(scratch.unless_refused(), Err(original.into()));
         assert_eq!(
             scratch.failure::<()>(EvaluationFailure::NoValue),
             EvaluationFailure::ResourceLimit(original)
@@ -772,7 +773,7 @@ fn scratch_completion_observes_refusals_from_other_context_operations() {
             scratch.settle::<(), ()>(Err(EvaluationFailure::NoValue)),
             Err(EvaluationFailure::ResourceLimit(original))
         );
-        assert_eq!(scratch.finish(()), Err(original));
+        drop(scratch);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
         );
@@ -829,7 +830,7 @@ fn standard_evaluation_shares_scratch_and_basis_algorithms() {
         &[-1.0, 0.0, 1.0]
     );
     assert_eq!(scratch.work(usize::MAX, "standard work"), Some(()));
-    assert_eq!(scratch.finish(7), Ok(7));
+    assert_eq!(scratch.unless_refused(), Ok(()));
 }
 
 #[test]
@@ -843,11 +844,11 @@ fn standard_evaluation_preserves_allocation_refusal() {
         None
     );
     assert_eq!(values, [7]);
-    let original = scratch.refused().unwrap();
+    let original = scratch.refused().unwrap().into_limit();
     assert_eq!(original.reason, ResourceFailure::AllocationFailed);
     assert_eq!(original.operation, "standard allocation");
     assert_eq!(scratch.work(0, "after allocation refusal"), None);
-    assert_eq!(scratch.finish(7), Err(original));
+    assert_eq!(scratch.unless_refused(), Err(original.into()));
 }
 
 #[test]
@@ -866,7 +867,7 @@ fn standard_evaluation_depth_is_explicit_and_releases_frames() {
         guards.push(scratch.enter().unwrap());
     }
     assert!(scratch.enter().is_none());
-    let original = scratch.refused().unwrap();
+    let original = scratch.refused().unwrap().into_limit();
     assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
     assert_eq!(original.limit, 256);
     assert_eq!(original.used, 256);
@@ -880,7 +881,7 @@ fn standard_evaluation_depth_is_explicit_and_releases_frames() {
     }
     drop(guards);
     assert_eq!(scratch.independent_depth.get(), 0);
-    assert_eq!(scratch.finish(7), Err(original));
+    assert_eq!(scratch.unless_refused(), Err(original.into()));
 }
 
 #[test]
@@ -893,16 +894,18 @@ fn evaluation_scratch_depth_is_shared_across_caller_contexts() {
     let second = super::Scratch::new(&ctx);
     let frame = first.enter().unwrap();
     assert!(second.enter().is_none());
-    let original = second.refused().unwrap();
+    let original = second.refused().unwrap().into_limit();
     assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
     assert_eq!(original.limit, 1);
     assert_eq!(original.used, 1);
     assert_eq!(original.additional, 1);
     assert_eq!(original.operation, "geometry evaluation nesting");
-    assert_eq!(first.refused(), Some(original));
+    assert_eq!(first.refused(), Some(original.into()));
     drop(frame);
-    assert_eq!(first.finish(7), Err(original));
-    assert_eq!(second.finish(7), Err(original));
+    assert_eq!(first.unless_refused(), Err(original.into()));
+    assert_eq!(second.unless_refused(), Err(original.into()));
+    drop(first);
+    drop(second);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );

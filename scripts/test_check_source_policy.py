@@ -1423,6 +1423,25 @@ fn resource(limit: ResourceLimit) -> Evaluation { Evaluation { resource: Some(li
                 self.assertEqual(self.scan(body, declarations=declarations), [])
         self.assertEqual(len(self.scan("let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { let saved = Some(Evaluation::resource(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }", declarations=declarations)), 1)
 
+    def test_evaluation_refusal_accepts_carriers_of_an_evaluation_refusal(self) -> None:
+        declarations = """
+struct Evaluation { refusal: Option<EvaluationRefusal> }
+impl Evaluation {
+    fn refused(refusal: impl Into<EvaluationRefusal>) -> Self {
+        let refusal = refusal.into();
+        Self { refusal: Some(refusal) }
+    }
+}
+fn dropped(refusal: impl Into<EvaluationRefusal>) -> Evaluation { Evaluation { refusal: None } }
+"""
+        for body in [
+            "match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(Evaluation::refused(limit)), _ => None }",
+            "let radial = cadmpeg_ir::eval::curve_point(0.); if let Err(EvaluationFailure::ResourceLimit(limit)) = &radial { return Some(Evaluation::refused(*limit)); } match radial { Ok(point) => Some(point), Err(_) => None }",
+        ]:
+            with self.subTest(body=body):
+                self.assertEqual(self.scan(body, declarations=declarations), [])
+        self.assertEqual(len(self.scan("match cadmpeg_ir::eval::curve_point(0.) { Err(EvaluationFailure::ResourceLimit(limit)) => Some(dropped(limit)), _ => None }", declarations=declarations)), 1)
+
     def test_evaluation_refusal_respects_binding_scope_and_shadowing(self) -> None:
         self.assertEqual(len(self.scan("let value = cadmpeg_ir::eval::curve_point(0.); { let value = other(); value.ok(); } value.ok();")), 1)
         self.assertEqual(self.scan("{ let value = cadmpeg_ir::eval::curve_point(0.); } let value = other(); value.ok();"), [])

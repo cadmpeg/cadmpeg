@@ -183,20 +183,29 @@ fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
 
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.0);
-    let refused_ctx = cadmpeg_test_support::service_decode_context();
-    let refused_budget = WorkBudget::new(12);
-    let refusal = nurbs_surface_parameter_within_tolerance_with_budget(
-        &refused_ctx,
+    let exhausted_ctx = cadmpeg_test_support::service_decode_context();
+    let exhausted_budget = WorkBudget::new(12);
+    let exhausted = nurbs_surface_parameter_within_tolerance_with_budget(
+        &exhausted_ctx,
         &surface,
         point,
         Some(Point2::new(0.3, 0.7)),
         FIT_TOLERANCE,
-        &refused_budget,
-    )
-    .expect_err("the original cap cannot admit all pole traversals");
-    assert_eq!(refusal.operation, "geometry evaluation work slice");
-    assert!(matches!(refused_ctx.finish_session(),
-        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+        &exhausted_budget,
+    );
+    // The original cap cannot admit all pole traversals. The local slice
+    // runs out, the solve has no value, and the session continues.
+    assert_eq!(exhausted, Ok(None));
+    assert!(exhausted_budget.exhausted());
+    assert_eq!(
+        crate::eval::admission::EvaluationAdmission::Decode(&exhausted_ctx)
+            .within_work_slice(&exhausted_budget, |admission| {
+                crate::eval::decode::nurbs_surface_point(admission, &surface, 0.3, 0.7)
+            }),
+        Err(crate::eval::EvaluationFailure::WorkExhausted)
+    );
+    assert_eq!(exhausted_ctx.resource_refusal(), None);
+    assert!(exhausted_ctx.finish_session().is_ok());
     let budget = WorkBudget::new(20);
     let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
         &cadmpeg_test_support::service_decode_context(),
@@ -221,20 +230,29 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
 
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.0);
-    let refused_ctx = cadmpeg_test_support::service_decode_context();
-    let refused_budget = WorkBudget::new(256);
-    let refusal = nurbs_surface_parameter_within_tolerance_with_budget(
-        &refused_ctx,
+    let exhausted_ctx = cadmpeg_test_support::service_decode_context();
+    let exhausted_budget = WorkBudget::new(256);
+    let exhausted = nurbs_surface_parameter_within_tolerance_with_budget(
+        &exhausted_ctx,
         &surface,
         point,
         Some(Point2::new(0.29, 0.69)),
         FIT_TOLERANCE,
-        &refused_budget,
-    )
-    .expect_err("the original cap cannot admit all pole traversals");
-    assert_eq!(refusal.operation, "geometry evaluation work slice");
-    assert!(matches!(refused_ctx.finish_session(),
-        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+        &exhausted_budget,
+    );
+    // The original cap cannot admit all pole traversals. The local slice
+    // runs out, the solve has no value, and the session continues.
+    assert_eq!(exhausted, Ok(None));
+    assert!(exhausted_budget.exhausted());
+    assert_eq!(
+        crate::eval::admission::EvaluationAdmission::Decode(&exhausted_ctx)
+            .within_work_slice(&exhausted_budget, |admission| {
+                crate::eval::decode::nurbs_surface_point(admission, &surface, 0.3, 0.7)
+            }),
+        Err(crate::eval::EvaluationFailure::WorkExhausted)
+    );
+    assert_eq!(exhausted_ctx.resource_refusal(), None);
+    assert!(exhausted_ctx.finish_session().is_ok());
     let budget = WorkBudget::new(32768);
     let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
         &cadmpeg_test_support::service_decode_context(),

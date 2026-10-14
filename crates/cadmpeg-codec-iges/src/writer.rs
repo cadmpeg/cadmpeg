@@ -4542,12 +4542,12 @@ impl PcurveOrientationContext<'_> {
                           position: &str| {
                 point.map_err(|failure| match failure {
                     EvaluationFailure::ResourceLimit(limit) => limit.into(),
-                    EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
-                        CodecError::malformed(format_args!(
-                            "IGES point {} pcurve {} {position} has non-finite coordinates",
-                            self.owner, pcurve.id
-                        ))
-                    }
+                    EvaluationFailure::NoValue
+                    | EvaluationFailure::NonFinite(_)
+                    | EvaluationFailure::WorkExhausted => CodecError::malformed(format_args!(
+                        "IGES point {} pcurve {} {position} has non-finite coordinates",
+                        self.owner, pcurve.id
+                    )),
                 })
             };
             mapped.push((finite(start, "start")?.get(), finite(end, "end")?.get()));
@@ -5559,9 +5559,9 @@ fn extrusion_surface_entities(
         ) {
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(_)) => Err(non_finite_point(label)),
-            Err(EvaluationFailure::NoValue) => Err(CodecError::malformed(format_args!(
-                "IGES {label} cannot be evaluated"
-            ))),
+            Err(EvaluationFailure::NoValue | EvaluationFailure::WorkExhausted) => Err(
+                CodecError::malformed(format_args!("IGES {label} cannot be evaluated")),
+            ),
             Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit.into()),
         };
         (
@@ -5746,7 +5746,9 @@ fn revolution_surface_entities(
     )
     .map_err(|failure| match failure {
         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+        EvaluationFailure::NoValue
+        | EvaluationFailure::NonFinite(_)
+        | EvaluationFailure::WorkExhausted => {
             CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into())
         }
     })?;
@@ -5757,7 +5759,9 @@ fn revolution_surface_entities(
     )
     .map_err(|failure| match failure {
         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
+        EvaluationFailure::NoValue
+        | EvaluationFailure::NonFinite(_)
+        | EvaluationFailure::WorkExhausted => {
             CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into())
         }
     })?;
@@ -6544,11 +6548,11 @@ fn curve_reference_span_inner(
                     )
                     .map_err(|failure| match failure {
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-                        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
-                            CodecError::NotImplemented(format!(
-                                "IGES composite child curve {curve_id} has no evaluable start"
-                            ))
-                        }
+                        EvaluationFailure::NoValue
+                        | EvaluationFailure::NonFinite(_)
+                        | EvaluationFailure::WorkExhausted => CodecError::NotImplemented(format!(
+                            "IGES composite child curve {curve_id} has no evaluable start"
+                        )),
                     })?;
                     let end = cadmpeg_ir::eval::decode::curve_point(
                         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -6557,11 +6561,11 @@ fn curve_reference_span_inner(
                     )
                     .map_err(|failure| match failure {
                         EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-                        EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
-                            CodecError::NotImplemented(format!(
-                                "IGES composite child curve {curve_id} has no evaluable end"
-                            ))
-                        }
+                        EvaluationFailure::NoValue
+                        | EvaluationFailure::NonFinite(_)
+                        | EvaluationFailure::WorkExhausted => CodecError::NotImplemented(format!(
+                            "IGES composite child curve {curve_id} has no evaluable end"
+                        )),
                     })?;
                     Ok(CurveSpan {
                         range,
@@ -6690,12 +6694,12 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         )
         .map_err(|failure| match failure {
             EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => {
-                CodecError::malformed(format_args!(
-                    "IGES edge {} start cannot be evaluated on its curve",
-                    edge.id
-                ))
-            }
+            EvaluationFailure::NoValue
+            | EvaluationFailure::NonFinite(_)
+            | EvaluationFailure::WorkExhausted => CodecError::malformed(format_args!(
+                "IGES edge {} start cannot be evaluated on its curve",
+                edge.id
+            )),
         })?;
         let evaluated_end = cadmpeg_ir::eval::decode::curve_point(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -6704,9 +6708,12 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         )
         .map_err(|failure| match failure {
             EvaluationFailure::ResourceLimit(limit) => CodecError::ResourceLimit(limit),
-            EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_) => CodecError::malformed(
-                format_args!("IGES edge {} end cannot be evaluated on its curve", edge.id),
-            ),
+            EvaluationFailure::NoValue
+            | EvaluationFailure::NonFinite(_)
+            | EvaluationFailure::WorkExhausted => CodecError::malformed(format_args!(
+                "IGES edge {} end cannot be evaluated on its curve",
+                edge.id
+            )),
         })?;
         let tolerance = edge_topology_tolerance(ir, edge)?;
         if !close_point_with_tolerance(start, evaluated_start.get(), tolerance)

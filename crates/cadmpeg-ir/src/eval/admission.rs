@@ -4,13 +4,49 @@
 use std::cell::Cell;
 
 use cadmpeg_core::decode::{
-    u64_from_index, work_units, DecodeContext, DepthGuard, ResourceDimension, ResourceFailure,
-    ResourceLimit, WorkBudget,
+    u64_from_index, DecodeContext, DepthGuard, ResourceDimension, ResourceFailure, ResourceLimit,
+    WorkBudget,
 };
 
 use super::EvaluationFailure;
 
 const INDEPENDENT_EVALUATION_DEPTH: usize = 256;
+
+/// Why an evaluation work charge was not admitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvaluationRefusal {
+    /// The evaluation's local work slice ran out. The decode session continues.
+    WorkExhausted,
+    /// The decode session refused. The session keeps this refusal.
+    ResourceLimit(ResourceLimit),
+}
+
+impl From<ResourceLimit> for EvaluationRefusal {
+    fn from(limit: ResourceLimit) -> Self {
+        Self::ResourceLimit(limit)
+    }
+}
+
+impl EvaluationRefusal {
+    /// No value for an exhausted work slice; the session refusal otherwise.
+    pub(super) fn absent<T>(self) -> Result<Option<T>, ResourceLimit> {
+        match self {
+            Self::WorkExhausted => Ok(None),
+            Self::ResourceLimit(limit) => Err(limit),
+        }
+    }
+}
+
+#[cfg(test)]
+impl EvaluationRefusal {
+    /// The session refusal of an evaluation that runs without a work slice.
+    pub(super) fn into_limit(self) -> ResourceLimit {
+        match self {
+            Self::ResourceLimit(limit) => limit,
+            Self::WorkExhausted => panic!("an evaluation without a work slice exhausted one"),
+        }
+    }
+}
 
 /// Evaluation uses the caller's decode session or standard-library storage.
 #[derive(Clone, Copy)]
@@ -54,9 +90,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     ) -> Result<T, EvaluationFailure<R>> {
         let evaluate = |admission: EvaluationAdmission<'_, '_>| {
             let scratch = super::decode::Scratch::new(admission);
-            scratch
-                .unless_refused()
-                .map_err(EvaluationFailure::ResourceLimit)?;
+            scratch.unless_refused()?;
             let result = run(admission);
             let result = match admission.work_slice() {
                 Some(_) => super::ModelEvaluationDepthGuard::finish_budgeted(admission, result),
@@ -82,33 +116,30 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     }
 
     /// Each model carrier consumes one work step before reading its payload.
+    /// An exhausted slice is [`EvaluationFailure::WorkExhausted`] unless the
+    /// session refused behind it.
     pub(super) fn model_step<R>(self) -> Result<(), EvaluationFailure<R>> {
         match self.work_slice() {
             Some(work) => {
-                let remaining = u64_from_index(work.remaining());
                 if work.charge() {
                     return Ok(());
                 }
                 if let Some(context) = self.context() {
-                    context
-                        .charge_work_limit(0, "model evaluation work slice")
-                        .map_err(EvaluationFailure::ResourceLimit)?;
-                    drop(context.refuse_codec_limit("model evaluation work slice", remaining, 1));
-                    context
-                        .charge_work_limit(0, "model evaluation work slice")
-                        .map_err(EvaluationFailure::ResourceLimit)?;
+                    context.charge_work_limit(0, "model evaluation work slice")?;
                 }
-                Err(EvaluationFailure::NoValue)
+                Err(EvaluationFailure::WorkExhausted)
             }
-            None => self
-                .work(1, "model evaluation work step")
-                .map_err(EvaluationFailure::ResourceLimit),
+            None => Ok(self.work(1, "model evaluation work step")?),
         }
     }
 
     /// Run one evaluation under a bounded slice. Session work is charged by
     /// the child as it occurs; consumption transfers to the parent once.
     /// Independent slices charge the stored representation's work cost.
+    ///
+    /// A slice that runs out leaves the parent exhausted and the decode
+    /// session unrefused; the evaluation reports
+    /// [`EvaluationFailure::WorkExhausted`].
     pub fn within_work_slice<T, R>(
         self,
         parent: &WorkBudget<'_>,
@@ -131,13 +162,10 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                         work: &child,
                     },
                 }));
-                let remaining = u64_from_index(parent.remaining());
-                if parent.consume_child(&child).is_err() {
-                    drop(context.refuse_codec_limit(
-                        "geometry work slice transfer",
-                        remaining,
-                        u64_from_index(work_units(child.consumed())),
-                    ));
+                // A transfer that does not fit exhausts the parent; a child
+                // that ran out leaves the parent exhausted as well.
+                if parent.consume_child(&child).is_ok() && child.exhausted() {
+                    parent.exhaust();
                 }
                 context
                     .charge_work_limit(0, "geometry work slice boundary")
@@ -179,14 +207,17 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             }) => cost
                 .is_some_and(|cost| work.charge_by(cost))
                 .then_some(())
-                .ok_or(EvaluationFailure::NoValue),
+                .ok_or(EvaluationFailure::WorkExhausted),
             _ => Ok(()),
         }
     }
 
-    pub(super) fn work(self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
+    /// Charge evaluation work. A session slice that cannot cover the charge
+    /// is [`EvaluationRefusal::WorkExhausted`] unless the session refused
+    /// behind it; the session stays unrefused.
+    pub(super) fn work(self, count: u64, operation: &'static str) -> Result<(), EvaluationRefusal> {
         match self {
-            Self::Decode(context) => context.charge_work_limit(count, operation),
+            Self::Decode(context) => Ok(context.charge_work_limit(count, operation)?),
             Self::Standard => Ok(()),
             Self::WorkSlice(EvaluationWorkSlice {
                 policy: WorkSlicePolicy::Independent(_),
@@ -195,15 +226,9 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                 policy: WorkSlicePolicy::Session { context, work },
             }) => {
                 context.charge_work_limit(0, operation)?;
-                let remaining = u64_from_index(work.remaining());
                 if !usize::try_from(count).is_ok_and(|count| work.charge_by(count)) {
                     context.charge_work_limit(0, operation)?;
-                    drop(context.refuse_codec_limit(
-                        "geometry evaluation work slice",
-                        remaining,
-                        count,
-                    ));
-                    return context.charge_work_limit(0, operation);
+                    return Err(EvaluationRefusal::WorkExhausted);
                 }
                 Ok(())
             }
@@ -242,8 +267,12 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
 impl crate::ids::comparison::sealed::TextWork for EvaluationAdmission<'_, '_> {}
 
 impl crate::ids::comparison::TextWork for EvaluationAdmission<'_, '_> {
-    type Error = ResourceLimit;
-    fn comparison_work(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
+    type Error = EvaluationRefusal;
+    fn comparison_work(
+        &self,
+        count: u64,
+        operation: &'static str,
+    ) -> Result<(), EvaluationRefusal> {
         self.work(count, operation)
     }
 }
@@ -251,15 +280,15 @@ impl crate::ids::comparison::TextWork for EvaluationAdmission<'_, '_> {
 impl crate::index::sealed::IndexQuery for EvaluationAdmission<'_, '_> {}
 
 impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
-    type Error = ResourceLimit;
-    type Output<T> = Result<T, ResourceLimit>;
-    fn finish<T>(&self, result: Result<T, ResourceLimit>) -> Self::Output<T> {
+    type Error = EvaluationRefusal;
+    type Output<T> = Result<T, EvaluationRefusal>;
+    fn finish<T>(&self, result: Result<T, EvaluationRefusal>) -> Self::Output<T> {
         result
     }
     fn lazy(&self) -> bool {
         self.context().is_none()
     }
-    fn work(&self, count: usize, operation: &'static str) -> Result<(), ResourceLimit> {
+    fn work(&self, count: usize, operation: &'static str) -> Result<(), EvaluationRefusal> {
         EvaluationAdmission::work(*self, u64_from_index(count), operation)
     }
     fn equal(
@@ -267,7 +296,7 @@ impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
         first: &str,
         second: &str,
         operation: &'static str,
-    ) -> Result<bool, ResourceLimit> {
+    ) -> Result<bool, EvaluationRefusal> {
         crate::ids::comparison::equal(self, first, second, operation)
     }
 }
@@ -287,7 +316,7 @@ impl Drop for EvaluationDepthGuard<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::EvaluationAdmission;
+    use super::{EvaluationAdmission, EvaluationRefusal};
     use crate::eval::EvaluationFailure;
     use cadmpeg_core::decode::{
         DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
@@ -313,24 +342,28 @@ mod tests {
                         "alpha",
                         "model text comparison",
                     )
-                    .map_err(EvaluationFailure::ResourceLimit)
+                    .map_err(EvaluationFailure::from)
                 });
             assert_eq!(parent.consumed(), usize::try_from(allowance).unwrap());
             if allowance < 6 {
-                let EvaluationFailure::ResourceLimit(original) = result.unwrap_err() else {
-                    panic!("text comparison must preserve its local refusal");
-                };
-                assert_eq!(
-                    original.dimension,
-                    ResourceDimension::Codec("geometry evaluation work slice")
-                );
-                assert_eq!(
-                    (original.limit, original.used, original.additional),
-                    (0, 0, 1)
-                );
+                // The exhausted slice is local: the session keeps running.
+                assert_eq!(result, Err(EvaluationFailure::WorkExhausted));
+                assert!(parent.exhausted());
+                assert_eq!(ctx.resource_refusal(), None);
                 assert_eq!(
                     crate::ids::comparison::equal(&ctx, "", "", "repeated text comparison"),
-                    Err(original)
+                    Ok(true)
+                );
+                // The slice charged the session once for each admitted unit.
+                ctx.charge_work_limit(5 - allowance, "remaining session work")
+                    .unwrap();
+                let original = ctx
+                    .charge_work_limit(1, "next model text comparison")
+                    .unwrap_err();
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(
+                    (original.limit, original.used, original.additional),
+                    (6, 6, 1)
                 );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
@@ -720,7 +753,7 @@ mod tests {
                 .within_work_slice(&parent, |admission| {
                     admission
                         .work(2, "test numerical work")
-                        .map_err(EvaluationFailure::ResourceLimit)
+                        .map_err(EvaluationFailure::from)
                 });
             assert_eq!(result, Ok(()));
             assert_eq!(parent.consumed(), 2);
@@ -736,43 +769,119 @@ mod tests {
     }
 
     #[test]
-    fn work_slice_preserves_global_and_local_refusals() {
-        for local in [false, true] {
-            let mut policy = DecodePolicy::service();
-            if !local {
-                policy.limits.max_work_units = 0;
-            }
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let parent = ctx.work_budget(if local { 0 } else { 10 });
-            let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
-                .within_work_slice(&parent, |admission| {
-                    admission
-                        .work(1, "test numerical work")
-                        .map_err(EvaluationFailure::ResourceLimit)
-                });
-            let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
-                panic!("a work refusal is a resource error");
-            };
-            let dimension = if local {
-                ResourceDimension::Codec("geometry evaluation work slice")
-            } else {
-                ResourceDimension::WorkUnits
-            };
-            assert_eq!(first.dimension, dimension);
-            assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-            let called = std::cell::Cell::new(false);
-            let repeated: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
-                .within_work_slice(&parent, |_| {
-                    called.set(true);
-                    Err(EvaluationFailure::NoValue)
-                });
-            assert_eq!(repeated, Err(EvaluationFailure::ResourceLimit(first)));
-            assert!(!called.get());
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-            );
-        }
+    fn work_slice_preserves_a_global_refusal() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parent = ctx.work_budget(10);
+        let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |admission| {
+                admission
+                    .work(1, "test numerical work")
+                    .map_err(EvaluationFailure::from)
+            });
+        let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
+            panic!("a session work refusal is a resource error");
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
+        let called = std::cell::Cell::new(false);
+        let repeated: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |_| {
+                called.set(true);
+                Err(EvaluationFailure::NoValue)
+            });
+        assert_eq!(repeated, Err(EvaluationFailure::ResourceLimit(first)));
+        assert!(!called.get());
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+        );
+    }
+
+    #[test]
+    fn exhausted_work_slice_leaves_the_session_unrefused() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parent = ctx.work_budget(0);
+        let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |admission| {
+                admission
+                    .work(1, "test numerical work")
+                    .map_err(EvaluationFailure::from)
+            });
+        assert_eq!(result, Err(EvaluationFailure::WorkExhausted));
+        assert!(parent.exhausted());
+        assert_eq!(ctx.resource_refusal(), None);
+        // The next evaluation runs; its own slice is the exhausted remainder.
+        let called = std::cell::Cell::new(false);
+        let repeated: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |admission| {
+                called.set(true);
+                admission
+                    .work(1, "test repeated numerical work")
+                    .map_err(EvaluationFailure::from)
+            });
+        assert!(called.get());
+        assert_eq!(repeated, Err(EvaluationFailure::WorkExhausted));
+        assert!(ctx.finish_session().is_ok());
+    }
+
+    #[test]
+    fn session_refusal_behind_a_work_slice_stays_a_resource_refusal() {
+        // The session refuses the slice's own charge.
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parent = ctx.work_budget(10);
+        let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |admission| {
+                admission
+                    .work(3, "test admitted work")
+                    .map_err(EvaluationFailure::from)?;
+                admission
+                    .work(1, "test refused work")
+                    .map_err(EvaluationFailure::from)
+            });
+        let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
+            panic!("a session refusal inside a slice is a resource error");
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((first.limit, first.used, first.additional), (3, 3, 1));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+        );
+
+        // The session refuses after the slice ran out: the session refusal wins.
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parent = ctx.work_budget(1);
+        let result: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
+            .within_work_slice(&parent, |admission| {
+                let scratch = crate::eval::decode::Scratch::new(admission);
+                assert_eq!(scratch.work(2, "test exhausted work"), None);
+                assert_eq!(scratch.refused(), Some(EvaluationRefusal::WorkExhausted));
+                let first = ctx
+                    .charge_work_limit(3, "test external session work")
+                    .unwrap_err();
+                assert_eq!(
+                    scratch.refused(),
+                    Some(EvaluationRefusal::ResourceLimit(first))
+                );
+                scratch.settle(Ok(()))
+            });
+        let EvaluationFailure::ResourceLimit(first) = result.unwrap_err() else {
+            panic!("a session refusal behind an exhausted slice is a resource error");
+        };
+        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((first.limit, first.used, first.additional), (2, 0, 3));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+        );
     }
 
     #[test]
