@@ -69,6 +69,11 @@ fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
+#[test]
+fn planar_relation_projection_succeeds() {
+    project_with_policy(DecodePolicy::service()).unwrap();
+}
+
 fn project_solved_point_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"solved point", &arena, &policy)?;
@@ -84,6 +89,11 @@ fn project_solved_point_with_policy(policy: DecodePolicy) -> Result<(), CodecErr
     )?;
     assert!(entities.is_empty());
     Ok(())
+}
+
+#[test]
+fn solved_point_projection_succeeds() {
+    project_solved_point_with_policy(DecodePolicy::service()).unwrap();
 }
 
 fn project_solved_line_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
@@ -103,158 +113,21 @@ fn project_solved_line_with_policy(policy: DecodePolicy) -> Result<(), CodecErro
     Ok(())
 }
 
-fn project_relation_point_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"relation point", &arena, &policy)?;
+#[test]
+fn solved_line_projection_succeeds() {
+    project_solved_line_with_policy(DecodePolicy::service()).unwrap();
+}
+
+fn project_relation_point_with_policy() {
     let (sketch, feature, lane) = planar_fixture();
     let mut entities = Vec::new();
-    project_relation_point_geometry(&ctx, &mut entities, &[sketch], &[feature], &[lane])?;
+    project_relation_point_geometry(&mut entities, &[sketch], &[feature], &[lane]);
     assert!(entities.is_empty());
-    Ok(())
 }
 
 #[test]
-fn planar_relation_projection_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = project_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT planar relation sketches"));
-}
-
-#[test]
-fn planar_relation_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "format SLDPRT planar relation constraint identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "format SLDPRT planar relation constraint identity"));
-}
-
-#[test]
-fn planar_relation_projection_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let error = project_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT planar relation sketches"));
-}
-
-#[test]
-fn solved_point_projection_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = project_solved_point_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT solved-point sketches"));
-}
-
-#[test]
-fn solved_point_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT relation identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_solved_point_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT relation identity"));
-}
-
-#[test]
-fn solved_point_projection_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let error = project_solved_point_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT solved-point sketches"));
-}
-
-#[test]
-fn solved_line_projection_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = project_solved_line_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT solved-line sketches"));
-}
-
-#[test]
-fn solved_line_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT planar sketch identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_solved_line_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT planar sketch identity"));
-}
-
-#[test]
-fn solved_line_projection_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let error = project_solved_line_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT solved-line sketches"));
-}
-
-#[test]
-fn relation_point_projection_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = project_relation_point_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT relation-point sketches"));
-}
-
-#[test]
-fn relation_point_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT planar sketch identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_relation_point_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT planar sketch identity"));
-}
-
-#[test]
-fn relation_point_projection_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let error = project_relation_point_with_policy(policy).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT relation-point sketches"));
+fn relation_point_projection_succeeds() {
+    project_relation_point_with_policy();
 }
 
 fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -385,17 +258,14 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
     Ok(())
 }
 
-fn assert_owned_loci_refusal(
-    dimension: ResourceDimension,
-    project: impl Fn(&DecodePolicy) -> Result<(), CodecError>,
-) {
-    let set_limit = |policy: &mut DecodePolicy, limit: u64| match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-        ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = limit,
-        _ => panic!("unexpected owned locus budget dimension"),
-    };
+#[test]
+fn planar_relation_owned_loci_succeeds() {
+    project_owned_loci_with_policy(&DecodePolicy::service()).unwrap();
+}
+
+fn assert_owned_loci_refusal(project: impl Fn(&DecodePolicy) -> Result<(), CodecError>) {
+    let set_limit =
+        |policy: &mut DecodePolicy, limit: u64| policy.limits.max_recursion_depth = limit;
     project(&DecodePolicy::service()).unwrap();
     let mut upper = 1u64;
     loop {
@@ -403,7 +273,9 @@ fn assert_owned_loci_refusal(
         set_limit(&mut policy, upper);
         match project(&policy) {
             Ok(()) => break,
-            Err(CodecError::ResourceLimit(limit)) => assert_eq!(limit.dimension, dimension),
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+            }
             Err(error) => panic!("unexpected projection error: {error}"),
         }
         upper = upper.checked_mul(2).unwrap();
@@ -416,7 +288,7 @@ fn assert_owned_loci_refusal(
         match project(&policy) {
             Ok(()) => upper = middle,
             Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
                 lower = middle + 1;
             }
             Err(error) => panic!("unexpected projection error: {error}"),
@@ -427,30 +299,10 @@ fn assert_owned_loci_refusal(
     set_limit(&mut policy, upper);
     project(&policy).unwrap();
     set_limit(&mut policy, upper - 1);
-    assert!(
-        matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
-#[test]
-fn planar_relation_owned_loci_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_owned_loci_with_policy,
-    );
-}
-
-#[test]
-fn planar_relation_owned_loci_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_owned_loci_with_policy,
-    );
-}
-
-#[test]
-fn planar_relation_owned_loci_refuse_work_limit() {
-    assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_owned_loci_with_policy);
+    assert!(matches!(
+        project(&policy),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth
+    ));
 }
 
 fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -507,25 +359,8 @@ fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecErr
 }
 
 #[test]
-fn planar_dimensional_relation_refuses_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_dimensional_with_policy,
-    );
-}
-#[test]
-fn planar_dimensional_relation_refuses_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_dimensional_with_policy,
-    );
-}
-#[test]
-fn planar_dimensional_relation_refuses_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_dimensional_with_policy,
-    );
+fn planar_dimensional_relation_succeeds() {
+    project_dimensional_with_policy(&DecodePolicy::service()).unwrap();
 }
 
 fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -597,25 +432,8 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
 }
 
 #[test]
-fn planar_dimensional_points_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_dimensional_points_with_policy,
-    );
-}
-#[test]
-fn planar_dimensional_points_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_dimensional_points_with_policy,
-    );
-}
-#[test]
-fn planar_dimensional_points_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_dimensional_points_with_policy,
-    );
+fn planar_dimensional_points_succeeds() {
+    project_dimensional_points_with_policy(&DecodePolicy::service()).unwrap();
 }
 
 fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -687,27 +505,8 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
 }
 
 #[test]
-fn planar_dimensional_lines_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_dimensional_lines_with_policy,
-    );
-}
-
-#[test]
-fn planar_dimensional_lines_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_dimensional_lines_with_policy,
-    );
-}
-
-#[test]
-fn planar_dimensional_lines_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_dimensional_lines_with_policy,
-    );
+fn planar_dimensional_lines_succeeds() {
+    project_dimensional_lines_with_policy(&DecodePolicy::service()).unwrap();
 }
 
 fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -775,27 +574,8 @@ fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), Cod
 }
 
 #[test]
-fn planar_repeated_circles_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_repeated_circles_with_policy,
-    );
-}
-
-#[test]
-fn planar_repeated_circles_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_repeated_circles_with_policy,
-    );
-}
-
-#[test]
-fn planar_repeated_circles_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_repeated_circles_with_policy,
-    );
+fn planar_repeated_circles_succeeds() {
+    project_repeated_circles_with_policy(&DecodePolicy::service()).unwrap();
 }
 
 fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -869,27 +649,8 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
 }
 
 #[test]
-fn planar_dynamic_lines_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_dynamic_lines_with_policy,
-    );
-}
-
-#[test]
-fn planar_dynamic_lines_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_dynamic_lines_with_policy,
-    );
-}
-
-#[test]
-fn planar_dynamic_lines_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_dynamic_lines_with_policy,
-    );
+fn planar_dynamic_lines_succeeds() {
+    project_dynamic_lines_with_policy(&DecodePolicy::service()).unwrap();
 }
 
 fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -987,32 +748,8 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
 }
 
 #[test]
-fn planar_dynamic_marker_points_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_dynamic_marker_points_with_policy,
-    );
-}
-#[test]
-fn planar_dynamic_marker_points_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_dynamic_marker_points_with_policy,
-    );
-}
-#[test]
-fn planar_dynamic_marker_points_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_dynamic_marker_points_with_policy,
-    );
-}
-#[test]
 fn planar_dynamic_marker_points_refuse_nesting_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RecursionDepth,
-        project_dynamic_marker_points_with_policy,
-    );
+    assert_owned_loci_refusal(project_dynamic_marker_points_with_policy);
 }
 
 fn project_native_marker_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -1071,28 +808,6 @@ fn project_native_marker_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
     );
     Ok(())
 }
-#[test]
-fn planar_native_marker_refuses_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_native_marker_with_policy,
-    );
-}
-#[test]
-fn planar_native_marker_refuses_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_native_marker_with_policy,
-    );
-}
-#[test]
-fn planar_native_marker_refuses_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_native_marker_with_policy,
-    );
-}
-
 mod roster_points;
 
 mod address_markers;

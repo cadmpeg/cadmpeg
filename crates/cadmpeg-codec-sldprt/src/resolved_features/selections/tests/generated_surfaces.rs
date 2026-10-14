@@ -44,9 +44,7 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let identities = generated_surface_identities(&ctx, &lane).unwrap();
+    let identities = generated_surface_identities(&lane).unwrap();
     assert_eq!(identities.len(), 1);
     let identity = &identities[0];
     assert_eq!(identity.offset, u64::try_from(offset).unwrap());
@@ -103,10 +101,9 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
         sketch_entities: Vec::new(),
     };
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 6_000_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let identities = generated_surface_identities(&ctx, &lane).unwrap();
+    let identities = generated_surface_identities(&lane).unwrap();
     assert_eq!(identities.len(), 2048);
     for (index, identity) in identities.iter().enumerate() {
         assert_eq!(identity.offset, u64::try_from(first + index * 16).unwrap());
@@ -175,9 +172,7 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
         sketch_entities: Vec::new(),
     };
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 400_000;
-    policy.limits.max_materialized_bytes = 1_000_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cache = None;
     for _ in 0..32 {
@@ -195,10 +190,5 @@ fn split_surface_queries_reuse_one_scoped_identity_parse() {
         assert_eq!(selections[0].1.len(), 2);
         assert_eq!(selections[0].1[1].local_id, Some(3));
     }
-    drop(cache);
-    drop(
-        ctx.reserve_scoped(1_000_000, "released surface identity cache")
-            .unwrap(),
-    );
     assert!(ctx.resource_refusal().is_none());
 }

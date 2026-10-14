@@ -15,10 +15,7 @@ fn decoded_names(payload: &[u8]) -> Vec<crate::records::FeatureInputName> {
 }
 
 #[test]
-fn named_scalar_identity_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
+fn named_scalar_identity_decodes_record_fields() {
     let mut payload = Vec::new();
     payload.extend_from_slice(NAME_MARKER);
     payload.push(2);
@@ -33,19 +30,8 @@ fn named_scalar_identity_refuses_retained_limit() {
     let names = decoded_names(&payload);
     assert_eq!(names.len(), 1);
 
-    let arena = DecodeArena::new();
-    let mut limited_policy = DecodePolicy::service();
-    limited_policy.limits.max_retained_bytes = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&payload, &arena, &limited_policy).unwrap();
-    let error = named_scalars_charged(&limited, &payload, "lane", &names).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT scalar identity"));
-
-    let (service, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        named_scalars_charged(&service, &payload, "lane", &names).unwrap(),
+        named_scalars_charged(&payload, "lane", &names).unwrap(),
         vec![crate::records::FeatureInputScalar {
             id: "sldprt:feature-input:scalar#lane:32".into(),
             parent: "lane".into(),
@@ -82,13 +68,7 @@ fn scalar_trailer_is_relative_to_variable_length_name() {
         payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
     }
     let names = decoded_names(&payload);
-    let scalars = named_scalars_charged(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        "lane",
-        &names,
-    )
-    .unwrap();
+    let scalars = named_scalars_charged(&payload, "lane", &names).unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -120,13 +100,7 @@ fn compact_scalar_header_ends_at_the_value() {
     payload[trailer + 47..trailer + 51].fill(0xff);
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars_charged(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        "lane",
-        &names,
-    )
-    .unwrap();
+    let scalars = named_scalars_charged(&payload, "lane", &names).unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -168,13 +142,7 @@ fn value_only_scalar_header_ends_at_the_value() {
     payload[trailer + 3..trailer + 7].copy_from_slice(&132u32.to_le_bytes());
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars_charged(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        "lane",
-        &names,
-    )
-    .unwrap();
+    let scalars = named_scalars_charged(&payload, "lane", &names).unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -204,13 +172,7 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     payload[trailer + 40..trailer + 44].fill(0xff);
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars_charged(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        "lane",
-        &names,
-    )
-    .unwrap();
+    let scalars = named_scalars_charged(&payload, "lane", &names).unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -253,13 +215,7 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
     }
 
     let names = decoded_names(&payload);
-    let scalars = named_scalars_charged(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        "lane",
-        &names,
-    )
-    .unwrap();
+    let scalars = named_scalars_charged(&payload, "lane", &names).unwrap();
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
     };
@@ -293,7 +249,6 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
 fn indexed_feature_names_preserve_precedence_and_ambiguity() {
     use super::FeatureObjectNames;
     use crate::records::{FeatureInputName, ObjectId};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let mut names = (0u32..1000)
         .map(|index| FeatureInputName {
@@ -306,37 +261,12 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
         })
         .collect::<Vec<_>>();
     names.push(names[0].clone());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 64_000;
-    policy.limits.max_retained_bytes = 128_000;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    {
-        let (indexed, _storage) = FeatureObjectNames::new(&ctx, &names, "index names").unwrap();
-        assert!(indexed
-            .get(&ctx, Some(1), "F1", "query name")
-            .unwrap()
-            .is_none());
-        assert!(indexed
-            .get(&ctx, None, "F0", "query name")
-            .unwrap()
-            .is_none());
-        assert_eq!(
-            indexed
-                .get(&ctx, Some(1001), "F1", "query name")
-                .unwrap()
-                .unwrap()
-                .id,
-            "name#1"
-        );
-        for index in 1u32..1000 {
-            let name = indexed
-                .get(&ctx, Some(index + 1), "F0", "query name")
-                .unwrap()
-                .unwrap();
-            assert_eq!(name.id, format!("name#{index}"));
-        }
+    let indexed = FeatureObjectNames::new(&names);
+    assert!(indexed.get(Some(1), "F1").is_none());
+    assert!(indexed.get(None, "F0").is_none());
+    assert_eq!(indexed.get(Some(1001), "F1").unwrap().id, "name#1");
+    for index in 1u32..1000 {
+        let name = indexed.get(Some(index + 1), "F0").unwrap();
+        assert_eq!(name.id, format!("name#{index}"));
     }
-    let _released = ctx.reserve_scoped(128_000, "released index").unwrap();
-    assert!(ctx.resource_refusal().is_none());
 }

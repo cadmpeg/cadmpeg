@@ -43,40 +43,6 @@ fn with_projection_context<R>(
 }
 
 #[test]
-fn draft_feature_identity_index_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut feature = cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("synthetic:test:id#draft").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: UnresolvedFamily::Draft,
-            }),
-        ),
-        native_ref: Some("draft".into()),
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = super::project_draft_operands(&ctx, std::slice::from_mut(&mut feature), &[], &[])
-        .expect_err("draft feature identity exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "index SLDPRT draft feature identities")
-    );
-}
-
-#[test]
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
@@ -102,53 +68,40 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         tolerance: None,
     };
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
-            ctx,
+        unique_cylindrical_face(
             4.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
-        .expect("cylindrical face search"),
+        ),
         Some(face.id.clone())
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
-            ctx,
+        unique_cylindrical_face(
             3.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
-        .expect("cylindrical face search"),
+        ),
         None
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_topological_cylindrical_face(
-            ctx,
+        unique_topological_cylindrical_face(
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ))
-        .expect("topological cylinder search"),
+        ),
         Some(face.id.clone())
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        with_projection_context(|ctx| unique_cylindrical_face(
-            ctx,
+        unique_cylindrical_face(
             4.0,
             &[face.clone(), duplicate.clone()],
-            std::slice::from_ref(&surface),
-        ))
-        .expect("cylindrical face search"),
+            std::slice::from_ref(&surface)
+        ),
         None
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_topological_cylindrical_face(
-            ctx,
-            &[face, duplicate],
-            &[surface]
-        ))
-        .expect("topological cylinder search"),
+        unique_topological_cylindrical_face(&[face, duplicate], &[surface]),
         None
     );
 }
@@ -179,38 +132,32 @@ fn frame_only_plane_support_requires_one_coincident_face() {
     };
 
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
-            ctx,
+        unique_planar_face(
             Point3::new(4.0, -2.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        ))
-        .expect("planar face search"),
+            std::slice::from_ref(&surface)
+        ),
         Some(face.id.clone())
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
-            ctx,
+        unique_planar_face(
             Point3::new(0.0, 0.0, 6.0),
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        ))
-        .expect("planar face search"),
+            std::slice::from_ref(&surface)
+        ),
         None
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        with_projection_context(|ctx| unique_planar_face(
-            ctx,
+        unique_planar_face(
             Point3::new(0.0, 0.0, 5.0),
             Vector3::new(0.0, 0.0, 1.0),
             &[face, duplicate],
-            &[surface],
-        ))
-        .expect("planar face search"),
+            &[surface]
+        ),
         None
     );
 }
@@ -266,15 +213,11 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         native_ref: None,
     }];
 
-    with_projection_context(|ctx| {
-        project_unbound_offset_plane_faces(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        )
-    })
-    .expect("offset plane projection");
+    project_unbound_offset_plane_faces(
+        &mut features,
+        std::slice::from_ref(&face),
+        std::slice::from_ref(&surface),
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -338,15 +281,11 @@ fn generic_native_offset_plane_support_stays_native() {
         native_ref: None,
     }];
 
-    with_projection_context(|ctx| {
-        project_unbound_offset_plane_faces(
-            ctx,
-            &mut features,
-            std::slice::from_ref(&face),
-            std::slice::from_ref(&surface),
-        )
-    })
-    .expect("offset plane projection");
+    project_unbound_offset_plane_faces(
+        &mut features,
+        std::slice::from_ref(&face),
+        std::slice::from_ref(&surface),
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -1850,66 +1789,55 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
 #[test]
 fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
-    with_projection_context(|ctx| {
-        let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
-            id: format!("{parent}-{offset}"),
-            parent: parent.into(),
-            ordinal: 0,
-            offset,
-            selector: 0,
-            kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
-            object_name_ref: "name".into(),
-            feature_ref: "fillet-native".into(),
-            producer_feature_refs: vec!["producer-native".into()],
-            terminal_feature_ref: Some("producer-native".into()),
-            components: vec![FeatureInputComponentPathEntry {
-                instance: Some(0x8020),
-                type_signature: [0; 12].into(),
-                local_id: Some(local_id),
-            }],
-        };
+    let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
+        id: format!("{parent}-{offset}"),
+        parent: parent.into(),
+        ordinal: 0,
+        offset,
+        selector: 0,
+        kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
+        object_name_ref: "name".into(),
+        feature_ref: "fillet-native".into(),
+        producer_feature_refs: vec!["producer-native".into()],
+        terminal_feature_ref: Some("producer-native".into()),
+        components: vec![FeatureInputComponentPathEntry {
+            instance: Some(0x8020),
+            type_signature: [0; 12].into(),
+            local_id: Some(local_id),
+        }],
+    };
 
-        let lane = [
-            selection("lane-one", 40, 3),
-            selection("lane-one", 20, 2),
-            selection("lane-one", 60, 1),
-        ];
-        let borrowed = lane.iter().collect::<Vec<_>>();
-        let [center, side_one, side_two] = full_round_fillet_selection_triple(ctx, &borrowed)
-            .expect("grouping")
-            .expect("one lane of three is a triple");
-        assert_eq!(
-            [center.offset, side_one.offset, side_two.offset],
-            [20, 40, 60]
-        );
+    let lane = [
+        selection("lane-one", 40, 3),
+        selection("lane-one", 20, 2),
+        selection("lane-one", 60, 1),
+    ];
+    let borrowed = lane.iter().collect::<Vec<_>>();
+    let [center, side_one, side_two] =
+        full_round_fillet_selection_triple(&borrowed).expect("one lane of three is a triple");
+    assert_eq!(
+        [center.offset, side_one.offset, side_two.offset],
+        [20, 40, 60]
+    );
 
-        let short = lane[..2].iter().collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &short)
-            .expect("grouping")
-            .is_none());
+    let short = lane[..2].iter().collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&short).is_none());
 
-        let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
-        let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &with_short_lane)
-            .expect("grouping")
-            .is_none());
+    let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
+    let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&with_short_lane).is_none());
 
-        let other_lane = [
-            selection("lane-two", 20, 9),
-            selection("lane-two", 40, 8),
-            selection("lane-two", 60, 7),
-        ];
-        let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &disagreeing)
-            .expect("grouping")
-            .is_none());
+    let other_lane = [
+        selection("lane-two", 20, 9),
+        selection("lane-two", 40, 8),
+        selection("lane-two", 60, 7),
+    ];
+    let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&disagreeing).is_none());
 
-        let fourth = [selection("lane-one", 80, 4)];
-        let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
-        assert!(full_round_fillet_selection_triple(ctx, &over_long)
-            .expect("grouping")
-            .is_none());
-    });
+    let fourth = [selection("lane-one", 80, 4)];
+    let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&over_long).is_none());
 }
 
 mod unresolved_fillet_groups;

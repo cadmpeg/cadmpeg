@@ -1,6 +1,6 @@
-use super::{assert_owned_loci_refusal, planar_fixture, project_relation_bindings};
+use super::{planar_fixture, project_relation_bindings};
 use crate::records::{FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId, ParameterValue};
 use cadmpeg_ir::sketches::{
@@ -73,25 +73,8 @@ fn project_roster_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
 }
 
 #[test]
-fn planar_roster_points_refuse_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_roster_points_with_policy,
-    );
-}
-#[test]
-fn planar_roster_points_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_roster_points_with_policy,
-    );
-}
-#[test]
-fn planar_roster_points_refuse_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_roster_points_with_policy,
-    );
+fn planar_roster_points_succeeds() {
+    project_roster_points_with_policy(&DecodePolicy::service()).unwrap();
 }
 
 fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -163,23 +146,6 @@ fn project_roster_point_line_with_policy(policy: &DecodePolicy) -> Result<(), Co
 }
 
 #[test]
-fn planar_roster_point_line_refuses_collection_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::CollectionItems,
-        project_roster_point_line_with_policy,
-    );
-}
-#[test]
-fn planar_roster_point_line_refuses_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_roster_point_line_with_policy,
-    );
-}
-#[test]
-fn planar_roster_point_line_refuses_work_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::WorkUnits,
-        project_roster_point_line_with_policy,
-    );
+fn planar_roster_point_line_succeeds() {
+    project_roster_point_line_with_policy(&DecodePolicy::service()).unwrap();
 }

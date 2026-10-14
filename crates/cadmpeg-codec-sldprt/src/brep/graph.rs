@@ -18,7 +18,7 @@ use cadmpeg_ir::eval::{
     nurbs_surface_isocurve,
 };
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, SurfaceParameterAxis},
+    nurbs::SurfaceParameterAxis,
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs},
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
@@ -172,39 +172,31 @@ impl Brep {
         // The site qualifier is admitted once, here, as a key tail. Appending
         // an admitted tail to an admitted key cannot leave the grammar, so no
         // identity below is rebuilt from text.
-        let tail_len = site
-            .len()
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("qualify SLDPRT site", u64::MAX - 1, u64::MAX))?;
-        let (mut tail_text, _tail_reservation) =
-            ctx.scoped_string(tail_len, "qualify SLDPRT site")?;
-        tail_text.push('@');
-        tail_text.push_str(site);
-        let tail = cadmpeg_ir::ids::IdentityKeyTail::try_new(tail_text).map_err(|error| {
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "SLDPRT site qualifier is not identity key text: {error}"
-            ))
-        })?;
-        let qualify = |value: &str| qualified_reference(ctx, value, site);
+        let tail =
+            cadmpeg_ir::ids::IdentityKeyTail::try_new(format!("@{site}")).map_err(|error| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SLDPRT site qualifier is not identity key text: {error}"
+                ))
+            })?;
         for body in &mut self.bodies {
-            body.id = qualified(ctx, &body.id, &tail)?;
+            body.id = qualified(&body.id, &tail)?;
             for id in &mut body.regions {
-                *id = qualified(ctx, id, &tail)?;
+                *id = qualified(id, &tail)?;
             }
         }
         for region in &mut self.regions {
-            region.id = qualified(ctx, &region.id, &tail)?;
-            region.body = qualified(ctx, &region.body, &tail)?;
+            region.id = qualified(&region.id, &tail)?;
+            region.body = qualified(&region.body, &tail)?;
             for id in &mut region.shells {
-                *id = qualified(ctx, id, &tail)?;
+                *id = qualified(id, &tail)?;
             }
         }
         for shell in &mut self.shells {
-            let id = qualified(ctx, &shell.id, &tail)?;
-            let region = qualified(ctx, &shell.region, &tail)?;
-            let faces = qualified_ids(ctx, shell.faces(), &tail)?;
-            let wire_edges = qualified_ids(ctx, shell.wire_edges(), &tail)?;
-            let free_vertices = qualified_ids(ctx, shell.free_vertices(), &tail)?;
+            let id = qualified(&shell.id, &tail)?;
+            let region = qualified(&shell.region, &tail)?;
+            let faces = qualified_ids(shell.faces(), &tail)?;
+            let wire_edges = qualified_ids(shell.wire_edges(), &tail)?;
+            let free_vertices = qualified_ids(shell.free_vertices(), &tail)?;
             *shell = Shell::new(id, region, faces, wire_edges, free_vertices).map_err(|error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "qualified shell topology is invalid: {error}"
@@ -212,44 +204,39 @@ impl Brep {
             })?;
         }
         for face in &mut self.faces {
-            face.id = qualified(ctx, &face.id, &tail)?;
-            face.shell = qualified(ctx, &face.shell, &tail)?;
-            face.surface = qualified(ctx, &face.surface, &tail)?;
+            face.id = qualified(&face.id, &tail)?;
+            face.shell = qualified(&face.shell, &tail)?;
+            face.surface = qualified(&face.surface, &tail)?;
             face.loops = match &face.loops {
                 cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
-                    cadmpeg_ir::topology::FaceLoops::unspecified(qualified_ids(ctx, loops, &tail)?)
+                    cadmpeg_ir::topology::FaceLoops::unspecified(qualified_ids(loops, &tail)?)
                 }
                 cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
                     cadmpeg_ir::topology::FaceLoops::classified(
-                        qualified(ctx, outer, &tail)?,
-                        qualified_ids(ctx, inner, &tail)?,
+                        qualified(outer, &tail)?,
+                        qualified_ids(inner, &tail)?,
                     )
                 }
             };
         }
         for loop_ in &mut self.loops {
-            loop_.id = qualified(ctx, &loop_.id, &tail)?;
-            loop_.face = qualified(ctx, &loop_.face, &tail)?;
+            loop_.id = qualified(&loop_.id, &tail)?;
+            loop_.face = qualified(&loop_.face, &tail)?;
             match &mut loop_.boundary {
                 cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, pcurves } => {
-                    *vertex = qualified(ctx, vertex, &tail)?;
+                    *vertex = qualified(vertex, &tail)?;
                     for pcurve in pcurves {
-                        pcurve.pcurve = qualified(ctx, &pcurve.pcurve, &tail)?;
+                        pcurve.pcurve = qualified(&pcurve.pcurve, &tail)?;
                     }
                 }
                 cadmpeg_ir::topology::LoopBoundary::Ring(ring) => {
-                    let coedges = qualified_ids(ctx, ring.coedges(), &tail)?;
+                    let coedges = qualified_ids(ring.coedges(), &tail)?;
                     let mut vertex_uses = Vec::new();
-                    ctx.reserve_vec(
-                        &mut vertex_uses,
-                        ring.vertex_uses().len(),
-                        "collect qualified SLDPRT vertex uses",
-                    )?;
                     for vertex_use in ring.vertex_uses() {
                         vertex_uses.push(cadmpeg_ir::topology::AnchoredVertexUse {
-                            vertex: qualified(ctx, &vertex_use.vertex, &tail)?,
-                            after: qualified(ctx, &vertex_use.after, &tail)?,
-                            pcurves: qualified_pcurve_uses(ctx, &vertex_use.pcurves, &tail)?,
+                            vertex: qualified(&vertex_use.vertex, &tail)?,
+                            after: qualified(&vertex_use.after, &tail)?,
+                            pcurves: qualified_pcurve_uses(&vertex_use.pcurves, &tail)?,
                         });
                     }
                     *ring = cadmpeg_ir::topology::LoopRing::new(ctx, coedges, vertex_uses)
@@ -263,46 +250,46 @@ impl Brep {
             }
         }
         for coedge in &mut self.coedges {
-            coedge.id = qualified(ctx, &coedge.id, &tail)?;
-            coedge.owner_loop = qualified(ctx, &coedge.owner_loop, &tail)?;
-            coedge.edge = qualified(ctx, &coedge.edge, &tail)?;
-            coedge.radial_next = qualified(ctx, &coedge.radial_next, &tail)?;
+            coedge.id = qualified(&coedge.id, &tail)?;
+            coedge.owner_loop = qualified(&coedge.owner_loop, &tail)?;
+            coedge.edge = qualified(&coedge.edge, &tail)?;
+            coedge.radial_next = qualified(&coedge.radial_next, &tail)?;
             for use_ in &mut coedge.pcurves {
-                use_.pcurve = qualified(ctx, &use_.pcurve, &tail)?;
+                use_.pcurve = qualified(&use_.pcurve, &tail)?;
             }
         }
         for edge in &mut self.edges {
-            edge.id = qualified(ctx, &edge.id, &tail)?;
+            edge.id = qualified(&edge.id, &tail)?;
             if let Some(curve) = edge.curve() {
-                let curve = qualified(ctx, curve, &tail)?;
+                let curve = qualified(curve, &tail)?;
                 edge.map_curve(|_| curve);
             }
-            edge.start = qualified(ctx, &edge.start, &tail)?;
-            edge.end = qualified(ctx, &edge.end, &tail)?;
+            edge.start = qualified(&edge.start, &tail)?;
+            edge.end = qualified(&edge.end, &tail)?;
         }
         for vertex in &mut self.vertices {
-            vertex.id = qualified(ctx, &vertex.id, &tail)?;
-            vertex.point = qualified(ctx, &vertex.point, &tail)?;
+            vertex.id = qualified(&vertex.id, &tail)?;
+            vertex.point = qualified(&vertex.point, &tail)?;
         }
         for point in &mut self.points {
-            point.id = qualified(ctx, &point.id, &tail)?;
+            point.id = qualified(&point.id, &tail)?;
         }
         for surface in &mut self.surfaces {
-            surface.id = qualified(ctx, &surface.id, &tail)?;
+            surface.id = qualified(&surface.id, &tail)?;
             match &mut surface.geometry {
                 SurfaceGeometry::Procedural { construction, .. } => {
-                    *construction = qualified(ctx, construction, &tail)?;
+                    *construction = qualified(construction, &tail)?;
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: Some(record),
                 }) => {
-                    *record = qualified(ctx, record, &tail)?;
+                    *record = qualified(record, &tail)?;
                 }
                 SurfaceGeometry::Solved(_) => {}
             }
         }
         for procedural in &mut self.procedural_surfaces {
-            procedural.id = qualified(ctx, &procedural.id, &tail)?;
+            procedural.id = qualified(&procedural.id, &tail)?;
             procedural.edit_definition(|definition| {
                 match definition {
                     ProceduralSurfaceDefinition::Blend(definition_payload) => {
@@ -311,7 +298,7 @@ impl Brep {
                                 support
                                     .as_ref()
                                     .map(|support| {
-                                        qualified(ctx, &support.surface, &tail).map(|surface| {
+                                        qualified(&support.surface, &tail).map(|surface| {
                                             cadmpeg_ir::geometry::BlendSupport {
                                                 surface,
                                                 reversed: support.reversed,
@@ -323,17 +310,14 @@ impl Brep {
                         let spine = definition_payload
                             .spine()
                             .as_ref()
-                            .map(|spine| qualified(ctx, spine, &tail))
+                            .map(|spine| qualified(spine, &tail))
                             .transpose()?;
                         definition_payload.set_supports([first?, second?]);
                         definition_payload.set_spine(spine);
                     }
                     ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                        definition_payload.set_support(qualified(
-                            ctx,
-                            definition_payload.support(),
-                            &tail,
-                        )?);
+                        definition_payload
+                            .set_support(qualified(definition_payload.support(), &tail)?);
                     }
                     _ => {}
                 }
@@ -341,99 +325,83 @@ impl Brep {
             })?;
         }
         for curve in &mut self.curves {
-            curve.id = qualified(ctx, &curve.id, &tail)?;
+            curve.id = qualified(&curve.id, &tail)?;
             if let CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(record),
             }) = &mut curve.geometry
             {
-                *record = qualified(ctx, record, &tail)?;
+                *record = qualified(record, &tail)?;
             }
         }
         for pcurve in &mut self.pcurves {
-            pcurve.id = qualified(ctx, &pcurve.id, &tail)?;
+            pcurve.id = qualified(&pcurve.id, &tail)?;
         }
         for record in &mut self.unknowns {
-            let id = qualified(ctx, record.id(), &tail)?;
+            let id = qualified(record.id(), &tail)?;
             record.set_id(id);
             for link in record.links_mut() {
-                *link = qualify(link)?;
+                *link = qualified_reference(link, site);
             }
         }
         for color in &mut self.face_colors {
             if let Some(target) = &mut color.value.target {
-                *target = qualify(target)?;
+                *target = qualified_reference(target, site);
             }
-            let mut site_key = String::new();
-            ctx.try_reserve_retained_text(
-                &mut site_key,
-                site.len(),
-                "copy SLDPRT face color site",
-            )?;
-            site_key.push_str(site);
-            color.site_key = Some(site_key);
+            color.site_key = Some(site.to_owned());
         }
         for atom in &mut self.face_atoms {
-            atom.face = qualified(ctx, &atom.face, &tail)?;
+            atom.face = qualified(&atom.face, &tail)?;
         }
         for modifier in &mut self.body_modifiers {
             if let Some(target) = &mut modifier.target {
-                *target = qualify(target)?;
+                *target = qualified_reference(target, site);
             }
         }
         self.annotations
-            .map_ids(ctx, qualify, "qualify SLDPRT annotation identities")?
+            .map_ids(
+                ctx,
+                |value| Ok(qualified_reference(value, site)),
+                "qualify SLDPRT annotation identities",
+            )?
             .map_err(cadmpeg_core::CodecError::from)?;
-
         Ok(())
     }
 }
 
-fn shell_face_components(
-    ctx: &DecodeContext<'_>,
-    out: &Brep,
-    native_shell_id: &str,
-) -> Result<Vec<Vec<FaceId>>, cadmpeg_core::CodecError> {
+fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> {
     let mut candidates = Vec::new();
     for face in &out.faces {
-        ctx.charge_work(1, "select Parasolid shell faces")?;
         if face.shell.as_str() == native_shell_id {
-            ctx.reserve_vec(&mut candidates, 1, "select Parasolid shell faces")?;
             candidates.push(&face.id);
         }
     }
     let mut candidate_ids = HashSet::new();
     for face in &candidates {
         let key = face.as_str();
-        ctx.insert_hash_set(&mut candidate_ids, key, "index Parasolid shell faces")?;
+        candidate_ids.insert(key);
     }
     let mut loop_faces = HashMap::new();
     for loop_ in &out.loops {
-        ctx.charge_work(1, "index Parasolid shell loops")?;
         if candidate_ids.contains(loop_.face.as_str()) {
             let key = loop_.id.as_str();
-            ctx.admit_hash_map_entry(&mut loop_faces, &key, "index Parasolid shell loops")?;
             loop_faces.insert(key, loop_.face.as_str());
         }
     }
     let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
     for coedge in &out.coedges {
-        ctx.charge_work(1, "index Parasolid shell edges")?;
         if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
             let key = coedge.edge.as_str();
-            ctx.admit_hash_map_entry(&mut faces_by_edge, &key, "index Parasolid shell edges")?;
             let edge_faces = faces_by_edge.entry(key).or_default();
-            ctx.insert_hash_set(edge_faces, *face, "index Parasolid edge faces")?;
+            edge_faces.insert(*face);
         }
     }
     let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
     for edge_faces in faces_by_edge.values() {
         for &face in edge_faces {
-            ctx.admit_hash_map_entry(&mut neighbors, &face, "index Parasolid face neighbors")?;
             let adjacent = neighbors.entry(face).or_default();
             for &other in edge_faces {
-                ctx.charge_work(1, "index Parasolid face neighbors")?;
                 if other != face {
-                    ctx.insert_hash_set(adjacent, other, "index Parasolid face neighbors")?;
+                    adjacent.insert(other);
                 }
             }
         }
@@ -444,60 +412,33 @@ fn shell_face_components(
     let mut faces_by_key = HashMap::new();
     for face in &candidates {
         let key = face.as_str();
-        ctx.admit_hash_map_entry(&mut faces_by_key, &key, "index Parasolid face identities")?;
         faces_by_key.insert(key, *face);
     }
     let mut assigned = HashSet::new();
     let mut components = Vec::new();
     for face in &candidates {
         let key = face.as_str();
-        if !ctx.insert_hash_set(&mut assigned, key, "walk Parasolid shell components")? {
+        if !assigned.insert(key) {
             continue;
         }
         let mut component = Vec::new();
         let mut pending = Vec::new();
-        ctx.reserve_vec(&mut pending, 1, "walk Parasolid shell components")?;
         pending.push(key);
         while let Some(current) = pending.pop() {
             let Some(face) = faces_by_key.get(current) else {
                 continue;
             };
-            let mut id = String::new();
-            ctx.try_reserve_retained_text(
-                &mut id,
-                face.as_str().len(),
-                "copy Parasolid face identity",
-            )?;
-            id.push_str(face.as_str());
-            let id = FaceId::mint(id).map_err(|error| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "Parasolid face identity is invalid: {error}"
-                ))
-            })?;
-            ctx.reserve_vec(&mut component, 1, "walk Parasolid shell components")?;
-            component.push(id);
+            component.push((*face).clone());
             for &neighbor in neighbors.get(current).into_iter().flatten() {
-                ctx.charge_work(1, "walk Parasolid shell components")?;
-                if ctx.insert_hash_set(
-                    &mut assigned,
-                    neighbor,
-                    "walk Parasolid shell components",
-                )? {
-                    ctx.reserve_vec(&mut pending, 1, "walk Parasolid shell components")?;
+                if assigned.insert(neighbor) {
                     pending.push(neighbor);
                 }
             }
         }
-        ctx.stable_sort_by(
-            &mut component,
-            |left, right| left.as_str().cmp(right.as_str()),
-            |id| id.as_str().len(),
-            "sort Parasolid shell faces",
-        )?;
-        ctx.reserve_vec(&mut components, 1, "group Parasolid shell components")?;
+        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         components.push(component);
     }
-    Ok(components)
+    components
 }
 
 #[derive(Debug, Clone)]
@@ -570,41 +511,28 @@ fn pcurve_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
 }
 
 /// The component split of one native shell: `<shell>.component-<ordinal>`.
-fn shell_component(
-    ctx: &DecodeContext<'_>,
-    shell: &ShellId,
-    component: usize,
-) -> Result<ShellId, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(
-        format_args!("{shell}.component-{component}"),
-        "SLDPRT shell component identity",
-    )?;
+fn shell_component(shell: &ShellId, component: usize) -> Result<ShellId, cadmpeg_core::CodecError> {
+    let text = format!("{shell}.component-{component}");
     ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 /// Append the site qualifier to one typed identity's key.
 ///
-/// The admitted tail preserves the key grammar. The caller context charges
-/// the resulting retained text before the append reserves capacity.
+/// The admitted tail preserves the key grammar.
 fn qualified<T>(
-    ctx: &DecodeContext<'_>,
     id: &T,
     site: &cadmpeg_ir::ids::IdentityKeyTail,
 ) -> Result<T, cadmpeg_core::CodecError>
 where
     T: std::fmt::Display + From<cadmpeg_ir::ids::Identity>,
 {
-    let text = ctx.format_retained(
-        format_args!("{id}{}", site.as_str()),
-        "qualify SLDPRT identity",
-    )?;
+    let text = format!("{id}{}", site.as_str());
     let identity =
         cadmpeg_ir::ids::Identity::new(text).map_err(cadmpeg_core::CodecError::malformed)?;
     Ok(T::from(identity))
 }
 
 fn qualified_ids<T>(
-    ctx: &DecodeContext<'_>,
     ids: &[T],
     site: &cadmpeg_ir::ids::IdentityKeyTail,
 ) -> Result<Vec<T>, cadmpeg_core::CodecError>
@@ -612,31 +540,20 @@ where
     T: std::fmt::Display + From<cadmpeg_ir::ids::Identity>,
 {
     let mut qualified_ids = Vec::new();
-    ctx.reserve_vec(
-        &mut qualified_ids,
-        ids.len(),
-        "collect qualified SLDPRT identities",
-    )?;
     for id in ids {
-        qualified_ids.push(qualified(ctx, id, site)?);
+        qualified_ids.push(qualified(id, site)?);
     }
     Ok(qualified_ids)
 }
 
 fn qualified_pcurve_uses(
-    ctx: &DecodeContext<'_>,
     uses: &[cadmpeg_ir::topology::PcurveUse],
     site: &cadmpeg_ir::ids::IdentityKeyTail,
 ) -> Result<Vec<cadmpeg_ir::topology::PcurveUse>, cadmpeg_core::CodecError> {
     let mut qualified_uses = Vec::new();
-    ctx.reserve_vec(
-        &mut qualified_uses,
-        uses.len(),
-        "collect qualified SLDPRT pcurve uses",
-    )?;
     for use_ in uses {
         qualified_uses.push(cadmpeg_ir::topology::PcurveUse {
-            pcurve: qualified(ctx, &use_.pcurve, site)?,
+            pcurve: qualified(&use_.pcurve, site)?,
             isoparametric: use_.isoparametric,
             parameter_range: use_.parameter_range,
         });
@@ -644,28 +561,12 @@ fn qualified_pcurve_uses(
     Ok(qualified_uses)
 }
 
-fn qualified_reference(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    site: &str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let tail = if value.contains('#') {
-        site.len().checked_add(1)
+fn qualified_reference(value: &str, site: &str) -> String {
+    if value.contains('#') {
+        format!("{value}@{site}")
     } else {
-        Some(0)
+        value.to_owned()
     }
-    .ok_or_else(|| ctx.refuse_codec_limit("qualify SLDPRT reference", u64::MAX - 1, u64::MAX))?;
-    let size = value.len().checked_add(tail).ok_or_else(|| {
-        ctx.refuse_codec_limit("qualify SLDPRT reference", u64::MAX - 1, u64::MAX)
-    })?;
-    let mut result = String::new();
-    ctx.try_reserve_retained_text(&mut result, size, "qualify SLDPRT reference")?;
-    result.push_str(value);
-    if tail != 0 {
-        result.push('@');
-        result.push_str(site);
-    }
-    Ok(result)
 }
 
 fn id_face(a: u16) -> FaceId {
@@ -914,22 +815,12 @@ fn emit_offset_surface(
         None,
     );
     admit_brep_entity(sink.ctx)?;
-    sink.ctx.reserve_vec(
-        &mut sink.out.procedural_surfaces,
-        1,
-        "collect Parasolid offset constructions",
-    )?;
     sink.out.procedural_surfaces.push(procedural);
     let geometry = SurfaceGeometry::Procedural {
         construction,
         cache: None,
     };
     admit_brep_entity(sink.ctx)?;
-    sink.ctx.reserve_vec(
-        &mut sink.out.surfaces,
-        1,
-        "collect Parasolid offset surfaces",
-    )?;
     sink.out.surfaces.push(Surface {
         id: surface,
         source_object: None,
@@ -949,8 +840,7 @@ fn support_is_acyclic(
     resolving: &mut HashSet<u16>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("check Parasolid surface support")?;
-    ctx.charge_work(1, "check Parasolid surface support")?;
-    if !ctx.insert_hash_set(resolving, attr, "track Parasolid surface support")? {
+    if !resolving.insert(attr) {
         return Ok(false);
     }
     let acyclic = if carriers.surface(attr).is_some() {
@@ -978,12 +868,7 @@ fn ensure_surface_support(
     resolving: &mut HashSet<u16>,
 ) -> Result<Option<SurfaceId>, cadmpeg_core::CodecError> {
     let _depth = sink.ctx.enter_nested("resolve Parasolid surface support")?;
-    sink.ctx
-        .charge_work(1, "resolve Parasolid surface support")?;
-    if !sink
-        .ctx
-        .insert_hash_set(resolving, attr, "track resolved Parasolid support")?
-    {
+    if !resolving.insert(attr) {
         return Ok(None);
     }
     let result = (|| -> Result<Option<SurfaceId>, cadmpeg_core::CodecError> {
@@ -1015,11 +900,6 @@ fn ensure_surface_support(
                     Some("procedural_support"),
                 )?;
                 admit_brep_entity(sink.ctx)?;
-                sink.ctx.reserve_vec(
-                    &mut sink.out.surfaces,
-                    1,
-                    "collect Parasolid support surfaces",
-                )?;
                 sink.out.surfaces.push(Surface {
                     id: id.try_clone_for_decode(sink.ctx, "SLDPRT decoded identity copy")?,
                     source_object: None,
@@ -1081,11 +961,6 @@ fn ensure_surface_support(
                 annotations.exactness(sink.ctx, surface.as_str(), Exactness::Unknown)?;
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
-                sink.ctx.reserve_vec(
-                    &mut sink.out.surfaces,
-                    1,
-                    "collect Parasolid opaque supports",
-                )?;
                 sink.out.surfaces.push(Surface {
                     id: surface
                         .try_clone_for_decode(sink.ctx, "copy Parasolid opaque surface identity")?,
@@ -1102,18 +977,13 @@ fn ensure_surface_support(
     result
 }
 
-fn walk_face(
-    ctx: &DecodeContext<'_>,
-    bridge: &topology::Bridge,
-    t: &topology::Tables,
-) -> Result<WalkedFace, cadmpeg_core::CodecError> {
+fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
-        ctx.charge_work(1, "walk Parasolid face loops")?;
-        if !ctx.insert_hash_set(&mut loop_guard, loop_ref, "walk Parasolid face loops")? {
+        if !loop_guard.insert(loop_ref) {
             break;
         }
         let Some(lp) = t.loops().get(&loop_ref) else {
@@ -1136,8 +1006,7 @@ fn walk_face(
         let mut ce_guard = HashSet::new();
         let mut ring_closed = false;
         while ce_ref != 0 {
-            ctx.charge_work(1, "walk Parasolid face coedges")?;
-            if !ctx.insert_hash_set(&mut ce_guard, ce_ref, "walk Parasolid face coedges")? {
+            if !ce_guard.insert(ce_ref) {
                 break;
             }
             let Some(ce) = t.coedges().get(&ce_ref) else {
@@ -1146,7 +1015,6 @@ fn walk_face(
             if ce.refs[1] != loop_ref {
                 break;
             }
-            ctx.reserve_vec(&mut ring, 1, "walk Parasolid face coedges")?;
             ring.push(ce_ref);
             ce_ref = ce.refs[3];
             if ce_ref == first {
@@ -1155,17 +1023,16 @@ fn walk_face(
             }
         }
         if ring_closed {
-            ctx.reserve_vec(&mut loops, 1, "walk Parasolid face loops")?;
             loops.push((loop_ref, ring));
         }
         loop_ref = lp.refs[3];
     }
-    Ok(WalkedFace {
+    WalkedFace {
         bridge_attr: bridge.attr,
         surface_attr,
         sense: bridge.sense,
         loops,
-    })
+    }
 }
 
 fn edge_parameter_range(
@@ -1308,60 +1175,29 @@ fn is_deltas_stream(header: &StreamHeader) -> bool {
 }
 
 fn selected_typed_face_offsets(
-    ctx: &DecodeContext<'_>,
     facts: &typed::Facts,
     attrs: Option<&HashSet<u16>>,
-) -> Result<HashSet<usize>, cadmpeg_core::CodecError> {
+) -> HashSet<usize> {
     let mut offsets = HashSet::new();
     if let Some(attrs) = attrs {
         for face in &facts.faces {
-            ctx.charge_work(1, "select typed Parasolid face offsets")?;
             if attrs.contains(&face.attr) {
-                ctx.insert_hash_set(
-                    &mut offsets,
-                    face.offset,
-                    "index typed Parasolid face offsets",
-                )?;
+                offsets.insert(face.offset);
             }
         }
     }
-    Ok(offsets)
+    offsets
 }
 
-fn append_entity_facts(
-    ctx: &DecodeContext<'_>,
-    target: &mut entity::Facts,
-    mut source: entity::Facts,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.reserve_vec(
-        &mut target.face_colors,
-        source.face_colors.len(),
-        "merge Parasolid face colors",
-    )?;
+fn append_entity_facts(target: &mut entity::Facts, mut source: entity::Facts) {
     target.face_colors.append(&mut source.face_colors);
-    ctx.reserve_vec(
-        &mut target.face_color_versions,
-        source.face_color_versions.len(),
-        "merge Parasolid face color versions",
-    )?;
     target
         .face_color_versions
         .append(&mut source.face_color_versions);
-    ctx.reserve_vec(
-        &mut target.face_atoms,
-        source.face_atoms.len(),
-        "merge Parasolid face atoms",
-    )?;
     target.face_atoms.append(&mut source.face_atoms);
-    ctx.reserve_vec(
-        &mut target.body_modifiers,
-        source.body_modifiers.len(),
-        "merge Parasolid body modifiers",
-    )?;
     target.body_modifiers.append(&mut source.body_modifiers);
     target.entity_count += source.entity_count;
     target.unresolved_face_colors += source.unresolved_face_colors;
-    Ok(())
 }
 
 /// Decode related partition and deltas streams as one record source.
@@ -1380,37 +1216,21 @@ pub(crate) fn decode_bodies(
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
     let mut ordered: Vec<&(&[u8], &StreamHeader)> = Vec::new();
-    ctx.reserve_vec(&mut ordered, bodies.len(), "order Parasolid body streams")?;
     ordered.extend(bodies.iter());
-    ctx.stable_sort_by(
-        &mut ordered,
-        |left, right| is_deltas_stream(left.1).cmp(&is_deltas_stream(right.1)),
-        |stream| stream.1.description.len(),
-        "sort Parasolid body streams",
-    )?;
+    ordered.sort_by_key(|entry| is_deltas_stream(entry.1));
     let mut entity_streams = Vec::new();
-    ctx.reserve_vec(
-        &mut entity_streams,
-        ordered.len(),
-        "index Parasolid body streams",
-    )?;
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
         entity_streams.push((body, is_deltas_stream(header)));
     }
     let mut typed_streams = Vec::new();
-    ctx.reserve_vec(
-        &mut typed_streams,
-        entity_streams.len(),
-        "index typed Parasolid streams",
-    )?;
     for (body, _) in &entity_streams {
-        typed_streams.push(typed::scan(body, ctx)?);
+        typed_streams.push(typed::scan(body));
     }
     for stream_typed_facts in &typed_streams {
-        typed_facts.merge_missing(ctx, stream_typed_facts.try_clone(ctx)?)?;
+        typed_facts.merge_missing(stream_typed_facts.clone());
     }
-    let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs(ctx)?;
+    let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
     for (stream_order, ((payload, header), stream_typed_facts)) in
         ordered.into_iter().zip(typed_streams).enumerate()
@@ -1418,20 +1238,19 @@ pub(crate) fn decode_bodies(
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
         let typed_face_offsets =
-            selected_typed_face_offsets(ctx, &stream_typed_facts, typed_bridge_attrs.as_ref())?;
-        carriers.merge_missing(ctx, scan_carriers(ctx, body)?)?;
-        let curve_attrs = carriers.curve_attrs(ctx)?;
+            selected_typed_face_offsets(&stream_typed_facts, typed_bridge_attrs.as_ref());
+        carriers.merge_missing(scan_carriers(ctx, body)?);
+        let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
             topology::scan_deltas_with_curve_attrs_excluding(
-                ctx,
                 body,
                 &curve_attrs,
                 &typed_face_offsets,
             )
         } else {
-            topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
-        }?;
-        let mut scanned_facts = entity::scan_metadata(ctx, body, is_deltas)?;
+            topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets)
+        };
+        let mut scanned_facts = entity::scan_metadata(body, is_deltas);
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
         }
@@ -1440,16 +1259,16 @@ pub(crate) fn decode_bodies(
         }
         if !initialized || !is_deltas {
             if initialized {
-                tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
-                append_entity_facts(ctx, &mut facts, scanned_facts)?;
+                tables.merge_deltas(scanned_tables, selected_bridge_attrs);
+                append_entity_facts(&mut facts, scanned_facts);
             } else {
                 tables = scanned_tables;
                 facts = scanned_facts;
                 initialized = true;
             }
         } else {
-            tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
-            append_entity_facts(ctx, &mut facts, scanned_facts)?;
+            tables.merge_deltas(scanned_tables, selected_bridge_attrs);
+            append_entity_facts(&mut facts, scanned_facts);
         }
     }
     decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
@@ -1461,35 +1280,23 @@ fn decode_body(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut carriers = scan_carriers(ctx, body)?;
-    let curve_attrs = carriers.curve_attrs(ctx)?;
-    let typed_facts = typed::scan(body, ctx)?;
-    let typed_face_attrs = typed_facts.valid_ownership_face_attrs(ctx)?;
-    let typed_face_offsets =
-        selected_typed_face_offsets(ctx, &typed_facts, typed_face_attrs.as_ref())?;
-    let t =
-        topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)?;
-    let entity_facts = entity::scan_metadata(ctx, body, false)?;
+    let curve_attrs = carriers.curve_attrs();
+    let typed_facts = typed::scan(body);
+    let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
+    let typed_face_offsets = selected_typed_face_offsets(&typed_facts, typed_face_attrs.as_ref());
+    let t = topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets);
+    let entity_facts = entity::scan_metadata(body, false);
     decode_graph(ctx, &mut carriers, &t, entity_facts, &typed_facts, stream)
 }
 
 fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_entities(1, "admit SLDPRT B-rep entity")?;
-
     Ok(())
 }
 
-fn unique_body_modifiers(
-    ctx: &DecodeContext<'_>,
-    modifiers: Vec<attrib::BodyModifier>,
-) -> Result<Vec<attrib::BodyModifier>, cadmpeg_core::CodecError> {
+fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::BodyModifier> {
     let mut by_attr = HashMap::<u16, Option<attrib::BodyModifier>>::new();
     for modifier in modifiers {
-        ctx.charge_work(1, "select Parasolid body modifiers")?;
-        ctx.admit_hash_map_entry(
-            &mut by_attr,
-            &modifier.body_attr,
-            "index Parasolid body modifiers",
-        )?;
         match by_attr.entry(modifier.body_attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(modifier));
@@ -1507,31 +1314,18 @@ fn unique_body_modifiers(
     }
     let mut out = Vec::new();
     for modifier in by_attr.into_values().flatten() {
-        ctx.reserve_vec(&mut out, 1, "collect Parasolid body modifiers")?;
         out.push(modifier);
     }
-    ctx.stable_sort_by(
-        &mut out,
-        |left, right| left.body_attr.cmp(&right.body_attr),
-        |_| 0,
-        "sort Parasolid body modifiers",
-    )?;
-    Ok(out)
+    out.sort_by_key(|record| record.body_attr);
+    out
 }
 
 fn unique_face_colors(
-    ctx: &DecodeContext<'_>,
     colors: Vec<entity::FaceColor>,
     versions: Vec<entity::FaceColorVersion>,
-) -> Result<(Vec<entity::FaceColor>, usize), cadmpeg_core::CodecError> {
+) -> (Vec<entity::FaceColor>, usize) {
     let mut current_versions = HashMap::<u16, (u32, usize)>::new();
     for version in versions {
-        ctx.charge_work(1, "select current Parasolid face colors")?;
-        ctx.admit_hash_map_entry(
-            &mut current_versions,
-            &version.face_attr,
-            "index Parasolid face color versions",
-        )?;
         current_versions
             .entry(version.face_attr)
             .and_modify(|current| {
@@ -1542,15 +1336,8 @@ fn unique_face_colors(
 
     let mut by_face = HashMap::<u16, Vec<entity::FaceColor>>::new();
     for color in colors {
-        ctx.charge_work(1, "select Parasolid face colors")?;
         if current_versions.get(&color.face_attr) == Some(&(color.face_seq, color.stream_order)) {
-            ctx.push_hash_group(
-                &mut by_face,
-                color.face_attr,
-                color,
-                "index Parasolid face colors",
-                "collect Parasolid face color candidates",
-            )?;
+            by_face.entry(color.face_attr).or_default().push(color);
         }
     }
 
@@ -1561,7 +1348,6 @@ fn unique_face_colors(
         if candidates.iter().all(|candidate| {
             candidate.color_attr == first.color_attr && candidate.color == first.color
         }) {
-            ctx.reserve_vec(&mut selected, 1, "collect selected Parasolid face colors")?;
             selected.push(candidates.swap_remove(0));
         } else {
             unresolved += 1;
@@ -1570,14 +1356,7 @@ fn unique_face_colors(
 
     let mut by_color = HashMap::<u16, Vec<entity::FaceColor>>::new();
     for color in selected {
-        ctx.charge_work(1, "resolve Parasolid color identities")?;
-        ctx.push_hash_group(
-            &mut by_color,
-            color.color_attr,
-            color,
-            "index Parasolid color identities",
-            "collect Parasolid color identity candidates",
-        )?;
+        by_color.entry(color.color_attr).or_default().push(color);
     }
     let mut out = Vec::new();
     for candidates in by_color.into_values() {
@@ -1586,40 +1365,23 @@ fn unique_face_colors(
             .iter()
             .all(|candidate| candidate.color == first.color)
         {
-            ctx.reserve_vec(
-                &mut out,
-                candidates.len(),
-                "collect resolved Parasolid face colors",
-            )?;
             out.extend(candidates);
         } else {
             unresolved += candidates.len();
         }
     }
-    ctx.stable_sort_by(
-        &mut out,
-        |left, right| (left.face_attr, left.offset).cmp(&(right.face_attr, right.offset)),
-        |_| 0,
-        "sort Parasolid face colors",
-    )?;
-    Ok((out, unresolved))
+    out.sort_by_key(|color| (color.face_attr, color.offset));
+    (out, unresolved)
 }
 
-fn typed_body_records(
-    ctx: &DecodeContext<'_>,
-    facts: &typed::Facts,
-    tables: &topology::Tables,
-) -> Result<Option<Vec<BodyRecord>>, cadmpeg_core::CodecError> {
+fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option<Vec<BodyRecord>> {
     let mut bridge_attrs = HashSet::new();
     for attr in tables.bridges().keys().copied() {
-        ctx.insert_hash_set(&mut bridge_attrs, attr, "index Parasolid body bridges")?;
+        bridge_attrs.insert(attr);
     }
-    let Some(hierarchies) = facts.hierarchies(ctx, &bridge_attrs)? else {
-        return Ok(None);
-    };
+    let hierarchies = facts.hierarchies(&bridge_attrs)?;
     let mut records = Vec::new();
     for hierarchy in hierarchies {
-        ctx.charge_work(1, "assemble typed Parasolid bodies")?;
         let mut body_refs = Vec::new();
         for attr in hierarchy
             .regions
@@ -1628,15 +1390,9 @@ fn typed_body_records(
             .chain(hierarchy.shells.iter().map(|shell| shell.attr))
             .chain(hierarchy.faces.iter().map(|(face, _)| *face))
         {
-            ctx.reserve_vec(&mut body_refs, 1, "collect typed Parasolid body references")?;
             body_refs.push(attr);
         }
-        ctx.sort_unstable_by(
-            &mut body_refs,
-            Ord::cmp,
-            |_| 0,
-            "sort typed Parasolid body references",
-        )?;
+        body_refs.sort_unstable();
         body_refs.dedup();
         let mut regions = Vec::new();
         for region in &hierarchy.regions {
@@ -1653,43 +1409,24 @@ fn typed_body_records(
                     .filter(|(_, shell_attr)| *shell_attr == shell.attr)
                     .map(|(face_attr, _)| *face_attr)
                 {
-                    ctx.reserve_vec(&mut refs, 1, "collect typed Parasolid shell faces")?;
                     refs.push(face_attr);
                 }
-                ctx.sort_unstable_by(
-                    &mut refs,
-                    Ord::cmp,
-                    |_| 0,
-                    "sort typed Parasolid shell faces",
-                )?;
+                refs.sort_unstable();
                 refs.dedup();
-                ctx.reserve_vec(&mut shells, 1, "collect typed Parasolid region shells")?;
                 shells.push(ShellRecord {
                     attr: shell.attr,
                     offset: shell.offset,
                     refs,
                 });
             }
-            ctx.stable_sort_by(
-                &mut shells,
-                |left, right| left.attr.cmp(&right.attr),
-                |_| 0,
-                "sort Parasolid topology",
-            )?;
-            ctx.reserve_vec(&mut regions, 1, "collect typed Parasolid body regions")?;
+            shells.sort_by_key(|record| record.attr);
             regions.push(RegionRecord {
                 attr: region.attr,
                 offset: region.offset,
                 shells,
             });
         }
-        ctx.stable_sort_by(
-            &mut regions,
-            |left, right| left.attr.cmp(&right.attr),
-            |_| 0,
-            "sort Parasolid topology",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "collect typed Parasolid body records")?;
+        regions.sort_by_key(|record| record.attr);
         records.push(BodyRecord {
             attr: hierarchy.body.attr,
             kind: hierarchy.body.kind,
@@ -1698,61 +1435,23 @@ fn typed_body_records(
             regions,
         });
     }
-    ctx.stable_sort_by(
-        &mut records,
-        |left, right| left.attr.cmp(&right.attr),
-        |_| 0,
-        "sort Parasolid topology",
-    )?;
-    Ok((!records.is_empty()).then_some(records))
+    records.sort_by_key(|record| record.attr);
+    (!records.is_empty()).then_some(records)
 }
 
-fn sorted_topology_sequences(
-    ctx: &DecodeContext<'_>,
-    pairs: impl ExactSizeIterator<Item = (u32, u16)>,
-    operation: &'static str,
-) -> Result<Vec<(u32, u16)>, cadmpeg_core::CodecError> {
-    let count = pairs.len();
-    let work = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)?;
+fn sorted_topology_sequences(pairs: impl IntoIterator<Item = (u32, u16)>) -> Vec<(u32, u16)> {
     let mut sequences = Vec::new();
-    ctx.reserve_vec(&mut sequences, count, operation)?;
     sequences.extend(pairs);
-    ctx.sort_unstable_by(&mut sequences, Ord::cmp, |_| 0, operation)?;
+    sequences.sort_unstable();
     sequences.dedup();
-    Ok(sequences)
+    sequences
 }
 
-fn sorted_graph_attrs(
-    ctx: &DecodeContext<'_>,
-    attrs: impl ExactSizeIterator<Item = u16>,
-    operation: &'static str,
-) -> Result<Vec<u16>, cadmpeg_core::CodecError> {
-    let count = attrs.len();
-    let work = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)?;
+fn sorted_graph_attrs(attrs: impl IntoIterator<Item = u16>) -> Vec<u16> {
     let mut sorted = Vec::new();
-    ctx.reserve_vec(&mut sorted, count, operation)?;
     sorted.extend(attrs);
-    ctx.sort_unstable_by(&mut sorted, Ord::cmp, |_| 0, operation)?;
-    Ok(sorted)
-}
-
-fn copy_graph_stream_name(
-    ctx: &DecodeContext<'_>,
-    stream: &cadmpeg_ir::StreamName,
-) -> Result<cadmpeg_ir::StreamName, cadmpeg_core::CodecError> {
-    let mut name = String::new();
-    ctx.try_reserve_retained_text(
-        &mut name,
-        stream.as_str().len(),
-        "copy Parasolid graph stream name",
-    )?;
-    name.push_str(stream.as_str());
-    cadmpeg_ir::StreamName::try_from(name)
-        .map_err(|_| cadmpeg_core::CodecError::malformed("empty Parasolid graph stream name"))
+    sorted.sort_unstable();
+    sorted
 }
 
 fn decode_graph(
@@ -1763,42 +1462,32 @@ fn decode_graph(
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    let typed_records = typed_body_records(ctx, typed_facts, t)?;
+    let typed_records = typed_body_records(typed_facts, t);
     let body_records = typed_records.unwrap_or_default();
-    let body_modifiers = unique_body_modifiers(ctx, entity_facts.body_modifiers)?;
-    let (face_colors, conflicting_face_colors) = unique_face_colors(
-        ctx,
-        entity_facts.face_colors,
-        entity_facts.face_color_versions,
-    )?;
+    let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
+    let (face_colors, conflicting_face_colors) =
+        unique_face_colors(entity_facts.face_colors, entity_facts.face_color_versions);
     let face_bridge_sequences = sorted_topology_sequences(
-        ctx,
         t.bridges()
             .values()
             .map(|bridge| (bridge.sequence, bridge.attr)),
-        "collect Parasolid face bridge sequences",
-    )?;
+    );
     let edge_use_sequences = sorted_topology_sequences(
-        ctx,
         t.edge_uses()
             .values()
             .map(|edge_use| (edge_use.sequence, edge_use.attr)),
-        "collect Parasolid edge use sequences",
-    )?;
+    );
     let vertex_use_sequences = sorted_topology_sequences(
-        ctx,
         t.vertex_uses()
             .values()
             .map(|vertex_use| (vertex_use.sequence, vertex_use.attr)),
-        "collect Parasolid vertex use sequences",
-    )?;
+    );
 
     let mut owned_face_colors = Vec::new();
     for value in face_colors {
-        ctx.reserve_vec(&mut owned_face_colors, 1, "collect Parasolid face colors")?;
         owned_face_colors.push(OwnedFaceColor {
             value,
-            source_stream: copy_graph_stream_name(ctx, stream)?,
+            source_stream: stream.clone(),
             site_key: None,
         });
     }
@@ -1817,11 +1506,8 @@ fn decode_graph(
         ..Brep::default()
     };
     let mut annotations = AnnotationBuilder::new();
-    let source_stream = StreamHandle::new(
-        ctx,
-        copy_graph_stream_name(ctx, stream)?,
-        "allocate annotation stream handle",
-    )?;
+    let source_stream =
+        StreamHandle::new(ctx, stream.clone(), "allocate annotation stream handle")?;
     if t.bridges().is_empty() {
         return Ok(out);
     }
@@ -1833,33 +1519,16 @@ fn decode_graph(
     let mut faces = Vec::new();
     let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
     for bridge in t.bridges().values() {
-        ctx.charge_work(1, "walk Parasolid face bridges")?;
-        let face = walk_face(ctx, bridge, t)?;
+        let face = walk_face(bridge, t);
         if let Some(owner) = bridge.owner {
-            ctx.push_hash_group(
-                &mut owned_faces,
-                owner,
-                (bridge, face),
-                "index Parasolid face owners",
-                "collect Parasolid face uses",
-            )?;
+            owned_faces.entry(owner).or_default().push((bridge, face));
         } else {
-            ctx.reserve_vec(&mut faces, 1, "collect Parasolid faces")?;
             faces.push(face);
         }
     }
     let mut ambiguous_face_owners = 0;
     for mut uses in owned_faces.into_values() {
-        let work = u64::try_from(uses.len()).map_err(|_| {
-            ctx.refuse_codec_limit("resolve Parasolid face owners", u64::MAX - 1, u64::MAX)
-        })?;
-        ctx.charge_work(work, "resolve Parasolid face owners")?;
-        ctx.stable_sort_by(
-            &mut uses,
-            |left, right| (left.0.offset, left.0.attr).cmp(&(right.0.offset, right.0.attr)),
-            |_| 0,
-            "sort Parasolid face owners",
-        )?;
+        uses.sort_by_key(|(bridge, _)| (bridge.offset, bridge.attr));
         let Some((first_bridge, first_face)) = uses.first() else {
             continue;
         };
@@ -1872,19 +1541,13 @@ fn decode_graph(
         });
         if equivalent {
             if let Some((_, first_face)) = uses.into_iter().next() {
-                ctx.reserve_vec(&mut faces, 1, "collect Parasolid faces")?;
                 faces.push(first_face);
             }
         } else {
             ambiguous_face_owners += 1;
         }
     }
-    ctx.stable_sort_by(
-        &mut faces,
-        |left, right| left.bridge_attr.cmp(&right.bridge_attr),
-        |_| 0,
-        "sort Parasolid topology",
-    )?;
+    faces.sort_by_key(|face| face.bridge_attr);
     out.stats.ambiguous_face_owners += ambiguous_face_owners;
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
@@ -1896,7 +1559,6 @@ fn decode_graph(
         for (_loop_attr, ring) in &f.loops {
             let k = ring.len();
             for (i, &ce_attr) in ring.iter().enumerate() {
-                ctx.charge_work(1, "index Parasolid edge incidences")?;
                 let Some(ce) = t.coedges().get(&ce_attr) else {
                     continue;
                 };
@@ -1905,13 +1567,10 @@ fn decode_graph(
                 let next_vuse = t.coedges().get(&next_attr).map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
-                    ctx.push_hash_group(
-                        &mut edge_incidence,
-                        edge_attr,
-                        (ce_attr, start_vuse, next_vuse),
-                        "index Parasolid edge incidences",
-                        "collect Parasolid edge incidences",
-                    )?;
+                    edge_incidence
+                        .entry(edge_attr)
+                        .or_default()
+                        .push((ce_attr, start_vuse, next_vuse));
                 }
             }
         }
@@ -1924,7 +1583,6 @@ fn decode_graph(
     let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
 
     for (edge_attr, incidences) in edge_incidence {
-        ctx.charge_work(1, "resolve Parasolid edge incidences")?;
         let canonical =
             canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
         let Some(canonical) = canonical else {
@@ -1941,7 +1599,6 @@ fn decode_graph(
             .edge_uses()
             .get(&edge_attr)
             .map_or(0, |edge_use| edge_use.references.curve());
-        ctx.admit_hash_map_entry(&mut edge_ends, &edge_attr, "index Parasolid edge endpoints")?;
         edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
         for vuse in [*start_vuse, end_vuse] {
             if vuse == 0 {
@@ -1950,16 +1607,15 @@ fn decode_graph(
             if let Some(vu) = t.vertex_uses().get(&vuse) {
                 let point_attr = vu.refs[4];
                 if t.points().contains_key(&point_attr) {
-                    ctx.insert_hash_set(&mut kept_vertices, vuse, "track Parasolid vertices")?;
-                    ctx.insert_hash_set(&mut kept_points, point_attr, "track Parasolid points")?;
+                    kept_vertices.insert(vuse);
+                    kept_points.insert(point_attr);
                 }
             }
         }
     }
 
     // Points.
-    let point_attrs =
-        sorted_graph_attrs(ctx, kept_points.iter().copied(), "order Parasolid points")?;
+    let point_attrs = sorted_graph_attrs(kept_points.iter().copied());
     for a in point_attrs {
         let rec = &t.points()[&a];
         annotations.note(
@@ -1976,17 +1632,12 @@ fn decode_graph(
         .ok_or(Point::NON_FINITE_POSITION)
         .map_err(cadmpeg_core::CodecError::malformed)?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.points, 1, "collect Parasolid points")?;
         out.points
             .push(Point::new(id_point(a), finite_position, None));
     }
 
     // Vertices.
-    let vuse_attrs = sorted_graph_attrs(
-        ctx,
-        kept_vertices.iter().copied(),
-        "order Parasolid vertices",
-    )?;
+    let vuse_attrs = sorted_graph_attrs(kept_vertices.iter().copied());
     for a in vuse_attrs {
         let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
@@ -1998,7 +1649,6 @@ fn decode_graph(
             Some("00_12"),
         )?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.vertices, 1, "collect Parasolid vertices")?;
         out.vertices.push(Vertex {
             id: id_vertex(a),
             point: id_point(point_attr),
@@ -2012,7 +1662,7 @@ fn decode_graph(
     let mut edge_set: HashSet<u16> = HashSet::new();
     let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut reversed_edge_orientation = HashSet::<u16>::new();
-    let edge_attrs = sorted_graph_attrs(ctx, edge_ends.keys().copied(), "order Parasolid edges")?;
+    let edge_attrs = sorted_graph_attrs(edge_ends.keys().copied());
     for e in edge_attrs {
         let (start_v, end_v, curve_attr) = edge_ends[&e];
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
@@ -2058,18 +1708,12 @@ fn decode_graph(
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             admit_brep_entity(ctx)?;
-            ctx.reserve_vec(&mut out.points, 1, "collect Parasolid closed-circle points")?;
             out.points.push(Point::new(
                 point_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 finite_position,
                 None,
             ));
             admit_brep_entity(ctx)?;
-            ctx.reserve_vec(
-                &mut out.vertices,
-                1,
-                "collect Parasolid closed-circle vertices",
-            )?;
             out.vertices.push(Vertex {
                 id: vertex_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 point: point_id,
@@ -2093,11 +1737,6 @@ fn decode_graph(
                 ))
             };
             if let (Some(start), Some(end)) = (position(start_v), position(end_v)) {
-                ctx.admit_hash_map_entry(
-                    &mut edge_endpoint_positions,
-                    &e,
-                    "index Parasolid edge endpoint positions",
-                )?;
                 edge_endpoint_positions.insert(e, [start, end]);
             }
         }
@@ -2117,11 +1756,7 @@ fn decode_graph(
             if let Some(endpoints) = edge_endpoint_positions.get_mut(&e) {
                 endpoints.swap(0, 1);
             }
-            ctx.insert_hash_set(
-                &mut reversed_edge_orientation,
-                e,
-                "track reversed Parasolid edges",
-            )?;
+            reversed_edge_orientation.insert(e);
         }
         let eu = t.edge_uses().get(&e);
         let mut curve = None;
@@ -2129,11 +1764,7 @@ fn decode_graph(
             match carriers.curve(curve_attr) {
                 Some(indexed) => {
                     let carrier = indexed.carrier();
-                    if ctx.insert_hash_set(
-                        &mut emitted_curves,
-                        curve_attr,
-                        "track emitted Parasolid curves",
-                    )? {
+                    if emitted_curves.insert(curve_attr) {
                         emit_curve(ctx, &mut out, carrier)?;
                         if matches!(indexed, IndexedCurve::Derived(_)) {
                             let offset = carrier.offset;
@@ -2154,11 +1785,7 @@ fn decode_graph(
                     curve = Some(id_curve(curve_attr));
                 }
                 _ => {
-                    if ctx.insert_hash_set(
-                        &mut emitted_curves,
-                        curve_attr,
-                        "track emitted Parasolid curves",
-                    )? {
+                    if emitted_curves.insert(curve_attr) {
                         let offset = eu.map_or(0, |record| record.offset);
                         annotations.note(
                             ctx,
@@ -2173,7 +1800,6 @@ fn decode_graph(
                             Exactness::Unknown,
                         )?;
                         admit_brep_entity(ctx)?;
-                        ctx.reserve_vec(&mut out.curves, 1, "collect unknown Parasolid curves")?;
                         out.curves.push(Curve {
                             parameter_range: None,
                             id: id_curve(curve_attr),
@@ -2197,7 +1823,6 @@ fn decode_graph(
             Some("00_10"),
         )?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.edges, 1, "collect Parasolid edges")?;
         out.edges.push(Edge {
             id: id_edge(e),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -2209,7 +1834,7 @@ fn decode_graph(
             end: end_id,
             tolerance: None,
         });
-        ctx.insert_hash_set(&mut edge_set, e, "track emitted Parasolid edges")?;
+        edge_set.insert(e);
     }
 
     // A loop is kept only when its whole ring resolves: every coedge exists and
@@ -2218,10 +1843,6 @@ fn decode_graph(
     let mut kept_loops: HashSet<u16> = HashSet::new();
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
-            let work = u64::try_from(ring.len()).map_err(|_| {
-                ctx.refuse_codec_limit("check Parasolid loop ring", u64::MAX - 1, u64::MAX)
-            })?;
-            ctx.charge_work(work, "check Parasolid loop ring")?;
             let ok = !ring.is_empty()
                 && ring.iter().all(|c| {
                     t.coedges()
@@ -2229,7 +1850,7 @@ fn decode_graph(
                         .is_some_and(|ce| edge_set.contains(&ce.refs[6]))
                 });
             if ok {
-                ctx.insert_hash_set(&mut kept_loops, *loop_attr, "track kept Parasolid loops")?;
+                kept_loops.insert(*loop_attr);
             }
         }
     }
@@ -2238,12 +1859,7 @@ fn decode_graph(
         for (loop_attr, ring) in &f.loops {
             if kept_loops.contains(loop_attr) {
                 for coedge in ring.iter().copied() {
-                    ctx.charge_work(1, "index emitted Parasolid coedges")?;
-                    ctx.insert_hash_set(
-                        &mut emitted_coedges,
-                        coedge,
-                        "track emitted Parasolid coedges",
-                    )?;
+                    emitted_coedges.insert(coedge);
                 }
             }
         }
@@ -2341,11 +1957,6 @@ fn decode_graph(
                         )?;
                         annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
                         admit_brep_entity(ctx)?;
-                        ctx.reserve_vec(
-                            &mut out.pcurves,
-                            1,
-                            "collect intersection Parasolid pcurves",
-                        )?;
                         out.pcurves.push(Pcurve {
                             id: id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                             geometry,
@@ -2373,11 +1984,9 @@ fn decode_graph(
                 // The sink is drained before the `?` below: an error on that
                 // route must not drop a refusal the walk above already pushed.
                 for record in pcurve_refusal.take_records() {
-                    let note = crate::loss::spline_lane_refusal(
-                        ctx,
-                        format_args!("intersection pcurve for coedge {ce_attr}: {record}"),
-                    )?;
-                    ctx.reserve_vec(&mut out.losses, 1, "collect intersection pcurve losses")?;
+                    let note = crate::loss::spline_lane_refusal(format_args!(
+                        "intersection pcurve for coedge {ce_attr}: {record}"
+                    ));
                     out.losses.push(note);
                 }
                 let pcurves = pcurves
@@ -2392,7 +2001,6 @@ fn decode_graph(
                     };
                 }
                 admit_brep_entity(ctx)?;
-                ctx.reserve_vec(&mut out.coedges, 1, "collect Parasolid coedges")?;
                 out.coedges.push(Coedge {
                     id: id_coedge(ce_attr),
                     owner_loop: id_loop(*loop_attr),
@@ -2413,7 +2021,6 @@ fn decode_graph(
                 continue;
             }
             let mut coedges = Vec::new();
-            ctx.reserve_vec(&mut coedges, ring.len(), "collect Parasolid loop coedges")?;
             coedges.extend(ring.iter().map(|a| id_coedge(*a)));
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations.note(
@@ -2429,7 +2036,6 @@ fn decode_graph(
                 continue;
             };
             admit_brep_entity(ctx)?;
-            ctx.reserve_vec(&mut out.loops, 1, "collect Parasolid loops")?;
             out.loops.push(Loop {
                 id: id_loop(*loop_attr),
                 face: id_face(f.bridge_attr),
@@ -2447,16 +2053,10 @@ fn decode_graph(
         let mut bridge_shell = HashMap::new();
         for (group, body_record) in body_records.iter().enumerate() {
             for face in faces {
-                ctx.charge_work(1, "bind Parasolid face bridges")?;
                 let owner = t.bridges().get(&face.bridge_attr).and_then(|r| r.owner);
                 if body_record.refs.contains(&face.bridge_attr)
                     || owner.is_some_and(|owner| body_record.refs.contains(&owner))
                 {
-                    ctx.admit_hash_map_entry(
-                        &mut bridge_group,
-                        &face.bridge_attr,
-                        "index Parasolid bridge groups",
-                    )?;
                     bridge_group.insert(face.bridge_attr, group);
                     if let Some(shell) = body_record
                         .regions
@@ -2467,11 +2067,6 @@ fn decode_graph(
                                 || owner.is_some_and(|owner| shell.refs.contains(&owner))
                         })
                     {
-                        ctx.admit_hash_map_entry(
-                            &mut bridge_shell,
-                            &face.bridge_attr,
-                            "index Parasolid bridge shells",
-                        )?;
                         bridge_shell.insert(face.bridge_attr, shell.attr);
                     }
                 }
@@ -2492,38 +2087,25 @@ fn decode_graph(
         let mut edges = HashSet::new();
         for (_, ring) in &face.loops {
             for coedge in ring {
-                ctx.charge_work(1, "index Parasolid face edges")?;
                 if let Some(edge) = t.coedges().get(coedge).map(|coedge| coedge.refs[6]) {
                     if edge != 0 {
-                        ctx.insert_hash_set(&mut edges, edge, "track Parasolid face edges")?;
+                        edges.insert(edge);
                     }
                 }
             }
         }
-        ctx.admit_hash_map_entry(
-            &mut face_edges_by_surface_carrier,
-            &face.surface_attr,
-            "index Parasolid surface face edges",
-        )?;
         let groups = face_edges_by_surface_carrier
             .entry(face.surface_attr)
             .or_default();
-        ctx.reserve_vec(groups, 1, "collect Parasolid surface face edges")?;
         groups.push(edges);
     }
     let mut emitted_face_surface_by_carrier = HashMap::<u16, u16>::new();
     for face in &faces {
-        ctx.charge_work(1, "select Parasolid face surface carriers")?;
         if face
             .loops
             .iter()
             .any(|(loop_attr, _)| loop_set.contains(loop_attr))
         {
-            ctx.admit_hash_map_entry(
-                &mut emitted_face_surface_by_carrier,
-                &face.surface_attr,
-                "index Parasolid face surface carriers",
-            )?;
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
@@ -2533,9 +2115,7 @@ fn decode_graph(
     for f in &faces {
         let mut loops = Vec::new();
         for (loop_attr, _) in &f.loops {
-            ctx.charge_work(1, "select Parasolid face loops")?;
             if loop_set.contains(loop_attr) {
-                ctx.reserve_vec(&mut loops, 1, "collect Parasolid face loops")?;
                 loops.push(id_loop(*loop_attr));
             }
         }
@@ -2599,15 +2179,10 @@ fn decode_graph(
                     let mut face_edges = HashSet::new();
                     for (_, ring) in &f.loops {
                         for coedge in ring {
-                            ctx.charge_work(1, "select Parasolid blend face edges")?;
                             if let Some(edge) = t.coedges().get(coedge).map(|coedge| coedge.refs[6])
                             {
                                 if edge != 0 {
-                                    ctx.insert_hash_set(
-                                        &mut face_edges,
-                                        edge,
-                                        "collect Parasolid blend face edges",
-                                    )?;
+                                    face_edges.insert(edge);
                                 }
                             }
                         }
@@ -2685,11 +2260,7 @@ fn decode_graph(
                 } else if let Some((blend, first, second)) = resolved_blend {
                     let spine = if let Some(indexed) = carriers.curve(blend.spine) {
                         let carrier = indexed.carrier();
-                        if ctx.insert_hash_set(
-                            &mut emitted_curves,
-                            blend.spine,
-                            "track Parasolid blend spines",
-                        )? {
+                        if emitted_curves.insert(blend.spine) {
                             emit_curve(ctx, &mut out, carrier)?;
                             annotations.note(
                                 ctx,
@@ -2728,11 +2299,6 @@ fn decode_graph(
                         })
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                     admit_brep_entity(ctx)?;
-                    ctx.reserve_vec(
-                        &mut out.procedural_surfaces,
-                        1,
-                        "collect Parasolid blend constructions",
-                    )?;
                     out.procedural_surfaces.push(ProceduralSurface::new(
                         procedural_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                         ProceduralSurfaceDefinition::Blend(admitted_payload),
@@ -2750,7 +2316,6 @@ fn decode_graph(
                         Some("00_38"),
                     )?;
                     admit_brep_entity(ctx)?;
-                    ctx.reserve_vec(&mut out.surfaces, 1, "collect Parasolid blend surfaces")?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
                         source_object: None,
@@ -2765,14 +2330,10 @@ fn decode_graph(
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
                     let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
                     for record in sweep_refusal.take_records() {
-                        let note = crate::loss::spline_lane_refusal(
-                            ctx,
-                            format_args!(
-                                "swept surface for face attr {}: {record}",
-                                f.surface_attr
-                            ),
-                        )?;
-                        ctx.reserve_vec(&mut out.losses, 1, "collect swept surface losses")?;
+                        let note = crate::loss::spline_lane_refusal(format_args!(
+                            "swept surface for face attr {}: {record}",
+                            f.surface_attr
+                        ));
                         out.losses.push(note);
                     }
                     resolved
@@ -2788,7 +2349,6 @@ fn decode_graph(
                         annotations.exactness(ctx, id_surf(f.bridge_attr).as_str(), exactness)?;
                     }
                     admit_brep_entity(ctx)?;
-                    ctx.reserve_vec(&mut out.surfaces, 1, "collect Parasolid swept surfaces")?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
                         source_object: None,
@@ -2809,7 +2369,6 @@ fn decode_graph(
                         Exactness::Unknown,
                     )?;
                     admit_brep_entity(ctx)?;
-                    ctx.reserve_vec(&mut out.surfaces, 1, "collect Parasolid opaque surfaces")?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
                         source_object: None,
@@ -2828,12 +2387,11 @@ fn decode_graph(
             Some("00_0e"),
         )?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.faces, 1, "collect Parasolid faces")?;
         let shell_attr = match bridge_shell.get(&f.bridge_attr).copied() {
             Some(shell_attr) => shell_attr,
             None => match bridge_group.get(&f.bridge_attr).copied() {
                 Some(group) => u16::try_from(group).map_err(|_| {
-                    ctx.refuse_codec_limit("index Parasolid bridge groups", u64::MAX - 1, u64::MAX)
+                    cadmpeg_core::CodecError::malformed("Parasolid bridge group index exceeds u16")
                 })?,
                 None => 0,
             },
@@ -2859,11 +2417,6 @@ fn decode_graph(
         });
     }
     let mut emitted_faces = HashMap::new();
-    ctx.reserve_map(
-        &mut emitted_faces,
-        out.faces.len(),
-        "index emitted Parasolid faces",
-    )?;
     emitted_faces.extend(out.faces.iter().map(|face| (face.id.as_str(), &face.id)));
     for appearance in &mut out.face_colors {
         appearance.value.target = faces
@@ -2886,12 +2439,7 @@ fn decode_graph(
         let Some(face) = emitted_faces.get(id_face(atom.face_attr).as_str()) else {
             continue;
         };
-        if ctx.insert_hash_set(
-            &mut bound_faces,
-            atom.face_attr,
-            "track bound Parasolid faces",
-        )? {
-            ctx.reserve_vec(&mut out.face_atoms, 1, "collect Parasolid face atoms")?;
+        if bound_faces.insert(atom.face_attr) {
             out.face_atoms.push(attrib::FaceAtom {
                 face: face.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 identity,
@@ -2949,18 +2497,17 @@ fn decode_graph(
             let native_shell_id = ShellId::compose(&shell_namespace(), group);
             annotate_group(region_id.as_str(), None)?;
             let mut region_shells = Vec::new();
-            for (component, faces) in shell_face_components(ctx, &out, native_shell_id.as_str())?
+            for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                 .into_iter()
                 .enumerate()
             {
                 let shell_id = if component == 0 {
                     native_shell_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?
                 } else {
-                    shell_component(ctx, &native_shell_id, component)?
+                    shell_component(&native_shell_id, component)?
                 };
                 annotate_group(shell_id.as_str(), None)?;
                 let mut face_ids = HashSet::new();
-                ctx.reserve_set(&mut face_ids, faces.len(), "index synthetic shell faces")?;
                 face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                 for face in &mut out.faces {
                     if face_ids.contains(face.id.as_str()) {
@@ -2969,7 +2516,6 @@ fn decode_graph(
                     }
                 }
                 admit_brep_entity(ctx)?;
-                ctx.reserve_vec(&mut out.shells, 1, "collect synthetic Parasolid shells")?;
                 out.shells.push(
                     match Shell::new(
                         shell_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -2984,17 +2530,14 @@ fn decode_graph(
                         }
                     },
                 );
-                ctx.reserve_vec(&mut region_shells, 1, "collect synthetic region shells")?;
                 region_shells.push(shell_id);
             }
             admit_brep_entity(ctx)?;
-            ctx.reserve_vec(&mut out.regions, 1, "collect synthetic Parasolid regions")?;
             out.regions.push(Region {
                 id: region_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 body: body_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 shells: region_shells,
             });
-            ctx.reserve_vec(&mut body_regions, 1, "collect synthetic body regions")?;
             body_regions.push(region_id);
         } else {
             for region in native_regions {
@@ -3003,23 +2546,21 @@ fn decode_graph(
                 let mut region_shells = Vec::new();
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
-                    for (component, faces) in
-                        shell_face_components(ctx, &out, native_shell_id.as_str())?
-                            .into_iter()
-                            .enumerate()
+                    for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
+                        .into_iter()
+                        .enumerate()
                     {
                         let shell_id = if component == 0 {
                             native_shell_id
                                 .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?
                         } else {
-                            shell_component(ctx, &native_shell_id, component)?
+                            shell_component(&native_shell_id, component)?
                         };
                         annotate_group(
                             shell_id.as_str(),
                             (component == 0).then_some((shell.offset, "00_51_shell")),
                         )?;
                         let mut face_ids = HashSet::new();
-                        ctx.reserve_set(&mut face_ids, faces.len(), "index native shell faces")?;
                         face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                         for face in &mut out.faces {
                             if face_ids.contains(face.id.as_str()) {
@@ -3028,7 +2569,6 @@ fn decode_graph(
                             }
                         }
                         admit_brep_entity(ctx)?;
-                        ctx.reserve_vec(&mut out.shells, 1, "collect native Parasolid shells")?;
                         out.shells.push(
                             match Shell::new(
                                 shell_id
@@ -3045,23 +2585,19 @@ fn decode_graph(
                                 }
                             },
                         );
-                        ctx.reserve_vec(&mut region_shells, 1, "collect native region shells")?;
                         region_shells.push(shell_id);
                     }
                 }
                 admit_brep_entity(ctx)?;
-                ctx.reserve_vec(&mut out.regions, 1, "collect native Parasolid regions")?;
                 out.regions.push(Region {
                     id: region_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                     body: body_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                     shells: region_shells,
                 });
-                ctx.reserve_vec(&mut body_regions, 1, "collect native body regions")?;
                 body_regions.push(region_id);
             }
         }
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.bodies, 1, "collect Parasolid bodies")?;
         out.bodies.push(Body {
             id: body_id,
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
@@ -3083,11 +2619,6 @@ fn decode_graph(
         else {
             continue;
         };
-        ctx.admit_hash_map_entry(
-            &mut body_ids_by_attr,
-            &attr,
-            "index Parasolid body attributes",
-        )?;
         match body_ids_by_attr.entry(attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(body.id.as_str()));
@@ -3100,11 +2631,6 @@ fn decode_graph(
     for modifier in &mut out.body_modifiers {
         modifier.target = if let Some(Some(id)) = body_ids_by_attr.get(&modifier.body_attr) {
             let mut target = String::new();
-            ctx.try_reserve_retained_text(
-                &mut target,
-                id.len(),
-                "copy Parasolid modifier body ID",
-            )?;
             target.push_str(id);
             Some(target)
         } else {
@@ -3138,122 +2664,42 @@ fn decode_graph(
             }
         }
     }
-    ctx.stable_sort_by(
-        &mut out.bodies,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.regions,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.shells,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.faces,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.loops,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.coedges,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.edges,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.vertices,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.points,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.surfaces,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.procedural_surfaces,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.curves,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
-    ctx.stable_sort_by(
-        &mut out.pcurves,
-        |a, b| a.id.cmp(&b.id),
-        |record| record.id.as_str().len(),
-        "sort Parasolid graph ids",
-    )?;
+    out.bodies.sort_by(|a, b| a.id.cmp(&b.id));
+    out.regions.sort_by(|a, b| a.id.cmp(&b.id));
+    out.shells.sort_by(|a, b| a.id.cmp(&b.id));
+    out.faces.sort_by(|a, b| a.id.cmp(&b.id));
+    out.loops.sort_by(|a, b| a.id.cmp(&b.id));
+    out.coedges.sort_by(|a, b| a.id.cmp(&b.id));
+    out.edges.sort_by(|a, b| a.id.cmp(&b.id));
+    out.vertices.sort_by(|a, b| a.id.cmp(&b.id));
+    out.points.sort_by(|a, b| a.id.cmp(&b.id));
+    out.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    out.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
+    out.curves.sort_by(|a, b| a.id.cmp(&b.id));
+    out.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
     out.annotations = annotations.build();
-    let retained_ids = ctx.collect_hash_set(
-        out.bodies
-            .iter()
-            .map(|entity| entity.id.as_str())
-            .chain(out.regions.iter().map(|entity| entity.id.as_str()))
-            .chain(out.shells.iter().map(|entity| entity.id.as_str()))
-            .chain(out.faces.iter().map(|entity| entity.id.as_str()))
-            .chain(out.loops.iter().map(|entity| entity.id.as_str()))
-            .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
-            .chain(out.edges.iter().map(|entity| entity.id.as_str()))
-            .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
-            .chain(out.points.iter().map(|entity| entity.id.as_str()))
-            .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
-            .chain(
-                out.procedural_surfaces
-                    .iter()
-                    .map(|entity| entity.id.as_str()),
-            )
-            .chain(out.curves.iter().map(|entity| entity.id.as_str()))
-            .chain(out.pcurves.iter().map(|entity| entity.id.as_str())),
-        "index retained Parasolid entities",
-    )?;
-    let mut keep = |id: &str| {
-        // Hash the queried identity; the index does not scan retained entities.
-        let work = id.len().checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "Parasolid annotation identity lookup",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "Parasolid annotation identity lookup",
-        )?;
-        Ok(retained_ids.contains(id))
-    };
+    let retained_ids = out
+        .bodies
+        .iter()
+        .map(|entity| entity.id.as_str())
+        .chain(out.regions.iter().map(|entity| entity.id.as_str()))
+        .chain(out.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(out.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(out.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
+        .chain(out.points.iter().map(|entity| entity.id.as_str()))
+        .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
+        .chain(
+            out.procedural_surfaces
+                .iter()
+                .map(|entity| entity.id.as_str()),
+        )
+        .chain(out.curves.iter().map(|entity| entity.id.as_str()))
+        .chain(out.pcurves.iter().map(|entity| entity.id.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    let mut keep = |id: &str| Ok(retained_ids.contains(id));
     out.annotations.retain_provenance(ctx, &mut keep)?;
     let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
     annotations.retain_exactness(ctx, keep)?;
@@ -3265,23 +2711,21 @@ fn prune_rejected_topology(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let kept_loops = ctx.collect_hash_set(
-        out.faces
-            .iter()
-            .flat_map(|face| &face.loops)
-            .map(cadmpeg_ir::ids::LoopId::as_str),
-        "track retained Parasolid loops",
-    )?;
+    let kept_loops = out
+        .faces
+        .iter()
+        .flat_map(|face| &face.loops)
+        .map(cadmpeg_ir::ids::LoopId::as_str)
+        .collect::<std::collections::HashSet<_>>();
     out.loops
         .retain(|loop_| kept_loops.contains(loop_.id.as_str()));
 
-    let kept_coedges = ctx.collect_hash_set(
-        out.loops
-            .iter()
-            .flat_map(cadmpeg_ir::topology::Loop::coedges)
-            .map(cadmpeg_ir::ids::CoedgeId::as_str),
-        "track retained Parasolid coedges",
-    )?;
+    let kept_coedges = out
+        .loops
+        .iter()
+        .flat_map(cadmpeg_ir::topology::Loop::coedges)
+        .map(cadmpeg_ir::ids::CoedgeId::as_str)
+        .collect::<std::collections::HashSet<_>>();
     out.coedges
         .retain(|coedge| kept_coedges.contains(coedge.id.as_str()));
     for coedge in &mut out.coedges {
@@ -3292,58 +2736,56 @@ fn prune_rejected_topology(
         }
     }
 
-    let kept_pcurves = ctx.collect_hash_set(
-        out.coedges
-            .iter()
-            .flat_map(|coedge| &coedge.pcurves)
-            .map(|use_| &use_.pcurve)
-            .map(cadmpeg_ir::ids::PcurveId::as_str),
-        "track retained Parasolid pcurves",
-    )?;
+    let kept_pcurves = out
+        .coedges
+        .iter()
+        .flat_map(|coedge| &coedge.pcurves)
+        .map(|use_| &use_.pcurve)
+        .map(cadmpeg_ir::ids::PcurveId::as_str)
+        .collect::<std::collections::HashSet<_>>();
     out.pcurves
         .retain(|pcurve| kept_pcurves.contains(pcurve.id.as_str()));
 
-    let kept_edges = ctx.collect_hash_set(
-        out.coedges.iter().map(|coedge| coedge.edge.as_str()),
-        "track retained Parasolid edges",
-    )?;
+    let kept_edges = out
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.as_str())
+        .collect::<std::collections::HashSet<_>>();
     out.edges
         .retain(|edge| kept_edges.contains(edge.id.as_str()));
 
-    let kept_vertices = ctx.collect_hash_set(
-        out.edges
-            .iter()
-            .flat_map(|edge| [&edge.start, &edge.end])
-            .map(cadmpeg_ir::ids::VertexId::as_str),
-        "track retained Parasolid vertices",
-    )?;
+    let kept_vertices = out
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .map(cadmpeg_ir::ids::VertexId::as_str)
+        .collect::<std::collections::HashSet<_>>();
     out.vertices
         .retain(|vertex| kept_vertices.contains(vertex.id.as_str()));
 
-    let kept_points = ctx.collect_hash_set(
-        out.vertices.iter().map(|vertex| vertex.point.as_str()),
-        "track retained Parasolid points",
-    )?;
+    let kept_points = out
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.as_str())
+        .collect::<std::collections::HashSet<_>>();
     out.points
         .retain(|point| kept_points.contains(point.id.as_str()));
 
-    let kept_curves = ctx.collect_hash_set(
-        out.edges
-            .iter()
-            .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
-            .chain(out.procedural_surfaces.iter().filter_map(|surface| {
-                if let ProceduralSurfaceDefinition::Blend(definition_payload) = surface.definition()
-                {
-                    definition_payload
-                        .spine()
-                        .as_ref()
-                        .map(cadmpeg_ir::ids::CurveId::as_str)
-                } else {
-                    None
-                }
-            })),
-        "track retained Parasolid curves",
-    )?;
+    let kept_curves = out
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str))
+        .chain(out.procedural_surfaces.iter().filter_map(|surface| {
+            if let ProceduralSurfaceDefinition::Blend(definition_payload) = surface.definition() {
+                definition_payload
+                    .spine()
+                    .as_ref()
+                    .map(cadmpeg_ir::ids::CurveId::as_str)
+            } else {
+                None
+            }
+        }))
+        .collect::<std::collections::HashSet<_>>();
     out.curves
         .retain(|curve| kept_curves.contains(curve.id.as_str()));
     out.stats.unknown_curve_edges = out
@@ -3371,7 +2813,6 @@ fn annotate_surface_frame(
     mut geometry: &SolvedSurfaceGeometry,
 ) -> Result<(), cadmpeg_core::CodecError> {
     loop {
-        ctx.charge_work(1, "scan Parasolid surface frame annotations")?;
         match geometry {
             SolvedSurfaceGeometry::Plane(_) => {
                 annotations.field_exactness(ctx, id, "geometry.u_axis", Exactness::Derived)?;
@@ -3413,26 +2854,31 @@ fn derive_planar_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
-        "index Parasolid pcurve loop faces",
-    )?;
-    let faces = ctx.collect_hash_map(
-        out.faces.iter().map(|face| (&face.id, face)),
-        "index Parasolid pcurve faces",
-    )?;
-    let surfaces = ctx.collect_hash_map(
-        out.surfaces.iter().map(|surface| (&surface.id, surface)),
-        "index Parasolid pcurve surfaces",
-    )?;
-    let edges = ctx.collect_hash_map(
-        out.edges.iter().map(|edge| (&edge.id, edge)),
-        "index Parasolid pcurve edges",
-    )?;
-    let curves = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, curve)),
-        "index Parasolid pcurve curves",
-    )?;
+    let loop_faces = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, &lp.face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let faces = out
+        .faces
+        .iter()
+        .map(|face| (&face.id, face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let surfaces = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = out
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -3584,7 +3030,6 @@ fn derive_planar_pcurves(
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         };
-        ctx.reserve_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge
                 .id
@@ -3593,30 +3038,20 @@ fn derive_planar_pcurves(
             pcurve,
         ));
     }
-    let mut index_copy_storage = ctx.reserve_scoped(0, "SLDPRT temporary coedge index identity")?;
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
-        let id = index_copy_storage.with_storage(|| {
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")
-        })?;
-        ctx.insert_hash_map(
-            &mut coedge_indices,
-            id,
-            index,
-            "index Parasolid derived coedges",
-        )?;
+        let id = coedge
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")?;
+        coedge_indices.insert(id, index);
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let mut uses = Vec::new();
-            ctx.reserve_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
-            uses.push(cadmpeg_ir::topology::PcurveUse {
+            let uses = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 isoparametric: None,
                 parameter_range: None,
-            });
+            }];
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
@@ -3628,7 +3063,6 @@ fn derive_planar_pcurves(
         )?;
         annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
@@ -3641,36 +3075,41 @@ fn derive_cylindrical_pcurves(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut refusals = Vec::new();
-    let loop_faces = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
-        "index Parasolid pcurve loop faces",
-    )?;
-    let faces = ctx.collect_hash_map(
-        out.faces.iter().map(|face| (&face.id, face)),
-        "index Parasolid pcurve faces",
-    )?;
-    let surfaces = ctx.collect_hash_map(
-        out.surfaces.iter().map(|surface| (&surface.id, surface)),
-        "index Parasolid pcurve surfaces",
-    )?;
-    let edges = ctx.collect_hash_map(
-        out.edges.iter().map(|edge| (&edge.id, edge)),
-        "index Parasolid pcurve edges",
-    )?;
-    let curves = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, curve)),
-        "index Parasolid pcurve curves",
-    )?;
-    let points = ctx.collect_hash_map(
-        out.points.iter().map(|point| (&point.id, point)),
-        "index Parasolid pcurve points",
-    )?;
-    let vertex_points = ctx.collect_hash_map(
-        out.vertices
-            .iter()
-            .filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point))),
-        "index Parasolid pcurve vertex points",
-    )?;
+    let loop_faces = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, &lp.face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let faces = out
+        .faces
+        .iter()
+        .map(|face| (&face.id, face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let surfaces = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = out
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<std::collections::HashMap<_, _>>();
+    let points = out
+        .points
+        .iter()
+        .map(|point| (&point.id, point))
+        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point)))
+        .collect::<std::collections::HashMap<_, _>>();
     let position = |vertex_id: &VertexId| {
         vertex_points
             .get(vertex_id)
@@ -3859,24 +3298,7 @@ fn derive_cylindrical_pcurves(
                     let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
                     cadmpeg_ir::math::Point2::new(dot(relative, *u_reference), dot(relative, cross))
                 };
-                let work = nurbs
-                    .pole_count()
-                    .checked_add(nurbs.knots().len())
-                    .and_then(|count| count.checked_mul(1024))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "project Parasolid cylinder poles",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_work(u64_from_index(work), "project Parasolid cylinder poles")?;
                 let mut radial_control_points = Vec::new();
-                ctx.reserve_vec(
-                    &mut radial_control_points,
-                    nurbs.pole_count(),
-                    "collect Parasolid cylinder radial poles",
-                )?;
                 let curve_weights = match nurbs.pole_rows() {
                     cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
                         radial_control_points
@@ -3887,11 +3309,6 @@ fn derive_cylindrical_pcurves(
                         radial_control_points
                             .extend(points.iter().map(|pole| project(pole.point.get())));
                         let mut weights = Vec::new();
-                        ctx.reserve_vec(
-                            &mut weights,
-                            points.len(),
-                            "collect Parasolid cylinder pole weights",
-                        )?;
                         weights.extend(points.iter().map(|pole| pole.weight.get()));
                         Some(weights)
                     }
@@ -3928,11 +3345,6 @@ fn derive_cylindrical_pcurves(
                 // One pole row carries its radial and axial halves together,
                 // so the two projections are built into one list.
                 let mut poles = Vec::new();
-                ctx.reserve_vec(
-                    &mut poles,
-                    nurbs.pole_count(),
-                    "collect cylindrical polar poles",
-                )?;
                 for (index, radial) in radial_control_points.iter().enumerate() {
                     let Some(point) = nurbs.pole_rows().point_at(index) else {
                         continue;
@@ -3952,11 +3364,6 @@ fn derive_cylindrical_pcurves(
                     nurbs.pole_rows()
                 {
                     let mut weights = Vec::new();
-                    ctx.reserve_vec(
-                        &mut weights,
-                        nurbs.pole_count(),
-                        "copy cylindrical polar weights",
-                    )?;
                     weights.extend(points.iter().map(|pole| pole.weight));
                     Some(weights)
                 } else {
@@ -3972,11 +3379,10 @@ fn derive_cylindrical_pcurves(
                 )? {
                     Ok(polar) => polar,
                     Err(error) => {
-                        let note = crate::loss::spline_lane_refusal(
-                            ctx,
-                            format_args!("cylindrical pcurve for edge {}: {error}", edge.id),
-                        )?;
-                        ctx.reserve_vec(&mut refusals, 1, "collect cylindrical pcurve losses")?;
+                        let note = crate::loss::spline_lane_refusal(format_args!(
+                            "cylindrical pcurve for edge {}: {error}",
+                            edge.id
+                        ));
                         refusals.push(note);
                         continue;
                     }
@@ -3994,7 +3400,6 @@ fn derive_cylindrical_pcurves(
             Some(Some(range)) => Some(range),
             None => None,
         };
-        ctx.reserve_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge
                 .id
@@ -4011,30 +3416,20 @@ fn derive_cylindrical_pcurves(
             },
         ));
     }
-    let mut index_copy_storage = ctx.reserve_scoped(0, "SLDPRT temporary coedge index identity")?;
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
-        let id = index_copy_storage.with_storage(|| {
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")
-        })?;
-        ctx.insert_hash_map(
-            &mut coedge_indices,
-            id,
-            index,
-            "index Parasolid derived coedges",
-        )?;
+        let id = coedge
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")?;
+        coedge_indices.insert(id, index);
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let mut uses = Vec::new();
-            ctx.reserve_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
-            uses.push(cadmpeg_ir::topology::PcurveUse {
+            let uses = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 isoparametric: None,
                 parameter_range: None,
-            });
+            }];
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
@@ -4046,14 +3441,8 @@ fn derive_cylindrical_pcurves(
         )?;
         annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
-    ctx.reserve_capacity(
-        &mut out.losses,
-        refusals.len(),
-        "move cylindrical pcurve losses",
-    )?;
     out.losses.extend(refusals);
     Ok(())
 }
@@ -4183,7 +3572,6 @@ where
 /// each nonzero knot span. Endpoints are always retained, so a candidate at a
 /// knot is not lost when adjacent spans share it.
 fn sampled_parameter_minima<F>(
-    ctx: &DecodeContext<'_>,
     knots: &[f64],
     domain: [f64; 2],
     mut objective: F,
@@ -4193,20 +3581,13 @@ where
 {
     let mut candidates = Vec::new();
     for span in knots.windows(2).filter(|span| span[0] < span[1]) {
-        ctx.charge_work(1, "sample Parasolid inverse knot spans")?;
         let start = span[0].max(domain[0]);
         let end = span[1].min(domain[1]);
         if start >= end {
             continue;
         }
         let mut samples = Vec::new();
-        ctx.reserve_vec(
-            &mut samples,
-            INVERSE_SAMPLE_COUNT + 1,
-            "sample Parasolid inverse span",
-        )?;
         for index in 0..=INVERSE_SAMPLE_COUNT {
-            ctx.charge_work(1, "sample Parasolid inverse span")?;
             let (Some(position), Some(span_count)) =
                 (f64_from_index(index), f64_from_index(INVERSE_SAMPLE_COUNT))
             else {
@@ -4222,11 +3603,6 @@ where
             };
             samples.push((parameter, distance));
         }
-        ctx.reserve_vec(
-            &mut candidates,
-            samples.len(),
-            "collect Parasolid inverse candidates",
-        )?;
         candidates.extend(samples.iter().copied());
         for index in 1..INVERSE_SAMPLE_COUNT {
             if samples[index].1 <= samples[index - 1].1 && samples[index].1 <= samples[index + 1].1
@@ -4239,7 +3615,6 @@ where
                 else {
                     return Ok(None);
                 };
-                ctx.reserve_vec(&mut candidates, 1, "collect Parasolid inverse minima")?;
                 candidates.push(minimum);
             }
         }
@@ -4248,25 +3623,15 @@ where
 }
 
 fn unique_inverse_parameter(
-    ctx: &DecodeContext<'_>,
     mut candidates: Vec<(f64, f64)>,
     tolerance: f64,
     parameter_domain: [f64; 2],
-) -> Result<InverseResolution<f64>, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        u64_from_index(candidates.len()),
-        "select Parasolid inverse parameters",
-    )?;
+) -> InverseResolution<f64> {
     let tolerance_squared = tolerance * tolerance;
     candidates.retain(|(parameter, error)| {
         parameter.is_finite() && error.is_finite() && *error <= tolerance_squared
     });
-    ctx.stable_sort_by(
-        &mut candidates,
-        |left, right| left.0.total_cmp(&right.0),
-        |_| 0,
-        "sort Parasolid inverse parameters",
-    )?;
+    candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
     let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * parameter_domain[1]
         - INVERSE_PARAMETER_TOLERANCE * parameter_domain[0])
         .abs();
@@ -4285,11 +3650,11 @@ fn unique_inverse_parameter(
         }
     }
     candidates.truncate(unique_len);
-    Ok(match candidates.as_slice() {
+    match candidates.as_slice() {
         [] => InverseResolution::NoMatch,
         [(parameter, _)] => InverseResolution::Unique(*parameter),
         _ => InverseResolution::Ambiguous,
-    })
+    }
 }
 
 fn nurbs_parameter_at_point(
@@ -4312,7 +3677,7 @@ fn nurbs_parameter_at_point(
     else {
         return Ok(InverseResolution::NoMatch);
     };
-    let Some(candidates) = sampled_parameter_minima(ctx, nurbs.knots(), domain, squared_distance)?
+    let Some(candidates) = sampled_parameter_minima(nurbs.knots(), domain, squared_distance)?
     else {
         return Ok(InverseResolution::NoMatch);
     };
@@ -4335,7 +3700,7 @@ fn nurbs_parameter_at_point(
             )
         }
     };
-    unique_inverse_parameter(ctx, candidates, tolerance, domain)
+    Ok(unique_inverse_parameter(candidates, tolerance, domain))
 }
 
 fn quadratic_nurbs_has_constant_radius(
@@ -4443,26 +3808,31 @@ fn derive_revolved_circle_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
-        "index Parasolid pcurve loop faces",
-    )?;
-    let faces = ctx.collect_hash_map(
-        out.faces.iter().map(|face| (&face.id, face)),
-        "index Parasolid pcurve faces",
-    )?;
-    let surfaces = ctx.collect_hash_map(
-        out.surfaces.iter().map(|surface| (&surface.id, surface)),
-        "index Parasolid pcurve surfaces",
-    )?;
-    let edges = ctx.collect_hash_map(
-        out.edges.iter().map(|edge| (&edge.id, edge)),
-        "index Parasolid pcurve edges",
-    )?;
-    let curves = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, curve)),
-        "index Parasolid pcurve curves",
-    )?;
+    let loop_faces = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, &lp.face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let faces = out
+        .faces
+        .iter()
+        .map(|face| (&face.id, face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let surfaces = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = out
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<std::collections::HashMap<_, _>>();
     let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
     let mut derived = Vec::new();
     for coedge in &out.coedges {
@@ -4569,7 +3939,6 @@ fn derive_revolved_circle_pcurves(
             &pcurve_namespace(),
             cadmpeg_ir::identity_key!("revolved-circle:").then(coedge.id.key()),
         );
-        ctx.reserve_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge
                 .id
@@ -4590,30 +3959,20 @@ fn derive_revolved_circle_pcurves(
             },
         ));
     }
-    let mut index_copy_storage = ctx.reserve_scoped(0, "SLDPRT temporary coedge index identity")?;
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
-        let id = index_copy_storage.with_storage(|| {
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")
-        })?;
-        ctx.insert_hash_map(
-            &mut coedge_indices,
-            id,
-            index,
-            "index Parasolid derived coedges",
-        )?;
+        let id = coedge
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")?;
+        coedge_indices.insert(id, index);
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let mut uses = Vec::new();
-            ctx.reserve_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
-            uses.push(cadmpeg_ir::topology::PcurveUse {
+            let uses = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 isoparametric: None,
                 parameter_range: None,
-            });
+            }];
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
@@ -4625,7 +3984,6 @@ fn derive_revolved_circle_pcurves(
         )?;
         annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
@@ -4663,26 +4021,31 @@ fn derive_spherical_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
-        "index Parasolid pcurve loop faces",
-    )?;
-    let faces = ctx.collect_hash_map(
-        out.faces.iter().map(|face| (&face.id, face)),
-        "index Parasolid pcurve faces",
-    )?;
-    let surfaces = ctx.collect_hash_map(
-        out.surfaces.iter().map(|surface| (&surface.id, surface)),
-        "index Parasolid pcurve surfaces",
-    )?;
-    let edges = ctx.collect_hash_map(
-        out.edges.iter().map(|edge| (&edge.id, edge)),
-        "index Parasolid pcurve edges",
-    )?;
-    let curves = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, curve)),
-        "index Parasolid pcurve curves",
-    )?;
+    let loop_faces = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, &lp.face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let faces = out
+        .faces
+        .iter()
+        .map(|face| (&face.id, face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let surfaces = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = out
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -4820,7 +4183,6 @@ fn derive_spherical_pcurves(
             &pcurve_namespace(),
             cadmpeg_ir::identity_key!("sphere:").then(coedge.id.key()),
         );
-        ctx.reserve_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge
                 .id
@@ -4833,30 +4195,20 @@ fn derive_spherical_pcurves(
             },
         ));
     }
-    let mut index_copy_storage = ctx.reserve_scoped(0, "SLDPRT temporary coedge index identity")?;
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
-        let id = index_copy_storage.with_storage(|| {
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")
-        })?;
-        ctx.insert_hash_map(
-            &mut coedge_indices,
-            id,
-            index,
-            "index Parasolid derived coedges",
-        )?;
+        let id = coedge
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")?;
+        coedge_indices.insert(id, index);
     }
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let mut uses = Vec::new();
-            ctx.reserve_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
-            uses.push(cadmpeg_ir::topology::PcurveUse {
+            let uses = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 isoparametric: None,
                 parameter_range: None,
-            });
+            }];
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
@@ -4868,7 +4220,6 @@ fn derive_spherical_pcurves(
         )?;
         annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
@@ -4880,35 +4231,42 @@ fn derive_nurbs_isoparametric_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
-        "index Parasolid pcurve loop faces",
-    )?;
-    let faces = ctx.collect_hash_map(
-        out.faces.iter().map(|face| (&face.id, face)),
-        "index Parasolid pcurve faces",
-    )?;
-    let surfaces = ctx.collect_hash_map(
-        out.surfaces.iter().map(|surface| (&surface.id, surface)),
-        "index Parasolid pcurve surfaces",
-    )?;
-    let edges = ctx.collect_hash_map(
-        out.edges.iter().map(|edge| (&edge.id, edge)),
-        "index Parasolid pcurve edges",
-    )?;
-    let curves = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, curve)),
-        "index Parasolid pcurve curves",
-    )?;
+    let loop_faces = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, &lp.face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let faces = out
+        .faces
+        .iter()
+        .map(|face| (&face.id, face))
+        .collect::<std::collections::HashMap<_, _>>();
+    let surfaces = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = out
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut lane_refusals = crate::lane_refusal::LaneRefusals::new();
-    let vertices = ctx.collect_hash_map(
-        out.vertices.iter().map(|vertex| (&vertex.id, vertex)),
-        "index Parasolid pcurve vertices",
-    )?;
-    let points = ctx.collect_hash_map(
-        out.points.iter().map(|point| (&point.id, point)),
-        "index Parasolid pcurve points",
-    )?;
+    let vertices = out
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, vertex))
+        .collect::<std::collections::HashMap<_, _>>();
+    let points = out
+        .points
+        .iter()
+        .map(|point| (&point.id, point))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -4955,7 +4313,6 @@ fn derive_nurbs_isoparametric_pcurves(
                         Ok(resolution) => resolution,
                         Err(NurbsPcurveFailure::Carrier(error)) => {
                             lane_refusals.note(
-                                ctx,
                                 format_args!("isoparametric pcurve for edge {}", edge.id.as_str()),
                                 &error,
                             )?;
@@ -5032,7 +4389,6 @@ fn derive_nurbs_isoparametric_pcurves(
         else {
             continue;
         };
-        ctx.reserve_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge
                 .id
@@ -5050,40 +4406,29 @@ fn derive_nurbs_isoparametric_pcurves(
             cache,
         ));
     }
-    let mut index_copy_storage = ctx.reserve_scoped(0, "SLDPRT temporary coedge index identity")?;
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
-        let id = index_copy_storage.with_storage(|| {
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")
-        })?;
-        ctx.insert_hash_map(
-            &mut coedge_indices,
-            id,
-            index,
-            "index Parasolid derived coedges",
-        )?;
+        let id = coedge
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")?;
+        coedge_indices.insert(id, index);
     }
     // The sink is drained before the `?` below: an error on that route must
     // not drop a refusal the walk above already pushed.
     for record in lane_refusals.take_records() {
-        let note = crate::loss::spline_lane_refusal(ctx, &record)?;
-        ctx.reserve_vec(&mut out.losses, 1, "collect isoparametric pcurve losses")?;
+        let note = crate::loss::spline_lane_refusal(&record);
         out.losses.push(note);
     }
     for (coedge_id, id, pcurve, cache) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let mut uses = Vec::new();
-            ctx.reserve_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
-            uses.push(cadmpeg_ir::topology::PcurveUse {
+            let uses = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                 isoparametric: None,
                 parameter_range: (pcurve.parameter_range())
                     .map(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range.get()))
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-            });
+            }];
             out.coedges[*index].pcurves = uses;
         }
         annotations.note(
@@ -5099,7 +4444,6 @@ fn derive_nurbs_isoparametric_pcurves(
         )?;
         annotations.exactness(ctx, id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
@@ -5208,7 +4552,6 @@ fn intersection_support_pcurve(
         let (mut control_points, source) = if let Some(support_uv) = &support_data.support_uv {
             let source_points = &support_uv[support_index];
             let mut control_points = Vec::new();
-            ctx.reserve_vec(&mut control_points, source_points.len(), "copy intersection support UV controls")?;
             control_points.extend_from_slice(source_points);
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
@@ -5237,7 +4580,6 @@ fn intersection_support_pcurve(
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                     let mut control_points = Vec::new();
-                    ctx.reserve_vec(&mut control_points, chart_points.len(), "solve intersection support UV controls")?;
                     for point in chart_points {
                         let parameters = match nurbs_surface_parameter_within_tolerance(
                             ctx,
@@ -5256,7 +4598,6 @@ fn intersection_support_pcurve(
                 }
                 _ => {
                     let mut control_points = Vec::new();
-                    ctx.reserve_vec(&mut control_points, chart_points.len(), "project intersection analytic controls")?;
                     for point in chart_points {
                         let parameters = some_or_none!(analytic_surface_parameters(surface, point.get()));
                         control_points.push(cadmpeg_ir::math::Point2::from(parameters));
@@ -5372,14 +4713,12 @@ fn intersection_support_pcurve(
             }
         }
         let mut mapped_points = Vec::new();
-        ctx.reserve_vec(&mut mapped_points, control_points.len(), "map intersection support controls")?;
         for parameters in &control_points {
             let Some(point) = super::evaluation::surface_point(ctx, surface, parameters.u, parameters.v)? else { return Ok(None); };
             let point = point.get();
             mapped_points.push(point);
         }
         let mut control_errors = Vec::new();
-        ctx.reserve_vec(&mut control_errors, mapped_points.len(), "check intersection support control errors")?;
         control_errors.extend(mapped_points.iter().zip(chart_points).map(|(point, target)| {
             squared_distance(*point, target.get()).sqrt()
         }));
@@ -5417,14 +4756,12 @@ fn intersection_support_pcurve(
         }
         let knots_source = chart.knots().as_slice();
         let mut knots = Vec::new();
-        ctx.reserve_vec(&mut knots, knots_source.len(), "copy intersection support pcurve knots")?;
         knots.extend_from_slice(knots_source);
         let nurbs =
             match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
                 Ok(nurbs) => nurbs,
                 Err(error) => {
                     refusal.note(
-                        ctx,
                         format_args!(
                             "sldprt intersection support pcurve for surface attr {surface_attr}"
                         ),
@@ -5491,7 +4828,6 @@ fn nurbs_boundary_pcurve(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
 ) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::CodecError> {
-    super::evaluation::charge_nurbs_isocurve_comparison(ctx, surface, curve)?;
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
         SurfaceParameterAxis::U => (
             index_from_u32(surface.u_degree()),
@@ -5601,7 +4937,6 @@ fn nurbs_strict_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::CodecError> {
-    super::evaluation::charge_nurbs_isocurve_comparison(ctx, surface, curve)?;
     let axis_candidate = |fixed_axis| -> Result<
         InverseResolution<PcurveGeometry>,
         cadmpeg_core::CodecError,
@@ -5862,26 +5197,18 @@ fn nurbs_representation_matches(
 }
 
 fn nurbs_homogeneous_controls(
-    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<Option<Vec<[f64; 4]>>, cadmpeg_core::CodecError> {
+) -> Option<Vec<[f64; 4]>> {
     let mut controls = Vec::new();
-    ctx.reserve_vec(
-        &mut controls,
-        curve.pole_count(),
-        "collect homogeneous NURBS controls",
-    )?;
     for index in 0..curve.pole_count() {
-        let Some(point) = curve.pole_rows().point_at(index) else {
-            return Ok(None);
-        };
+        let point = curve.pole_rows().point_at(index)?;
         let weight = curve.pole_rows().weight_at(index).unwrap_or(1.0);
         if weight <= 0.0 {
-            return Ok(None);
+            return None;
         }
         controls.push([point.x * weight, point.y * weight, point.z * weight, weight]);
     }
-    Ok(Some(controls))
+    Some(controls)
 }
 
 struct HomogeneousCurveLanes {
@@ -5890,82 +5217,55 @@ struct HomogeneousCurveLanes {
 }
 
 fn insert_nurbs_homogeneous_knot(
-    ctx: &DecodeContext<'_>,
     degree: usize,
     knots: &[f64],
     controls: &[[f64; 4]],
     value: f64,
-) -> Result<Option<HomogeneousCurveLanes>, cadmpeg_core::CodecError> {
-    let Some(expected_knots) = controls
+) -> Option<HomogeneousCurveLanes> {
+    let expected_knots = controls
         .len()
         .checked_add(degree)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
+        .and_then(|count| count.checked_add(1))?;
     if degree == 0
         || controls.is_empty()
         || knots.len() != expected_knots
         || !value.is_finite()
         || knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(knots, |count| ctx.charge_work(count, "IR NURBS knot order"))?
+        || !knots.is_sorted()
     {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(1, "insert homogeneous NURBS knot")?;
     let n = controls.len() - 1;
     let (Some(&start), Some(&end)) = (knots.get(degree), knots.get(n + 1)) else {
-        return Ok(None);
+        return None;
     };
     let domain = [start, end];
     if value < domain[0] || value > domain[1] {
-        return Ok(None);
+        return None;
     }
     let span = if value == domain[1] {
         n
     } else {
-        let Some(span) =
-            (degree..=n).find(|index| knots[*index] <= value && value < knots[*index + 1])
-        else {
-            return Ok(None);
-        };
-        span
+        (degree..=n).find(|index| knots[*index] <= value && value < knots[*index + 1])?
     };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
     if multiplicity > degree {
-        return Ok(None);
+        return None;
     }
-    let Some(knot_count) = knots.len().checked_add(1) else {
-        return Ok(None);
-    };
     let mut inserted_knots = Vec::new();
-    ctx.reserve_vec(
-        &mut inserted_knots,
-        knot_count,
-        "insert homogeneous NURBS knot lane",
-    )?;
     inserted_knots.extend_from_slice(&knots[..=span]);
     inserted_knots.push(value);
     inserted_knots.extend_from_slice(&knots[span + 1..]);
 
-    let Some(control_count) = controls.len().checked_add(1) else {
-        return Ok(None);
-    };
+    let control_count = controls.len().checked_add(1)?;
     let mut inserted_controls = Vec::new();
-    ctx.reserve_vec(
-        &mut inserted_controls,
-        control_count,
-        "insert homogeneous NURBS control lane",
-    )?;
     inserted_controls.resize(control_count, [0.0; 4]);
     let prefix_end = span - degree + 1;
     inserted_controls[..prefix_end].copy_from_slice(&controls[..prefix_end]);
     // The knot span never precedes the multiplicity of the inserted value: a
     // refused subtraction states that, where a saturating one would alias an
     // impossible span with span 0 and copy the wrong control run.
-    let Some(middle_end) = span.checked_sub(multiplicity) else {
-        return Ok(None);
-    };
+    let middle_end = span.checked_sub(multiplicity)?;
     let suffix_start = middle_end;
     inserted_controls[(suffix_start + 1)..].copy_from_slice(&controls[suffix_start..]);
     let middle_start = prefix_end;
@@ -5973,7 +5273,7 @@ fn insert_nurbs_homogeneous_knot(
         for index in middle_start..=middle_end {
             let denominator = knots[index + degree] - knots[index];
             if !denominator.is_finite() || denominator <= 0.0 {
-                return Ok(None);
+                return None;
             }
             let alpha = (value - knots[index]) / denominator;
             inserted_controls[index] = std::array::from_fn(|axis| {
@@ -5981,10 +5281,10 @@ fn insert_nurbs_homogeneous_knot(
             });
         }
     }
-    Ok(Some(HomogeneousCurveLanes {
+    Some(HomogeneousCurveLanes {
         knots: inserted_knots,
         controls: inserted_controls,
-    }))
+    })
 }
 
 /// The knots, control points and weights of one clamped NURBS segment, before
@@ -5995,51 +5295,35 @@ type ClampedCurveLanes = (Vec<f64>, Vec<cadmpeg_ir::math::Point3>, Option<Vec<f6
 /// does not clamp to the domain at all; the lanes themselves are minted by the
 /// caller.
 fn clamp_nurbs_curve_to_domain_lanes(
-    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
-) -> Result<Option<ClampedCurveLanes>, cadmpeg_core::CodecError> {
+) -> Option<ClampedCurveLanes> {
     if curve.periodic()
         || !domain[0].is_finite()
         || !domain[1].is_finite()
         || domain[0] >= domain[1]
     {
-        return Ok(None);
+        return None;
     }
     let Ok(degree) = usize::try_from(curve.degree()) else {
-        return Ok(None);
+        return None;
     };
-    let Some(original_domain) = nurbs_curve_parameter_domain(curve) else {
-        return Ok(None);
-    };
+    let original_domain = nurbs_curve_parameter_domain(curve)?;
     let original_domain = original_domain.endpoints();
     if domain[0] < original_domain[0] || domain[1] > original_domain[1] {
-        return Ok(None);
+        return None;
     }
     let mut knots = Vec::new();
-    ctx.reserve_vec(
-        &mut knots,
-        curve.knots().len(),
-        "copy NURBS knots for clamping",
-    )?;
     knots.extend_from_slice(curve.knots());
-    let Some(mut controls) = nurbs_homogeneous_controls(ctx, curve)? else {
-        return Ok(None);
-    };
-    let Some(full_multiplicity) = degree.checked_add(1) else {
-        return Ok(None);
-    };
+    let mut controls = nurbs_homogeneous_controls(curve)?;
+    let full_multiplicity = degree.checked_add(1)?;
     for value in domain {
         let multiplicity = knots.iter().filter(|knot| **knot == value).count();
         if multiplicity > full_multiplicity {
-            return Ok(None);
+            return None;
         }
         for _ in multiplicity..full_multiplicity {
-            let Some(inserted) =
-                insert_nurbs_homogeneous_knot(ctx, degree, &knots, &controls, value)?
-            else {
-                return Ok(None);
-            };
+            let inserted = insert_nurbs_homogeneous_knot(degree, &knots, &controls, value)?;
             knots = inserted.knots;
             controls = inserted.controls;
         }
@@ -6049,57 +5333,34 @@ fn clamp_nurbs_curve_to_domain_lanes(
         knots.iter().position(|knot| *knot == domain[1]),
         knots.iter().rposition(|knot| *knot == domain[1]),
     ) else {
-        return Ok(None);
+        return None;
     };
     if end <= start || end_last < end || end - start == 0 {
-        return Ok(None);
+        return None;
     }
     let (Some(control_slice), Some(knot_slice)) =
         (controls.get(start..end), knots.get(start..=end_last))
     else {
-        return Ok(None);
+        return None;
     };
-    let Some(expected_knots) = control_slice
+    let expected_knots = control_slice
         .len()
         .checked_add(degree)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
+        .and_then(|count| count.checked_add(1))?;
     if knot_slice.len() != expected_knots {
-        return Ok(None);
+        return None;
     }
     let mut segment_knots = Vec::new();
-    ctx.reserve_vec(
-        &mut segment_knots,
-        knot_slice.len(),
-        "copy clamped NURBS knots",
-    )?;
     segment_knots.extend_from_slice(knot_slice);
     let rational = matches!(
         curve.pole_rows(),
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
     );
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        control_slice.len(),
-        "collect clamped NURBS controls",
-    )?;
-    let mut weights = if rational {
-        let mut weights = Vec::new();
-        ctx.reserve_vec(
-            &mut weights,
-            control_slice.len(),
-            "collect clamped NURBS weights",
-        )?;
-        Some(weights)
-    } else {
-        None
-    };
+    let mut weights = rational.then(Vec::new);
     for &[x, y, z, weight] in control_slice {
         if !weight.is_finite() || weight <= 0.0 {
-            return Ok(None);
+            return None;
         }
         control_points.push(cadmpeg_ir::math::Point3::new(
             x / weight,
@@ -6110,7 +5371,7 @@ fn clamp_nurbs_curve_to_domain_lanes(
             weights.push(weight);
         }
     }
-    Ok(Some((segment_knots, control_points, weights)))
+    Some((segment_knots, control_points, weights))
 }
 
 fn clamp_nurbs_curve_to_domain(
@@ -6119,7 +5380,7 @@ fn clamp_nurbs_curve_to_domain(
     domain: [f64; 2],
 ) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, NurbsPcurveFailure> {
     let Some((segment_knots, control_points, weights)) =
-        clamp_nurbs_curve_to_domain_lanes(ctx, curve, domain)?
+        clamp_nurbs_curve_to_domain_lanes(curve, domain)
     else {
         return Ok(None);
     };
@@ -6139,7 +5400,6 @@ fn extended_nurbs_isocurve_axis_candidate(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
 ) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
-    super::evaluation::charge_nurbs_isocurve_comparison(ctx, surface, curve)?;
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree(),
@@ -6319,26 +5579,18 @@ enum NurbsPcurveResolution {
 }
 
 fn nurbs_curve_sample_parameters(
-    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<Vec<f64>>, NurbsPcurveFailure> {
-    let Some(domain) = nurbs_curve_parameter_domain(curve) else {
-        return Ok(None);
-    };
-    let domain = domain.endpoints();
+) -> Option<Vec<f64>> {
+    let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
     if !range[0].is_finite()
         || !range[1].is_finite()
         || range[0] >= range[1]
         || range[0] < domain[0]
         || range[1] > domain[1]
     {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work(
-        u64_from_index(curve.knots().len()),
-        "scan NURBS curve knot windows",
-    )?;
     let mut parameters = vec![range[0], range[1]];
     for span in curve.knots().windows(2) {
         let start = span[0].max(range[0]);
@@ -6351,26 +5603,17 @@ fn nurbs_curve_sample_parameters(
                 f64_from_index(index),
                 f64_from_index(NURBS_CACHE_SAMPLES_PER_SPAN),
             ) else {
-                return Ok(None);
+                return None;
             };
             let fraction = position / span_count;
-            let Some(parameter) = cadmpeg_ir::math::interpolate(start, end, fraction) else {
-                return Ok(None);
-            };
-            ctx.charge_work(1, "sample NURBS curve span")?;
-            ctx.reserve_vec(&mut parameters, 1, "collect NURBS sample parameters")?;
+            let parameter = cadmpeg_ir::math::interpolate(start, end, fraction)?;
             parameters.push(parameter.get());
         }
     }
-    ctx.stable_sort_by(
-        &mut parameters,
-        f64::total_cmp,
-        |_| 0,
-        "sort NURBS sample parameters",
-    )?;
+    parameters.sort_by(f64::total_cmp);
     // Every distinct sample participates in the fit bound, including tiny spans.
     parameters.dedup();
-    Ok((!parameters.is_empty()).then_some(parameters))
+    (!parameters.is_empty()).then_some(parameters)
 }
 
 fn nurbs_edge_endpoint_parameters(
@@ -6423,7 +5666,7 @@ fn nurbs_curve_surface_deviation(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
 ) -> Result<Option<f64>, NurbsPcurveFailure> {
-    let Some(parameters) = nurbs_curve_sample_parameters(ctx, curve, range)? else {
+    let Some(parameters) = nurbs_curve_sample_parameters(curve, range) else {
         return Ok(None);
     };
     let mut seed = None;
@@ -6478,11 +5721,6 @@ fn nurbs_degree_one_cache_lanes(
         return Ok(None);
     }
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        curve.pole_count(),
-        "collect NURBS cache pcurve controls",
-    )?;
     let mut seed = None;
     for index in 0..curve.pole_count() {
         let Some(point) = curve.pole_rows().point_at(index) else {
@@ -6511,7 +5749,7 @@ fn nurbs_degree_one_cache_lanes(
         seed = Some(parameters);
         control_points.push(parameters);
     }
-    let Some(parameters) = nurbs_curve_sample_parameters(ctx, curve, range)? else {
+    let Some(parameters) = nurbs_curve_sample_parameters(curve, range) else {
         return Ok(None);
     };
     let mut fit_tolerance = 0.0_f64;
@@ -6554,11 +5792,6 @@ fn nurbs_degree_one_cache_pcurve(
         return Ok(None);
     };
     let mut knots = Vec::new();
-    ctx.reserve_vec(
-        &mut knots,
-        curve.knots().len(),
-        "copy NURBS cache pcurve knots",
-    )?;
     knots.extend_from_slice(curve.knots());
     let nurbs = PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)??;
     Ok(Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance)))
@@ -6668,25 +5901,17 @@ fn ruled_surface_line_pcurve(
     if matches!(
         surface.pole_grid(),
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
-    ) {
-        ctx.charge_work(
-            u64::try_from(fixed_count).map_err(|_| {
-                ctx.refuse_codec_limit("compare ruled surface weights", u64::MAX - 1, u64::MAX)
-            })?,
-            "compare ruled surface weights",
-        )?;
-        if (0..fixed_count).any(|fixed| {
-            let ((a_u, a_v), (b_u, b_v)) = match fixed_axis {
-                SurfaceParameterAxis::U => ((fixed, 0), (fixed, 1)),
-                SurfaceParameterAxis::V => ((0, fixed), (1, fixed)),
-            };
-            match (surface.weight(a_u, a_v), surface.weight(b_u, b_v)) {
-                (Some(a), Some(b)) => (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT,
-                _ => true,
-            }
-        }) {
-            return Ok(InverseResolution::NoMatch);
+    ) && (0..fixed_count).any(|fixed| {
+        let ((a_u, a_v), (b_u, b_v)) = match fixed_axis {
+            SurfaceParameterAxis::U => ((fixed, 0), (fixed, 1)),
+            SurfaceParameterAxis::V => ((0, fixed), (1, fixed)),
+        };
+        match (surface.weight(a_u, a_v), surface.weight(b_u, b_v)) {
+            (Some(a), Some(b)) => (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT,
+            _ => true,
         }
+    }) {
+        return Ok(InverseResolution::NoMatch);
     }
     let Some(fixed_degree) = usize::try_from(fixed_degree).ok() else {
         return Ok(InverseResolution::NoMatch);
@@ -6744,12 +5969,11 @@ fn ruled_surface_line_pcurve(
         ))
     };
     let Some(candidates) =
-        sampled_parameter_minima(ctx, fixed_knots, [fixed_min, fixed_max], objective)?
+        sampled_parameter_minima(fixed_knots, [fixed_min, fixed_max], objective)?
     else {
         return Ok(InverseResolution::NoMatch);
     };
     let resolution = unique_inverse_parameter(
-        ctx,
         candidates,
         inverse_coordinate_tolerance(
             admitted_surface_poles(surface)
@@ -6757,7 +5981,7 @@ fn ruled_surface_line_pcurve(
                 .chain(std::iter::once(line_origin)),
         ),
         [fixed_min, fixed_max],
-    )?;
+    );
     let fixed = match resolution {
         InverseResolution::Unique(fixed) => fixed,
         InverseResolution::NoMatch => return Ok(InverseResolution::NoMatch),
@@ -6810,133 +6034,90 @@ fn solve_face_orientation(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    {
-        let mut copied_storage =
-            ctx.reserve_scoped(0, "SLDPRT face orientation identity storage")?;
-        copied_storage.with_storage(|| {
-            let mut loop_faces = HashMap::new();
-            for lp in &out.loops {
-                ctx.admit_hash_map_entry(
-                    &mut loop_faces,
-                    &lp.id,
-                    "index oriented Parasolid loops",
-                )?;
-                loop_faces.insert(
-                    lp.id
-                        .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                    lp.face
-                        .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                );
-            }
-            let mut uses: HashMap<EdgeId, Vec<(FaceId, bool)>> = HashMap::new();
-            for coedge in &out.coedges {
-                ctx.charge_work(1, "orient Parasolid face uses")?;
-                if let Some(face) = loop_faces.get(&coedge.owner_loop) {
-                    ctx.admit_hash_map_entry(
-                        &mut uses,
-                        &coedge.edge,
-                        "index Parasolid edge face uses",
-                    )?;
-                    let edge_uses = uses
-                        .entry(
-                            coedge
-                                .edge
-                                .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                        )
-                        .or_default();
-                    ctx.reserve_vec(edge_uses, 1, "collect Parasolid edge face uses")?;
-                    edge_uses.push((
-                        face.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                        coedge.sense == Sense::Reversed,
-                    ));
-                }
-            }
-            let mut adjacency: HashMap<FaceId, Vec<(FaceId, bool)>> = HashMap::new();
-            for edge_uses in uses.values().filter(|uses| uses.len() == 2) {
-                let (a, a_reversed) = &edge_uses[0];
-                let (b, b_reversed) = &edge_uses[1];
-                let parity = *a_reversed == *b_reversed;
-                for (face, neighbor) in [(a, b), (b, a)] {
-                    ctx.admit_hash_map_entry(
-                        &mut adjacency,
-                        face,
-                        "index Parasolid face adjacency",
-                    )?;
-                    let neighbors = adjacency
-                        .entry(face.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?)
-                        .or_default();
-                    ctx.reserve_vec(neighbors, 1, "collect Parasolid face adjacency")?;
-                    neighbors.push((
-                        neighbor.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                        parity,
-                    ));
-                }
-            }
-            let mut initial = HashMap::new();
-            for face in &out.faces {
-                ctx.admit_hash_map_entry(
-                    &mut initial,
-                    &face.id,
-                    "index initial Parasolid face senses",
-                )?;
-                initial.insert(
-                    face.id
-                        .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                    face.sense == Sense::Reversed,
-                );
-            }
-            let mut solved = HashMap::new();
-            for face in &out.faces {
-                let root = face
-                    .id
-                    .try_clone_for_decode(ctx, "SLDPRT orientation root identity")?;
-                ctx.charge_work(1, "solve Parasolid face senses")?;
-                if solved.contains_key(&root) {
-                    continue;
-                }
-                ctx.admit_hash_map_entry(&mut solved, &root, "track solved Parasolid face senses")?;
-                solved.insert(
-                    root.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                    initial[&root],
-                );
-                let mut pending = Vec::new();
-                ctx.reserve_vec(&mut pending, 1, "walk Parasolid face senses")?;
-                pending.push(root);
-                while let Some(face) = pending.pop() {
-                    ctx.charge_work(1, "walk Parasolid face senses")?;
-                    let sense = solved[&face];
-                    for (neighbor, parity) in adjacency.get(&face).into_iter().flatten() {
-                        ctx.charge_work(1, "walk Parasolid face adjacency")?;
-                        if !solved.contains_key(neighbor) {
-                            ctx.admit_hash_map_entry(
-                                &mut solved,
-                                neighbor,
-                                "track solved Parasolid face senses",
-                            )?;
-                            solved.insert(
-                                neighbor
-                                    .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                                sense ^ parity,
-                            );
-                            ctx.reserve_vec(&mut pending, 1, "walk Parasolid face senses")?;
-                            pending.push(
-                                neighbor
-                                    .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
-                            );
-                        }
-                    }
-                }
-            }
-            for face in &mut out.faces {
-                face.sense = if solved.get(&face.id).copied().unwrap_or(false) {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                };
-            }
-            Ok(())
-        })
+    let mut loop_faces = HashMap::new();
+    for lp in &out.loops {
+        loop_faces.insert(
+            lp.id
+                .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+            lp.face
+                .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+        );
     }
+    let mut uses: HashMap<EdgeId, Vec<(FaceId, bool)>> = HashMap::new();
+    for coedge in &out.coedges {
+        if let Some(face) = loop_faces.get(&coedge.owner_loop) {
+            let edge_uses = uses
+                .entry(
+                    coedge
+                        .edge
+                        .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+                )
+                .or_default();
+            edge_uses.push((
+                face.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+                coedge.sense == Sense::Reversed,
+            ));
+        }
+    }
+    let mut adjacency: HashMap<FaceId, Vec<(FaceId, bool)>> = HashMap::new();
+    for edge_uses in uses.values().filter(|uses| uses.len() == 2) {
+        let (a, a_reversed) = &edge_uses[0];
+        let (b, b_reversed) = &edge_uses[1];
+        let parity = *a_reversed == *b_reversed;
+        for (face, neighbor) in [(a, b), (b, a)] {
+            let neighbors = adjacency
+                .entry(face.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?)
+                .or_default();
+            neighbors.push((
+                neighbor.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+                parity,
+            ));
+        }
+    }
+    let mut initial = HashMap::new();
+    for face in &out.faces {
+        initial.insert(
+            face.id
+                .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+            face.sense == Sense::Reversed,
+        );
+    }
+    let mut solved = HashMap::new();
+    for face in &out.faces {
+        let root = face
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT orientation root identity")?;
+        if solved.contains_key(&root) {
+            continue;
+        }
+        solved.insert(
+            root.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+            initial[&root],
+        );
+        let mut pending = Vec::new();
+        pending.push(root);
+        while let Some(face) = pending.pop() {
+            let sense = solved[&face];
+            for (neighbor, parity) in adjacency.get(&face).into_iter().flatten() {
+                if !solved.contains_key(neighbor) {
+                    solved.insert(
+                        neighbor.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
+                        sense ^ parity,
+                    );
+                    pending
+                        .push(neighbor.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?);
+                }
+            }
+        }
+    }
+    for face in &mut out.faces {
+        face.sense = if solved.get(&face.id).copied().unwrap_or(false) {
+            Sense::Reversed
+        } else {
+            Sense::Forward
+        };
+    }
+    Ok(())
 }
 
 fn synthesize_cylinder_seams(
@@ -6945,26 +6126,31 @@ fn synthesize_cylinder_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let surfaces = ctx.collect_hash_map(
-        out.surfaces.iter().map(|surface| (&surface.id, surface)),
-        "index Parasolid pcurve surfaces",
-    )?;
-    let loops = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, lp)),
-        "index Parasolid seam loops",
-    )?;
-    let coedges = ctx.collect_hash_map(
-        out.coedges.iter().map(|coedge| (&coedge.id, coedge)),
-        "index Parasolid seam coedges",
-    )?;
-    let edges = ctx.collect_hash_map(
-        out.edges.iter().map(|edge| (&edge.id, edge)),
-        "index Parasolid pcurve edges",
-    )?;
-    let curves = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, curve)),
-        "index Parasolid pcurve curves",
-    )?;
+    let surfaces = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<std::collections::HashMap<_, _>>();
+    let loops = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, lp))
+        .collect::<std::collections::HashMap<_, _>>();
+    let coedges = out
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = out
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut candidates = Vec::new();
     for face in &out.faces {
         let Some(surface) = surfaces.get(&face.surface) else {
@@ -7017,11 +6203,6 @@ fn synthesize_cylinder_seams(
             ))
         };
         if let (Some(pa), Some(pb)) = (seam_point(ea), seam_point(eb)) {
-            ctx.reserve_vec(
-                &mut candidates,
-                1,
-                "collect Parasolid cylinder seam candidates",
-            )?;
             candidates.push((
                 face.id
                     .try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -7042,20 +6223,12 @@ fn synthesize_cylinder_seams(
     }
 
     let mut removed = HashSet::new();
-    let mut index_copy_storage = ctx.reserve_scoped(0, "SLDPRT temporary coedge index identity")?;
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
-        let id = index_copy_storage.with_storage(|| {
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")
-        })?;
-        ctx.insert_hash_map(
-            &mut coedge_indices,
-            id,
-            index,
-            "index Parasolid seam coedges",
-        )?;
+        let id = coedge
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")?;
+        coedge_indices.insert(id, index);
     }
     for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b, pa, pb) in candidates {
         for (vertex_id, position) in [(&vertex_a, pa), (&vertex_b, pb)] {
@@ -7086,36 +6259,21 @@ fn synthesize_cylinder_seams(
             direction.z / norm,
         );
         let suffix = cadmpeg_ir::identity_key!("seam:").then(face_id.key());
-        let curve_id = {
-            let mut copied_storage = ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-            copied_storage.with_storage(|| {
-                Ok::<_, cadmpeg_core::CodecError>(CurveId::compose(
-                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
-                    suffix.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                ))
-            })
-        }?;
-        let edge_id = {
-            let mut copied_storage = ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-            copied_storage.with_storage(|| {
-                Ok::<_, cadmpeg_core::CodecError>(EdgeId::compose(
-                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
-                    suffix.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                ))
-            })
-        }?;
+        let curve_id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
+            suffix.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+        );
+        let edge_id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
+            suffix.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+        );
         let coedge_namespace = cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge");
-        let seam_a = {
-            let mut copied_storage = ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-            copied_storage.with_storage(|| {
-                Ok::<_, cadmpeg_core::CodecError>(CoedgeId::compose(
-                    &coedge_namespace,
-                    suffix
-                        .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?
-                        .colon(0_u16),
-                ))
-            })
-        }?;
+        let seam_a = CoedgeId::compose(
+            &coedge_namespace,
+            suffix
+                .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?
+                .colon(0_u16),
+        );
         let seam_b = CoedgeId::compose(&coedge_namespace, suffix.colon(1_u16));
         for id in [
             curve_id.as_str(),
@@ -7127,7 +6285,6 @@ fn synthesize_cylinder_seams(
             annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
         out.curves.push(Curve {
             parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -7140,7 +6297,6 @@ fn synthesize_cylinder_seams(
             )),
         });
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.edges, 1, "collect Parasolid cylinder seam edges")?;
         out.edges.push(Edge {
             id: edge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, norm]))
@@ -7149,23 +6305,11 @@ fn synthesize_cylinder_seams(
             end: vertex_b,
             tolerance: None,
         });
-        ctx.admit_hash_map_entry(
-            &mut coedge_indices,
-            &seam_a,
-            "index generated Parasolid seam coedges",
-        )?;
         coedge_indices.insert(
-            index_copy_storage.with_storage(|| {
-                seam_a.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")
-            })?,
+            seam_a.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             out.coedges.len(),
         );
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(
-            &mut out.coedges,
-            1,
-            "collect Parasolid cylinder seam coedges",
-        )?;
         out.coedges.push(Coedge {
             id: seam_a.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             owner_loop: loop_a.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -7175,23 +6319,11 @@ fn synthesize_cylinder_seams(
             use_curve: None,
             pcurves: Vec::new(),
         });
-        ctx.admit_hash_map_entry(
-            &mut coedge_indices,
-            &seam_b,
-            "index generated Parasolid seam coedges",
-        )?;
         coedge_indices.insert(
-            index_copy_storage.with_storage(|| {
-                seam_b.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")
-            })?,
+            seam_b.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             out.coedges.len(),
         );
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(
-            &mut out.coedges,
-            1,
-            "collect Parasolid cylinder seam coedges",
-        )?;
         out.coedges.push(Coedge {
             id: seam_b.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             owner_loop: loop_a.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -7208,11 +6340,6 @@ fn synthesize_cylinder_seams(
             seam_b,
         ];
         let mut ring_members = Vec::new();
-        ctx.reserve_vec(
-            &mut ring_members,
-            ring_ids.len(),
-            "build Parasolid cylinder seam ring",
-        )?;
         for id in &ring_ids {
             ring_members.push(id.try_clone_for_decode(ctx, "SLDPRT seam ring identity")?);
         }
@@ -7239,7 +6366,7 @@ fn synthesize_cylinder_seams(
                 "bind Parasolid cylinder seam loop",
             )?);
         }
-        ctx.insert_hash_set(&mut removed, loop_b, "track replaced Parasolid seam loops")?;
+        removed.insert(loop_b);
     }
     out.loops.retain(|lp| !removed.contains(&lp.id));
     Ok(())
@@ -7251,40 +6378,42 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let surface_geometry = ctx.collect_hash_map(
-        out.surfaces
-            .iter()
-            .map(|surface| (&surface.id, &surface.geometry)),
-        "index Parasolid sphere geometry",
-    )?;
-    let loop_coedges = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, lp.coedges())),
-        "index Parasolid sphere loop coedges",
-    )?;
-    let coedge_edges = ctx.collect_hash_map(
-        out.coedges.iter().map(|coedge| (&coedge.id, &coedge.edge)),
-        "index Parasolid sphere coedge edges",
-    )?;
-    let edge_indices = ctx.collect_hash_map(
-        out.edges
-            .iter()
-            .enumerate()
-            .map(|(index, edge)| (&edge.id, index)),
-        "index Parasolid sphere edges",
-    )?;
-    let curve_geometry = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, &curve.geometry)),
-        "index Parasolid sphere curves",
-    )?;
-    let vertex_points = ctx.collect_hash_map(
-        out.vertices.iter().filter_map(|vertex| {
+    let surface_geometry = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<std::collections::HashMap<_, _>>();
+    let loop_coedges = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, lp.coedges()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let coedge_edges = out
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, &coedge.edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edge_indices = out
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| (&edge.id, index))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curve_geometry = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
             out.points
                 .iter()
                 .find(|point| point.id == vertex.point)
                 .map(|point| (&vertex.id, point.position().get()))
-        }),
-        "index Parasolid sphere vertex points",
-    )?;
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let mut existing = Vec::new();
     for face in &out.faces {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) =
@@ -7307,13 +6436,11 @@ fn synthesize_sphere_seams(
         }
         let mut seam_edges = Vec::new();
         for coedge in coedge_ids {
-            ctx.charge_work(1, "select Parasolid sphere seam edges")?;
             if let Some(index) = coedge_edges
                 .get(coedge)
                 .and_then(|edge| edge_indices.get(*edge))
             {
                 if out.edges[*index].curve().is_none() {
-                    ctx.reserve_vec(&mut seam_edges, 1, "collect Parasolid sphere seam edges")?;
                     seam_edges.push(*index);
                 }
             }
@@ -7348,7 +6475,6 @@ fn synthesize_sphere_seams(
             // the nearer pole lets a stale or reversed endpoint change the
             // sphere parameterization.
             let point = north;
-            ctx.reserve_vec(&mut existing, 1, "collect Parasolid sphere seam repairs")?;
             existing.push((*edge_index, point));
         }
     }
@@ -7384,11 +6510,6 @@ fn synthesize_sphere_seams(
         )?;
         annotations.exactness(ctx, curve_id.as_str(), Exactness::Derived)?;
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(
-            &mut out.curves,
-            1,
-            "collect repaired Parasolid sphere seam curves",
-        )?;
         out.curves.push(Curve {
             parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -7400,26 +6521,31 @@ fn synthesize_sphere_seams(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
 
-    let surfaces = ctx.collect_hash_map(
-        out.surfaces.iter().map(|surface| (&surface.id, surface)),
-        "index Parasolid pcurve surfaces",
-    )?;
-    let loops = ctx.collect_hash_map(
-        out.loops.iter().map(|lp| (&lp.id, lp)),
-        "index Parasolid seam loops",
-    )?;
-    let coedges = ctx.collect_hash_map(
-        out.coedges.iter().map(|coedge| (&coedge.id, coedge)),
-        "index Parasolid seam coedges",
-    )?;
-    let edges = ctx.collect_hash_map(
-        out.edges.iter().map(|edge| (&edge.id, edge)),
-        "index Parasolid pcurve edges",
-    )?;
-    let curves = ctx.collect_hash_map(
-        out.curves.iter().map(|curve| (&curve.id, curve)),
-        "index Parasolid pcurve curves",
-    )?;
+    let surfaces = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect::<std::collections::HashMap<_, _>>();
+    let loops = out
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, lp))
+        .collect::<std::collections::HashMap<_, _>>();
+    let coedges = out
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let edges = out
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<std::collections::HashMap<_, _>>();
+    let curves = out
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut candidates = Vec::new();
     for (face_index, face) in out.faces.iter().enumerate() {
         let Some(surface) = surfaces.get(&face.surface) else {
@@ -7479,34 +6605,14 @@ fn synthesize_sphere_seams(
                 });
             let mut pole_vertices = Vec::new();
             for vertex in pole_candidates {
-                ctx.reserve_vec(
-                    &mut pole_vertices,
-                    1,
-                    "collect Parasolid sphere pole vertices",
-                )?;
                 pole_vertices.push(vertex);
             }
-            ctx.stable_sort_by(
-                &mut pole_vertices,
-                |left, right| left.as_str().cmp(right.as_str()),
-                |id| id.as_str().len(),
-                "sort Parasolid sphere pole vertices",
-            )?;
+            pole_vertices.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             pole_vertices.dedup();
             let mut ring = Vec::new();
-            ctx.reserve_vec(
-                &mut ring,
-                lp.coedges().len(),
-                "copy Parasolid sphere seam ring",
-            )?;
             for id in lp.coedges() {
                 ring.push(id.try_clone_for_decode(ctx, "SLDPRT sphere ring identity")?);
             }
-            ctx.reserve_vec(
-                &mut candidates,
-                1,
-                "collect Parasolid sphere seam candidates",
-            )?;
             candidates.push((
                 face_index,
                 face.id
@@ -7522,20 +6628,12 @@ fn synthesize_sphere_seams(
             ));
         }
     }
-    let mut index_copy_storage = ctx.reserve_scoped(0, "SLDPRT temporary coedge index identity")?;
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
-        let id = index_copy_storage.with_storage(|| {
-            coedge
-                .id
-                .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")
-        })?;
-        ctx.insert_hash_map(
-            &mut coedge_indices,
-            id,
-            index,
-            "index Parasolid seam coedges",
-        )?;
+        let id = coedge
+            .id
+            .try_clone_for_decode(ctx, "SLDPRT temporary coedge index identity")?;
+        coedge_indices.insert(id, index);
     }
     for (face_index, _face, loop_id, mut ring, seam_point, pole_vertex) in candidates {
         let Ok(degenerate) = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(seam_point)
@@ -7550,88 +6648,46 @@ fn synthesize_sphere_seams(
         };
 
         let seam_face_key = cadmpeg_ir::identity_key!("sphere-seam-face:").then(face_index);
-        let curve_id = {
-            let mut copied_storage = ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-            copied_storage.with_storage(|| {
-                Ok::<_, cadmpeg_core::CodecError>(CurveId::compose(
-                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
-                    seam_face_key
-                        .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                ))
-            })
-        }?;
-        let edge_id = {
-            let mut copied_storage = ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-            copied_storage.with_storage(|| {
-                Ok::<_, cadmpeg_core::CodecError>(EdgeId::compose(
-                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
-                    seam_face_key
-                        .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                ))
-            })
-        }?;
-        let coedge_id = {
-            let mut copied_storage = ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-            copied_storage.with_storage(|| {
-                Ok::<_, cadmpeg_core::CodecError>(CoedgeId::compose(
-                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge"),
-                    seam_face_key
-                        .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                ))
-            })
-        }?;
-        let pcurve_id = {
-            let mut copied_storage = ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-            copied_storage.with_storage(|| {
-                Ok::<_, cadmpeg_core::CodecError>(PcurveId::compose(
-                    &pcurve_namespace(),
-                    seam_face_key
-                        .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                ))
-            })
-        }?;
+        let curve_id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
+            seam_face_key.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+        );
+        let edge_id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
+            seam_face_key.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+        );
+        let coedge_id = CoedgeId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge"),
+            seam_face_key.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+        );
+        let pcurve_id = PcurveId::compose(
+            &pcurve_namespace(),
+            seam_face_key.try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+        );
         let pole_vertex = match pole_vertex {
             Some(vertex) => vertex,
             None => {
-                let point_id = {
-                    let mut copied_storage =
-                        ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-                    copied_storage.with_storage(|| {
-                        Ok::<_, cadmpeg_core::CodecError>(PointId::compose(
-                            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "point"),
-                            seam_face_key
-                                .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                        ))
-                    })
-                }?;
-                let vertex_id = {
-                    let mut copied_storage =
-                        ctx.reserve_scoped(0, "SLDPRT temporary seam identity key")?;
-                    copied_storage.with_storage(|| {
-                        Ok::<_, cadmpeg_core::CodecError>(VertexId::compose(
-                            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
-                            seam_face_key
-                                .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
-                        ))
-                    })
-                }?;
+                let point_id = PointId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "point"),
+                    seam_face_key
+                        .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+                );
+                let vertex_id = VertexId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
+                    seam_face_key
+                        .try_clone_for_decode(ctx, "SLDPRT temporary seam identity key")?,
+                );
                 for id in [point_id.as_str(), vertex_id.as_str()] {
                     annotations.note(ctx, id, source_stream, 0, Some("derived_sphere_seam"))?;
                     annotations.exactness(ctx, id, Exactness::Derived)?;
                 }
                 admit_brep_entity(ctx)?;
-                ctx.reserve_vec(&mut out.points, 1, "collect Parasolid sphere seam points")?;
                 out.points.push(Point::new(
                     point_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                     degenerate.point(),
                     None,
                 ));
                 admit_brep_entity(ctx)?;
-                ctx.reserve_vec(
-                    &mut out.vertices,
-                    1,
-                    "collect Parasolid sphere seam vertices",
-                )?;
                 out.vertices.push(Vertex {
                     id: vertex_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
                     point: point_id,
@@ -7650,7 +6706,6 @@ fn synthesize_sphere_seams(
             annotations.exactness(ctx, id, Exactness::Derived)?;
         }
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid sphere seam curves")?;
         out.curves.push(Curve {
             parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -7658,7 +6713,6 @@ fn synthesize_sphere_seams(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
         });
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.edges, 1, "collect Parasolid sphere seam edges")?;
         out.edges.push(Edge {
             id: edge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
@@ -7671,7 +6725,6 @@ fn synthesize_sphere_seams(
             continue;
         };
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.pcurves, 1, "collect Parasolid sphere seam pcurves")?;
         out.pcurves.push(Pcurve {
             id: pcurve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             geometry: PcurveGeometry::Line(pcurve),
@@ -7681,31 +6734,20 @@ fn synthesize_sphere_seams(
                 None,
             ),
         });
-        ctx.reserve_vec(&mut ring, 1, "extend Parasolid sphere seam ring")?;
         ring.push(coedge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?);
-        ctx.admit_hash_map_entry(
-            &mut coedge_indices,
-            &coedge_id,
-            "index generated Parasolid sphere coedges",
-        )?;
         coedge_indices.insert(
-            index_copy_storage.with_storage(|| {
-                coedge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")
-            })?,
+            coedge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             out.coedges.len(),
         );
-        let mut pcurve_uses = Vec::new();
-        ctx.reserve_vec(&mut pcurve_uses, 1, "bind Parasolid sphere seam pcurve")?;
-        pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
+        let pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve_id,
             isoparametric: None,
             parameter_range: Some(
                 cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, std::f64::consts::TAU])
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
-        });
+        }];
         admit_brep_entity(ctx)?;
-        ctx.reserve_vec(&mut out.coedges, 1, "collect Parasolid sphere seam coedges")?;
         out.coedges.push(Coedge {
             id: coedge_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             owner_loop: loop_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
@@ -7735,7 +6777,6 @@ fn emit_curve(
     carrier: &CurveCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
     admit_brep_entity(ctx)?;
-    ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid curves")?;
     out.curves.push(Curve {
         parameter_range: None,
         id: id_curve(carrier.attr),
@@ -7750,21 +6791,18 @@ fn emit_curve(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn incomplete_brep_marker_does_not_consume_collection_slots() {
+    fn incomplete_brep_marker_decodes_empty() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
         let body = [0x00, 0x1e, 0x00];
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
         let carriers = super::scan_carriers(&ctx, &body).unwrap();
-        assert!(carriers.curve_attrs(&ctx).unwrap().is_empty());
-        let tables = super::topology::scan(&ctx, &body).unwrap();
+        assert!(carriers.curve_attrs().is_empty());
+        let tables = super::topology::scan(&body);
         assert!(tables.points().is_empty());
         assert!(tables.loops().is_empty());
         ctx.finish_session().unwrap();
-        // Graph construction owns one annotation-stream handle even without records.
-        policy.limits.max_collection_items = 1;
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
@@ -7777,104 +6815,22 @@ mod tests {
     }
 
     #[test]
-    fn empty_brep_scan_preserves_work_refusal_without_candidate_census() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let body = [0xff; 4096];
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-        let stream = cadmpeg_ir::stream_name!("no-candidates");
-        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-            super::decode_body(&ctx, &body, &stream)
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
-            panic!("work refusal");
-        };
-        assert_eq!(
-            limit.dimension,
-            cadmpeg_core::decode::ResourceDimension::WorkUnits
-        );
-        assert_eq!(limit.operation, "scan SLDPRT analytic carriers");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert_eq!(allocations, 0);
-    }
-
-    fn one_face_shell() -> super::Brep {
-        use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
-        use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
-
-        super::Brep {
-            faces: vec![Face {
-                id: FaceId::mint("test:model:face#1").expect("face id"),
-                shell: ShellId::mint("test:model:shell#1").expect("shell id"),
-                surface: SurfaceId::mint("test:model:surface#1").expect("surface id"),
-                sense: Sense::Forward,
-                loops: FaceLoops::unspecified(Vec::new()),
-                name: None,
-                color: None,
-                tolerance: None,
-            }],
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn shell_components_refuse_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(
-            super::shell_face_components(&ctx, &one_face_shell(), "test:model:shell#1"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
-    fn shell_components_refuse_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(
-            super::shell_face_components(&ctx, &one_face_shell(), "test:model:shell#1"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
     fn numerical_followup_inverse_ambiguity_is_independent_of_parameter_units() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         for domain in [1e-200, 1e-12, 1.0, 1e200] {
             assert!(matches!(
                 super::unique_inverse_parameter(
-                    &ctx,
                     vec![(0.25 * domain, 0.), (0.75 * domain, 0.)],
                     0.001,
                     [0., domain]
-                )
-                .unwrap(),
+                ),
                 super::InverseResolution::Ambiguous
             ));
             assert!(matches!(
                 super::unique_inverse_parameter(
-                    &ctx,
                     vec![(0.25 * domain, 0.), (0.25 * domain, 0.)],
                     0.001,
                     [0., domain]
-                )
-                .unwrap(),
+                ),
                 super::InverseResolution::Unique(_)
             ));
         }
@@ -8064,21 +7020,10 @@ mod tests {
     fn face_walk_rejects_a_loop_owned_by_another_bridge() {
         let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test context");
-        tables
-            .insert_loop(&ctx, loop_record(20, [0, 40, 11, 0]))
-            .expect("loop");
-        tables
-            .insert_coedge(&ctx, coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]))
-            .expect("coedge");
+        tables.insert_loop(loop_record(20, [0, 40, 11, 0]));
+        tables.insert_coedge(coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
 
-        let face = super::walk_face(&ctx, &bridge, &tables).expect("face walk");
+        let face = super::walk_face(&bridge, &tables);
 
         assert!(face.loops.is_empty());
     }
@@ -8087,53 +7032,12 @@ mod tests {
     fn face_walk_rejects_a_ring_owned_by_another_loop() {
         let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test context");
-        tables
-            .insert_loop(&ctx, loop_record(20, [0, 40, 10, 0]))
-            .expect("loop");
-        tables
-            .insert_coedge(&ctx, coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0]))
-            .expect("coedge");
+        tables.insert_loop(loop_record(20, [0, 40, 10, 0]));
+        tables.insert_coedge(coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0]));
 
-        let face = super::walk_face(&ctx, &bridge, &tables).expect("face walk");
+        let face = super::walk_face(&bridge, &tables);
 
         assert!(face.loops.is_empty());
-    }
-
-    #[test]
-    fn face_walk_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
-        assert!(matches!(
-            super::walk_face(&ctx, &bridge, &Tables::default()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
-    fn face_walk_refuses_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
-        assert!(matches!(
-            super::walk_face(&ctx, &bridge, &Tables::default()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
     }
 
     fn face_color(
@@ -8169,14 +7073,10 @@ mod tests {
     fn current_uncolored_face_version_removes_an_older_color() {
         let colors = vec![face_color(700, 900, 1, [0.25, 0.5, 0.75])];
 
-        let (resolved, unresolved) = with_test_context(|ctx| {
-            unique_face_colors(
-                ctx,
-                colors,
-                vec![face_color_version(700, 1, 0), face_color_version(700, 2, 0)],
-            )
-            .expect("face colors")
-        });
+        let (resolved, unresolved) = unique_face_colors(
+            colors,
+            vec![face_color_version(700, 1, 0), face_color_version(700, 2, 0)],
+        );
 
         assert!(resolved.is_empty());
         assert_eq!(unresolved, 0);
@@ -8188,14 +7088,10 @@ mod tests {
         let mut current = face_color(700, 901, 2, [0.75, 0.5, 0.25]);
         current.stream_order = 1;
 
-        let (resolved, unresolved) = with_test_context(|ctx| {
-            unique_face_colors(
-                ctx,
-                vec![old, current],
-                vec![face_color_version(700, 2, 0), face_color_version(700, 2, 1)],
-            )
-            .expect("face colors")
-        });
+        let (resolved, unresolved) = unique_face_colors(
+            vec![old, current],
+            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 1)],
+        );
 
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].color_attr, 901);
@@ -8209,14 +7105,10 @@ mod tests {
             face_color(700, 901, 2, [0.75, 0.5, 0.25]),
         ];
 
-        let (resolved, unresolved) = with_test_context(|ctx| {
-            unique_face_colors(
-                ctx,
-                colors,
-                vec![face_color_version(700, 2, 0), face_color_version(700, 2, 0)],
-            )
-            .expect("face colors")
-        });
+        let (resolved, unresolved) = unique_face_colors(
+            colors,
+            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 0)],
+        );
 
         assert!(resolved.is_empty());
         assert_eq!(unresolved, 1);
@@ -8229,14 +7121,10 @@ mod tests {
             face_color(701, 900, 2, [0.75, 0.5, 0.25]),
         ];
 
-        let (resolved, unresolved) = with_test_context(|ctx| {
-            unique_face_colors(
-                ctx,
-                colors,
-                vec![face_color_version(700, 2, 0), face_color_version(701, 2, 0)],
-            )
-            .expect("face colors")
-        });
+        let (resolved, unresolved) = unique_face_colors(
+            colors,
+            vec![face_color_version(700, 2, 0), face_color_version(701, 2, 0)],
+        );
 
         assert!(resolved.is_empty());
         assert_eq!(unresolved, 2);
@@ -8343,7 +7231,7 @@ mod tests {
     }
 
     #[test]
-    fn intersection_support_pcurve_refuses_collection_limit() {
+    fn intersection_support_pcurve_accepts_two_stored_uv_controls() {
         let surface =
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -8387,28 +7275,6 @@ mod tests {
                 ],
             ]),
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits policy");
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            super::intersection_support_pcurve(
-                &ctx,
-                &support_data,
-                &chart,
-                10,
-                &surface,
-                endpoints,
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        else {
-            panic!("two UV controls exceed one collection item")
-        };
-        assert_eq!(
-            limit.dimension,
-            cadmpeg_core::decode::ResourceDimension::CollectionItems
-        );
         assert!(intersection_support_pcurve(
             &support_data,
             &chart,
@@ -8838,26 +7704,10 @@ mod tests {
     }
 
     #[test]
-    fn native_brep_carrier_collection_refuses_before_insertion() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn native_brep_carrier_decodes_triangle_body() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
         let body = crate::test_support::parasolid::triangle_body();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
-        let Err(error) = super::decode_body(
-            &ctx,
-            &body,
-            &cadmpeg_ir::stream_name!("candidate-admission"),
-        ) else {
-            panic!("expected carrier collection admission refusal");
-        };
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index SLDPRT surface carriers"));
-
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&body, &arena, &DecodePolicy::service()).expect("root");
@@ -8918,30 +7768,16 @@ mod tests {
             }],
         };
         let mut tables = Tables::default();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test context");
-        tables
-            .insert_bridge(
-                &ctx,
-                Bridge {
-                    attr: 100,
-                    sequence: 0,
-                    refs: [1, 1, 49, 7, 8],
-                    sense: Sense::Forward,
-                    owner: None,
-                    offset: 11,
-                },
-            )
-            .expect("bridge");
+        tables.insert_bridge(Bridge {
+            attr: 100,
+            sequence: 0,
+            refs: [1, 1, 49, 7, 8],
+            sense: Sense::Forward,
+            owner: None,
+            offset: 11,
+        });
 
-        let records = super::typed_body_records(&ctx, &facts, &tables)
-            .expect("body record allocation")
-            .expect("typed body records");
+        let records = super::typed_body_records(&facts, &tables).expect("typed body records");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].kind, BodyKind::Sheet);
         assert_eq!(records[0].regions.len(), 2);
@@ -8949,8 +7785,7 @@ mod tests {
         assert_eq!(records[0].regions[1].shells[0].refs, vec![100]);
         assert_eq!(
             facts
-                .hierarchies(&ctx, &HashSet::from([100]))
-                .expect("hierarchy allocation")
+                .hierarchies(&HashSet::from([100]))
                 .expect("typed hierarchy")[0]
                 .body
                 .kind,
@@ -8976,12 +7811,8 @@ mod tests {
             offset,
         };
         let mut tables = super::topology::Tables::default();
-        tables
-            .insert_bridge(&ctx, bridge(10, 100, 20))
-            .expect("bridge");
-        tables
-            .insert_bridge(&ctx, bridge(11, 200, 10))
-            .expect("bridge");
+        tables.insert_bridge(bridge(10, 100, 20));
+        tables.insert_bridge(bridge(11, 200, 10));
         let decoded = super::decode_graph(
             &ctx,
             &mut crate::brep::index::CarrierIndex::default(),

@@ -61,15 +61,8 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
     };
 
     assert_eq!(
-        direct_point_dimension_center(
-            &cadmpeg_test_support::service_decode_context(),
-            std::slice::from_ref(&lane),
-            "feature",
-            &operand,
-            5.0
-        )
-        .unwrap()
-        .map(crate::records::SketchInputEntity::id),
+        direct_point_dimension_center(std::slice::from_ref(&lane), "feature", &operand, 5.0)
+            .map(crate::records::SketchInputEntity::id),
         Some("center")
     );
     let markers = lane
@@ -78,14 +71,12 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &operand,
         5.0,
     )
-    .unwrap()
     .expect("classless direct point carrier");
     assert_eq!(carrier.marker.id(), "center");
     assert_eq!(carrier.construction, Some(false));
@@ -95,13 +86,11 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         ..operand.clone()
     };
     assert!(direct_point_dimension_center(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         "feature",
         &mismatched,
         5.0
     )
-    .unwrap()
     .is_none());
 
     let mut nonmatching_pair_lane = lane.clone();
@@ -115,13 +104,11 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
     };
     assert_eq!(
         direct_point_dimension_center(
-            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&nonmatching_pair_lane),
             "feature",
             &nonmatching_pair,
             5.0,
         )
-        .unwrap()
         .map(crate::records::SketchInputEntity::id),
         Some("radial")
     );
@@ -136,13 +123,11 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         ..operand
     };
     assert!(direct_point_dimension_center(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&radial_lane),
         "feature",
         &radial,
         5.0
     )
-    .unwrap()
     .is_none());
 }
 
@@ -213,14 +198,12 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         entity_ref: Some("center".into()),
     };
     let carrier = dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &center,
         5.0,
     )
-    .unwrap()
     .expect("center identity survives a mismatched pair radius");
     assert_eq!(carrier.marker.id(), "center");
 
@@ -230,14 +213,12 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         ..center
     };
     assert!(dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &radial,
         5.0,
     )
-    .unwrap()
     .is_none());
 }
 
@@ -339,14 +320,12 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
     };
 
     let carrier = dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &operand,
         5.0,
     )
-    .unwrap()
     .expect("the radial identity selects its declared center");
     assert_eq!(carrier.marker.id(), "center-one");
     assert_eq!(carrier.center(), [0.010, 0.020]);

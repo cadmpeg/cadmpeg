@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::View;
 
 use super::LEN_TO_MM;
 
@@ -153,19 +153,14 @@ pub(super) struct BlendCarriers {
 }
 
 /// Scan rolling-ball carriers and their zero-offset support-pair records.
-pub(super) fn scan(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<BlendCarriers, cadmpeg_core::CodecError> {
-    ctx.charge_work(u64_from_index(bytes.len()), "scan SLDPRT blend carriers")?;
+pub(super) fn scan(bytes: &[u8]) -> BlendCarriers {
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
     let Some(last_offset) = bytes.len().checked_sub(57) else {
-        return Ok(BlendCarriers { blends, pairs });
+        return BlendCarriers { blends, pairs };
     };
     for offset in 0..last_offset {
         if let Some(carrier) = parse_blend(bytes, offset) {
-            ctx.admit_hash_map_entry(&mut blends, &carrier.attr, "index SLDPRT blend carriers")?;
             blends.entry(carrier.attr).or_insert(carrier);
         }
         if let Some(raw) = parse_raw(bytes, offset) {
@@ -173,11 +168,6 @@ pub(super) fn scan(
                 && raw.values[0].abs() <= f64::EPSILON
                 && raw.values[1].abs() <= f64::EPSILON
             {
-                ctx.admit_hash_map_entry(
-                    &mut pairs,
-                    &raw.attr,
-                    "index SLDPRT blend support pairs",
-                )?;
                 pairs.entry(raw.attr).or_insert(SupportPairCarrier {
                     supports: [raw.references[0], raw.references[1]],
                     intersection: raw.references[2],
@@ -185,7 +175,7 @@ pub(super) fn scan(
             }
         }
     }
-    Ok(BlendCarriers { blends, pairs })
+    BlendCarriers { blends, pairs }
 }
 
 #[cfg(test)]
@@ -193,18 +183,8 @@ mod tests {
     use super::{BlendCarrier, BlendSupportRef, SupportPairCarrier};
     use std::collections::HashMap;
 
-    fn scan_with_service_context(
-        bytes: &[u8],
-    ) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            bytes,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test carrier bytes fit service policy");
-        let super::BlendCarriers { blends, pairs } =
-            super::scan(&ctx, bytes).expect("test carriers fit service policy");
+    fn scan_pairs(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
+        let super::BlendCarriers { blends, pairs } = super::scan(bytes);
         (blends, pairs)
     }
 
@@ -226,10 +206,7 @@ mod tests {
                 bytes.extend_from_slice(&value.to_be_bytes());
             }
 
-            let carrier = scan_with_service_context(&bytes)
-                .0
-                .remove(&9)
-                .expect("blend carrier");
+            let carrier = scan_pairs(&bytes).0.remove(&9).expect("blend carrier");
             assert_eq!(carrier.offset, 0);
             assert_eq!(
                 carrier.supports,
@@ -259,7 +236,7 @@ mod tests {
         for value in [-0.0005f64, -0.0006, 1.0, 1.0] {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
-        assert!(scan_with_service_context(&bytes).0.is_empty());
+        assert!(scan_pairs(&bytes).0.is_empty());
     }
 
     #[test]
@@ -277,11 +254,7 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         assert_eq!(
-            scan_with_service_context(&bytes)
-                .0
-                .get(&9)
-                .expect("blend")
-                .reversed,
+            scan_pairs(&bytes).0.get(&9).expect("blend").reversed,
             [false, true]
         );
     }
@@ -301,7 +274,7 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
 
-        let (_, pairs) = scan_with_service_context(&bytes);
+        let (_, pairs) = scan_pairs(&bytes);
         let pair = pairs.get(&9).expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);

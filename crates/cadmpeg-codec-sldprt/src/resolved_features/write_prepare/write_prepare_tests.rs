@@ -19,11 +19,7 @@ fn spatial_vertex_patch_preserves_record_shape_and_order() {
     patch_spatial_vertex(&mut payload, 0, replacement).expect("required invariant");
 
     assert_eq!(
-        spatial_vertex_coordinates_charged(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload
-        )
-        .unwrap(),
+        spatial_vertex_coordinates_charged(&payload),
         vec![
             cadmpeg_ir::features::FinitePoint3::new(replacement).expect("finite replacement"),
             cadmpeg_ir::features::FinitePoint3::new(second).expect("finite second point"),

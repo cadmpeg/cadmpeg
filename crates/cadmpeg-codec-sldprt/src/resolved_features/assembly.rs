@@ -8,7 +8,7 @@ use super::scalars::named_scalars_charged;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::container::ContainerScan;
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::Exactness;
 
@@ -39,7 +39,6 @@ pub(crate) fn lanes(
             continue;
         }
         let lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
-        ctx.reserve_vec(&mut result, 1, "collect SLDPRT feature input lanes")?;
         result.push(lane);
     }
     Ok(result)
@@ -63,12 +62,14 @@ pub(crate) fn supplemental_config_lanes(
         let Some(section) = source.name() else {
             continue;
         };
-        if legacy_feature_input_section(section)
-            && legacy_sketch_object_stream(ctx, source.payload())?
-        {
-            let lane = feature_input_lane(ctx, source, section, "config-objects", annotations)?;
-            ctx.reserve_vec(&mut lanes, 1, "collect SLDPRT supplemental feature lanes")?;
-            lanes.push(lane);
+        if legacy_feature_input_section(section) && legacy_sketch_object_stream(source.payload())? {
+            lanes.push(feature_input_lane(
+                ctx,
+                source,
+                section,
+                "config-objects",
+                annotations,
+            )?);
         }
     }
     Ok(lanes)
@@ -83,12 +84,12 @@ fn feature_input_lane(
 ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
     let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
     let payload = source.payload();
-    let classes = class_declarations(ctx, payload, &parent)?;
+    let classes = class_declarations(payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;
-    let scalars = named_scalars_charged(ctx, payload, &parent, &names)?;
-    let relation_bindings = relation_bindings_charged(ctx, &parent, &classes, &scalars)?;
-    let references = reference_cells_charged(ctx, &scalars, &classes)?;
-    let sketch_entities = admit_sketch_input_entities(ctx, payload, &parent)?;
+    let scalars = named_scalars_charged(payload, &parent, &names)?;
+    let relation_bindings = relation_bindings_charged(&parent, &classes, &scalars)?;
+    let references = reference_cells_charged(&scalars, &classes)?;
+    let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
     for entity in &sketch_entities {
         let signature = usize::try_from(entity.offset())
             .ok()
@@ -125,12 +126,14 @@ fn feature_input_lane(
         },
         Exactness::ByteExact,
     )?;
+    ctx.retain_bytes(
+        u64_from_index(payload.len()),
+        "retain SLDPRT feature input payload",
+    )?;
     Ok(FeatureInputLane {
         id: parent,
-        configuration: configuration(ctx, section)?,
-        native_payload: ctx
-            .copy_retained(payload, "retain SLDPRT feature input payload")?
-            .into(),
+        configuration: configuration(section),
+        native_payload: payload.to_vec().into(),
         classes,
         names,
         scalars,
@@ -164,11 +167,8 @@ pub(super) fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool 
         .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
-fn legacy_sketch_object_stream(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let classes = class_declarations(ctx, payload, "legacy-sketch-probe")?;
+fn legacy_sketch_object_stream(payload: &[u8]) -> Result<bool, cadmpeg_core::CodecError> {
+    let classes = class_declarations(payload, "legacy-sketch-probe")?;
     Ok(classes.iter().any(|class| class.name == "sgSketch")
         && classes
             .iter()
