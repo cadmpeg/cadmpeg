@@ -16,45 +16,16 @@ use crate::test_support::test_dump::{
 };
 use crate::RhinoCodec;
 
-mod resource_limits;
-
 #[test]
-fn object_typecode_count_refuses_collection_limit_before_map_insertion() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = super::count_object_typecode(&mut std::collections::BTreeMap::new(), 0x20)
-        .expect_err("one typecode map node exceeds zero items");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit) if limit.operation == "Rhino object typecode counts"
-    ));
+fn object_typecode_count_increments_existing_entries() {
     let mut counts = std::collections::BTreeMap::new();
-    let ctx = cadmpeg_test_support::service_decode_context();
-    super::count_object_typecode(&mut counts, 0x20).expect("first count admitted");
-    super::count_object_typecode(&mut counts, 0x20).expect("existing count admitted");
+    super::count_object_typecode(&mut counts, 0x20);
+    super::count_object_typecode(&mut counts, 0x20);
     assert_eq!(counts[&0x20], 2);
 }
 
 #[test]
-fn source_metadata_refuses_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let refusal = super::source_meta(
-        ArchiveVersion::V1.classify(None),
-        super::SourceMetaDetail::FlatLegacyArchive,
-    )
-    .expect_err("archive-version attribute exceeds zero collection items");
-    assert!(matches!(
-        refusal,
-        CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino source metadata attributes"
-    ));
+fn flat_legacy_source_metadata_records_archive_version() {
     let meta = super::source_meta(
         ArchiveVersion::V1.classify(None),
         super::SourceMetaDetail::FlatLegacyArchive,
@@ -67,41 +38,17 @@ fn source_metadata_refuses_collection_limit() {
 }
 
 #[test]
-fn container_summary_attributes_refuse_collection_limit() {
+fn container_summary_has_one_entry_per_table() {
     let scan = crate::test_support::test_dump::scan_with_objects(&[]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-        .expect("summary input admitted");
-    let refusal =
-        super::summarize(&scan).expect_err("first table attribute exceeds zero collection items");
-    assert!(matches!(
-        refusal,
-        CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino container summary attributes"
-    ));
-    let summary = super::summarize(&scan).expect("service profile admits container summary");
+    let summary = super::summarize(&scan);
     assert_eq!(summary.entries.len(), scan.tables.len());
 }
 
 #[test]
-fn container_only_loss_refuses_collection_limit() {
+fn container_only_result_reports_notes_and_scan_loss() {
     let mut scan = crate::test_support::test_dump::scan_with_objects(&[]);
     scan.warnings = crate::loss::Diagnostics::new();
     scan.warnings.push("fixture warning");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-        .expect("container-only input admitted");
-    let refusal = super::container_only_result(&scan)
-        .expect_err("two notes leave no collection item for the loss");
-    assert!(matches!(
-        refusal,
-        CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino container-only losses"
-    ));
     let decoded =
         super::container_only_result(&scan).expect("service profile admits notes and loss");
     assert_eq!(decoded.body.notes.len(), 2);
@@ -115,13 +62,7 @@ fn checksum_warning(
     parent_end: usize,
     archive: ArchiveVersion,
 ) -> Result<Option<String>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        data,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    super::checksum_warning(&ctx, data, typecode, offset, parent_end, archive)
+    super::checksum_warning(data, typecode, offset, parent_end, archive)
 }
 
 #[test]
@@ -607,7 +548,7 @@ fn counted_view_list_crc_excludes_nested_children() {
 }
 
 #[test]
-fn named_view_checksum_ranges_refuse_materialized_limit_before_copy() {
+fn named_view_checksum_excludes_complete_child_chunks() {
     let archive = ArchiveVersion::V5;
     let child = crc_chunk(archive, 0x2000_813b, &[1, 2, 3]);
     let mut body = 1_i32.to_le_bytes().to_vec();
@@ -619,22 +560,9 @@ fn named_view_checksum_ranges_refuse_materialized_limit_before_copy() {
         &body,
         std::slice::from_ref(&child_range),
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 15;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &policy)
-        .expect("record fits service input limit");
-    let refusal = super::checksum_warning(&ctx, &record, 0x2000_8035, 0, record.len(), archive)
-        .expect_err("one range exceeds the materialized limit");
-    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-
-    let service = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &service)
-        .expect("record fits service input limit");
     assert_eq!(
-        super::checksum_warning(&ctx, &record, 0x2000_8035, 0, record.len(), archive)
-            .expect("service admits checksum ranges"),
+        super::checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
+            .expect("checksum ranges"),
         None
     );
 }
@@ -844,36 +772,6 @@ fn plugin_list_crc_excludes_plugin_reference_chunks() {
             .expect("plugin-list checksum framing"),
         None
     );
-}
-
-#[test]
-fn plugin_list_child_ranges_refuse_collection_limit_without_warning() {
-    let archive = ArchiveVersion::V5;
-    let child = anonymous_chunk(archive, 2, &[0xde, 0xad]);
-    let mut body = vec![0x10];
-    body.extend(1_i32.to_le_bytes());
-    let child_start = body.len();
-    body.extend(child);
-    let child_range = child_start..body.len();
-    body.extend([0xbe, 0xef]);
-    let record = crc_chunk_excluding(
-        archive,
-        0x2000_8135,
-        &body,
-        std::slice::from_ref(&child_range),
-    );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &policy)
-        .expect("root bytes admitted");
-    let error = super::checksum_warning(&ctx, &record, 0x2000_8135, 0, record.len(), archive)
-        .expect_err("one plugin child exceeds zero collection items");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino plugin-list child ranges"
-    ));
 }
 
 #[test]

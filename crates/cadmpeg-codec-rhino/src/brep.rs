@@ -552,10 +552,7 @@ pub(crate) enum BrepBodyKind {
 impl ValidatedRawBrep {
     /// Validates a structurally decoded Brep for owned test fixtures.
     #[cfg(test)]
-    pub(crate) fn try_new(
-        ctx: &DecodeContext<'_>,
-        mut raw: RawBrep,
-    ) -> Result<Self, GeometryError> {
+    pub(crate) fn try_new(mut raw: RawBrep) -> Result<Self, GeometryError> {
         let (resolved, warnings) = Self::validate(&mut raw)?;
         Ok(Self {
             raw,
@@ -3009,11 +3006,6 @@ mod tests {
     fn numerical_followup_legacy_vertex_mean_stays_finite() {
         for endpoints in [[1e308, 1e308], [-1e308, 1e308]] {
             let mut vertices = Vec::new();
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let policy = cadmpeg_core::decode::DecodePolicy::service();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("empty root fits service profile");
             super::legacy_vertex(&mut vertices, [endpoints[0], 0., 0.], 0).unwrap();
             for x in endpoints {
                 vertices[0].add_point([x, 0., 0.]);
@@ -3028,17 +3020,16 @@ mod tests {
 
     use super::{
         body_kind_rests_on_missing_stamp, finite_tolerance, legacy_curve_shape,
-        legacy_decoded_curve_endpoints, ordered_interval, read_children, read_edges, read_faces,
-        read_legacy_mesh_sides, read_loops, read_mesh_sides, read_region_records,
-        read_region_sides, read_region_topology_userdata, read_regions, read_trims, read_vertices,
-        serialized_body_kind, supported_class, validate_regions, validate_rings, BrepBodyKind,
-        RawBrep, RawBrepBaseType, RawBrepChild, RawBrepChildren, RawBrepEdge, RawBrepFace,
-        RawBrepFaceSide, RawBrepLoop, RawBrepRegion, RawBrepTrim, RawBrepVertex, RawLoopKind,
-        RawSolidFlag, RawTrimIso, RawTrimKind, ResolvedBrep, ResolvedFace, ResolvedLoop,
-        ResolvedTrim, ResolvedVertex, SolidState, ValidatedRawBrep, LEGACY_BREP,
-        LEGACY_TRIMMED_SURFACE, ON_BREP, ON_BREP_FACE_SIDE, ON_BREP_REGION,
-        ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE, OPENNURBS4, TL_BREP,
-        V5_BREP_REGION_TOPOLOGY_USERDATA,
+        legacy_decoded_curve_endpoints, ordered_interval, read_children, read_faces,
+        read_legacy_mesh_sides, read_mesh_sides, read_region_records,
+        read_region_topology_userdata, read_regions, read_trims, read_vertices,
+        serialized_body_kind, supported_class, validate_rings, BrepBodyKind, RawBrep,
+        RawBrepBaseType, RawBrepChild, RawBrepChildren, RawBrepEdge, RawBrepFace, RawBrepFaceSide,
+        RawBrepLoop, RawBrepRegion, RawBrepTrim, RawBrepVertex, RawLoopKind, RawSolidFlag,
+        RawTrimIso, RawTrimKind, ResolvedBrep, ResolvedFace, ResolvedLoop, ResolvedTrim,
+        ResolvedVertex, SolidState, ValidatedRawBrep, LEGACY_BREP, LEGACY_TRIMMED_SURFACE, ON_BREP,
+        ON_BREP_FACE_SIDE, ON_BREP_REGION, ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE, OPENNURBS4,
+        TL_BREP, V5_BREP_REGION_TOPOLOGY_USERDATA,
     };
 
     fn parse(
@@ -3066,18 +3057,6 @@ mod tests {
         f(&ctx)
     }
 
-    fn with_collection_limit<R>(
-        bytes: &[u8],
-        limit: u64,
-        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
-    ) -> R {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("test input fits service profile");
-        f(&ctx)
-    }
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
     use crate::loss::Diagnostics;
@@ -3211,15 +3190,13 @@ mod tests {
         let payload = region_topology_userdata_payload();
         let descriptor = region_topology_userdata_descriptor(0..payload.len());
         let mut warnings = Diagnostics::new();
-        let (sides, regions, source_range, loaded) = with_test_context(&payload, |ctx| {
-            read_region_topology_userdata(
-                &payload,
-                &descriptor,
-                ArchiveVersion::V5,
-                1,
-                &mut warnings,
-            )
-        })
+        let (sides, regions, source_range, loaded) = read_region_topology_userdata(
+            &payload,
+            &descriptor,
+            ArchiveVersion::V5,
+            1,
+            &mut warnings,
+        )
         .expect("V5 region topology userdata");
 
         assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
@@ -3249,15 +3226,13 @@ mod tests {
         let payload = region_topology_v6_payload();
         let descriptor = region_topology_userdata_descriptor(0..payload.len());
         let mut warnings = Diagnostics::new();
-        let (sides, regions, _, loaded) = with_test_context(&payload, |ctx| {
-            read_region_topology_userdata(
-                &payload,
-                &descriptor,
-                ArchiveVersion::V6,
-                1,
-                &mut warnings,
-            )
-        })
+        let (sides, regions, _, loaded) = read_region_topology_userdata(
+            &payload,
+            &descriptor,
+            ArchiveVersion::V6,
+            1,
+            &mut warnings,
+        )
         .expect("V6 region topology userdata");
 
         assert!(loaded);
@@ -3597,46 +3572,14 @@ mod tests {
         let mut raw = one_face_raw();
         raw.minor = 2;
         raw.is_solid = RawSolidFlag::Known(SolidState::Closed);
-        let validated =
-            with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw)).expect("valid Brep");
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let (kind, substituted) = validated
-            .body_kind(&ctx, None)
-            .expect("body-kind loss admitted");
+        let validated = ValidatedRawBrep::try_new(raw).expect("valid Brep");
+        let (kind, substituted) = validated.body_kind(None);
         assert_eq!(kind, BrepBodyKind::Solid);
         assert_eq!(
             substituted.as_ref().map(|loss| &loss.code),
             Some(&crate::loss::RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind())
         );
-        assert_eq!(
-            validated
-                .body_kind(&ctx, Some(200_210_020))
-                .expect("no loss")
-                .1,
-            None
-        );
-    }
-
-    #[test]
-    fn body_kind_gauge_loss_refuses_retained_limit() {
-        let mut raw = one_face_raw();
-        raw.minor = 2;
-        raw.is_solid = RawSolidFlag::Known(SolidState::Closed);
-        let validated =
-            with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw)).expect("valid Brep");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is admitted");
-        let refusal = validated
-            .body_kind(&ctx, None)
-            .expect_err("body-kind loss needs retained text");
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino Brep body-kind loss message"
-        ));
+        assert_eq!(validated.body_kind(Some(200_210_020)).1, None);
     }
 
     fn degenerate_trim_raw(trim_type: RawTrimKind, curve: Option<i32>) -> RawBrep {
@@ -3790,265 +3733,15 @@ mod tests {
     fn raw_arrays_consume_complete_anonymous_wrappers() {
         let bytes = packed_array(0, &[]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let (_, range) = with_test_context(&bytes, |ctx| {
-            read_vertices(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
+        let (_, range) = read_vertices(
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            &mut Diagnostics::new(),
+        )
         .expect("vertex");
         assert_eq!(range, 0..bytes.len());
         assert_eq!(reader.remaining(), 0);
-    }
-
-    #[test]
-    fn brep_child_ranges_refuse_collection_limit() {
-        let mut body = vec![0x10];
-        body.extend(1_i32.to_le_bytes());
-        body.extend(0_i32.to_le_bytes());
-        let bytes = anonymous(&body);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 1, |ctx| {
-            read_children(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                RawBrepBaseType::Curve,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("two child ranges exceed one collection item");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep child ranges")
-        );
-    }
-
-    #[test]
-    fn brep_child_slots_refuse_collection_limit() {
-        let mut body = vec![0x10];
-        body.extend(1_i32.to_le_bytes());
-        body.extend(0_i32.to_le_bytes());
-        let bytes = anonymous(&body);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 2, |ctx| {
-            read_children(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                RawBrepBaseType::Curve,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one child slot exceeds two charged ranges");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep child slots")
-        );
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        assert!(with_test_context(&bytes, |ctx| read_children(
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            RawBrepBaseType::Curve,
-            &mut Diagnostics::new()
-        ))
-        .is_ok());
-    }
-
-    fn one_vertex_array() -> Vec<u8> {
-        let mut record = 0_i32.to_le_bytes().to_vec();
-        record.extend([0.0_f64; 3].into_iter().flat_map(f64::to_le_bytes));
-        record.extend(1_i32.to_le_bytes());
-        record.extend(0_i32.to_le_bytes());
-        record.extend(0.0_f64.to_le_bytes());
-        packed_array(1, &record)
-    }
-
-    #[test]
-    fn brep_vertices_refuse_collection_limit() {
-        let bytes = one_vertex_array();
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_vertices(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one vertex exceeds zero collection items");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep vertices")
-        );
-    }
-
-    #[test]
-    fn brep_indexes_refuse_collection_limit() {
-        let bytes = one_vertex_array();
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 1, |ctx| {
-            read_vertices(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one edge index exceeds one vertex item");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep indexes")
-        );
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        assert!(with_test_context(&bytes, |ctx| read_vertices(
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            &mut Diagnostics::new()
-        ))
-        .is_ok());
-    }
-
-    #[test]
-    fn brep_edges_refuse_collection_limit() {
-        let mut record = 0_i32.to_le_bytes().to_vec();
-        record.extend(0_i32.to_le_bytes());
-        record.extend(0_i32.to_le_bytes());
-        record.extend([0.0_f64, 1.0].into_iter().flat_map(f64::to_le_bytes));
-        record.extend([0_i32; 2].into_iter().flat_map(i32::to_le_bytes));
-        record.extend(0_i32.to_le_bytes());
-        record.extend(0.0_f64.to_le_bytes());
-        let bytes = packed_array(1, &record);
-        for (limit, operation) in [
-            (0, "Rhino Brep unstamped layout losses"),
-            (1, "Rhino Brep edges"),
-        ] {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let error = with_collection_limit(&bytes, limit, |ctx| {
-                read_edges(
-                    &bytes,
-                    &mut reader,
-                    ArchiveVersion::V5,
-                    None,
-                    &mut Diagnostics::new(),
-                    &mut Vec::new(),
-                )
-            })
-            .expect_err("one edge and its layout loss exceed the collection limit");
-            assert!(
-                matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == operation),
-                "limit {limit} must refuse at {operation}"
-            );
-        }
-    }
-
-    #[test]
-    fn brep_trims_refuse_collection_limit() {
-        let bytes = packed_array(1, &trim_record(true));
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_trims(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                Some(200_206_180),
-                &mut Diagnostics::new(),
-                &mut Vec::new(),
-            )
-        })
-        .expect_err("one trim exceeds zero collection items");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep trims")
-        );
-    }
-
-    #[test]
-    fn brep_trim_reserved_bytes_refuse_retained_limit() {
-        let bytes = packed_array(1, &trim_record(true));
-        let run = |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                    .expect("test input fits service profile");
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            read_trims(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                Some(200_206_180),
-                &mut Diagnostics::new(),
-                &mut Vec::new(),
-            )
-            .expect_err("31 reserved bytes exceed a 30-byte retained limit")
-        };
-        let error = run(crate::test_support::retained_limit_at(
-            "Rhino Brep trim reserved bytes",
-            0,
-            |cap| match run(cap) {
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
-                error => panic!("unexpected resource refusal: {error:?}"),
-            },
-        ));
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep trim reserved bytes")
-        );
-    }
-
-    #[test]
-    fn brep_loops_refuse_collection_limit() {
-        let mut record = 0_i32.to_le_bytes().to_vec();
-        record.extend(1_i32.to_le_bytes());
-        record.extend(0_i32.to_le_bytes());
-        record.extend(1_i32.to_le_bytes());
-        record.extend(0_i32.to_le_bytes());
-        let bytes = packed_array(1, &record);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_loops(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one loop exceeds zero collection items");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep loops")
-        );
-    }
-
-    #[test]
-    fn brep_faces_refuse_collection_limit() {
-        let mut record = 0_i32.to_le_bytes().to_vec();
-        record.extend(0_i32.to_le_bytes());
-        record.extend(0_i32.to_le_bytes());
-        record.extend(0_i32.to_le_bytes());
-        record.extend(0_i32.to_le_bytes());
-        let bytes = packed_array(1, &record);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_faces(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one face exceeds zero collection items");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep faces")
-        );
     }
 
     #[test]
@@ -4058,54 +3751,17 @@ mod tests {
         bytes[crc] ^= 1;
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        with_test_context(&bytes, |ctx| {
-            read_vertices(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
-        })
-        .expect("recoverable vertex wrapper");
+        read_vertices(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
+            .expect("recoverable vertex wrapper");
         assert_eq!(reader.remaining(), 0);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("Brep anonymous CRC mismatch"));
     }
 
     #[test]
-    fn raw_array_crc_mismatch_refuses_diagnostic_collection_limit() {
-        let mut bytes = packed_array(0, &[]);
-        let crc = bytes.len() - 1;
-        bytes[crc] ^= 1;
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_vertices(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("checksum warning requires one diagnostic slot");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino diagnostics"
-        ));
-    }
-
-    #[test]
-    fn unstamped_layout_loss_refuses_collection_limit() {
+    fn unstamped_layout_reports_one_loss() {
         let mut losses = Vec::new();
-        let error = with_collection_limit(&[], 0, |ctx| {
-            super::unstamped_legacy_layout(ArchiveVersion::V5, None, 1, "edge domains", &mut losses)
-        })
-        .expect_err("unstamped layout loss requires one slot");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino Brep unstamped layout losses"
-        ));
-        assert!(losses.is_empty());
-        with_test_context(&[], |ctx| {
-            super::unstamped_legacy_layout(ArchiveVersion::V5, None, 1, "edge domains", &mut losses)
-        })
-        .expect("service profile admits the loss");
+        super::unstamped_legacy_layout(ArchiveVersion::V5, None, 1, "edge domains", &mut losses);
         assert_eq!(losses.len(), 1);
     }
 
@@ -4118,14 +3774,12 @@ mod tests {
             }
             let bytes = anonymous(&body);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let (faces, _) = with_test_context(&bytes, |ctx| {
-                read_faces(
-                    &bytes,
-                    &mut reader,
-                    ArchiveVersion::V5,
-                    &mut Diagnostics::new(),
-                )
-            })
+            let (faces, _) = read_faces(
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                &mut Diagnostics::new(),
+            )
             .expect("faces");
             assert!(faces.is_empty());
         }
@@ -4138,16 +3792,14 @@ mod tests {
             assert_eq!(record.len(), 132);
             let bytes = packed_array(1, &record);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let (trims, range) = with_test_context(&bytes, |ctx| {
-                read_trims(
-                    &bytes,
-                    &mut reader,
-                    ArchiveVersion::V5,
-                    Some(writer),
-                    &mut Diagnostics::new(),
-                    &mut Vec::new(),
-                )
-            })
+            let (trims, range) = read_trims(
+                &bytes,
+                &mut reader,
+                ArchiveVersion::V5,
+                Some(writer),
+                &mut Diagnostics::new(),
+                &mut Vec::new(),
+            )
             .expect("trims");
             assert_eq!(range, 0..bytes.len());
             assert_eq!(trims[0].legacy_tolerances, [0.0, 0.0]);
@@ -4258,92 +3910,6 @@ mod tests {
     }
 
     #[test]
-    fn degraded_mesh_slots_refuse_collection_limit_without_warning() {
-        let bytes = anonymous(&[1]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Diagnostics::new();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test input fits service profile");
-        let error = read_mesh_sides(
-            &ctx,
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            1,
-            &mut warnings,
-        )
-        .expect_err("one degraded mesh slot exceeds the remaining collection items");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino Brep degraded mesh slots"
-        ));
-        assert!(warnings.is_empty());
-    }
-
-    #[test]
-    fn parsed_mesh_slots_refuse_collection_limit_without_warning() {
-        let bytes = anonymous(&[0]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Diagnostics::new();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test input fits service profile");
-        let error = read_mesh_sides(
-            &ctx,
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            1,
-            &mut warnings,
-        )
-        .expect_err("one parsed mesh slot exceeds zero collection items");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino Brep mesh cache slots"
-        ));
-        assert!(warnings.is_empty());
-    }
-
-    #[test]
-    fn mesh_child_ranges_refuse_collection_limit_without_warning() {
-        let presence = [1_u8];
-        let wrapper = mesh_class_wrapper_with_userdata();
-        let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Diagnostics::new();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test input fits service profile");
-        let error = read_mesh_sides(
-            &ctx,
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            1,
-            &mut warnings,
-        )
-        .expect_err("one child range exceeds the remaining collection items");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino Brep mesh cache child ranges"
-        ));
-        assert!(warnings.is_empty());
-    }
-
-    #[test]
     fn legacy_mesh_side_degrades_truncated_present_slot() {
         let bytes = [1_u8];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
@@ -4364,52 +3930,6 @@ mod tests {
         assert!(slots[0].is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
-    }
-
-    #[test]
-    fn legacy_brep_mesh_slots_refuse_collection_limit() {
-        let bytes = [0_u8];
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Diagnostics::new();
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_legacy_mesh_sides(
-                ctx,
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                1,
-                &mut warnings,
-            )
-        })
-        .expect_err("one legacy mesh slot exceeds zero collection items");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino legacy Brep mesh slots")
-        );
-        assert!(warnings.is_empty());
-    }
-
-    #[test]
-    fn legacy_brep_degraded_mesh_slots_refuse_without_warning() {
-        let bytes = [1_u8];
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Diagnostics::new();
-        let error = with_collection_limit(&bytes, 1, |ctx| {
-            read_legacy_mesh_sides(
-                ctx,
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                1,
-                &mut warnings,
-            )
-        })
-        .expect_err("degraded mesh slot exceeds one parsed slot item");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino legacy Brep degraded mesh slots")
-        );
-        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -4467,36 +3987,6 @@ mod tests {
     }
 
     #[test]
-    fn mesh_side_userdata_refuses_collection_limit_without_cache_warning() {
-        let presence = [1_u8];
-        let wrapper = mesh_class_wrapper_with_userdata();
-        let bytes = anonymous_mixed(&[(&presence, false), (&wrapper, true)]);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let mut warnings = Diagnostics::new();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root bytes admitted");
-        let error = read_mesh_sides(
-            &ctx,
-            &bytes,
-            &mut reader,
-            ArchiveVersion::V5,
-            1,
-            &mut warnings,
-        )
-        .expect_err("class userdata exceeds remaining collection items");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino class userdata"
-        ));
-        assert!(warnings.is_empty());
-    }
-
-    #[test]
     fn polymorphic_array_preserves_null_and_classifies_wrong_base() {
         let mut body = vec![0x10];
         body.extend_from_slice(&2_i32.to_le_bytes());
@@ -4505,15 +3995,13 @@ mod tests {
         body.extend(class_wrapper(&[]));
         let bytes = anonymous(&body);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let array = with_test_context(&bytes, |ctx| {
-            read_children(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                RawBrepBaseType::Curve,
-                &mut Diagnostics::new(),
-            )
-        })
+        let array = read_children(
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V5,
+            RawBrepBaseType::Curve,
+            &mut Diagnostics::new(),
+        )
         .expect("children");
         assert!(array.slots[0].is_none());
         assert_eq!(
@@ -4533,10 +4021,8 @@ mod tests {
         let bytes = region_array(&entries, 2);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let regions = with_test_context(&bytes, |ctx| {
-            read_region_records(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
-        })
-        .expect("regions with redundant indexes");
+        let regions = read_region_records(&bytes, &mut reader, ArchiveVersion::V5, &mut warnings)
+            .expect("regions with redundant indexes");
         assert_eq!(
             regions
                 .iter()
@@ -4549,82 +4035,6 @@ mod tests {
         assert_eq!(
             warnings.messages().collect::<Vec<_>>(),
             ["redundant Brep region positional index mismatch; serialized array order used"]
-        );
-    }
-
-    #[test]
-    fn brep_region_face_sides_refuse_collection_limit() {
-        let bytes = region_array(&region_face_side(0, 0, 0, 1), 1);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_region_sides(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one region face side exceeds zero collection items");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep region face sides")
-        );
-    }
-
-    #[test]
-    fn brep_region_side_ranges_refuse_collection_limit() {
-        let bytes = region_array(&region_face_side(0, 0, 0, 1), 1);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 1, |ctx| {
-            read_region_sides(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one region side range exceeds one side item");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep region side ranges")
-        );
-    }
-
-    #[test]
-    fn brep_region_records_refuse_collection_limit() {
-        let bytes = region_array(&region_record(0, 1, &[0], [0.0; 6]), 1);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 0, |ctx| {
-            read_region_records(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one region record exceeds zero collection items");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep region records")
-        );
-    }
-
-    #[test]
-    fn brep_region_record_ranges_refuse_collection_limit() {
-        let bytes = region_array(&region_record(0, 1, &[0], [0.0; 6]), 1);
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        let error = with_collection_limit(&bytes, 1, |ctx| {
-            read_region_records(
-                &bytes,
-                &mut reader,
-                ArchiveVersion::V5,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("one region record range exceeds one record item");
-        assert!(
-            matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep region record ranges")
         );
     }
 
@@ -4659,10 +4069,9 @@ mod tests {
         let outer = anonymous_mixed(&[(&outer_prefix, false), (&nested, true)]);
         let mut reader = BoundedReader::new(&outer, 0, outer.len()).expect("reader");
         let mut warnings = Diagnostics::new();
-        let (_, regions, _, loaded) = with_test_context(&outer, |ctx| {
+        let (_, regions, _, loaded) =
             read_regions(&outer, &mut reader, ArchiveVersion::V5, 0, &mut warnings)
-        })
-        .expect("regions");
+                .expect("regions");
         assert!(warnings.is_empty(), "{warnings:?}");
         assert!(loaded);
         assert_eq!(regions.len(), 1);
@@ -4671,59 +4080,7 @@ mod tests {
 
     #[test]
     fn valid_one_face_raw_brep_validates_all_reciprocal_links() {
-        assert!(
-            with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, one_face_raw())).is_ok()
-        );
-    }
-
-    fn assert_resolved_brep_limit(limit: u64, operation: &str) {
-        let error = with_collection_limit(&[], limit, |ctx| {
-            ValidatedRawBrep::try_new(ctx, one_face_raw())
-        })
-        .expect_err("resolved Brep collections exceed the configured limit");
-        assert!(
-            matches!(
-                &error,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.operation == operation
-            ),
-            "unexpected validation refusal: {error}"
-        );
-    }
-
-    #[test]
-    fn resolved_brep_vertices_refuse_collection_limit() {
-        assert_resolved_brep_limit(2, "Rhino resolved Brep vertices");
-    }
-
-    #[test]
-    fn resolved_brep_edges_refuse_collection_limit() {
-        assert_resolved_brep_limit(5, "Rhino resolved Brep edges");
-    }
-
-    #[test]
-    fn resolved_brep_trims_refuse_collection_limit() {
-        assert_resolved_brep_limit(8, "Rhino resolved Brep trims");
-    }
-
-    #[test]
-    fn resolved_brep_loops_refuse_collection_limit() {
-        assert_resolved_brep_limit(9, "Rhino resolved Brep loops");
-    }
-
-    #[test]
-    fn resolved_brep_faces_refuse_collection_limit() {
-        assert_resolved_brep_limit(10, "Rhino resolved Brep faces");
-    }
-
-    #[test]
-    fn resolved_brep_references_refuse_collection_limit() {
-        assert_resolved_brep_limit(11, "Rhino resolved Brep references");
-    }
-
-    #[test]
-    fn brep_unique_references_refuse_collection_limit() {
-        assert_resolved_brep_limit(18, "Rhino Brep unique references");
+        assert!(ValidatedRawBrep::try_new(one_face_raw()).is_ok());
     }
 
     #[test]
@@ -4734,47 +4091,30 @@ mod tests {
         raw.trims[2].index = 9;
         raw.loops[0].index = 9;
         raw.faces[0].index = 9;
-        let validated = with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw))
-            .expect("positional indexes are redundant");
+        let validated = ValidatedRawBrep::try_new(raw).expect("positional indexes are redundant");
         assert_eq!(validated.warnings().len(), 5);
     }
 
     #[test]
-    fn positional_index_diagnostic_refuses_collection_limit() {
-        let mut raw = one_face_raw();
-        raw.vertices[0].index = 9;
-        let error = with_collection_limit(&[], 0, |ctx| ValidatedRawBrep::try_new(ctx, raw))
-            .expect_err("positional mismatch requires one diagnostic slot");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino diagnostics"
-        ));
-    }
-
-    #[test]
     fn singular_trim_accepts_c2_without_a_real_edge() {
-        assert!(with_test_context(&[], |ctx| ValidatedRawBrep::try_new(
-            ctx,
-            degenerate_trim_raw(RawTrimKind::Singular, Some(0))
-        ))
-        .is_ok());
+        assert!(
+            ValidatedRawBrep::try_new(degenerate_trim_raw(RawTrimKind::Singular, Some(0))).is_ok()
+        );
     }
 
     #[test]
     fn point_on_surface_trim_accepts_no_c2_or_real_edge() {
-        assert!(with_test_context(&[], |ctx| ValidatedRawBrep::try_new(
-            ctx,
-            degenerate_trim_raw(RawTrimKind::PointOnSurface, None)
-        ))
-        .is_ok());
+        assert!(
+            ValidatedRawBrep::try_new(degenerate_trim_raw(RawTrimKind::PointOnSurface, None))
+                .is_ok()
+        );
     }
 
     #[test]
     fn point_on_surface_trim_rejects_an_attributed_c2() {
-        assert!(with_test_context(&[], |ctx| ValidatedRawBrep::try_new(
-            ctx,
-            degenerate_trim_raw(RawTrimKind::PointOnSurface, Some(0))
+        assert!(ValidatedRawBrep::try_new(degenerate_trim_raw(
+            RawTrimKind::PointOnSurface,
+            Some(0)
         ))
         .is_err());
     }
@@ -4813,92 +4153,9 @@ mod tests {
                 source_range: 0..0,
             },
         ];
-        let validated = with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw))
-            .expect("valid regions");
+        let validated = ValidatedRawBrep::try_new(raw).expect("valid regions");
         assert_eq!(validated.raw().regions.len(), 2);
         assert!(validated.warnings().is_empty());
-    }
-
-    #[test]
-    fn resolved_brep_region_sides_refuse_without_degrading() {
-        let mut raw = one_face_raw();
-        raw.minor = 3;
-        raw.face_sides = vec![
-            RawBrepFaceSide {
-                index: 0,
-                region: 1,
-                face: 0,
-                direction: 1,
-                source_range: 0..0,
-            },
-            RawBrepFaceSide {
-                index: 1,
-                region: 0,
-                face: 0,
-                direction: -1,
-                source_range: 0..0,
-            },
-        ];
-        raw.regions = vec![
-            RawBrepRegion {
-                region_type: 0,
-                sides: vec![1],
-                bounds: raw.bounds,
-                source_range: 0..0,
-            },
-            RawBrepRegion {
-                region_type: 1,
-                sides: vec![0],
-                bounds: raw.bounds,
-                source_range: 0..0,
-            },
-        ];
-        let error = with_collection_limit(&[], 30, |ctx| ValidatedRawBrep::try_new(ctx, raw))
-            .expect_err("two resolved region sides exceed the preceding 30 collection items");
-        assert!(matches!(error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino resolved Brep region sides"));
-    }
-
-    #[test]
-    fn brep_listed_region_sides_refuse_collection_limit() {
-        let mut raw = one_face_raw();
-        raw.minor = 3;
-        raw.face_sides = vec![
-            RawBrepFaceSide {
-                index: 0,
-                region: 1,
-                face: 0,
-                direction: 1,
-                source_range: 0..0,
-            },
-            RawBrepFaceSide {
-                index: 1,
-                region: 0,
-                face: 0,
-                direction: -1,
-                source_range: 0..0,
-            },
-        ];
-        raw.regions = vec![
-            RawBrepRegion {
-                region_type: 0,
-                sides: vec![1],
-                bounds: raw.bounds,
-                source_range: 0..0,
-            },
-            RawBrepRegion {
-                region_type: 1,
-                sides: vec![0],
-                bounds: raw.bounds,
-                source_range: 0..0,
-            },
-        ];
-        let error = with_collection_limit(&[], 2, |ctx| validate_regions(&raw))
-            .expect_err("one listed side exceeds two resolved face sides");
-        assert!(matches!(error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino Brep listed region sides"));
     }
 
     #[test]
@@ -4935,8 +4192,7 @@ mod tests {
                 source_range: 0..0,
             },
         ];
-        let validated = with_test_context(&[], |ctx| ValidatedRawBrep::try_new(ctx, raw))
-            .expect("optional regions degrade");
+        let validated = ValidatedRawBrep::try_new(raw).expect("optional regions degrade");
         assert!(validated.raw().regions.is_empty());
         assert_eq!(validated.warnings().len(), 1);
     }

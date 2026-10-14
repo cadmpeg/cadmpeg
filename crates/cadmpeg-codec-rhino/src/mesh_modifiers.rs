@@ -1054,46 +1054,6 @@ mod tests {
         .expect("service profile admits modifier diagnostics")
     }
 
-    #[test]
-    fn malformed_modifier_diagnostic_refuses_collection_limit() {
-        let payload = v2_payload("<xml><new-displacement-object-data><on type=\"bool\">maybe</on></new-displacement-object-data></xml>");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        for _ in 0..4096 {
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-                    .expect("root bytes admitted");
-            let refused = super::parse_attribute_userdata(
-                &ctx,
-                &payload,
-                &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
-                ArchiveVersion::V6,
-                &mut Diagnostics::new(),
-            )
-            .expect_err("modifier diagnostic exceeds its collection admission");
-            let FramingError::Resource(limit) = refused else {
-                panic!("resource refusal expected");
-            };
-            assert_eq!(
-                limit.dimension,
-                cadmpeg_core::decode::ResourceDimension::CollectionItems
-            );
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-            let threshold = limit
-                .used
-                .checked_add(limit.additional)
-                .expect("collection threshold");
-            assert!(threshold > policy.limits.max_collection_items);
-            if limit.operation == "Rhino diagnostics" {
-                assert_eq!(threshold, policy.limits.max_collection_items + 1);
-                return;
-            }
-            policy.limits.max_collection_items = threshold;
-        }
-        panic!("Rhino diagnostics must refuse after the XML tree admissions");
-    }
-
     fn descriptor(payload: &[u8], application_uuid: Option<Uuid>) -> AttributeUserdataDescriptor {
         descriptor_with_ids(
             0..payload.len(),
@@ -1184,38 +1144,6 @@ mod tests {
             payload.extend(unit.to_le_bytes());
         }
         payload
-    }
-
-    #[test]
-    fn mesh_modifier_xml_text_refusals_propagate() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        for payload in [v1_payload(XML), v2_payload(XML)] {
-            for dimension in [
-                ResourceDimension::MaterializedBytes,
-                ResourceDimension::WorkUnits,
-            ] {
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = 0;
-                    }
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                    _ => unreachable!(),
-                }
-                let arena = DecodeArena::new();
-                let (ctx, _) =
-                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-                let error =
-                    super::parse_displacement(&ctx, &payload, 0..payload.len(), ArchiveVersion::V6)
-                        .expect_err("text admission refuses");
-                let FramingError::Resource(limit) = error else {
-                    panic!("resource refusal expected");
-                };
-                assert_eq!(limit.dimension, dimension);
-                assert_eq!(limit.operation, "Rhino mesh modifier XML text");
-                assert!(ctx.charge_work(0, "fused context").is_err());
-            }
-        }
     }
 
     const XML: &str = "<xml><new-displacement-object-data>\
@@ -1827,18 +1755,5 @@ mod tests {
         assert!(shut_lining_warnings.iter().any(|warning| {
             warning.contains("shut-lining userdata") && warning.contains("dropped")
         }));
-    }
-    #[test]
-    fn displacement_sub_items_refuse_retained_limit_before_projection() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root");
-        let error = parse_xml(&ctx, XML, 2, ArchiveVersion::V6)
-            .expect_err("sub-items need retained storage");
-        assert!(
-            matches!(error, FramingError::Resource(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "Rhino displacement sub-items" && ctx.resource_refusal() == Some(limit))
-        );
     }
 }

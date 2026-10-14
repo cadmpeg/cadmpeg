@@ -366,54 +366,6 @@ mod tests {
         );
     }
 
-    fn cage_collection_refusal(limit: u64, operation: &str) {
-        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &rational_cage_body());
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("root bytes admitted");
-        let expand = crate::mesh::MeshExpand::new(&ctx, root);
-        let error = decode(
-            expand,
-            0..bytes.len(),
-            crate::test_support::millimeter_scale(10.0),
-            ArchiveVersion::V8,
-        )
-        .expect_err("cage allocation exceeds collection limit");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.operation == operation
-        ));
-    }
-
-    #[test]
-    fn cage_knots_refuse_collection_limit() {
-        cage_collection_refusal(1, "Rhino cage knot values");
-    }
-
-    #[test]
-    fn cage_control_points_refuse_collection_limit() {
-        cage_collection_refusal(13, "Rhino cage control points");
-    }
-
-    #[test]
-    fn cage_weights_refuse_collection_limit() {
-        cage_collection_refusal(21, "Rhino cage weights");
-    }
-
-    #[test]
-    fn cage_coordinate_tuple_refuses_collection_limit() {
-        cage_collection_refusal(24, "Rhino cage coordinate tuple");
-    }
-
-    #[test]
-    fn cage_scaled_coordinates_refuse_collection_limit() {
-        cage_collection_refusal(27, "Rhino cage scaled coordinates");
-    }
-
     #[test]
     fn nonfinite_cage_knot_is_refused_at_source() {
         let mut body = rational_cage_body();

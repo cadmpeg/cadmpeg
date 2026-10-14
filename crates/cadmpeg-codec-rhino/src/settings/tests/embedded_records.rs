@@ -10,116 +10,6 @@ use crate::test_support::test_dump::{
 };
 use crate::wire::Uuid;
 
-fn with_embedded_collection_limit<T>(
-    bytes: &[u8],
-    limit: u64,
-    test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("embedded fixture root admitted");
-    test(&ctx)
-}
-
-fn embedded_linetype_with_model_attributes(archive: ArchiveVersion) -> Vec<u8> {
-    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
-    let mut body = Vec::new();
-    body.extend(2_i32.to_le_bytes());
-    body.extend(1_i32.to_le_bytes());
-    let child_start = body.len();
-    body.extend(model_attributes);
-    let child_end = body.len();
-    body.extend(0_i32.to_le_bytes());
-    body.push(0);
-    crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &body,
-        std::slice::from_ref(&(child_start..child_end)),
-    )
-}
-
-fn embedded_section_style_with_model_attributes(
-    archive: ArchiveVersion,
-    nested_linetype: bool,
-) -> Vec<u8> {
-    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
-    let mut body = Vec::new();
-    body.extend(1_i32.to_le_bytes());
-    body.extend(1_i32.to_le_bytes());
-    let child_start = body.len();
-    body.extend(model_attributes);
-    let child_end = body.len();
-    let mut children = Vec::new();
-    children.push(child_start..child_end);
-    if nested_linetype {
-        body.push(11);
-        let nested_start = body.len();
-        body.extend(embedded_linetype_with_model_attributes(archive));
-        children.push(nested_start..body.len());
-        body.push(0);
-    } else {
-        body.push(0);
-    }
-    crc_chunk_excluding(archive, 0x4000_8000, &body, &children)
-}
-
-#[test]
-fn embedded_linetype_checksum_children_refuse_collection_limit() {
-    let archive = ArchiveVersion::V8;
-    let bytes = embedded_linetype_with_model_attributes(archive);
-    let error = with_embedded_collection_limit(&bytes, 0, |ctx| {
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("linetype bounds");
-        settings::parse_direct_linetype(&bytes, &mut reader, archive, &mut Diagnostics::new())
-            .expect_err("linetype child exceeds zero collection items")
-    });
-    assert!(
-        matches!(error, crate::chunks::FramingError::Resource(refusal)
-        if refusal.operation == "Rhino embedded linetype checksum children")
-    );
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("linetype bounds");
-    settings::parse_direct_linetype(&bytes, &mut reader, archive, &mut Diagnostics::new())
-        .expect("service profile admits linetype child");
-}
-
-#[test]
-fn embedded_section_style_first_checksum_child_refuses_collection_limit() {
-    let archive = ArchiveVersion::V8;
-    let bytes = embedded_section_style_with_model_attributes(archive, false);
-    let error = with_embedded_collection_limit(&bytes, 0, |ctx| {
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-        settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
-            .expect_err("first section-style child exceeds zero collection items")
-    });
-    assert!(
-        matches!(error, crate::chunks::FramingError::Resource(refusal)
-        if refusal.operation == "Rhino embedded section-style checksum children")
-    );
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-    settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
-        .expect("service profile admits section-style child");
-}
-
-#[test]
-fn embedded_section_style_nested_checksum_child_refuses_collection_limit() {
-    let archive = ArchiveVersion::V8;
-    let bytes = embedded_section_style_with_model_attributes(archive, true);
-    let error = with_embedded_collection_limit(&bytes, 1, |ctx| {
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-        settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
-            .expect_err("nested section-style child exceeds one collection item")
-    });
-    assert!(
-        matches!(error, crate::chunks::FramingError::Resource(refusal)
-        if refusal.operation == "Rhino embedded section-style checksum children")
-    );
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("section-style bounds");
-    settings::parse_direct_section_style(&bytes, &mut reader, archive, &mut Diagnostics::new())
-        .expect("service profile admits nested section-style child");
-}
-
 #[test]
 fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     let archive = ArchiveVersion::V8;
@@ -218,40 +108,17 @@ fn single_viewport_extension(bits: u32, field_bytes: &[u8]) -> (Vec<u8>, ClassUs
 }
 
 #[test]
-fn layer_extension_entries_refuse_cumulative_collection_limit() {
+fn layer_extension_entries_parse_one_entry() {
     let (payload, descriptor) = single_viewport_extension(
         super::super::LAYER_PER_VIEWPORT_ID | super::super::LAYER_PER_VIEWPORT_COLOR,
         &[1, 2, 3, 4],
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("test input fits the service profile");
     assert_eq!(
         settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
-            .expect("first layer entry fits the limit")
+            .expect("layer extension entry")
             .len(),
         1
     );
-    let refusal = settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
-        .expect_err("second layer entry exceeds the cumulative limit");
-    assert!(
-        matches!(refusal, crate::chunks::FramingError::Resource(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-
-    let service = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &service)
-        .expect("test input fits the service profile");
-    for _ in 0..2 {
-        assert_eq!(
-            settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
-                .expect("service profile admits both layer entries")
-                .len(),
-            1
-        );
-    }
 }
 
 fn assert_malformed_viewport_visibility(bits: u32, field_bytes: &[u8]) {

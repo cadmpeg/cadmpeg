@@ -1868,9 +1868,7 @@ pub(crate) mod tests {
     use crate::objects::ClassUserdata;
     use crate::objects::UserdataDescriptor;
     use crate::settings::MillimeterScale;
-    use crate::test_support::test_dump::{
-        crc_chunk, object_record_with_payload, scan_with_objects, utf16_bytes,
-    };
+    use crate::test_support::test_dump::{crc_chunk, utf16_bytes};
     use crate::wire::Uuid;
     use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
@@ -1895,253 +1893,6 @@ pub(crate) mod tests {
         with_test_context(data, |ctx| {
             super::decode(ctx, data, class, range, scale, archive)
         })
-    }
-
-    fn with_collection_limit<R>(
-        data: &[u8],
-        limit: u64,
-        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
-    ) -> R {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-            .expect("dimension fixture fits root limit");
-        apply(&ctx)
-    }
-
-    fn with_retained_limit<R>(
-        data: &[u8],
-        limit: u64,
-        apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
-    ) -> R {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-            .expect("dimension fixture fits root limit");
-        apply(&ctx)
-    }
-
-    fn assert_resource(error: &crate::chunks::FramingError, operation: &str) {
-        assert!(
-            matches!(error, crate::chunks::FramingError::Resource(limit) if limit.operation == operation),
-            "expected {operation}, got {error:?}"
-        );
-    }
-
-    #[test]
-    fn v2_user_text_refuses_retained_limit() {
-        let bytes = v2_payload(7, &[], "user", "default", false, None);
-        let error = with_retained_limit(&bytes, 0, |ctx| {
-            let mut reader =
-                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
-            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
-                .err()
-                .expect("user text exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino V2 annotation user text");
-    }
-
-    #[test]
-    fn v2_default_text_refuses_retained_limit() {
-        let bytes = v2_payload(7, &[], "user", "default", false, None);
-        let error = with_retained_limit(&bytes, 4, |ctx| {
-            let mut reader =
-                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
-            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
-                .err()
-                .expect("default text exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino V2 annotation default text");
-    }
-
-    #[test]
-    fn v2_effective_text_refuses_retained_limit() {
-        let bytes = v2_payload(7, &[], "  user  ", "default", false, None);
-        let annotation = with_test_context(&bytes, |ctx| {
-            let mut reader =
-                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
-            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
-        })
-        .expect("V2 annotation admitted");
-        let error = with_retained_limit(&bytes, 0, |ctx| {
-            v2_effective_text(&annotation).expect_err("effective copy exceeds retained limit")
-        });
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino V2 effective text"
-        ));
-    }
-
-    #[test]
-    fn legacy_rich_text_refuses_retained_limit() {
-        let bytes = direct_legacy_payload(7, &[], &[]);
-        let error = with_retained_limit(&bytes, 0, |ctx| {
-            let mut reader =
-                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded legacy payload");
-            super::legacy_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
-                .err()
-                .expect("rich text exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino legacy annotation rich text");
-    }
-
-    #[test]
-    fn legacy_user_text_copy_refuses_retained_limit() {
-        let bytes = direct_legacy_payload(7, &[], &[]);
-        let error = with_retained_limit(&bytes, 2, |ctx| {
-            let mut reader =
-                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded legacy payload");
-            super::legacy_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
-                .err()
-                .expect("user text copy exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino legacy annotation user text");
-    }
-
-    #[test]
-    fn legacy_user_text_field_refuses_retained_limit() {
-        let bytes = legacy_annotation_payload(7, &[]);
-        let error = with_retained_limit(&bytes, 2, |ctx| {
-            let mut reader =
-                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded legacy payload");
-            super::legacy_annotation(
-                ctx,
-                &bytes,
-                &mut reader,
-                MillimeterScale::IDENTITY,
-                ArchiveVersion::V8,
-            )
-            .err()
-            .expect("user text field exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino legacy annotation user text");
-    }
-
-    #[test]
-    fn modern_dimension_rich_text_refuses_retained_limit() {
-        let family = [3.0_f64, 4.0, 8.0, 9.0]
-            .into_iter()
-            .flat_map(f64::to_le_bytes)
-            .collect::<Vec<_>>();
-        let bytes = payload(1, &family);
-        let error = with_retained_limit(&bytes, 0, |ctx| {
-            super::decode(
-                ctx,
-                &bytes,
-                LINEAR,
-                0..bytes.len(),
-                MillimeterScale::IDENTITY,
-                ArchiveVersion::V8,
-            )
-            .expect_err("rich text exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino dimension rich text");
-    }
-
-    #[test]
-    fn modern_dimension_user_text_refuses_retained_limit() {
-        let family = [3.0_f64, 4.0, 8.0, 9.0]
-            .into_iter()
-            .flat_map(f64::to_le_bytes)
-            .collect::<Vec<_>>();
-        let bytes =
-            dimension_payload_with_arrow_fit(1, &family, [0; 16], &plane(), None, 0, "user");
-        let error = with_retained_limit(&bytes, 3, |ctx| {
-            super::decode(
-                ctx,
-                &bytes,
-                LINEAR,
-                0..bytes.len(),
-                MillimeterScale::IDENTITY,
-                ArchiveVersion::V8,
-            )
-            .expect_err("user text exceeds retained limit")
-        });
-        assert_resource(&error, "Rhino dimension user text");
-        assert!(test_decode(
-            &bytes,
-            LINEAR,
-            0..bytes.len(),
-            MillimeterScale::IDENTITY,
-            ArchiveVersion::V8,
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn legacy_annotation_points_refuse_collection_limit() {
-        let bytes = direct_legacy_payload(7, &[[1.0, 2.0], [3.0, 4.0]], &[]);
-        let refusal = with_collection_limit(&bytes, 1, |ctx| {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded payload");
-            super::legacy_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
-                .err()
-                .expect("two points exceed one collection item")
-        });
-        assert!(matches!(
-            refusal,
-            crate::chunks::FramingError::Resource(limit)
-                if limit.operation == "Rhino legacy annotation points"
-        ));
-    }
-
-    #[test]
-    fn v2_annotation_points_refuse_collection_limit() {
-        let bytes = v2_payload(7, &[[1.0, 2.0], [3.0, 4.0]], "", "", false, None);
-        let refusal = with_collection_limit(&bytes, 1, |ctx| {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded payload");
-            v2_annotation_direct(ctx, &mut reader, MillimeterScale::IDENTITY)
-                .err()
-                .expect("two points exceed one collection item")
-        });
-        assert!(matches!(
-            refusal,
-            crate::chunks::FramingError::Resource(limit)
-                if limit.operation == "Rhino V2 annotation points"
-        ));
-    }
-
-    #[test]
-    fn dimension_decode_propagates_v2_point_limit() {
-        let payload = v2_payload(
-            1,
-            &[[1.0, 2.0], [0.0, 0.0], [5.0, 0.0], [3.0, 0.0], [7.0, 4.0]],
-            "user",
-            "default",
-            false,
-            None,
-        );
-        let object =
-            object_record_with_payload(ArchiveVersion::V5, 1, V2_LINEAR.to_wire(), &payload);
-        let scan = scan_with_objects(&[object]);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 8;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                .expect("fixture fits root limit");
-        let refusal = crate::decode::decode(&scan, crate::mesh::MeshExpand::new(&ctx, root))
-            .expect_err("dimension points exceed collection limit");
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino V2 annotation points"
-        ));
-        let service_arena = cadmpeg_core::decode::DecodeArena::new();
-        let service_policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (service_ctx, service_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            scan.data,
-            &service_arena,
-            &service_policy,
-        )
-        .expect("fixture fits root limit");
-        let service = crate::decode::decode(
-            &scan,
-            crate::mesh::MeshExpand::new(&service_ctx, service_root),
-        );
-        assert!(service.is_ok(), "service dimension decode: {service:?}");
     }
 
     #[test]
@@ -2260,10 +2011,7 @@ pub(crate) mod tests {
         assert_eq!(annotation.default_text, "default");
         assert!(!annotation.user_positioned_text);
         assert_eq!(reader.remaining(), 2);
-        assert_eq!(
-            v2_effective_text(&annotation).expect("effective V2 text"),
-            "user <>"
-        );
+        assert_eq!(v2_effective_text(&annotation), "user <>");
     }
 
     #[test]
@@ -2581,11 +2329,9 @@ pub(crate) mod tests {
         .expect("required invariant");
         assert_eq!(linear.measurement, 60.0);
         assert_eq!(linear.horizontal_direction.get(), [1.0, 0.0]);
-        let semantic: serde_json::Value = serde_json::from_str(
-            &semantic_json(&cadmpeg_test_support::service_decode_context(), &linear)
-                .expect("required invariant"),
-        )
-        .expect("required invariant");
+        let semantic: serde_json::Value =
+            serde_json::from_str(&semantic_json(&linear).expect("required invariant"))
+                .expect("required invariant");
         assert_eq!(semantic["kind"], "dimension");
         assert_eq!(semantic["runtime_type"], "linear_dimension");
         assert!(
@@ -2672,7 +2418,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn dimension_projection_refuses_parameter_limit_and_preserves_semantic_json() {
+    fn dimension_semantic_json_matches_the_projection() {
         let family = [3.0_f64, 4.0, 8.0, 9.0]
             .into_iter()
             .flat_map(f64::to_le_bytes)
@@ -2686,18 +2432,8 @@ pub(crate) mod tests {
             ArchiveVersion::V8,
         )
         .expect("valid linear dimension");
-        let refusal = with_collection_limit(&[], 0, |ctx| {
-            super::project(&dimension, "test", None, "", 0)
-                .expect_err("first parameter exceeds zero items")
-        });
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino dimension parameter entries"
-        ));
-        let ctx = cadmpeg_test_support::service_decode_context();
         let (annotation, _) = super::project(&dimension, "embedded-history-dimension", None, "", 0)
-            .expect("service profile admits projection");
+            .expect("dimension projection");
         let baseline = serde_json::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,
@@ -2708,9 +2444,7 @@ pub(crate) mod tests {
             "parameters": annotation.parameters,
         })
         .to_string();
-        let semantic =
-            super::semantic_json(&cadmpeg_test_support::service_decode_context(), &dimension)
-                .expect("service profile admits semantic JSON");
+        let semantic = super::semantic_json(&dimension).expect("semantic JSON");
         assert_eq!(semantic, baseline);
     }
 
