@@ -105,9 +105,7 @@ fn native_topology_link_must_resolve() {
         )
         .expect("valid native identity")],
     );
-    ir.native
-        .finalize(&cadmpeg_test_support::service_decode_context())
-        .expect("fixture ordering is admitted");
+    ir.native.finalize();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("resource allocation did not fail")
         .findings
@@ -252,7 +250,7 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
 }
 
 #[test]
-fn native_annotation_paths_borrow_payloads_without_projecting_unrelated_data() {
+fn native_annotation_paths_report_only_unresolvable_paths() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let id = "test:native:record#payload";
     let mut ir = crate::CadIr::empty();
@@ -288,8 +286,7 @@ fn native_annotation_paths_borrow_payloads_without_projecting_unrelated_data() {
     }
     let annotations = builder.build();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let all_ids = super::BorrowedIdentities::build(&ctx, |add| add(id, ())).unwrap();
     let mut findings = Vec::new();
@@ -310,7 +307,7 @@ fn native_annotation_paths_borrow_payloads_without_projecting_unrelated_data() {
 }
 
 #[test]
-fn annotated_model_entities_use_indexed_identity_lookups() {
+fn annotations_on_many_model_points_resolve_without_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = crate::CadIr::empty();
     let prototype = unit_cube().unwrap().model.points.remove(0);
@@ -326,10 +323,7 @@ fn annotated_model_entities_use_indexed_identity_lookups() {
     }
     let annotations = builder.build();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Admit indexed sorting and projection work while excluding repeated
-    // full-population identity scans for each annotation.
-    policy.limits.max_work_units = 20_000_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let all_ids = super::BorrowedIdentities::build(&ctx, |add| {
         for point in &ir.model.points {

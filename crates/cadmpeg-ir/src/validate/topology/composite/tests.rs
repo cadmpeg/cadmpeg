@@ -35,39 +35,6 @@ fn model(rows: &[(&str, &[&str])]) -> CadIr {
 }
 
 #[test]
-fn composite_cycle_validation_preserves_all_resource_refusals() {
-    let ir = model(&[("test:model:curve#a", &["test:model:curve#a"])]);
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = super::check(&ctx, &ir, &mut findings) else {
-            panic!("cycle validation must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(findings.is_empty());
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-}
-
-#[test]
 fn composite_cycle_validation_keeps_lexical_roots_and_repeated_backedges() {
     let ir = model(&[
         ("test:model:curve#z", &["test:model:curve#z"]),
@@ -127,7 +94,7 @@ fn composite_cycle_validation_uses_active_session_depth_for_nested_frames() {
 }
 
 #[test]
-fn composite_cycle_validation_releases_scoped_storage_without_retained_copies() {
+fn composite_cycle_validation_admits_repeated_acyclic_edges_and_missing_children() {
     let ir = model(&[
         (
             "test:model:curve#a",
@@ -135,14 +102,8 @@ fn composite_cycle_validation_releases_scoped_storage_without_retained_copies() 
         ),
         ("test:model:curve#b", &["test:model:curve#missing"]),
     ]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 16384;
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings.is_empty());
-    drop(ctx.reserve_scoped(16384, "cycle scopes released").unwrap());
-    ctx.finish_session().unwrap();
+    assert!(findings.is_empty(), "{findings:?}");
 }

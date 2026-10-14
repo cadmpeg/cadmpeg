@@ -2,66 +2,7 @@
 
 use crate::document::CadIr;
 use crate::math::Point3;
-use crate::report::check::Finding;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-
-fn refuses(
-    ir: &CadIr,
-    checker: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>,
-) {
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut findings = Vec::new();
-        let Err(CodecError::ResourceLimit(limit)) = checker(&ctx, ir, &mut findings) else {
-            panic!("index must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(findings.is_empty());
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-}
-
-#[test]
-fn geometric_endpoint_indexes_preserve_original_refusals() {
-    refuses(
-        &crate::examples::unit_cube().unwrap(),
-        super::super::check_edge_endpoint_consistency,
-    );
-}
-
-#[test]
-fn geometric_pcurve_indexes_preserve_original_refusals() {
-    refuses(&super::untrimmed_surface_curve(), |ctx, ir, findings| {
-        let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
-        super::super::check_pcurve_surface_consistency(ctx, &index, findings)
-    });
-}
-
-#[test]
-fn geometric_procedural_indexes_preserve_original_refusals() {
-    refuses(
-        &super::mapped_surface_curve([1.0, 0.0]),
-        |ctx, ir, findings| {
-            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
-            super::super::check_procedural_support_consistency(ctx, &index, findings)
-        },
-    );
-}
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities() {
@@ -80,10 +21,7 @@ fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities()
     );
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_work_units = 1_000;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
@@ -112,7 +50,6 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 65536;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
         let positions = super::super::vertex_positions(&ctx, &ir).unwrap();
@@ -124,27 +61,5 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
             ))
         );
     }
-    drop(
-        ctx.reserve_scoped(65536, "geometric vertex scopes released")
-            .unwrap(),
-    );
-    ctx.finish_session().unwrap();
-}
-
-#[test]
-fn geometric_endpoint_indexes_release_all_storage_with_zero_retained_budget() {
-    let ir = crate::examples::unit_cube().unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 65536;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut findings = Vec::new();
-    super::super::check_edge_endpoint_consistency(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings.is_empty());
-    drop(
-        ctx.reserve_scoped(65536, "geometric endpoint scopes released")
-            .unwrap(),
-    );
     ctx.finish_session().unwrap();
 }

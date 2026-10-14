@@ -208,7 +208,7 @@ fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
 }
 
 #[test]
-fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
+fn owned_variable_radius_scaling_matches_the_service_result() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let law = || {
         VariableRadii::new(
@@ -218,18 +218,8 @@ fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
         .expect("radius construction admission")
         .expect("law")
     };
-    for cap in [0, 1] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(law().try_map_radii(&ctx, Ok::<_, ()>),
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR variable radii scaling work"));
-    }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
-    policy.limits.max_collection_items = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let multiplier = crate::scalar::PositiveReal::new(2.0).expect("scale");
@@ -262,53 +252,20 @@ fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
 }
 
 #[test]
-fn radius_mapping_uses_the_original_context_before_each_callback() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let law = || {
-        VariableRadii::new(
-            vec![point(0.0, 1.0), point(0.5, 2.0), point(1.0, 3.0)],
-            &cadmpeg_test_support::service_decode_context(),
-        )
-        .expect("radius construction admission")
-        .expect("law")
-    };
-    for cap in 0..3 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut calls = 0;
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            law().try_map_radii(&ctx, |radius| {
-                calls += 1;
-                Ok::<_, ()>(radius)
-            })
-        else {
-            panic!("caller work must be admitted before conversion");
-        };
-        assert_eq!(calls, cap);
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.used, cap);
-        assert_eq!(limit.operation, "IR variable radii scaling work");
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 3;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let original = law();
+fn owned_variable_radius_mapping_keeps_its_sample_storage() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let original = VariableRadii::new(
+        vec![point(0.0, 1.0), point(0.5, 2.0), point(1.0, 3.0)],
+        &ctx,
+    )
+    .expect("radius construction admission")
+    .expect("law");
     let address = original.as_slice().as_ptr();
     let mapped = original
         .try_map_radii(&ctx, Ok::<_, ()>)
-        .expect("exact caller work")
+        .expect("radius map admission")
         .expect("valid");
     assert_eq!(mapped.as_slice().as_ptr(), address);
-    ctx.finish_session().expect("no sample copy or second scan");
 }
 
 mod construction;

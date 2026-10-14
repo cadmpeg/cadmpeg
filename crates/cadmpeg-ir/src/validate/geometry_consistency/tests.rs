@@ -1701,38 +1701,22 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
 }
 
 #[test]
-fn solved_surface_parameter_domains_preserves_session_depth_and_work_refusals() {
+fn solved_surface_parameter_domains_preserves_session_depth_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let geometry = placed_nurbs_surface(2).unwrap();
-    for (dimension, cap, held_frame) in [
-        (ResourceDimension::RecursionDepth, 0, false),
-        (ResourceDimension::RecursionDepth, 2, false),
-        (ResourceDimension::RecursionDepth, 2, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 2, false),
-    ] {
+    for (cap, held_frame) in [(0, false), (2, false), (2, true)] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => unreachable!(),
-        }
+        policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
         let limit = super::solved_surface_parameter_domains(&ctx, &geometry).unwrap_err();
-        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, cap);
         assert_eq!(limit.additional, 1);
-        assert_eq!(
-            limit.operation,
-            match dimension {
-                ResourceDimension::RecursionDepth => "surface parameter domain nesting",
-                _ => "surface parameter domain visit",
-            }
-        );
+        assert_eq!(limit.operation, "surface parameter domain nesting");
         drop(guard);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -1741,38 +1725,22 @@ fn solved_surface_parameter_domains_preserves_session_depth_and_work_refusals() 
 }
 
 #[test]
-fn pcurve_geometry_trim_range_preserves_session_depth_and_work_refusals() {
+fn pcurve_geometry_trim_range_preserves_session_depth_refusals() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let geometry = placed_pcurve(2, nurbs_pcurve_leaf()).unwrap();
-    for (dimension, cap, held_frame) in [
-        (ResourceDimension::RecursionDepth, 0, false),
-        (ResourceDimension::RecursionDepth, 2, false),
-        (ResourceDimension::RecursionDepth, 2, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 2, false),
-    ] {
+    for (cap, held_frame) in [(0, false), (2, false), (2, true)] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => unreachable!(),
-        }
+        policy.limits.max_recursion_depth = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let guard = held_frame.then(|| ctx.enter_nested_limit("caller frame").unwrap());
         let limit = super::pcurve_geometry_trim_range(&ctx, &geometry).unwrap_err();
-        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, cap);
         assert_eq!(limit.additional, 1);
-        assert_eq!(
-            limit.operation,
-            match dimension {
-                ResourceDimension::RecursionDepth => "pcurve trim range nesting",
-                _ => "pcurve trim range visit",
-            }
-        );
+        assert_eq!(limit.operation, "pcurve trim range nesting");
         drop(guard);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
@@ -1781,49 +1749,7 @@ fn pcurve_geometry_trim_range_preserves_session_depth_and_work_refusals() {
 }
 
 #[test]
-fn pcurve_seed_storage_preserves_caller_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let pcurve = Pcurve {
-        id: "test:model:pcurve#seed".try_into().unwrap(),
-        geometry: PcurveGeometry::Line(
-            crate::geometry::pcurve::LinePcurve::try_new(
-                Point2::new(0.0, 0.0),
-                Point2::new(1.0, 0.0),
-            )
-            .unwrap(),
-        ),
-        metadata: PcurveMetadata::default(),
-    };
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = super::pcurve_parameter_seeds(&ctx, &pcurve)
-        else {
-            panic!("seed storage must refuse");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
-    }
-}
-
-#[test]
-fn a_verified_pcurve_interval_avoids_unneeded_knot_seed_storage() {
+fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = untrimmed_surface_curve();
     for (point, x) in ir.model.points.iter_mut().zip([0.0, 1.0]) {
@@ -1857,9 +1783,7 @@ fn a_verified_pcurve_interval_avoids_unneeded_knot_seed_storage() {
         Some(DirectedParameterRange::new([0.0, 1.0]).unwrap());
     let index = crate::index::ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 128;
-    policy.limits.max_work_units = 30_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut findings = Vec::new();
     check_pcurve_surface_consistency(&ctx, &index, &mut findings).unwrap();

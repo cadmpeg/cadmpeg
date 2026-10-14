@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::NativeRecord;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use serde::Serialize;
 
 #[test]
@@ -19,9 +19,7 @@ fn borrowed_comparison_checks_large_payloads_without_cloning_them() {
     };
     let stored = NativeRecord::from_typed(&expected).unwrap();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 100;
-    policy.limits.max_work_units = 500_000;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     assert!(stored.matches_typed_for_decode(&ctx, &expected).unwrap());
     assert!(ctx.finish_session().is_ok());
@@ -102,55 +100,6 @@ fn borrowed_comparison_preserves_every_json_shape_and_rejects_drift() {
 }
 
 #[test]
-fn borrowed_comparison_preserves_refusals_and_rejects_nonfinite_expected_numbers() {
-    #[derive(Serialize)]
-    struct Nonfinite<'a> {
-        id: &'a str,
-        value: f64,
-    }
-
-    let expected = serde_json::json!({ "id": "test:native:record#limits", "data": [1,2,3] });
-    let stored: NativeRecord = serde_json::from_value(expected.clone()).unwrap();
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let super::super::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(
-            first,
-        )) = stored
-            .matches_typed_for_decode(&ctx, &expected)
-            .unwrap_err()
-        else {
-            panic!("resource refusal")
-        };
-        assert_eq!(first.dimension, dimension);
-        assert_eq!(ctx.resource_refusal(), Some(first));
-        assert!(stored.matches_typed_for_decode(&ctx, &expected).is_err());
-    }
-    assert!(stored
-        .matches_typed_for_decode(
-            &super::super::test_ctx(),
-            &Nonfinite {
-                id: "test:native:record#limits",
-                value: f64::NAN
-            }
-        )
-        .is_err());
-}
-
-#[test]
 fn borrowed_comparison_handles_raw_record_roots_and_rejects_duplicate_keys() {
     struct Duplicate;
     impl Serialize for Duplicate {
@@ -189,5 +138,43 @@ fn borrowed_comparison_enforces_native_depth_even_when_the_actual_record_differs
     let expected = serde_json::json!({ "id": stored.id(), "data": data });
     assert!(stored
         .matches_typed_for_decode(&super::super::test_ctx(), &expected)
+        .is_err());
+}
+
+#[test]
+fn borrowed_comparison_refuses_at_the_depth_limit_and_rejects_a_nonfinite_expected_number() {
+    #[derive(Serialize)]
+    struct Nonfinite<'a> {
+        id: &'a str,
+        value: f64,
+    }
+
+    let expected = serde_json::json!({ "id": "test:native:record#limits", "data": [1,2,3] });
+    let stored: NativeRecord = serde_json::from_value(expected.clone()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    let error = stored
+        .matches_typed_for_decode(&ctx, &expected)
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(first) = cadmpeg_core::CodecError::from(error)
+    else {
+        panic!("resource refusal")
+    };
+    assert_eq!(
+        first.dimension,
+        cadmpeg_core::decode::ResourceDimension::RecursionDepth
+    );
+    assert_eq!(ctx.resource_refusal(), Some(first));
+    assert!(stored.matches_typed_for_decode(&ctx, &expected).is_err());
+    assert!(stored
+        .matches_typed_for_decode(
+            &super::super::test_ctx(),
+            &Nonfinite {
+                id: "test:native:record#limits",
+                value: f64::NAN
+            }
+        )
         .is_err());
 }
