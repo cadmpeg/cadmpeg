@@ -120,7 +120,7 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn parasolid_fuzz_wrapper_returns_declared_expansion_refusal() {
+    fn parasolid_fuzz_wrapper_skips_frame_above_local_cap() {
         let mut encoder =
             flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(b"x").expect("compressed frame fixture");
@@ -136,15 +136,6 @@ mod tests {
                 .to_le_bytes(),
         );
         payload.extend_from_slice(&member);
-        let error =
-            super::parasolid(&payload).expect_err("declared expansion exceeds the local frame cap");
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::Codec("inflate Parasolid frame")
-                    && limit.operation == "inflate Parasolid frame"
-                    && limit.limit == 512 * 1024 * 1024
-                    && limit.used == 512 * 1024 * 1024
-                    && limit.additional == 1
-        ));
+        super::parasolid(&payload).expect("a frame above the local cap is skipped");
     }
 }
