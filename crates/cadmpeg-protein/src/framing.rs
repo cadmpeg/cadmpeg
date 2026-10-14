@@ -29,18 +29,6 @@ impl RecordFrame {
     }
 }
 
-/// Split a paged `InstanceProperties` stream into logical records.
-///
-/// The stream is a [`STREAM_HEADER_LEN`]-byte header followed by fixed
-/// [`PAGE_SIZE`] pages. A page whose bytes 4..8 hold [`RECORD_MARKER`] opens a
-/// record, [`CONTINUATION_MARKER`] extends it, and a page opening with
-/// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
-/// offset 4. Every record is returned with the opening marker restored so
-/// record offsets match the on-page layout.
-pub fn record_frames_for_edit(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
-    frame_records(bytes)
-}
-
 /// Framed records of one instance stream.
 #[derive(Debug)]
 pub struct RecordFrames {
@@ -60,11 +48,19 @@ pub fn record_frames_admitted(
     bytes: &[u8],
 ) -> Result<RecordFrames, CodecError> {
     Ok(RecordFrames {
-        frames: frame_records(bytes)?,
+        frames: record_frames_for_edit(bytes)?,
     })
 }
 
-fn frame_records(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
+/// Split a paged `InstanceProperties` stream into logical records.
+///
+/// The stream is a [`STREAM_HEADER_LEN`]-byte header followed by fixed
+/// [`PAGE_SIZE`] pages. A page whose bytes 4..8 hold [`RECORD_MARKER`] opens a
+/// record, [`CONTINUATION_MARKER`] extends it, and a page opening with
+/// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
+/// offset 4. Every record is returned with the opening marker restored so
+/// record offsets match the on-page layout.
+pub fn record_frames_for_edit(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
         return Err(CodecError::Malformed(
             "Protein page stream is shorter than its header and one page".into(),
