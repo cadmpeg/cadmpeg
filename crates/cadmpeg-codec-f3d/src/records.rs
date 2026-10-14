@@ -6,7 +6,6 @@
 mod identity_rewrite;
 
 pub(crate) mod act;
-pub(crate) mod admission;
 pub(crate) mod bodies;
 pub(crate) mod canvas;
 pub(crate) mod configuration;

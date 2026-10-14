@@ -7,11 +7,11 @@ use cadmpeg_ir::ids::FaceId;
 fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
     let ctx = cadmpeg_test_support::service_decode_context();
     FeatureInputTopology {
-        id: crate::ids::history_input_state_id_charged(&ctx, feature, 4).unwrap(),
+        id: crate::ids::history_input_state_id_charged(feature, 4).unwrap(),
         input_of: feature.clone(),
         bodies: Default::default(),
         faces: DistinctMembers::try_from(
-            vec![crate::ids::history_input_face_id_charged(&ctx, feature, 4, slot).unwrap()],
+            vec![crate::ids::history_input_face_id_charged(feature, 4, slot).unwrap()],
             &ctx,
         )
         .unwrap(),
@@ -24,7 +24,7 @@ fn historical(input: &FeatureInputTopology, slot: i64) -> FaceSelection {
     let ctx = cadmpeg_test_support::service_decode_context();
     FaceSelection::historical(
         input.id.clone(),
-        vec![crate::ids::history_input_face_id_charged(&ctx, &input.input_of, 4, slot).unwrap()],
+        vec![crate::ids::history_input_face_id_charged(&input.input_of, 4, slot).unwrap()],
         "f3d:design:face-operand#1".into(),
         &ctx,
     )
@@ -40,7 +40,6 @@ fn resolved(face: &str) -> FaceSelection {
 
 #[test]
 fn historical_faces_require_one_emitted_feature_state_and_every_selected_member() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let feature = FeatureId::mint("f3d:model:feature#input").unwrap();
     let topology = input(&feature, 2);
     let admitted = historical(&topology, 2);
@@ -52,9 +51,7 @@ fn historical_faces_require_one_emitted_feature_state_and_every_selected_member(
         let mut inputs = FaceInputs::new(&topologies, &[]);
         let mut selection = admitted.clone();
         let mut losses = Vec::new();
-        inputs
-            .admit(&ctx, &feature, &mut selection, &mut losses)
-            .unwrap();
+        inputs.admit(&feature, &mut selection, &mut losses).unwrap();
         if topologies.len() == 1 {
             assert_eq!(selection, admitted);
             assert!(losses.is_empty());
@@ -74,15 +71,12 @@ fn historical_faces_require_one_emitted_feature_state_and_every_selected_member(
     let mut inputs = FaceInputs::new(&topologies, &[]);
     let mut selection = historical(&topology, 3);
     let mut losses = Vec::new();
-    inputs
-        .admit(&ctx, &feature, &mut selection, &mut losses)
-        .unwrap();
+    inputs.admit(&feature, &mut selection, &mut losses).unwrap();
     assert!(matches!(selection, FaceSelection::Native(_)));
     assert_eq!(losses.len(), 1);
     let mut selection = historical(&topology, 2);
     inputs
         .admit(
-            &ctx,
             &FeatureId::mint("f3d:model:feature#other").unwrap(),
             &mut selection,
             &mut losses,
@@ -155,9 +149,7 @@ fn hole_keeps_a_surviving_current_face_and_refuses_an_unemitted_history() {
     assert_eq!(selection, original);
     assert!(losses.is_empty());
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The surviving current face needs one set entry and no historical index.
-    policy.limits.max_collection_items = 1;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut inputs = FaceInputs::new(&topologies, &current);
@@ -201,13 +193,10 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
                 profile: ProfileRef::Planar(
                     PlanarProfileRef::historical_faces(
                         topology.id.clone(),
-                        vec![crate::ids::history_input_face_id_charged(
-                            &ctx,
-                            &topology.input_of,
-                            4,
-                            2,
-                        )
-                        .unwrap()],
+                        vec![
+                            crate::ids::history_input_face_id_charged(&topology.input_of, 4, 2)
+                                .unwrap(),
+                        ],
                         vec!["f3d:design:profile#1".into(), "f3d:design:profile#2".into()],
                         &ctx,
                     )
@@ -264,9 +253,7 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     );
     assert_eq!(losses.len(), 3);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_work_units = 1;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (limited, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut untouched_losses = Vec::new();
@@ -339,23 +326,6 @@ fn feature_gate_changes_hole_namespace_and_propagates_index_refusal() {
     };
     assert_eq!(face, &historical(&topology, 2));
     assert!(losses.is_empty());
-    let mut features = [original];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::admit_feature_input_faces(
-        &limited,
-        &mut features,
-        std::slice::from_ref(&topology),
-        &[],
-        &mut losses,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "index F3D emitted feature inputs")
-    );
 }
 
 #[test]
@@ -368,27 +338,21 @@ fn repeated_membership_queries_reuse_only_the_topologies_they_need() {
     let mut topologies = [input(&first, 2), input(&second, 3), input(&unused, 4)];
     topologies[2].faces = DistinctMembers::try_from(
         (0..128)
-            .map(|slot| {
-                crate::ids::history_input_face_id_charged(&source, &unused, 4, slot).unwrap()
-            })
+            .map(|slot| crate::ids::history_input_face_id_charged(&unused, 4, slot).unwrap())
             .collect(),
         &source,
     )
     .unwrap();
     let original = [historical(&topologies[0], 2), historical(&topologies[1], 3)];
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Three state entries, two selected members, and two member-cache entries.
-    policy.limits.max_collection_items = 7;
+    let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut inputs = FaceInputs::new(&topologies, &[]);
     let mut losses = Vec::new();
     for _ in 0..1_000 {
         for (feature, original) in [(&first, &original[0]), (&second, &original[1])] {
             let mut selection = original.clone();
-            inputs
-                .admit(&ctx, feature, &mut selection, &mut losses)
-                .unwrap();
+            inputs.admit(feature, &mut selection, &mut losses).unwrap();
             assert_eq!(&selection, original);
         }
     }

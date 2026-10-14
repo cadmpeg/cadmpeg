@@ -168,28 +168,3 @@ fn header(bytes: &mut [u8], at: usize, class_tag: &[u8; 3], record_index: u32) {
     bytes[at + 4..at + 7].copy_from_slice(class_tag);
     bytes[at + 7..at + 11].copy_from_slice(&record_index.to_le_bytes());
 }
-
-#[test]
-fn derived_instance_guid_copies_preserve_retained_refusals() {
-    let (bytes, scope, occurrence) = fixture();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    for limit in [0, 36] {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = exact_derived_instance_construction(
-                ctx,
-                &bytes,
-                &records,
-                &scope,
-                std::slice::from_ref(&occurrence),
-            )
-            .unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && failure.operation == "retain F3D construction GUID")
-            );
-        });
-    }
-}

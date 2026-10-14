@@ -30,33 +30,6 @@ fn exact_hole_construction(
 }
 
 #[test]
-fn hole_input_records_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, scope, _, _) = hole_point_stream();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = exact_hole_construction_with_ctx(
-        &ctx,
-        &bytes,
-        &records,
-        &scope,
-        &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
-        &crate::records::feature::scope::DesignFeatureKind::Hole,
-    );
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d Hole input records"
-    ));
-}
-
-#[test]
 fn hole_carrier_reads_borrowed_as_built_scope() {
     let (bytes, mut scope, _, _) = hole_point_stream();
     scope
@@ -338,25 +311,6 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    for limit in [35, 71] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            exact_hole_face_selection(
-                &ctx,
-                &bytes,
-                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-                &scope,
-                &HashMap::from([(100_u64, (HOLE_FACE_SELECTION_TYPE_GUID, 1))]),
-            ),
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d Design UTF-16 text"
-        ));
-    }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =

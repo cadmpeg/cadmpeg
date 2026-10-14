@@ -32,7 +32,6 @@ pub(super) fn validate_configuration_projection(
         &native.design_configurations,
     )?;
     crate::design::configurations::bind_configuration_parameter_overrides(
-        decode_ctx,
         &mut projected,
         &target.model.parameters,
     )?;
@@ -96,6 +95,17 @@ pub(super) fn normalized_face_sense_to_native(desired: Sense, carrier_flipped: b
         }
     } else {
         desired
+    }
+}
+
+/// Zero-fill `bytes` to `length`, or truncate it when it is longer.
+pub(crate) fn zero_fill_to(bytes: &mut Vec<u8>, length: usize) {
+    if let Some(additional) = length.checked_sub(bytes.len()) {
+        for _ in 0..additional {
+            bytes.push(0);
+        }
+    } else {
+        bytes.truncate(length);
     }
 }
 

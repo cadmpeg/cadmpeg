@@ -269,7 +269,6 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let mut scopes = vec![extrude, work_point];
 
     super::super::bind_vertex_recipe_history(
-        &cadmpeg_test_support::service_decode_context(),
         &mut scopes,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -310,7 +309,6 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         .candidate_faces
         .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
     super::super::bind_vertex_recipe_history(
-        &cadmpeg_test_support::service_decode_context(),
         &mut ambiguous,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -869,20 +867,6 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
 }
 
 #[test]
-fn body_recipe_history_refuses_collection_limit() {
-    let (scope, history, mut operands, _) = body_recipe_history_fixture();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_body_recipe_operand_history_candidates(&ctx, &mut operands, &[], &[scope], &[history])
-            .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
 fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
@@ -899,33 +883,21 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &topology)?
-                .faces(decode_ctx, 1)
-        })
-        .unwrap(),
+        crate::history::body_index::CompleteBodyIndex::new(&topology).faces(1),
         Some(vec![10, 11])
     );
 
     let mut incomplete = topology.clone();
     incomplete.shell_faces[0].member_refs.clear();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &incomplete)?
-                .faces(decode_ctx, 1)
-        })
-        .unwrap(),
+        crate::history::body_index::CompleteBodyIndex::new(&incomplete).faces(1),
         None
     );
 
     let mut ambiguous = topology;
     ambiguous.shell_faces.push(relation(4, vec![10]));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &ambiguous)?
-                .faces(decode_ctx, 1)
-        })
-        .unwrap(),
+        crate::history::body_index::CompleteBodyIndex::new(&ambiguous).faces(1),
         None
     );
 }
@@ -1124,8 +1096,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         ordinal: 0,
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 32;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut candidates = crate::history::body_candidates::BodyCandidates::new(
@@ -1141,9 +1112,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             Some(body.id.clone())
         );
         assert_eq!(
-            candidates
-                .face_body_candidates(&ctx, &operand, &body.id)
-                .unwrap(),
+            candidates.face_body_candidates(&operand, &body.id),
             (true, true)
         );
     }

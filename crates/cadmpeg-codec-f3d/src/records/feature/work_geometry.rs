@@ -106,11 +106,6 @@ impl DesignWorkPointInput {
             .carrier
             .as_deref()
             .map(|carrier| {
-                ctx.charge_retained(
-                    u64_from_index(std::mem::size_of::<DesignWorkPointInputCarrier>()),
-                    operation,
-                )?;
-                ctx.charge_collection_items(1, operation)?;
                 Ok::<_, CodecError>(Box::new(carrier.try_clone_for_decode(ctx, operation)?))
             })
             .transpose()?;
@@ -259,10 +254,9 @@ impl DesignWorkPointInputCarrier {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
         Ok(match self {
             Self::EdgeRecipe { operand_id } => Self::EdgeRecipe {
-                operand_id: ctx.copy_retained_text(operand_id, operation)?,
+                operand_id: operand_id.to_owned(),
             },
             Self::VertexRecipe { recipe } => Self::VertexRecipe {
                 recipe: recipe.try_clone_for_decode(ctx, operation)?,
@@ -360,15 +354,15 @@ impl DesignVertexRecipe {
             paired_byte_offset: self.paired_byte_offset,
             paired_class_tag: self.paired_class_tag.try_clone_for_decode(ctx, operation)?,
             recipe_record_byte_offset: self.recipe_record_byte_offset,
-            recipe_id: ctx.copy_retained_text(&self.recipe_id, operation)?,
-            recipe_prefix_bytes: (ctx.copy_slice(&self.recipe_prefix_bytes, operation)?).into(),
-            recipe_references: ctx.try_collect_retained_with(
-                &self.recipe_references,
-                operation,
-                |value| value.try_clone_for_decode(ctx, operation),
-            )?,
+            recipe_id: self.recipe_id.clone(),
+            recipe_prefix_bytes: (self.recipe_prefix_bytes.to_vec()).into(),
+            recipe_references: self
+                .recipe_references
+                .iter()
+                .map(|value| value.try_clone_for_decode(ctx, operation))
+                .collect::<Result<Vec<_>, _>>()?,
             recipe_program_offset: self.recipe_program_offset,
-            recipe_program: ctx.copy_slice(&self.recipe_program, operation)?,
+            recipe_program: self.recipe_program.clone(),
             resolution: self.resolution,
             next_byte_offset: self.next_byte_offset,
         })
@@ -927,7 +921,7 @@ impl DesignWorkPointSketchPointSelection {
             identity_record_offset: self.identity_record_offset,
             sketch_record_index: self.sketch_record_index,
             point_persistent_id: self.point_persistent_id,
-            point_native_id: ctx.copy_retained_text(&self.point_native_id, operation)?,
+            point_native_id: self.point_native_id.clone(),
         })
     }
 

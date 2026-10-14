@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
-fn work_plane_vertex_recipe_id_refuses_retained_limit() {
+fn work_plane_projects_three_point_vertex_recipes() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use crate::records::feature::work_geometry::{DesignVertexRecipe, DesignWorkPlaneConstruction};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let recipe = |record_index, vertex| {
@@ -60,24 +59,4 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
         .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { .. })
     ));
-    let mut policy = DecodePolicy::default();
-    let feature = crate::ids::neutral_feature_id(&plane);
-    let prefix = crate::ids::history_input_prefix(
-        &feature.key(),
-        plane.work_plane_construction().unwrap().inputs()[0]
-            .resolution
-            .unwrap()
-            .state_id,
-    );
-    policy.limits.max_retained_bytes =
-        u64::try_from(feature.as_str().len() + prefix.as_str().len()).unwrap();
-    let arena = DecodeArena::new();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(super::super::project_work_plane(&ctx, &plane, transform),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d WorkPlane vertex recipe id")
-    );
 }

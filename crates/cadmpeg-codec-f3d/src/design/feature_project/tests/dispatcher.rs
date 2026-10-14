@@ -194,45 +194,6 @@ fn dispatcher_projects_referenced_work_plane_frame() {
 }
 
 #[test]
-fn scale_center_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let mut scope = DesignParameterScope::empty(
-        "f3d:native/BulkStream.dat:parameter-scope#scale",
-        crate::records::feature::scope::DesignFeatureKind::Scale,
-        1,
-    );
-    if let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut()
-    {
-        *slot = Some(DesignScaleOperation {
-            body_group_record_index: 5,
-            center_record_index: 6,
-            center_position: None,
-            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5).unwrap(),
-            uniform_factor_offset: 20,
-        });
-    }
-    let mut found = false;
-    for limit in 0..2048 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(super::project_single_scope_with_context(&ctx, &scope),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d Scale center id"
-                    && failure.dimension == ResourceDimension::RetainedBytes)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "Scale center charge was not reached");
-}
-
-#[test]
 fn dispatcher_projects_three_point_work_plane_vertices() {
     use crate::records::feature::work_geometry::{DesignVertexRecipe, DesignWorkPlaneConstruction};
     use cadmpeg_ir::features::VertexSelection;
@@ -1017,21 +978,17 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     let edge =
         HistoricalEdgeId::mint("f3d:history-input:edge#7:feature:41:17").expect("identity grammar");
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::loft_path_from_edge_selection(
-                decode_ctx,
-                "group",
-                EdgeSelection::historical(
-                    state.clone(),
-                    vec![edge.clone()],
-                    "selection".into(),
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("selection storage is admitted")
-                .unwrap(),
+        crate::design::feature_project::loft_path_from_edge_selection(
+            "group",
+            EdgeSelection::historical(
+                state.clone(),
+                vec![edge.clone()],
+                "selection".into(),
+                &cadmpeg_test_support::service_decode_context(),
             )
-        })
-        .unwrap(),
+            .expect("selection storage is admitted")
+            .unwrap(),
+        ),
         PathRef::historical_edges(
             state.clone(),
             vec![edge.clone()],
@@ -1042,71 +999,20 @@ fn loft_path_preserves_complete_historical_edge_selection() {
         .unwrap()
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::loft_path_from_edge_selection(
-                decode_ctx,
-                "group",
-                EdgeSelection::historical_partial(
-                    state,
-                    vec![edge],
-                    vec!["operand".into()],
-                    "selection".into(),
-                    &cadmpeg_test_support::service_decode_context(),
-                )
-                .expect("selection storage is admitted")
-                .unwrap(),
+        crate::design::feature_project::loft_path_from_edge_selection(
+            "group",
+            EdgeSelection::historical_partial(
+                state,
+                vec![edge],
+                vec!["operand".into()],
+                "selection".into(),
+                &cadmpeg_test_support::service_decode_context(),
             )
-        })
-        .unwrap(),
+            .expect("selection storage is admitted")
+            .unwrap(),
+        ),
         PathRef::Native("group".into())
     );
-}
-
-#[test]
-fn loft_native_path_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::EdgeSelection;
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 4;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::feature_project::loft_path_from_edge_selection(
-            &ctx, "group", EdgeSelection::Unresolved,
-        ),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d loft native path"
-                && failure.dimension == ResourceDimension::RetainedBytes
-    ));
-}
-
-#[test]
-fn empty_surface_patch_path_refuses_native_copy_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let scope = DesignParameterScope::empty(
-        "f3d:test:scope#100",
-        crate::records::feature::scope::DesignFeatureKind::Thread,
-        100,
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::feature_project::resolved_surface_patch_path(
-            &[], &[], &[], &[], &scope,
-            crate::design::feature_project::SurfacePatchRecipe::Direct, &ctx,
-        ),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d surface patch native path"
-                && failure.dimension == ResourceDimension::RetainedBytes
-    ));
 }
 
 #[test]
@@ -1210,269 +1116,6 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
             }
         )
     );
-}
-
-fn thread_face_group_fixture() -> (DesignParameterScope, DesignConstructionOperandGroup) {
-    let scope = DesignParameterScope::empty(
-        "f3d:test:scope#100",
-        crate::records::feature::scope::DesignFeatureKind::Thread,
-        100,
-    );
-    let group = serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:construction-group#150",
-        "scope_record_index": 100,
-        "scope_reference_ordinal": 0,
-        "record_index": 150,
-        "byte_offset": 0,
-        "class_tag": "346",
-        "role": 0x0000_0010_0000_0000_u64,
-        "members": [200],
-        "member_offsets": [0],
-        "frame": {
-            "member_count_offset": 0,
-            "opaque_index": 1,
-            "opaque_index_offset": 18,
-            "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 22,
-            "variant": false
-        },
-        "role_offset": 0,
-        "paired_class_tag": "262",
-        "paired_byte_offset": 325,
-        "next_record_index": 151,
-        "next_byte_offset": 0
-    }))
-    .expect("Thread face group");
-    (scope, group)
-}
-
-#[test]
-fn thread_face_group_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let (scope, group) = thread_face_group_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d Thread face group"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
-}
-
-#[test]
-fn thread_face_native_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let (scope, group) = thread_face_group_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "f3d Thread face native id",
-        |cap| {
-            let group = group.clone();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::RetainedBytes {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (crate::design::feature_project::project_thread_face_selection(
-                &ctx,
-                &scope,
-                &[150],
-                &[group],
-                &[],
-            ))
-            .map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::RetainedBytes {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        "f3d Thread face native id",
-        |cap| {
-            let group = group.clone();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            match ResourceDimension::RetainedBytes {
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                    policy.limits.max_retained_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = cap;
-                }
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap;
-                }
-                dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            (crate::design::feature_project::project_thread_face_selection(
-                &ctx,
-                &scope,
-                &[150],
-                &[group],
-                &[],
-            ))
-            .map(|_| ())
-        },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-    match ResourceDimension::RetainedBytes {
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            policy.limits.max_retained_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            policy.limits.max_collection_items = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-            policy.limits.max_materialized_bytes = refusal_cap;
-        }
-        cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-            policy.limits.max_work_units = refusal_cap;
-        }
-        dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-    }
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d Thread face native id"
-                && failure.dimension == ResourceDimension::RetainedBytes
-    ));
-}
-
-#[test]
-fn merged_direct_edge_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::EdgeSelection;
-    use cadmpeg_ir::ids::EdgeId;
-
-    let scope = DesignParameterScope::empty(
-        "f3d:test:scope#100",
-        crate::records::feature::scope::DesignFeatureKind::Thread,
-        100,
-    );
-    let edge = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
-    let selections = [EdgeSelection::Edges(vec![edge])];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d merged direct edge"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
-}
-
-#[test]
-fn merged_direct_edge_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::EdgeSelection;
-    use cadmpeg_ir::ids::EdgeId;
-
-    let scope = DesignParameterScope::empty(
-        "f3d:test:scope#100",
-        crate::records::feature::scope::DesignFeatureKind::Thread,
-        100,
-    );
-    let edge = EdgeId::mint("f3d:brep:entity#1").expect("identity grammar");
-    let selections = [EdgeSelection::Edges(vec![edge])];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d merged direct edge id"
-                && failure.dimension == ResourceDimension::RetainedBytes
-    ));
-}
-
-#[test]
-fn merged_historical_edge_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::EdgeSelection;
-    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
-
-    let scope = DesignParameterScope::empty(
-        "f3d:test:scope#100",
-        crate::records::feature::scope::DesignFeatureKind::Thread,
-        100,
-    );
-    let state =
-        FeatureInputTopologyId::mint("f3d:history-input:state#100").expect("identity grammar");
-    let edge = HistoricalEdgeId::mint("f3d:history-input:edge#100:1").expect("identity grammar");
-    let selection = EdgeSelection::historical(
-        state,
-        vec![edge],
-        scope.id.clone(),
-        &cadmpeg_test_support::service_decode_context(),
-    )
-    .expect("selection storage is admitted")
-    .expect("historical edge selection");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &[selection]),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d merged historical edge"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
 }
 
 #[test]

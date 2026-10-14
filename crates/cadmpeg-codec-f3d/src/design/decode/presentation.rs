@@ -92,32 +92,23 @@ pub(super) fn browser_node_records(
                 .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "F3D Design browser-node entity {} has incompatible registration metadata",
-                    frame.entity_id
-                ),
-            ));
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D Design browser-node entity {} has incompatible registration metadata",
+                frame.entity_id
+            )));
         }
         let record = &bytes[frame.start..frame.end];
         let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
-            crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "F3D Design browser-node entity {} has a truncated record index",
-                    frame.entity_id
-                ),
-            )
+            crate::design::text::malformed_design(format_args!(
+                "F3D Design browser-node entity {} has a truncated record index",
+                frame.entity_id
+            ))
         })?;
         if u64::from(record_index) != frame.entity_id || record.get(11..21) != Some(&[0; 10]) {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "F3D Design browser-node entity {} has an invalid header",
-                    frame.entity_id
-                ),
-            ));
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D Design browser-node entity {} has an invalid header",
+                frame.entity_id
+            )));
         }
         let Some((guid, after_guid)) = lp_utf16_bounded_charged(
             ctx,
@@ -139,19 +130,15 @@ pub(super) fn browser_node_records(
             CodecError::Malformed("F3D Design browser-node flag is truncated".into())
         })?
         else {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "F3D Design browser-node entity {} has an invalid hidden flag",
-                    frame.entity_id
-                ),
-            ));
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D Design browser-node entity {} has an invalid hidden flag",
+                frame.entity_id
+            )));
         };
         let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
             CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
         })?;
 
-        ctx.reserve_vec(&mut out, 1, "f3d browser node records")?;
         out.push(BrowserNodeRecord {
             record_index,
             guid,
@@ -170,7 +157,7 @@ pub(crate) fn body_presentations(
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
     let nodes = browser_node_records(ctx, bytes, meta)?;
-    let entity_types = entity_types(ctx, meta)?;
+    let entity_types = entity_types(meta)?;
 
     let mut out = Vec::new();
     for frame in typed_primary_frames(
@@ -191,13 +178,10 @@ pub(crate) fn body_presentations(
                 .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "F3D Design body-presentation entity {} has incompatible registration metadata",
-                    frame.entity_id
-                ),
-            ));
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D Design body-presentation entity {} has incompatible registration metadata",
+                frame.entity_id
+            )));
         }
         let framed_bytes = &bytes[..frame.end];
         let named_header = match parse_settled_entity_header(ctx, framed_bytes, frame.start)? {
@@ -213,7 +197,7 @@ pub(crate) fn body_presentations(
         {
             let entity_suffix = entity_id.suffix();
             if entity_suffix != frame.entity_id {
-                return Err(crate::design::text::malformed_design(ctx, format_args!(
+                return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design body-presentation entity {} disagrees with its named header entity {entity_suffix}",
                     frame.entity_id
                 )));
@@ -236,22 +220,16 @@ pub(crate) fn body_presentations(
         } else {
             let entity_suffix =
                 View::u64_le_at(framed_bytes, frame.start + 7).ok_or_else(|| {
-                    crate::design::text::malformed_design(
-                        ctx,
-                        format_args!(
-                            "F3D Design bare body-presentation entity {} has a truncated head",
-                            frame.entity_id
-                        ),
-                    )
+                    crate::design::text::malformed_design(format_args!(
+                        "F3D Design bare body-presentation entity {} has a truncated head",
+                        frame.entity_id
+                    ))
                 })?;
             if entity_suffix == 0 || entity_suffix != frame.entity_id {
-                return Err(crate::design::text::malformed_design(
-                    ctx,
-                    format_args!(
+                return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design bare body-presentation entity {} has head entity {entity_suffix}",
                     frame.entity_id
-                ),
-                ));
+                )));
             }
             let Some(material) = bare_presentation_material(
                 ctx,
@@ -271,14 +249,12 @@ pub(crate) fn body_presentations(
                     && node.guid.eq_ignore_ascii_case(&material.node_guid)
             });
             match (matching_nodes.next(), matching_nodes.next()) {
-                (Some(node), None) => Some(copy_browser_node(ctx, node)?),
+                (Some(node), None) => Some(node.clone()),
                 _ => None,
             }
         } else {
             None
         };
-
-        ctx.reserve_vec(&mut out, 1, "f3d body presentation records")?;
         out.push(BodyPresentation {
             byte_offset: u64_from_index(frame.start),
             entity_suffix,
@@ -290,39 +266,18 @@ pub(crate) fn body_presentations(
     Ok(out)
 }
 
-fn copy_browser_node(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    node: &BrowserNodeRecord,
-) -> Result<BrowserNodeRecord, CodecError> {
-    let guid = String::from_utf8(ctx.copy_retained(
-        node.guid.as_bytes(),
-        "f3d body presentation browser node GUID",
-    )?)
-    .map_err(|_| CodecError::Malformed("F3D browser node GUID is invalid UTF-8".into()))?;
-    Ok(BrowserNodeRecord {
-        record_index: node.record_index,
-        guid,
-        entity_suffix: node.entity_suffix,
-        hidden_offset: node.hidden_offset,
-        hidden: node.hidden,
-    })
-}
-
 fn entity_types<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
     let mut out = HashMap::new();
     for design_type in &meta.types {
         for &entity_id in design_type.entities.values() {
             if out.contains_key(&entity_id) {
-                return Err(crate::design::text::malformed_design(
-                    ctx,
-                    format_args!("F3D Design entity {entity_id} has multiple registered types"),
-                ));
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D Design entity {entity_id} has multiple registered types"
+                )));
             }
 
-            ctx.reserve_map(&mut out, 1, "f3d presentation entity types")?;
             out.insert(
                 entity_id,
                 (design_type.type_guid.as_str(), design_type.version),
@@ -705,8 +660,6 @@ fn preceding_lp_utf16(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::u64_from_index;
-
     use super::{
         bare_presentation_material as bare_presentation_material_with_context,
         body_presentations as body_presentations_with_context,
@@ -756,30 +709,13 @@ mod tests {
     }
 
     #[test]
-    fn presentation_utf16_text_refuses_exact_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn presentation_utf16_text_decodes_exact_text() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
         let text = "A雪𐍈";
         let mut bytes = Vec::new();
         lp_utf16(&mut bytes, text);
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(text.len() - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::bytes::lp_utf16_bounded_charged(
-            &ctx,
-            &bytes,
-            0,
-            1..=256,
-            "f3d Design UTF-16 text",
-        )
-        .err()
-        .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "f3d Design UTF-16 text"
-        ));
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let decoded = crate::bytes::lp_utf16_bounded_charged(
@@ -807,9 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_records_and_entity_types_refuse_collection_limits() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+    fn browser_node_records_decode_one_node() {
         let mut bytes = Vec::new();
         lp_ascii(&mut bytes, "256");
         bytes.extend_from_slice(&43_u32.to_le_bytes());
@@ -828,26 +762,6 @@ mod tests {
             records: vec![primary_record(43, 0)],
             secondary_records: Vec::new(),
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 7;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = browser_node_records_with_context(&ctx, &bytes, &meta)
-            .err()
-            .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "f3d browser node records"
-        ));
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::entity_types(&ctx, &meta).err().unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "f3d presentation entity types"
-        ));
         crate::design::test_support::with_test_decode_context(|ctx| {
             let nodes = browser_node_records_with_context(ctx, &bytes, &meta).unwrap();
             assert_eq!(nodes.len(), 1);
@@ -944,9 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn linked_body_presentation_refuses_output_and_node_copy_limits() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+    fn linked_body_presentation_joins_its_browser_node() {
         let body_tag = 256u32;
         let node_tag = 257u32;
         let entity = (1u64 << 40) + 42;
@@ -1014,28 +926,6 @@ mod tests {
             records: vec![primary_record(entity, 0), primary_record(43, node_start)],
             secondary_records: Vec::new(),
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 31;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = body_presentations_with_context(&ctx, &bytes, &meta)
-            .err()
-            .unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "f3d body presentation records"
-        ));
-        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes = u64_from_index(node_guid.len() - 1);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let nodes = browser_node_records(&bytes, &meta).unwrap();
-        let error = super::copy_browser_node(&ctx, &nodes[0]).err().unwrap();
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "f3d body presentation browser node GUID"
-        ));
         let presentations = body_presentations(&bytes, &meta).unwrap();
         assert_eq!(presentations.len(), 1);
         assert_eq!(

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
     counted_role_relation, Angle, Length, Point2, SketchConstraintDefinitionInput, SketchEntityId,
-    SketchGeometry, SketchGeometryDefinition, SketchId, TEST_ANGLE_ROUNDING, TEST_LINEAR_TOLERANCE,
+    SketchGeometry, SketchGeometryDefinition, SketchId,
 };
-use cadmpeg_core::decode::ResourceDimension;
 
-fn fixture(operation: &'static str, dimension: ResourceDimension) {
+#[test]
+fn counted_role_relation_matches_roles_and_tangency() {
     let line = |id: &str, start, end| {
         cadmpeg_ir::sketches::SketchEntity::new(
             SketchEntityId::mint(id).unwrap(),
@@ -104,68 +104,4 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == arc.id() && &second == interior_tangent_arc.id()
     ));
-
-    let tangent_circle = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId::mint("generated:test:circle#rounded-tangent").unwrap(),
-        tangent_arc.sketch.clone(),
-        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-            center: Point2::new(0.0, 0.0),
-            radius: Length::new(1.0).unwrap(),
-        })
-        .unwrap(),
-    );
-    let rounded_tangent_arc = cadmpeg_ir::sketches::SketchEntity::new(
-        SketchEntityId::mint("generated:test:arc#rounded-tangent").unwrap(),
-        tangent_arc.sketch.clone(),
-        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center: Point2::new(2.0, 0.0),
-            radius: Length::new(1.0).unwrap(),
-            start_angle: Angle::new(TEST_ANGLE_ROUNDING).unwrap(),
-            end_angle: Angle::new(std::f64::consts::PI).unwrap(),
-        })
-        .unwrap(),
-    );
-    let selected = if operation == "f3d counted role relation at tolerance entity id" {
-        vec![&horizontal]
-    } else {
-        vec![&tangent_circle, &rounded_tangent_arc]
-    };
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::counted_role_relation_at_tolerance(
-            ctx,
-            &selected,
-            if operation == "f3d counted role relation at tolerance entity id" {
-                &[crate::records::sketch_relations::SketchConstraintKind::Horizontal]
-            } else {
-                &[crate::records::sketch_relations::SketchConstraintKind::Tangent]
-            },
-            TEST_LINEAR_TOLERANCE,
-        )
-        .transpose()
-        .map(|_| ())
-    });
-}
-
-#[test]
-fn counted_role_relation_at_tolerance_entity_id_refuses_retained_limit() {
-    fixture(
-        "f3d counted role relation at tolerance entity id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn counted_role_relation_at_tolerance_first_id_refuses_retained_limit() {
-    fixture(
-        "f3d counted role relation at tolerance first id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn counted_role_relation_at_tolerance_second_id_refuses_retained_limit() {
-    fixture(
-        "f3d counted role relation at tolerance second id",
-        ResourceDimension::RetainedBytes,
-    );
 }

@@ -30,13 +30,11 @@ use cadmpeg_core::CodecError;
 use std::collections::HashSet;
 
 pub(super) fn exact_surface_extend_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceExtendOperation>, CodecError> {
     let Some(operation) = exact_surface_boundary_operation(
-        ctx,
         bytes,
         records,
         scope,
@@ -80,7 +78,6 @@ pub(super) fn exact_surface_offset_operation(
         return Ok(Some(operation));
     }
     let Some(operation) = exact_surface_boundary_operation(
-        ctx,
         bytes,
         records,
         scope,
@@ -159,13 +156,6 @@ fn exact_surface_offset_face_groups(
                 return None;
             }
 
-            if let Err(error) = ctx.reserve_set(
-                &mut covered_references,
-                1,
-                "f3d surface offset covered reference",
-            ) {
-                return Some(Err(error));
-            }
             covered_references.insert(group.record_index);
             for member in group.members().iter().map(|member| &member.value) {
                 if *member == *distance_record_index
@@ -179,23 +169,9 @@ fn exact_surface_offset_face_groups(
                     return None;
                 }
 
-                if let Err(error) = ctx.reserve_set(
-                    &mut covered_references,
-                    1,
-                    "f3d surface offset covered reference",
-                ) {
-                    return Some(Err(error));
-                }
                 covered_references.insert(*member);
             }
 
-            if let Err(error) = ctx.reserve_vec(
-                &mut group_record_indices,
-                1,
-                "f3d surface offset face group",
-            ) {
-                return Some(Err(error));
-            }
             group_record_indices.push(group.record_index);
         }
         if group_record_indices.is_empty() || covered_references.len() != support_reference_count {
@@ -243,7 +219,6 @@ fn exact_construction_operand_group(
                     return None;
                 }
             }
-            ConstructionOperandGroupParse::Refused(error) => return Some(Err(error)),
             ConstructionOperandGroupParse::NotAGroup | ConstructionOperandGroupParse::Unclosed => {}
         }
     }
@@ -266,7 +241,6 @@ struct ExactSurfaceBoundaryOperation {
 }
 
 fn exact_surface_boundary_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -417,11 +391,6 @@ fn exact_surface_boundary_operation(
     };
 
     let mut edges = Vec::new();
-    ctx.reserve_vec(
-        &mut edges,
-        edge_record_indices.len(),
-        "f3d surface boundary edges",
-    )?;
     edges.extend(edge_record_indices.copied());
     Ok(Some(ExactSurfaceBoundaryOperation {
         distance: scalar.value,
@@ -463,7 +432,6 @@ pub(super) fn exact_surface_stitch_operation(
 }
 
 pub(super) fn exact_ruled_surface_operation(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -511,10 +479,6 @@ pub(super) fn exact_ruled_surface_operation(
             cursor = cursor.checked_add(4)?;
 
             let mut records = Vec::new();
-            if let Err(error) = ctx.reserve_vec(&mut records, count, "f3d ruled surface references")
-            {
-                return Some(Err(error));
-            }
             for _ in 0..count {
                 records.push(match fixed_reference(cursor) {
                     Some(record) => record,
@@ -548,16 +512,8 @@ pub(super) fn exact_ruled_surface_operation(
         };
         cursor = next;
 
-        if let Err(error) = ctx.reserve_vec(
-            &mut edge_group_record_indices,
-            trailing_edge_groups.len(),
-            "f3d ruled surface merged edge groups",
-        ) {
-            return Some(Err(error));
-        }
         edge_group_record_indices.extend(trailing_edge_groups);
-        let (direction_entity_id, direction_end) = match fixed_relaxed_guid_text(ctx, bytes, cursor)
-        {
+        let (direction_entity_id, direction_end) = match fixed_relaxed_guid_text(bytes, cursor) {
             Ok(Some(value)) => value,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),

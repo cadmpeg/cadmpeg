@@ -96,13 +96,9 @@ fn path_fixture() -> (
     (scope, vec![group], vec![operand], PathRef::Native(group_id))
 }
 
-fn bind_with_limits(
-    max_items: u64,
-    max_retained_bytes: u64,
-) -> Result<PathRef, cadmpeg_core::CodecError> {
+fn bind_with_limits(max_retained_bytes: u64) -> Result<PathRef, cadmpeg_core::CodecError> {
     let (scope, groups, operands, mut path) = path_fixture();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -114,53 +110,9 @@ fn bind_with_limits(
 }
 
 #[test]
-fn path_edge_slots_refuse_collection_limit() {
-    let error = bind_with_limits(0, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D path edge slots")
-    );
-}
-
-#[test]
-fn path_edge_ids_refuse_collection_limit() {
-    let error = bind_with_limits(1, u64::MAX).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D path edge identities")
-    );
-}
-
-#[test]
-fn path_edge_identity_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain F3D history input identity",
-        |cap| bind_with_limits(u64::MAX, cap).map(|_| ()),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D history input identity")
-    );
-}
-
-#[test]
-fn path_edge_validation_refuses_collection_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "validate PathRef historical edges edges",
-        |cap| bind_with_limits(cap, u64::MAX),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "validate PathRef historical edges edges")
-    );
-}
-
-#[test]
 fn path_edges_keep_historical_identity() {
     assert!(matches!(
-        bind_with_limits(3, u64::MAX).unwrap(),
+        bind_with_limits(u64::MAX).unwrap(),
         PathRef::HistoricalEdges { .. }
     ));
 }

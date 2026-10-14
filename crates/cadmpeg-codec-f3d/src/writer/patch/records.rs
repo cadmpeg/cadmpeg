@@ -177,12 +177,6 @@ fn patch_utf16_if_changed(
 }
 
 pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     let Some((stream, _)) = id
         .strip_prefix(crate::ids::SCHEME_PREFIX)
         .and_then(|id| id.rsplit_once(delimiter))
@@ -191,7 +185,7 @@ pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecEr
             "invalid native record id {id}"
         )));
     };
-    crate::ids::decode_identity_key_component(&ctx, stream)?
+    crate::ids::decode_identity_key_component(stream)?
         .ok_or_else(|| CodecError::malformed(format_args!("invalid native record id {id}")))
 }
 

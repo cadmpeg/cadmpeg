@@ -172,10 +172,7 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
     let history = test_history();
     let mut scope = hole_scope();
 
-    crate::test_support::with_decode_context(|decode_ctx| {
-        bind_hole_selection_history(decode_ctx, std::slice::from_mut(&mut scope), &[history])
-    })
-    .unwrap();
+    { bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]) }.unwrap();
 
     assert_eq!(
         scope
@@ -213,10 +210,7 @@ fn edge_backed_hole_selection_rejects_ambiguous_support_planes() {
         .normal = Vector3::new(0.0, 0.0, 1.0);
     let mut scope = hole_scope();
 
-    crate::test_support::with_decode_context(|decode_ctx| {
-        bind_hole_selection_history(decode_ctx, std::slice::from_mut(&mut scope), &[history])
-    })
-    .unwrap();
+    { bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]) }.unwrap();
 
     assert!(scope
         .hole_construction()

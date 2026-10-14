@@ -3,8 +3,6 @@ use crate::design::dimensions::relation_kind_name;
 use crate::records::sketch_relations::{
     SketchRelation, SketchRelationDefinition, SketchRelationDraft,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 fn relation(state: u64) -> SketchRelation {
     SketchRelation::try_new(SketchRelationDraft {
@@ -28,36 +26,16 @@ fn relation(state: u64) -> SketchRelation {
 }
 
 #[test]
-fn relation_kind_text_refuses_retained_limit_and_preserves_order() {
-    let relation = relation(0x8000_0000_0000_0011);
-    let expected = "coincident+parallel+unknown_bits";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(relation_kind_name(&relation, &ctx),
-        Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
-            && failure.operation == "f3d sketch constraint native kind"));
+fn relation_kind_text_preserves_order() {
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| relation_kind_name(
-            &relation, decode_ctx
-        ))
-        .unwrap(),
-        expected
+        relation_kind_name(&relation(0x8000_0000_0000_0011)),
+        "coincident+parallel+unknown_bits"
     );
 }
 
 #[test]
-fn relation_kind_temporary_collection_is_removed() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        relation_kind_name(&relation(0), &ctx).unwrap(),
-        "coincident"
-    );
+fn relation_kind_names_single_kinds() {
+    assert_eq!(relation_kind_name(&relation(0)), "coincident");
     assert_eq!(
         crate::design::relation_kinds::sole_constraint_kind(&relation(0)),
         Some(crate::records::sketch_relations::SketchConstraintKind::Coincident)

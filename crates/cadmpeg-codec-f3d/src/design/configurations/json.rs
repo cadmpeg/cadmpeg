@@ -38,17 +38,11 @@ pub(super) fn parse_configuration_payload(
     entry_name: &str,
     bytes: &[u8],
 ) -> Result<Value, CodecError> {
-    let _scratch = crate::design::json_value::reserve_json_scratch(
-        ctx,
-        bytes.len(),
-        "f3d configuration JSON",
-    )?;
     let mut refusal = None;
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let parsed = ValueSeed {
         ctx,
         refusal: &mut refusal,
-        member: false,
     }
     .deserialize(&mut deserializer)
     .and_then(|value| {
@@ -59,10 +53,9 @@ pub(super) fn parse_configuration_payload(
         Ok(value) => Ok(value),
         Err(error) => match refusal {
             Some(error) => Err(error),
-            None => Err(CodecError::Malformed(ctx.format_retained(
-                format_args!("invalid F3D configuration JSON {entry_name}: {error}"),
-                "f3d configuration JSON diagnostic",
-            )?)),
+            None => Err(CodecError::malformed(format_args!(
+                "invalid F3D configuration JSON {entry_name}: {error}"
+            ))),
         },
     }
 }

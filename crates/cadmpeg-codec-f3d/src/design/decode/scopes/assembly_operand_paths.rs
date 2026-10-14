@@ -15,11 +15,10 @@ use crate::layout::assembly_variable_reference_operand_path_locator as variable_
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 pub(super) fn exact_assembly_operand_paths(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -54,7 +53,6 @@ pub(super) fn exact_assembly_operand_paths(
             let mut candidate = None;
             for locator_at in candidates {
                 let parsed = match exact_assembly_operand_path_envelope(
-                    ctx,
                     bytes,
                     scope,
                     locator_record_index,
@@ -100,7 +98,6 @@ pub(super) fn exact_assembly_operand_paths(
 }
 
 fn exact_assembly_operand_path_envelope(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     locator_record_index: u32,
@@ -186,14 +183,11 @@ fn exact_assembly_operand_path_envelope(
         if next_indexed_record_offset(bytes, locator_at.checked_add(1)?)? != path_at {
             return None;
         }
-        let span_count =
-            usize::try_from(wrapper_record_index.checked_sub(path_record_index)?).ok()?;
+        if wrapper_record_index < path_record_index {
+            return None;
+        }
 
         let mut path_spans = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut path_spans, span_count, "f3d assembly path spans")
-        {
-            return Some(Err(error));
-        }
         let mut record_index = path_record_index;
         let mut record_at = path_at;
         let wrapper_at = loop {
@@ -267,7 +261,7 @@ fn exact_assembly_operand_path_envelope(
             path_reference_offset,
         };
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
-            exact_assembly_operand_path(ctx, bytes, start, record_index, limit, link.clone())
+            exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
         });
         let mut path = match paths.next()? {
             Ok(Some(path)) => path,
@@ -286,11 +280,7 @@ fn exact_assembly_operand_path_envelope(
             if !variable_reference || continuation.class_tag().as_str() != "330" {
                 return None;
             }
-            path = match path.try_append(continuation, ctx) {
-                Ok(Some(path)) => path,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+            path = path.try_append(continuation)?;
         }
         Some(Ok(path))
     })()
@@ -298,7 +288,6 @@ fn exact_assembly_operand_path_envelope(
 }
 
 fn exact_assembly_operand_path(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     record_index: u32,
@@ -325,7 +314,7 @@ fn exact_assembly_operand_path(
                 }
                 let mut position = after_tag + 18;
                 let (occurrence, after_occurrence) =
-                    match fixed_relaxed_guid_text(ctx, bytes.get(..end)?, position) {
+                    match fixed_relaxed_guid_text(bytes.get(..end)?, position) {
                         Ok(Some(value)) => value,
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
@@ -337,7 +326,7 @@ fn exact_assembly_operand_path(
                 position = after_occurrence;
                 for _ in 0..2 {
                     let (guid, after_guid) =
-                        match fixed_relaxed_guid_text(ctx, bytes.get(..end)?, position) {
+                        match fixed_relaxed_guid_text(bytes.get(..end)?, position) {
                             Ok(Some(value)) => value,
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
@@ -354,7 +343,7 @@ fn exact_assembly_operand_path(
                 position += 8;
                 for _ in 0..2 {
                     let (guid, after_guid) =
-                        match fixed_relaxed_guid_text(ctx, bytes.get(..end)?, position) {
+                        match fixed_relaxed_guid_text(bytes.get(..end)?, position) {
                             Ok(Some(value)) => value,
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
@@ -380,17 +369,10 @@ fn exact_assembly_operand_path(
                     return None;
                 }
 
-                if let Err(error) = ctx.reserve_vec(
-                    &mut occurrence_guids,
-                    count,
-                    "f3d assembly path occurrences",
-                ) {
-                    return Some(Err(error));
-                }
                 let mut position = after_tag + 18;
                 for _ in 0..count {
                     let (guid, after_guid) =
-                        match fixed_relaxed_guid_text(ctx, bytes.get(..limit)?, position) {
+                        match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
                             Ok(Some(value)) => value,
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
@@ -408,7 +390,7 @@ fn exact_assembly_operand_path(
                 } else {
                     for _ in 0..2 {
                         let (guid, after_guid) =
-                            match fixed_relaxed_guid_text(ctx, bytes.get(..limit)?, position) {
+                            match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
                                 Ok(Some(value)) => value,
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
@@ -425,7 +407,7 @@ fn exact_assembly_operand_path(
                     position += 8;
                     for _ in 0..2 {
                         let (guid, after_guid) =
-                            match fixed_relaxed_guid_text(ctx, bytes.get(..limit)?, position) {
+                            match fixed_relaxed_guid_text(bytes.get(..limit)?, position) {
                                 Ok(Some(value)) => value,
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),

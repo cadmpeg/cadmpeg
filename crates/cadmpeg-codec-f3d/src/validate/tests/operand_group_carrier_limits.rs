@@ -84,100 +84,6 @@ pub(super) fn native_with_identity() -> crate::native::F3dNative {
 }
 
 #[test]
-fn operand_group_identity_members_refuse_collection_limit() {
-    crate::test_support::with_decode_context(|service_ctx| {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native_with_identity();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        let error = super::super::validate_operand_group_carriers(
-            &ctx,
-            &mut Vec::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D operand group identity members")
-        );
-    })
-}
-
-fn carrier_error(
-    trailing_only: bool,
-    max_items: u64,
-    max_retained: u64,
-) -> cadmpeg_core::CodecError {
-    crate::test_support::with_decode_context(|service_ctx| {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native(trailing_only);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        policy.limits.max_retained_bytes = max_retained;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        super::super::validate_operand_group_carriers(
-            &ctx,
-            &mut Vec::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-        )
-        .unwrap_err()
-    })
-}
-
-#[test]
-fn operand_group_missing_member_refuses_finding_limit() {
-    let error = carrier_error(false, 0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings")
-    );
-}
-
-#[test]
-fn operand_group_missing_member_refuses_entity_limit() {
-    let error = carrier_error(false, u64::MAX, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity")
-    );
-}
-
-#[test]
-fn operand_group_missing_trailing_carrier_refuses_finding_limit() {
-    let error = carrier_error(true, 0, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "collect F3D native validation findings")
-    );
-}
-
-#[test]
-fn operand_group_missing_trailing_carrier_refuses_entity_limit() {
-    let error = carrier_error(true, u64::MAX, 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D validation entity")
-    );
-}
-
-#[test]
 fn operand_group_missing_member_preserves_finding_text() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -192,8 +98,7 @@ fn operand_group_missing_member_preserves_finding_text() {
             &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
-        )
-        .unwrap();
+        );
         assert_eq!(findings.len(), 1);
         assert_eq!(
             findings[0].message,
@@ -218,8 +123,7 @@ fn operand_group_exact_identity_member_has_no_finding() {
             &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
-        )
-        .unwrap();
+        );
         assert!(findings.is_empty());
     })
 }

@@ -67,12 +67,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         Some((AsmHistoricalEntityKind::Vertex, vec![5]))
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
-            std::slice::from_ref(&history),
-            42
-        ))
-        .unwrap(),
+        historical_selection_identity_kind(std::slice::from_ref(&history), 42),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
     );
     assert_eq!(
@@ -89,21 +84,11 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         record_ref: 701,
     }];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
-            std::slice::from_ref(&revision_history),
-            700
-        ))
-        .unwrap(),
+        historical_selection_identity_kind(std::slice::from_ref(&revision_history), 700),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3]))
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
-            std::slice::from_ref(&revision_history),
-            701
-        ))
-        .unwrap(),
+        historical_selection_identity_kind(std::slice::from_ref(&revision_history), 701),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![5]))
     );
     let revision_change = |new_ref| AsmEntityChange {
@@ -125,12 +110,10 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         changes: vec![revision_change(42)],
     }];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
+        historical_selection_identity_kind(
             std::slice::from_ref(&reconstructed_revision_history),
             700
-        ))
-        .unwrap(),
+        ),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
     );
     let mut incomplete_revision_history = reconstructed_revision_history.clone();
@@ -142,24 +125,17 @@ fn design_identity_resolves_only_one_invariant_history_family() {
                 .clone(),
         );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
-            std::slice::from_ref(&incomplete_revision_history),
-            700
-        ))
-        .unwrap(),
+        historical_selection_identity_kind(std::slice::from_ref(&incomplete_revision_history), 700),
         None
     );
     reconstructed_revision_history.states[0].bulletin_boards[0]
         .changes
         .push(revision_change(90));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
+        historical_selection_identity_kind(
             std::slice::from_ref(&reconstructed_revision_history),
             700
-        ))
-        .unwrap(),
+        ),
         None
     );
     revision_history.states[0].entity_versions = vec![AsmEntityVersion {
@@ -167,12 +143,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         record_ref: 42,
     }];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
-            std::slice::from_ref(&revision_history),
-            42
-        ))
-        .unwrap(),
+        historical_selection_identity_kind(std::slice::from_ref(&revision_history), 42),
         None
     );
     let duplicate_state_history = AsmHistory {
@@ -198,12 +169,10 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         record_ref: 700,
     }];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
+        historical_selection_identity_kind(
             &[revision_history.clone(), duplicate_revision_history],
             700
-        ))
-        .unwrap(),
+        ),
         None
     );
     let ambiguous = AsmHistory {
@@ -283,20 +252,10 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
             transition: None,
         }],
     };
-    let identities = crate::test_support::with_decode_context(|decode_ctx| {
-        HistoricalIdentityIndex::build(decode_ctx, std::slice::from_ref(&history), [700, 800])
-    })
-    .unwrap();
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
-        entity_selection_edge_candidates(
-            decode_ctx,
-            [(0, 700), (1, 800)],
-            3,
-            &identities,
-            &topology,
-        )
-    })
-    .unwrap();
+    let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&history), [700, 800]);
+    let candidates =
+        { entity_selection_edge_candidates([(0, 700), (1, 800)], 3, &identities, &topology) }
+            .unwrap();
     assert_eq!(
         candidates,
         [
@@ -382,12 +341,7 @@ fn a_retained_state_beside_a_complete_snapshot_resolves_no_reconstructed_revisio
     let history: AsmHistory = serde_json::from_value(document).unwrap();
     assert!(!history.projection_finalized());
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(
-            decode_ctx,
-            std::slice::from_ref(&history),
-            700
-        ))
-        .unwrap(),
+        historical_selection_identity_kind(std::slice::from_ref(&history), 700),
         None
     );
 }

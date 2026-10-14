@@ -353,25 +353,17 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ];
     let second_operand = edge_operand.clone();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::radius_edge_group_candidates(
-                &[&edge_operand, &second_operand],
-                3.0,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::radius_edge_group_candidates(
+            &[&edge_operand, &second_operand],
+            3.0,
+        ),
         Some(vec![17, 18])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::radius_edge_group_candidates(
-                &[&edge_operand, &second_operand],
-                4.0,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::radius_edge_group_candidates(
+            &[&edge_operand, &second_operand],
+            4.0,
+        ),
         None
     );
     let mut chain_left = edge_operand.clone();
@@ -394,52 +386,36 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ];
     chain_right.deleted_boundary_edge_slots = vec![19, 20];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::radius_edge_group_candidates(
-                &[&chain_left, &chain_right],
-                3.0,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::radius_edge_group_candidates(
+            &[&chain_left, &chain_right],
+            3.0,
+        ),
         Some(vec![17, 18, 19, 20])
     );
     let mut context_operand = edge_operand.clone();
     context_operand.treatment_radius_candidates.clear();
     context_operand.changed_boundary_edge_slots = vec![16, 17];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::radius_edge_group_candidates(
-                &[&edge_operand, &context_operand],
-                3.0,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::radius_edge_group_candidates(
+            &[&edge_operand, &context_operand],
+            3.0,
+        ),
         None
     );
     context_operand.changed_boundary_edge_slots.clear();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::radius_edge_group_candidates(
-                &[&edge_operand, &context_operand],
-                3.0,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::radius_edge_group_candidates(
+            &[&edge_operand, &context_operand],
+            3.0,
+        ),
         Some(vec![17, 18])
     );
     context_operand.changed_boundary_edge_slots = vec![15, 16];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::radius_edge_group_candidates(
-                &[&edge_operand, &context_operand],
-                3.0,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
+        crate::design::edge_resolve::radius_edge_group_candidates(
+            &[&edge_operand, &context_operand],
+            3.0,
+        ),
         None
     );
     let mut resolved_operand = edge_operand.clone();
@@ -1040,9 +1016,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         [2, 3, -1, 0, 0, -1, 4, -1, 0, 0, -1]
     );
     assert_eq!(extended_payload.sides[0].entries.len(), 1);
-    let surface_patch = crate::test_support::with_decode_context(|ctx| {
+    let surface_patch =
         crate::design::decode::operands::surface_patch_recipe_structure_with_context(
-            ctx,
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
@@ -1051,8 +1026,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             4,
         )
         .expect("recipe structure")
-    })
-    .expect("SurfacePatch two-clause recipe structure");
+        .expect("SurfacePatch two-clause recipe structure");
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
     assert_eq!(surface_patch.clauses[0].edge_reference_ordinals, [0, 2]);
@@ -1062,9 +1036,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(surface_patch.clauses[1].edge_reference_ordinals, [0, 3]);
     assert_eq!(surface_patch.clauses[1].entries.len(), 0);
     assert!(surface_patch.clauses[1].entries.is_empty());
-    assert!(crate::test_support::with_decode_context(|ctx| {
+    assert!(
         crate::design::decode::operands::surface_patch_recipe_structure_with_context(
-            ctx,
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
@@ -1073,11 +1046,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             3,
         )
         .expect("recipe structure")
-    })
-    .is_none());
-    assert!(crate::test_support::with_decode_context(|ctx| {
+        .is_none()
+    );
+    assert!(
         crate::design::decode::operands::surface_patch_recipe_structure_with_context(
-            ctx,
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
@@ -1086,8 +1058,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             4,
         )
         .expect("recipe structure")
-    })
-    .is_none());
+        .is_none()
+    );
     let mut surface_patch_operand = edge_operand.clone();
     surface_patch_operand.surface_patch_recipe_structure = Some(surface_patch.clone());
     surface_patch_operand.recipe_state_id = Some(8);
@@ -1250,27 +1222,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         matching_edge_operand_ids: Vec::new(),
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
-                ctx,
-                &dimension_recipe,
-                std::slice::from_ref(&edge_operand),
-            )
-            .expect("recipe references")
-        }),
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+            &dimension_recipe,
+            std::slice::from_ref(&edge_operand),
+        ),
         [edge_operand.id.clone()]
     );
     let mut other_stream_operand = edge_operand.clone();
     other_stream_operand.id = "f3d:Other/BulkStream.dat:edge-operand#100".into();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
-                ctx,
-                &dimension_recipe,
-                &[edge_operand.clone(), other_stream_operand],
-            )
-            .expect("recipe references")
-        }),
+        crate::design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
+            &dimension_recipe,
+            &[edge_operand.clone(), other_stream_operand],
+        ),
         [edge_operand.id.clone()]
     );
 

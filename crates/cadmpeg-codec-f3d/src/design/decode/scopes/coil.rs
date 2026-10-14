@@ -460,10 +460,7 @@ fn exact_coil_face_selection(
             Ok(prefix) => prefix,
             Err(error) => return Some(Err(error)),
         };
-        let id = match ctx.copy_retained_text(&scope.id, "f3d Coil selection header ID") {
-            Ok(id) => id,
-            Err(error) => return Some(Err(error)),
-        };
+        let id = scope.id.to_owned();
         let header = DesignRecordHeader {
             id,
             byte_offset: u64::try_from(selection_start).ok()?,
@@ -491,10 +488,7 @@ fn exact_coil_face_selection(
             return None;
         }
         let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
-        let recipe_id = match ctx.copy_retained_text(&recipe.id, "f3d Coil face recipe ID") {
-            Ok(id) => id,
-            Err(error) => return Some(Err(error)),
-        };
+        let recipe_id = recipe.id.to_owned();
         Some(Ok(DesignCoilSelection::FaceRecipe {
             asset_id: prefix.asset_id.try_into().ok()?,
             context_id: prefix.context_id.try_into().ok()?,
@@ -732,16 +726,15 @@ fn exact_long_coil_transform_values(
 }
 
 pub(super) fn bind_coil_extent_from_parameters(
-    ctx: &DecodeContext<'_>,
     scope: &mut DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
-) -> Result<(), CodecError> {
+) {
     if scope.kind() != scope::DesignFeatureKind::CoilPrimitive || scope.coil_extent().is_some() {
-        return Ok(());
+        return;
     }
     let Some(stream) = native_stream(&scope.id) else {
-        return Ok(());
+        return;
     };
     let owned_kinds = parameter_owners
         .iter()
@@ -762,17 +755,12 @@ pub(super) fn bind_coil_extent_from_parameters(
     let mut count = 0usize;
     for kind in owned_kinds {
         if count == sorted.len() {
-            return Ok(());
+            return;
         }
         sorted[count] = kind;
         count += 1;
     }
-    ctx.sort_unstable_by(
-        &mut sorted[..count],
-        |left, right| left.0.cmp(&right.0),
-        |_| 0,
-        "f3d coil parameter owner ordinals sort",
-    )?;
+    sorted[..count].sort_unstable_by(|left, right| left.0.cmp(&right.0));
     let mut kinds = [""; 5];
     for (index, (_, source_kind)) in sorted[..count].iter().enumerate() {
         kinds[index] = source_kind;
@@ -803,7 +791,6 @@ pub(super) fn bind_coil_extent_from_parameters(
             );
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

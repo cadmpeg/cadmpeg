@@ -6,11 +6,10 @@ use cadmpeg_core::container::ContainerRole;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use std::fmt::Write;
 
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
+use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
@@ -29,15 +28,11 @@ pub(crate) fn decode_component_occurrences(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let scope = native_scope_charged(ctx, &entry.name)?;
+        let scope = crate::ids::native_scope(&entry.name);
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
             if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
-                ctx.push_vec(
-                    &mut occurrences,
-                    occurrence,
-                    "f3d decoded component occurrence",
-                )?;
+                occurrences.push(occurrence);
             }
             let Some(next_at) = start.checked_add(1) else {
                 break;
@@ -45,12 +40,7 @@ pub(crate) fn decode_component_occurrences(
             at = next_at;
         }
     }
-    ctx.stable_sort_by(
-        &mut occurrences[..],
-        |a, b| a.id.cmp(&b.id),
-        |value| value.id.as_str().len(),
-        "sort f3d design components 1",
-    )?;
+    occurrences.sort_by(|a, b| a.id.cmp(&b.id));
     occurrences.dedup_by(|left, right| left.id == right.id);
     Ok(occurrences)
 }
@@ -161,24 +151,7 @@ fn exact_component_occurrence(
     else {
         return Ok(None);
     };
-    let mut digits = 1usize;
-    let mut remaining = start;
-    while remaining >= 10 {
-        digits += 1;
-        remaining /= 10;
-    }
-
-    let id_bytes = stream
-        .len()
-        .checked_add(SUFFIX.len())
-        .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d component occurrence id length", 0, 1))?;
-
-    let mut id = ctx.retained_string(id_bytes, "f3d component occurrence id")?;
-    id.push_str(stream);
-    id.push_str(SUFFIX);
-    write!(&mut id, "{start}")
-        .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence id formatting", 0, 1))?;
+    let id = format!("{stream}{SUFFIX}{start}");
     Ok(DesignComponentOccurrence::try_new(
         crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
             id,
@@ -200,7 +173,7 @@ mod tests {
 
     use super::exact_component_occurrence;
     use crate::test_support::indexed_header;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";
@@ -328,78 +301,6 @@ mod tests {
             exact_component_occurrence(&ctx, &placed_seed, 0, "f3d:Design/BulkStream.dat")
                 .unwrap()
                 .is_none()
-        );
-    }
-
-    #[test]
-    fn component_occurrence_id_refuses_retained_limit() {
-        let mut seed = common(229, 1);
-        seed[208] = 1;
-        seed[218] = 1;
-        indexed_header(&mut seed, *b"333", 21);
-        let stream = "f3d:synthetic";
-        let id_bytes = stream.len() + ":design-component-occurrence#".len() + 1;
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64::try_from(72 + id_bytes - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = exact_component_occurrence(&ctx, &seed, 0, stream)
-            .expect_err("one native occurrence ID exceeds the retained-byte limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d component occurrence id")
-        );
-    }
-
-    #[test]
-    fn component_occurrence_guid_text_refuses_each_retained_limit() {
-        let mut seed = common(229, 1);
-        seed[208] = 1;
-        seed[218] = 1;
-        indexed_header(&mut seed, *b"333", 21);
-        for limit in [35, 71] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let error = exact_component_occurrence(&ctx, &seed, 0, "f3d:synthetic")
-                .err()
-                .unwrap();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::RetainedBytes
-                    && refusal.operation == "f3d Design UTF-16 text")
-            );
-        }
-    }
-
-    #[test]
-    fn decoded_component_occurrence_refuses_collection_limit() {
-        let mut seed = common(229, 1);
-        seed[208] = 1;
-        seed[218] = 1;
-        indexed_header(&mut seed, *b"333", 21);
-        let arena = DecodeArena::new();
-        let (parse_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-        let occurrence = exact_component_occurrence(&parse_ctx, &seed, 0, "f3d:synthetic")
-            .unwrap()
-            .expect("valid fixed component occurrence");
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = ctx
-            .push_vec(
-                &mut Vec::new(),
-                occurrence,
-                "f3d decoded component occurrence",
-            )
-            .expect_err("one decoded occurrence needs one collection item");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d decoded component occurrence")
         );
     }
 }

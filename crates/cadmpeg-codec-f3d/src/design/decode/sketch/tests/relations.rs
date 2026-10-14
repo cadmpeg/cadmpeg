@@ -14,9 +14,7 @@ fn tested_parse_classed_sketch_relation(
     payload: &[u8],
     class: SketchRelationClass,
 ) -> Option<crate::design::decode::sketch::ParsedSketchRelation> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        parse_classed_sketch_relation(ctx, payload, class).unwrap()
-    })
+    parse_classed_sketch_relation(payload, class).unwrap()
 }
 
 #[test]
@@ -447,32 +445,6 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
     )
     .unwrap()
     .is_none());
-}
-
-#[test]
-fn genesis_entity_header_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"281");
-    bytes.extend_from_slice(&201u32.to_le_bytes());
-    bytes.extend_from_slice(&[0u8; 10]);
-    push_genesis_block(&mut bytes, 4);
-    bytes.extend_from_slice(&5u32.to_le_bytes());
-    for unit in "0_201".encode_utf16() {
-        bytes.extend_from_slice(&unit.to_le_bytes());
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = parse_genesis_entity_header(&ctx, &bytes, 0).err().unwrap();
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "f3d Design UTF-16 text"
-    ));
 }
 
 fn genesis_relation_record(

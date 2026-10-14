@@ -121,7 +121,7 @@ fn locus_findings(group: DesignDimensionLocusGroup) -> Vec<cadmpeg_ir::report::c
         ctx.entities_by_suffix.insert((stream, 4), &entity);
         ctx.sketch_geometry_indices.insert((stream, 10));
         let mut findings = Vec::new();
-        super::super::validate_dimension_locus_groups(&ctx, &mut findings).unwrap();
+        super::super::validate_dimension_locus_groups(&ctx, &mut findings);
         findings
     })
 }
@@ -235,7 +235,7 @@ fn companion_findings(
         ctx.owners_by_index.insert((stream, 6), &owner);
         ctx.records_by_index.insert((stream, 8), &header);
         let mut findings = Vec::new();
-        super::super::validate_parameter_companions(&ctx, &mut findings).unwrap();
+        super::super::validate_parameter_companions(&ctx, &mut findings);
         findings
     })
 }
@@ -391,7 +391,7 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         ctx.sketch_geometry_indices
             .extend([(stream, 10), (stream, 11)]);
         let mut findings = Vec::new();
-        super::super::validate_dimension_annotation_frames(&ctx, &mut findings).unwrap();
+        super::super::validate_dimension_annotation_frames(&ctx, &mut findings);
         findings
     })
 }

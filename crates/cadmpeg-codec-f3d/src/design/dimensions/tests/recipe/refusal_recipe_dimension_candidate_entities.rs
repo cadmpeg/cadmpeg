@@ -3,9 +3,9 @@ use super::{
     Point2, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId,
 };
-use cadmpeg_core::decode::ResourceDimension;
 
-fn fixture(operation: &'static str, dimension: ResourceDimension) {
+#[test]
+fn recipe_linear_dimension_candidates_resolve_unique_vertical_distance() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |name: &str, u, v| {
         SketchEntity::new(
@@ -39,23 +39,4 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     })
     .unwrap();
     assert_eq!(candidates.len(), 2);
-    super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::recipe_dimension_candidate_entities(ctx, &candidates).map(|_| ())
-    });
-}
-
-#[test]
-fn recipe_native_entity_id_refuses_retained_limit() {
-    fixture(
-        "f3d recipe native entity id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn recipe_native_entity_refuses_collection_limit() {
-    fixture(
-        "f3d recipe native entity",
-        ResourceDimension::CollectionItems,
-    );
 }

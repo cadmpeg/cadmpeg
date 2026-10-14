@@ -9,9 +9,7 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::HashMap;
 
-fn split_face_case(
-    max_items: u64,
-) -> Result<
+fn split_face_case() -> Result<
     (
         Vec<cadmpeg_ir::features::Feature>,
         cadmpeg_ir::ids::FaceId,
@@ -192,8 +190,7 @@ fn split_face_case(
     }];
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     super::super::bind_feature_face_selections(
         &ctx,
@@ -213,18 +210,9 @@ fn split_face_case(
 }
 
 #[test]
-fn split_face_binding_refuses_collection_limit() {
-    let result = split_face_case(0);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
-    ));
-}
-
-#[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-    let (features, face_id, group_id) = split_face_case(u64::MAX).unwrap();
+    let (features, face_id, group_id) = split_face_case().unwrap();
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -671,12 +659,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         ),
     ];
 
-    bind_sweep_result_modes(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut features,
-        &bodies,
-    )
-    .unwrap();
+    bind_sweep_result_modes(&mut features, &bodies);
 
     let modes = features.map(|feature| match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.mode(),
@@ -691,100 +674,6 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     );
     assert_eq!(modes[2], SweepMode::Unresolved {});
     assert_eq!(modes[3], SweepMode::Unresolved {});
-}
-
-#[test]
-fn sweep_body_kind_index_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::topology::{Body, BodyKind};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let body = Body {
-        id: BodyId::mint("test:model:body#solid").unwrap(),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let error = bind_sweep_result_modes(&ctx, &mut [], &[body]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D sweep body kinds")
-    );
-}
-
-#[test]
-fn solid_sweep_section_conversion_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, SweepMode, SweepSection,
-    };
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::topology::{Body, BodyKind};
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let body_id = BodyId::mint("test:model:body#solid").unwrap();
-    let body = Body {
-        id: body_id.clone(),
-        kind: BodyKind::Solid,
-        regions: Vec::new(),
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let feature = Feature {
-        id: FeatureId::mint("synthetic:test:id#solid-sweep").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-            FeatureDefinition::Operation(FeatureOperation::Sweep {
-                shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                    SweepMode::Unresolved {},
-                    SweepSection::Unresolved(None),
-                    vec![SweepSection::Unresolved(None)],
-                ),
-                path: None,
-                orientation: None,
-                transition: None,
-                transformation: None,
-                path_tangent: false,
-                linearize: false,
-                twist: None,
-                path_extent: None,
-                guide_rail: None,
-                taper: None,
-                scale: None,
-                allow_multi_profile_faces: None,
-            }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![body_id],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-        ),
-        native_ref: None,
-    };
-    let error = bind_sweep_result_modes(&ctx, &mut [feature], &[body]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "convert F3D solid sweep sections")
-    );
 }
 
 #[test]
@@ -855,9 +744,7 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
 }
 
-fn hole_face_case(
-    max_items: u64,
-) -> Result<
+fn hole_face_case() -> Result<
     (
         cadmpeg_ir::features::Feature,
         Vec<cadmpeg_ir::features::FeatureInputTopology>,
@@ -1053,8 +940,7 @@ fn hole_face_case(
     };
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     bind_feature_face_selections(
         &ctx,
@@ -1074,18 +960,9 @@ fn hole_face_case(
 }
 
 #[test]
-fn hole_face_binding_refuses_collection_limit() {
-    let result = hole_face_case(0);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
-    ));
-}
-
-#[test]
 fn hole_face_selection_binds_to_the_feature_input_topology() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-    let (feature, input_topologies, feature_id) = hole_face_case(u64::MAX).unwrap();
+    let (feature, input_topologies, feature_id) = hole_face_case().unwrap();
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:

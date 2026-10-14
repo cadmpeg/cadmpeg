@@ -3,8 +3,7 @@
 use crate::design::dimensions::bind_offset_dimension_parameters;
 use crate::ids::neutral_parameter_id;
 use crate::records::parameters::DesignParameter;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
     SketchNativeOperand, SketchOffsetPair,
@@ -99,118 +98,4 @@ fn offset_dimension_binding_preserves_parameter_and_removes_annotation() {
     assert!(matches!(constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Offset { parameter: Some(driving), .. }
             if driving.id == neutral_parameter_id(&parameters[0]) && !driving.negated));
-}
-
-fn assert_offset_binding_limit(operation: &'static str, dimension: ResourceDimension) {
-    let (constraints, parameters) = offset_binding_fixture();
-    let mut found = false;
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("unsupported limit dimension"),
-        }
-        let refusal_cap =
-            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut constraints = constraints.clone();
-                bind_offset_dimension_parameters(&ctx, &mut constraints, &parameters)
-            }) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                error => panic!("unexpected refusal: {error:?}"),
-            };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut constraints = constraints.clone();
-        if matches!(
-            bind_offset_dimension_parameters(&ctx, &mut constraints, &parameters),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation && failure.dimension == dimension
-        ) {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no limit reached {operation}");
-}
-
-#[test]
-fn offset_parameter_value_index_refuses_collection_limit() {
-    assert_offset_binding_limit(
-        "f3d offset parameter value index",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn offset_binding_parameter_id_refuses_retained_limit() {
-    assert_offset_binding_limit(
-        "f3d offset binding parameter id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn offset_dimension_binding_refuses_collection_limit() {
-    assert_offset_binding_limit(
-        "f3d offset dimension binding",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn offset_binding_count_refuses_collection_limit() {
-    assert_offset_binding_limit(
-        "f3d offset binding count",
-        ResourceDimension::CollectionItems,
-    );
-}
-
-#[test]
-fn offset_driving_parameter_id_refuses_retained_limit() {
-    assert_offset_binding_limit(
-        "f3d offset driving parameter id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
-fn offset_removed_dimension_refuses_collection_limit() {
-    assert_offset_binding_limit(
-        "f3d offset removed dimension",
-        ResourceDimension::CollectionItems,
-    );
 }

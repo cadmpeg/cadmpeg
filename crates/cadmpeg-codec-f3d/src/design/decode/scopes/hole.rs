@@ -90,7 +90,6 @@ pub(in crate::design::decode) fn exact_hole_construction(
                     continue;
                 };
                 let next = match hole_construction_frame_at(
-                    ctx,
                     bytes,
                     start,
                     paired_at,
@@ -191,7 +190,6 @@ fn exact_hole_face_selection(
 }
 
 fn hole_construction_frame_at(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -248,11 +246,6 @@ fn hole_construction_frame_at(
         }
 
         let mut input_records = Vec::new();
-        if let Err(error) =
-            ctx.reserve_vec(&mut input_records, input_count, "f3d Hole input records")
-        {
-            return Some(Err(error));
-        }
         for _ in 0..input_count {
             let reference_at = cursor;
             let reference = take_reference(body, &mut cursor)?;

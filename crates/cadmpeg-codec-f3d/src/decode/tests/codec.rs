@@ -566,56 +566,6 @@ fn inspect_enumerates_and_reads_headers() {
 }
 
 #[test]
-fn f3d_brep_scan_propagates_header_string_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let bytes = synthetic_f3d(true);
-    let mut cap = 0;
-    let mut needed = None;
-    for _ in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (limited, root) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        match container::scan(&limited, root) {
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes =>
-            {
-                let next = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("fixture charge fits u64");
-                if limit.operation == "retain kernel header product string" {
-                    needed = Some(next);
-                    break;
-                }
-                assert!(next > cap, "fixture advances to its next retained charge");
-                cap = next;
-            }
-            Ok(_) => panic!("BREP scan did not reach the header limit"),
-            Err(error) => panic!("BREP scan failed elsewhere: {error}"),
-        }
-    }
-    let needed = needed.expect("header string reached within fixture charges");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = needed - 1;
-    let (limited, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-    assert!(matches!(
-        container::scan(&limited, root),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain kernel header product string"
-    ));
-    let (service, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
-    assert!(container::scan(&service, root).is_ok());
-}
-
-#[test]
 fn decode_refuses_when_max_entities_is_zero_before_ir_build() {
     use cadmpeg_core::decode::ResourceDimension;
 
@@ -718,12 +668,7 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
             "FusionAssetName[Active]/Breps.BlobParts/Body1.smb"
         );
         assert!(container::select_history_brep(scan).is_none());
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let notes =
-            container::summary_notes(&ctx, scan, container::SummaryScope::FullDecode).unwrap();
+        let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
         assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));
