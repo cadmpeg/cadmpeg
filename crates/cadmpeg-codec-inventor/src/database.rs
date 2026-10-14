@@ -422,7 +422,6 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
     use crate::test_support::test_fixtures::push_version;
-    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
@@ -431,50 +430,27 @@ mod tests {
     };
 
     #[test]
-    fn registry_identifiers_prove_extent_and_admit_retained_storage() {
+    fn registry_identifiers_prove_extent() {
         let bytes = 1_000_000_u32.to_le_bytes();
-        crate::test_support::test_fixtures::parse(&bytes, |ctx, _| {
-            assert!(matches!(
-                super::Cursor::new(&bytes, "test").id_list(ctx, "ids"),
-                Err(CodecError::Malformed(_))
-            ));
-        });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("test context");
         assert!(matches!(
-            super::Cursor::new(&bytes, "test").id_list(&ctx, "ids"),
+            super::Cursor::new(&bytes, "test").id_list("ids"),
             Err(CodecError::Malformed(_))
         ));
         let mut complete = 1_u32.to_le_bytes().to_vec();
         complete.extend_from_slice(&[0; 16]);
-        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes = 15;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&complete, &arena, &policy).expect("test context");
-        assert!(
-            matches!(super::Cursor::new(&complete, "test").id_list(&ctx, "ids"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        assert_eq!(
+            super::Cursor::new(&complete, "test")
+                .id_list("ids")
+                .expect("one identifier"),
+            [[0; 16]]
         );
     }
 
     #[test]
-    fn unframed_database_detail_refuses_retained_limit_before_copy() {
+    fn truncated_schema_31_database_is_unframed() {
         let mut bytes = database_fixture();
         bytes.truncate(28);
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("truncated database fits input cap");
-        assert!(matches!(
-            parse_database(&ctx, &bytes),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe unframed database detail"
-        ));
-
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("truncated database fits service policy");
         assert!(matches!(
@@ -484,30 +460,9 @@ mod tests {
     }
 
     #[test]
-    fn database_note_refuses_retained_limit_and_needs_no_utf16_scratch() {
+    fn database_note_decodes() {
         let bytes = database_fixture();
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("synthetic database".len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("database fits input cap");
-        assert!(matches!(
-            parse_database(&ctx, &bytes),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe table UTF-16 field"
-        ));
-
-        policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("database fits input cap");
-        assert!(matches!(
-            parse_database(&ctx, &bytes),
-            Ok(DatabaseHeader::Supported(database)) if database.note == "synthetic database"
-        ));
-
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("database fits service policy");
         assert!(matches!(
@@ -517,35 +472,9 @@ mod tests {
     }
 
     #[test]
-    fn registry_names_refuse_retained_limit_before_utf16_decode() {
+    fn registry_names_decode() {
         let bytes = registry_fixture(&[2]);
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            "PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>(),
-        ) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("registry fits input cap");
-        assert!(matches!(
-            parse_registry(&ctx, &bytes),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe table UTF-16 field"
-        ));
-
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            "PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>(),
-        );
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("registry fits input cap");
-        assert!(matches!(
-            parse_registry(&ctx, &bytes),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe table UTF-16 field"
-                    && limit.used == cadmpeg_core::decode::u64_from_index("PmBRepSegment".len() + std::mem::size_of::<super::SegmentRegistryEntry>())
-        ));
-
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("registry fits service policy");
         assert_eq!(
@@ -691,8 +620,8 @@ mod tests {
         bytes.extend_from_slice(&u16::MAX.to_le_bytes());
         bytes.push(1);
         bytes.extend_from_slice(&[0x33; 8]);
-        with_context(&bytes, |ctx| {
-            let table = parse_revisions(ctx, &bytes).expect("revision table parses");
+        with_context(&bytes, |_| {
+            let table = parse_revisions(&bytes).expect("revision table parses");
             assert_eq!(table.entries.len(), 2);
             assert!(matches!(
                 table.entries[1].payload,
@@ -719,8 +648,8 @@ mod tests {
             bytes.extend_from_slice(&[0x22; 16]);
             push_u32(&mut bytes, 8);
             bytes.extend_from_slice(&2u16.to_le_bytes());
-            with_context(&bytes, |ctx| {
-                let table = parse_revisions(ctx, &bytes)
+            with_context(&bytes, |_| {
+                let table = parse_revisions(&bytes)
                     .expect("revision fixture follows current selector framing");
                 assert_eq!(table.entries.len(), 2);
                 assert_eq!(
@@ -735,7 +664,7 @@ mod tests {
                 assert_eq!(table.entries[1].payload, RevisionPayload::None);
             });
             bytes.push(0);
-            with_context(&bytes, |ctx| assert!(parse_revisions(ctx, &bytes).is_err()));
+            with_context(&bytes, |_| assert!(parse_revisions(&bytes).is_err()));
         }
     }
 

@@ -195,33 +195,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn appearance_identity_refuses_retained_limits_before_each_copy() {
-        let arena = DecodeArena::new();
-        let bytes = b"fixture";
-        let (service, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-            .expect("service context");
-        let id = appearance_id(&service, 0, 1).expect("identity admitted");
-        assert_eq!(id.as_str(), "inventor:protein:appearance#0-1");
-        for (cap, operation) in [
-            (0, "retain Inventor appearance instance key"),
-            (1, "retain Inventor appearance record key"),
-            (3, "retain Inventor appearance key"),
-            (
-                4 + cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1,
-                "retain Inventor appearance id",
-            ),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, _) =
-                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                appearance_id(&limited, 0, 1),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-            ));
-        }
+    fn appearance_identity_names_instance_and_record() {
+        assert_eq!(
+            appearance_id(0, 1).as_str(),
+            "inventor:protein:appearance#0-1"
+        );
     }
 
     fn project_fixture(
@@ -334,39 +312,8 @@ mod tests {
     }
 
     #[test]
-    fn inventor_texture_catalog_refuses_before_insertion() {
-        let instances = [ProteinInstanceRecords {
-            entry_name: "AssetData/InstanceProperties.bin".into(),
-            records: vec![one_connected_texture()[0].records[1].clone()],
-            rejected: Vec::new(),
-        }];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
-        assert!(matches!(
-            project_catalog(&ctx, &instances, &mut 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "Inventor material texture catalog"
-        ));
-    }
-
-    #[test]
-    fn inventor_connection_refuses_before_texture_copy() {
+    fn inventor_connection_projects_its_texture() {
         let instances = one_connected_texture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
-        assert!(matches!(
-            project_catalog(&ctx, &instances, &mut 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "Protein appearance texture"
-        ));
         assert_eq!(
             project_fixture(&instances)
                 .expect("connected appearance fits service profile")
@@ -378,19 +325,8 @@ mod tests {
     }
 
     #[test]
-    fn inventor_property_map_refuses_before_insertion() {
+    fn inventor_property_map_projects_one_appearance() {
         let instances = one_float_appearance();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
-        assert!(matches!(
-            project_catalog(&ctx, &instances, &mut 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "Inventor appearance properties"
-        ));
         assert_eq!(
             project_fixture(&instances)
                 .expect("appearance fits the service profile")

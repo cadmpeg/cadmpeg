@@ -72,11 +72,22 @@ pub(crate) struct AssemblyPlacement<'a> {
 }
 
 /// Records one more occurrence of `cause` in a non-zero tally.
-pub(crate) fn count_unresolved<C: Ord>(counts: &mut BTreeMap<C, NonZeroUsize>, cause: C) {
-    counts
-        .entry(cause)
-        .and_modify(|count| *count = count.saturating_add(1))
-        .or_insert(NonZeroUsize::MIN);
+pub(crate) fn count_unresolved<C: Ord>(
+    counts: &mut BTreeMap<C, NonZeroUsize>,
+    cause: C,
+) -> Result<(), CodecError> {
+    match counts.entry(cause) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(NonZeroUsize::MIN);
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            let count = entry.get().checked_add(1).ok_or_else(|| {
+                CodecError::malformed("Inventor unresolved projection count overflows")
+            })?;
+            entry.insert(count);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -152,21 +163,21 @@ pub(crate) fn project_occurrences(
             count_unresolved(
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
-            );
+            )?;
             continue;
         };
         if !occurrence_records.contains_key(&source.occurrence_id) {
             count_unresolved(
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
-            );
+            )?;
             continue;
         }
         if emitted_ids.contains(&source.occurrence_id) {
             count_unresolved(
                 &mut unresolved_placements,
                 UnresolvedCause::DuplicateOccurrence,
-            );
+            )?;
             continue;
         }
         emitted_ids.insert(source.occurrence_id);
@@ -193,14 +204,14 @@ pub(crate) fn project_occurrences(
                     count_unresolved(
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
-                    );
+                    )?;
                     continue;
                 };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
-                count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement);
+                count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement)?;
                 continue;
             }
         };
@@ -541,26 +552,17 @@ mod tests {
     use std::num::NonZeroUsize;
 
     #[test]
-    fn assembly_utf16_text_charges_utf8_size_and_preserves_refusal() {
+    fn assembly_utf16_text_decodes_and_advances() {
         let bytes = [1, 0, 0, 0, 0, 8];
-        for retained in [2, 3] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = retained;
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test root fits input admission");
-            let mut cursor = super::Cursor::new(root);
-            let result = cursor.utf16(&ctx, "label", 256);
-            if retained == 2 {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3));
-                assert_eq!(cursor.source.position(), 4);
-            } else {
-                assert_eq!(result.expect("three retained bytes fit exact text"), "ࠀ");
-                assert_eq!(cursor.source.position(), bytes.len());
-                assert!(ctx.charge_retained(1, "after assembly text").is_err());
-            }
-        }
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("test root fits input admission");
+        let mut cursor = super::Cursor::new(root);
+        assert_eq!(
+            cursor.utf16(&ctx, "label", 256).expect("one UTF-16 unit"),
+            "ࠀ"
+        );
+        assert_eq!(cursor.source.position(), bytes.len());
     }
 
     fn project_under_service(
@@ -583,38 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn occurrence_projection_refuses_collection_limit_before_output() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 7;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        let projected = super::project_occurrences(
-            &ctx,
-            &[ufrx_occurrence(4, 7, 0)],
-            &[external_reference(4, "part.ipt", [0, 0])],
-            &[assembly_occurrence(7)],
-            &[assembly_placement(7)],
-        )
-        .expect("one table for each of three indexes fits seven slots");
-        assert_eq!(projected.occurrences.len(), 1);
-
-        // Three unique indexes and the emitted-id set use four slots.
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
-        assert!(matches!(
-            super::project_occurrences(
-                &ctx,
-                &[ufrx_occurrence(4, 7, 0)],
-                &[external_reference(4, "part.ipt", [0, 0])],
-                &[assembly_occurrence(7)],
-                &[assembly_placement(7)],
-            ),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "project Inventor occurrence"
-        ));
+    fn occurrence_projection_emits_the_resolved_occurrence() {
         assert_eq!(
             project_under_service(
                 &[ufrx_occurrence(4, 7, 0)],
@@ -712,8 +683,8 @@ mod tests {
     }
 
     #[test]
-    fn assembly_record_forms_refuse_collection_limit_before_push() {
-        for (kind, type_id, payload, operation) in [
+    fn assembly_record_forms_are_admitted() {
+        for (kind, type_id, payload, _) in [
             (
                 SegmentKind::AmDc,
                 OCCURRENCE_TYPE,
@@ -732,20 +703,11 @@ mod tests {
                     .expect("assembly record is admitted");
             assert_eq!(admitted.0 + admitted.1, 1);
             assert!(admitted.2.is_empty());
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            assert!(matches!(
-                inventory_with_record(kind, type_id, &payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == operation
-                        && limit.used == 0
-            ));
         }
     }
 
     #[test]
-    fn assembly_related_references_refuse_collection_limit_before_allocation() {
+    fn assembly_related_references_are_admitted() {
         let payload = occurrence_fixture(7, &[8]);
         assert_eq!(
             inventory_with_record(
@@ -758,19 +720,10 @@ mod tests {
             .0,
             1
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &payload, policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor occurrence related references"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
-    fn assembly_parse_issue_refuses_collection_limit_before_push() {
+    fn assembly_parse_issue_is_recorded() {
         assert_eq!(
             inventory_with_record(
                 SegmentKind::AmDc,
@@ -783,15 +736,6 @@ mod tests {
             .len(),
             1
         );
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        assert!(matches!(
-            inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "admit Inventor assembly issue"
-                    && limit.used == 0
-        ));
     }
 
     #[test]
@@ -816,73 +760,6 @@ mod tests {
             .len(),
             1
         );
-    }
-
-    #[test]
-    fn assembly_record_tokens_refuse_retained_limit_before_copy() {
-        for (kind, type_id, payload, label, operation) in [
-            (
-                SegmentKind::AmDc,
-                OCCURRENCE_TYPE,
-                occurrence_fixture(7, &[]),
-                "DCx",
-                "retain Inventor assembly occurrence token",
-            ),
-            (
-                SegmentKind::AmGraphics,
-                PLACEMENT_TYPE_CA,
-                placement_fixture(7, false, 0x8421, 0x7bde, &[]),
-                "GRx",
-                "retain Inventor assembly placement token",
-            ),
-        ] {
-            let admitted =
-                inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
-                    .expect("assembly record is admitted");
-            let token_len = admitted.3.as_deref().expect("record token").len();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(label.len() + token_len - 1);
-            assert!(matches!(
-                inventory_with_record(kind, type_id, &payload, policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-                        && limit.used == cadmpeg_core::decode::u64_from_index(label.len())
-                        && limit.additional == cadmpeg_core::decode::u64_from_index(token_len)
-            ));
-        }
-    }
-
-    #[test]
-    fn assembly_issue_copies_refuse_retained_limits_before_creation() {
-        let admitted = inventory_with_record(
-            SegmentKind::AmDc,
-            OCCURRENCE_TYPE,
-            &[],
-            DecodePolicy::service(),
-        )
-        .expect("truncated occurrence becomes an issue");
-        let detail_len = admitted.2[0].detail.len();
-        let token_len = admitted.2[0].segment_token.as_str().len();
-        for (limit_bytes, operation, used) in [
-            (detail_len - 1, "retain Inventor assembly issue detail", 0),
-            (
-                detail_len + token_len - 1,
-                "retain Inventor assembly issue token",
-                detail_len,
-            ),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
-            assert!(matches!(
-                inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes
-                        && limit.operation == operation
-                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
-            ));
-        }
     }
 
     #[test]
