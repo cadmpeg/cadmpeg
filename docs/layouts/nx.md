@@ -819,6 +819,19 @@ Parsed by:
 | 5 | 20 | `tagged_words` | `bytes[20]` | big | spec | marker at offset 1, the four tagged words at offsets 5 through 24, and the |
 | 25 | 6 | `reserved` | `bytes[6]` | big | spec | six zero bytes at offset 25. Each lane is `01, count:u8, triple[count - 1]` · value `[0, 0, 0, 0, 0, 0]` |
 
+## `symbolic_thread_reference_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 2 B
+
+Immediately after the two equal coordinate tuples. Three canonical variable-width payload references and an optional ff follow; the complete Cut/CUT text frame bounds the witness.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/symbolic_thread.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `reference_frame` | `bytes[2]` | big | spec | three-coordinate tuples followed by the fixed two-byte prefix `01 03` · value `[1, 3]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

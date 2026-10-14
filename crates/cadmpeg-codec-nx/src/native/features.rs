@@ -48,6 +48,7 @@ pub(super) mod operation_record;
 pub(super) mod surface_allocation;
 pub(super) mod surface_branches;
 pub(super) mod swp104_branch;
+pub(super) mod symbolic_thread;
 pub(super) mod thru_curve_branches;
 pub(super) mod unlabeled_record;
 use crate::native::om::column_row::{

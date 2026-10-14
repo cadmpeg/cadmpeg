@@ -99,6 +99,12 @@ pub(crate) fn admit_construction_records(
     {
         record?;
     }
+    for record in namespace.arena_iter_as_for_decode::<features::holes::FeatureSymbolicThread>(
+        ctx,
+        "feature_symbolic_threads",
+    ) {
+        record?;
+    }
     for arena in [
         "feature_operation_body_writes",
         "feature_unlabeled_operation_body_writes",

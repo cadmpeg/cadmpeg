@@ -64,6 +64,7 @@ pub(crate) mod simple_hole_references;
 pub(crate) mod studio_references;
 pub(crate) mod surface_branches;
 pub(crate) mod surface_envelope;
+pub(crate) mod symbolic_thread;
 use branch_items::BranchItems;
 pub(crate) mod binary64_pair;
 pub(crate) mod name_field;

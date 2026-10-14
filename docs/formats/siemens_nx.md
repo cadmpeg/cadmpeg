@@ -2252,10 +2252,40 @@ controls remain unresolved until the serialized construction roles establish a
 complete operation.
 
 The `SYMBOLIC_THREAD` operation label identifies a non-geometric cosmetic-thread
-annotation. Its cylindrical face, nominal diameter, and axial extent remain
-unresolved in the neutral definition. The type-`03` profile, designation, and
-mode text frames remain in the native feature arena and do not assign those
-construction roles.
+annotation. Complete type-`03` profile, designation, and mode text frames remain
+in the native feature arena. Its construction witness requires the owning
+one-based parameter-class selector to name `UGS::SYMB_THD_PARMS` and exactly one
+complete `Cut` or `CUT` text frame.
+
+Immediately before that mode frame, the witness contains two byte-identical
+three-coordinate tuples followed by the fixed two-byte prefix `01 03`, three canonical payload object
+indices, and an optional `ff`. A coordinate is a one-byte zero or finite shifted
+binary64 atom. Exactly one tuple reading must fit the complete adjoining frame;
+competing readings, including zero atoms inside a binary64 encoding, leave the
+witness unassigned. The native record retains the class selector, exact atoms,
+ordered reference tokens, sentinel presence, and complete witness span. Its
+point in millimetres is the coordinate tuple multiplied by 250. The reference
+lane has no assigned authored face or axial extent role.
+
+For an admitted witness, the second complete type-`03` text frame supplies the
+nominal diameter when it is `M<diameter>_x_<pitch>` (also uppercase `X`), or
+`<numerator>/<denominator>-<threads>_UNC` or `_UNF`. Decimal components must be
+positive and finite; fraction components and threads are positive integers.
+Metric diameter is in millimetres; fractional-inch diameter is multiplied by
+25.4. This is the nominal thread diameter, independent of the cylindrical BRep
+diameter.
+
+The point selects a cylindrical face group only when exactly one candidate
+has its axis within 1e-6 mm of the point, includes the point in its boundary
+vertices' axial interval within 1e-6 mm, and has radius no greater than half the
+nominal diameter plus 1e-7 mm. Seam faces group only within one shell when their
+canonical axis directions agree within 1e-10 and their axis lines, radii, and
+vertex intervals agree within those distance tolerances. Ownership must be
+unique and reciprocal through shell, region, and body; placed bodies and
+incomplete geometry remain unassigned. Zero or multiple candidates leave face
+selection unresolved. Boundary vertex intervals do not establish general
+curved-trim extrema. The axial thread extent remains unresolved and is never
+replaced by the selected face span. The operation has no body output relation.
 
 The `EXTRACT_BODY` operation label identifies a body-extraction construction. Its
 source is the operation's unique primary-body field `01 02 10 reference_index

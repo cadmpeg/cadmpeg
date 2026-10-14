@@ -2433,3 +2433,21 @@ type = "bytes[6]"
 source = "spec"
 anchor = "six zero bytes at offset 25. Each lane is `01, count:u8, triple[count - 1]`"
 value = [0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "symbolic_thread_reference_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/symbolic_thread.rs"
+kind = "byte"
+section = "7.1"
+anchor = "three-coordinate tuples followed by the fixed two-byte prefix `01 03`"
+size = 2
+endianness = "big"
+note = "Immediately after the two equal coordinate tuples. Three canonical variable-width payload references and an optional ff follow; the complete Cut/CUT text frame bounds the witness."
+
+[[record.field]]
+name = "reference_frame"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "three-coordinate tuples followed by the fixed two-byte prefix `01 03`"
+value = [1, 3]

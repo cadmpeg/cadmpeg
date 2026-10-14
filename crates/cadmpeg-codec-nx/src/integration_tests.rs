@@ -62,6 +62,7 @@ mod dialect;
 mod enlarge;
 mod extract_face;
 mod swp104;
+mod symbolic_thread;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     EditableDecodeResult::from(

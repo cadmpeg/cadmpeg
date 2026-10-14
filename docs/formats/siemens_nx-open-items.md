@@ -736,15 +736,15 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and resolved sheet result identify the family, but the ordered construction revision lanes and body-write relation do not assign source faces or associativity, copy, or sew controls. Lane endpoints join owner-local operation-state ordinals where the complete state table is present; neither lane is a literal result-face or result-edge list. Result sheet ownership does not identify the authored source selection.
 
-### OM-42. `SYMBOLIC_THREAD` construction roles
+### OM-42. `SYMBOLIC_THREAD` axial extent and unresolved face relations
 
-**Question.** Which serialized face, diameter, and axial extent fields define a `SYMBOLIC_THREAD` operation?
+**Question.** Which serialized relation assigns the axial thread extent, and how are faces identified when the checked placement witness has no unique cylindrical candidate?
 
-**Known.** `siemens_nx.md` §7.1 "The `SYMBOLIC_THREAD` operation label identifies" defines the family. Complete type-`03` profile, designation, and mode text frames remain in the native feature arena; the operation has no body output relation.
+**Known.** `siemens_nx.md` §7.1 "The `SYMBOLIC_THREAD` operation label identifies" defines the family, the checked duplicate coordinate witness, nominal diameter designation, and unique physical-cylinder selection. Complete profile, designation, and mode text frames and exact construction reference tokens remain native. The operation has no body output relation.
 
-**Need.** We must identify the cylindrical-face relation and dimensional fields to populate the neutral cosmetic-thread definition.
+**Need.** We must identify the operation-to-dimension relation that assigns axial extent, the roles of the construction reference tokens and older inline scalar, and any authored face relation needed when geometry or unique ownership is unavailable.
 
-**Conflict.** The label and text frames identify the cosmetic-thread family, but the current object-index lanes and text values do not assign a unique cylindrical face, nominal diameter, or axial extent.
+**Conflict.** A selected face's axial span can differ from the thread extent. The coordinate witness and nominal diameter do not identify an extent dimension. Ambiguous tuple boundaries, absent or incomplete geometry, placed bodies, and multiple physical candidates preserve unresolved selection rather than choosing an arbitrary face.
 
 ### OM-43. `DATUM_AXIS` construction roles
 

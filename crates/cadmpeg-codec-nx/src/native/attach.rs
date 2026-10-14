@@ -38,6 +38,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 pub(super) mod body_selection;
 pub(super) mod expressions;
 pub(super) mod feature_projection;
+mod symbolic_thread;
 
 use body_selection::{
     atomic_disjoint_body_selections, boolean_participant_writer, boolean_target_output,
@@ -1816,6 +1817,8 @@ fn attach_feature_operations(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let features = &model.features;
+    let mut symbolic_threads =
+        symbolic_thread::definitions(ctx, ir, &features.feature_symbolic_threads)?;
     let parasolid_group_members = model.parasolid.group_members.as_slice();
     let data_blocks = model.om.data_blocks.as_slice();
     let expressions = model.om.expressions.as_slice();
@@ -5170,7 +5173,8 @@ fn attach_feature_operations(
             .or_else(|| blend_projection.map(|(definition, _)| definition))
             .or_else(|| thicken_projection.map(|(definition, _)| definition))
             .or_else(|| offset_projection.map(|(definition, _)| definition))
-            .or(sphere_definition);
+            .or(sphere_definition)
+            .or_else(|| symbolic_threads.remove(label.id.as_str()));
         let brep_projection = if primary_definition.is_none() && label.value == "BREP" {
             brep_feature_definition(ctx, &outputs)?
         } else {
