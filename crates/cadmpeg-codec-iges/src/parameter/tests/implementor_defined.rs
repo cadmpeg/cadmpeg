@@ -45,7 +45,6 @@ fn type406_implementor_defined_forms_use_common_count_boundary() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -121,7 +120,6 @@ fn type406_implementor_defined_malformed_count_or_span_suppresses_generic_recove
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),

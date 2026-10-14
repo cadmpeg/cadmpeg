@@ -91,7 +91,6 @@ fn fixed_and_counted_fem_boundaries_stop_before_pointer_groups() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         }
         .groups()
         .unwrap_or_else(|| panic!("FEM trailing pointer groups case {case_index}"));
@@ -144,7 +143,6 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
             candidates.iter().any(|candidate| {
                 candidate.token_start < expected_end && {
                     groups_for_candidate_with_context(&record, &directory, *candidate)
-                        .expect("test-only trailing pointer allocation")
                 }
                 .is_some_and(|groups| groups.fully_valid().is_some())
             }),
@@ -157,7 +155,6 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         assert_eq!(
             analysis.candidate_count(
@@ -267,7 +264,6 @@ fn malformed_fem_counted_spans_do_not_enable_generic_recovery() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         }
         .groups()
         .is_none());
@@ -290,7 +286,6 @@ fn element_results_boundary_rejects_an_incomplete_variable_item() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     }
     .groups()
     .is_none());

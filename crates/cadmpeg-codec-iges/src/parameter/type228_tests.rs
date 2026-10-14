@@ -36,7 +36,6 @@ fn type228_standard_and_implementor_forms_share_entity_table_boundary() {
                 &directory,
                 crate::global::GlobalTable::V5Later,
             )
-            .expect("test-only trailing pointer analysis")
         };
         let groups = analysis.groups().expect("Type 228 table boundary");
         assert_eq!(groups.token_start, 6);

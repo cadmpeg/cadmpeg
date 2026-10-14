@@ -35,7 +35,6 @@ fn type230_form1_entity_table_boundary_follows_island_count() {
             &directory,
             crate::global::GlobalTable::V5Later,
         )
-        .expect("test-only trailing pointer analysis")
     };
     let groups = analysis.groups().expect("Type 230 Form 1 table boundary");
     assert_eq!(groups.token_start, 10);

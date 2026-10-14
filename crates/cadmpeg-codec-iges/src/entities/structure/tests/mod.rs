@@ -204,7 +204,11 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         .collect::<BTreeMap<_, _>>();
     let mut visited = std::collections::BTreeSet::new();
 
-    assert!(!crate::entities::structure::single_target_cycle(1, &targets, &mut visited,).unwrap());
+    assert!(!crate::entities::structure::single_target_cycle(
+        1,
+        &targets,
+        &mut visited,
+    ));
     assert_eq!(visited.len(), 100_000);
 
     let mut cyclic = targets;
@@ -213,8 +217,7 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         1,
         &cyclic,
         &mut std::collections::BTreeSet::new(),
-    )
-    .unwrap());
+    ));
 }
 
 #[test]
