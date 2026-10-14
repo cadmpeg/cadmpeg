@@ -533,7 +533,7 @@ those products.
 
 **Question.** Which `CPROJ` construction references select the source curve, target surface, direction, and combination controls?
 
-**Known.** `siemens_nx.md` §7.1 "A `CPROJ` construction-reference lane begins with" defines the complete counted reference lane, block resolution, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "A `CPROJ` construction-reference lane begins with" defines the complete counted reference lane, block resolution, and logical payload. `siemens_nx.md` §7.1 "The first payload byte of a `CPROJ` or `CPROJ_CMB` operation" defines the same-section parameter-class and hidden-normal pair-element class indices.
 
 **Need.** We must know the roles to construct a neutral projected curve.
 
@@ -541,7 +541,7 @@ those products.
 to offset-store blocks. The repeated header index and fixed suffix delimit the lane,
 but do not identify a source curve, target surface, direction, or combination
 control. Reconstructed strings remain payload-owned and have no independent
-role relation.
+role relation. A parameter-class name does not identify a physical projection direction or bind a reference to an operand. The eight-byte scalar in the hidden-normal header has no established tolerance role, unit, or field-specific scale.
 
 ### OM-16. `CPROJ_CMB` construction-reference roles
 
