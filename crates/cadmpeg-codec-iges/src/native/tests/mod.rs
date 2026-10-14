@@ -77,13 +77,13 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
     );
 }
 
-mod allocation_limits;
 mod annotations;
+mod attributes_and_properties;
 mod counted_lists;
 mod fem;
 mod macros;
 mod occurrences;
-mod serialization_limits;
+mod serialization;
 
 fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
     let tag = format!("directory_entry:D{sequence}");
