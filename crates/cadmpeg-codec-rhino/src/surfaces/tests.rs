@@ -291,8 +291,8 @@ fn sum_surface_product_refuses_collection_limit_before_allocation() {
     policy.limits.max_collection_items = 5;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test input fits the service profile");
-    let refusal = super::admit_sum_product(&ctx, 2, 3)
-        .expect_err("six output poles exceed five collection items");
+    let refusal =
+        super::admit_sum_product(2, 3).expect_err("six output poles exceed five collection items");
     assert!(
         matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -302,7 +302,7 @@ fn sum_surface_product_refuses_collection_limit_before_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
         .expect("test input fits the service profile");
     assert_eq!(
-        super::admit_sum_product(&ctx, 2, 3).expect("service admits six poles"),
+        super::admit_sum_product(2, 3).expect("service admits six poles"),
         6
     );
 }
@@ -859,43 +859,21 @@ fn valid_sum_payload() -> Vec<u8> {
 #[test]
 fn reconstructs_spec_examples_and_one_sided_vectors() {
     assert_eq!(
-        reconstruct_knots(
-            &cadmpeg_test_support::service_decode_context(),
-            &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
-            3,
-            6
-        )
-        .expect("required invariant"),
+        reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("required invariant"),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
     );
     assert_eq!(
-        reconstruct_knots(
-            &cadmpeg_test_support::service_decode_context(),
-            &[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0],
-            3,
-            6
-        )
-        .expect("required invariant"),
+        reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0], 3, 6).expect("required invariant"),
         vec![-2.0, 0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 9.0]
     );
     assert_eq!(
-        reconstruct_knots(
-            &cadmpeg_test_support::service_decode_context(),
-            &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0],
-            3,
-            6
-        )
-        .expect("required invariant")[0],
+        reconstruct_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0], 3, 6).expect("required invariant")
+            [0],
         0.0
     );
     assert_eq!(
-        reconstruct_knots(
-            &cadmpeg_test_support::service_decode_context(),
-            &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0],
-            3,
-            6
-        )
-        .expect("required invariant")[8],
+        reconstruct_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0], 3, 6).expect("required invariant")
+            [8],
         5.0
     );
 }
@@ -904,13 +882,7 @@ fn reconstructs_spec_examples_and_one_sided_vectors() {
 /// locates, so the refusal names no offset instead of naming byte 0.
 #[test]
 fn a_knot_reconstruction_refusal_names_no_byte() {
-    let error = reconstruct_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &[0.0, 1.0],
-        3,
-        6,
-    )
-    .expect_err("knot count mismatch");
+    let error = reconstruct_knots(&[0.0, 1.0], 3, 6).expect_err("knot count mismatch");
     assert!(matches!(
         error,
         GeometryError::Malformed(FramingError::Unpositioned { ref message })
@@ -1007,13 +979,7 @@ fn checked_source_knots_reconstruct_without_scalar_readmission() {
         6,
     )
     .expect("reconstructed checked knot vector");
-    let expected = reconstruct_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &stored,
-        3,
-        6,
-    )
-    .expect("raw reference reconstruction");
+    let expected = reconstruct_knots(&stored, 3, 6).expect("raw reference reconstruction");
     assert_eq!(reconstructed.as_slice(), expected.as_slice());
 }
 
@@ -1102,40 +1068,17 @@ fn c2_nurbs_preserves_periodic_parameterization() {
 
 #[test]
 fn periodic_rule_matches_native_tolerance_and_rejects_clamping() {
-    assert!(!periodic_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
-        3,
-        6
-    )
-    .expect("periodic admission"));
-    assert!(periodic_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        3,
-        6
-    )
-    .expect("periodic admission"));
-    assert!(!periodic_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0],
-        3,
-        6
-    )
-    .expect("periodic admission"));
-    assert!(!periodic_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &[0.0, 1.0, 2.0, 3.0],
-        2,
-        4
-    )
-    .expect("periodic admission"));
+    assert!(
+        !periodic_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("periodic admission")
+    );
+    assert!(periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 6).expect("periodic admission"));
+    assert!(
+        !periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0], 3, 6).expect("periodic admission")
+    );
+    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0], 2, 4).expect("periodic admission"));
     let mut near = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
     near[6] += EPS_PERIODIC_PERTURBATION;
-    assert!(
-        periodic_knots(&cadmpeg_test_support::service_decode_context(), &near, 3, 6)
-            .expect("periodic admission")
-    );
+    assert!(periodic_knots(&near, 3, 6).expect("periodic admission"));
 }
 
 #[test]
@@ -1865,13 +1808,10 @@ fn plane_parameter_maps_preserve_extreme_finite_domains() {
 }
 #[test]
 fn large_nonperiodic_knot_gaps_remain_nonperiodic() {
-    assert!(!super::periodic_knots(
-        &cadmpeg_test_support::service_decode_context(),
-        &[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308],
-        3,
-        5
-    )
-    .expect("periodic admission"));
+    assert!(
+        !super::periodic_knots(&[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308], 3, 5)
+            .expect("periodic admission")
+    );
 }
 
 #[test]

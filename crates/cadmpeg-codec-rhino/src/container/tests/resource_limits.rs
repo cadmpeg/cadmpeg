@@ -204,14 +204,9 @@ fn view_list_refuses_work_before_framing_truncated_children() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
     let mut storage = ctx.reserve_scoped(0, "fixture ranges").unwrap();
-    let error = crate::container::list_checksum_children(
-        &ctx,
-        &bytes,
-        &chunk,
-        ArchiveVersion::V5,
-        &mut storage,
-    )
-    .unwrap_err();
+    let error =
+        crate::container::list_checksum_children(&bytes, &chunk, ArchiveVersion::V5, &mut storage)
+            .unwrap_err();
     assert!(matches!(error, crate::chunks::FramingError::Resource(limit)
         if limit.operation == "Rhino view checksum child ranges" && limit.used == 0 && limit.additional == 1));
 }
@@ -232,14 +227,9 @@ fn view_list_second_walk_has_separate_work_admission() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
     let mut storage = ctx.reserve_scoped(0, "fixture ranges").unwrap();
-    let error = crate::container::list_checksum_children(
-        &ctx,
-        &bytes,
-        &chunk,
-        ArchiveVersion::V5,
-        &mut storage,
-    )
-    .unwrap_err();
+    let error =
+        crate::container::list_checksum_children(&bytes, &chunk, ArchiveVersion::V5, &mut storage)
+            .unwrap_err();
     assert!(matches!(error, crate::chunks::FramingError::Resource(limit)
         if limit.operation == "Rhino view checksum second walk" && limit.used == 1 && limit.additional == 1));
 }

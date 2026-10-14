@@ -115,7 +115,7 @@ fn definition_diagnostic_loss_refuses_retained_limit() {
     };
     with_retained_limit(0, |ctx| {
         let error = diagnostic
-            .to_loss(ctx)
+            .to_loss()
             .expect_err("loss text exceeds retained limit");
         assert!(matches!(
             error,
@@ -124,7 +124,7 @@ fn definition_diagnostic_loss_refuses_retained_limit() {
         ));
     });
     let loss = diagnostic
-        .to_loss(&cadmpeg_test_support::service_decode_context())
+        .to_loss()
         .expect("service profile admits loss text");
     assert!(loss.message.contains("fixture warning"));
 }
@@ -137,7 +137,7 @@ fn reference_object_array_ranges_refuse_collection_limit() {
     with_collection_limit(0, |ctx| {
         let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded array");
         let error =
-            crate::instances::skip_object_array(ctx, &data, &mut reader, archive, &mut Vec::new())
+            crate::instances::skip_object_array(&data, &mut reader, archive, &mut Vec::new())
                 .expect_err("array range exceeds collection limit");
         assert_resource(&error, "Rhino reference object ranges");
     });

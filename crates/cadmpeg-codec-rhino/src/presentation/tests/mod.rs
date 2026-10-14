@@ -556,14 +556,7 @@ fn light_table_class_data_stops_before_record_children() {
     ));
     let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
 
-    let range = class_data_prefix(
-        &cadmpeg_test_support::service_decode_context(),
-        &body,
-        &record,
-        archive,
-        LIGHT,
-    )
-    .expect("light class");
+    let range = class_data_prefix(&body, &record, archive, LIGHT).expect("light class");
     assert_eq!(&body[range], payload);
 }
 
@@ -1083,7 +1076,6 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         payload_range: 0..extra_bytes.len(),
     };
     let extra = parse_v5_dimension_style_extra(
-        &cadmpeg_test_support::service_decode_context(),
         &extra_bytes,
         &descriptor,
         ArchiveVersion::V5,
@@ -1149,7 +1141,6 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     let mut minor_zero_descriptor = descriptor;
     minor_zero_descriptor.payload_range = 0..minor_zero.len();
     let minor_zero = parse_v5_dimension_style_extra(
-        &cadmpeg_test_support::service_decode_context(),
         &minor_zero,
         &minor_zero_descriptor,
         ArchiveVersion::V5,
@@ -1340,8 +1331,7 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     .expect("second group");
     let mut groups = vec![first, second];
     assert_eq!(
-        disambiguate_group_ids(&cadmpeg_test_support::service_decode_context(), &mut groups)
-            .expect("duplicate group IDs fit the service profile"),
+        disambiguate_group_ids(&mut groups).expect("duplicate group IDs fit the service profile"),
         2
     );
     assert_ne!(groups[0].id, groups[1].id);
@@ -1563,7 +1553,6 @@ fn rendering_attributes_transfer_mapping_channels_and_flags() {
     let bytes = anonymous(3, &rendering_body);
 
     let value = rendering_attributes(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,
@@ -1644,7 +1633,6 @@ fn rendering_attributes_reject_negative_nested_version_minors() {
         ),
     ] {
         let result = rendering_attributes(
-            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             Some(0..bytes.len()),
             ArchiveVersion::V8,
@@ -1677,7 +1665,6 @@ fn rendering_material_reference_consumes_obsolete_mapping_channels() {
     let bytes = anonymous(3, &rendering_body);
 
     let value = rendering_attributes(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,

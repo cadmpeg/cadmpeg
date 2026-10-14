@@ -215,10 +215,7 @@ pub(crate) fn decode(
                 // The document budget is not rolled back: any buffer the cache
                 // inflated before failing is retained in the arena, so its
                 // charge must stand (see `mesh::MeshBudget`).
-                warnings.push_admitted(
-                    expand.ctx(),
-                    format_args!("extrusion mesh cache dropped: {cache_error}"),
-                )?;
+                warnings.push(format_args!("extrusion mesh cache dropped: {cache_error}"));
                 reader.skip(reader.remaining())?;
                 Vec::new()
             }
@@ -241,25 +238,17 @@ pub(crate) fn decode(
                 return Err(error);
             }
             Err(cache_error) => {
-                warnings.push_admitted(
-                    expand.ctx(),
-                    format_args!("V5 extrusion mesh cache dropped: {cache_error}"),
-                )?;
+                warnings.push(format_args!(
+                    "V5 extrusion mesh cache dropped: {cache_error}"
+                ));
                 Vec::new()
             }
         }
     };
     for mesh in &meshes {
-        warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings)?;
+        warnings.extend(mesh.warnings.iter().cloned());
     }
-    finish_payload(
-        expand.ctx(),
-        data,
-        &outer,
-        reader,
-        &payload_children,
-        &mut warnings,
-    )?;
+    finish_payload(data, &outer, reader, &payload_children, &mut warnings)?;
 
     let path_delta = path_to.vector_from(path_from);
     let path_length = path_delta.norm();
@@ -283,7 +272,6 @@ pub(crate) fn decode(
     ];
 
     let source_boundaries = split_profiles(
-        expand.ctx(),
         profile,
         usize::try_from(profile_count)
             .map_err(|_| GeometryError::unpositioned("geometry count exceeds address space"))?,
@@ -299,14 +287,8 @@ pub(crate) fn decode(
         path_from.translated(path_delta, trim[1]),
     ];
     let direction = cap_origins[1].vector_from(cap_origins[0]);
-    let mut boundaries = expand
-        .ctx()
-        .collection_vec(source_boundaries.len(), "Rhino extrusion boundaries")
-        .map_err(crate::curves::GeometryError::from)?;
-    let mut orientations = expand
-        .ctx()
-        .collection_vec(source_boundaries.len(), "Rhino extrusion orientations")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut boundaries = Vec::new();
+    let mut orientations = Vec::new();
     for source in source_boundaries {
         orientations.push(exact_orientation(expand.ctx(), &source, version_offset)?);
         let source_nurbs = exact_nurbs(expand.ctx(), &source, version_offset)?;
@@ -343,20 +325,8 @@ pub(crate) fn decode(
         );
         let start_frame = cap_frame(xaxis.into(), up, tangent, active_miters[0], version_offset)?;
         let end_frame = cap_frame(xaxis.into(), up, tangent, active_miters[1], version_offset)?;
-        let start_pcurve = cap_pcurve(
-            expand.ctx(),
-            &start_nurbs,
-            cap_origins[0],
-            start_frame,
-            version_offset,
-        )?;
-        let end_pcurve = cap_pcurve(
-            expand.ctx(),
-            &end_nurbs,
-            cap_origins[1],
-            end_frame,
-            version_offset,
-        )?;
+        let start_pcurve = cap_pcurve(&start_nurbs, cap_origins[0], start_frame, version_offset)?;
+        let end_pcurve = cap_pcurve(&end_nurbs, cap_origins[1], end_frame, version_offset)?;
         let lateral = crate::surfaces::extrusion_nurbs(
             expand.ctx(),
             &start_nurbs,
@@ -415,17 +385,12 @@ pub(crate) fn decode(
 }
 
 fn split_profiles(
-    ctx: &DecodeContext<'_>,
     profile: DecodedCurve,
     profile_count: usize,
     offset: usize,
 ) -> Result<Vec<DecodedCurve>, GeometryError> {
     if profile_count == 1 {
-        let mut profiles = ctx
-            .collection_vec(1, "Rhino extrusion profile split")
-            .map_err(crate::curves::GeometryError::from)?;
-        profiles.push(profile);
-        return Ok(profiles);
+        return Ok(vec![profile]);
     }
     let DecodedCurve::Compound { children, .. } = profile else {
         return Err(error(
@@ -436,9 +401,7 @@ fn split_profiles(
     if children.len() != profile_count {
         return Err(error(offset, "extrusion profile count mismatch"));
     }
-    let mut profiles = ctx
-        .collection_vec(children.len(), "Rhino extrusion profile split")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut profiles = Vec::new();
     profiles.extend(children.into_iter().map(|(_, child)| child));
     Ok(profiles)
 }
@@ -712,7 +675,6 @@ fn cap_frame(
 }
 
 fn cap_pcurve(
-    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     origin: Point3,
     frame: (UnitVector3, UnitVector3, UnitVector3),
@@ -723,9 +685,7 @@ fn cap_pcurve(
         Vector3::from(frame.1),
         Vector3::from(frame.2),
     );
-    let mut points = ctx
-        .collection_vec(curve.pole_count(), "Rhino extrusion cap points")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut points = Vec::new();
     for index in 0..curve.pole_count() {
         let point = curve
             .pole_rows()
@@ -739,16 +699,12 @@ fn cap_pcurve(
         }
         points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
     }
-    let mut knots = ctx
-        .collection_vec(curve.knots().len(), "Rhino extrusion cap knots")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut knots = Vec::new();
     knots.extend_from_slice(curve.knots());
     let weights = match curve.pole_rows() {
         NurbsPoles3::Polynomial { .. } => None,
         NurbsPoles3::Rational { points } => {
-            let mut weights = ctx
-                .collection_vec(points.len(), "Rhino extrusion cap weights")
-                .map_err(crate::curves::GeometryError::from)?;
+            let mut weights = Vec::new();
             weights.extend(points.iter().map(|pole| pole.weight.get()));
             Some(weights)
         }
@@ -824,24 +780,15 @@ fn read_mesh_cache(
             }
         }
         let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
-        expand.ctx().reserve_vec(
-            &mut cache_children,
-            1,
-            "Rhino extrusion mesh-cache children",
-        )?;
+
         cache_children.push(item.range());
         let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
         require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
-        let (class, userdata) = parse_class_wrapper_with_userdata(
-            expand.ctx(),
-            data,
-            wrapper.range(),
-            archive,
-            warnings,
-        )?;
+        let (class, userdata) =
+            parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
         item_reader.skip(wrapper.next_offset() - wrapper_start)?;
         if class.class_uuid != crate::mesh::ON_MESH {
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
@@ -860,12 +807,9 @@ fn read_mesh_cache(
             },
             mesh_budget,
         )?;
-        expand
-            .ctx()
-            .reserve_vec(&mut meshes, 1, "Rhino extrusion mesh-cache meshes")?;
+
         meshes.push(mesh);
         finish_anonymous(
-            expand.ctx(),
             data,
             &mut cache_reader,
             &item,
@@ -881,7 +825,6 @@ fn read_mesh_cache(
             .ok_or_else(|| error(wrapper_start, "mesh-cache item count overflow"))?;
     }
     finish_anonymous(
-        expand.ctx(),
         data,
         reader,
         &cache,
@@ -923,13 +866,8 @@ fn read_v5_mesh_cache(
     let mut meshes = Vec::new();
     for index in 0..3_usize {
         let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
-        let (class, nested_userdata) = parse_class_wrapper_with_userdata(
-            expand.ctx(),
-            data,
-            wrapper.range(),
-            archive,
-            warnings,
-        )?;
+        let (class, nested_userdata) =
+            parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
         if index < 2 {
             if class.class_uuid == crate::mesh::ON_MESH {
                 let mesh = crate::mesh::decode(
@@ -946,9 +884,7 @@ fn read_v5_mesh_cache(
                     },
                     mesh_budget,
                 )?;
-                expand
-                    .ctx()
-                    .reserve_vec(&mut meshes, 1, "Rhino V5 extrusion mesh-cache meshes")?;
+
                 meshes.push(mesh);
             } else if class.class_uuid != Uuid::nil() {
                 return Err(error(
@@ -989,7 +925,6 @@ struct AnonymousChecksum<'a> {
 }
 
 fn finish_anonymous(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
@@ -998,26 +933,24 @@ fn finish_anonymous(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), checksum.children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), checksum.children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded_admitted(
-            ctx,
+        warnings.push_coded(
             crate::loss::RhinoLossCode::IntegrityFailure,
             format_args!(
                 "{} CRC mismatch at offset {}",
                 checksum.name, chunk.header_start
             ),
-        )?;
+        );
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
 fn finish_payload(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &Chunk,
     mut reader: BoundedReader<'_>,
@@ -1025,19 +958,18 @@ fn finish_payload(
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
-        crate::chunks::verify_checksum_ranges(ctx, data, chunk, &direct)?,
+        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded_admitted(
-            ctx,
+        warnings.push_coded(
             crate::loss::RhinoLossCode::IntegrityFailure,
             format_args!(
                 "extrusion payload CRC mismatch at offset {}",
                 chunk.header_start
             ),
-        )?;
+        );
     }
     Ok(())
 }
@@ -1341,7 +1273,7 @@ pub(crate) mod tests {
                 &cadmpeg_core::decode::DecodePolicy::service(),
                 false,
             );
-            let direct = crate::chunks::direct_checksum_ranges(&ctx, &(0..body.len()), &children)
+            let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
                 .expect("valid extrusion children");
             let mut hasher = crc32fast::Hasher::new();
             for range in &direct {
@@ -1734,12 +1666,12 @@ pub(crate) mod tests {
         };
         crate::decode::with_expand_bytes(&[], |expand| {
             assert_eq!(
-                split_profiles(expand.ctx(), profile.clone(), 2, 0)
+                split_profiles(profile.clone(), 2, 0)
                     .expect("required invariant")
                     .len(),
                 2
             );
-            assert!(split_profiles(expand.ctx(), profile, 3, 0).is_err());
+            assert!(split_profiles(profile, 3, 0).is_err());
         });
     }
 
@@ -1754,7 +1686,7 @@ pub(crate) mod tests {
             end_parameter: finite(2.0),
             warnings: Diagnostics::new(),
         };
-        let refusal = with_collection_limit(1, |ctx| split_profiles(ctx, profile, 2, 0))
+        let refusal = with_collection_limit(1, |ctx| split_profiles(profile, 2, 0))
             .expect_err("two profiles exceed one collection item");
         assert!(matches!(
             refusal,
@@ -1766,7 +1698,7 @@ pub(crate) mod tests {
     #[test]
     fn extrusion_single_profile_refuses_collection_limit() {
         let profile = decoded_polygon(false, true);
-        let refusal = with_collection_limit(0, |ctx| split_profiles(ctx, profile, 1, 0))
+        let refusal = with_collection_limit(0, |ctx| split_profiles(profile, 1, 0))
             .expect_err("one profile exceeds zero collection items");
         assert!(matches!(
             refusal,
@@ -1883,7 +1815,7 @@ pub(crate) mod tests {
         .expect("unit cap frame");
         let refusal = with_collection_limit(
             cadmpeg_core::decode::u64_from_index(curve.pole_count() - 1),
-            |ctx| cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0),
+            |ctx| cap_pcurve(&curve, Point3::new(0.0, 0.0, 0.0), frame, 0),
         )
         .expect_err("cap points exceed collection limit");
         assert!(matches!(
@@ -1907,7 +1839,7 @@ pub(crate) mod tests {
         let needed = curve.pole_count() + curve.knots().len();
         let refusal =
             with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-                cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
+                cap_pcurve(&curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
             })
             .expect_err("cap knots exceed collection limit");
         assert!(matches!(
@@ -1940,7 +1872,7 @@ pub(crate) mod tests {
         let needed = curve.pole_count() * 2 + curve.knots().len();
         let refusal =
             with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-                cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
+                cap_pcurve(&curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
             })
             .expect_err("cap weights exceed collection limit");
         assert!(matches!(

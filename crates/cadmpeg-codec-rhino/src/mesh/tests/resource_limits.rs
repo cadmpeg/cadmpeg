@@ -152,13 +152,8 @@ fn truncated_v5_double_vertices_are_malformed_before_collection_admission() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     with_expand_policy(&bytes, policy, |expand| {
-        let result = read_v5_double_vertices(
-            expand.ctx(),
-            &bytes,
-            descriptor.known().unwrap(),
-            ArchiveVersion::V5,
-            &[],
-        );
+        let result =
+            read_v5_double_vertices(&bytes, descriptor.known().unwrap(), ArchiveVersion::V5, &[]);
         assert!(matches!(
             result,
             Err(GeometryError::Malformed(FramingError::Truncated {

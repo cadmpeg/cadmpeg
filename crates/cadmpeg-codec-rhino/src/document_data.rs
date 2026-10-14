@@ -236,10 +236,7 @@ fn annotation_settings(
     }
     let dimension_scale = annotation_scale(&mut reader)?;
     let value = AnnotationSettingsRecord {
-        id: ctx.copy_retained_text(
-            "rhino:document:annotation_settings#current",
-            "Rhino annotation settings ID",
-        )?,
+        id: "rhino:document:annotation_settings#current".to_owned(),
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         dimension_scale,
         text_height_mm: length(&mut reader, scale)?,
@@ -272,10 +269,7 @@ fn annotation_settings(
             if id.is_nil() {
                 None
             } else {
-                Some(ctx.format_retained(
-                    format_args!("{id}"),
-                    "Rhino annotation dimension layer UUID",
-                )?)
+                Some(format!("{id}"))
             }
         } else {
             None
@@ -286,7 +280,6 @@ fn annotation_settings(
 }
 
 fn grid_defaults(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     source_offset: usize,
@@ -300,10 +293,7 @@ fn grid_defaults(
         ));
     }
     let value = GridDefaultsRecord {
-        id: ctx.copy_retained_text(
-            "rhino:document:grid_defaults#current",
-            "Rhino grid defaults ID",
-        )?,
+        id: "rhino:document:grid_defaults#current".to_owned(),
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         grid_spacing_mm: length(&mut reader, scale)?,
         snap_spacing_mm: length(&mut reader, scale)?,
@@ -451,10 +441,7 @@ fn render_settings(
     };
     reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
-        id: ctx.copy_retained_text(
-            "rhino:document:render_settings#current",
-            "Rhino render settings ID",
-        )?,
+        id: "rhino:document:render_settings#current".to_owned(),
         source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         image_flags: RenderImageFlags {
             custom_image_size,
@@ -499,7 +486,6 @@ fn render_settings(
 }
 
 fn render_userdata(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -517,10 +503,9 @@ fn render_userdata(
                         "render userdata item must be a long chunk",
                     ));
                 }
-                ctx.reserve_vec(&mut items, 1, "Rhino render userdata items")
-                    .map_err(crate::chunks::FramingError::from)?;
+
                 let mut checksum_warnings = Diagnostics::new();
-                let item = parse_userdata(ctx, data, &chunk, archive, &mut checksum_warnings)?;
+                let item = parse_userdata(data, &chunk, archive, &mut checksum_warnings)?;
                 items.push(item);
                 offset = chunk.next_offset();
             }
@@ -545,12 +530,6 @@ fn render_userdata(
                 ));
             }
             _ => {
-                ctx.reserve_vec(
-                    &mut unknown_chunks,
-                    1,
-                    "Rhino render userdata unknown chunks",
-                )
-                .map_err(crate::chunks::FramingError::from)?;
                 unknown_chunks.push(chunk.range());
                 offset = chunk.next_offset();
             }
@@ -562,32 +541,17 @@ fn render_userdata(
     ))
 }
 
-fn retained_numbered_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    prefix: &str,
-    index: usize,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.format_retained(format_args!("{prefix}{index:04}"), operation)
+fn retained_numbered_id(prefix: &str, index: usize) -> String {
+    format!("{prefix}{index:04}")
 }
 
-fn retained_typecode(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    typecode: u32,
-) -> Result<String, CodecError> {
-    ctx.format_retained(format_args!("{typecode:#010x}"), "Rhino setting typecode")
+fn retained_typecode(typecode: u32) -> String {
+    format!("{typecode:#010x}")
 }
 
-fn retained_sha256(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<String, CodecError> {
+fn retained_sha256(bytes: &[u8]) -> String {
     let digest = cadmpeg_ir::hash::sha256(bytes);
-    ctx.format_retained(
-        format_args!("{}", cadmpeg_ir::hash::LowerHex(&digest)),
-        operation,
-    )
+    format!("{}", cadmpeg_ir::hash::LowerHex(&digest))
 }
 
 /// Installs complete typed document-level metadata and named setting records.
@@ -600,68 +564,52 @@ pub(crate) fn install(
     ir: &mut CadIr,
 ) -> Result<NativeInstall, CodecError> {
     let properties = &scan.metadata.properties;
-    let mut revisions = ctx.collection_vec(
-        usize::from(properties.revision_history.is_some()),
-        "Rhino document revisions",
-    )?;
+    let mut revisions = Vec::new();
     if let Some(value) = &properties.revision_history {
         revisions.push(RevisionRecord {
-            id: ctx.copy_retained_text("rhino:document:revision#current", "Rhino revision ID")?,
+            id: "rhino:document:revision#current".to_owned(),
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
-            created_by: ctx.copy_retained_text(&value.created_by, "Rhino revision creator")?,
+            created_by: value.created_by.clone(),
             created_utc_fields: value.created.fields,
-            last_edited_by: ctx
-                .copy_retained_text(&value.last_edited_by, "Rhino revision editor")?,
+            last_edited_by: value.last_edited_by.clone(),
             last_edited_utc_fields: value.last_edited.fields,
             revision_count: value.revision_count,
         });
     }
-    let mut notes = ctx.collection_vec(
-        usize::from(properties.notes.is_some()),
-        "Rhino document notes",
-    )?;
+    let mut notes = Vec::new();
     if let Some(value) = &properties.notes {
         notes.push(NotesRecord {
-            id: ctx.copy_retained_text("rhino:document:notes#current", "Rhino notes ID")?,
+            id: "rhino:document:notes#current".to_owned(),
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             html: value.html,
-            text: ctx.copy_retained_text(&value.text, "Rhino notes text")?,
+            text: value.text.clone(),
             visible: value.visible,
             window_rectangle: value.rectangle,
             locked: value.locked,
         });
     }
-    let mut applications = ctx.collection_vec(
-        usize::from(properties.application.is_some()),
-        "Rhino document applications",
-    )?;
+    let mut applications = Vec::new();
     if let Some(value) = &properties.application {
         applications.push(ApplicationRecord {
-            id: ctx
-                .copy_retained_text("rhino:document:application#writer", "Rhino application ID")?,
+            id: "rhino:document:application#writer".to_owned(),
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
-            name: ctx.copy_retained_text(&value.name, "Rhino application name")?,
-            url: ctx.copy_retained_text(&value.url, "Rhino application URL")?,
-            details: ctx.copy_retained_text(&value.details, "Rhino application details")?,
+            name: value.name.clone(),
+            url: value.url.clone(),
+            details: value.details.clone(),
         });
     }
     let settings = &scan.metadata.settings;
     let document_settings = [DocumentSettingsRecord {
-        id: ctx.copy_retained_text(
-            "rhino:document:settings#current",
-            "Rhino document settings ID",
-        )?,
+        id: "rhino:document:settings#current".to_owned(),
         writer_version: properties.writer_version,
         archive_file_name: properties
             .as_file_name
             .as_deref()
-            .map(|value| ctx.copy_retained_text(value, "Rhino archive file name"))
-            .transpose()?,
+            .map(std::borrow::ToOwned::to_owned),
         model_url: settings
             .model_url
             .as_deref()
-            .map(|value| ctx.copy_retained_text(value, "Rhino model URL"))
-            .transpose()?,
+            .map(std::borrow::ToOwned::to_owned),
         current_layer_index: settings.current_layer,
         current_material_index: settings.current_material.map(|selection| selection.value),
         current_material_source: settings.current_material.map(|selection| selection.source),
@@ -671,35 +619,24 @@ pub(crate) fn install(
         current_font_index: settings.current_font,
         current_dimension_style_index: settings.current_dimstyle,
     }];
-    let mut previews = ctx.collection_vec(properties.previews.len(), "Rhino document previews")?;
+    let mut previews = Vec::new();
     for (index, value) in properties.previews.iter().enumerate() {
         previews.push(PreviewRecord {
-            id: retained_numbered_id(ctx, "rhino:document:preview#", index, "Rhino preview ID")?,
+            id: retained_numbered_id("rhino:document:preview#", index),
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
             compressed: value.compressed,
-            sha256: retained_sha256(
-                ctx,
-                &scan.data[value.source.range.clone()],
-                "Rhino preview SHA-256",
-            )?,
+            sha256: retained_sha256(&scan.data[value.source.range.clone()]),
         });
     }
-    let mut setting_records = ctx.collection_vec(
-        settings.unsupported.len(),
-        "Rhino unsupported setting records",
-    )?;
+    let mut setting_records = Vec::new();
     for (index, value) in settings.unsupported.iter().enumerate() {
         setting_records.push(SettingRecord {
-            id: retained_numbered_id(ctx, "rhino:document:setting#", index, "Rhino setting ID")?,
+            id: retained_numbered_id("rhino:document:setting#", index),
             source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
-            typecode: retained_typecode(ctx, value.typecode)?,
-            sha256: retained_sha256(
-                ctx,
-                &scan.data[value.source.range.clone()],
-                "Rhino setting SHA-256",
-            )?,
+            typecode: retained_typecode(value.typecode),
+            sha256: retained_sha256(&scan.data[value.source.range.clone()]),
             parse_error: None,
         });
     }
@@ -720,39 +657,27 @@ pub(crate) fn install(
                 ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
             ) && binding.neutral_scale().is_none()
             {
-                let message = ctx.format_retained(format_args!(
-                    "setting record {:#010x} at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-                    record.typecode,
-                    record.range.start,
-                    binding.label()
-                ), "Rhino unit-binding setting message")?;
-                ctx.reserve_vec(&mut losses, 1, "Rhino document setting losses")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(message.len()),
-                    "Rhino unit-binding loss message",
-                )?;
+                let message = format!("setting record {:#010x} at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+                record.typecode,
+                record.range.start,
+                binding.label());
+
                 losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(&message));
-                ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
+
                 opaque_records.push(OpaqueRecord {
                     table_typecode: table.typecode,
                     record: record.clone(),
                 });
-                ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
+
                 setting_records.push(SettingRecord {
                     id: retained_numbered_id(
-                        ctx,
                         "rhino:document:setting#unit-binding-",
                         setting_records.len(),
-                        "Rhino retained setting ID",
-                    )?,
+                    ),
                     source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
                     byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
-                    typecode: retained_typecode(ctx, record.typecode)?,
-                    sha256: retained_sha256(
-                        ctx,
-                        &scan.data[record.range.clone()],
-                        "Rhino setting SHA-256",
-                    )?,
+                    typecode: retained_typecode(record.typecode),
+                    sha256: retained_sha256(&scan.data[record.range.clone()]),
                     parse_error: Some(message),
                 });
                 continue;
@@ -764,7 +689,6 @@ pub(crate) fn install(
                 match annotation_settings(ctx, scan.data, record.body(), record.range.start, scale)
                 {
                     Ok(value) => {
-                        ctx.reserve_vec(&mut annotations, 1, "Rhino annotation settings")?;
                         annotations.push(value);
                         Ok(())
                     }
@@ -774,9 +698,8 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match grid_defaults(ctx, scan.data, record.body(), record.range.start, scale) {
+                match grid_defaults(scan.data, record.body(), record.range.start, scale) {
                     Ok(value) => {
-                        ctx.reserve_vec(&mut grids, 1, "Rhino grid defaults")?;
                         grids.push(value);
                         Ok(())
                     }
@@ -795,7 +718,6 @@ pub(crate) fn install(
                     scale,
                 ) {
                     Ok(value) => {
-                        ctx.reserve_vec(&mut renders, 1, "Rhino render settings")?;
                         renders.push(value);
                         render_settings_seen = true;
                         Ok(())
@@ -804,13 +726,8 @@ pub(crate) fn install(
                 }
             } else if record.typecode == RENDER_USERDATA {
                 if render_settings_seen {
-                    match render_userdata(ctx, scan.data, record, scan.archive) {
+                    match render_userdata(scan.data, record, scan.archive) {
                         Ok(_) => {
-                            ctx.reserve_vec(
-                                &mut opaque_records,
-                                1,
-                                "Rhino opaque setting records",
-                            )?;
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),
@@ -823,7 +740,6 @@ pub(crate) fn install(
                         Err(error) => Err(error),
                     }
                 } else {
-                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
@@ -837,30 +753,22 @@ pub(crate) fn install(
                 if let FramingError::Resource(limit) = &error {
                     return Err(CodecError::ResourceLimit(*limit));
                 }
-                ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
+
                 opaque_records.push(OpaqueRecord {
                     table_typecode: table.typecode,
                     record: record.clone(),
                 });
-                ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
+
                 setting_records.push(SettingRecord {
                     id: retained_numbered_id(
-                        ctx,
                         "rhino:document:setting#error-",
                         setting_records.len(),
-                        "Rhino retained setting ID",
-                    )?,
+                    ),
                     source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
                     byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
-                    typecode: retained_typecode(ctx, record.typecode)?,
-                    sha256: retained_sha256(
-                        ctx,
-                        &scan.data[record.range.clone()],
-                        "Rhino setting SHA-256",
-                    )?,
-                    parse_error: Some(
-                        ctx.format_retained(format_args!("{error}"), "Rhino setting parse error")?,
-                    ),
+                    typecode: retained_typecode(record.typecode),
+                    sha256: retained_sha256(&scan.data[record.range.clone()]),
+                    parse_error: Some(format!("{error}")),
                 });
             }
         }

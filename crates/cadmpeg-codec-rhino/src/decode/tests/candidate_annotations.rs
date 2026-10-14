@@ -23,8 +23,7 @@ fn rejected_candidate_annotations_do_not_consume_retained_storage() {
         let result = context.validate_candidate_fallible(|_, annotations| {
             assert_eq!(annotations.base(), &original);
             assert!(annotations.annotations().exactness().is_empty());
-            let text =
-                session.copy_retained_text("candidate-only", "candidate annotation mutation")?;
+            let text = "candidate-only".to_owned();
             assert_eq!(text, "candidate-only");
             Err::<(), CodecError>(CodecError::malformed("candidate rejected"))
         });
@@ -153,9 +152,7 @@ fn admission_findings() -> cadmpeg_ir::report::check::ValidationReport {
 #[test]
 fn candidate_validation_message_preserves_order_and_three_error_limit() {
     let report = admission_findings();
-    let text =
-        super::super::validation_findings(&cadmpeg_test_support::service_decode_context(), &report)
-            .unwrap();
+    let text = super::super::validation_findings(&report).unwrap();
     assert_eq!(text, "identity (rhino:test:point#1): invalid identity; native_links: unresolved link; arena_order: unsorted arena");
 }
 
@@ -175,8 +172,7 @@ fn candidate_validation_message_preserves_resource_refusals() {
             _ => panic!("test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) =
-            super::super::validation_findings(&ctx, &report)
+        let Err(CodecError::ResourceLimit(limit)) = super::super::validation_findings(&report)
         else {
             panic!("finding construction must refuse");
         };
@@ -256,7 +252,6 @@ fn source_link_insertion_preserves_work_refusal_before_mutation() {
     let mut links = vec!["test:model:point#later".to_owned()];
     let before = links.clone();
     let Err(CodecError::ResourceLimit(limit)) = super::super::append_link_to_record(
-        &ctx,
         "test:source:unknown#owner",
         &mut links,
         "test:model:point#earlier",

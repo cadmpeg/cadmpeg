@@ -13,11 +13,9 @@ fn projected_user_string_entries_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    let error = crate::presentation::user_string_records(
-        &ctx,
-        vec![("key".to_string(), "value".to_string())],
-    )
-    .expect_err("projected entry exceeds collection limit");
+    let error =
+        crate::presentation::user_string_records(vec![("key".to_string(), "value".to_string())])
+            .expect_err("projected entry exceeds collection limit");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -261,7 +259,7 @@ fn displacement_projection_refusal(
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    crate::presentation::displacement_record(&ctx, value)
+    crate::presentation::displacement_record(value)
         .expect_err("displacement projection exceeds configured limit")
 }
 
@@ -327,7 +325,7 @@ fn shut_lining_projection_refusal(
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
-    crate::presentation::shut_lining_record(&ctx, value)
+    crate::presentation::shut_lining_record(value)
         .expect_err("shut-lining projection exceeds configured limit")
 }
 
@@ -379,7 +377,6 @@ fn projected_rendering_collection_refusal(limit: u64) -> FramingError {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("root bytes admitted");
     rendering_attributes(
-        &ctx,
         &bytes,
         Some(0..bytes.len()),
         ArchiveVersion::V8,

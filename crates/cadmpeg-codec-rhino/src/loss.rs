@@ -41,37 +41,21 @@ impl Diagnostics {
         Self(Vec::new())
     }
 
-    /// Admits one decoded diagnostic and its retained message before insertion.
-    pub(crate) fn push_admitted(
+    /// Records one classified diagnostic.
+    pub(crate) fn push_coded(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        message: std::fmt::Arguments<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.push_coded_admitted(ctx, None, message)
-    }
-
-    /// Admits one classified diagnostic and its retained message before insertion.
-    pub(crate) fn push_coded_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         code: impl Into<Option<RhinoLossCode>>,
-        message: std::fmt::Arguments<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_vec(&mut self.0, 1, "Rhino diagnostics")?;
-        let message = ctx.format_retained(message, "Rhino diagnostic message")?;
+        message: impl std::fmt::Display,
+    ) {
         self.0.push(RhinoDiagnostic {
             code: code.into(),
-            message,
+            message: message.to_string(),
         });
-        Ok(())
     }
 
     /// Records a diagnostic whose category the consuming channel decides.
-    pub(crate) fn push(&mut self, message: impl Into<String>) {
-        self.0.push(RhinoDiagnostic {
-            code: None,
-            message: message.into(),
-        });
+    pub(crate) fn push(&mut self, message: impl std::fmt::Display) {
+        self.push_coded(None, message);
     }
 
     pub(crate) fn messages(&self) -> impl Iterator<Item = &str> {
@@ -87,49 +71,19 @@ impl Diagnostics {
         self.0.truncate(len);
     }
 
-    /// Moves admitted diagnostics into a second report collection.
-    pub(crate) fn append_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        other: &mut Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
+    /// Moves every diagnostic of `other` after the recorded ones.
+    pub(crate) fn append(&mut self, other: &mut Self) {
         self.0.append(&mut other.0);
-        Ok(())
     }
 
-    /// Adds a source label while admitting each destination diagnostic and message.
-    pub(crate) fn append_prefixed_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        other: Self,
-        prefix: std::fmt::Arguments<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+    /// Adds a source label to each diagnostic of `other`.
+    pub(crate) fn append_prefixed(&mut self, other: Self, prefix: std::fmt::Arguments<'_>) {
         for diagnostic in other {
-            self.push_coded_admitted(
-                ctx,
+            self.push_coded(
                 diagnostic.code,
                 format_args!("{prefix}: {}", diagnostic.message),
-            )?;
+            );
         }
-        Ok(())
-    }
-
-    /// Copies diagnostics into another report after admitting the slots and text.
-    pub(crate) fn extend_cloned_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        other: &Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
-        for diagnostic in &other.0 {
-            self.0.push(RhinoDiagnostic {
-                code: diagnostic.code,
-                message: ctx
-                    .copy_retained_text(&diagnostic.message, "Rhino diagnostic copy text")?,
-            });
-        }
-        Ok(())
     }
 }
 

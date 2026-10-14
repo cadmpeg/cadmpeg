@@ -106,7 +106,6 @@ fn rendering_collection_refusal(limit: u64) -> crate::chunks::FramingError {
         .expect("root bytes admitted");
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("rendering chunk");
     settings::parse_rendering_attributes(
-        &ctx,
         &bytes,
         &mut reader,
         ArchiveVersion::V8,
@@ -162,7 +161,6 @@ fn rendering_checksums_follow_each_nested_chunk_owner() {
                     settings::RenderingAttributesKind::Layer
                 };
                 settings::parse_rendering_attributes(
-                    &cadmpeg_test_support::service_decode_context(),
                     &bytes,
                     &mut reader,
                     archive,

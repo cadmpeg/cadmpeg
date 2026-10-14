@@ -603,7 +603,6 @@ fn grid_defaults_id_refuses_retained_limit() {
         "rhino:document:grid_defaults#current".len() - 1,
         |ctx| {
             grid_defaults(
-                ctx,
                 &bytes,
                 0..bytes.len(),
                 0,
@@ -824,7 +823,6 @@ fn annotation_settings_refuse_nonfinite_scales() {
 fn grid_defaults_accept_future_minor_and_scale_lengths() {
     let bytes = grid_body();
     let value = grid_defaults(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         23,
@@ -936,7 +934,7 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("root bytes admitted");
-    let descriptor = render_userdata(&ctx, &data, &record, archive).expect("render userdata");
+    let descriptor = render_userdata(&data, &record, archive).expect("render userdata");
 
     assert_eq!(descriptor.source, record.range);
     assert_eq!(descriptor.items.len(), 2);
@@ -1007,7 +1005,7 @@ fn render_userdata_items_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("root bytes admitted");
-    let error = render_userdata(&ctx, &data, &record, archive)
+    let error = render_userdata(&data, &record, archive)
         .expect_err("render userdata item exceeds collection limit");
     assert!(matches!(
         error,
@@ -1027,7 +1025,7 @@ fn render_userdata_unknown_chunks_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("root bytes admitted");
-    let error = render_userdata(&ctx, &data, &record, archive)
+    let error = render_userdata(&data, &record, archive)
         .expect_err("unknown render userdata chunk exceeds collection limit");
     assert!(matches!(
         error,
