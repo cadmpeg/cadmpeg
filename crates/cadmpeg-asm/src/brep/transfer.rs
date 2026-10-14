@@ -113,32 +113,28 @@ pub fn transfer_into_ir<'ir>(
     .try_fold(0_u64, |total, count| {
         total
             .checked_add(cadmpeg_core::decode::u64_from_index(count))
-            .ok_or_else(|| ctx.refuse_codec_limit("admit ASM entities", u64::MAX, u64::MAX))
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("ASM entity count overflows u64"))
     })?;
     ctx.charge_entities(entity_count, "admit ASM entities")?;
-    ctx.extend_vec(&mut ir.model.bodies, bodies, "ASM transfer bodies")?;
-    ctx.extend_vec(&mut ir.model.regions, regions, "ASM transfer regions")?;
-    ctx.extend_vec(&mut ir.model.shells, shells, "ASM transfer shells")?;
-    ctx.extend_vec(&mut ir.model.faces, faces, "ASM transfer faces")?;
-    ctx.extend_vec(&mut ir.model.loops, loops, "ASM transfer loops")?;
-    ctx.extend_vec(&mut ir.model.coedges, coedges, "ASM transfer coedges")?;
-    ctx.extend_vec(&mut ir.model.edges, edges, "ASM transfer edges")?;
-    ctx.extend_vec(&mut ir.model.vertices, vertices, "ASM transfer vertices")?;
-    ctx.extend_vec(&mut ir.model.points, points, "ASM transfer points")?;
-    ctx.extend_vec(&mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
-    ctx.extend_vec(&mut ir.model.curves, curves, "ASM transfer curves")?;
-    ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
+    ir.model.bodies.extend(bodies);
+    ir.model.regions.extend(regions);
+    ir.model.shells.extend(shells);
+    ir.model.faces.extend(faces);
+    ir.model.loops.extend(loops);
+    ir.model.coedges.extend(coedges);
+    ir.model.edges.extend(edges);
+    ir.model.vertices.extend(vertices);
+    ir.model.points.extend(points);
+    ir.model.surfaces.extend(surfaces);
+    ir.model.curves.extend(curves);
+    ir.model.pcurves.extend(pcurves);
     ir.model
         .add_procedural_surfaces(ctx, procedural_surfaces)?
         .map_err(CodecError::malformed)?;
     ir.model
         .add_procedural_curves(ctx, procedural_curves)?
         .map_err(CodecError::malformed)?;
-    ctx.extend_vec(
-        &mut ir.model.attributes,
-        attributes,
-        "ASM transfer attributes",
-    )?;
+    ir.model.attributes.extend(attributes);
 
     let namespace = ir.native.namespace_mut(native_format);
     namespace.set_arena(ctx, "edge_continuities", &edge_continuities)?;
@@ -189,35 +185,6 @@ mod tests {
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         assert_eq!(namespace.arenas().len(), 12);
-    }
-
-    #[test]
-    fn transfer_regions_refuses_collection_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-        use cadmpeg_core::CodecError;
-        use cadmpeg_ir::ids::{BodyId, RegionId};
-        use cadmpeg_ir::topology::Region;
-
-        let source = [0_u8];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
-            .expect("test root fits policy");
-        let mut brep = AsmBrep::default();
-        brep.regions.push(Region {
-            id: RegionId::mint("f3d:brep:region#1").unwrap(),
-            body: BodyId::mint("f3d:brep:body#1").unwrap(),
-            shells: Vec::new(),
-        });
-        let error = transfer_into_ir(&ctx, &mut CadIr::empty(), "test", brep)
-            .err()
-            .expect("one region exceeds zero items");
-        let CodecError::ResourceLimit(limit) = error else {
-            panic!("expected collection refusal: {error:?}");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "ASM transfer regions");
     }
 
     #[test]

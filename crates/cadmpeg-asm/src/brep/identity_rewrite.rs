@@ -12,13 +12,11 @@ macro_rules! graph {
         impl RewriteIdentities for $owner {
             fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
                 let _depth = ctx.enter_nested("walk ASM graph references")?;
-                ctx.charge_work(1, "walk ASM graph references")?;
                 $(self.$field.visit_identity_references(ctx, visitor)?;)*
                 Ok(())
             }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(mut self, ctx: &DecodeContext<'_>, map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
                 let _depth = ctx.enter_nested("rewrite ASM graph fields")?;
-                ctx.charge_work(1, "rewrite ASM graph fields")?;
                 $(self.$field = self.$field.rewrite_identities(ctx, map)?;)*
                 Ok(self)
             }
@@ -31,10 +29,9 @@ graph!(Stats; missing_face_surface_kinds, unknown_surface_kinds, mesh_surface_fa
 impl RewriteIdentities for AnnotationRecord {
     fn visit_identity_references(
         &self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
-        ctx.charge_work(1, "walk ASM annotation identity")?;
         visitor(&self.id)
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -42,7 +39,6 @@ impl RewriteIdentities for AnnotationRecord {
         ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_, F>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, "rewrite ASM annotation identity")?;
         self.id = map.identity(ctx, &self.id)?;
         Ok(self)
     }

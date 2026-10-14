@@ -49,27 +49,16 @@ pub(crate) fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bo
 }
 
 /// Scan record boundaries and exact names without constructing a record table.
-/// The caller admits the complete token walk before scanning.
 pub(crate) fn scan_history_boundary(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     ref_width: RefWidth,
     preamble: Option<&[&str]>,
-) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let Some(remaining) = bytes.get(start..) else {
-        return Ok(None);
-    };
-    // Token decoding validates UTF-8 and compares names against fixed markers.
-    // Three walks cover decoding and both marker comparisons for every byte.
-    for _ in 0..3 {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(remaining.len()),
-            "SAB history boundary scan",
-        )?;
+) -> Option<usize> {
+    if start > bytes.len() {
+        return None;
     }
-    let _errors = ctx.reserve_scoped(128, "SAB history scanner error text")?;
-    Ok((|| {
+    {
         let mut pos = start;
         while pos < bytes.len() {
             let rec_start = pos;
@@ -116,7 +105,7 @@ pub(crate) fn scan_history_boundary(
             }
         }
         None
-    })())
+    }
 }
 
 /// A decoded SAB token. The codec assigns typed values to the payload it
@@ -555,9 +544,6 @@ fn frame_impl(
 
     while pos < limit {
         let rec_start = pos;
-        let mut scratch = ctx
-            .reserve_scoped(0, "frame SAB record")
-            .map_err(StreamFailure::from_operation)?;
         let mut name_parts: Vec<String> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
         let mut depth_guards = Vec::new();
@@ -575,8 +561,6 @@ fn frame_impl(
                 break;
             }
             let token_offset = pos;
-            ctx.charge_work(1, "lex SAB token")
-                .map_err(StreamFailure::from_operation)?;
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
@@ -590,19 +574,11 @@ fn frame_impl(
                     .into());
                 }
                 Lexed::SubIdent(s) if !name_done => {
-                    ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
+                    let part = s.to_owned();
                     name_parts.push(part);
                 }
                 Lexed::Ident(s) if !name_done => {
-                    ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
-                    let part = ctx
-                        .copy_scoped_text(s, &mut scratch, "frame SAB name part")
-                        .map_err(StreamFailure::from_operation)?;
+                    let part = s.to_owned();
                     name_parts.push(part);
                     name_done = true;
                     // The history partition opens with the delta_state record.
@@ -629,30 +605,18 @@ fn frame_impl(
                         embedded_history_edge = true;
                     }
                     payload_start = false;
-                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")
-                        .map_err(StreamFailure::from_operation)?;
-                    let owned = ctx
-                        .copy_retained_text(identifier, "retain SAB token string")
-                        .map_err(StreamFailure::from_operation)?;
+                    let owned = identifier.to_owned();
                     tokens.push(Token::Ident(owned));
                 }
                 Lexed::SubIdent(identifier) => {
                     payload_start = false;
-                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")
-                        .map_err(StreamFailure::from_operation)?;
-                    let owned = ctx
-                        .copy_retained_text(identifier, "retain SAB token string")
-                        .map_err(StreamFailure::from_operation)?;
+                    let owned = identifier.to_owned();
                     tokens.push(Token::SubIdent(owned));
                 }
                 Lexed::Str(value) => {
                     payload_start = false;
                     name_done = true;
-                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")
-                        .map_err(StreamFailure::from_operation)?;
-                    let owned = ctx
-                        .copy_retained_text(value, "retain SAB token string")
-                        .map_err(StreamFailure::from_operation)?;
+                    let owned = value.to_owned();
                     tokens.push(Token::Str(owned));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
@@ -660,17 +624,8 @@ fn frame_impl(
                     let guard = ctx
                         .enter_nested("frame SAB subtype")
                         .map_err(StreamFailure::from_operation)?;
-                    ctx.reserve_scoped_vec(
-                        &mut scratch,
-                        &mut depth_guards,
-                        1,
-                        "frame SAB subtype guards",
-                    )
-                    .map_err(StreamFailure::from_operation)?;
                     depth_guards.push(guard);
                     name_done = true;
-                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")
-                        .map_err(StreamFailure::from_operation)?;
                     tokens.push(Token::SubtypeOpen);
                 }
                 Lexed::Value(Token::SubtypeClose) => {
@@ -683,15 +638,11 @@ fn frame_impl(
                         }
                         .into());
                     }
-                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")
-                        .map_err(StreamFailure::from_operation)?;
                     tokens.push(Token::SubtypeClose);
                 }
                 Lexed::Value(v) => {
                     payload_start = false;
                     name_done = true;
-                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")
-                        .map_err(StreamFailure::from_operation)?;
                     tokens.push(v);
                 }
             }
@@ -701,33 +652,12 @@ fn frame_impl(
             break;
         }
         let name = if embedded_history_edge {
-            ctx.copy_retained_text("edge", "retain SAB record name")
-                .map_err(StreamFailure::from_operation)?
+            "edge".to_owned()
         } else {
-            ctx.join_retained(&name_parts, "-", "retain SAB record name")
-                .map_err(StreamFailure::from_operation)?
+            name_parts.join("-")
         };
 
-        let token_bytes = tokens
-            .len()
-            .checked_mul(std::mem::size_of::<Token>())
-            .ok_or_else(|| {
-                StreamFailure::from_operation(ctx.refuse_codec_limit(
-                    "SAB token bytes",
-                    u64::MAX,
-                    u64::MAX,
-                ))
-            })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(token_bytes),
-            "retain SAB tokens",
-        )
-        .map_err(StreamFailure::from_operation)?;
-        let population = index
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("SAB record population", u64::MAX, u64::MAX))
-            .map_err(StreamFailure::from_operation)?;
-        let population = cadmpeg_core::decode::u64_from_index(population);
+        let population = cadmpeg_core::decode::u64_from_index(index + 1);
         if population > admitted_entities {
             ctx.admit_entities(
                 population,
@@ -736,8 +666,6 @@ fn frame_impl(
             )
             .map_err(StreamFailure::from_operation)?;
         }
-        ctx.reserve_vec(&mut records, 1, "frame SAB record")
-            .map_err(StreamFailure::from_operation)?;
         records.push(Record {
             index,
             name,
@@ -761,10 +689,9 @@ mod tests {
     use crate::kernel_header::RefWidth;
     use crate::stream_error::{StreamError, StreamFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     #[test]
-    fn sab_history_boundary_refuses_caller_work_before_lexing() {
+    fn sab_history_boundary_follows_the_solved_records() {
         for acis in [false, true] {
             let mut bytes = if acis {
                 b"ACIS BinaryFile".to_vec()
@@ -788,27 +715,6 @@ mod tests {
                 .expect("header admitted")
                 .expect("binary header");
                 let boundary = bytes.len() - 13;
-                for with_header in [false, true] {
-                    let mut policy = *service.policy();
-                    policy.limits.max_work_units = 0;
-                    let arena = DecodeArena::new();
-                    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                        .expect("source fits policy");
-                    let result = match (acis, with_header) {
-                        (false, false) => crate::asm_header::solved_record_limit(&ctx, &bytes),
-                        (false, true) => crate::asm_header::solved_record_limit_with_header(
-                            &ctx, &bytes, &header,
-                        ),
-                        (true, false) => crate::acis_header::solved_record_limit(&ctx, &bytes),
-                        (true, true) => crate::acis_header::solved_record_limit_with_header(
-                            &ctx, &bytes, &header,
-                        ),
-                    };
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                        if limit.dimension == ResourceDimension::WorkUnits
-                            && limit.operation == "SAB history boundary scan"
-                            && limit.used == 0));
-                }
                 let result = if acis {
                     crate::acis_header::solved_record_limit_with_header(service, &bytes, &header)
                 } else {
@@ -820,60 +726,13 @@ mod tests {
         }
     }
 
-    fn assert_framed_collection_limit(max_items: u64, operation: &str) {
-        let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
-            .expect_err("collection refusal");
-        let StreamFailure::Resource(limit) = error else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, operation);
-    }
-
     #[test]
-    fn sab_name_parts_refuse_collection_limit() {
-        assert_framed_collection_limit(0, "frame SAB name part");
-    }
-
-    #[test]
-    fn sab_subtype_guards_refuse_collection_limit() {
-        assert_framed_collection_limit(1, "frame SAB subtype guards");
-    }
-
-    #[test]
-    fn sab_tokens_refuse_collection_limit() {
-        assert_framed_collection_limit(2, "frame SAB token");
-    }
-
-    #[test]
-    fn sab_records_refuse_collection_limit() {
-        assert_framed_collection_limit(5, "frame SAB record");
-    }
-
-    #[test]
-    fn sab_framing_refuses_token_name_record_and_scope_resources() {
+    fn sab_framing_refuses_record_entities_and_scope_depth() {
         type LimitCase = (ResourceDimension, fn(&mut DecodePolicy));
         let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
-        let cases: [LimitCase; 6] = [
-            (ResourceDimension::RetainedBytes, |policy| {
-                policy.limits.max_retained_bytes = 0;
-            }),
+        let cases: [LimitCase; 2] = [
             (ResourceDimension::Entities, |policy| {
                 policy.limits.max_entities = 0;
-            }),
-            (ResourceDimension::CollectionItems, |policy| {
-                policy.limits.max_collection_items = 0;
-            }),
-            (ResourceDimension::MaterializedBytes, |policy| {
-                policy.limits.max_materialized_bytes = 0;
-            }),
-            (ResourceDimension::WorkUnits, |policy| {
-                policy.limits.max_work_units = 0;
             }),
             (ResourceDimension::RecursionDepth, |policy| {
                 policy.limits.max_recursion_depth = 0;

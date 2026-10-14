@@ -14,23 +14,11 @@ use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::test_support::sab;
 
 fn decode_surface(record: &cadmpeg_asm::sab::Record) -> Option<(SolvedSurfaceGeometry, bool)> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    cadmpeg_asm::brep::geometry::decode_surface(&ctx, record)
-        .transpose()
-        .unwrap()
+    cadmpeg_asm::brep::geometry::decode_surface(record)
 }
 
 fn decode_curve(record: &cadmpeg_asm::sab::Record) -> Option<CurveGeometry> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    cadmpeg_asm::brep::geometry::decode_curve(&ctx, record)
-        .transpose()
-        .unwrap()
+    cadmpeg_asm::brep::geometry::decode_curve(record)
 }
 
 #[test]
