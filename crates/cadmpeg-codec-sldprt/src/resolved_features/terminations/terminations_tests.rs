@@ -121,9 +121,7 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[138..158].fill(0);
     payload[158..162].copy_from_slice(&101u32.to_le_bytes());
     let crate::resolved_features::selections::ComponentPathReference(path, terminal_source) =
-        compact_single_face_reference_record_at(&path_ctx, &payload, 100)
-            .expect("component path resource admission")
-            .expect("required invariant");
+        compact_single_face_reference_record_at(&payload, 100).expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(terminal_source, Some(101));
 
@@ -136,9 +134,7 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[162..186].fill(0);
     payload[186..190].copy_from_slice(&101u32.to_le_bytes());
     let crate::resolved_features::selections::ComponentPathReference(path, terminal_source) =
-        compact_single_face_reference_record_at(&path_ctx, &payload, 100)
-            .expect("component path resource admission")
-            .expect("required invariant");
+        compact_single_face_reference_record_at(&payload, 100).expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[1].local_id, Some(9));
     assert_eq!(terminal_source, Some(101));
@@ -797,13 +793,6 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
 
 #[test]
 fn termination_consensus_uses_stable_reference_identity_across_lanes() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let vote = |reference: &str, identity: &str| super::TerminationVote::Face {
         condition: super::FaceCondition::ToFace,
         reference: super::FaceReference::Lane {
@@ -814,20 +803,16 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     };
     let first = vote("lane-0:100", "components:1,2,3");
     let second = vote("lane-1:200", "components:1,2,3");
-    let consensus = super::consensus_termination_vote(&ctx, &[Some(first.clone()), Some(second)])
-        .unwrap()
-        .unwrap();
+    let consensus =
+        super::consensus_termination_vote(&[Some(first.clone()), Some(second)]).unwrap();
     assert_eq!(consensus.reference(), Some("components:1,2,3"));
 
-    let exact = super::consensus_termination_vote(&ctx, &[Some(first.clone())])
-        .unwrap()
-        .unwrap();
+    let exact = super::consensus_termination_vote(&[Some(first.clone())]).unwrap();
     assert_eq!(exact.reference(), first.reference());
-    assert!(super::consensus_termination_vote(
-        &ctx,
-        &[Some(first), Some(vote("lane-1:200", "components:1,2,4")),]
-    )
-    .unwrap()
+    assert!(super::consensus_termination_vote(&[
+        Some(first),
+        Some(vote("lane-1:200", "components:1,2,4")),
+    ])
     .is_none());
 
     let first_depth = super::TerminationVote::Blind {
@@ -836,11 +821,7 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     let second_depth = super::TerminationVote::Blind {
         depth_m: Some(0.02),
     };
-    assert!(
-        super::consensus_termination_vote(&ctx, &[Some(first_depth), Some(second_depth),])
-            .unwrap()
-            .is_none()
-    );
+    assert!(super::consensus_termination_vote(&[Some(first_depth), Some(second_depth)]).is_none());
 }
 
 #[test]
@@ -1434,14 +1415,6 @@ fn compact_extrusion_offset_from_face_requires_the_late_face_reference() {
 
 #[test]
 fn compact_body_path_requires_type_three_vector() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; 100];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -1455,63 +1428,31 @@ fn compact_body_path_requires_type_three_vector() {
     payload[second..second + 4].copy_from_slice(&[0x3b, 0x80, 0, 0]);
     payload[second + 4..second + 16].copy_from_slice(&[2; 12]);
     payload[second + 16..second + 20].copy_from_slice(&7u32.to_le_bytes());
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
     assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        Some(vec![6, 7])
-    );
-    assert_eq!(
-        compact_body_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
-            .map(|components| components.len()),
+        compact_body_component_path_at(&payload, marker).map(|components| components.len()),
         Some(2)
     );
 
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
-    assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        Some(vec![6, 7])
-    );
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
 
     payload[second + 20..second + 30].copy_from_slice(&[0; 10]);
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
     assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        Some(vec![6, 7])
-    );
-    assert_eq!(
-        compact_body_component_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission")
-            .map(|components| components.len()),
+        compact_body_component_path_at(&payload, marker).map(|components| components.len()),
         Some(2)
     );
     payload[second + 24] = 1;
-    assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        None
-    );
+    assert_eq!(compact_body_path_at(&payload, marker), None);
 
     payload[4] = 2;
-    assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        None
-    );
+    assert_eq!(compact_body_path_at(&payload, marker), None);
 }
 
 #[test]
 fn compact_body_path_accepts_anonymous_mixed_entries() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker + 18];
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
@@ -1531,38 +1472,18 @@ fn compact_body_path_accepts_anonymous_mixed_entries() {
     payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
     payload.extend_from_slice(&3u32.to_le_bytes());
 
-    assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        Some(vec![2, 1, 3])
-    );
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
 
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
     payload.extend_from_slice(&[0; 10]);
-    assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        Some(vec![2, 1, 3])
-    );
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
     let last = payload.len() - 1;
     payload[last] = 1;
-    assert_eq!(
-        compact_body_path_at(&path_ctx, &payload, marker)
-            .expect("component path resource admission"),
-        None
-    );
+    assert_eq!(compact_body_path_at(&payload, marker), None);
 }
 
 #[test]
 fn compact_body_component_path_accepts_counted_sentinel_separators() {
-    let path_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &path_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("component path test context");
-
     let marker = 12;
     let mut payload = vec![0; marker + 18];
     payload[..4].copy_from_slice(&10u32.to_le_bytes());
@@ -1604,8 +1525,7 @@ fn compact_body_component_path_accepts_counted_sentinel_separators() {
     entry(&mut payload, 0x8521, 213, 1);
     local(&mut payload, 8);
 
-    let components = compact_body_component_path_at(&path_ctx, &payload, marker)
-        .expect("component path resource admission")
+    let components = compact_body_component_path_at(&payload, marker)
         .expect("counted lineage path with sentinel separators");
     assert_eq!(components.len(), 10);
     assert_eq!(components[5].local_id, None);
@@ -1675,14 +1595,7 @@ fn enrich_combine_uses_outermost_body_paths() {
         sketch_entities: Vec::new(),
     }];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lanes[0].native_payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    enrich_history_combine_selections(&ctx, &mut histories, &lanes).unwrap();
+    enrich_history_combine_selections(&mut histories, &lanes).unwrap();
 
     let properties = &histories[0].features[0].properties;
     assert_eq!(
@@ -1725,7 +1638,8 @@ fn compact_combine_operation_is_name_length_relative() {
     assert_eq!(compact_combine_operation_at(&tokenized, offset), None);
 }
 
-fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+#[test]
+fn sweep_path_enrichment_binds_the_general_curve_path() {
     let histories = [FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1783,15 +1697,8 @@ fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core:
         references: Vec::new(),
         sketch_entities: Vec::new(),
     }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lanes[0].native_payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let mut admitted = histories.clone();
-    super::enrich_history_sweep_paths(&service, &mut admitted, &lanes).unwrap();
+    super::enrich_history_sweep_paths(&mut admitted, &lanes);
     assert_eq!(
         admitted[0].features[0]
             .properties
@@ -1799,49 +1706,10 @@ fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core:
             .map(String::as_str),
         Some("sldprt:feature-input:general-curve-ref:35:40")
     );
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lanes[0].native_payload,
-        &arena,
-        &policy,
-    )
-    .unwrap();
-    super::enrich_history_sweep_paths(&ctx, &mut histories.clone(), &lanes).unwrap_err()
 }
 
 #[test]
-fn sweep_path_enrichment_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    assert!(
-        matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "enrich SLDPRT sweep paths")
-    );
-}
-
-#[test]
-fn sweep_path_enrichment_refuses_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    assert!(
-        matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "enrich SLDPRT sweep paths")
-    );
-}
-
-#[test]
-fn sweep_path_enrichment_refuses_work_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    assert!(
-        matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "enrich SLDPRT sweep paths")
-    );
-}
-
-fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+fn combine_selection_enrichment_binds_target_and_tool_paths() {
     let mut payload = vec![0; 420];
     for (marker, local_id) in [(100usize, 1u32), (200, 2), (300, 3)] {
         payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
@@ -1852,7 +1720,7 @@ fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpe
         payload[marker + 22..marker + 34].copy_from_slice(&[1; 12]);
         payload[marker + 34..marker + 38].copy_from_slice(&local_id.to_le_bytes());
     }
-    let mut histories = vec![FeatureHistory {
+    let histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
@@ -1900,15 +1768,8 @@ fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpe
         sketch_entities: Vec::new(),
     }];
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lanes[0].native_payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
     let mut admitted = histories.clone();
-    enrich_history_combine_selections(&service, &mut admitted, &lanes).unwrap();
+    enrich_history_combine_selections(&mut admitted, &lanes).unwrap();
     assert_eq!(
         admitted[0].features[0]
             .properties
@@ -1922,43 +1783,6 @@ fn combine_selection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpe
             .get("Tools")
             .map(String::as_str),
         Some("sldprt:feature-input:body-path:35:300")
-    );
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lanes[0].native_payload,
-        &arena,
-        &policy,
-    )
-    .unwrap();
-    enrich_history_combine_selections(&ctx, &mut histories, &lanes).unwrap_err()
-}
-
-#[test]
-fn combine_selection_enrichment_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    assert!(
-        matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn combine_selection_enrichment_refuses_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    assert!(
-        matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn combine_selection_enrichment_refuses_work_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    assert!(
-        matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
 }
 

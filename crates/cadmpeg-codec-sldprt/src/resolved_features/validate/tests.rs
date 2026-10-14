@@ -214,7 +214,8 @@ fn native_validation_rejects_edited_relation_instance() {
         .contains("relation instances do not match the native payload"));
 }
 
-fn native_validation_route_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+#[test]
+fn native_validation_route_refuses_nesting_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let source = sldprt_with_compact_relation_pair(&triangle_body());
@@ -223,72 +224,18 @@ fn native_validation_route_refusal(dimension: cadmpeg_core::decode::ResourceDime
         .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    let selected = match dimension {
-        ResourceDimension::CollectionItems => &mut policy.limits.max_collection_items,
-        ResourceDimension::RetainedBytes => &mut policy.limits.max_retained_bytes,
-        ResourceDimension::MaterializedBytes => &mut policy.limits.max_materialized_bytes,
-        ResourceDimension::RecursionDepth => &mut policy.limits.max_recursion_depth,
-        ResourceDimension::WorkUnits => &mut policy.limits.max_work_units,
-        _ => panic!("unsupported validation test dimension"),
-    };
-    *selected = 0;
+    policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let CodecError::ResourceLimit(limit) =
         SldprtCodec.validate_native(&ctx, decoded.ir()).unwrap_err()
     else {
         panic!("native validation must propagate a resource refusal");
     };
-    assert_eq!(limit.dimension, dimension);
-    let selected = match dimension {
-        ResourceDimension::CollectionItems => &mut policy.limits.max_collection_items,
-        ResourceDimension::RetainedBytes => &mut policy.limits.max_retained_bytes,
-        ResourceDimension::MaterializedBytes => &mut policy.limits.max_materialized_bytes,
-        ResourceDimension::RecursionDepth => &mut policy.limits.max_recursion_depth,
-        ResourceDimension::WorkUnits => &mut policy.limits.max_work_units,
-        _ => panic!("unsupported validation test dimension"),
-    };
-    *selected = limit.used + limit.additional - 1;
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    policy.limits.max_recursion_depth = limit.used + limit.additional - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     assert!(
         matches!(SldprtCodec.validate_native(&ctx, decoded.ir()), Err(CodecError::ResourceLimit(refusal))
-        if refusal.dimension == dimension && refusal.operation == limit.operation)
+        if refusal.dimension == ResourceDimension::RecursionDepth && refusal.operation == limit.operation)
     );
-}
-
-#[test]
-fn native_validation_route_refuses_collection_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn native_validation_route_keeps_valid_record_copies_in_scoped_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let source = sldprt_with_compact_relation_pair(&triangle_body());
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    assert!(SldprtCodec
-        .validate_native(&ctx, decoded.ir())
-        .unwrap()
-        .is_empty());
-    assert!(ctx.finish_session().is_ok());
-}
-
-#[test]
-fn native_validation_route_refuses_scoped_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-}
-
-#[test]
-fn native_validation_route_refuses_nesting_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::RecursionDepth);
-}
-
-#[test]
-fn native_validation_route_refuses_work_limit() {
-    native_validation_route_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }

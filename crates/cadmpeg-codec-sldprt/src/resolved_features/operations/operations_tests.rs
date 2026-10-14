@@ -14,157 +14,8 @@ use crate::records::{
 use cadmpeg_ir::features::BooleanOp;
 use std::collections::BTreeMap;
 
-fn split_line_limit_input() -> (Vec<FeatureHistory>, Vec<FeatureInputLane>) {
-    let histories = vec![FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![Feature {
-            id: "split".into(),
-            parent: "history".into(),
-            xml_tag: "Feature".into(),
-            tree_parent: None,
-            source_id: FeatureSource::from_value(1),
-            ordinal: 0,
-            name: "Split Line".into(),
-            kind: "Split Line".into(),
-            input_class: Some("moPLine_c".into()),
-            suppressed: false,
-            parameters: BTreeMap::new(),
-            dimension_properties: BTreeMap::new(),
-            properties: BTreeMap::new(),
-            text: None,
-            content: Vec::new(),
-        }],
-    }];
-    let lanes = vec![FeatureInputLane {
-        id: "lane".into(),
-        configuration: None,
-        native_payload: vec![0; 64].into(),
-        classes: Vec::new(),
-        names: vec![FeatureInputName {
-            id: "name".into(),
-            parent: "lane".into(),
-            ordinal: 0,
-            offset: 20,
-            value: "Split Line".into(),
-            object_id: ObjectId::from_value(1),
-        }],
-        scalars: Vec::new(),
-        relation_bindings: Vec::new(),
-        relation_instances: Vec::new(),
-        body_selections: Vec::new(),
-        edge_selections: Vec::new(),
-        surface_selections: Vec::new(),
-        generated_surface_identities: Vec::new(),
-        references: Vec::new(),
-        sketch_entities: Vec::new(),
-    }];
-    (histories, lanes)
-}
-
-fn split_line_limit_error(
-    limit: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let (mut histories, lanes) = split_line_limit_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    limit(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    enrich_history_split_lines(&ctx, &mut histories, &lanes)
-        .expect_err("split-line input exceeds the selected limit")
-}
-
-#[test]
-fn split_line_enrichment_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = split_line_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT split-line objects")
-    );
-}
-
-#[test]
-fn split_line_enrichment_refuses_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain SLDPRT split-line observation ID",
-        |cap| {
-            Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap;
-            }))
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT split-line observation ID")
-    );
-}
-
-#[test]
-fn split_line_enrichment_refuses_work_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = split_line_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT split-line objects")
-    );
-}
-
-#[test]
-fn feature_operation_binding_refuses_history_index_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let histories = [FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![Feature {
-            id: "native-extrude".into(),
-            parent: "history".into(),
-            xml_tag: "Feature".into(),
-            tree_parent: None,
-            source_id: FeatureSource::from_value(1),
-            ordinal: 0,
-            name: "Extrude".into(),
-            kind: "operation".into(),
-            input_class: Some("moExtrusion_c".into()),
-            suppressed: false,
-            parameters: BTreeMap::new(),
-            dimension_properties: BTreeMap::new(),
-            properties: BTreeMap::new(),
-            text: None,
-            content: Vec::new(),
-        }],
-    }];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = super::bind_feature_operations(&ctx, &mut [], &histories, &[], None)
-        .expect_err("one history feature exceeds zero collection items");
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "index SLDPRT extrusion history"));
-}
-
 #[test]
 fn split_line_projection_mode_requires_one_owned_project_class() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("test context");
     let native_feature = |id: &str, source: &str, class: &str| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -238,8 +89,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     };
 
     let mut projected = vec![history.clone()];
-    enrich_history_split_lines(&ctx, &mut projected, std::slice::from_ref(&lane))
-        .expect("enrich split line");
+    enrich_history_split_lines(&mut projected, std::slice::from_ref(&lane));
     assert_eq!(
         projected[0].features[0]
             .properties
@@ -264,7 +114,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         name: "moPLineProject_c".into(),
     });
     let mut ambiguous = vec![history.clone()];
-    enrich_history_split_lines(&ctx, &mut ambiguous, &[ambiguous_lane]).expect("enrich split line");
+    enrich_history_split_lines(&mut ambiguous, &[ambiguous_lane]);
     assert!(!ambiguous[0].features[0]
         .properties
         .contains_key(SPLIT_LINE_MODE_PROPERTY));
@@ -274,7 +124,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     duplicate_sketch.source_id = FeatureSource::from_value(20);
     history.features.insert(2, duplicate_sketch);
     let mut ambiguous_tool = vec![history];
-    enrich_history_split_lines(&ctx, &mut ambiguous_tool, &[lane]).expect("enrich split line");
+    enrich_history_split_lines(&mut ambiguous_tool, &[lane]);
     assert_eq!(
         ambiguous_tool[0].features[0]
             .properties
@@ -630,7 +480,6 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 
 #[test]
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
         FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
@@ -638,10 +487,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("test context");
 
     let extrude = |op| {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -759,8 +604,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ),
     ];
 
-    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
-        .expect("bind configuration operations");
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
 
     assert!(matches!(
         configured[0].evaluation.definition(),
@@ -780,8 +624,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     configured[0]
         .evaluation
         .set_definition(extrude(BooleanOp::NewBody));
-    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
-        .expect("bind configuration operations");
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -826,14 +669,12 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
-        &ctx,
         &mut inherited,
         &base,
         &histories,
         &[operation_lane.clone()],
         Some(4),
-    )
-    .expect("bind configuration operations");
+    );
     assert!(matches!(
         inherited[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -849,14 +690,12 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
-        &ctx,
         &mut unresolved,
         &base,
         &histories,
         &[operation_lane],
         Some(4),
-    )
-    .expect("bind configuration operations");
+    );
     assert!(matches!(
         unresolved[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {

@@ -10,7 +10,7 @@ use crate::history::configuration::restore_configuration_tree_node_definitions;
 use crate::history::enrich_scene_classes;
 use crate::history::parameters::native_parameter_is_length;
 use crate::history::parameters::project_parameters;
-use crate::history::project::neutral_feature_id_charged;
+use crate::history::project::neutral_feature_id;
 use crate::history::project::parameter_names;
 use crate::history::project::project_definition;
 use crate::history::project::project_feature_content;
@@ -54,21 +54,19 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
 
 #[test]
 fn charged_feature_ids_preserve_native_key_escaping() {
-    with_test_ctx(|ctx| {
-        for (native, expected) in [
-            ("sldprt:history:feature#1:2", "sldprt:model:feature#1:2"),
-            (
-                "sldprt:history:feature#two#percent% space",
-                "sldprt:model:feature#two%23percent%25%20space",
-            ),
-            ("custom-native-id", "sldprt:model:feature#custom-native-id"),
-        ] {
-            assert_eq!(
-                neutral_feature_id_charged(ctx, native).unwrap(),
-                cadmpeg_ir::features::FeatureId::mint(expected).unwrap()
-            );
-        }
-    });
+    for (native, expected) in [
+        ("sldprt:history:feature#1:2", "sldprt:model:feature#1:2"),
+        (
+            "sldprt:history:feature#two#percent% space",
+            "sldprt:model:feature#two%23percent%25%20space",
+        ),
+        ("custom-native-id", "sldprt:model:feature#custom-native-id"),
+    ] {
+        assert_eq!(
+            neutral_feature_id(native).unwrap(),
+            cadmpeg_ir::features::FeatureId::mint(expected).unwrap()
+        );
+    }
 }
 
 #[test]
@@ -327,15 +325,8 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
         FeatureContent::Dimension("D1".into()),
     ];
 
-    assert_eq!(
-        parameter_names(&cadmpeg_test_support::service_decode_context(), &feature).unwrap(),
-        vec!["D1", "D1"]
-    );
-    assert_eq!(
-        projected_parameter_names(&cadmpeg_test_support::service_decode_context(), &feature)
-            .unwrap(),
-        vec!["D1"]
-    );
+    assert_eq!(parameter_names(&feature), vec!["D1", "D1"]);
+    assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
     assert_eq!(
         (&*project_feature_content(
             &cadmpeg_test_support::service_decode_context(),
@@ -415,12 +406,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "12"),
         ("e", "<MOD-DIAM>5.5"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &counterbore,
-    )
-    .expect("resource budget")
-    .expect("required invariant");
+    let construction = hole_sketch_construction(&counterbore)
+        .expect("resource budget")
+        .expect("required invariant");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
@@ -448,10 +436,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "10"),
         ("e", "118°"),
     ]);
-    let construction =
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &threaded)
-            .expect("resource budget")
-            .expect("required invariant");
+    let construction = hole_sketch_construction(&threaded)
+        .expect("resource budget")
+        .expect("required invariant");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.2).unwrap()
@@ -478,12 +465,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "11.62"),
         ("f", "<MOD-DIAM>10.29"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &tapered_thread,
-    )
-    .expect("resource budget")
-    .expect("tapered thread profile");
+    let construction = hole_sketch_construction(&tapered_thread)
+        .expect("resource budget")
+        .expect("tapered thread profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(8.43).unwrap()
@@ -521,12 +505,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("e", "<MOD-DIAM>4.5"),
         ("f", "<MOD-DIAM>4.55"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &counterbore_with_exit_countersink,
-    )
-    .expect("resource budget")
-    .expect("dual-ended profile");
+    let construction = hole_sketch_construction(&counterbore_with_exit_countersink)
+        .expect("resource budget")
+        .expect("dual-ended profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap()
@@ -559,12 +540,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("f", "5.4"),
         ("g", "<MOD-DIAM>9.95"),
     ]);
-    let construction = hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &counterdrill,
-    )
-    .expect("resource budget")
-    .expect("counterdrill profile");
+    let construction = hole_sketch_construction(&counterdrill)
+        .expect("resource budget")
+        .expect("counterdrill profile");
     assert_eq!(
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
@@ -601,12 +579,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("d", "4"),
         ("e", "6"),
     ]);
-    assert!(hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &placement_dimensions
-    )
-    .expect("resource budget")
-    .is_none());
+    assert!(hole_sketch_construction(&placement_dimensions)
+        .expect("resource budget")
+        .is_none());
 
     let unsupported_countersink = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -614,12 +589,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("depth", "6"),
         ("angle", "82°"),
     ]);
-    assert!(hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &unsupported_countersink
-    )
-    .expect("resource budget")
-    .is_none());
+    assert!(hole_sketch_construction(&unsupported_countersink)
+        .expect("resource budget")
+        .is_none());
 
     let unsupported_counterbore = profile(&[
         ("diameter", "<MOD-DIAM>5"),
@@ -627,12 +599,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         ("entry depth", "3"),
         ("depth", "6"),
     ]);
-    assert!(hole_sketch_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &unsupported_counterbore
-    )
-    .expect("resource budget")
-    .is_none());
+    assert!(hole_sketch_construction(&unsupported_counterbore)
+        .expect("resource budget")
+        .is_none());
 
     let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
     native_profile.id = "native-profile".into();
@@ -729,14 +698,7 @@ fn scene_class_binds_only_its_explicit_source_identifier() {
     }];
     let scene = HashMap::from([(153, "moDirectionLight_c".into())]);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .unwrap();
-    enrich_scene_classes(&ctx, &mut histories, &scene).unwrap();
+    enrich_scene_classes(&mut histories, &scene);
 
     assert_eq!(
         histories[0].features[0].input_class.as_deref(),
@@ -1033,11 +995,9 @@ fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
     ];
 
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
-        &cadmpeg_test_support::service_decode_context(),
         &mut histories,
         &[lane],
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         histories[0].features[1]
@@ -1362,12 +1322,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
 
-    restore_configuration_tree_node_definitions(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut configured,
-        &base,
-    )
-    .unwrap();
+    restore_configuration_tree_node_definitions(&mut configured, &base);
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -1396,11 +1351,9 @@ fn hole_profile_rejects_more_than_supported_dimension_roles() {
         );
         profile.content.push(FeatureContent::Dimension(name.into()));
     }
-    assert!(
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
-            .expect("resource budget")
-            .is_none()
-    );
+    assert!(hole_sketch_construction(&profile)
+        .expect("resource budget")
+        .is_none());
 }
 
 #[test]
@@ -1413,10 +1366,9 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("depth"), "9".into());
-    let construction =
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
-            .expect("resource budget")
-            .expect("fallback hole dimensions");
+    let construction = hole_sketch_construction(&profile)
+        .expect("resource budget")
+        .expect("fallback hole dimensions");
     assert_eq!(construction.diameter.get(), 5.0);
     assert_eq!(
         construction
@@ -1427,9 +1379,7 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     profile
         .content
         .push(FeatureContent::Dimension("missing".into()));
-    assert!(
-        hole_sketch_construction(&cadmpeg_test_support::service_decode_context(), &profile)
-            .expect("resource budget")
-            .is_none()
-    );
+    assert!(hole_sketch_construction(&profile)
+        .expect("resource budget")
+        .is_none());
 }

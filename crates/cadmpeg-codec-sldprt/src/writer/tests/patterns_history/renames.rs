@@ -55,14 +55,9 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         ]
     );
     assert_eq!(
-        crate::resolved_features::scalars::named_scalars_charged(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &lane.id,
-            &written
-        )
-        .unwrap()
-        .len(),
+        crate::resolved_features::scalars::named_scalars_charged(&payload, &lane.id, &written)
+            .unwrap()
+            .len(),
         scalars
     );
 }

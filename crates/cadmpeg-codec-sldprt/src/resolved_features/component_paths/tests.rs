@@ -3,7 +3,6 @@
 use super::{component_path_features, component_path_terminal_feature};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::records::{Feature, FeatureInputComponentPathEntry, FeatureSource};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::collections::BTreeMap;
 
 fn feature(source: u32) -> Feature {
@@ -39,29 +38,17 @@ fn component(source: u32) -> FeatureInputComponentPathEntry {
 }
 
 #[test]
-fn component_indexes_admit_only_referenced_sources_and_release_storage() {
+fn component_indexes_resolve_referenced_sources() {
     let features = (1..=1000).map(feature).collect::<Vec<_>>();
     let components = [component(500)];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // One map slot per call and one output-list slot.
-    policy.limits.max_collection_items = 3;
-    policy.limits.max_retained_bytes = 256;
-    policy.limits.max_materialized_bytes = 1024;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        component_path_features(&ctx, &components, &features).unwrap(),
+        component_path_features(&components, &features),
         ["synthetic:feature#500"]
     );
     assert_eq!(
-        component_path_terminal_feature(&ctx, &components, &features).unwrap(),
+        component_path_terminal_feature(&components, &features),
         Some("synthetic:feature#500".into())
     );
-    let released = ctx
-        .reserve_scoped(1024, "component indexes released")
-        .unwrap();
-    drop(released);
-    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]
@@ -70,12 +57,9 @@ fn component_indexes_preserve_ambiguous_source_identity() {
     second.id = "synthetic:feature#duplicate".into();
     let features = [feature(500), second];
     let components = [component(500)];
-    let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(component_path_features(&ctx, &components, &features)
-        .unwrap()
-        .is_empty());
+    assert!(component_path_features(&components, &features).is_empty());
     assert_eq!(
-        component_path_terminal_feature(&ctx, &components, &features).unwrap(),
+        component_path_terminal_feature(&components, &features),
         None
     );
 }

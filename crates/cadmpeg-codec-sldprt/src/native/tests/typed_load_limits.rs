@@ -26,26 +26,6 @@ fn typed_load_refusal(policy: DecodePolicy) -> cadmpeg_core::CodecError {
 }
 
 #[test]
-fn native_load_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    assert!(
-        matches!(typed_load_refusal(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn native_load_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    assert!(
-        matches!(typed_load_refusal(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits)
-    );
-}
-
-#[test]
 fn native_load_refuses_nesting_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;

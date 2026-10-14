@@ -2,7 +2,7 @@
 //! Stable hashes of projected and native history state.
 
 use crate::records::{FeatureContent, FeatureHistory};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignConfiguration, DesignParameter};
 use serde::Serialize;
@@ -31,35 +31,27 @@ pub(crate) fn feature_hash(
     ctx: &DecodeContext<'_>,
     model: &cadmpeg_ir::document::Model,
 ) -> Result<String, CodecError> {
-    let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        admit_feature_parents(ctx, model)?;
-        let mut features = collect_hash_views(
-            ctx,
-            model.features.iter().map(|feature| FeatureHashView {
-                id: &feature.id,
-                ordinal: feature.ordinal,
-                name: feature.name.as_deref(),
-                suppressed: feature.suppressed,
-                parent: model.feature_parent(&feature.id),
-                dependencies: &feature.dependencies,
-                source_properties: &feature.source_properties,
-                source_tag: feature.source_tag.as_deref(),
-                source_text: feature.source_text.as_deref(),
-                source_content: &feature.source_content,
-                outputs: feature.evaluation.outputs(),
-                definition: feature.evaluation.definition(),
-                native_ref: feature.native_ref.as_deref(),
-            }),
-        )?;
-        ctx.stable_sort_by(
-            &mut features,
-            |left, right| left.id.cmp(right.id),
-            |feature| feature.id.as_str().len(),
-            "sort SLDPRT canonical hash views",
-        )?;
-        Ok::<_, CodecError>(features)
-    })?;
-    hash_records(ctx, &views.0)
+    let mut features = model
+        .features
+        .iter()
+        .map(|feature| FeatureHashView {
+            id: &feature.id,
+            ordinal: feature.ordinal,
+            name: feature.name.as_deref(),
+            suppressed: feature.suppressed,
+            parent: model.feature_parent(&feature.id),
+            dependencies: &feature.dependencies,
+            source_properties: &feature.source_properties,
+            source_tag: feature.source_tag.as_deref(),
+            source_text: feature.source_text.as_deref(),
+            source_content: &feature.source_content,
+            outputs: feature.evaluation.outputs(),
+            definition: feature.evaluation.definition(),
+            native_ref: feature.native_ref.as_deref(),
+        })
+        .collect::<Vec<_>>();
+    features.sort_by(|left, right| left.id.cmp(right.id));
+    hash_records(ctx, &features)
 }
 
 /// The feature state the digest covers: the neutral feature and the tree
@@ -94,17 +86,9 @@ pub(crate) fn configuration_hash(
     ctx: &DecodeContext<'_>,
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
-    let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut configurations = collect_hash_views(ctx, configurations.iter())?;
-        ctx.stable_sort_by(
-            &mut configurations,
-            |left, right| left.id.cmp(&right.id),
-            |configuration| configuration.id.as_str().len(),
-            "sort SLDPRT canonical hash views",
-        )?;
-        Ok::<_, CodecError>(configurations)
-    })?;
-    hash_records(ctx, &views.0)
+    let mut configurations = configurations.iter().collect::<Vec<_>>();
+    configurations.sort_by(|left, right| left.id.cmp(&right.id));
+    hash_records(ctx, &configurations)
 }
 
 /// Stable hash of configuration-local evaluated parameter state.
@@ -112,10 +96,6 @@ pub(crate) fn configuration_parameter_value_hash(
     ctx: &DecodeContext<'_>,
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
-    ctx.charge_work(
-        u64_from_index(configurations.len()),
-        "scan SLDPRT configuration hash views",
-    )?;
     hash_keyed_records(
         ctx,
         configurations
@@ -130,10 +110,6 @@ pub(crate) fn configuration_feature_state_hash(
     ctx: &DecodeContext<'_>,
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
-    ctx.charge_work(
-        u64_from_index(configurations.len()),
-        "scan SLDPRT configuration hash views",
-    )?;
     hash_keyed_records(
         ctx,
         configurations
@@ -148,24 +124,12 @@ pub(crate) fn native_configuration_hash(
     ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<String, CodecError> {
-    let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        ctx.charge_work(
-            u64_from_index(histories.len()),
-            "scan SLDPRT native configuration hash views",
-        )?;
-        let mut configurations = collect_hash_views(
-            ctx,
-            histories.iter().flat_map(|history| &history.configurations),
-        )?;
-        ctx.stable_sort_by(
-            &mut configurations,
-            |left, right| left.id.cmp(&right.id),
-            |configuration| configuration.id.as_str().len(),
-            "sort SLDPRT canonical hash views",
-        )?;
-        Ok::<_, CodecError>(configurations)
-    })?;
-    hash_records(ctx, &views.0)
+    let mut configurations = histories
+        .iter()
+        .flat_map(|history| &history.configurations)
+        .collect::<Vec<_>>();
+    configurations.sort_by(|left, right| left.id.cmp(&right.id));
+    hash_records(ctx, &configurations)
 }
 
 /// Stable hash of neutral feature parameters.
@@ -173,17 +137,9 @@ pub(crate) fn parameter_hash(
     ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
 ) -> Result<String, CodecError> {
-    let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut parameters = collect_hash_views(ctx, parameters.iter())?;
-        ctx.stable_sort_by(
-            &mut parameters,
-            |left, right| left.id.cmp(&right.id),
-            |parameter| parameter.id.as_str().len(),
-            "sort SLDPRT canonical hash views",
-        )?;
-        Ok::<_, CodecError>(parameters)
-    })?;
-    hash_records(ctx, &views.0)
+    let mut parameters = parameters.iter().collect::<Vec<_>>();
+    parameters.sort_by(|left, right| left.id.cmp(&right.id));
+    hash_records(ctx, &parameters)
 }
 
 /// Stable hash of native feature parameters, properties, and ordering.
@@ -191,117 +147,36 @@ pub(crate) fn native_parameter_hash(
     ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<String, CodecError> {
-    let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut parameters = Vec::new();
-        for history in histories {
-            ctx.charge_work(
-                u64_from_index(history.features.len()),
-                "scan SLDPRT hash features",
-            )?;
-            for feature in &history.features {
-                ctx.charge_work(
-                    u64_from_index(feature.content.len()),
-                    "scan SLDPRT hash dimensions",
-                )?;
-                let dimensions = collect_hash_views(
-                    ctx,
-                    feature.content.iter().filter_map(|item| match item {
-                        FeatureContent::Dimension(name) => Some(name),
-                        _ => None,
-                    }),
-                )?;
-                ctx.reserve_vec(
-                    &mut parameters,
-                    1,
-                    "retain SLDPRT native parameter hash view",
-                )?;
-                parameters.push((
-                    &feature.id,
-                    &feature.parameters,
-                    &feature.dimension_properties,
-                    dimensions,
-                ));
-            }
+    let mut parameters = Vec::new();
+    for history in histories {
+        for feature in &history.features {
+            let dimensions = feature
+                .content
+                .iter()
+                .filter_map(|item| match item {
+                    FeatureContent::Dimension(name) => Some(name),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            parameters.push((
+                &feature.id,
+                &feature.parameters,
+                &feature.dimension_properties,
+                dimensions,
+            ));
         }
-        ctx.stable_sort_by(
-            &mut parameters,
-            |left, right| left.0.cmp(right.0),
-            |parameter| parameter.0.as_str().len(),
-            "sort SLDPRT canonical hash views",
-        )?;
-        Ok::<_, CodecError>(parameters)
-    })?;
-    hash_records(ctx, &views.0)
+    }
+    parameters.sort_by(|left, right| left.0.cmp(right.0));
+    hash_records(ctx, &parameters)
 }
 
 fn hash_keyed_records<'id, V: Serialize>(
     ctx: &DecodeContext<'_>,
     records: impl Iterator<Item = (&'id cadmpeg_ir::features::ConfigurationId, V)>,
 ) -> Result<String, CodecError> {
-    let views = ctx.with_scoped_storage("SLDPRT canonical hash views", || {
-        let mut records = collect_hash_views(ctx, records)?;
-        ctx.stable_sort_by(
-            &mut records,
-            |left, right| left.0.cmp(right.0),
-            |record| record.0.as_str().len(),
-            "sort SLDPRT canonical hash views",
-        )?;
-        Ok::<_, CodecError>(records)
-    })?;
-    hash_records(ctx, &views.0)
-}
-
-fn collect_hash_views<T>(
-    ctx: &DecodeContext<'_>,
-    mut values: impl Iterator<Item = T>,
-) -> Result<Vec<T>, CodecError> {
-    let mut views = Vec::new();
-    loop {
-        ctx.charge_work(1, "scan SLDPRT canonical hash views")?;
-        let Some(value) = values.next() else {
-            break;
-        };
-        ctx.reserve_vec(&mut views, 1, "retain SLDPRT canonical hash views")?;
-        views.push(value);
-    }
-    Ok(views)
-}
-
-fn admit_feature_parents(
-    ctx: &DecodeContext<'_>,
-    model: &cadmpeg_ir::document::Model,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "match SLDPRT feature hash parents";
-    let count = u64_from_index(model.features.len());
-    ctx.charge_work(count, OPERATION)?;
-    let mut key_bytes = 0u64;
-    let mut children_count = 0u64;
-    for feature in &model.features {
-        key_bytes = key_bytes
-            .checked_add(u64_from_index(feature.id.as_str().len()))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        if let cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::TreeNode { children, .. },
-        ) = feature.evaluation.definition()
-        {
-            ctx.charge_work(u64_from_index(children.len()), OPERATION)?;
-            for child in children {
-                key_bytes = key_bytes
-                    .checked_add(u64_from_index(child.as_str().len()))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                children_count = children_count
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            }
-        }
-    }
-    let work = count
-        .checked_add(children_count)
-        .and_then(|slots| slots.checked_mul(64))
-        .and_then(|work| work.checked_add(key_bytes.checked_mul(8)?))
-        .and_then(|work| work.checked_mul(count))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)
+    let mut records = records.collect::<Vec<_>>();
+    records.sort_by(|left, right| left.0.cmp(right.0));
+    hash_records(ctx, &records)
 }
 
 #[cfg(test)]
