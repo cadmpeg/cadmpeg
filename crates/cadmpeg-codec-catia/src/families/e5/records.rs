@@ -6,8 +6,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-type NurbsAxisOutput = Result<Option<(u32, Vec<f64>, Vec<u32>)>, CodecError>;
-
 use crate::families::a5a8::records::rolling_ball_jet_derivative;
 use crate::math::distance;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -87,7 +85,7 @@ impl E5RollingBallJet {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<ProceduralSurfaceDefinition>, CodecError> {
-        let stations = self.stations.to_vec();
+        let stations = self.stations.clone();
         Ok(
             cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations, ctx)?
                 .ok()
@@ -167,33 +165,30 @@ fn e5_records(data: &[u8]) -> impl Iterator<Item = E5Record> + '_ {
 /// Read the complete ordered E5 `05 08 01` coordinate roster matching the
 /// referenced vertex population. The roster may be split into multiple runs;
 /// marker-like bytes inside framed payloads are not vertex rows.
-pub(super) fn e5_vertices(
-    data: &[u8],
-    vertex_count: usize,
-) -> Result<Vec<FinitePoint3>, CodecError> {
+pub(super) fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<FinitePoint3> {
     if vertex_count == 0 {
-        return Ok(Vec::new());
+        return Vec::new();
     }
     let mut vertices = Vec::new();
     let mut region_start = 0usize;
     for record in e5_records(data) {
-        for vertex in scan_vertex_records(&data[region_start..record.pos])? {
+        for vertex in scan_vertex_records(&data[region_start..record.pos]) {
             vertices.push(vertex);
         }
         region_start = record.end();
     }
-    for vertex in scan_vertex_records(&data[region_start..])? {
+    for vertex in scan_vertex_records(&data[region_start..]) {
         vertices.push(vertex);
     }
     if vertices.len() != vertex_count {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-    Ok(vertices)
+    vertices
 }
 
 /// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
 /// Record strides are derived from the little-endian size field at `+5`.
-pub(super) fn e5_circles(data: &[u8]) -> Result<Vec<E5Circle>, CodecError> {
+pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -229,14 +224,14 @@ pub(super) fn e5_circles(data: &[u8]) -> Result<Vec<E5Circle>, CodecError> {
             }
         }
     }
-    Ok(out)
+    out
 }
 
 /// Decode the byte-explicit origin and natural bounds of E5 class-`0xc8` planes.
 ///
 /// The record does not store a complete in-plane frame, so this function does not
 /// synthesize plane axes or a [`SurfaceGeometry`].
-pub(super) fn e5_planes(data: &[u8]) -> Result<Vec<E5Plane>, CodecError> {
+pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -269,7 +264,7 @@ pub(super) fn e5_planes(data: &[u8]) -> Result<Vec<E5Plane>, CodecError> {
             v_range: [bounds[2].get(), bounds[3].get()],
         });
     }
-    Ok(out)
+    out
 }
 
 /// A directly framed E5 edge-use record.  The endpoint ids are E5 vertex
@@ -283,7 +278,7 @@ pub(in crate::families::e5) struct E5Edge {
 }
 
 /// Decode E5 `0xff` five-reference edge records.
-pub(super) fn e5_edges(data: &[u8]) -> Result<Vec<E5Edge>, CodecError> {
+pub(super) fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -301,7 +296,7 @@ pub(super) fn e5_edges(data: &[u8]) -> Result<Vec<E5Edge>, CodecError> {
             }
         }
     }
-    Ok(out)
+    out
 }
 
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
@@ -368,23 +363,18 @@ pub(in crate::families) fn e5_surfaces(
 /// channel is the opening angle. The tail range, radius, and sense are kept on
 /// the native record; the neutral definition contains the complete value and
 /// derivative jets.
-pub(in crate::families) fn e5_rolling_ball_jets(
-    data: &[u8],
-) -> Result<Vec<E5RollingBallJet>, CodecError> {
+pub(in crate::families) fn e5_rolling_ball_jets(data: &[u8]) -> Vec<E5RollingBallJet> {
     let mut jets = Vec::new();
     for record in e5_records(data).filter(|record| record.class == 0xd8) {
-        if let Some(jet) = parse_e5_rolling_ball_jet(data, record)? {
+        if let Some(jet) = parse_e5_rolling_ball_jet(data, record) {
             jets.push(jet);
         }
     }
-    Ok(jets)
+    jets
 }
 
-fn parse_e5_rolling_ball_jet(
-    data: &[u8],
-    record: E5Record,
-) -> Result<Option<E5RollingBallJet>, CodecError> {
-    let Some((mut view, station_count)) = (|| {
+fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingBallJet> {
+    let (mut view, station_count) = (|| {
         let mut view =
             View::over_retained(data).child(record.pos.checked_add(13)?, record.end())?;
         if view.u8()? != 0x80 {
@@ -405,9 +395,7 @@ fn parse_e5_rolling_ball_jet(
                     .checked_mul(252)
                     .and_then(|size| size.checked_add(88))?)
         .then_some((view, station_count))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     // Knots, multiplicities, three channel lanes, sites, and stations each
     // contain one item per declared station.
     let station_count_u64 = u64_from_index(station_count);
@@ -419,7 +407,7 @@ fn parse_e5_rolling_ball_jet(
     let mut sites = Vec::new();
     let mut stations = Vec::new();
 
-    Ok((|| {
+    (|| {
         read_d8_counted(&mut view, station_count_u64, 8, &mut knots, |view| {
             FiniteReal::new(view.f64_le()?)
         })?;
@@ -573,7 +561,7 @@ fn parse_e5_rolling_ball_jet(
             stations,
             sense,
         })
-    })())
+    })()
 }
 
 fn read_d8_counted<T>(
@@ -619,9 +607,7 @@ fn relative_close(left: f64, right: f64, tolerance: f64) -> bool {
 /// fixed at 44 bytes. Reference tokens retain their encoded widths; the tail
 /// remains opaque. Only the exact frame and reference lane are needed to join
 /// a face wrapper to a directly decoded geometric carrier.
-pub(in crate::families) fn e5_surface_wrappers(
-    data: &[u8],
-) -> Result<Vec<E5SurfaceWrapper>, CodecError> {
+pub(in crate::families) fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         if record.class != 0xf1 || record.size != 44 {
@@ -653,7 +639,7 @@ pub(in crate::families) fn e5_surface_wrappers(
             references,
         });
     }
-    Ok(out)
+    out
 }
 
 fn e5_nurbs_surface(
@@ -668,19 +654,19 @@ fn e5_nurbs_surface(
     if view.u8() != Some(0x80) {
         return Ok(None);
     }
-    let Some((u_degree, u_knots, u_multiplicities)) = read_nurbs_axis(&mut view)? else {
+    let Some((u_degree, u_knots, u_multiplicities)) = read_nurbs_axis(&mut view) else {
         return Ok(None);
     };
-    let Some((v_degree, v_knots, v_multiplicities)) = read_nurbs_axis(&mut view)? else {
+    let Some((v_degree, v_knots, v_multiplicities)) = read_nurbs_axis(&mut view) else {
         return Ok(None);
     };
     let Some((u_knots, u_count)) =
-        expand_nurbs_axis(u_degree, &u_knots, &u_multiplicities, record.size)?
+        expand_nurbs_axis(u_degree, &u_knots, &u_multiplicities, record.size)
     else {
         return Ok(None);
     };
     let Some((v_knots, v_count)) =
-        expand_nurbs_axis(v_degree, &v_knots, &v_multiplicities, record.size)?
+        expand_nurbs_axis(v_degree, &v_knots, &v_multiplicities, record.size)
     else {
         return Ok(None);
     };
@@ -757,7 +743,7 @@ fn e5_nurbs_surface(
     } else {
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows: point_rows }
     };
-    crate::nurbs::note_refusal(
+    Ok(crate::nurbs::note_refusal(
         NurbsSurface::new(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
@@ -778,15 +764,12 @@ fn e5_nurbs_surface(
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
     )
-    .map(|surface| {
-        surface
-            .map(SolvedSurfaceGeometry::Nurbs)
-            .map(SurfaceGeometry::Solved)
-    })
+    .map(SolvedSurfaceGeometry::Nurbs)
+    .map(SurfaceGeometry::Solved))
 }
 
-fn read_nurbs_axis(view: &mut View<'_>) -> NurbsAxisOutput {
-    let Some((degree, zero0, zero1, knot_count, zero2)) = (|| {
+fn read_nurbs_axis(view: &mut View<'_>) -> Option<(u32, Vec<f64>, Vec<u32>)> {
+    let (degree, zero0, zero1, knot_count, zero2) = (|| {
         Some((
             view.u32_le()?,
             view.u32_le()?,
@@ -794,35 +777,27 @@ fn read_nurbs_axis(view: &mut View<'_>) -> NurbsAxisOutput {
             usize::try_from(view.u32_le()?).ok()?,
             view.u32_le()?,
         ))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     if degree == 0 || [zero0, zero1, zero2] != [0; 3] || knot_count == 0 {
-        return Ok(None);
+        return None;
     }
     let knot_count_u64 = u64_from_index(knot_count);
-    if view.counted(knot_count_u64, 12).is_none() {
-        return Ok(None);
-    }
+    view.counted(knot_count_u64, 12)?;
 
     let mut knots = Vec::new();
 
     for _ in 0..knot_count {
-        let Some(knot) = view.f64_le() else {
-            return Ok(None);
-        };
+        let knot = view.f64_le()?;
         knots.push(knot);
     }
 
     let mut multiplicities = Vec::new();
 
     for _ in 0..knot_count {
-        let Some(multiplicity) = view.u32_le() else {
-            return Ok(None);
-        };
+        let multiplicity = view.u32_le()?;
         multiplicities.push(multiplicity);
     }
-    Ok(Some((degree, knots, multiplicities)))
+    Some((degree, knots, multiplicities))
 }
 
 fn expand_nurbs_axis(
@@ -830,44 +805,38 @@ fn expand_nurbs_axis(
     knots: &[f64],
     multiplicities: &[u32],
     payload_size: usize,
-) -> Result<Option<(Vec<f64>, usize)>, CodecError> {
+) -> Option<(Vec<f64>, usize)> {
     if knots.len() != multiplicities.len()
         || knots.iter().any(|knot| !knot.is_finite())
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities.contains(&0)
     {
-        return Ok(None);
+        return None;
     }
-    let Some(total) = multiplicities
+    let total = multiplicities
         .iter()
         .try_fold(0usize, |total, multiplicity| {
             total.checked_add(usize::try_from(*multiplicity).ok()?)
-        })
-    else {
-        return Ok(None);
-    };
+        })?;
     if total > payload_size {
-        return Ok(None);
+        return None;
     }
-    let Some((degree, control_count)) = usize::try_from(degree)
+    let (degree, control_count) = usize::try_from(degree)
         .ok()
-        .and_then(|degree| Some((degree, total.checked_sub(degree.checked_add(1)?)?)))
-    else {
-        return Ok(None);
-    };
+        .and_then(|degree| Some((degree, total.checked_sub(degree.checked_add(1)?)?)))?;
     if control_count <= degree || knots.first() >= knots.last() {
-        return Ok(None);
+        return None;
     }
 
     let mut expanded = Vec::new();
 
     for (knot, multiplicity) in knots.iter().zip(multiplicities) {
         let Ok(count) = usize::try_from(*multiplicity) else {
-            return Ok(None);
+            return None;
         };
         expanded.extend(std::iter::repeat_with(|| *knot).take(count));
     }
-    Ok((expanded.len() == total).then_some((expanded, control_count)))
+    (expanded.len() == total).then_some((expanded, control_count))
 }
 
 fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength)> {

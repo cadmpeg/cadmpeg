@@ -1,8 +1,8 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
-type FbbEdgeTableOutput = Result<Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>, CodecError>;
-type ScopedEdgeTableOutput = Result<Option<(Vec<EdgeRow>, Vec<usize>, usize)>, CodecError>;
+type FbbEdgeTableOutput = Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)>;
+type ScopedEdgeTableOutput = Option<(Vec<EdgeRow>, Vec<usize>, usize)>;
 
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
@@ -71,12 +71,12 @@ pub(crate) fn standard_edge_count(
 }
 
 /// Number of physical edge rows in the width-selected FBB-only tables.
-pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Result<Option<usize>, CodecError> {
+pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
     let Some(face_run) = largest_fbb_run(bytes) else {
-        return Ok(None);
+        return None;
     };
     let after_faces = face_run.after_faces();
-    Ok(parse_fbb_edge_tables(bytes, after_faces)?.map(|(rows, _, _, _)| rows.len()))
+    parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, _)| rows.len())
 }
 
 /// RGBA display color for each positional standard face row.
@@ -148,7 +148,7 @@ pub(super) fn standard_face_frame_vectors(
     bytes: &[u8],
     expected_face_count: usize,
 ) -> Result<Vec<Option<FiniteVector<3>>>, CodecError> {
-    let runs = crate::container::fbb_run_ranges(bytes)?;
+    let runs = crate::container::fbb_run_ranges(bytes);
     if runs.len() > 1 {
         let mut combined = Vec::new();
         let mut complete = true;
@@ -190,20 +190,18 @@ pub(super) fn standard_vertex_points(
     let Some((_, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
         return Ok(None);
     };
-    parse_vertex_points(bytes, vertex_header)
+    Ok(parse_vertex_points(bytes, vertex_header))
 }
 
 /// Coordinates from the counted vertex table following a complete FBB-only
 /// edge-table walk.
-pub(super) fn fbb_only_vertex_points(
-    bytes: &[u8],
-) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
+pub(super) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<FinitePoint3>> {
     let Some(face_run) = largest_fbb_run(bytes) else {
-        return Ok(None);
+        return None;
     };
     let after_faces = face_run.after_faces();
-    let Some((_, _, vertex_header, _)) = parse_fbb_edge_tables(bytes, after_faces)? else {
-        return Ok(None);
+    let Some((_, _, vertex_header, _)) = parse_fbb_edge_tables(bytes, after_faces) else {
+        return None;
     };
     parse_vertex_points(bytes, vertex_header)
 }
@@ -222,11 +220,11 @@ pub(crate) fn parse_standard(
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let Some((edge_rows, vertex_header, handle_width)) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)?
+        parse_standard_edge_tables_with_width(bytes, after_faces)
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
@@ -252,11 +250,11 @@ pub(super) fn parse_standard_motif(
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let Some((edge_rows, vertex_header, handle_width)) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)?
+        parse_standard_edge_tables_with_width(bytes, after_faces)
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != circle_anchors.len() {
@@ -265,7 +263,7 @@ pub(super) fn parse_standard_motif(
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let Some(port_points) = motif_port_points(&trims, vertex_points.len())? else {
+    let Some(port_points) = motif_port_points(&trims, vertex_points.len()) else {
         return Ok(None);
     };
     let mut edge_points = Vec::new();
@@ -324,7 +322,7 @@ pub(super) fn parse_standard_endpoints_with_edge_classes(
     let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -387,7 +385,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
     } else {
         deferred_edges.to_vec()
     };
-    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred)? {
+    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
         return Ok(None);
     }
     let is_deferred = |edge: usize| effective_deferred[edge];
@@ -418,7 +416,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
         for (endpoint, port) in ports.iter().copied().enumerate() {
             let node = edge * 2 + endpoint;
             if let Some(&previous) = node_by_port.get(&port) {
-                if quotient.merge_charged(previous, node)?.is_none() {
+                if quotient.merge(previous, node)?.is_none() {
                     return Ok(None);
                 }
             } else {
@@ -429,7 +427,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
     let mut constrained_candidates = Vec::new();
 
     for candidates in edge_candidates {
-        constrained_candidates.push(candidates.to_vec());
+        constrained_candidates.push(candidates.clone());
     }
     for (edge, candidates) in constrained_candidates.iter_mut().enumerate() {
         if is_deferred(edge) {
@@ -491,7 +489,7 @@ pub(super) fn parse_standard_endpoint_candidates(
     let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -539,7 +537,7 @@ pub(super) fn parse_standard_port_endpoint_candidates(
     let Some((edge_rows, vertex_header)) = parse_standard_edge_tables(bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -588,10 +586,10 @@ pub(super) fn parse_fbb_endpoints_with_edge_classes(
     };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, _, vertex_header, _)) = parse_fbb_edge_tables(bytes, after_faces)? else {
+    let Some((edge_rows, _, vertex_header, _)) = parse_fbb_edge_tables(bytes, after_faces) else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     if edge_rows.len() != edge_faces.len()
@@ -623,16 +621,16 @@ pub(crate) fn parse_fbb_edge_tables(bytes: &[u8], position: usize) -> FbbEdgeTab
     // accepting the first delimiter match would assign a wrong handle grammar.
     let mut solutions = Vec::new();
     for handle_width in [1, 2, 3] {
-        let Some(parsed) = parse_fbb_edge_tables_width(bytes, position, handle_width)? else {
+        let Some(parsed) = parse_fbb_edge_tables_width(bytes, position, handle_width) else {
             continue;
         };
         if vertex_table_end(bytes, parsed.2).is_some() {
             solutions.push(parsed);
         }
     }
-    Ok(<[_; 1]>::try_from(solutions)
+    <[_; 1]>::try_from(solutions)
         .ok()
-        .map(|[solution]| solution))
+        .map(|[solution]| solution)
 }
 
 fn read_handle(bytes: &[u8], position: usize, width: usize) -> Option<u32> {
@@ -649,74 +647,71 @@ pub(super) fn parse_fbb_edge_tables_width(
     mut position: usize,
     handle_width: usize,
 ) -> FbbEdgeTableOutput {
-    (|| -> Option<Result<_, CodecError>> {
-        let mut rows = Vec::new();
-        let mut scopes = Vec::new();
-        let mut table_count = 0;
-        let mut delimiter_family = None;
-        loop {
-            if bytes.get(position) != Some(&0x01) {
-                return None;
-            }
-            let kind = *bytes.get(position + 1)?;
-            let expected_kind = u8::try_from(table_count + 1).ok()?;
-            if kind != expected_kind {
-                return None;
-            }
-            position += 2;
-            let count = parse_count(bytes, &mut position)?;
-            for _ in 0..count {
-                if bytes.get(position) != Some(&0x02) {
-                    return None;
-                }
-                position += 1;
-                let arity = parse_count(bytes, &mut position)?;
-                if arity < 2 {
-                    return None;
-                }
-                if arity > bytes.get(position..).map_or(0, <[u8]>::len) / handle_width {
-                    return None;
-                }
-                let mut handles = Vec::new();
-                for _ in 0..arity {
-                    handles.push(read_handle(bytes, position, handle_width)?);
-                    position += handle_width;
-                }
-                rows.push(EdgeRow::new(
-                    kind,
-                    handles,
-                    EdgeBoundaryLayout::CompleteBoundaryRun,
-                )?);
-                scopes.push(table_count);
-            }
-            table_count += 1;
-            let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
-            let family = match handle_width {
-                2 if delimiter[0] == 0x10
-                    && delimiter[1] >= 0x14
-                    && delimiter[1] != 0x24
-                    && delimiter[1] & 0x0f == 0x04
-                    && delimiter[2..] == EDGE_DELIMITER[2..] =>
-                {
-                    delimiter[1] >> 4
-                }
-                1 | 3 if delimiter == EDGE_DELIMITER => 0x02,
-                _ => return None,
-            };
-            if delimiter_family
-                .replace(family)
-                .is_some_and(|value| value != family)
-            {
-                return None;
-            }
-            position += EDGE_DELIMITER.len();
-            if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
-                break;
-            }
+    let mut rows = Vec::new();
+    let mut scopes = Vec::new();
+    let mut table_count = 0;
+    let mut delimiter_family = None;
+    loop {
+        if bytes.get(position) != Some(&0x01) {
+            return None;
         }
-        (table_count == 2).then_some(Ok((rows, scopes, position, handle_width)))
-    })()
-    .transpose()
+        let kind = *bytes.get(position + 1)?;
+        let expected_kind = u8::try_from(table_count + 1).ok()?;
+        if kind != expected_kind {
+            return None;
+        }
+        position += 2;
+        let count = parse_count(bytes, &mut position)?;
+        for _ in 0..count {
+            if bytes.get(position) != Some(&0x02) {
+                return None;
+            }
+            position += 1;
+            let arity = parse_count(bytes, &mut position)?;
+            if arity < 2 {
+                return None;
+            }
+            if arity > bytes.get(position..).map_or(0, <[u8]>::len) / handle_width {
+                return None;
+            }
+            let mut handles = Vec::new();
+            for _ in 0..arity {
+                handles.push(read_handle(bytes, position, handle_width)?);
+                position += handle_width;
+            }
+            rows.push(EdgeRow::new(
+                kind,
+                handles,
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )?);
+            scopes.push(table_count);
+        }
+        table_count += 1;
+        let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
+        let family = match handle_width {
+            2 if delimiter[0] == 0x10
+                && delimiter[1] >= 0x14
+                && delimiter[1] != 0x24
+                && delimiter[1] & 0x0f == 0x04
+                && delimiter[2..] == EDGE_DELIMITER[2..] =>
+            {
+                delimiter[1] >> 4
+            }
+            1 | 3 if delimiter == EDGE_DELIMITER => 0x02,
+            _ => return None,
+        };
+        if delimiter_family
+            .replace(family)
+            .is_some_and(|value| value != family)
+        {
+            return None;
+        }
+        position += EDGE_DELIMITER.len();
+        if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
+            break;
+        }
+    }
+    (table_count == 2).then_some((rows, scopes, position, handle_width))
 }
 
 /// Recover the row layout used by an FBB-only table from its trim boundaries.
@@ -727,16 +722,10 @@ pub(super) fn parse_fbb_edge_tables_width(
 /// complete sequence has no occurrence and the interior sequence has at most
 /// one occurrence per cycle. Rows with no boundary match remain complete so
 /// their fixed unmatched span is preserved for the later placement solver.
-pub(super) fn classify_fbb_edge_layouts(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    rows: &mut [EdgeRow],
-    trims: &[TrimRecord],
-) -> Result<Option<()>, cadmpeg_core::CodecError> {
+pub(super) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecord]) -> Option<()> {
     let mut cycles = Vec::new();
     for trim in trims {
-        let Some(face) = boundary_cycles(trim.packet.triangles(ctx)?)? else {
-            return Ok(None);
-        };
+        let face = boundary_cycles(trim.packet.triangles())?;
         cycles.push(face);
     }
     for row in rows {
@@ -748,9 +737,7 @@ pub(super) fn classify_fbb_edge_layouts(
         if complete_matches != 0 {
             continue;
         }
-        let Some(end) = row.handles().len().checked_sub(1) else {
-            return Ok(None);
-        };
+        let end = row.handles().len().checked_sub(1)?;
         let Some(interior) = row.handles().get(1..end) else {
             continue;
         };
@@ -765,10 +752,10 @@ pub(super) fn classify_fbb_edge_layouts(
             unique_per_cycle &= count <= 1;
         }
         if matched && unique_per_cycle && !row.select_flanking_corners() {
-            return Ok(None);
+            return None;
         }
     }
-    Ok(Some(()))
+    Some(())
 }
 
 fn pattern_match_count(cycle: &[u32], pattern: &[u32]) -> usize {
@@ -832,7 +819,7 @@ pub(super) fn standard_fbb_groups(
     bytes: &[u8],
 ) -> Result<Vec<FbbFaceRun>, CodecError> {
     let mut groups = Vec::new();
-    for range in crate::container::fbb_run_ranges(bytes)? {
+    for range in crate::container::fbb_run_ranges(bytes) {
         if let Some(group) =
             parse_standard_group(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
         {
@@ -890,9 +877,9 @@ pub(super) fn population_spine<'a>(
 ) -> Result<Option<&'a [u8]>, CodecError> {
     let parsed = match layout.edge_table_form {
         EdgeTableForm::Standard => {
-            parse_standard_edge_tables_with_width(bytes, layout.face_run.after_faces())?
+            parse_standard_edge_tables_with_width(bytes, layout.face_run.after_faces())
         }
-        EdgeTableForm::FbbOnly => parse_fbb_edge_tables(bytes, layout.face_run.after_faces())?
+        EdgeTableForm::FbbOnly => parse_fbb_edge_tables(bytes, layout.face_run.after_faces())
             .map(|(_, _, vertex_header, handle_width)| (Vec::new(), vertex_header, handle_width)),
     };
     let Some((_, vertex_header, handle_width)) = parsed else {
@@ -917,12 +904,12 @@ pub(super) fn population_spine<'a>(
 /// walk, without requiring endpoint incidence to be solved.
 pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Result<Vec<FbbPopulationLayout>, CodecError> {
     let mut layouts = Vec::new();
-    for range in crate::container::fbb_run_ranges(bytes)? {
+    for range in crate::container::fbb_run_ranges(bytes) {
         let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN) else {
             continue;
         };
         let after_faces = face_run.after_faces();
-        let parsed = parse_standard_edge_tables_with_width(bytes, after_faces)?.map(
+        let parsed = parse_standard_edge_tables_with_width(bytes, after_faces).map(
             |(rows, vertex_header, handle_width)| {
                 (rows, vertex_header, handle_width, EdgeTableForm::Standard)
             },
@@ -930,7 +917,7 @@ pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Result<Vec<FbbPopulationLa
         let parsed = if parsed.is_some() {
             parsed
         } else {
-            parse_fbb_edge_tables(bytes, after_faces)?.map(
+            parse_fbb_edge_tables(bytes, after_faces).map(
                 |(rows, _, vertex_header, handle_width)| {
                     (rows, vertex_header, handle_width, EdgeTableForm::FbbOnly)
                 },
@@ -977,11 +964,11 @@ fn parse_standard_group(
     };
     let after_faces = face_run.after_faces();
     let Some((edge_rows, vertex_header, handle_width)) =
-        parse_standard_edge_tables_with_width(bytes, after_faces)?
+        parse_standard_edge_tables_with_width(bytes, after_faces)
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
@@ -994,7 +981,7 @@ pub(crate) fn selected_standard_run(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<FbbFaceRun>, CodecError> {
-    let ranges = crate::container::fbb_run_ranges(bytes)?;
+    let ranges = crate::container::fbb_run_ranges(bytes);
     if let [range] = ranges.as_slice() {
         // A single marker run has no competing population to disambiguate.
         return Ok(FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN));
@@ -1067,293 +1054,6 @@ mod appearance_tests {
     }
 }
 
-#[cfg(test)]
-mod allocation_tests {
-    use super::{
-        fbb_population_layouts, largest_fbb_run, parse_fbb_edge_tables, parse_standard,
-        parse_standard_edge_tables_with_width, parse_trim_chain, parse_trim_record,
-        parse_trim_record_layout, parse_vertex_table, standard_face_count,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    fn collection_refusals(
-        bytes: &[u8],
-        run: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>,
-    ) -> std::collections::HashSet<&'static str> {
-        let mut operations = std::collections::HashSet::new();
-        for limit in 0..=256 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-                .expect("fixture fits the input limit");
-            match run(&ctx) {
-                Err(CodecError::ResourceLimit(error)) => {
-                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                    operations.insert(error.operation);
-                }
-                Ok(()) => {}
-                Err(error) => panic!("unexpected collection refusal: {error}"),
-            }
-        }
-        operations
-    }
-
-    /// Run `run` under the service policy and assert it charges `operation`.
-    /// Released scope scratch peaks above these charges, so no collection
-    /// ceiling makes them the refusing charge.
-    fn charges_collection_items<T>(
-        operation: &str,
-        run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
-    ) -> T {
-        cadmpeg_test_support::refusal::assert_charged(
-            ResourceDimension::CollectionItems,
-            operation,
-            || crate::test_support::with_service_context(run),
-        )
-    }
-
-    #[test]
-    fn counted_trim_search_and_packet_lanes_refuse_before_growth() {
-        let mut bytes = vec![
-            0x01, 0x47, 0x01, 0x01, 0x01, 0xff, 0x0a, 0x00, 0x00, 0x00, 0x03, 0x04,
-        ];
-        for handle in 0u16..10 {
-            bytes.extend_from_slice(&handle.to_be_bytes());
-        }
-        let parsed = crate::test_support::with_service_context(|ctx| {
-            parse_trim_chain(&bytes, bytes.len(), 1, 2)
-        })
-        .expect("service resource budget")
-        .expect("complete trim chain");
-        assert_eq!(parsed.len(), 1);
-        let operations = collection_refusals(&bytes, |ctx| {
-            parse_trim_chain(&bytes, bytes.len(), 1, 2)?;
-            Ok(())
-        });
-        for operation in [
-            "catia_trim_primitive_lengths",
-            "catia_trim_predecessor_ends",
-            "catia_trim_predecessor_starts",
-            "catia_trim_search_frames",
-            "catia_trim_packet_handles",
-            "catia_trim_strip_lengths",
-            "catia_trim_fan_lengths",
-            "catia_trim_reversed",
-            "catia_trim_solution_records",
-            "catia_trim_solutions",
-        ] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
-        let operations = collection_refusals(&bytes, |ctx| {
-            parse_trim_record_layout(&bytes, 0, 2)?;
-            parse_trim_record(&bytes, 0, 2)?;
-            Ok(())
-        });
-        assert!(operations.contains("catia_trim_primitive_lengths"));
-        assert!(operations.contains("catia_trim_packet_handles"));
-    }
-
-    #[test]
-    fn cycle_cover_matches_corners_and_coedges_refuse_before_growth() {
-        use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow};
-        use crate::solve::union_find::UnionFind;
-
-        let rows = [[0, 1], [1, 2], [2, 0]].map(|handles| {
-            EdgeRow::new(1, handles.to_vec(), EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row")
-        });
-        let run = |ctx: &DecodeContext<'_>| {
-            let mut union = UnionFind::new(6);
-            super::cover_cycle(ctx, &[0, 1, 2], &rows, &mut union)
-        };
-        let boundary = crate::test_support::with_service_context(run)
-            .expect("service resource budget")
-            .expect("complete edge cycle");
-        assert_eq!(boundary.coedges.len(), 3);
-        let mut operations = std::collections::HashSet::new();
-        for cap in 0..32 {
-            let result = crate::test_support::with_collection_limit(cap, run);
-            if let Err(CodecError::ResourceLimit(refusal)) = result {
-                operations.insert(refusal.operation);
-            }
-        }
-        for operation in [
-            "catia_fbb_cycle_matches",
-            "catia_fbb_corner_union_nodes",
-            "catia_fbb_corner_nodes",
-            "catia_fbb_cycle_coedges",
-        ] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
-    }
-
-    #[test]
-    fn counted_fbb_edge_rows_and_nested_handles_refuse_before_allocation() {
-        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let after_faces = largest_fbb_run(&bytes).expect("FBB face run").after_faces();
-        let parsed = crate::test_support::with_service_context(|ctx| {
-            parse_fbb_edge_tables(&bytes, after_faces)
-        })
-        .expect("service resource budget")
-        .expect("complete edge tables");
-        assert_eq!(parsed.0.len(), 4);
-        let operations = collection_refusals(&bytes, |ctx| {
-            parse_fbb_edge_tables(&bytes, after_faces)?;
-            Ok(())
-        });
-        for operation in [
-            "catia_fbb_edge_handles",
-            "catia_fbb_edge_rows",
-            "catia_fbb_edge_scopes",
-            "catia_fbb_edge_width_solutions",
-        ] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
-    }
-
-    #[test]
-    fn counted_standard_edge_rows_and_nested_handles_refuse_before_allocation() {
-        let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
-        let after_faces = largest_fbb_run(&bytes)
-            .expect("standard face run")
-            .after_faces();
-        let parsed = crate::test_support::with_service_context(|ctx| {
-            parse_standard_edge_tables_with_width(&bytes, after_faces)
-        })
-        .expect("service resource budget")
-        .expect("complete edge tables");
-        assert_eq!(parsed.0.len(), 4);
-        let operations = collection_refusals(&bytes, |ctx| {
-            parse_standard_edge_tables_with_width(&bytes, after_faces)?;
-            Ok(())
-        });
-        for operation in [
-            "catia_standard_edge_handles",
-            "catia_standard_edge_rows",
-            "catia_standard_edge_scopes",
-        ] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
-    }
-
-    #[test]
-    fn counted_fbb_vertex_points_and_coordinate_copy_refuse_before_allocation() {
-        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let after_faces = largest_fbb_run(&bytes).expect("FBB face run").after_faces();
-        let vertex_header = crate::test_support::with_service_context(|ctx| {
-            parse_fbb_edge_tables(&bytes, after_faces)
-        })
-        .expect("service resource budget")
-        .expect("complete edge tables")
-        .2;
-        let points = crate::test_support::with_service_context(|ctx| {
-            parse_vertex_table(&bytes, vertex_header)
-        })
-        .expect("service resource budget")
-        .expect("counted vertices");
-        assert_eq!(points.len(), 4);
-        let operations = collection_refusals(&bytes, |ctx| {
-            parse_vertex_table(&bytes, vertex_header)?;
-            Ok(())
-        });
-        for operation in ["catia_fbb_vertex_points", "catia_fbb_vertex_coordinates"] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
-
-        let refusal = crate::test_support::with_retained_refusal(
-            &bytes,
-            "catia_fbb_vertex_coordinates",
-            |ctx| parse_vertex_table(&bytes, vertex_header),
-        )
-        .expect_err("coordinate copy exceeds retained bytes");
-        assert!(matches!(refusal, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "catia_fbb_vertex_coordinates"));
-    }
-
-    #[test]
-    fn fbb_population_layouts_charge_each_discovered_population() {
-        let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        bytes.push(0);
-        bytes.extend(crate::test_support::test_topology::fbb_only_quad_topology_stream());
-        let layouts =
-            crate::test_support::with_service_context(|ctx| fbb_population_layouts(&bytes))
-                .expect("service resource budget");
-        assert_eq!(layouts.len(), 2);
-        let operations = collection_refusals(&bytes, |ctx| {
-            fbb_population_layouts(&bytes)?;
-            Ok(())
-        });
-        assert!(operations.contains("catia_fbb_population_layouts"));
-    }
-
-    #[test]
-    fn fbb_boundary_coverage_charges_collection_items() {
-        let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
-        let parsed = charges_collection_items("catia FBB boundary coverage", |ctx| {
-            parse_standard(ctx, &bytes)
-        });
-        assert!(parsed.is_some());
-    }
-
-    #[test]
-    fn fbb_only_boundary_coverage_charges_collection_items() {
-        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let parsed = charges_collection_items("catia FBB boundary coverage", |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)
-        });
-        assert!(parsed.is_some());
-    }
-
-    #[test]
-    fn multiple_standard_runs_charge_coverage_during_selection() {
-        let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
-        bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
-        let count = charges_collection_items("catia FBB boundary coverage", |ctx| {
-            standard_face_count(ctx, &bytes)
-        });
-        assert_eq!(count, None);
-    }
-
-    #[test]
-    fn fbb_reconstruct_union_charges_collection_items() {
-        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let parsed = charges_collection_items("catia_reconstruct_union", |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)
-        });
-        assert!(parsed.is_some());
-    }
-
-    #[test]
-    fn fbb_reconstruct_boundaries_charge_collection_items() {
-        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let parsed = charges_collection_items("catia_reconstruct_boundaries", |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)
-        });
-        assert!(parsed.is_some());
-    }
-
-    #[test]
-    fn fbb_reconstruct_faces_charge_collection_items() {
-        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let parsed = charges_collection_items("catia_reconstruct_faces", |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)
-        });
-        assert!(parsed.is_some());
-    }
-
-    #[test]
-    fn fbb_reconstruct_roots_charge_collection_items() {
-        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-        let parsed = charges_collection_items("catia_reconstruct_roots", |ctx| {
-            crate::families::standard::topology::parse_fbb(ctx, &bytes)
-        });
-        assert!(parsed.is_some());
-    }
-}
-
 fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
     let first = *bytes.get(*position)?;
     *position += 1;
@@ -1372,7 +1072,7 @@ pub(crate) fn parse_edge_tables(
     if let Some(result) = parse_standard_edge_tables(bytes, position)? {
         return Ok(Some(result));
     }
-    Ok(parse_fbb_edge_tables(bytes, position)?
+    Ok(parse_fbb_edge_tables(bytes, position)
         .map(|(rows, _, vertex_header, _)| (rows, vertex_header)))
 }
 
@@ -1380,16 +1080,16 @@ fn parse_standard_edge_tables(
     bytes: &[u8],
     position: usize,
 ) -> Result<Option<(Vec<EdgeRow>, usize)>, CodecError> {
-    Ok(parse_standard_edge_tables_with_width(bytes, position)?
+    Ok(parse_standard_edge_tables_with_width(bytes, position)
         .map(|(rows, vertex_header, _)| (rows, vertex_header)))
 }
 
 pub(crate) fn parse_standard_edge_tables_with_width(
     bytes: &[u8],
     position: usize,
-) -> Result<Option<(Vec<EdgeRow>, usize, usize)>, CodecError> {
-    Ok(parse_standard_edge_tables_scoped(bytes, position)?
-        .map(|(rows, _, vertex_header, handle_width)| (rows, vertex_header, handle_width)))
+) -> Option<(Vec<EdgeRow>, usize, usize)> {
+    parse_standard_edge_tables_scoped(bytes, position)
+        .map(|(rows, _, vertex_header, handle_width)| (rows, vertex_header, handle_width))
 }
 
 pub(crate) fn parse_standard_edge_tables_scoped(
@@ -1399,10 +1099,10 @@ pub(crate) fn parse_standard_edge_tables_scoped(
     // The full standard spine uses u16be rows and may contain one or more
     // counted tables. Keep that grammar first so a malformed standard walk
     // cannot silently enter the compact form below.
-    if let Some((rows, scopes, vertex_header)) = parse_edge_tables_scoped_width(bytes, position, 2)?
+    if let Some((rows, scopes, vertex_header)) = parse_edge_tables_scoped_width(bytes, position, 2)
     {
         if vertex_table_end(bytes, vertex_header).is_some() {
-            return Ok(Some((rows, scopes, vertex_header, 2)));
+            return Some((rows, scopes, vertex_header, 2));
         }
     }
 
@@ -1411,19 +1111,19 @@ pub(crate) fn parse_standard_edge_tables_scoped(
     // counted vertex table. A two-table walk belongs to the separate FBB-only
     // family and must not be admitted through this fallback.
     if bytes.get(position..position + 2) != Some(&[0x01, 0x01]) {
-        return Ok(None);
+        return None;
     }
     let Some((rows, scopes, vertex_header, handle_width)) =
-        parse_edge_tables_scoped_at_with_width(bytes, position)?
+        parse_edge_tables_scoped_at_with_width(bytes, position)
     else {
-        return Ok(None);
+        return None;
     };
-    Ok((!rows.is_empty()
+    (!rows.is_empty()
         && scopes.iter().all(|scope| *scope == 0)
         && rows
             .iter()
             .all(|row| row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun))
-    .then_some((rows, scopes, vertex_header, handle_width)))
+    .then_some((rows, scopes, vertex_header, handle_width))
 }
 
 #[cfg(test)]
@@ -1437,23 +1137,23 @@ pub(super) fn parse_edge_tables_at(
 
 #[cfg(test)]
 pub(super) fn parse_edge_tables_scoped_at(bytes: &[u8], position: usize) -> ScopedEdgeTableOutput {
-    Ok(parse_edge_tables_scoped_at_with_width(bytes, position)?
-        .map(|(rows, scopes, vertex_header, _)| (rows, scopes, vertex_header)))
+    parse_edge_tables_scoped_at_with_width(bytes, position)?
+        .map(|(rows, scopes, vertex_header, _)| (rows, scopes, vertex_header))
 }
 
 fn parse_edge_tables_scoped_at_with_width(bytes: &[u8], position: usize) -> FbbEdgeTableOutput {
     let mut solutions = Vec::new();
     for handle_width in [1, 2, 3] {
-        let Some(parsed) = parse_edge_tables_scoped_width(bytes, position, handle_width)? else {
+        let Some(parsed) = parse_edge_tables_scoped_width(bytes, position, handle_width) else {
             continue;
         };
         if vertex_table_end(bytes, parsed.2).is_some() {
             solutions.push((parsed.0, parsed.1, parsed.2, handle_width));
         }
     }
-    Ok(<[_; 1]>::try_from(solutions)
+    <[_; 1]>::try_from(solutions)
         .ok()
-        .map(|[solution]| solution))
+        .map(|[solution]| solution)
 }
 
 fn parse_edge_tables_scoped_width(
@@ -1461,73 +1161,65 @@ fn parse_edge_tables_scoped_width(
     mut position: usize,
     handle_width: usize,
 ) -> ScopedEdgeTableOutput {
-    (|| -> Option<Result<_, CodecError>> {
-        let mut rows = Vec::new();
-        let mut scopes = Vec::new();
-        let mut scope = 0usize;
-        loop {
-            if bytes.get(position) != Some(&0x01) {
-                return None;
-            }
-            let kind = *bytes.get(position + 1)?;
-            if !matches!(kind, 0x01 | 0x02) {
-                return None;
-            }
-            position += 2;
-            let count = parse_count(bytes, &mut position)?;
-            for _ in 0..count {
-                if bytes.get(position) != Some(&0x02) {
-                    return None;
-                }
-                position += 1;
-                let arity = parse_count(bytes, &mut position)?;
-                if arity < 2 {
-                    return None;
-                }
-                if arity > bytes.get(position..).map_or(0, <[u8]>::len) / handle_width {
-                    return None;
-                }
-                let mut handles = Vec::new();
-                for _ in 0..arity {
-                    handles.push(read_handle(bytes, position, handle_width)?);
-                    position += handle_width;
-                }
-                rows.push(EdgeRow::new(
-                    kind,
-                    handles,
-                    if arity == 2 {
-                        EdgeBoundaryLayout::CompleteBoundaryRun
-                    } else {
-                        EdgeBoundaryLayout::InteriorWithFlankingCorners
-                    },
-                )?);
-                scopes.push(scope);
-            }
-            let mut saw_delimiter = false;
-            while bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
-                saw_delimiter = true;
-                position += EDGE_DELIMITER.len();
-            }
-            if !saw_delimiter {
-                return None;
-            }
-            if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
-                break;
-            }
-            scope = scope.checked_add(1)?;
+    let mut rows = Vec::new();
+    let mut scopes = Vec::new();
+    let mut scope = 0usize;
+    loop {
+        if bytes.get(position) != Some(&0x01) {
+            return None;
         }
-        Some(Ok((rows, scopes, position)))
-    })()
-    .transpose()
+        let kind = *bytes.get(position + 1)?;
+        if !matches!(kind, 0x01 | 0x02) {
+            return None;
+        }
+        position += 2;
+        let count = parse_count(bytes, &mut position)?;
+        for _ in 0..count {
+            if bytes.get(position) != Some(&0x02) {
+                return None;
+            }
+            position += 1;
+            let arity = parse_count(bytes, &mut position)?;
+            if arity < 2 {
+                return None;
+            }
+            if arity > bytes.get(position..).map_or(0, <[u8]>::len) / handle_width {
+                return None;
+            }
+            let mut handles = Vec::new();
+            for _ in 0..arity {
+                handles.push(read_handle(bytes, position, handle_width)?);
+                position += handle_width;
+            }
+            rows.push(EdgeRow::new(
+                kind,
+                handles,
+                if arity == 2 {
+                    EdgeBoundaryLayout::CompleteBoundaryRun
+                } else {
+                    EdgeBoundaryLayout::InteriorWithFlankingCorners
+                },
+            )?);
+            scopes.push(scope);
+        }
+        let mut saw_delimiter = false;
+        while bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
+            saw_delimiter = true;
+            position += EDGE_DELIMITER.len();
+        }
+        if !saw_delimiter {
+            return None;
+        }
+        if bytes.get(position..position + 2) == Some(&[0x01, 0x06]) {
+            break;
+        }
+        scope = scope.checked_add(1)?;
+    }
+    Some((rows, scopes, position))
 }
 
-pub(crate) fn parse_vertex_table(
-    bytes: &[u8],
-    position: usize,
-) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
-    let Some(points) = parse_vertex_points(bytes, position)? else {
-        return Ok(None);
-    };
+pub(crate) fn parse_vertex_table(bytes: &[u8], position: usize) -> Option<Vec<[f64; 3]>> {
+    let points = parse_vertex_points(bytes, position)?;
 
     let mut coordinates = Vec::new();
 
@@ -1535,50 +1227,39 @@ pub(crate) fn parse_vertex_table(
         let coordinate: [f64; 3] = point.get().into();
         coordinates.push(coordinate);
     }
-    Ok(Some(coordinates))
+    Some(coordinates)
 }
 
 /// The counted `05 08 01` vertex table at `position`, every coordinate
 /// admitted finite.
-fn parse_vertex_points(
-    bytes: &[u8],
-    mut position: usize,
-) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
-    let Some(rest) = bytes.get(position..) else {
-        return Ok(None);
-    };
+fn parse_vertex_points(bytes: &[u8], mut position: usize) -> Option<Vec<FinitePoint3>> {
+    let rest = bytes.get(position..)?;
     if !rest.starts_with(&[0x01, 0x06]) {
-        return Ok(None);
+        return None;
     }
     position += 2;
-    let Some(count) = parse_count(bytes, &mut position) else {
-        return Ok(None);
-    };
+    let count = parse_count(bytes, &mut position)?;
     if count > bytes.get(position..).map_or(0, <[u8]>::len) / VERTEX_RECORD_BYTES {
-        return Ok(None);
+        return None;
     }
     let mut points = Vec::new();
 
     for _ in 0..count {
         if bytes.get(position..position + 3) != Some(&[0x05, 0x08, 0x01][..]) {
-            return Ok(None);
+            return None;
         }
         position += 3;
         let mut coordinates = [FiniteReal::ZERO; 3];
         for coordinate in &mut coordinates {
-            let Some(value) = View::f32_le_at(bytes, position) else {
-                return Ok(None);
-            };
-            let Some(finite) = FiniteReal::new(f64::from(value)) else {
-                return Ok(None);
-            };
+            let value = View::f32_le_at(bytes, position)?;
+            let finite = FiniteReal::new(f64::from(value))?;
             *coordinate = finite;
             position += 4;
         }
         let [x, y, z] = coordinates;
         points.push(FinitePoint3::from_coordinates(x, y, z));
     }
-    Ok(Some(points))
+    Some(points)
 }
 
 pub(crate) fn parse_trim_chain(
@@ -1596,9 +1277,9 @@ fn parse_trim_chain_start(
     record_count: usize,
     width: usize,
 ) -> Result<Option<(usize, Vec<TrimRecord>)>, CodecError> {
-    let compact = parse_trim_chain_with_length_encoding(bytes, end, record_count, width, false)?;
+    let compact = parse_trim_chain_with_length_encoding(bytes, end, record_count, width, false);
     let wide_u16be = if width == 2 {
-        parse_trim_chain_with_length_encoding(bytes, end, record_count, width, true)?
+        parse_trim_chain_with_length_encoding(bytes, end, record_count, width, true)
     } else {
         None
     };
@@ -1619,7 +1300,7 @@ fn parse_trim_chain_with_length_encoding(
     record_count: usize,
     width: usize,
     wide_u16be: bool,
-) -> Result<Option<(usize, Vec<TrimRecord>)>, CodecError> {
+) -> Option<(usize, Vec<TrimRecord>)> {
     struct Frame {
         end: usize,
         remaining: usize,
@@ -1635,7 +1316,7 @@ fn parse_trim_chain_with_length_encoding(
     }
 
     let Some(prefix) = bytes.get(..end) else {
-        return Ok(None);
+        return None;
     };
     let mut predecessors = HashMap::<usize, Vec<usize>>::new();
     for (start, marker) in prefix.windows(2).enumerate() {
@@ -1643,7 +1324,7 @@ fn parse_trim_chain_with_length_encoding(
             continue;
         }
         if let Some(layout) =
-            parse_trim_record_layout_with_length_encoding(prefix, start, width, wide_u16be)?
+            parse_trim_record_layout_with_length_encoding(prefix, start, width, wide_u16be)
         {
             let starts = predecessors.entry(layout.end).or_default();
             starts.push(start);
@@ -1667,7 +1348,7 @@ fn parse_trim_chain_with_length_encoding(
 
             for record in &reversed {
                 records.push(TrimRecord {
-                    packet: record.packet.try_clone_with_context()?,
+                    packet: record.packet.clone(),
                     frame_vector: record.frame_vector,
                     kind: record.kind,
                 });
@@ -1686,8 +1367,7 @@ fn parse_trim_chain_with_length_encoding(
             continue;
         };
         frames[frame].next_predecessor += 1;
-        let Some(record) =
-            parse_trim_record_with_length_encoding(prefix, start, width, wide_u16be)?
+        let Some(record) = parse_trim_record_with_length_encoding(prefix, start, width, wide_u16be)
         else {
             continue;
         };
@@ -1699,9 +1379,9 @@ fn parse_trim_chain_with_length_encoding(
             next_predecessor: 0,
         });
     }
-    Ok(<[(usize, Vec<TrimRecord>); 1]>::try_from(solutions)
+    <[(usize, Vec<TrimRecord>); 1]>::try_from(solutions)
         .ok()
-        .map(|[solution]| solution))
+        .map(|[solution]| solution)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1799,117 +1479,112 @@ fn parse_trim_record_layout_with_length_encoding(
     start: usize,
     width: usize,
     wide_u16be: bool,
-) -> Result<Option<TrimRecordLayout>, CodecError> {
-    (|| -> Option<Result<TrimRecordLayout, CodecError>> {
-        if wide_u16be && width != 2 {
+) -> Option<TrimRecordLayout> {
+    if wide_u16be && width != 2 {
+        return None;
+    }
+    if bytes.get(start) != Some(&0x01) {
+        return None;
+    }
+    let kind = *bytes.get(start + 1)?;
+    if !TRIM_KINDS.contains(&kind) {
+        return None;
+    }
+    let mask = kind & 0x0f;
+    let mut position = start + 2;
+    let a = if mask & 1 != 0 {
+        parse_count(bytes, &mut position)?
+    } else {
+        0
+    };
+    let b_start = position;
+    let b = if mask & 2 != 0 {
+        parse_count(bytes, &mut position)?
+    } else {
+        0
+    };
+    let c = if mask & 4 != 0 {
+        parse_count(bytes, &mut position)?
+    } else {
+        0
+    };
+    if bytes.get(position) != Some(&0xff) {
+        return None;
+    }
+    position += 1;
+    let handle_count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
+    position += 4;
+    if handle_count == 0 {
+        return None;
+    }
+    let frame_vector = if mask & 8 != 0 {
+        let components = [
+            f64::from(View::f32_le_at(bytes, position)?),
+            f64::from(View::f32_le_at(bytes, position + 4)?),
+            f64::from(View::f32_le_at(bytes, position + 8)?),
+        ];
+        position += 12;
+        let norm2 = components.iter().map(|value| value * value).sum::<f64>();
+        let components = FiniteVector::new(components)?;
+        if (norm2 - 1.0).abs() >= FRAME_VECTOR_NORM2_TOLERANCE {
             return None;
         }
-        if bytes.get(start) != Some(&0x01) {
-            return None;
-        }
-        let kind = *bytes.get(start + 1)?;
-        if !TRIM_KINDS.contains(&kind) {
-            return None;
-        }
-        let mask = kind & 0x0f;
-        let mut position = start + 2;
-        let a = if mask & 1 != 0 {
-            parse_count(bytes, &mut position)?
-        } else {
-            0
-        };
-        let b_start = position;
-        let b = if mask & 2 != 0 {
-            parse_count(bytes, &mut position)?
-        } else {
-            0
-        };
-        let c = if mask & 4 != 0 {
-            parse_count(bytes, &mut position)?
-        } else {
-            0
-        };
-        if bytes.get(position) != Some(&0xff) {
-            return None;
-        }
-        position += 1;
-        let handle_count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
-        position += 4;
-        if handle_count == 0 {
-            return None;
-        }
-        let frame_vector = if mask & 8 != 0 {
-            let components = [
-                f64::from(View::f32_le_at(bytes, position)?),
-                f64::from(View::f32_le_at(bytes, position + 4)?),
-                f64::from(View::f32_le_at(bytes, position + 8)?),
-            ];
-            position += 12;
-            let norm2 = components.iter().map(|value| value * value).sum::<f64>();
-            let components = FiniteVector::new(components)?;
-            if (norm2 - 1.0).abs() >= FRAME_VECTOR_NORM2_TOLERANCE {
-                return None;
-            }
-            Some(components)
-        } else {
-            None
-        };
+        Some(components)
+    } else {
+        None
+    };
 
-        // A two-strip packet stores K0 and K1 as two raw bytes before the H lane.
-        // The bytes are not a handle.  At width two they happen to occupy one
-        // handle-sized slot; at width three they do not, so sizing the lane as
-        // `(N + 1) * width` would consume one byte from the next packet.
-        let packed_two_strip_lengths =
-            kind == 0x42 && b == 2 && bytes.get(b_start).is_some_and(|encoded| *encoded == 2);
-        let primitive_count = b.checked_add(c)?;
-        if !packed_two_strip_lengths
-            && primitive_count > bytes.get(position..).map_or(0, <[u8]>::len)
-        {
+    // A two-strip packet stores K0 and K1 as two raw bytes before the H lane.
+    // The bytes are not a handle.  At width two they happen to occupy one
+    // handle-sized slot; at width three they do not, so sizing the lane as
+    // `(N + 1) * width` would consume one byte from the next packet.
+    let packed_two_strip_lengths =
+        kind == 0x42 && b == 2 && bytes.get(b_start).is_some_and(|encoded| *encoded == 2);
+    let primitive_count = b.checked_add(c)?;
+    if !packed_two_strip_lengths && primitive_count > bytes.get(position..).map_or(0, <[u8]>::len) {
+        return None;
+    }
+    let lengths_start = position;
+    if !packed_two_strip_lengths {
+        let mut expected_handles = 3usize.checked_mul(a)?;
+        for _ in 0..primitive_count {
+            let length = read_trim_length(bytes, &mut position, wide_u16be)?;
+            expected_handles = expected_handles.checked_add(length)?;
+        }
+        if expected_handles != handle_count {
             return None;
         }
-        let lengths_start = position;
-        if !packed_two_strip_lengths {
-            let mut expected_handles = 3usize.checked_mul(a)?;
-            for _ in 0..primitive_count {
-                let length = read_trim_length(bytes, &mut position, wide_u16be)?;
-                expected_handles = expected_handles.checked_add(length)?;
-            }
-            if expected_handles != handle_count {
-                return None;
-            }
+    }
+    let handle_offset = position;
+    let byte_count = if packed_two_strip_lengths {
+        2usize.checked_add(handle_count.checked_mul(width)?)?
+    } else {
+        handle_count.checked_mul(width)?
+    };
+    let end = handle_offset.checked_add(byte_count)?;
+    bytes.get(handle_offset..end)?;
+    // Marker candidates become packet layouts only after both the partition
+    // and the complete handle lane close. Reject false headers without
+    // allocating their declared primitive count.
+    let lane = if packed_two_strip_lengths {
+        TrimLengthLane::PackedTwoStrip
+    } else {
+        TrimLengthLane::Encoded {
+            start: lengths_start,
+            count: primitive_count,
+            wide_u16be,
         }
-        let handle_offset = position;
-        let byte_count = if packed_two_strip_lengths {
-            2usize.checked_add(handle_count.checked_mul(width)?)?
-        } else {
-            handle_count.checked_mul(width)?
-        };
-        let end = handle_offset.checked_add(byte_count)?;
-        bytes.get(handle_offset..end)?;
-        // Marker candidates become packet layouts only after both the partition
-        // and the complete handle lane close. Reject false headers without
-        // allocating their declared primitive count.
-        let lane = if packed_two_strip_lengths {
-            TrimLengthLane::PackedTwoStrip
-        } else {
-            TrimLengthLane::Encoded {
-                start: lengths_start,
-                count: primitive_count,
-                wide_u16be,
-            }
-        };
-        Some(Ok(TrimRecordLayout {
-            kind,
-            independent_count: a,
-            strip_count: b,
-            lane,
-            frame_vector,
-            handle_offset,
-            handle_count,
-            end,
-        }))
-    })()
-    .transpose()
+    };
+    Some(TrimRecordLayout {
+        kind,
+        independent_count: a,
+        strip_count: b,
+        lane,
+        frame_vector,
+        handle_offset,
+        handle_count,
+        end,
+    })
 }
 
 #[cfg(test)]
@@ -1936,76 +1611,62 @@ fn parse_trim_record_with_length_encoding(
     start: usize,
     width: usize,
     wide_u16be: bool,
-) -> Result<Option<TrimRecord>, CodecError> {
-    let Some(layout) =
-        parse_trim_record_layout_with_length_encoding(bytes, start, width, wide_u16be)?
-    else {
-        return Ok(None);
-    };
-    (|| -> Option<Result<TrimRecord, CodecError>> {
-        let mut position = layout.handle_offset;
-        let lengths = match layout.lane {
-            TrimLengthLane::Encoded {
-                start,
-                count,
-                wide_u16be,
-            } => {
-                let mut length_position = start;
-                let mut lengths = Vec::new();
-                for _ in 0..count {
-                    let length = read_trim_length(bytes, &mut length_position, wide_u16be)?;
-                    lengths.push(length);
-                }
-                lengths
+) -> Option<TrimRecord> {
+    let layout = parse_trim_record_layout_with_length_encoding(bytes, start, width, wide_u16be)?;
+    let mut position = layout.handle_offset;
+    let lengths = match layout.lane {
+        TrimLengthLane::Encoded {
+            start,
+            count,
+            wide_u16be,
+        } => {
+            let mut length_position = start;
+            let mut lengths = Vec::new();
+            for _ in 0..count {
+                let length = read_trim_length(bytes, &mut length_position, wide_u16be)?;
+                lengths.push(length);
             }
-            TrimLengthLane::PackedTwoStrip => {
-                let packed = bytes.get(position..position + 2)?;
-                position += 2;
-                let mut lengths = Vec::new();
-                lengths.push(usize::from(packed[0]));
-                lengths.push(usize::from(packed[1]));
-                if lengths.iter().sum::<usize>() != layout.handle_count {
-                    return None;
-                }
-                lengths
-            }
-        };
-        let mut handles = Vec::new();
-        for _ in 0..layout.handle_count {
-            let handle = read_handle(bytes, position, width)?;
-            handles.push(handle);
-            position += width;
+            lengths
         }
+        TrimLengthLane::PackedTwoStrip => {
+            let packed = bytes.get(position..position + 2)?;
+            position += 2;
+            let lengths = vec![usize::from(packed[0]), usize::from(packed[1])];
+            if lengths.iter().sum::<usize>() != layout.handle_count {
+                return None;
+            }
+            lengths
+        }
+    };
+    let mut handles = Vec::new();
+    for _ in 0..layout.handle_count {
+        let handle = read_handle(bytes, position, width)?;
+        handles.push(handle);
+        position += width;
+    }
 
-        let (strip_lengths, fan_lengths) = lengths.split_at_checked(layout.strip_count)?;
-        let strip_lengths = strip_lengths.to_vec();
-        let fan_lengths = fan_lengths.to_vec();
-        let packet = match TrimPacket::from_lanes(
-            layout.independent_count,
-            strip_lengths,
-            fan_lengths,
-            handles,
-        ) {
-            Ok(packet) => packet?,
-            Err(error) => return Some(Err(error)),
-        };
-        Some(Ok(TrimRecord {
-            packet,
-            frame_vector: layout.frame_vector,
-            kind: layout.kind,
-        }))
-    })()
-    .transpose()
+    let (strip_lengths, fan_lengths) = lengths.split_at_checked(layout.strip_count)?;
+    let strip_lengths = strip_lengths.to_vec();
+    let fan_lengths = fan_lengths.to_vec();
+    let packet = TrimPacket::from_lanes(
+        layout.independent_count,
+        strip_lengths,
+        fan_lengths,
+        handles,
+    )?;
+    Some(TrimRecord {
+        packet,
+        frame_vector: layout.frame_vector,
+        kind: layout.kind,
+    })
 }
 
-pub(crate) fn boundary_cycles(
-    triangles: &[[u32; 3]],
-) -> Result<Option<Vec<Vec<u32>>>, cadmpeg_core::CodecError> {
+pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
     let mut edge_directions = HashMap::<(u32, u32), u8>::new();
     for &[a, b, c] in triangles {
         for (start, end) in [(a, b), (b, c), (c, a)] {
             if start == end {
-                return Ok(None);
+                return None;
             }
             let (edge, direction) = if start < end {
                 ((start, end), 1)
@@ -2014,7 +1675,7 @@ pub(crate) fn boundary_cycles(
             };
             if let Some(directions) = edge_directions.get_mut(&edge) {
                 if *directions & direction != 0 {
-                    return Ok(None);
+                    return None;
                 }
                 *directions |= direction;
             } else {
@@ -2028,11 +1689,11 @@ pub(crate) fn boundary_cycles(
             1 => Some((low, high)),
             2 => Some((high, low)),
             3 => None,
-            _ => return Ok(None),
+            _ => return None,
         };
         if let Some((start, end)) = boundary {
             if successors.contains_key(&start) {
-                return Ok(None);
+                return None;
             }
             successors.insert(start, end);
         }
@@ -2046,18 +1707,14 @@ pub(crate) fn boundary_cycles(
         let mut cycle = Vec::new();
         cycle.push(start);
         seen.insert(start);
-        let Some(&mut_current) = successors.get(&start) else {
-            return Ok(None);
-        };
+        let &mut_current = successors.get(&start)?;
         let mut current = mut_current;
         while current != start {
             if !seen.insert(current) {
-                return Ok(None);
+                return None;
             }
             cycle.push(current);
-            let Some(&next) = successors.get(&current) else {
-                return Ok(None);
-            };
+            let &next = successors.get(&current)?;
             current = next;
         }
         let minimum = cycle
@@ -2065,14 +1722,12 @@ pub(crate) fn boundary_cycles(
             .enumerate()
             .min_by_key(|(_, handle)| *handle)
             .map(|(index, _)| index);
-        let Some(minimum) = minimum else {
-            return Ok(None);
-        };
+        let minimum = minimum?;
         cycle.rotate_left(minimum);
         cycles.push(cycle);
     }
     cycles.sort_by(Ord::cmp);
-    Ok((!cycles.is_empty()).then_some(cycles))
+    (!cycles.is_empty()).then_some(cycles)
 }
 
 pub(super) fn cover_cycle(
@@ -2138,15 +1793,12 @@ fn cover_cycle_by_rows(
     if coverage.iter().any(|count| *count != 1) {
         return Ok(None);
     }
-    matches.sort_by(|left, right| (left.0 % length).cmp(&(right.0 % length)));
+    matches.sort_by_key(|left| left.0 % length);
     let mut corner_nodes = HashMap::new();
     for &(start, edge_count, _, _) in &matches {
         let end = (start + edge_count) % length;
         for corner in [start % length, end] {
-            if !corner_nodes.contains_key(&corner) {
-                let node = union.push();
-                corner_nodes.insert(corner, node);
-            }
+            corner_nodes.entry(corner).or_insert_with(|| union.push());
         }
     }
     let mut coedges = Vec::new();

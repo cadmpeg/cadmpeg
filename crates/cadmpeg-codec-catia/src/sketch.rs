@@ -36,9 +36,9 @@ pub(crate) fn transfer_native_sketch_entities(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
-    let object_records = unique_object_records(native)?;
-    let entity_records = unique_entity_records(native)?;
-    let design_objects = unique_design_objects(native)?;
+    let object_records = unique_object_records(native);
+    let entity_records = unique_entity_records(native);
+    let design_objects = unique_design_objects(native);
     let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
     for object in native
         .design_objects
@@ -161,9 +161,9 @@ pub(crate) fn transfer_native_sketch_constraints(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
-    let object_records = unique_object_records(native)?;
-    let entity_records = unique_entity_records(native)?;
-    let design_objects = unique_design_objects(native)?;
+    let object_records = unique_object_records(native);
+    let entity_records = unique_entity_records(native);
+    let design_objects = unique_design_objects(native);
     let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
     for object in native
         .design_objects
@@ -242,7 +242,7 @@ pub(crate) fn transfer_native_sketch_constraints(
             let id = entity
                 .id()
                 .try_clone_for_decode(ctx, "catia_sketch_constraint_entity_id")?;
-            sketch_entities.insert(key, id)?;
+            sketch_entities.insert(key, id);
         }
 
         for child_object in member_objects {
@@ -399,7 +399,7 @@ pub(crate) fn transfer_native_sketch_constraints(
             &mut native_properties,
             &candidate.target_record.references,
             &object_records,
-        )?;
+        );
         insert_property(
             &mut native_properties,
             format_args!("catia_relation_incidence_count"),
@@ -483,7 +483,7 @@ fn insert_target_reference_properties(
     properties: &mut BTreeMap<String, String>,
     references: &[CatiaObjectRecordReference],
     object_records: &UniqueIndex<&str, &CatiaObjectRecord>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     insert_property(
         properties,
         format_args!("catia_relation_target_reference_count"),
@@ -572,7 +572,6 @@ fn insert_target_reference_properties(
             );
         }
     }
-    Ok(())
 }
 
 fn insert_property(
@@ -703,7 +702,7 @@ pub(crate) fn transfer_constraint_ranges(
             cadmpeg_core::text::NonBlankString::new(constraint_kind).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("empty native sketch constraint kind")
             })?,
-            constraint_properties(range)?,
+            constraint_properties(range),
             bound_entities,
             binding.operand,
         );
@@ -753,9 +752,9 @@ impl<'a> ConstraintIndexes<'a> {
         native: &'a CatiaNative,
         ir: &CadIr,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let entity_records = unique_entity_records(native)?;
-        let object_records = unique_object_records(native)?;
-        let design_objects = unique_design_objects(native)?;
+        let entity_records = unique_entity_records(native);
+        let object_records = unique_object_records(native);
+        let design_objects = unique_design_objects(native);
         let sketch_ids = sketch_ids_by_native_ref(ctx, ir)?;
         let sketch_entities = sketch_entities_by_native_ref(ctx, ir)?;
         Ok(Self {
@@ -784,7 +783,7 @@ fn sketch_entities_by_native_ref(
         let sketch = entity
             .sketch
             .try_clone_for_decode(ctx, "catia_sketch_entity_index_sketch")?;
-        index.insert(key, (id, sketch))?;
+        index.insert(key, (id, sketch));
     }
     Ok(index)
 }
@@ -941,12 +940,10 @@ fn sketch_owner_for_design_object<'a>(
     Ok(None)
 }
 
-fn constraint_properties(
-    range: &CatiaConstraintRange,
-) -> Result<BTreeMap<String, String>, cadmpeg_core::CodecError> {
+fn constraint_properties(range: &CatiaConstraintRange) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
-    insert_selector(&mut properties, "catia_range", &range.range)?;
-    insert_selector(&mut properties, "catia_constraint", &range.constraint)?;
+    insert_selector(&mut properties, "catia_range", &range.range);
+    insert_selector(&mut properties, "catia_constraint", &range.constraint);
     insert_property(
         &mut properties,
         format_args!("catia_framing"),
@@ -978,14 +975,14 @@ fn constraint_properties(
         format_args!("catia_evaluation_opcode_offset"),
         format_args!("{}", range.evaluation_opcode_offset),
     );
-    Ok(properties)
+    properties
 }
 
 fn insert_selector(
     properties: &mut BTreeMap<String, String>,
     prefix: &str,
     selector: &crate::native::CatiaEntitySchemaValue,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     insert_property(
         properties,
         format_args!("{prefix}_entry"),
@@ -1006,7 +1003,6 @@ fn insert_selector(
         format_args!("{prefix}_value"),
         format_args!("{}", selector.value),
     );
-    Ok(())
 }
 
 fn framing_name(framing: crate::native::CatiaConstraintRangeFraming) -> &'static str {
@@ -1019,9 +1015,7 @@ fn framing_name(framing: crate::native::CatiaConstraintRangeFraming) -> &'static
     }
 }
 
-fn unique_entity_records<'a>(
-    native: &'a CatiaNative,
-) -> Result<UniqueIndex<&'a str, &'a CatiaEntityRecord>, cadmpeg_core::CodecError> {
+fn unique_entity_records(native: &CatiaNative) -> UniqueIndex<&str, &CatiaEntityRecord> {
     UniqueIndex::collect(
         native
             .entity_records
@@ -1030,9 +1024,7 @@ fn unique_entity_records<'a>(
     )
 }
 
-fn unique_object_records<'a>(
-    native: &'a CatiaNative,
-) -> Result<UniqueIndex<&'a str, &'a CatiaObjectRecord>, cadmpeg_core::CodecError> {
+fn unique_object_records(native: &CatiaNative) -> UniqueIndex<&str, &CatiaObjectRecord> {
     UniqueIndex::collect(
         native
             .object_graphs
@@ -1042,9 +1034,7 @@ fn unique_object_records<'a>(
     )
 }
 
-fn unique_design_objects<'a>(
-    native: &'a CatiaNative,
-) -> Result<UniqueIndex<&'a str, &'a CatiaDesignObject>, cadmpeg_core::CodecError> {
+fn unique_design_objects(native: &CatiaNative) -> UniqueIndex<&str, &CatiaDesignObject> {
     UniqueIndex::collect(
         native
             .design_objects
@@ -1066,7 +1056,7 @@ fn sketch_ids_by_native_ref(
         let id = sketch
             .id
             .try_clone_for_decode(ctx, "catia_sketch_native_id")?;
-        index.insert(key, id)?;
+        index.insert(key, id);
     }
     Ok(index)
 }

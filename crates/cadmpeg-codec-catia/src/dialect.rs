@@ -116,11 +116,9 @@ fn matched(variant: Variant) -> DialectMatch {
 /// [`CatiaLossCode::TopologyGraphNotBuilt`], which state what was not
 /// transferred out of an identified layout. This one states that the layout was
 /// never identified.
-pub(crate) fn dialect_loss(
-    matched: &DialectMatch,
-) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     if !matches!(matched.admission(), Admission::Residual) {
-        return Ok(None);
+        return None;
     }
     let message = format!(
         "This container matched no CATIA V5 storage family's structural invariants, so it \
@@ -130,7 +128,7 @@ pub(crate) fn dialect_loss(
      any family's record grammar.",
         matched.dialect()
     );
-    Ok(Some(CatiaLossCode::SourceDialectUnverified.note(message)))
+    Some(CatiaLossCode::SourceDialectUnverified.note(message))
 }
 
 /// The `LastSaveVersion` tuple the summary-information record declared.

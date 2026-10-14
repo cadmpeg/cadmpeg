@@ -15,7 +15,6 @@ use super::{
     CatiaRelationTypeSignature, CatiaSchemaConfigurationRecord, CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 /// Complete production selected by the entity value and suffix frames.
@@ -352,16 +351,15 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(super) fn parse_suffix(&mut self) -> Result<(), CodecError> {
+    pub(super) fn parse_suffix(&mut self) {
         let suffix = self.record_suffix();
         let value = entity_suffix_value(suffix);
-        let framing = entity_suffix_framing(suffix)?;
+        let framing = entity_suffix_framing(suffix);
         self.suffix = match (value, framing) {
             (Some(value), _) => Some(CatiaEntityRecordSuffix::Value(value)),
             (None, Some(framing)) => Some(CatiaEntityRecordSuffix::Framing(framing)),
             (None, None) => None,
         };
-        Ok(())
     }
 }
 
@@ -522,41 +520,6 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
 }
 
 impl CatiaEntityRecordWire {
-    pub(super) fn from_charged(mut value: CatiaEntityRecord) -> Result<Self, CodecError> {
-        let payload = match &value.body {
-            CatiaEntityRecordBody::Inline(_) => &[][..],
-            CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
-        };
-        let value_fields = value_block::tokenize(payload);
-        let value_packets = entity_table::value_packets(payload, &value_fields);
-        let signature = match value.value_production.as_ref() {
-            Some(CatiaEntityValueProduction::RelationExpression(expression)) => {
-                expression.signature_charged()?
-            }
-            _ => None,
-        };
-        let output_entity = match value.object_production.as_ref() {
-            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) => instance
-                .output_entity()
-                .map(|entity| entity.copy_charged())
-                .transpose()?,
-            _ => None,
-        };
-        let reference_signature = value
-            .reference_signature
-            .take()
-            .map(|signature| CatiaReferenceSignatureWire::from_charged(signature))
-            .transpose()?;
-        Ok(Self::from_with_views(
-            value,
-            value_fields,
-            value_packets,
-            signature,
-            output_entity,
-            reference_signature,
-        ))
-    }
-
     fn from_with_views(
         value: CatiaEntityRecord,
         value_fields: Vec<value_block::ValueField>,

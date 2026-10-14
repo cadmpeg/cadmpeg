@@ -7,9 +7,6 @@
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
-type QuinticJetOutput<const N: usize> =
-    Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError>;
-
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::geometry::{
@@ -128,22 +125,17 @@ impl LaneRefusals {
 /// The range is a value the record states, so a non-finite bound or a bound pair
 /// that does not increase is a refused record. `strict` states whether the two
 /// bounds must differ.
-fn readable_range(
-    range: [f64; 2],
-    strict: bool,
-    refusal: &mut LaneRefusals,
-    record: &str,
-) -> Result<bool, cadmpeg_core::CodecError> {
+fn readable_range(range: [f64; 2], strict: bool, refusal: &mut LaneRefusals, record: &str) -> bool {
     let ordered = if strict {
         range[0] < range[1]
     } else {
         range[0] <= range[1]
     };
     if range.into_iter().all(f64::is_finite) && ordered {
-        return Ok(true);
+        return true;
     }
     refusal.push_range(record, range);
-    Ok(false)
+    false
 }
 
 /// Record a carrier refusal against the record that stated it, and answer
@@ -156,12 +148,12 @@ pub(crate) fn note_refusal<T>(
     result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
     refusal: &mut LaneRefusals,
     record: impl std::fmt::Display,
-) -> Result<Option<T>, cadmpeg_core::CodecError> {
+) -> Option<T> {
     match result {
-        Ok(value) => Ok(Some(value)),
+        Ok(value) => Some(value),
         Err(error) => {
             refusal.push(record, &error);
-            Ok(None)
+            None
         }
     }
 }
@@ -178,7 +170,7 @@ pub(crate) fn reverse_pcurve_geometry(
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    if !readable_range(range, true, refusal, record)? {
+    if !readable_range(range, true, refusal, record) {
         return Ok(None);
     }
     match geometry {
@@ -200,21 +192,21 @@ pub(crate) fn reverse_pcurve_geometry(
             if !pcurve_weights_are_positive(nurbs) {
                 return Ok(None);
             }
-            let reversed_knots = reverse_knots(nurbs.knots(), range)?;
+            let reversed_knots = reverse_knots(nurbs.knots(), range);
             let mut poles = match nurbs.pole_rows() {
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial {
-                        points: points.to_vec(),
+                        points: points.clone(),
                     }
                 }
                 cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
                     cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational {
-                        points: points.to_vec(),
+                        points: points.clone(),
                     }
                 }
             };
             poles.reverse();
-            note_refusal(
+            Ok(note_refusal(
                 match KnotVector::new(ctx, reversed_knots)? {
                     Ok(knots) => {
                         PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?
@@ -224,7 +216,7 @@ pub(crate) fn reverse_pcurve_geometry(
                 refusal,
                 record,
             )
-            .map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
+            .map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
         }
         _ => Ok(None),
     }
@@ -242,7 +234,7 @@ pub(crate) fn reverse_curve_geometry(
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
-    if !readable_range(range, false, refusal, record)? {
+    if !readable_range(range, false, refusal, record) {
         return Ok(None);
     }
     if matches!(
@@ -294,26 +286,30 @@ pub(crate) fn reverse_curve_geometry(
                 )
             }))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            note_refusal(reverse_nurbs_curve(ctx, nurbs, range)?, refusal, record).map(|curve| {
-                curve.map(|curve| {
-                    (
-                        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                        range,
-                    )
-                })
-            })
-        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(note_refusal(
+            reverse_nurbs_curve(ctx, nurbs, range)?,
+            refusal,
+            record,
+        )
+        .map(|curve| {
+            (
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                range,
+            )
+        })),
         _ => Ok(None),
     }
 }
 
+/// Answer whether adjacent knots strictly increase. A repeated knot or a NaN
+/// pair fails.
+pub(crate) fn strictly_increasing(knots: &[f64]) -> bool {
+    knots.windows(2).all(|pair| pair[0] < pair[1])
+}
+
 /// Reflect knots without summing the interval endpoints. Subtracting from
 /// the nearer endpoint preserves small spans at large parameter offsets.
-fn reverse_knots(
-    knots: &[f64],
-    [lower, upper]: [f64; 2],
-) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+fn reverse_knots(knots: &[f64], [lower, upper]: [f64; 2]) -> Vec<f64> {
     let mut reversed = knots.to_vec();
     reversed.reverse();
     for knot in &mut reversed {
@@ -324,7 +320,7 @@ fn reverse_knots(
         };
         *knot = if reflected == 0.0 { 0.0 } else { reflected };
     }
-    Ok(reversed)
+    reversed
 }
 
 /// Reverse a NURBS carrier in the stated parameter chart.
@@ -340,17 +336,17 @@ pub(crate) fn reverse_nurbs_curve(
     let mut poles = match curve.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
-                points: points.to_vec(),
+                points: points.clone(),
             }
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
-                points: points.to_vec(),
+                points: points.clone(),
             }
         }
     };
     poles.reverse();
-    let knots = match KnotVector::new(ctx, reverse_knots(curve.knots(), range)?)? {
+    let knots = match KnotVector::new(ctx, reverse_knots(curve.knots(), range))? {
         Ok(knots) => knots,
         Err(error) => return Ok(Err(error)),
     };
@@ -390,9 +386,9 @@ pub(crate) fn canonical_model_curve_range(
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-    if !readable_range(range, false, refusal, record)? {
-        return Ok(None);
+) -> Option<[f64; 2]> {
+    if !readable_range(range, false, refusal, record) {
+        return None;
     }
     if matches!(
         geometry,
@@ -402,9 +398,9 @@ pub(crate) fn canonical_model_curve_range(
         if normalized.is_none() {
             refusal.push_range(record, range);
         }
-        return Ok(normalized);
+        return normalized;
     }
-    Ok((|| match geometry {
+    (|| match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints();
             let domain_span = upper - lower;
@@ -432,7 +428,7 @@ pub(crate) fn canonical_model_curve_range(
             }
         }
         _ => Some(range),
-    })())
+    })()
 }
 
 /// Reverse a cone-helix construction over its complete angular domain.
@@ -447,18 +443,18 @@ pub(crate) fn reverse_helix_definition(
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Result<Option<(ProceduralCurveDefinition, [f64; 2])>, cadmpeg_core::CodecError> {
+) -> Option<(ProceduralCurveDefinition, [f64; 2])> {
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
-        return Ok(None);
+        return None;
     };
-    if !readable_range(range, true, refusal, record)? {
-        return Ok(None);
+    if !readable_range(range, true, refusal, record) {
+        return None;
     }
     if !(range[1] - range[0]).is_finite() {
         refusal.push_range(record, range);
-        return Ok(None);
+        return None;
     }
-    Ok((|| {
+    (|| {
         let angle_range = helix_payload.angle_range();
         let center = helix_payload.center().as_raw();
         let major = helix_payload.major();
@@ -519,7 +515,7 @@ pub(crate) fn reverse_helix_definition(
             ),
             range,
         ))
-    })())
+    })()
 }
 
 /// Normalize an increasing circular interval to the canonical one-turn domain.
@@ -561,7 +557,7 @@ pub(crate) fn circular_helix_cache(
         return Ok(None);
     };
     let angle_range = helix_payload.angle_range();
-    if !readable_range(angle_range.get(), true, refusal, record)? {
+    if !readable_range(angle_range.get(), true, refusal, record) {
         return Ok(None);
     }
     let [angle_start, angle_end] = angle_range.get();
@@ -698,7 +694,7 @@ pub(crate) fn circular_helix_cache(
         ctx, 1, knots, controls, None, false,
     )? {
         Ok(curve) => curve,
-        Err(error) => return note_refusal(Err(error), refusal, record),
+        Err(error) => return Ok(note_refusal(Err(error), refusal, record)),
     };
     Ok(FitTolerance::try_new(fit_tolerance)
         .ok()
@@ -741,7 +737,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     points: &[[f64; N]],
     first: &[[f64; N]],
     second: &[[f64; N]],
-) -> QuinticJetOutput<N> {
+) -> Option<(Vec<f64>, Vec<FiniteVector<N>>)> {
     if degree != 5
         || knots.len() < 2
         || points.len() != knots.len()
@@ -752,7 +748,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         || !first.iter().flatten().copied().all(f64::is_finite)
         || !second.iter().flatten().copied().all(f64::is_finite)
     {
-        return Ok(None);
+        return None;
     }
     let mut controls = Vec::new();
     let mut full_knots = Vec::new();
@@ -761,7 +757,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     for index in 0..knots.len() - 1 {
         let h = knots[index + 1] - knots[index];
         if !h.is_finite() || h <= 0.0 {
-            return Ok(None);
+            return None;
         }
         let p0 = points[index];
         let p1 = points[index + 1];
@@ -802,17 +798,15 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         full_knots.extend([knots[index + 1]; 6]);
     }
     if !full_knots.iter().copied().all(f64::is_finite) {
-        return Ok(None);
+        return None;
     }
     let mut finite_controls = Vec::new();
 
     for control in controls {
-        let Some(control) = FiniteVector::new(control) else {
-            return Ok(None);
-        };
+        let control = FiniteVector::new(control)?;
         finite_controls.push(control);
     }
-    Ok(Some((full_knots, finite_controls)))
+    Some((full_knots, finite_controls))
 }
 
 pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
@@ -973,7 +967,7 @@ mod tests {
         );
         let notes = crate::test_support::with_service_context(|ctx| {
             let mut refusal = LaneRefusals::new();
-            let value = super::note_refusal(short_weight_lane(), &mut refusal, "test record")?;
+            let value = super::note_refusal(short_weight_lane(), &mut refusal, "test record");
             Ok::<_, cadmpeg_core::CodecError>((value, refusal.take_notes()))
         })
         .expect("service profile admits NURBS refusal note");

@@ -92,9 +92,9 @@ pub(in crate::families) fn try_decode_e5(
         return Ok(None);
     };
     let stream = &scan.data[stream_range];
-    let circles = crate::families::e5::records::e5_circles(stream)?;
+    let circles = crate::families::e5::records::e5_circles(stream);
     let mut surfaces = crate::families::e5::records::e5_surfaces(ctx, stream, refusal)?;
-    let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(stream)?;
+    let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(stream);
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
         macro_rules! admitted {
             ($value:expr) => {
@@ -111,10 +111,7 @@ pub(in crate::families) fn try_decode_e5(
         let vertex_count = if let Some(topology) = topology.as_ref() {
             topology.vertex_refs.len()
         } else {
-            let edges = match crate::families::e5::records::e5_edges(stream) {
-                Ok(edges) => edges,
-                Err(error) => return Some(Err(error)),
-            };
+            let edges = crate::families::e5::records::e5_edges(stream);
             let mut vertices = HashSet::new();
             for edge in edges {
                 for vertex in [edge.start_vertex_id, edge.end_vertex_id] {
@@ -124,10 +121,7 @@ pub(in crate::families) fn try_decode_e5(
             vertices.len()
         };
         let points = {
-            let roster = match crate::families::e5::records::e5_vertices(&scan.data, vertex_count) {
-                Ok(roster) => roster,
-                Err(error) => return Some(Err(error)),
-            };
+            let roster = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
             if roster.len() == vertex_count {
                 roster
             } else {
@@ -351,9 +345,9 @@ refusal,
                 topology_ir.model.procedural_curves.clear();
                 topology_ir.model.curves = original_curves;
                 topology_ir.model.surfaces.append(&mut unused_surfaces);
-                topology_ir.model.surfaces.sort_unstable_by(|left, right| e5_source_ordinal(left.id.as_str()).cmp(&e5_source_ordinal(right.id.as_str())));
-                topology_ir.model.points.sort_unstable_by(|left, right| e5_source_ordinal(left.id.as_str()).cmp(&e5_source_ordinal(right.id.as_str())));
-                topology_ir.model.vertices.sort_unstable_by(|left, right| e5_source_ordinal(left.id.as_str()).cmp(&e5_source_ordinal(right.id.as_str())));
+                topology_ir.model.surfaces.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
+                topology_ir.model.points.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
+                topology_ir.model.vertices.sort_unstable_by_key(|left| e5_source_ordinal(left.id.as_str()));
             }
             ir = topology_ir;
             if !ir.model.vertices.is_empty() {
@@ -377,10 +371,8 @@ refusal,
             (CatiaLossCode::TopologyE5GraphUnclosed,
                 "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.")
         };
-        losses.push(loss_code.note(format!("{message}")));
-        if let Err(error) = insert_unresolved_carrier_loss(&ir, &mut losses) {
-            return Some(Err(error));
-        }
+        losses.push(loss_code.note(message.to_string()));
+        insert_unresolved_carrier_loss(&ir, &mut losses);
         if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
             return Some(Err(error));
         }
@@ -514,7 +506,7 @@ fn append_e5_planes(
         };
         carrier_axes.insert(surface.record_id, axis);
     }
-    for plane in crate::families::e5::records::e5_planes(stream)? {
+    for plane in crate::families::e5::records::e5_planes(stream) {
         let mut normal: Option<Vector3> = None;
         let mut consistent = true;
         for face in topology
@@ -1089,10 +1081,8 @@ fn attach_e5_free_vertices(
             Exactness::Inferred,
         )?;
     }
-    let mut regions = Vec::new();
-    regions.push(region_id.try_clone_for_decode(ctx, "catia_e5_free_body_region_id")?);
-    let mut shells = Vec::new();
-    shells.push(shell_id.try_clone_for_decode(ctx, "catia_e5_free_region_shell_id")?);
+    let regions = vec![region_id.try_clone_for_decode(ctx, "catia_e5_free_body_region_id")?];
+    let shells = vec![shell_id.try_clone_for_decode(ctx, "catia_e5_free_region_shell_id")?];
     let free_vertices = ir
         .model
         .vertices
@@ -1176,23 +1166,17 @@ struct E5MemberPlan<'a> {
 }
 
 impl<'a> E5LoopPlan<'a> {
-    fn admit(
-        source: &'a crate::families::e5::graph::E5Loop,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some(oriented) = source.resolved_members() else {
-            return Ok(None);
-        };
+    fn admit(source: &'a crate::families::e5::graph::E5Loop) -> Option<Self> {
+        let oriented = source.resolved_members()?;
         if source.members.is_empty() || oriented.len() != source.members.len() {
-            return Ok(None);
+            return None;
         }
         let mut seen = HashSet::new();
         let mut members = Vec::new();
         for orientation in oriented {
-            let Some(member) = source.members.get(orientation.serialized_index) else {
-                return Ok(None);
-            };
+            let member = source.members.get(orientation.serialized_index)?;
             if !seen.insert(orientation.serialized_index) {
-                return Ok(None);
+                return None;
             }
             members.push(E5MemberPlan {
                 source: member,
@@ -1204,7 +1188,7 @@ impl<'a> E5LoopPlan<'a> {
                 ),
             });
         }
-        Ok(Some(Self { source, members }))
+        Some(Self { source, members })
     }
 }
 
@@ -1361,7 +1345,7 @@ fn plan_e5_boundary<'a>(
     for face in &topology.faces {
         let mut loops = Vec::new();
         for source in &face.loops {
-            let Some(loop_plan) = E5LoopPlan::admit(source)? else {
+            let Some(loop_plan) = E5LoopPlan::admit(source) else {
                 return Ok(None);
             };
             loops.push(loop_plan);
@@ -1707,14 +1691,16 @@ fn plan_e5_boundary<'a>(
             e5_support_occurrence_intersection_context(ctx, support_range, solved_range, sides)?
         else {
             if let [side] = sides.as_slice() {
-                if !surface_curves.contains_key(&edge_ref) {
+                if let std::collections::btree_map::Entry::Vacant(e) =
+                    surface_curves.entry(edge_ref)
+                {
                     let surface_id = side
                         .surface
                         .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
                     let pcurve = side
                         .pcurve
                         .try_clone_for_decode(ctx, "catia_e5_surface_curve_pcurve")?;
-                    surface_curves.insert(edge_ref, (surface_id, pcurve, side.pcurve_range));
+                    e.insert((surface_id, pcurve, side.pcurve_range));
                 }
             }
             continue;
@@ -1808,7 +1794,7 @@ fn resolve_e5_ownership(
         body_faces.push((None, faces));
     } else {
         for body in &topology.bodies {
-            let faces = body.faces.to_vec();
+            let faces = body.faces.clone();
             body_faces.push((Some(body.record_id), faces));
         }
     }
@@ -2164,8 +2150,7 @@ fn emit_e5_bodies(
             )?;
             annotations.derived(ctx, &region_id, "body")?;
             annotations.derived(ctx, &region_id, "shells")?;
-            let mut shells = Vec::new();
-            shells.push(shell_id.try_clone_for_decode(ctx, "catia_e5_region_shell_id")?);
+            let shells = vec![shell_id.try_clone_for_decode(ctx, "catia_e5_region_shell_id")?];
             admission.charge()?;
             ir.model.regions.push(Region {
                 id: region_id.try_clone_for_decode(ctx, "catia_e5_region_id_copy")?,
@@ -2724,8 +2709,7 @@ fn e5_pcurve_on_surface(
                     "e5 NURBS pcurve on surface record {} at byte {}",
                     decoded_surface.record_id, decoded_surface.pos
                 ),
-            )?
-            else {
+            ) else {
                 return Ok(None);
             };
             let geometry = PcurveGeometry::Nurbs { nurbs };
@@ -2818,13 +2802,13 @@ fn e5_lift_plane_nurbs(
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_e5_boundary_lifted_knots")?;
-    crate::nurbs::note_refusal(
+    Ok(crate::nurbs::note_refusal(
         NurbsCurve::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())?,
         refusal,
         format_args!(
             "e5 boundary curve lifted from the pcurve on surface record {surface_record_id}"
         ),
-    )
+    ))
 }
 
 fn e5_boundary_curve(

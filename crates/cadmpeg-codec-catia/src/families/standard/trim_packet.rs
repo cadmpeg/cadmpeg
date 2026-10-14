@@ -2,9 +2,6 @@
 
 use std::sync::{Arc, OnceLock};
 
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
 #[derive(Debug, Clone)]
 pub(crate) struct TrimPacket {
     inner: Arc<TrimPacketData>,
@@ -75,19 +72,16 @@ impl TrimPacket {
         strip_lengths: Vec<usize>,
         fan_lengths: Vec<usize>,
         handles: Vec<u32>,
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Option<Self> {
         let Ok(inner) =
             TrimPacketData::try_from((independent_count, strip_lengths, fan_lengths, handles))
         else {
-            return Ok(None);
+            return None;
         };
 
-        Ok(Some(Self {
+        Some(Self {
             inner: Arc::new(inner),
-        }))
-    }
-    pub(crate) fn try_clone_with_context(&self) -> Result<Self, CodecError> {
-        Ok(self.clone())
+        })
     }
 
     pub(crate) fn handles(&self) -> &[u32] {
@@ -109,22 +103,11 @@ impl TrimPacket {
         &self.inner.fan_lengths
     }
 
-    pub(crate) fn triangles(&self, ctx: &DecodeContext<'_>) -> Result<&[[u32; 3]], CodecError> {
-        if let Some(triangles) = self.inner.triangles.get() {
-            return Ok(triangles);
-        }
-        let triangles = self.expand_triangles()?;
-        match self.inner.triangles.set(triangles) {
-            Ok(()) | Err(_) => self
-                .inner
-                .triangles
-                .get()
-                .map(Vec::as_slice)
-                .ok_or_else(|| ctx.refuse_codec_limit("catia_trim_triangles", u64::MAX, u64::MAX)),
-        }
+    pub(crate) fn triangles(&self) -> &[[u32; 3]] {
+        self.inner.triangles.get_or_init(|| self.expand_triangles())
     }
 
-    fn expand_triangles(&self) -> Result<Vec<[u32; 3]>, CodecError> {
+    fn expand_triangles(&self) -> Vec<[u32; 3]> {
         let mut triangles = Vec::new();
         let (independent, mut remaining) = self
             .inner
@@ -154,31 +137,13 @@ impl TrimPacket {
                 triangles.push([center, pair[0], pair[1]]);
             }
         }
-        Ok(triangles)
+        triangles
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::TrimPacket;
-    use cadmpeg_core::CodecError;
-
-    #[test]
-    fn trim_expansion_refuses_work_before_cache_installation() {
-        let packet =
-            TrimPacket::try_from((1, vec![], vec![], vec![0, 1, 2])).expect("complete partition");
-        crate::test_support::with_work_limit(0, |ctx| {
-            let CodecError::ResourceLimit(limit) = packet
-                .triangles(ctx)
-                .expect_err("triangle work must be admitted")
-            else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_trim_expansion_work");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-        assert!(packet.inner.triangles.get().is_none());
-    }
 
     #[test]
     fn packet_rejects_overflow_and_incomplete_partitions() {
@@ -194,18 +159,10 @@ mod tests {
             .expect("complete trim handle partition");
         let cold = packet.clone();
         assert!(packet.inner.triangles.get().is_none());
-        crate::test_support::with_service_context(|ctx| {
-            let first = packet.triangles(ctx).expect("service resource budget");
-            assert_eq!(first.len(), 5);
-            assert!(std::ptr::eq(
-                first,
-                packet.triangles(ctx).expect("cached triangles")
-            ));
-            assert!(std::ptr::eq(
-                first,
-                packet.triangles(ctx).expect("cached triangles")
-            ));
-        });
+        let first = packet.triangles();
+        assert_eq!(first.len(), 5);
+        assert!(std::ptr::eq(first, packet.triangles()));
+        assert!(std::ptr::eq(first, packet.triangles()));
         assert!(packet.inner.triangles.get().is_some());
         assert!(cold.inner.triangles.get().is_some());
         assert_eq!(packet, cold);
@@ -216,39 +173,18 @@ mod tests {
         let packet = TrimPacket::try_from((1, vec![4, 1], vec![4], (0..12).collect()))
             .expect("complete trim handle partition");
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| packet
-                .triangles(ctx)
-                .expect("service resource budget")
-                .to_vec()),
+            packet.triangles().to_vec(),
             [[0, 1, 2], [3, 4, 5], [5, 4, 6], [8, 9, 10], [8, 10, 11]]
         );
     }
 
     #[test]
-    fn lazy_trim_triangle_expansion_refuses_before_retained_growth() {
-        let packet = TrimPacket::try_from((1, vec![4], vec![4], (0..11).collect()))
-            .expect("complete trim handle partition");
-        let refusal = crate::test_support::with_collection_limit(4, |ctx| packet.triangles(ctx))
-            .expect_err("five triangles exceed four admitted items");
-        assert!(matches!(refusal, CodecError::ResourceLimit(limit)
-            if limit.operation == "catia_trim_triangles"));
-        assert!(packet.inner.triangles.get().is_none());
-    }
-    #[test]
     fn cloned_trim_packet_shares_handles_and_expansion() {
         let packet =
             TrimPacket::try_from((1, vec![], vec![], vec![1, 2, 3])).expect("complete partition");
-        crate::test_support::with_service_context(|ctx| packet.triangles(ctx).map(|_| ()))
-            .expect("initial expansion");
-        let cloned =
-            crate::test_support::with_collection_limit(0, |ctx| packet.try_clone_with_context())
-                .expect("sharing immutable lanes allocates no collection items");
+        packet.triangles();
+        let cloned = packet.clone();
         assert!(std::ptr::eq(packet.handles(), cloned.handles()));
-        crate::test_support::with_collection_limit(0, |ctx| {
-            assert!(std::ptr::eq(
-                packet.triangles(ctx).expect("cached original"),
-                cloned.triangles(ctx).expect("shared cache")
-            ));
-        });
+        assert!(std::ptr::eq(packet.triangles(), cloned.triangles()));
     }
 }

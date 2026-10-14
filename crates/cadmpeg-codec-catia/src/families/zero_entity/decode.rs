@@ -446,7 +446,7 @@ fn transfer_closed_wire_loops(
                             raw_source_range,
                             refusal,
                             "zero-entity wire edge source parameter range",
-                        )?,
+                        ),
                         None => Some(raw_source_range),
                     };
                     let source_range = canonical_source_range.unwrap_or(raw_source_range);
@@ -558,7 +558,7 @@ fn transfer_closed_wire_loops(
                                     source_range,
                                     refusal,
                                     "zero-entity helix edge reversed onto its coedge",
-                                )?
+                                )
                                 .map(|(definition, edge_range)| {
                                     Ok::<_, cadmpeg_core::CodecError>((
                                         geometry.try_clone_for_decode(
@@ -724,7 +724,7 @@ fn transfer_closed_wire_loops(
                         range,
                         refusal,
                         "zero-entity standalone wire edge parameter range",
-                    )?,
+                    ),
                     None => None,
                 };
                 annotate(
@@ -765,14 +765,8 @@ fn transfer_closed_wire_loops(
             if root_owns_support_runs {
                 owned_edge_ids.extend(edge_ids);
             } else {
-                let mut regions = Vec::new();
-
-                regions.push(
-                    region_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_region_id_copy",
-                    )?,
-                );
+                let regions = vec![region_id
+                    .try_clone_for_decode(admission.context(), "catia_zero_wire_region_id_copy")?];
                 admission.charge()?;
                 ir.model.bodies.push(Body {
                     id: body_id.try_clone_for_decode(
@@ -786,14 +780,8 @@ fn transfer_closed_wire_loops(
                     color: None,
                     visible: None,
                 });
-                let mut shells = Vec::new();
-
-                shells.push(
-                    shell_id.try_clone_for_decode(
-                        admission.context(),
-                        "catia_zero_wire_shell_id_copy",
-                    )?,
-                );
+                let shells = vec![shell_id
+                    .try_clone_for_decode(admission.context(), "catia_zero_wire_shell_id_copy")?];
                 admission.charge()?;
                 ir.model.regions.push(Region {
                     id: region_id.try_clone_for_decode(
@@ -865,12 +853,8 @@ fn transfer_closed_wire_loops(
             "owned_wire_shell",
             Exactness::Derived,
         )?;
-        let mut regions = Vec::new();
-
-        regions.push(
-            region_id
-                .try_clone_for_decode(admission.context(), "catia_zero_wire_region_id_copy")?,
-        );
+        let regions = vec![region_id
+            .try_clone_for_decode(admission.context(), "catia_zero_wire_region_id_copy")?];
         admission.charge()?;
         ir.model.bodies.push(Body {
             id: body_id
@@ -882,11 +866,9 @@ fn transfer_closed_wire_loops(
             color: None,
             visible: None,
         });
-        let mut shells = Vec::new();
-
-        shells.push(
-            shell_id.try_clone_for_decode(admission.context(), "catia_zero_wire_shell_id_copy")?,
-        );
+        let shells =
+            vec![shell_id
+                .try_clone_for_decode(admission.context(), "catia_zero_wire_shell_id_copy")?];
         admission.charge()?;
         ir.model.regions.push(Region {
             id: region_id
@@ -1309,8 +1291,7 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    let mut losses = Vec::new();
-    losses.push(topology_loss.note(format!("{topology_message}")));
+    let losses = vec![topology_loss.note(topology_message.to_string())];
     Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {

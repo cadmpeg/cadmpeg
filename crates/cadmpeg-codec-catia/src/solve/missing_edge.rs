@@ -47,7 +47,7 @@ fn standard_edge_port_identities_with_namespace(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) = parse_standard_edge_tables_scoped(bytes, after_faces)?
+    let Some((edge_rows, scopes, _, _)) = parse_standard_edge_tables_scoped(bytes, after_faces)
     else {
         return Ok(None);
     };
@@ -92,27 +92,24 @@ fn standard_edge_port_identities_with_namespace(
     Ok(Some(pairs))
 }
 
-fn fbb_edge_port_identities_with_namespace(
-    bytes: &[u8],
-    global: bool,
-) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
     let Some(face_run) = largest_fbb_run(bytes) else {
-        return Ok(None);
+        return None;
     };
     let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(bytes, after_faces)? else {
-        return Ok(None);
+    let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(bytes, after_faces) else {
+        return None;
     };
     let mut identity_by_handle = HashMap::new();
     let mut pairs = Vec::new();
     for (row, scope) in edge_rows.iter().zip(scopes) {
         let (Some(&first), Some(&last)) = (row.handles().first(), row.handles().last()) else {
-            return Ok(None);
+            return None;
         };
         let mut pair = [0; 2];
         for (port, handle) in [first, last].into_iter().enumerate() {
             let Some(next) = u32::try_from(identity_by_handle.len()).ok() else {
-                return Ok(None);
+                return None;
             };
             let key = (if global { 0 } else { scope }, handle);
             pair[port] = if let Some(&identity) = identity_by_handle.get(&key) {
@@ -124,7 +121,7 @@ fn fbb_edge_port_identities_with_namespace(
         }
         pairs.push(pair);
     }
-    Ok(Some(pairs))
+    Some(pairs)
 }
 
 const INDEXED_VISUALIZATION_POINT_MARKER: [u8; 6] = [0xff, 0xff, 0x02, 0x00, 0x01, 0xff];
@@ -141,20 +138,18 @@ pub(crate) fn visualization_endpoint_pairs(
     source: &[u8],
     edge_rows: &[EdgeRow],
     point_coordinates: &[[f32; 3]],
-) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+) -> Option<Vec<[usize; 2]>> {
     let mut markers = source
         .windows(INDEXED_VISUALIZATION_POINT_MARKER.len())
         .enumerate()
         .filter_map(|(offset, bytes)| {
             (bytes == INDEXED_VISUALIZATION_POINT_MARKER).then_some(offset)
         });
-    let Some(marker) = markers.next() else {
-        return Ok(None);
-    };
+    let marker = markers.next()?;
     if markers.next().is_some() {
-        return Ok(None);
+        return None;
     }
-    let Some((count, indexed_count, mode, marker_valid, table)) = (|| {
+    let (count, indexed_count, mode, marker_valid, table) = (|| {
         Some((
             usize::try_from(View::u32_le_at(source, marker.checked_add(6)?)?).ok()?,
             usize::try_from(View::u32_le_at(source, marker.checked_add(11)?)?).ok()?,
@@ -163,18 +158,16 @@ pub(crate) fn visualization_endpoint_pairs(
                 && source.get(marker.checked_add(15)?..marker.checked_add(18)?)? == [0, 0, 0],
             marker.checked_add(INDEXED_VISUALIZATION_POINT_HEADER_LEN)?,
         ))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     if !marker_valid || indexed_count > count {
-        return Ok(None);
+        return None;
     }
 
     let mut point_by_bits = HashMap::new();
     for (point, coordinates) in point_coordinates.iter().enumerate() {
         let key = coordinates.map(f32::to_bits);
         if point_by_bits.insert(key, point).is_some() {
-            return Ok(None);
+            return None;
         }
     }
     let mut terminal_handles = HashSet::new();
@@ -190,7 +183,7 @@ pub(crate) fn visualization_endpoint_pairs(
         .iter()
         .any(|handle| usize::try_from(*handle).map_or(true, |handle| handle >= count))
     {
-        return Ok(None);
+        return None;
     }
     let point_by_handle = match mode {
         0 => compressed_visualization_point_bindings(
@@ -199,41 +192,37 @@ pub(crate) fn visualization_endpoint_pairs(
             count,
             &terminal_handles,
             &point_by_bits,
-        )?,
+        ),
         1 if count - indexed_count <= 1 => raw_visualization_point_bindings(
             source,
             table,
             count,
             &terminal_handles,
             &point_by_bits,
-        )?,
-        _ => return Ok(None),
+        ),
+        _ => return None,
     };
-    let Some(point_by_handle) = point_by_handle else {
-        return Ok(None);
-    };
+    let point_by_handle = point_by_handle?;
     let mut matched_points = HashSet::new();
     for point in point_by_handle.values().copied() {
         matched_points.insert(point);
     }
     if matched_points.len() != point_coordinates.len() {
-        return Ok(None);
+        return None;
     }
 
     let mut pairs = Vec::new();
 
     for row in edge_rows {
-        let Some(pair) = (|| {
+        let pair = (|| {
             Some([
                 *point_by_handle.get(row.handles().first()?)?,
                 *point_by_handle.get(row.handles().last()?)?,
             ])
-        })() else {
-            return Ok(None);
-        };
+        })()?;
         pairs.push(pair);
     }
-    Ok(Some(pairs))
+    Some(pairs)
 }
 
 fn raw_visualization_point_bindings(
@@ -242,19 +231,14 @@ fn raw_visualization_point_bindings(
     count: usize,
     terminal_handles: &HashSet<u32>,
     point_by_bits: &HashMap<[u32; 3], usize>,
-) -> Result<Option<HashMap<u32, usize>>, CodecError> {
-    let Some(extent) = count
+) -> Option<HashMap<u32, usize>> {
+    let extent = count
         .checked_mul(RAW_VISUALIZATION_POINT_STRIDE)
-        .and_then(|bytes| bytes.checked_add(table))
-    else {
-        return Ok(None);
-    };
-    if source.get(table..extent).is_none() {
-        return Ok(None);
-    }
+        .and_then(|bytes| bytes.checked_add(table))?;
+    source.get(table..extent)?;
     let mut bindings = HashMap::new();
     for handle in terminal_handles {
-        let Some(key) = (|| {
+        let key = (|| {
             let index = usize::try_from(*handle).ok()?;
             let at = table.checked_add(index.checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?)?;
             Some([
@@ -262,15 +246,11 @@ fn raw_visualization_point_bindings(
                 View::f32_le_at(source, at.checked_add(4)?)?.to_bits(),
                 View::f32_le_at(source, at.checked_add(8)?)?.to_bits(),
             ])
-        })() else {
-            return Ok(None);
-        };
-        let Some(&point) = point_by_bits.get(&key) else {
-            return Ok(None);
-        };
+        })()?;
+        let &point = point_by_bits.get(&key)?;
         bindings.insert(*handle, point);
     }
-    Ok(Some(bindings))
+    Some(bindings)
 }
 
 fn compressed_visualization_point_bindings(
@@ -279,8 +259,8 @@ fn compressed_visualization_point_bindings(
     count: usize,
     terminal_handles: &HashSet<u32>,
     point_by_bits: &HashMap<[u32; 3], usize>,
-) -> Result<Option<HashMap<u32, usize>>, CodecError> {
-    let Some((scalar_count, scalars)) = (|| {
+) -> Option<HashMap<u32, usize>> {
+    let (scalar_count, scalars) = (|| {
         let packed_len = count.checked_add(3)? / 4;
         let delimiter = controls.checked_add(packed_len)?;
         if *source.get(delimiter)? != 0xff {
@@ -292,21 +272,16 @@ fn compressed_visualization_point_bindings(
         let scalar_extent = scalar_count.checked_mul(4)?.checked_add(scalars)?;
         source.get(controls..scalar_extent)?;
         Some((scalar_count, scalars))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
 
     let mut previous = None::<[u32; 3]>;
     let mut scalar = 0usize;
     let mut bindings = HashMap::new();
     for index in 0..count {
-        let Some(packed) = controls
+        let packed = controls
             .checked_add(index / 4)
             .and_then(|at| source.get(at))
-            .copied()
-        else {
-            return Ok(None);
-        };
+            .copied()?;
         let code = (packed >> (2 * (index % 4))) & 3;
         let mut read_scalar = || {
             if scalar >= scalar_count {
@@ -316,7 +291,7 @@ fn compressed_visualization_point_bindings(
             scalar = scalar.checked_add(1)?;
             Some(View::f32_le_at(source, at)?.to_bits())
         };
-        let Some(point) = (|| {
+        let point = (|| {
             Some(match (code, previous) {
                 (0, _) => [read_scalar()?, read_scalar()?, read_scalar()?],
                 (1, Some(previous)) => previous,
@@ -324,21 +299,15 @@ fn compressed_visualization_point_bindings(
                 (3, Some(previous)) => [previous[0], read_scalar()?, read_scalar()?],
                 _ => return None,
             })
-        })() else {
-            return Ok(None);
-        };
+        })()?;
         previous = Some(point);
-        let Some(handle) = u32::try_from(index).ok() else {
-            return Ok(None);
-        };
+        let handle = u32::try_from(index).ok()?;
         if terminal_handles.contains(&handle) {
-            let Some(&point) = point_by_bits.get(&point) else {
-                return Ok(None);
-            };
+            let &point = point_by_bits.get(&point)?;
             bindings.insert(handle, point);
         }
     }
-    Ok((scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings))
+    (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
 }
 
 fn standard_edge_port_identities(
@@ -349,7 +318,7 @@ fn standard_edge_port_identities(
 }
 
 fn fbb_edge_port_identities(bytes: &[u8]) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    fbb_edge_port_identities_with_namespace(bytes, false)
+    Ok(fbb_edge_port_identities_with_namespace(bytes, false))
 }
 
 fn standard_global_edge_port_identities(
@@ -362,7 +331,7 @@ fn standard_global_edge_port_identities(
 pub(crate) fn fbb_global_edge_port_identities(
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    fbb_edge_port_identities_with_namespace(bytes, true)
+    Ok(fbb_edge_port_identities_with_namespace(bytes, true))
 }
 
 /// Select conservative endpoint identities for the bounded topology solver.
@@ -408,9 +377,9 @@ pub(super) fn solver_ports(
 pub(crate) fn expand_deferred_edge_port_components(
     edge_ports: &[[u32; 2]],
     deferred_edges: &mut [bool],
-) -> Result<bool, CodecError> {
+) -> bool {
     if edge_ports.len() != deferred_edges.len() {
-        return Ok(false);
+        return false;
     }
     let mut deferred_ports = HashSet::new();
     for (edge, &deferred) in deferred_edges.iter().enumerate() {
@@ -436,7 +405,7 @@ pub(crate) fn expand_deferred_edge_port_components(
             }
         }
     }
-    Ok(true)
+    true
 }
 
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
@@ -452,11 +421,10 @@ pub(crate) fn standard_mesh_edge_ports(
     let Some(local_ports) = global_edge_port_identities(ctx, bytes)? else {
         return Ok(None);
     };
-    mesh_edge_ports(ctx, &analysis, &local_ports)
+    mesh_edge_ports(&analysis, &local_ports)
 }
 
 fn mesh_edge_ports(
-    ctx: &DecodeContext<'_>,
     analysis: &StandardMeshAnalysis,
     local_ports: &[[u32; 2]],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
@@ -466,11 +434,7 @@ fn mesh_edge_ports(
     if local_ports.len() != edge_rows.len() {
         return Ok(None);
     }
-    let node_count = edge_rows
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_mesh_edge_port_union", u64::MAX, u64::MAX))?;
-    let mut union = UnionFind::new(node_count);
+    let mut union = UnionFind::new(edge_rows.len() * 2);
     let mut node_by_identity = HashMap::new();
     for (edge, ports) in local_ports.iter().enumerate() {
         for (side, identity) in ports.iter().copied().enumerate() {
@@ -575,7 +539,7 @@ fn mesh_edge_ports_refuse_each_graph_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     assert_eq!(
-        mesh_edge_ports(&ctx, &analysis, &[[10, 11]]).expect("service resource budget"),
+        mesh_edge_ports(&analysis, &[[10, 11]]).expect("service resource budget"),
         Some(vec![[0, 1]])
     );
 
@@ -586,7 +550,7 @@ fn mesh_edge_ports_refuse_each_graph_collection_limit() {
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits the input limit");
-        match mesh_edge_ports(&ctx, &analysis, &[[10, 11]]) {
+        match mesh_edge_ports(&analysis, &[[10, 11]]) {
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                 operations.insert(limit.operation);
@@ -634,7 +598,7 @@ impl MeshEdgeRun {
 fn mesh_edge_occurrences(
     edge_rows: &[EdgeRow],
     cycles: &[Vec<Vec<u32>>],
-) -> Result<Option<Vec<Vec<MeshEdgeRun>>>, CodecError> {
+) -> Option<Vec<Vec<MeshEdgeRun>>> {
     let mut locations = HashMap::<u32, Vec<(usize, usize, usize)>>::new();
     for (face, face_cycles) in cycles.iter().enumerate() {
         for (cycle, handles) in face_cycles.iter().enumerate() {
@@ -642,8 +606,7 @@ fn mesh_edge_occurrences(
                 if let Some(entries) = locations.get_mut(&handle) {
                     entries.push((face, cycle, position));
                 } else {
-                    let mut entries = Vec::new();
-                    entries.push((face, cycle, position));
+                    let entries = vec![(face, cycle, position)];
                     locations.insert(handle, entries);
                 }
             }
@@ -655,12 +618,8 @@ fn mesh_edge_occurrences(
             rows.push(Vec::new());
             continue;
         };
-        let Some(&first) = pattern.first() else {
-            return Ok(None);
-        };
-        let Some(&last) = pattern.last() else {
-            return Ok(None);
-        };
+        let &first = pattern.first()?;
+        let &last = pattern.last()?;
         let mut matches = HashMap::<(usize, usize, usize), bool>::new();
         for &(face, cycle, start) in locations.get(&first).into_iter().flatten() {
             let handles = &cycles[face][cycle];
@@ -693,14 +652,12 @@ fn mesh_edge_occurrences(
             }
         }
         if cycle_counts.values().any(|count| *count > 1) {
-            return Ok(None);
+            return None;
         }
         let mut occurrences = Vec::new();
         for ((face, cycle, start), reversed) in matches {
             let cycle_len = cycles[face][cycle].len();
-            let Some((start, segment_count)) = row.boundary_span(start, cycle_len) else {
-                return Ok(None);
-            };
+            let (start, segment_count) = row.boundary_span(start, cycle_len)?;
             occurrences.push(MeshEdgeRun {
                 edge,
                 face,
@@ -715,7 +672,7 @@ fn mesh_edge_occurrences(
         });
         rows.push(occurrences);
     }
-    Ok(Some(rows))
+    Some(rows)
 }
 
 #[cfg(test)]
@@ -742,9 +699,7 @@ fn mesh_edge_occurrences_refuse_nested_collection_limits() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
-    assert!(mesh_edge_occurrences(&rows, &cycles)
-        .expect("service resource budget")
-        .is_some());
+    assert!(mesh_edge_occurrences(&rows, &cycles).is_some());
 
     let mut operations = HashSet::new();
     for cap in 0..=32 {
@@ -793,11 +748,11 @@ fn standard_mesh_analysis(
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let standard = parse_standard_edge_tables_with_width(bytes, after_faces)?;
+    let standard = parse_standard_edge_tables_with_width(bytes, after_faces);
     let parsed = if let Some((rows, _, width)) = standard {
         Some((rows, width, false))
     } else {
-        parse_fbb_edge_tables(bytes, after_faces)?.map(|(rows, _, _, width)| (rows, width, true))
+        parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width, true))
     };
     let Some((edge_rows, handle_width, fixed_complete_row_spans)) = parsed else {
         return Ok(None);
@@ -807,12 +762,12 @@ fn standard_mesh_analysis(
     };
     let mut cycles = Vec::new();
     for trim in &trims {
-        let Some(face) = boundary_cycles(trim.packet.triangles(ctx)?)? else {
+        let Some(face) = boundary_cycles(trim.packet.triangles()) else {
             return Ok(None);
         };
         cycles.push(face);
     }
-    let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles)? else {
+    let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
         return Ok(None);
     };
     Ok(Some(StandardMeshAnalysis {
@@ -833,12 +788,10 @@ pub(crate) fn standard_mesh_edge_runs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<MeshEdgeRun>>, CodecError> {
-    standard_mesh_analysis(ctx, bytes)?
-        .map(|analysis| mesh_edge_runs(&analysis))
-        .transpose()
+    Ok(standard_mesh_analysis(ctx, bytes)?.map(|analysis| mesh_edge_runs(&analysis)))
 }
 
-fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Result<Vec<MeshEdgeRun>, CodecError> {
+fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Vec<MeshEdgeRun> {
     let mut runs = Vec::new();
     for run in analysis.occurrences.iter().flatten() {
         runs.push(*run);
@@ -851,7 +804,7 @@ fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Result<Vec<MeshEdgeRun>, C
             right.edge,
         ))
     });
-    Ok(runs)
+    runs
 }
 
 /// Complete repeated standard edge-face slots from exact trim-boundary
@@ -969,11 +922,11 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let standard = parse_standard_edge_tables_with_width(bytes, after_faces)?;
+    let standard = parse_standard_edge_tables_with_width(bytes, after_faces);
     let parsed = if let Some((rows, _, width)) = standard {
         Some((rows, width))
     } else {
-        parse_fbb_edge_tables(bytes, after_faces)?.map(|(rows, _, _, width)| (rows, width))
+        parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
     };
     let Some((edge_rows, handle_width)) = parsed else {
         return Ok(None);
@@ -1007,9 +960,9 @@ pub(crate) fn refine_repeated_edge_face_candidates(
     edge_faces: &[[usize; 2]],
     allowed_faces: &mut [Vec<usize>],
     handle_face_candidates: &[Vec<usize>],
-) -> Result<Option<()>, CodecError> {
+) -> Option<()> {
     if edge_faces.len() != allowed_faces.len() || edge_faces.len() != handle_face_candidates.len() {
-        return Ok(None);
+        return None;
     }
     for (edge, (allowed, handle_candidates)) in allowed_faces
         .iter_mut()
@@ -1032,12 +985,12 @@ pub(crate) fn refine_repeated_edge_face_candidates(
             intersection.push(face);
         }
         *allowed = if intersection.is_empty() {
-            handle_candidates.to_vec()
+            handle_candidates.clone()
         } else {
             intersection
         };
     }
-    Ok(Some(()))
+    Some(())
 }
 
 /// Resolve optional second-face incidences by complete endpoint-degree closure.
@@ -1061,19 +1014,13 @@ pub(crate) fn repeated_face_endpoint_closures(
         end: Option<(usize, Option<u8>)>,
     }
 
-    fn add_pair(
-        degrees: &mut BTreeMap<usize, u8>,
-        pair: [usize; 2],
-    ) -> Result<Option<PairDegreeUndo>, CodecError> {
+    fn add_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) -> Option<PairDegreeUndo> {
         let start_add = 1 + u8::from(pair[0] == pair[1]);
-        let Some(start_degree) = degrees
+        let start_degree = degrees
             .get(&pair[0])
             .copied()
             .unwrap_or_default()
-            .checked_add(start_add)
-        else {
-            return Ok(None);
-        };
+            .checked_add(start_add)?;
         let end_degree = if pair[0] == pair[1] {
             Some(0)
         } else {
@@ -1084,7 +1031,7 @@ pub(crate) fn repeated_face_endpoint_closures(
                 .checked_add(1)
         };
         if start_degree > 2 || end_degree.is_none_or(|degree| degree > 2) {
-            return Ok(None);
+            return None;
         }
         let start_previous = degrees.get(&pair[0]).copied();
 
@@ -1097,10 +1044,10 @@ pub(crate) fn repeated_face_endpoint_closures(
             *degrees.entry(pair[1]).or_default() += 1;
             Some((pair[1], previous))
         };
-        Ok(Some(PairDegreeUndo {
+        Some(PairDegreeUndo {
             start: (pair[0], start_previous),
             end: end_previous,
-        }))
+        })
     }
 
     fn remove_pair(degrees: &mut BTreeMap<usize, u8>, undo: &PairDegreeUndo) {
@@ -1196,7 +1143,7 @@ pub(crate) fn repeated_face_endpoint_closures(
                 let owner = self.owners[branch];
                 let adds_incidence = face != owner;
                 let undo = if adds_incidence {
-                    let Some(undo) = add_pair(&mut degrees[face], self.endpoint_pairs[*edge])?
+                    let Some(undo) = add_pair(&mut degrees[face], self.endpoint_pairs[*edge])
                     else {
                         continue;
                     };
@@ -1235,10 +1182,10 @@ pub(crate) fn repeated_face_endpoint_closures(
         "catia missing-edge face degrees",
     )?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
-        if add_pair(&mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
+        if add_pair(&mut degrees[faces[0]], endpoint_pairs[edge]).is_none() {
             return Ok(None);
         }
-        if faces[1] != faces[0] && add_pair(&mut degrees[faces[1]], endpoint_pairs[edge])?.is_none()
+        if faces[1] != faces[0] && add_pair(&mut degrees[faces[1]], endpoint_pairs[edge]).is_none()
         {
             return Ok(None);
         }
@@ -1320,10 +1267,7 @@ impl FaceOptions {
     ///
     /// `admitted` states the faces the slot allows, in any order, with or
     /// without repeats, and with or without `retained` among them.
-    fn from_admitted(
-        retained: usize,
-        admitted: impl IntoIterator<Item = usize>,
-    ) -> Result<Self, CodecError> {
+    fn from_admitted(retained: usize, admitted: impl IntoIterator<Item = usize>) -> Self {
         let mut others = Vec::new();
         for face in admitted.into_iter().filter(|face| *face != retained) {
             others.push(face);
@@ -1332,19 +1276,19 @@ impl FaceOptions {
         others.dedup();
         let at = others.partition_point(|face| *face < retained);
         if at == 0 {
-            return Ok(Self {
+            return Self {
                 first: retained,
                 rest: others,
-            });
+            };
         }
         // `others[0]` is smaller than `retained`, so it is the smallest face.
         // Removing it shifts the insertion point of `retained` down by one.
         let first = others.remove(0);
         others.insert(at - 1, retained);
-        Ok(Self {
+        Self {
             first,
             rest: others,
-        })
+        }
     }
 
     /// How many faces this slot admits. Never zero.
@@ -1359,7 +1303,6 @@ impl FaceOptions {
 }
 
 pub(super) fn unique_duplicate_face_assignment<F>(
-    ctx: &DecodeContext<'_>,
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
     face_count: usize,
@@ -1371,7 +1314,6 @@ where
     const MAX_STATES: usize = 4_096;
 
     fn search<F>(
-        ctx: &DecodeContext<'_>,
         branches: &[(usize, FaceOptions)],
         at: usize,
         assignment: &mut [[usize; 2]],
@@ -1401,7 +1343,6 @@ where
         for face in options.iter() {
             assignment[*edge][1] = face;
             search(
-                ctx,
                 branches,
                 at + 1,
                 assignment,
@@ -1438,7 +1379,7 @@ where
     let mut branches = Vec::new();
     for edge in unresolved {
         let retained = assignment[edge][0];
-        let options = FaceOptions::from_admitted(retained, allowed_faces[edge].iter().copied())?;
+        let options = FaceOptions::from_admitted(retained, allowed_faces[edge].iter().copied());
         if options.rest.is_empty() {
             assignment[edge][1] = options.first;
         } else {
@@ -1452,7 +1393,6 @@ where
     let mut exhausted = false;
     let mut solutions = Vec::new();
     search(
-        ctx,
         &branches,
         0,
         &mut assignment,
@@ -1591,7 +1531,7 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     };
     let face_count = face_run.face_count();
     let context = StandardMeshBoundaryContext::parse(ctx, bytes, serialized)?;
-    unique_duplicate_face_assignment(ctx, serialized, allowed_faces, face_count, |assignment| {
+    unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
         if let Some(base) = context.as_ref() {
             let Some(context) = base.with_edge_faces(ctx, assignment)? else {
                 return Ok(false);
@@ -1706,10 +1646,10 @@ impl StandardMeshBoundaryContext {
         let Some(local_ports) = solver_ports(ctx, bytes, global_handle_ports)? else {
             return Ok(None);
         };
-        let Some(edge_ports) = mesh_edge_ports(ctx, &analysis, &local_ports)? else {
+        let Some(edge_ports) = mesh_edge_ports(&analysis, &local_ports)? else {
             return Ok(None);
         };
-        let edge_runs = mesh_edge_runs(&analysis)?;
+        let edge_runs = mesh_edge_runs(&analysis);
         let mut cycle_lengths = Vec::new();
 
         for cycles in &analysis.cycles {
@@ -1738,9 +1678,9 @@ impl StandardMeshBoundaryContext {
         Ok(Some(Self {
             analysis: Arc::clone(&self.analysis),
             coverage,
-            edge_ports: self.edge_ports.to_vec(),
-            edge_runs: self.edge_runs.to_vec(),
-            cycle_lengths: self.cycle_lengths.to_vec(),
+            edge_ports: self.edge_ports.clone(),
+            edge_runs: self.edge_runs.clone(),
+            cycle_lengths: self.cycle_lengths.clone(),
         }))
     }
 }
@@ -1968,7 +1908,7 @@ pub(crate) fn bounded_oriented_trail_orders(
             return Ok(false);
         }
         if index_from_u32(used.count_ones()) == trails.len() {
-            let order = edges.to_vec();
+            let order = edges.clone();
             orders.push(order);
             return Ok(orders.len() <= limit);
         }
@@ -2035,7 +1975,7 @@ pub(crate) fn bounded_endpoint_cycle_orders(
             self.operations_left = operations_left;
             if order.len() == self.missing.len() {
                 if current_point == first_point && !self.orders.contains(order) {
-                    let saved = order.to_vec();
+                    let saved = order.clone();
                     self.orders.insert(saved);
                 }
                 return Ok(self.orders.len() <= self.limit);
@@ -2097,7 +2037,7 @@ pub(crate) fn bounded_endpoint_cycle_orders(
         },
         orders: HashSet::new(),
     };
-    let mut first_pairs = edge_candidates[first_edge].to_vec();
+    let mut first_pairs = edge_candidates[first_edge].clone();
     for pair in &mut first_pairs {
         pair.sort_unstable_by(Ord::cmp);
     }
@@ -2272,7 +2212,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 if gap == self.gaps.len() {
                     if index_from_u32(used.count_ones()) == self.missing.len() {
                         self.assignments += 1;
-                        let copy = placed.to_vec();
+                        let copy = placed.clone();
                         self.complete.push(copy);
                     }
                     return Ok(Some(()));
@@ -2302,14 +2242,13 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 .get(&(self.face, next.cycle, next.start))
                                 .copied()
                         });
-                        let next_points = if let Some(source) =
-                            self.gaps.get(gap + 1).and_then(|next| {
+                        let next_points = self
+                            .gaps
+                            .get(gap + 1)
+                            .and_then(|next| {
                                 self.corner_points.get(&(self.face, next.cycle, next.start))
-                            }) {
-                            Some(Arc::new(source.clone()))
-                        } else {
-                            None
-                        };
+                            })
+                            .map(|source| Arc::new(source.clone()));
                         let saved = placed[gap_placed_start..].to_vec();
                         if offset < target {
                             let slack = target - offset;
@@ -2514,14 +2453,10 @@ fn standard_mesh_missing_edge_assignment_domains(
         let first_port = gaps
             .first()
             .and_then(|gap| corner_ports.get(&(face, gap.cycle, gap.start)).copied());
-        let first_points = if let Some(source) = gaps
+        let first_points = gaps
             .first()
             .and_then(|gap| corner_points.get(&(face, gap.cycle, gap.start)))
-        {
-            Some(Arc::new(source.clone()))
-        } else {
-            None
-        };
+            .map(|source| Arc::new(source.clone()));
         if search
             .walk(GapSearchState {
                 gap: 0,
@@ -2696,8 +2631,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                         offset = offset.checked_add(segment_count)?;
                     }
                 }
-                let mut rows = Vec::new();
-                rows.push(placements);
+                let rows = vec![placements];
                 return Some(Ok(rows));
             }
             let [gap] = gaps else {
@@ -2717,7 +2651,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
             let mut trail_edges = Vec::new();
             for trail in &trails {
-                let copy = trail.edges.to_vec();
+                let copy = trail.edges.clone();
                 trail_edges.push(copy);
             }
             let orders =
@@ -3005,8 +2939,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             Some(MeshFaceAssignmentDomain::DeferredValidation(
                 MeshFaceCoverage {
                     face: face.face,
-                    gaps: face.gaps.to_vec(),
-                    missing_edges: face.missing_edges.to_vec(),
+                    gaps: face.gaps.clone(),
+                    missing_edges: face.missing_edges.clone(),
                 },
             ))
         } else {
@@ -3017,7 +2951,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         };
         assignment_results.push(domain);
     }
-    Ok(Some((assignment_results, edge_runs.to_vec())))
+    Ok(Some((assignment_results, edge_runs.clone())))
 }
 
 fn standard_mesh_missing_edge_assignments(
@@ -3165,7 +3099,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
                     for cycle in &mut cycles {
                         cycle
                             .exact_uses
-                            .sort_unstable_by(|(left, _), (right, _)| left.start.cmp(&right.start));
+                            .sort_unstable_by_key(|(left, _)| left.start);
                     }
                     Ok(Some(MeshFaceBoundaryDomain::DeferredValidation(
                         MeshDeferredFaceBoundary {
@@ -3283,7 +3217,7 @@ fn parse_standard_mesh_selection(
         };
         selected.push(choice);
     }
-    reconstruct_mesh_selection(ctx, &edge_rows, &vertex_points, &selected, edge_directions)
+    reconstruct_mesh_selection(&edge_rows, &vertex_points, &selected, edge_directions)
 }
 
 #[derive(Debug)]
@@ -3449,7 +3383,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
     let Some((_, vertex_header)) = parse_edge_tables(bytes, after_faces)? else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     let point_count = vertex_points.len();
@@ -3470,7 +3404,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         } else {
             domain
         };
-        candidates.push(source.to_vec());
+        candidates.push(source.clone());
     }
     let Some(mut faces) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)? else {
         return Ok(None);
@@ -3511,7 +3445,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
 
             for (index, _) in &evaluated {
                 retained_assignments.push(MeshFaceBoundaryAssignment {
-                    boundaries: assignments[*index].boundaries.to_vec(),
+                    boundaries: assignments[*index].boundaries.clone(),
                 });
             }
             *assignments = retained_assignments;
@@ -3598,10 +3532,7 @@ fn standard_mesh_assignment_corner_points(
         if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
             return None;
         }
-        let runs = match mesh_edge_runs(&analysis) {
-            Ok(runs) => runs,
-            Err(error) => return Some(Err(error)),
-        };
+        let runs = mesh_edge_runs(&analysis);
         let assignments =
             match standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true) {
                 Ok(Some(assignments)) => assignments,
@@ -3886,7 +3817,7 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
         for placement in face.into_iter().flatten() {
             placements.push(placement);
         }
-        placements.sort_unstable_by(|left, right| left.placement.cmp(&right.placement));
+        placements.sort_unstable_by_key(|left| left.placement);
         placements.dedup_by_key(|candidate| candidate.placement);
         for candidate in placements {
             let edge = candidate.placement.edge;
@@ -3911,16 +3842,12 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     Ok(Some(domains))
 }
 
-fn bind_port_point(
-    port_points: &mut HashMap<u32, usize>,
-    port: u32,
-    point: usize,
-) -> Result<bool, CodecError> {
+fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usize) -> bool {
     if let Some(&stored) = port_points.get(&port) {
-        return Ok(stored == point);
+        return stored == point;
     }
     port_points.insert(port, point);
-    Ok(true)
+    true
 }
 
 /// Propagate byte-level endpoint ports through independently resolved physical
@@ -3977,17 +3904,11 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
                 if ports[0] == ports[1] && ordered[0] != ordered[1] {
                     return None;
                 }
-                let first = match bind_port_point(&mut port_points, ports[0], ordered[0]) {
-                    Ok(first) => first,
-                    Err(error) => return Some(Err(error)),
-                };
+                let first = bind_port_point(&mut port_points, ports[0], ordered[0]);
                 if !first {
                     return None;
                 }
-                let second = match bind_port_point(&mut port_points, ports[1], ordered[1]) {
-                    Ok(second) => second,
-                    Err(error) => return Some(Err(error)),
-                };
+                let second = bind_port_point(&mut port_points, ports[1], ordered[1]);
                 if !second {
                     return None;
                 }
@@ -4016,10 +3937,8 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
             if let Some(points) = intersection {
                 if points.len() == 1 {
                     let point = *points.iter().next()?;
-                    match bind_port_point(&mut port_points, port, point) {
-                        Ok(true) => {}
-                        Ok(false) => return None,
-                        Err(error) => return Some(Err(error)),
+                    if !bind_port_point(&mut port_points, port, point) {
+                        return None;
                     }
                 }
             }
@@ -4127,7 +4046,7 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
         return Ok(None);
     }
     let mut effective_deferred = deferred_edges.to_vec();
-    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred)? {
+    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
         return Ok(None);
     }
     let mut masked_pairs = endpoint_pairs.to_vec();
@@ -4273,11 +4192,11 @@ impl PortCandidateSearch<'_, '_> {
         oriented
     }
 
-    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Result<Vec<(u32, usize)>, CodecError> {
+    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Vec<(u32, usize)> {
         let mut inserted = Vec::new();
         for (&port, point) in self.ports[edge].iter().zip(points) {
-            if !self.port_points.contains_key(&port) {
-                self.port_points.insert(port, point);
+            if let std::collections::hash_map::Entry::Vacant(e) = self.port_points.entry(port) {
+                e.insert(point);
                 if self.mode.enforces_point_bijection() {
                     self.point_ports.insert(point, port);
                 }
@@ -4285,7 +4204,7 @@ impl PortCandidateSearch<'_, '_> {
             }
         }
         self.edge_pairs[edge] = Some(points);
-        Ok(inserted)
+        inserted
     }
 
     fn unassign(&mut self, edge: usize, inserted: Vec<(u32, usize)>) {
@@ -4340,7 +4259,7 @@ impl PortCandidateSearch<'_, '_> {
                     }
                     continue;
                 }
-                let inserted = self.assign(edge, first)?;
+                let inserted = self.assign(edge, first);
                 propagated.push((edge, inserted));
                 progress = true;
             }
@@ -4383,7 +4302,7 @@ impl PortCandidateSearch<'_, '_> {
                     .into_iter()
                     .flatten()
                 {
-                    let inserted = self.assign(edge, points)?;
+                    let inserted = self.assign(edge, points);
                     self.search()?;
                     self.unassign(edge, inserted);
                     if !self.mode.requires_unique()
@@ -4442,7 +4361,7 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
         return Ok(None);
     }
     let mut effective_deferred = deferred_edges.to_vec();
-    if !expand_deferred_edge_port_components(ports, &mut effective_deferred)? {
+    if !expand_deferred_edge_port_components(ports, &mut effective_deferred) {
         return Ok(None);
     }
     let mut settled = Vec::new();
@@ -4452,7 +4371,7 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
         if !effective_deferred[edge] {
             settled.push(edge);
             settled_ports.push(ports[edge]);
-            settled_candidates.push(candidates[edge].to_vec());
+            settled_candidates.push(candidates[edge].clone());
         }
     }
     let Some(settled_pairs) =
@@ -4506,8 +4425,7 @@ fn edge_port_candidate_assignment(
         if let Some(group) = groups.get_mut(&root) {
             group.push(edge);
         } else {
-            let mut group = Vec::new();
-            group.push(edge);
+            let group = vec![edge];
             groups.insert(root, group);
         }
     }
@@ -4522,7 +4440,7 @@ fn edge_port_candidate_assignment(
         let mut component_candidates = Vec::new();
         for &edge in &component {
             component_ports.push(ports[edge]);
-            let pairs = candidates[edge].to_vec();
+            let pairs = candidates[edge].clone();
             component_candidates.push(pairs);
         }
         let mut search = PortCandidateSearch {
@@ -4561,7 +4479,7 @@ pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
 pub(crate) fn motif_port_points(
     trims: &[TrimRecord],
     vertex_count: usize,
-) -> Result<Option<HashMap<u32, usize>>, CodecError> {
+) -> Option<HashMap<u32, usize>> {
     fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
         Some((
             [
@@ -4577,76 +4495,55 @@ pub(crate) fn motif_port_points(
             ],
         ))
     }
-    fn emit(seen: &mut HashMap<u32, usize>, handle: u32) -> Result<(), CodecError> {
+    fn emit(seen: &mut HashMap<u32, usize>, handle: u32) {
         if !seen.contains_key(&handle) {
             let next = seen.len();
             seen.insert(handle, next);
         }
-        Ok(())
     }
-    fn emit_column(seen: &mut HashMap<u32, usize>, column: [u32; 2]) -> Result<(), CodecError> {
-        emit(seen, column[0])?;
-        emit(seen, column[1])
+    fn emit_column(seen: &mut HashMap<u32, usize>, column: [u32; 2]) {
+        emit(seen, column[0]);
+        emit(seen, column[1]);
     }
 
     let mut seen = HashMap::new();
     let mut at = 0usize;
-    let Some(first_three) = trims.get(0..3) else {
-        return Ok(None);
-    };
+    let first_three = trims.get(0..3)?;
     if first_three.iter().all(|record| record.kind == 0x4a) {
-        let Some((first_a, first_b)) = columns(&trims[0]) else {
-            return Ok(None);
-        };
-        let Some((third_a, third_b)) = columns(&trims[2]) else {
-            return Ok(None);
-        };
+        let (first_a, first_b) = columns(&trims[0])?;
+        let (third_a, third_b) = columns(&trims[2])?;
         for column in [third_a, first_b, first_a, third_b] {
-            emit_column(&mut seen, column)?;
+            emit_column(&mut seen, column);
         }
         at = 3;
     }
     if trims.get(at..at + 3).is_some_and(|records| {
         records[0].kind == 0x42 && records[1].kind == 0x4a && records[2].kind == 0x42
     }) {
-        let Some((strip0_first, strip0_last)) = columns(&trims[at]) else {
-            return Ok(None);
-        };
-        let Some((quad_first, _)) = columns(&trims[at + 1]) else {
-            return Ok(None);
-        };
-        let Some((strip1_first, _)) = columns(&trims[at + 2]) else {
-            return Ok(None);
-        };
+        let (strip0_first, strip0_last) = columns(&trims[at])?;
+        let (quad_first, _) = columns(&trims[at + 1])?;
+        let (strip1_first, _) = columns(&trims[at + 2])?;
         for column in [strip0_last, strip0_first, quad_first, strip1_first] {
-            emit_column(&mut seen, column)?;
+            emit_column(&mut seen, column);
         }
         at += 3;
     }
     while trims.get(at).is_some_and(|record| record.kind == 0x4a) {
-        let Some((first, last)) = columns(&trims[at]) else {
-            return Ok(None);
-        };
-        emit_column(&mut seen, first)?;
-        emit_column(&mut seen, last)?;
+        let (first, last) = columns(&trims[at])?;
+        emit_column(&mut seen, first);
+        emit_column(&mut seen, last);
         at += 1;
     }
     while at < trims.len() {
         if trims.get(at..at + 3).is_some_and(|records| {
             records[0].kind == 0x42 && records[1].kind == 0x4a && records[2].kind == 0x42
         }) {
-            let Some(([a0, b0], [a1, b1])) = columns(&trims[at]) else {
-                return Ok(None);
-            };
-            let Some(([c, d], [qa, qb])) = columns(&trims[at + 1]) else {
-                return Ok(None);
-            };
-            let Some(([e, g], [sc, sd])) = columns(&trims[at + 2]) else {
-                return Ok(None);
-            };
+            let ([a0, b0], [a1, b1]) = columns(&trims[at])?;
+            let ([c, d], [qa, qb]) = columns(&trims[at + 1])?;
+            let ([e, g], [sc, sd]) = columns(&trims[at + 2])?;
             if [qa, qb] == [a0, b0] && [sc, sd] == [c, d] {
                 for handle in [a1, b1, b0, d, g, a0, c, e] {
-                    emit(&mut seen, handle)?;
+                    emit(&mut seen, handle);
                 }
                 at += 3;
                 continue;
@@ -4664,14 +4561,14 @@ pub(crate) fn motif_port_points(
                 trims[at].packet.handles()[3],
                 trims[at + 1].packet.handles()[1],
             ] {
-                emit(&mut seen, handle)?;
+                emit(&mut seen, handle);
             }
             at += 2;
             continue;
         }
-        return Ok(None);
+        return None;
     }
-    Ok((at == trims.len() && seen.len() == vertex_count).then_some(seen))
+    (at == trims.len() && seen.len() == vertex_count).then_some(seen)
 }
 
 #[cfg(test)]

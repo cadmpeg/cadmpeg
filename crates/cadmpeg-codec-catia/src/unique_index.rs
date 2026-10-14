@@ -2,8 +2,6 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use cadmpeg_core::CodecError;
-
 pub(super) struct UniqueIndex<K, V> {
     entries: HashMap<K, Option<V>>,
 }
@@ -19,13 +17,12 @@ impl<K: Eq + Hash, V> UniqueIndex<K, V> {
         self.entries.len()
     }
 
-    pub(super) fn insert(&mut self, key: K, value: V) -> Result<(), CodecError> {
+    pub(super) fn insert(&mut self, key: K, value: V) {
         if let Some(entry) = self.entries.get_mut(&key) {
             *entry = None;
         } else {
             self.entries.insert(key, Some(value));
         }
-        Ok(())
     }
 
     pub(super) fn get<Q: Eq + Hash + ?Sized>(&self, key: &Q) -> Option<&V>
@@ -35,12 +32,12 @@ impl<K: Eq + Hash, V> UniqueIndex<K, V> {
         self.entries.get(key)?.as_ref()
     }
 
-    pub(super) fn collect(iter: impl IntoIterator<Item = (K, V)>) -> Result<Self, CodecError> {
+    pub(super) fn collect(iter: impl IntoIterator<Item = (K, V)>) -> Self {
         let mut index = Self::new();
         for (key, value) in iter {
-            index.insert(key, value)?;
+            index.insert(key, value);
         }
-        Ok(index)
+        index
     }
 }
 

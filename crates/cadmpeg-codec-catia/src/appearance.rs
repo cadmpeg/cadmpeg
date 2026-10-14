@@ -135,7 +135,7 @@ pub(crate) fn transfer(
                     for rgba in colors.iter().copied().filter(|rgba| rgba != base) {
                         overrides.push(rgba);
                     }
-                    same_color_multiset(&overrides, &body)?
+                    same_color_multiset(&overrides, &body)
                 }
                 _ => false,
             }
@@ -206,18 +206,15 @@ fn copy_face_ids(
     Ok(faces)
 }
 
-fn same_color_multiset(
-    left: &[[u8; 4]],
-    right: &[[u8; 4]],
-) -> Result<bool, cadmpeg_core::CodecError> {
-    fn counts(values: &[[u8; 4]]) -> Result<BTreeMap<[u8; 4], usize>, cadmpeg_core::CodecError> {
+fn same_color_multiset(left: &[[u8; 4]], right: &[[u8; 4]]) -> bool {
+    fn counts(values: &[[u8; 4]]) -> BTreeMap<[u8; 4], usize> {
         let mut counts = BTreeMap::new();
         for value in values {
             *counts.entry(*value).or_default() += 1;
         }
-        Ok(counts)
+        counts
     }
-    Ok(counts(left)? == counts(right)?)
+    counts(left) == counts(right)
 }
 
 fn packet(field: &ValueField) -> Option<Packet> {

@@ -238,12 +238,12 @@ pub(super) fn append_consolidated_revolutions(
 fn typed_face_counts(
     records: &std::collections::BTreeMap<u32, crate::families::b5::graph::B5FaceRecord>,
     resolved_faces: &[crate::families::b5::graph::B5Face],
-) -> Result<[usize; 4], cadmpeg_core::CodecError> {
+) -> [usize; 4] {
     let resolved_ids = resolved_faces
         .iter()
         .map(|face| face.object_id)
         .collect::<std::collections::HashSet<_>>();
-    Ok(records.values().fold([0usize; 4], |mut counts, face| {
+    records.values().fold([0usize; 4], |mut counts, face| {
         match face.terminal_control {
             Some(B5FramingControl::Control03) => counts[0] += 1,
             Some(B5FramingControl::Control05) => counts[1] += 1,
@@ -251,7 +251,7 @@ fn typed_face_counts(
         }
         counts[3] += usize::from(!resolved_ids.contains(&face.object_id));
         counts
-    }))
+    })
 }
 
 fn typed_multi_surface_face_count(graph: &crate::families::b5::graph::B5Graph) -> usize {
@@ -397,33 +397,22 @@ pub(super) fn try_decode_freeform_surfaces(
             })
         });
         let typed_face_counts = if let Some(graph) = &b5_graph {
-            Some(admitted!(typed_face_counts(
-                &graph.face_records,
-                &graph.faces
-            )))
+            Some(typed_face_counts(&graph.face_records, &graph.faces))
         } else {
-            let records = match crate::families::b5::graph::typed_face_records_from_records(
-                &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+            let records =
+                crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
             if records.is_empty() {
                 None
             } else {
-                Some(admitted!(typed_face_counts(&records, &[])))
+                Some(typed_face_counts(&records, &[]))
             }
         };
         let typed_multi_surface_face_count = b5_graph
             .as_ref()
             .map(typed_multi_surface_face_count)
             .unwrap_or_default();
-        let typed_edge_records = match crate::families::b5::graph::typed_edge_records_from_records(
-            &census_object_records,
-        ) {
-            Ok(records) => records,
-            Err(error) => return Some(Err(error)),
-        };
+        let typed_edge_records =
+            crate::families::b5::graph::typed_edge_records_from_records(&census_object_records);
         let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
             typed_edge_records
                 .values()
@@ -443,12 +432,9 @@ pub(super) fn try_decode_freeform_surfaces(
                 })
         });
         let typed_vertex_incidence_links =
-            match crate::families::b5::graph::typed_vertex_incidence_links_from_records(
+            crate::families::b5::graph::typed_vertex_incidence_links_from_records(
                 &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+            );
         let vertex_incidence_terminal_controls =
             (!typed_vertex_incidence_links.is_empty()).then(|| {
                 typed_vertex_incidence_links
@@ -464,12 +450,8 @@ pub(super) fn try_decode_freeform_surfaces(
         let resolved_loop_metadata_counts = b5_graph
             .as_ref()
             .map(|graph| loop_metadata_counts(graph.loops.values()));
-        let typed_loop_records = match crate::families::b5::graph::typed_loop_records_from_records(
-            &census_object_records,
-        ) {
-            Ok(records) => records,
-            Err(error) => return Some(Err(error)),
-        };
+        let typed_loop_records =
+            crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
         let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
             (
                 loop_metadata_counts(typed_loop_records.values()),
@@ -491,30 +473,20 @@ pub(super) fn try_decode_freeform_surfaces(
                 .count()
         });
         let typed_class_21_pcurve_count =
-            match crate::families::b5::graph::typed_class_21_pcurves_from_records(
-                &census_object_records,
-            ) {
-                Ok(pcurves) => pcurves.len(),
-                Err(error) => return Some(Err(error)),
-            };
+            crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
+                .len();
         let typed_parameter_incidences =
-            match crate::families::b5::graph::typed_parameter_incidences_from_records(
+            crate::families::b5::graph::typed_parameter_incidences_from_records(
                 &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+            );
         let typed_parameter_incidence_member_count = typed_parameter_incidences
             .values()
             .map(|incidence| incidence.lanes.len())
             .sum();
         let typed_vertex_incidence_rosters =
-            match crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
+            crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
                 &census_object_records,
-            ) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+            );
         let typed_vertex_incidence_roster_member_count =
             typed_vertex_incidence_rosters.values().map(Vec::len).sum();
         let mut fallback_surfaces = if b5_graph.is_none() {
@@ -563,10 +535,7 @@ pub(super) fn try_decode_freeform_surfaces(
         let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
         let b2_spatial_circle_count = b2_spatial_circles.len();
         let no_a8_jets = if fallback_surfaces.as_ref().is_some_and(Vec::is_empty) {
-            match crate::families::a5a8::records::a8_freeform_curves(&scan.data) {
-                Ok(jets) => jets.is_empty(),
-                Err(error) => return Some(Err(error)),
-            }
+            crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
         } else {
             false
         };
@@ -887,9 +856,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 )));
             }
         }
-        if let Err(error) = insert_unresolved_carrier_loss(&ir, &mut losses) {
-            return Some(Err(error));
-        }
+        insert_unresolved_carrier_loss(&ir, &mut losses);
         if let Err(error) =
             link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations)
         {
@@ -1357,8 +1324,7 @@ fn attach_standalone_wires(
         body_id.try_clone_for_decode(admission.context(), "catia_freeform_wire_region_body_id")?;
     let body_region_id = region_id
         .try_clone_for_decode(admission.context(), "catia_freeform_wire_body_region_id")?;
-    let mut body_regions = Vec::new();
-    body_regions.push(body_region_id);
+    let body_regions = vec![body_region_id];
     ir.model.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Wire,
@@ -1369,8 +1335,7 @@ fn attach_standalone_wires(
         visible: None,
     });
     admission.charge()?;
-    let mut region_shells = Vec::new();
-    region_shells.push(shell_owner_id);
+    let region_shells = vec![shell_owner_id];
     ir.model.regions.push(Region {
         id: region_id,
         body: region_body_id,
@@ -1672,7 +1637,7 @@ pub(super) fn append_freeform_surface_pools(
         });
     }
 
-    let offsets = crate::families::b2::records::b2_offset_supports_from_records(data, records)?;
+    let offsets = crate::families::b2::records::b2_offset_supports_from_records(data, records);
     let bindings = crate::families::b2::records::offset_support_carriers(&offsets, &surfaces)?;
     for (offset, carrier) in offsets
         .iter()
@@ -1750,7 +1715,7 @@ pub(super) fn append_freeform_surface_pools(
         admission,
     )?;
 
-    for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records)? {
+    for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let solution = {
             let mut points = Vec::new();
             let mut first = Vec::new();
@@ -1773,7 +1738,7 @@ pub(super) fn append_freeform_surface_pools(
                 &points,
                 &first,
                 &second,
-            )?
+            )
         };
         let Some((knots, control_points)) = solution else {
             continue;
@@ -1810,7 +1775,7 @@ pub(super) fn append_freeform_surface_pools(
         });
     }
 
-    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records)? {
+    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
                 admission.context(),
@@ -2089,7 +2054,7 @@ fn append_resolved_consolidated_surface_curves(
         tori.insert(torus.pos, torus);
     }
     let mut planes = HashMap::new();
-    for plane in crate::families::b2::records::b2_plane_carriers_from_records(data, records)? {
+    for plane in crate::families::b2::records::b2_plane_carriers_from_records(data, records) {
         planes.insert(plane.pos, plane);
     }
     let mut complete_runs = HashMap::new();
@@ -3603,10 +3568,10 @@ fn rechart_equivalent_surface_pcurve(
                 .map_err(RechartFailure::Resource)?;
             let mut poles = match nurbs.pole_rows() {
                 PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
-                    points: points.to_vec(),
+                    points: points.clone(),
                 },
                 PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
-                    points: points.to_vec(),
+                    points: points.clone(),
                 },
             };
             match &mut poles {
@@ -3652,7 +3617,7 @@ fn append_a8_rolling_ball_pools(
     data: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for jet in crate::families::a5a8::records::a8_freeform_curves(data)? {
+    for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
         let Some(definition) =
             crate::families::a5a8::records::rolling_ball_jet_definition(admission.context(), &jet)?
         else {
@@ -3700,7 +3665,7 @@ fn append_a8_rolling_ball_pools(
             format_args!(
                 "object_id:{:08x}:multiplicities:{:?}",
                 jet.object_id,
-                jet.multiplicities()?
+                jet.multiplicities()
             ),
             Exactness::ByteExact,
         )?;

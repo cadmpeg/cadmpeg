@@ -243,9 +243,9 @@ struct StandardSurfaceRecordTable {
     successors: Vec<Option<usize>>,
 }
 
-fn standard_surface_record_table(brep: &[u8]) -> Result<StandardSurfaceRecordTable, CodecError> {
+fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
-    for prefix in surface_prefixes(brep)? {
+    for prefix in surface_prefixes(brep) {
         if face_sense(brep, &prefix).is_some() {
             records.insert(
                 prefix.pos - analytic_plane::MARKER,
@@ -316,10 +316,10 @@ fn standard_surface_record_table(brep: &[u8]) -> Result<StandardSurfaceRecordTab
     for record in &ordered_records {
         successors.push(record_indices.get(&record.end()).copied());
     }
-    Ok(StandardSurfaceRecordTable {
+    StandardSurfaceRecordTable {
         records: ordered_records,
         successors,
-    })
+    }
 }
 
 /// Return every surface roster chain that ends directly at a complete `0x60`
@@ -329,7 +329,7 @@ pub(super) fn standard_surface_record_groups(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
 ) -> Result<Vec<Vec<StandardSurfaceRecord>>, CodecError> {
-    let table = standard_surface_record_table(brep)?;
+    let table = standard_surface_record_table(brep);
     let mut has_predecessor =
         ctx.alloc_filled(table.records.len(), false, "catia_surface_has_predecessor")?;
     for successor in table.successors.iter().flatten() {
@@ -386,7 +386,7 @@ pub(super) fn standard_surface_populations(
         let Some(support_start) = records.last().map(StandardSurfaceRecord::end) else {
             continue;
         };
-        let Some(supports) = standard_curve_supports_at(brep, records.len(), support_start)? else {
+        let Some(supports) = standard_curve_supports_at(brep, records.len(), support_start) else {
             continue;
         };
         populations.push(StandardSurfacePopulation { records, supports });
@@ -423,8 +423,8 @@ pub(super) fn pair_standard_populations(
         Ok(Some((
             layout,
             StandardSurfacePopulation {
-                records: population.records.to_vec(),
-                supports: population.supports.to_vec(),
+                records: population.records.clone(),
+                supports: population.supports.clone(),
             },
         )))
     };
@@ -448,10 +448,10 @@ pub(super) fn pair_standard_populations(
 pub(super) fn standard_surface_records(
     brep: &[u8],
     face_count: usize,
-) -> Result<Option<Vec<StandardSurfaceRecord>>, CodecError> {
-    let table = standard_surface_record_table(brep)?;
+) -> Option<Vec<StandardSurfaceRecord>> {
+    let table = standard_surface_record_table(brep);
     if face_count == 0 || face_count > table.records.len() {
-        return Ok(None);
+        return None;
     }
     let ordered_records = &table.records;
     let successors = &table.successors;
@@ -460,7 +460,7 @@ pub(super) fn standard_surface_records(
     let mut jumps = Vec::new();
 
     if level_count > 0 {
-        let mut previous = successors.to_vec();
+        let mut previous = successors.clone();
         for _ in 1..level_count {
             let mut next = Vec::new();
 
@@ -491,25 +491,21 @@ pub(super) fn standard_surface_records(
         if brep.get(ordered_records[last].end()) == Some(&0x60)
             && solution_start.replace(start).is_some()
         {
-            return Ok(None);
+            return None;
         }
     }
 
-    let Some(mut current) = solution_start else {
-        return Ok(None);
-    };
+    let mut current = solution_start?;
     let mut chain = Vec::new();
 
     for ordinal in 0..face_count {
         chain.push(ordered_records[current]);
         if ordinal + 1 < face_count {
-            let Some(next) = successors[current] else {
-                return Ok(None);
-            };
+            let next = successors[current]?;
             current = next;
         }
     }
-    Ok(Some(chain))
+    Some(chain)
 }
 
 /// Read the trailing per-face orientation byte from a complete analytic
@@ -531,12 +527,9 @@ pub(super) fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
 /// Read the unique contiguous standard vertex roster with the requested
 /// cardinality. Each seven-byte row stores `54 <identity:u24le> 00 00 00`;
 /// roster order is coordinate-table order.
-pub(super) fn standard_vertex_roster(
-    source: &[u8],
-    vertex_count: usize,
-) -> Result<Option<Vec<u32>>, CodecError> {
+pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<u32>> {
     if vertex_count == 0 {
-        return Ok(None);
+        return None;
     }
     let mut solutions = Vec::new();
     let mut position = 0usize;
@@ -555,9 +548,7 @@ pub(super) fn standard_vertex_roster(
             && source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
                 == [0, 0, 0]
         {
-            let Some(identity) = View::u24_le_at(source, position + vertex_roster::TAG) else {
-                return Ok(None);
-            };
+            let identity = View::u24_le_at(source, position + vertex_roster::TAG)?;
             if identities
                 .last()
                 .is_some_and(|previous| *previous >= identity)
@@ -574,18 +565,18 @@ pub(super) fn standard_vertex_roster(
             position += 1;
         }
     }
-    Ok(<[Vec<u32>; 1]>::try_from(solutions)
+    <[Vec<u32>; 1]>::try_from(solutions)
         .ok()
-        .map(|[identities]| identities))
+        .map(|[identities]| identities)
 }
 
 /// Locate every per-face analytic surface record by the strict 5-byte template
 /// `[target_u24 le][00][prebyte] 00 33 <kind>` ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). The strict template
 /// rejects collisional `00 33` matches inside other binary data.
-pub(crate) fn surface_prefixes(brep: &[u8]) -> Result<Vec<SurfacePrefix>, CodecError> {
+pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
     let mut out = Vec::new();
     if brep.len() < 8 {
-        return Ok(out);
+        return out;
     }
     for i in analytic_plane::MARKER..brep.len() - 3 {
         if brep[i] != 0x00 || brep[i + 1] != 0x33 {
@@ -604,7 +595,7 @@ pub(crate) fn surface_prefixes(brep: &[u8]) -> Result<Vec<SurfacePrefix>, CodecE
             kind,
         });
     }
-    Ok(out)
+    out
 }
 
 /// Locate plane bounds records and bind each persistent carrier tag to the
@@ -613,7 +604,7 @@ pub(crate) fn surface_prefixes(brep: &[u8]) -> Result<Vec<SurfacePrefix>, CodecE
 pub(super) fn plane_params<S: std::hash::BuildHasher>(
     brep: &[u8],
     normals: &HashMap<u32, FiniteVector<3>, S>,
-) -> Result<Vec<PlaneParams>, CodecError> {
+) -> Vec<PlaneParams> {
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
 
     let mut out = Vec::new();
@@ -649,7 +640,7 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
         });
     }
     out.retain(|plane| !duplicate_targets.contains(&plane.target));
-    Ok(out)
+    out
 }
 
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
@@ -731,12 +722,12 @@ pub(super) fn standard_curve_supports(
         else {
             return Ok(Vec::new());
         };
-        return Ok(population.supports.to_vec());
+        return Ok(population.supports.clone());
     }
-    if let Some(first) = standard_surface_records(brep, face_count)?
+    if let Some(first) = standard_surface_records(brep, face_count)
         .and_then(|records| records.last().map(StandardSurfaceRecord::end))
     {
-        let Some(rows) = standard_curve_supports_at(brep, face_count, first)? else {
+        let Some(rows) = standard_curve_supports_at(brep, face_count, first) else {
             return Ok(Vec::new());
         };
         return if edge_count.is_none_or(|count| rows.len() == count) {
@@ -753,7 +744,7 @@ pub(super) fn standard_curve_supports(
         {
             continue;
         }
-        let Some(rows) = standard_curve_supports_at(brep, face_count, start)? else {
+        let Some(rows) = standard_curve_supports_at(brep, face_count, start) else {
             continue;
         };
         if edge_count.is_none_or(|count| rows.len() == count) {
@@ -770,16 +761,14 @@ fn standard_curve_supports_at(
     brep: &[u8],
     face_count: usize,
     mut position: usize,
-) -> Result<Option<Vec<StandardCurveSupport>>, CodecError> {
+) -> Option<Vec<StandardCurveSupport>> {
     let mut rows = Vec::new();
     while brep.get(position) == Some(&0x60) {
-        let Some((row, end)) = standard_curve_support_row_at(brep, face_count, position) else {
-            return Ok(None);
-        };
+        let (row, end) = standard_curve_support_row_at(brep, face_count, position)?;
         rows.push(row);
         position = end;
     }
-    Ok((!rows.is_empty()).then_some(rows))
+    (!rows.is_empty()).then_some(rows)
 }
 
 fn standard_curve_support_row_at(

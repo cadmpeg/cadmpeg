@@ -37,7 +37,7 @@ impl MeshSelectionSearch<'_, '_> {
                 .all(|candidates| candidates.len() == 1)
     }
 
-    pub(super) fn selected_edges(&self) -> Result<HashSet<usize>, CodecError> {
+    pub(super) fn selected_edges(&self) -> HashSet<usize> {
         let mut edges = HashSet::new();
         for (face, selected) in self.selected.iter().enumerate() {
             let Some((index, _)) = selected else {
@@ -49,7 +49,7 @@ impl MeshSelectionSearch<'_, '_> {
                 }
             }
         }
-        Ok(edges)
+        edges
     }
 
     #[cfg(test)]
@@ -354,12 +354,12 @@ impl MeshSelectionSearch<'_, '_> {
                 let [choice] = self.possible_face_choices[face].as_slice() else {
                     return Ok(false);
                 };
-                choice.to_vec()
+                choice.clone()
             } else {
                 let cache_key = (face, self.face_projection_signature(face, quotient)?);
                 let cached = {
                     let cache = self.face_equation_cache.borrow();
-                    cache.get(&cache_key).map(|equations| equations.to_vec())
+                    cache.get(&cache_key).cloned()
                 };
                 if let Some(cached) = cached {
                     cached
@@ -376,7 +376,7 @@ impl MeshSelectionSearch<'_, '_> {
                     let mut equations = Vec::new();
 
                     equations.extend(common);
-                    let cached_equations = equations.to_vec();
+                    let cached_equations = equations.clone();
                     let mut cache = self.face_equation_cache.borrow_mut();
                     if cache.len() >= MAX_FACE_EQUATION_CACHE_ENTRIES {
                         cache.clear();
@@ -390,7 +390,7 @@ impl MeshSelectionSearch<'_, '_> {
                 if quotient.union.find(left)? == quotient.union.find(right)? {
                     continue;
                 }
-                let Some(root) = quotient.merge_charged(left, right)? else {
+                let Some(root) = quotient.merge(left, right)? else {
                     return Ok(false);
                 };
                 if !quotient.propagate_component_edge_domains(root, self.edge_candidates, None)? {
@@ -508,12 +508,11 @@ impl MeshSelectionSearch<'_, '_> {
         let mut completion = Vec::new();
 
         for selected in &self.selected {
-            completion.push(match selected {
-                Some((index, directions)) => {
-                    Some((*index, copy_mesh_boundary_directions(directions)?))
-                }
-                None => None,
-            });
+            completion.push(
+                selected
+                    .as_ref()
+                    .map(|(index, directions)| (*index, copy_mesh_boundary_directions(directions))),
+            );
         }
         for (face, selected) in completion.iter_mut().enumerate() {
             if selected.is_some() {
@@ -622,7 +621,7 @@ impl MeshSelectionSearch<'_, '_> {
         let mut seen = HashSet::<(Vec<Vec<bool>>, Vec<Option<bool>>)>::new();
         let mut output = Vec::new();
         for label_directions in direction_options {
-            let mut next_orientations = self.fixed_edge_orientations.to_vec();
+            let mut next_orientations = self.fixed_edge_orientations.clone();
             let constrained = assignment
                 .boundaries
                 .iter()
@@ -657,8 +656,8 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             };
             let signature = (
-                canonical_mesh_boundary_directions(&directions)?,
-                next_orientations.to_vec(),
+                canonical_mesh_boundary_directions(&directions),
+                next_orientations.clone(),
             );
             if seen.insert(signature) {
                 output.push((directions, quotient, next_orientations));
@@ -692,7 +691,7 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(());
             }
         }
-        let selected_edges = self.selected_edges()?;
+        let selected_edges = self.selected_edges();
         let mut impossible = false;
         let face = self
             .selected
@@ -794,8 +793,8 @@ impl MeshSelectionSearch<'_, '_> {
                 let Some(source) = self.assignments[face].get(*assignment) else {
                     return Ok(());
                 };
-                selected_assignments.push(copy_mesh_assignment(source)?);
-                directions.push(copy_mesh_boundary_directions(selected_directions)?);
+                selected_assignments.push(copy_mesh_assignment(source));
+                directions.push(copy_mesh_boundary_directions(selected_directions));
             }
             let Some(port_identities) = self.port_identities else {
                 return Ok(());
@@ -864,19 +863,16 @@ impl MeshSelectionSearch<'_, '_> {
         let mut quotient = quotient.clone();
         let mut selected = Vec::new();
         for choice in &self.selected {
-            let copy = match choice {
-                Some((assignment, directions)) => {
-                    Some((*assignment, copy_mesh_boundary_directions(directions)?))
-                }
-                None => None,
-            };
+            let copy = choice.as_ref().map(|(assignment, directions)| {
+                (*assignment, copy_mesh_boundary_directions(directions))
+            });
             selected.push(copy);
         }
         Ok((
             prepared,
             selected,
             quotient.signature()?,
-            self.fixed_edge_orientations.to_vec(),
+            self.fixed_edge_orientations.clone(),
         ))
     }
 
@@ -948,7 +944,7 @@ impl MeshSelectionSearch<'_, '_> {
                 return Ok(());
             }
         }
-        let selected_edges = self.selected_edges()?;
+        let selected_edges = self.selected_edges();
         let mut adjacent_faces = HashSet::new();
         if !selected_edges.is_empty() {
             for (face, selected) in self.selected.iter().enumerate() {
@@ -1053,8 +1049,8 @@ impl MeshSelectionSearch<'_, '_> {
                 let Some(assignment) = self.assignments[face].get(*index) else {
                     return Ok(());
                 };
-                selected_assignments.push(copy_mesh_assignment(assignment)?);
-                directions.push(copy_mesh_boundary_directions(selected_directions)?);
+                selected_assignments.push(copy_mesh_assignment(assignment));
+                directions.push(copy_mesh_boundary_directions(selected_directions));
             }
             if self
                 .edge_candidates
@@ -1108,7 +1104,6 @@ impl MeshSelectionSearch<'_, '_> {
             };
             let candidate = 'candidate: {
                 let Some(mut topology) = reconstruct_mesh_selection(
-                    self.ctx,
                     self.edge_rows,
                     self.vertex_points,
                     &selected_assignments,
@@ -1228,7 +1223,6 @@ impl MeshSelectionSearch<'_, '_> {
                     continue;
                 }
                 measured.assignment_options_for_directions(
-                    self.ctx,
                     assignment,
                     direction_options,
                     remaining,
@@ -1270,10 +1264,8 @@ impl MeshSelectionSearch<'_, '_> {
         }
         if let [(assignment_index, directions, next_quotient)] = options.as_slice() {
             let changed_edges = changed_quotient_edges(&measured, next_quotient)?;
-            self.selected[face] = Some((
-                *assignment_index,
-                copy_mesh_boundary_directions(directions)?,
-            ));
+            self.selected[face] =
+                Some((*assignment_index, copy_mesh_boundary_directions(directions)));
             if self.selected_orientable()? {
                 if let Some(next_quotient) =
                     self.prepare_selected_branch(next_quotient, &changed_edges, propagation_budget)?
@@ -1423,7 +1415,7 @@ pub(in crate::solve) fn parse_standard_mesh_endpoint_candidates(
     if assignments.len() != face_count {
         return Ok(None);
     }
-    deduplicate_mesh_quotient_assignments(ctx, &mut assignments)?;
+    deduplicate_mesh_quotient_assignments(&mut assignments);
     // Standard-row occurrence direction is a face-quotient choice. Complete
     // FBB tables retain their scoped handle equalities in these local ports.
     let Some(port_identities) = crate::solve::missing_edge::edge_port_identities(ctx, bytes)?
@@ -1455,18 +1447,15 @@ pub(super) fn singleton_mesh_boundary_directions(
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
     edge_direction_evidence: Option<&[bool]>,
-) -> Result<Option<Vec<bool>>, CodecError> {
+) -> Option<Vec<bool>> {
     if boundary.is_empty() {
-        return Ok(None);
+        return None;
     }
     let first = boundary[0];
-    let Some(first_pair) = edge_candidates
+    let first_pair = edge_candidates
         .get(first.edge)
         .and_then(|candidates| candidates.first())
-        .copied()
-    else {
-        return Ok(None);
-    };
+        .copied()?;
     let first_required = first.reversed.filter(|_| {
         edge_direction_evidence
             .and_then(|evidence| evidence.get(first.edge))
@@ -1494,13 +1483,10 @@ pub(super) fn singleton_mesh_boundary_directions(
         directions.push(first_direction);
         let mut valid = true;
         for use_ in &boundary[1..] {
-            let Some(pair) = edge_candidates
+            let pair = edge_candidates
                 .get(use_.edge)
                 .and_then(|candidates| candidates.first())
-                .copied()
-            else {
-                return Ok(None);
-            };
+                .copied()?;
             let required = use_.reversed.filter(|_| {
                 edge_direction_evidence
                     .and_then(|evidence| evidence.get(use_.edge))
@@ -1539,17 +1525,17 @@ pub(super) fn singleton_mesh_boundary_directions(
     {
         solutions.truncate(1);
     }
-    Ok((solutions.len() == 1).then(|| solutions.remove(0)))
+    (solutions.len() == 1).then(|| solutions.remove(0))
 }
 
 pub(super) fn canonical_singleton_coordinate_cycles(
     assignment: &MeshFaceBoundaryAssignment,
     directions: &[Vec<bool>],
     edge_candidates: &[Vec<[usize; 2]>],
-) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
-    pub(super) fn canonical_cycle(points: &[usize]) -> Result<Vec<usize>, CodecError> {
+) -> Option<Vec<Vec<usize>>> {
+    pub(super) fn canonical_cycle(points: &[usize]) -> Vec<usize> {
         if points.is_empty() {
-            return Ok(Vec::new());
+            return Vec::new();
         }
         let value = |reversed: bool, start: usize, offset: usize| {
             let until_wrap = points.len() - start;
@@ -1580,31 +1566,28 @@ pub(super) fn canonical_singleton_coordinate_cycles(
         let mut canonical = Vec::new();
 
         canonical.extend((0..points.len()).map(|offset| value(best.0, best.1, offset)));
-        Ok(canonical)
+        canonical
     }
 
     let mut cycles = Vec::new();
 
     for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
         if boundary.len() != directions.len() {
-            return Ok(None);
+            return None;
         }
         let mut points = Vec::new();
 
         for (use_, &reversed) in boundary.iter().zip(directions) {
-            let Some(pair) = edge_candidates
+            let pair = edge_candidates
                 .get(use_.edge)
                 .and_then(|candidates| candidates.first())
-                .copied()
-            else {
-                return Ok(None);
-            };
+                .copied()?;
             points.push(if reversed { pair[1] } else { pair[0] });
         }
-        cycles.push(canonical_cycle(&points)?);
+        cycles.push(canonical_cycle(&points));
     }
     cycles.sort_unstable_by(Ord::cmp);
-    Ok(Some(cycles))
+    Some(cycles)
 }
 
 pub(super) fn reconstruct_singleton_coordinate_topology(
@@ -1654,7 +1637,7 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     }
     let topology = StandardTopologyDraft {
         faces,
-        edge_rows: copy_mesh_edge_rows(edge_rows)?,
+        edge_rows: copy_mesh_edge_rows(edge_rows),
         vertex_points: vertex_points.to_vec(),
         logical_vertex_count: vertex_points.len(),
     };
@@ -1743,20 +1726,18 @@ struct DistinctAssignment {
 }
 
 impl DistinctAssignment {
-    fn new(points: Vec<usize>, point_count: usize) -> Result<Option<Self>, CodecError> {
+    fn new(points: Vec<usize>, point_count: usize) -> Option<Self> {
         let mut seen = Vec::new();
 
         seen.resize(point_count, false);
         for &point in &points {
-            let Some(used) = seen.get_mut(point) else {
-                return Ok(None);
-            };
+            let used = seen.get_mut(point)?;
             if *used {
-                return Ok(None);
+                return None;
             }
             *used = true;
         }
-        Ok(Some(Self { points }))
+        Some(Self { points })
     }
 }
 
@@ -1830,7 +1811,7 @@ fn reduced_distinct_matching(
         };
         completed.push(point);
     }
-    DistinctAssignment::new(completed, point_count)
+    Ok(DistinctAssignment::new(completed, point_count))
 }
 
 // The selection owns the complete quotient inputs and the optional gauge. The
@@ -1879,7 +1860,7 @@ pub(super) fn resolve_singleton_mesh_selection(
         return Ok(None);
     }
     let Some(topology) =
-        reconstruct_mesh_selection(ctx, edge_rows, vertex_points, selected, directions)?
+        reconstruct_mesh_selection(edge_rows, vertex_points, selected, directions)?
     else {
         return Ok(None);
     };
@@ -1896,7 +1877,7 @@ pub(super) fn resolve_singleton_mesh_selection(
         for (port, vertex) in [(0, start), (1, end)] {
             let node = edge * 2 + port;
             if let Some(previous) = port_by_vertex.insert(vertex, node) {
-                if quotient.merge_charged(previous, node)?.is_none() {
+                if quotient.merge(previous, node)?.is_none() {
                     return Ok(None);
                 }
             }
@@ -2095,12 +2076,8 @@ mod reduced_matching_tests {
     #[test]
     fn reduced_matching_rejects_duplicate_and_out_of_range_assignments() {
         crate::test_support::with_service_context(|ctx| {
-            assert!(DistinctAssignment::new(vec![0, 0], 2)
-                .expect("admitted")
-                .is_none());
-            assert!(DistinctAssignment::new(vec![2], 2)
-                .expect("admitted")
-                .is_none());
+            assert!(DistinctAssignment::new(vec![0, 0], 2).is_none());
+            assert!(DistinctAssignment::new(vec![2], 2).is_none());
             let budget = cadmpeg_core::decode::WorkBudget::new(100);
             assert!(reduced_distinct_matching(ctx, &[vec![2]], 2, &budget, None)
                 .expect("admitted")

@@ -612,14 +612,11 @@ fn zero_entity_nurbs_layout(
                 u_distinct_count,
                 expected_u_count,
             ) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => continue,
-                Err(error) => return Some(Err(error)),
+                Some(lane) => lane,
+                None => continue,
             };
-            let after_dimensions = match u32_tokens(data, u_after, 2) {
-                Ok(Some((_, end))) => end,
-                Ok(None) => continue,
-                Err(error) => return Some(Err(error)),
+            let Some((_, after_dimensions)) = u32_tokens(data, u_after, 2) else {
+                continue;
             };
             let v_start = after_dimensions.checked_add(1)?;
             if v_start > pole_marker_start {
@@ -639,9 +636,8 @@ fn zero_entity_nurbs_layout(
                 v_distinct_count,
                 expected_v_count,
             ) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => continue,
-                Err(error) => return Some(Err(error)),
+                Some(lane) => lane,
+                None => continue,
             };
             if candidate.is_some() {
                 return None;
@@ -670,41 +666,34 @@ fn zero_entity_nurbs_knot_lane(
     start: usize,
     distinct_count: usize,
     expected_control_count: usize,
-) -> Result<Option<ZeroEntityNurbsKnotLane>, CodecError> {
-    (|| -> Option<Result<ZeroEntityNurbsKnotLane, CodecError>> {
-        let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
-        let mut distinct = Vec::new();
-        for index in 0..distinct_count {
-            let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
-            if distinct.last().is_some_and(|last| value <= *last) {
-                return None;
-            }
-            distinct.push(value);
-        }
-        let (mults, end) = match u32_tokens(data, distinct_end, distinct_count) {
-            Ok(Some(tokens)) => tokens,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let degree = mults.first().copied()?.checked_sub(1)?;
-        let control_count = mults
-            .iter()
-            .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-            .checked_sub(degree + 1)?;
-        if !(1..=9).contains(&degree)
-            || usize::try_from(control_count).ok()? != expected_control_count
-            || end != distinct_end.checked_add(distinct_count.checked_mul(5)?)?
-        {
+) -> Option<ZeroEntityNurbsKnotLane> {
+    let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
+    let mut distinct = Vec::new();
+    for index in 0..distinct_count {
+        let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
+        if distinct.last().is_some_and(|last| value <= *last) {
             return None;
         }
-        Some(Ok(ZeroEntityNurbsKnotLane {
-            distinct,
-            multiplicities: mults,
-            degree,
-            control_count,
-        }))
-    })()
-    .transpose()
+        distinct.push(value);
+    }
+    let (mults, end) = u32_tokens(data, distinct_end, distinct_count)?;
+    let degree = mults.first().copied()?.checked_sub(1)?;
+    let control_count = mults
+        .iter()
+        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
+        .checked_sub(degree + 1)?;
+    if !(1..=9).contains(&degree)
+        || usize::try_from(control_count).ok()? != expected_control_count
+        || end != distinct_end.checked_add(distinct_count.checked_mul(5)?)?
+    {
+        return None;
+    }
+    Some(ZeroEntityNurbsKnotLane {
+        distinct,
+        multiplicities: mults,
+        degree,
+        control_count,
+    })
 }
 
 /// Inventory every complete framed record in the one-based global namespace.
@@ -1051,7 +1040,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
         && faces.len() == runs.len();
     if rosters_are_complete {
         for (run, mut face) in runs.iter_mut().zip(faces) {
-            bind_face_support_occurrences(&mut face, &run.supports)?;
+            bind_face_support_occurrences(&mut face, &run.supports);
             run.face = Some(face);
         }
     }
@@ -1061,9 +1050,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
 fn bind_face_support_occurrences(
     face: &mut ZeroEntityFace,
     supports: &[ZeroEntitySupportOccurrence],
-) -> Result<(), CodecError> {
+) {
     let Some(face_loops) = face.loops.as_mut() else {
-        return Ok(());
+        return;
     };
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
     for support in supports {
@@ -1080,21 +1069,21 @@ fn bind_face_support_occurrences(
 
         for slot in loop_record.members.support_slots() {
             let Some(ordinal) = supports_by_slot.get(&slot).copied().flatten() else {
-                return Ok(());
+                return;
             };
             row.push(ordinal);
         }
         bindings.push(row);
     }
     if bindings.iter().map(Vec::len).sum::<usize>() != supports.len() {
-        return Ok(());
+        return;
     }
     let mut bound = HashSet::new();
     for ordinal in bindings.iter().flatten().copied() {
         bound.insert(ordinal);
     }
     if bound.len() != supports.len() {
-        return Ok(());
+        return;
     }
     for (loop_record, support_record_ordinals) in face_loops.iter_mut().zip(bindings) {
         loop_record.support_record_ordinals = support_record_ordinals;
@@ -1115,22 +1104,21 @@ fn bind_face_support_occurrences(
             );
         }
         if let Some(oriented) =
-            oriented_closed_model_endpoints(&endpoints, &loop_record.forward_senses)?
+            oriented_closed_model_endpoints(&endpoints, &loop_record.forward_senses)
         {
             loop_record.oriented_model_endpoints = oriented;
         }
     }
-    Ok(())
 }
 
 pub(crate) fn oriented_closed_model_endpoints(
     endpoints: &[Option<[FinitePoint3; 2]>],
     forward_senses: &[bool],
-) -> Result<Option<Vec<[FinitePoint3; 2]>>, CodecError> {
+) -> Option<Vec<[FinitePoint3; 2]>> {
     const CLOSURE_TOLERANCE: f64 = 2e-3;
 
     if endpoints.is_empty() || endpoints.len() != forward_senses.len() {
-        return Ok(None);
+        return None;
     }
     let mut oriented = Vec::new();
 
@@ -1138,37 +1126,35 @@ pub(crate) fn oriented_closed_model_endpoints(
     for (index, (endpoints, forward)) in endpoints.iter().zip(forward_senses).enumerate() {
         let pair = endpoints.map(|[start, end]| if *forward { [start, end] } else { [end, start] });
         if pair.is_none() && missing.replace(index).is_some() {
-            return Ok(None);
+            return None;
         }
         oriented.push(pair);
     }
     if let Some(index) = missing {
         if oriented.len() <= 1 {
-            return Ok(None);
+            return None;
         }
         let previous = (index + oriented.len() - 1) % oriented.len();
         let next = (index + 1) % oriented.len();
         let (Some(previous), Some(next)) = (oriented[previous], oriented[next]) else {
-            return Ok(None);
+            return None;
         };
         oriented[index] = Some([previous[1], next[0]]);
     }
     let mut complete = Vec::new();
 
     for pair in oriented {
-        let Some(pair) = pair else {
-            return Ok(None);
-        };
+        let pair = pair?;
         complete.push(pair);
     }
-    Ok(complete
+    complete
         .iter()
         .enumerate()
         .all(|(index, endpoints)| {
             endpoints[1].distance(complete[(index + 1) % complete.len()][0].get())
                 <= CLOSURE_TOLERANCE
         })
-        .then_some(complete))
+        .then_some(complete)
 }
 
 fn zero_entity_faces_from_records(
@@ -1555,7 +1541,7 @@ fn zero_entity_support_pcurve(
         } else {
             None
         };
-        let nurbs = match crate::nurbs::note_refusal(
+        let nurbs = crate::nurbs::note_refusal(
             match PcurveNurbs::from_checked_lanes(
                 ctx,
                 degree,
@@ -1569,11 +1555,7 @@ fn zero_entity_support_pcurve(
             },
             refusal,
             format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
-        ) {
-            Ok(Some(nurbs)) => nurbs,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        )?;
         Some(Ok(PcurveGeometry::Nurbs { nurbs }))
     })()
     .transpose()
@@ -1652,7 +1634,7 @@ pub(super) fn zero_entity_neutral_pcurve(
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_neutral_pcurve_knots")?;
-    crate::nurbs::note_refusal(
+    Ok(crate::nurbs::note_refusal(
         PcurveNurbs::from_checked_lanes(
             ctx,
             nurbs.degree(),
@@ -1664,7 +1646,7 @@ pub(super) fn zero_entity_neutral_pcurve(
         refusal,
         format_args!("zero-entity pcurve scaled onto its surface parameters: {record}"),
     )
-    .map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
+    .map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
 }
 
 fn zero_entity_model_curve(
@@ -1976,7 +1958,7 @@ fn zero_entity_lift_pcurve(
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "catia_zero_lifted_pcurve_knots")?;
-    crate::nurbs::note_refusal(
+    Ok(crate::nurbs::note_refusal(
         NurbsCurve::from_checked_lanes(
             ctx,
             nurbs.degree(),
@@ -1987,7 +1969,7 @@ fn zero_entity_lift_pcurve(
         )?,
         refusal,
         format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
-    )
+    ))
 }
 
 fn zero_entity_model_curve_construction(
@@ -2465,7 +2447,7 @@ fn zero_entity_nurbs_surface(
     for row in control_points.chunks(index_from_u32(layout.v_count)) {
         rows.push(row.to_vec());
     }
-    crate::nurbs::note_refusal(
+    Ok(crate::nurbs::note_refusal(
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(layout.u_degree, u_knots, false),
@@ -2476,9 +2458,7 @@ fn zero_entity_nurbs_surface(
         refusal,
         format_args!("zero-entity NURBS surface record at byte {record}"),
     )
-    .map(|surface| {
-        surface.map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
-    })
+    .map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))))
 }
 
 fn zero_entity_expand_knots(
@@ -2528,30 +2508,22 @@ fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     Some(geometry)
 }
 
-fn u32_tokens(
-    bytes: &[u8],
-    at: usize,
-    count: usize,
-) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
+fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)> {
     let mut view = View::over_retained(bytes);
-    if view.seek(at).is_none() {
-        return Ok(None);
-    }
+    view.seek(at)?;
     let mut values = Vec::new();
 
     for _ in 0..count {
         if view.u8() != Some(0x10) {
-            return Ok(None);
+            return None;
         }
-        let Some(value) = view.u32_le() else {
-            return Ok(None);
-        };
+        let value = view.u32_le()?;
         if value == 0 {
-            return Ok(None);
+            return None;
         }
         values.push(value);
     }
-    Ok(Some((values, view.position())))
+    Some((values, view.position()))
 }
 
 #[cfg(test)]

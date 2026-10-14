@@ -10,15 +10,12 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_core::decode::u64_from_index;
 
-type NativePcurveLanesOutput = Result<
-    (
-        Vec<FiniteReal>,
-        Vec<FiniteVector<2>>,
-        Vec<FiniteVector<2>>,
-        Vec<FiniteVector<2>>,
-    ),
-    CodecError,
->;
+type NativePcurveLanes = (
+    Vec<FiniteReal>,
+    Vec<FiniteVector<2>>,
+    Vec<FiniteVector<2>>,
+    Vec<FiniteVector<2>>,
+);
 
 use std::{borrow::Borrow, collections::HashSet, ops::Range};
 
@@ -104,21 +101,20 @@ pub(crate) fn family_pcurves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
     family: ConsolidatedFamily,
-) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
+) -> Vec<ConsolidatedPcurve> {
     let mut pcurves = Vec::new();
     for frame in family_frames_from_records(records, family, 0x20) {
-        if let Some(pcurve) = parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end)?
-        {
+        if let Some(pcurve) = parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end) {
             pcurves.push(pcurve);
         }
     }
-    Ok(pcurves)
+    pcurves
 }
 
 impl ConsolidatedPcurve {
     pub(crate) const DEGREE: u32 = 5;
 
-    pub(crate) fn native_lanes(&self) -> NativePcurveLanesOutput {
+    pub(crate) fn native_lanes(&self) -> NativePcurveLanes {
         let mut knots = Vec::new();
         let mut points = Vec::new();
         let mut first = Vec::new();
@@ -130,7 +126,7 @@ impl ConsolidatedPcurve {
             first.push(site.first_derivatives);
             second.push(site.second_derivatives);
         }
-        Ok((knots, points, first, second))
+        (knots, points, first, second)
     }
 
     #[cfg(test)]
@@ -157,12 +153,9 @@ fn parse_consolidated_pcurve(
     pos: usize,
     payload: usize,
     end: usize,
-) -> Result<Option<ConsolidatedPcurve>, CodecError> {
-    let Some((support_id, count, extrapolation_sites, lanes, range, tail_at)) =
-        pcurve_layout(data, payload, end)
-    else {
-        return Ok(None);
-    };
+) -> Option<ConsolidatedPcurve> {
+    let (support_id, count, extrapolation_sites, lanes, range, tail_at) =
+        pcurve_layout(data, payload, end)?;
 
     let mut sites = Vec::new();
 
@@ -171,7 +164,7 @@ fn parse_consolidated_pcurve(
         let values = lanes.map(|lane| f64_le(data, lane + offset));
         let [Some(knot), Some(u), Some(v), Some(du), Some(dv), Some(ddu), Some(ddv)] = values
         else {
-            return Ok(None);
+            return None;
         };
         sites.push(ConsolidatedPcurveSite {
             knot,
@@ -182,16 +175,16 @@ fn parse_consolidated_pcurve(
     }
 
     let Ok(sites) = OrderedPcurveSites::try_from(sites) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(ConsolidatedPcurve {
+    Some(ConsolidatedPcurve {
         pos,
         support_id,
         extrapolation_sites,
         sites,
         range,
         tail: data[tail_at..end].to_vec(),
-    }))
+    })
 }
 
 fn pcurve_layout(
@@ -790,8 +783,7 @@ where
             }
 
             source_records.extend(added);
-            source_records
-                .sort_by(|left, right| left.source_range.start.cmp(&right.source_range.start));
+            source_records.sort_by_key(|left| left.source_range.start);
         }
 
         records.extend(source_records);
@@ -981,26 +973,20 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
-pub(crate) fn scan_vertex_records<'a>(
-    bytes: &'a [u8],
-) -> Result<impl Iterator<Item = FinitePoint3> + 'a, CodecError> {
-    Ok(scan_vertex_rows(bytes)?.map(|(_, point)| point))
+pub(crate) fn scan_vertex_records(bytes: &[u8]) -> impl Iterator<Item = FinitePoint3> + '_ {
+    scan_vertex_rows(bytes).map(|(_, point)| point)
 }
 
 /// Locate every finite `05 08 01` coordinate row in `bytes`.
-pub(crate) fn scan_vertex_record_ranges<'a>(
-    bytes: &'a [u8],
-) -> Result<impl Iterator<Item = Range<usize>> + 'a, CodecError> {
-    Ok(scan_vertex_rows(bytes)?.map(|(range, _)| range))
+pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
+    scan_vertex_rows(bytes).map(|(range, _)| range)
 }
 
 /// Every `05 08 01` row whose three coordinates are finite, with its byte
 /// range and admitted point.
-fn scan_vertex_rows<'a>(
-    bytes: &'a [u8],
-) -> Result<impl Iterator<Item = (Range<usize>, FinitePoint3)> + 'a, CodecError> {
+fn scan_vertex_rows(bytes: &[u8]) -> impl Iterator<Item = (Range<usize>, FinitePoint3)> + '_ {
     let mut p = 0usize;
-    Ok(std::iter::from_fn(move || loop {
+    std::iter::from_fn(move || loop {
         if p + 15 > bytes.len() {
             return None;
         }
@@ -1018,7 +1004,7 @@ fn scan_vertex_rows<'a>(
         } else {
             p += 1;
         }
-    }))
+    })
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
