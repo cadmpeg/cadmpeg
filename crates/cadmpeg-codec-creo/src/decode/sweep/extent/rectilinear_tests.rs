@@ -150,52 +150,6 @@ fn generated_fixture(
     (scan, ir, section)
 }
 
-fn rectilinear_extent_at_limit(
-    limit: u64,
-) -> Result<Option<(ExtrudeExtent, [f64; 3])>, cadmpeg_core::CodecError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let (scan, ir, section) = generated_fixture(&[(31, -6.0, false), (32, 8.0, true)], 0.0);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    generated_rectilinear_plane_extent(
-        &ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        7,
-        Some(&section),
-    )
-}
-
-#[test]
-fn rectilinear_cap_plane_limit_refuses() {
-    assert!(
-        matches!(rectilinear_extent_at_limit(16), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-        if refusal.operation == "creo rectilinear cap planes")
-    );
-}
-
-#[test]
-fn rectilinear_station_limit_refuses() {
-    assert!(
-        matches!(rectilinear_extent_at_limit(20), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-        if refusal.operation == "creo rectilinear stations")
-    );
-}
-
-#[test]
-fn rectilinear_family_limit_refuses() {
-    assert!(
-        matches!(rectilinear_extent_at_limit(21), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-        if refusal.operation == "creo rectilinear families")
-    );
-    assert!(rectilinear_extent_at_limit(26)
-        .expect("admitted extent")
-        .is_some());
-}
-
 #[test]
 fn rectilinear_section_offsets_select_all_extent_forms() {
     assert_eq!(
@@ -260,11 +214,10 @@ fn rectilinear_section_offsets_select_all_extent_forms() {
 
 #[test]
 fn generated_rectilinear_extent_uses_unique_section_origin() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    {
         let (scan, ir, section) = generated_fixture(&[(31, -6.0, false), (32, 8.0, true)], 0.0);
         assert_eq!(
             generated_rectilinear_plane_extent(
-                ctx,
                 &scan,
                 &ir,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -284,7 +237,6 @@ fn generated_rectilinear_extent_uses_unique_section_origin() {
         let (scan, ir, section) = generated_fixture(&[(31, -7.0, false), (32, 7.0, true)], 0.0);
         assert_eq!(
             generated_rectilinear_plane_extent(
-                ctx,
                 &scan,
                 &ir,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -297,12 +249,12 @@ fn generated_rectilinear_extent_uses_unique_section_origin() {
                 [0.0, 1.0, 0.0],
             ))
         );
-    });
+    };
 }
 
 #[test]
 fn generated_rectilinear_extent_rejects_ambiguous_or_missing_section_flags() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    {
         let (mut scan, ir, section) = generated_fixture(&[(31, -6.0, false), (32, 8.0, true)], 0.0);
         scan.planes
             .local_systems
@@ -316,7 +268,6 @@ fn generated_rectilinear_extent_rejects_ambiguous_or_missing_section_flags() {
                 offset: 1,
             });
         assert!(generated_rectilinear_plane_extent(
-            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -329,7 +280,6 @@ fn generated_rectilinear_extent_rejects_ambiguous_or_missing_section_flags() {
         let (scan, ir, mut section) = generated_fixture(&[(31, -6.0, false), (32, 8.0, true)], 0.0);
         section.orientation.section_flip = None;
         assert!(generated_rectilinear_plane_extent(
-            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -338,12 +288,12 @@ fn generated_rectilinear_extent_rejects_ambiguous_or_missing_section_flags() {
         )
         .expect("admitted extent")
         .is_none());
-    });
+    };
 }
 
 #[test]
 fn rectilinear_extent_reconciles_native_and_transferred_planes() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    {
         let row = |id, reversed| crate::surface::SurfaceRow {
             id,
             kind: crate::surface::SurfaceKind::Plane,
@@ -396,7 +346,6 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         ]);
         assert_eq!(
             generated_rectilinear_plane_extent(
-                ctx,
                 &scan,
                 &ir,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -420,7 +369,6 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
             });
         assert_eq!(
             generated_rectilinear_plane_extent(
-                ctx,
                 &scan,
                 &ir,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -445,7 +393,6 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
             .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         assert_eq!(
             generated_rectilinear_plane_extent(
-                ctx,
                 &scan,
                 &local_only,
                 &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -458,7 +405,6 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
 
         scan.planes.local_systems[0].slots[10] = Some(49.0);
         assert!(generated_rectilinear_plane_extent(
-            ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -467,5 +413,5 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         )
         .expect("admitted extent")
         .is_none());
-    });
+    };
 }

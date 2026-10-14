@@ -2,9 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-
 use super::super::BrepEligibleFaceIndexes;
 
 fn source_loop() -> crate::topology::Loop {
@@ -29,74 +26,12 @@ fn source_row() -> crate::curve::CurveTopologyRow {
     }
 }
 
-fn index_limit_error(limit: u64) -> CodecError {
+#[test]
+fn brep_eligible_face_indexes_record_the_single_edge_face() {
     let lp = source_loop();
     let faces = BTreeMap::from([(5, vec![&lp])]);
     let rows = [source_row()];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    BrepEligibleFaceIndexes::from_faces(&ctx, &faces, &rows)
-        .err()
-        .expect("eligible-face index allocation refused")
-}
-
-fn assert_collection_refusal(limit: u64, operation: &'static str) {
-    let error = index_limit_error(limit);
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn brep_eligible_loop_refs_refuse_collection_limit() {
-    assert_collection_refusal(0, "creo B-rep eligible loop refs");
-}
-
-#[test]
-fn brep_emitted_half_edge_nodes_refuse_collection_limit() {
-    assert_collection_refusal(1, "creo B-rep emitted half-edge nodes");
-}
-
-#[test]
-fn brep_face_curve_id_nodes_refuse_collection_limit() {
-    assert_collection_refusal(2, "creo B-rep face curve ID nodes");
-}
-
-#[test]
-fn brep_single_edge_curve_nodes_refuse_collection_limit() {
-    assert_collection_refusal(3, "creo B-rep single-edge curve nodes");
-}
-
-#[test]
-fn brep_row_offset_nodes_refuse_collection_limit() {
-    assert_collection_refusal(4, "creo B-rep row-offset nodes");
-}
-
-#[test]
-fn brep_curve_face_nodes_refuse_collection_limit() {
-    assert_collection_refusal(7, "creo B-rep curve-face nodes");
-}
-
-#[test]
-fn brep_eligible_face_id_nodes_refuse_collection_limit() {
-    assert_collection_refusal(8, "creo B-rep eligible face ID nodes");
-}
-
-#[test]
-fn brep_eligible_face_indexes_preserve_service_order() {
-    let lp = source_loop();
-    let faces = BTreeMap::from([(5, vec![&lp])]);
-    let rows = [source_row()];
-    let indexes = crate::decode::with_test_decode_ctx(|ctx| {
-        BrepEligibleFaceIndexes::from_faces(ctx, &faces, &rows)
-    })
-    .expect("service eligible-face indexes admitted");
+    let indexes = BrepEligibleFaceIndexes::from_faces(&faces, &rows);
     assert_eq!(
         indexes.emitted_half_edges,
         BTreeSet::from([lp.half_edges()[0]])

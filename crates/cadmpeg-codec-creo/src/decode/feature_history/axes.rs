@@ -72,23 +72,22 @@ pub(in super::super) fn resolved_revolution_axis(
 }
 
 pub(in super::super) fn full_turn_revolution_carrier_axis(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     extent: Option<&RevolveExtent>,
-) -> Result<Option<RevolutionAxis>, CodecError> {
+) -> Option<RevolutionAxis> {
     let Some(RevolveExtent::OneSided {
         termination: AngularTermination::Angle { angle },
     }) = extent
     else {
-        return Ok(None);
+        return None;
     };
     let angle = angle.get();
 
     if (angle.abs() - std::f64::consts::TAU).abs() > EPS_FULL_TURN {
-        return Ok(None);
+        return None;
     }
 
     let rows = scan
@@ -103,7 +102,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     for row in rows {
         saw_row = true;
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
-            return Ok(None);
+            return None;
         }
         let mut surfaces = ir.model.surfaces.iter().filter(|surface| {
             crate::identity::matches_numbered_identity(
@@ -112,50 +111,35 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
                 row.id,
             )
         });
-        let Some(surface) = surfaces.next().filter(|_| surfaces.next().is_none()) else {
-            return Ok(None);
-        };
+        let surface = surfaces.next().filter(|_| surfaces.next().is_none())?;
         match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
-                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((origin, *cylinder_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
-                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((origin, *cone_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
-                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((center, *torus_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                ctx.reserve_vec(
-                    &mut plane_normals,
-                    1,
-                    "creo full-turn revolution plane normals",
-                )?;
                 plane_normals.push(*plane_surface.frame().axis());
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center().get();
-                ctx.reserve_vec(
-                    &mut sphere_centers,
-                    1,
-                    "creo full-turn revolution sphere centers",
-                )?;
                 sphere_centers.push(center);
             }
-            _ => return Ok(None),
+            _ => return None,
         }
     }
     if !saw_row {
-        return Ok(None);
+        return None;
     }
     let [(first_origin, first_direction), rest @ ..] = axes.as_slice() else {
-        return Ok(None);
+        return None;
     };
     let mut direction = unit_length(*first_direction);
     if direction
@@ -188,7 +172,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
                 .partial_cmp(&(EPS_AXIS_ALIGNMENT)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
         ) {
-            return Ok(None);
+            return None;
         }
         let displacement = [
             candidate_origin.x - origin[0],
@@ -200,7 +184,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             (dot(radial, radial).sqrt()).partial_cmp(&(EPS_AXIS_OFFSET * scale)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
         ) {
-            return Ok(None);
+            return None;
         }
     }
     for normal in plane_normals {
@@ -209,7 +193,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             ((dot(direction, normal).abs() - 1.0).abs()).partial_cmp(&(EPS_AXIS_ALIGNMENT)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
         ) {
-            return Ok(None);
+            return None;
         }
     }
     for center in sphere_centers {
@@ -223,26 +207,23 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             (dot(radial, radial).sqrt()).partial_cmp(&(EPS_AXIS_OFFSET * scale)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
         ) {
-            return Ok(None);
+            return None;
         }
     }
-    Ok(
-        cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))
-            .zip(cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(
-                direction,
-            )))
-            .map(|(origin, direction)| RevolutionAxis {
-                origin,
-                direction,
-                reference: None,
-            }),
-    )
+    cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))
+        .zip(cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(
+            direction,
+        )))
+        .map(|(origin, direction)| RevolutionAxis {
+            origin,
+            direction,
+            reference: None,
+        })
 }
 
 #[cfg(test)]
-mod full_turn_carrier_allocation_tests {
+mod full_turn_carrier_tests {
     use super::full_turn_revolution_carrier_axis;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
@@ -331,66 +312,28 @@ mod full_turn_carrier_allocation_tests {
         (scan, ir, extent)
     }
 
-    fn assert_limit(extra: ExtraCarrier, limit: u64, operation: &'static str) {
+    fn assert_axis_resolves(extra: ExtraCarrier) {
         let (scan, ir, extent) = fixture(extra);
         let source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        assert!(full_turn_revolution_carrier_axis(
-            &ctx,
-            &scan,
-            &ir,
-            &source_carriers,
-            7,
-            Some(&extent)
-        )
-        .expect("service profile admits carrier evidence")
-        .is_some());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let Err(error) =
-            full_turn_revolution_carrier_axis(&ctx, &scan, &ir, &source_carriers, 7, Some(&extent))
-        else {
-            panic!("one more carrier item exceeds the collection limit");
-        };
         assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == operation),
-            "{error:?}"
+            full_turn_revolution_carrier_axis(&scan, &ir, &source_carriers, 7, Some(&extent))
+                .is_some()
         );
     }
 
     #[test]
-    fn full_turn_carrier_axes_refuse_collection_limit() {
-        assert_limit(
-            ExtraCarrier::None,
-            0,
-            "creo full-turn revolution carrier axes",
-        );
+    fn full_turn_carrier_axis_resolves_from_a_cylinder() {
+        assert_axis_resolves(ExtraCarrier::None);
     }
 
     #[test]
-    fn full_turn_carrier_plane_normals_refuse_collection_limit() {
-        assert_limit(
-            ExtraCarrier::Plane,
-            1,
-            "creo full-turn revolution plane normals",
-        );
+    fn full_turn_carrier_axis_resolves_with_a_perpendicular_plane() {
+        assert_axis_resolves(ExtraCarrier::Plane);
     }
 
     #[test]
-    fn full_turn_carrier_sphere_centers_refuse_collection_limit() {
-        assert_limit(
-            ExtraCarrier::Sphere,
-            1,
-            "creo full-turn revolution sphere centers",
-        );
+    fn full_turn_carrier_axis_resolves_with_a_coaxial_sphere() {
+        assert_axis_resolves(ExtraCarrier::Sphere);
     }
 }
 
@@ -410,7 +353,13 @@ pub(in super::super) fn revolution_axis_for_transfer(
     if let Some(axis) = resolved_revolution_axis(ctx, definition, transform)? {
         Ok(Some(axis))
     } else {
-        full_turn_revolution_carrier_axis(ctx, scan, ir, source_carriers, feature_id, extent)
+        Ok(full_turn_revolution_carrier_axis(
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            extent,
+        ))
     }
 }
 
@@ -423,11 +372,10 @@ pub(super) fn feature_revolution_axis_for_transfer(
     extent: Option<&RevolveExtent>,
 ) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
     let definition = unique_feature_profile_definition(
-        ctx,
         &scan.features.definitions,
         &scan.features.section_transforms,
         feature_id,
-    )?;
+    );
     let mut transforms = scan
         .features
         .section_transforms
@@ -449,7 +397,13 @@ pub(super) fn feature_revolution_axis_for_transfer(
     if let Some(axis) = axis {
         Ok(Some(axis))
     } else {
-        full_turn_revolution_carrier_axis(ctx, scan, ir, source_carriers, feature_id, extent)
+        Ok(full_turn_revolution_carrier_axis(
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            extent,
+        ))
     }
 }
 
@@ -459,9 +413,6 @@ pub(in super::super) fn section_profile_ref(
     native_ref: String,
 ) -> Result<ProfileRef, CodecError> {
     let native_scope = native_ref.strip_prefix("creo:featdefs:sketch#");
-    let scan_count = u64::try_from(ir.model.sketches.len())
-        .map_err(|_| CodecError::malformed("Creo sketch count exceeds u64"))?;
-    ctx.charge_work(scan_count, "creo section profile sketch lookup")?;
     let Some(sketch) = exactly_one(
         ir.model
             .sketches
@@ -484,13 +435,9 @@ pub(in super::super) fn section_profile_ref(
     }
 }
 
-pub(in super::super) fn unresolved_feature_profile_ref(
-    ctx: &DecodeContext<'_>,
-    feature_id: u32,
-    operation: &'static str,
-) -> Result<ProfileRef, CodecError> {
-    Ok(ProfileRef::Planar(PlanarProfileRef::Unresolved(
-        ctx.format_retained(format_args!("creo:model:feature#{feature_id}"), operation)?,
+pub(in super::super) fn unresolved_feature_profile_ref(feature_id: u32) -> ProfileRef {
+    ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
+        "creo:model:feature#{feature_id}"
     )))
 }
 
@@ -503,53 +450,25 @@ pub(in super::super) struct GeometryGeneratorFeature {
 }
 
 pub(in super::super) fn geometry_generator_features(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<GeometryGeneratorFeature>, CodecError> {
-    let mut lookup_storage = ctx.reserve_scoped(0, "Creo generator exclusion lookup")?;
+) -> Vec<GeometryGeneratorFeature> {
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut operation_feature_ids,
-                operation.feature_id,
-                "creo generator operation feature nodes",
-            )
-        })?;
+        operation_feature_ids.insert(operation.feature_id);
     }
     let mut row_feature_ids = BTreeSet::new();
     for row in &scan.features.rows {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut row_feature_ids,
-                row.feature_id,
-                "creo generator row feature nodes",
-            )
-        })?;
+        row_feature_ids.insert(row.feature_id);
     }
     let mut datum_feature_ids = BTreeSet::new();
     for datum in &scan.planes.datums {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut datum_feature_ids,
-                datum.feature_id,
-                "creo generator datum feature nodes",
-            )
-        })?;
+        datum_feature_ids.insert(datum.feature_id);
     }
-    let mut map_storage = ctx.reserve_scoped(0, "Creo generator map storage")?;
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
     for row in &scan.surfaces.rows {
         if row.feature_id == 0 {
             continue;
         }
-        map_storage.with_storage(|| {
-            ctx.admit_btree_entry(
-                &generators,
-                &row.feature_id,
-                "creo generator feature map nodes",
-            )
-        })?;
         let generator = match generators.entry(row.feature_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -562,20 +481,12 @@ pub(in super::super) fn geometry_generator_features(
             }
         };
         generator.offset = generator.offset.min(row.offset);
-        ctx.reserve_vec(&mut generator.surface_ids, 1, "creo generator surface IDs")?;
         generator.surface_ids.push(row.id);
     }
     for row in &scan.curves.topology_rows {
         if row.feature_id == 0 {
             continue;
         }
-        map_storage.with_storage(|| {
-            ctx.admit_btree_entry(
-                &generators,
-                &row.feature_id,
-                "creo generator feature map nodes",
-            )
-        })?;
         let generator = match generators.entry(row.feature_id) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -588,7 +499,6 @@ pub(in super::super) fn geometry_generator_features(
             }
         };
         generator.offset = generator.offset.min(row.offset);
-        ctx.reserve_vec(&mut generator.curve_ids, 1, "creo generator curve IDs")?;
         generator.curve_ids.push(row.id);
     }
     let mut output = Vec::new();
@@ -599,16 +509,10 @@ pub(in super::super) fn geometry_generator_features(
         {
             continue;
         }
-        ctx.reserve_vec(&mut output, 1, "creo geometry generator features")?;
         output.push(generator);
     }
-    ctx.stable_sort_by(
-        output.as_mut_slice(),
-        |left, right| left.offset.cmp(&right.offset),
-        |_| 0,
-        "creo geometry generator features output ordering",
-    )?;
-    Ok(output)
+    output.as_mut_slice().sort_by_key(|left| left.offset);
+    output
 }
 
 /// Return the feature identities that the model-transfer pass will emit.
@@ -619,11 +523,9 @@ pub(in super::super) fn geometry_generator_features(
 /// yet. Derive the complete emitted identity set from the scan instead of
 /// using the construction-time prefix of the IR.
 pub(in super::super) fn model_feature_ids(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<BTreeSet<IrFeatureId>, CodecError> {
     let mut ids = BTreeSet::new();
-    let mut numeric_storage = ctx.reserve_scoped(0, "Creo model numeric identity lookup")?;
     let mut numeric_ids = BTreeSet::new();
     for feature_id in scan
         .features
@@ -633,8 +535,7 @@ pub(in super::super) fn model_feature_ids(
         .chain(scan.features.rows.iter().map(|row| row.feature_id))
         .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
         .chain(
-            numeric_storage
-                .with_storage(|| geometry_generator_features(ctx, scan))?
+            geometry_generator_features(scan)
                 .into_iter()
                 .map(|generator| generator.feature_id),
         )
@@ -642,182 +543,22 @@ pub(in super::super) fn model_feature_ids(
         if numeric_ids.contains(&feature_id) {
             continue;
         }
-        numeric_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut numeric_ids,
-                feature_id,
-                "creo model feature numeric identity nodes",
-            )
-        })?;
-        let text = ctx.format_retained(
-            format_args!("creo:model:feature#{feature_id}"),
-            "creo model feature identity text",
-        )?;
+        numeric_ids.insert(feature_id);
+        let text = format!("creo:model:feature#{feature_id}");
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
-        ctx.insert_btree_set(&mut ids, id, "creo model feature identity nodes")?;
+        ids.insert(id);
     }
     Ok(ids)
 }
 
 #[cfg(test)]
-mod allocation_tests {
-    use super::{geometry_generator_features, model_feature_ids, unresolved_feature_profile_ref};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::collections::BTreeSet;
-
-    fn generator_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::test_support::empty_container_scan();
-        scan.surfaces.rows.push(crate::surface::SurfaceRow {
-            id: 61,
-            kind: crate::surface::SurfaceKind::Plane,
-            feature_id: 50,
-            reversed: false,
-            boundary_type: crate::surface::BoundaryType::Code00,
-            next_surface: 0,
-            offset: 200,
-        });
-        scan.curves
-            .topology_rows
-            .push(crate::curve::CurveTopologyRow {
-                id: 59,
-                type_byte: 8,
-                feature_id: 50,
-                directions: [1, 0xf6],
-                faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
-                next_edges: [59, 59],
-                offset: 100,
-            });
-        scan
-    }
-
-    fn generator_limit_error(limit: u64, operation: &'static str) {
-        let scan = generator_scan();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = geometry_generator_features(&ctx, &scan)
-            .map(|_| ())
-            .expect_err("one generator exceeds the collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == operation),
-            "{error:?}"
-        );
-    }
-
-    fn feature_set_limit_error(operation: &'static str) {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let mut ids = BTreeSet::new();
-        let error = ctx
-            .insert_btree_set(&mut ids, 50, operation)
-            .expect_err("one source feature exceeds the collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == operation),
-            "{error:?}"
-        );
-    }
+mod profile_ref_tests {
+    use super::unresolved_feature_profile_ref;
 
     #[test]
-    fn generator_operation_feature_nodes_refuse_collection_limit() {
-        feature_set_limit_error("creo generator operation feature nodes");
-    }
-
-    #[test]
-    fn generator_row_feature_nodes_refuse_collection_limit() {
-        feature_set_limit_error("creo generator row feature nodes");
-    }
-
-    #[test]
-    fn generator_datum_feature_nodes_refuse_collection_limit() {
-        feature_set_limit_error("creo generator datum feature nodes");
-    }
-
-    #[test]
-    fn generator_feature_map_nodes_refuse_collection_limit() {
-        generator_limit_error(0, "creo generator feature map nodes");
-    }
-
-    #[test]
-    fn generator_surface_ids_refuse_collection_limit() {
-        generator_limit_error(1, "creo generator surface IDs");
-    }
-
-    #[test]
-    fn generator_curve_ids_refuse_collection_limit() {
-        generator_limit_error(2, "creo generator curve IDs");
-    }
-
-    #[test]
-    fn geometry_generator_features_refuse_collection_limit() {
-        generator_limit_error(3, "creo geometry generator features");
-    }
-
-    #[test]
-    fn model_feature_numeric_identity_nodes_charge_collection_items() {
-        let scan = generator_scan();
-        crate::test_support::assert_collection_charged(
-            &[],
-            "creo model feature numeric identity nodes",
-            |ctx| model_feature_ids(ctx, &scan),
-        );
-    }
-
-    #[test]
-    fn model_feature_identity_nodes_refuse_collection_limit() {
-        let scan = generator_scan();
-        crate::test_support::collection_refusal_at(
-            &[],
-            "creo model feature identity nodes",
-            |ctx| model_feature_ids(ctx, &scan),
-        );
-    }
-
-    #[test]
-    fn model_feature_identity_text_refuses_retained_limit() {
-        let scan = generator_scan();
-        let error = crate::test_support::last_refusal_at(
-            &[],
-            ResourceDimension::RetainedBytes,
-            "creo model feature identity text",
-            |ctx| model_feature_ids(ctx, &scan),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo model feature identity text"),
-            "{error:?}"
-        );
-    }
-
-    #[test]
-    fn unresolved_section_profile_identity_refuses_retained_bytes() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:model:feature#50".len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error =
-            unresolved_feature_profile_ref(&ctx, 50, "creo unresolved section profile identity")
-                .expect_err("feature identity exceeds cap");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo unresolved section profile identity")
-        );
-        let profile = crate::decode::with_test_decode_ctx(|ctx| {
-            unresolved_feature_profile_ref(ctx, 50, "creo unresolved section profile identity")
-        })
-        .expect("service profile admitted");
+    fn unresolved_section_profile_names_the_model_feature() {
+        let profile = unresolved_feature_profile_ref(50);
         assert_eq!(
             profile,
             cadmpeg_ir::features::ProfileRef::Planar(
@@ -825,23 +566,6 @@ mod allocation_tests {
                     "creo:model:feature#50".to_owned()
                 )
             )
-        );
-    }
-
-    #[test]
-    fn unresolved_named_profile_identity_refuses_retained_bytes() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:model:feature#50".len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error =
-            unresolved_feature_profile_ref(&ctx, 50, "creo unresolved named profile identity")
-                .expect_err("feature identity exceeds cap");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo unresolved named profile identity")
         );
     }
 }

@@ -53,7 +53,7 @@ pub(super) fn emit_reference_arenas(
         annotations,
         &UniformArena {
             key: CreoArena::ReferenceLines,
-            records: &reference_line_records(ctx, scan)?,
+            records: &reference_line_records(scan),
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
             offset: |record| cadmpeg_core::decode::u64_from_index(record.offset),
@@ -67,7 +67,7 @@ pub(super) fn emit_reference_arenas(
         annotations,
         &UniformArena {
             key: CreoArena::ReferenceCircles,
-            records: &reference_circle_records(ctx, scan)?,
+            records: &reference_circle_records(scan),
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
             offset: |record| cadmpeg_core::decode::u64_from_index(record.offset),
@@ -81,7 +81,7 @@ pub(super) fn emit_reference_arenas(
         annotations,
         &UniformArena {
             key: CreoArena::ReferenceConics,
-            records: &reference_conic_records(ctx, scan)?,
+            records: &reference_conic_records(scan),
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
             offset: |record| cadmpeg_core::decode::u64_from_index(record.offset),
@@ -95,7 +95,7 @@ pub(super) fn emit_reference_arenas(
         annotations,
         &UniformArena {
             key: CreoArena::ReferenceEllipses,
-            records: &reference_ellipse_records(ctx, scan)?,
+            records: &reference_ellipse_records(scan),
             id: |record| &record.id,
             stream: |_| "MdlRefInfo",
             offset: |record| cadmpeg_core::decode::u64_from_index(record.offset),
@@ -118,7 +118,7 @@ pub(super) fn emit_geometry_arenas(
     annotations: &mut AnnotationBuilder,
     brep_diagnostics: &BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
-    let surface_rows = surface_row_records(ctx, scan, &scan.surfaces.rows, "visibgeom")?;
+    let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
     emit_uniform(
         ctx,
         ir,
@@ -134,7 +134,7 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let nonvisible_surface_rows =
-        surface_row_records(ctx, scan, &scan.surfaces.nonvisible_rows, "novisgeom")?;
+        surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom");
     emit_uniform(
         ctx,
         ir,
@@ -150,11 +150,10 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let cross_section_surface_rows = surface_row_records(
-        ctx,
         scan,
         &scan.surfaces.cross_section_rows,
         "cross_section_geometry",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -169,8 +168,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let surface_contours =
-        surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom")?;
+    let surface_contours = surface_contour_records(scan, &scan.surfaces.contours, "visibgeom");
     emit_uniform(
         ctx,
         ir,
@@ -186,7 +184,7 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let nonvisible_surface_contours =
-        surface_contour_records(ctx, scan, &scan.surfaces.nonvisible_contours, "novisgeom")?;
+        surface_contour_records(scan, &scan.surfaces.nonvisible_contours, "novisgeom");
     emit_uniform(
         ctx,
         ir,
@@ -202,11 +200,10 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let cross_section_surface_contours = surface_contour_records(
-        ctx,
         scan,
         &scan.surfaces.cross_section_contours,
         "cross_section_geometry",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -222,7 +219,7 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let surface_prototypes =
-        surface_prototype_records(ctx, scan, &scan.surfaces.prototype_records, "visibgeom")?;
+        surface_prototype_records(scan, &scan.surfaces.prototype_records, "visibgeom");
     emit_uniform(
         ctx,
         ir,
@@ -238,11 +235,10 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let nonvisible_surface_prototypes = surface_prototype_records(
-        ctx,
         scan,
         &scan.surfaces.nonvisible_prototype_records,
         "novisgeom",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -257,7 +253,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(ctx, scan)?;
+    let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -272,8 +268,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let curve_parameters =
-        curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom")?;
+    let curve_parameters = curve_parameter_records(scan, &scan.curves.parameters, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -289,7 +284,7 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let nonvisible_curve_parameters =
-        curve_parameter_records(ctx, scan, &scan.curves.nonvisible_parameters, "novisgeom")?;
+        curve_parameter_records(scan, &scan.curves.nonvisible_parameters, "novisgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -304,7 +299,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let fc_curve_coordinates = fc_curve_coordinate_records(ctx, scan)?;
+    let fc_curve_coordinates = fc_curve_coordinate_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -319,18 +314,18 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let fc05_circles = fc05_circle_records(ctx, scan)?;
+    let fc05_circles = fc05_circle_records(scan);
     store_arena(ctx, ir, CreoArena::Fc05Circles, &fc05_circles)?;
-    let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(ctx, scan)?;
+    let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(scan);
     store_arena(
         ctx,
         ir,
         CreoArena::Fc05CylinderCapPairs,
         &fc05_cylinder_cap_pairs,
     )?;
-    let prototype_pcurves = prototype_pcurve_records(ctx, scan)?;
+    let prototype_pcurves = prototype_pcurve_records(scan);
     store_arena(ctx, ir, CreoArena::PrototypePcurves, &prototype_pcurves)?;
-    let curve_prototype_topology = curve_prototype_topology_records(ctx, scan)?;
+    let curve_prototype_topology = curve_prototype_topology_records(scan);
     store_arena(
         ctx,
         ir,
@@ -338,7 +333,7 @@ pub(super) fn emit_geometry_arenas(
         &curve_prototype_topology,
     )?;
     let curve_prototypes =
-        curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype")?;
+        curve_prototype_records(scan, &scan.curves.prototypes, "creo:curve:prototype");
     emit_uniform(
         ctx,
         ir,
@@ -354,11 +349,10 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let nonvisible_curve_prototypes = curve_prototype_records(
-        ctx,
         scan,
         &scan.curves.nonvisible_prototypes,
         "creo:novisgeom:curve_prototype",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -374,11 +368,10 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let cross_section_curve_prototypes = curve_prototype_records(
-        ctx,
         scan,
         &scan.curves.cross_section_prototypes,
         "creo:cross_section_geometry:curve_prototype",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -394,7 +387,7 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let curve_topology_rows =
-        curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom")?;
+        curve_topology_row_records(scan, &scan.curves.topology_rows, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -409,12 +402,8 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let nonvisible_curve_topology_rows = curve_topology_row_records(
-        ctx,
-        scan,
-        &scan.curves.nonvisible_topology_rows,
-        "novisgeom",
-    )?;
+    let nonvisible_curve_topology_rows =
+        curve_topology_row_records(scan, &scan.curves.nonvisible_topology_rows, "novisgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -429,7 +418,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let cross_section_curve_rows = cross_section_curve_row_records(ctx, scan)?;
+    let cross_section_curve_rows = cross_section_curve_row_records(scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -444,9 +433,9 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let loop_array_frames = loop_array_frame_records(ctx, scan)?;
+    let loop_array_frames = loop_array_frame_records(scan)?;
     store_arena(ctx, ir, CreoArena::LoopArrayFrames, &loop_array_frames)?;
-    let loop_array_records = loop_array_record_records(ctx, scan)?;
+    let loop_array_records = loop_array_record_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -461,7 +450,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let half_edges = half_edge_records(ctx, scan)?;
+    let half_edges = half_edge_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -476,25 +465,25 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::Derived,
         },
     )?;
-    let native_loops = loop_records(ctx, scan)?;
+    let native_loops = loop_records(scan);
     store_arena(ctx, ir, CreoArena::Loops, &native_loops)?;
-    let topological_vertices = topological_vertex_records(ctx, scan)?;
+    let topological_vertices = topological_vertex_records(scan);
     store_arena(
         ctx,
         ir,
         CreoArena::TopologicalVertices,
         &topological_vertices,
     )?;
-    let half_edge_vertex_incidence = half_edge_vertex_incidence_records(ctx, scan)?;
+    let half_edge_vertex_incidence = half_edge_vertex_incidence_records(scan);
     store_arena(
         ctx,
         ir,
         CreoArena::HalfEdgeVertexIncidence,
         &half_edge_vertex_incidence,
     )?;
-    let face_components = face_component_records(ctx, scan)?;
+    let face_components = face_component_records(scan);
     store_arena(ctx, ir, CreoArena::FaceComponents, &face_components)?;
-    let face_admission_rejections = brep_diagnostics.face_admission_rejection_records(ctx)?;
+    let face_admission_rejections = brep_diagnostics.face_admission_rejection_records();
     store_arena(
         ctx,
         ir,
@@ -502,12 +491,11 @@ pub(super) fn emit_geometry_arenas(
         &face_admission_rejections,
     )?;
     let surface_parameters = surface_parameter_records(
-        ctx,
         scan,
         &scan.surfaces.rows,
         &scan.surfaces.parameters,
         "visibgeom",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -523,12 +511,11 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let nonvisible_surface_parameters = surface_parameter_records(
-        ctx,
         scan,
         &scan.surfaces.nonvisible_rows,
         &scan.surfaces.nonvisible_parameters,
         "novisgeom",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -544,12 +531,11 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let cross_section_surface_parameters = surface_parameter_records(
-        ctx,
         scan,
         &scan.surfaces.cross_section_rows,
         &scan.surfaces.cross_section_parameters,
         "cross_section_geometry",
-    )?;
+    );
     emit_uniform(
         ctx,
         ir,
@@ -565,56 +551,44 @@ pub(super) fn emit_geometry_arenas(
         },
     )?;
     let plane_local_systems = plane_local_system_records(
-        ctx,
         scan,
         &scan.planes.local_systems,
         "creo:surface:plane_local_system",
-    )?;
+    );
     store_arena(ctx, ir, CreoArena::PlaneLocalSystems, &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
-        ctx,
         scan,
         &scan.planes.cross_section_local_systems,
         "creo:cross_section_geometry:plane_local_system",
-    )?;
+    );
     store_arena(
         ctx,
         ir,
         CreoArena::CrossSectionPlaneLocalSystems,
         &cross_section_plane_local_systems,
     )?;
-    let plane_envelopes = plane_envelope_records(
-        ctx,
-        scan,
-        &scan.planes.envelopes,
-        "creo:surface:plane_envelope",
-    )?;
+    let plane_envelopes =
+        plane_envelope_records(scan, &scan.planes.envelopes, "creo:surface:plane_envelope");
     store_arena(ctx, ir, CreoArena::PlaneEnvelopes, &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
-        ctx,
         scan,
         &scan.planes.cross_section_envelopes,
         "creo:cross_section_geometry:plane_envelope",
-    )?;
+    );
     store_arena(
         ctx,
         ir,
         CreoArena::CrossSectionPlaneEnvelopes,
         &cross_section_plane_envelopes,
     )?;
-    let outline_planes = outline_plane_records(
-        ctx,
-        scan,
-        &scan.planes.outlines,
-        "creo:surface:outline_plane",
-    )?;
+    let outline_planes =
+        outline_plane_records(scan, &scan.planes.outlines, "creo:surface:outline_plane");
     store_arena(ctx, ir, CreoArena::OutlinePlanes, &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
-        ctx,
         scan,
         &scan.planes.positional_frames,
         "creo:surface:positional_frame_plane",
-    )?;
+    );
     store_arena(
         ctx,
         ir,
@@ -622,29 +596,28 @@ pub(super) fn emit_geometry_arenas(
         &positional_frame_planes,
     )?;
     let cross_section_outline_planes = outline_plane_records(
-        ctx,
         scan,
         &scan.planes.cross_section_outlines,
         "creo:cross_section_geometry:outline_plane",
-    )?;
+    );
     store_arena(
         ctx,
         ir,
         CreoArena::CrossSectionOutlinePlanes,
         &cross_section_outline_planes,
     )?;
-    let datum_planes = datum_plane_records(ctx, scan)?;
+    let datum_planes = datum_plane_records(scan);
     store_arena(ctx, ir, CreoArena::DatumPlanes, &datum_planes)?;
-    let datum_cylinders = datum_cylinder_records(ctx, scan)?;
+    let datum_cylinders = datum_cylinder_records(scan);
     store_arena(ctx, ir, CreoArena::DatumCylinders, &datum_cylinders)?;
-    let feature_section_transforms = feature_section_transform_records(ctx, scan)?;
+    let feature_section_transforms = feature_section_transform_records(scan);
     store_arena(
         ctx,
         ir,
         CreoArena::FeatureSectionTransforms,
         &feature_section_transforms,
     )?;
-    let feature_placement_instructions = feature_placement_instruction_records(ctx, scan)?;
+    let feature_placement_instructions = feature_placement_instruction_records(scan);
     store_arena(
         ctx,
         ir,
@@ -653,7 +626,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     // Bespoke annotation: the arena payload drops the per-record source offset the
     // annotation needs, so the offset travels alongside each record in a tuple.
-    let pcurve_endpoints = pcurve_endpoint_records(ctx, scan)?;
+    let pcurve_endpoints = pcurve_endpoint_records(scan);
     for (record, offset) in &pcurve_endpoints {
         annotate(
             ctx,
@@ -666,11 +639,6 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     let mut pcurve_endpoint_payload = Vec::new();
-    ctx.reserve_vec(
-        &mut pcurve_endpoint_payload,
-        pcurve_endpoints.len(),
-        "creo native pcurve endpoint payload references",
-    )?;
     pcurve_endpoint_payload.extend(pcurve_endpoints.iter().map(|(record, _)| record));
     store_arena(
         ctx,
@@ -678,7 +646,7 @@ pub(super) fn emit_geometry_arenas(
         CreoArena::PcurveEndpoints,
         &pcurve_endpoint_payload,
     )?;
-    let feature_definitions = feature_definition_records(ctx, scan)?;
+    let feature_definitions = feature_definition_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -693,7 +661,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_entities = feature_entity_records(ctx, scan)?;
+    let feature_entities = feature_entity_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -708,7 +676,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_entity_references = feature_entity_reference_records(ctx, scan)?;
+    let feature_entity_references = feature_entity_reference_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -723,7 +691,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_entity_tables = feature_entity_table_records(ctx, scan)?;
+    let feature_entity_tables = feature_entity_table_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -738,7 +706,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_surface_replays = feature_surface_replay_associations(ctx, scan)?;
+    let feature_surface_replays = feature_surface_replay_associations(scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -753,7 +721,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::Derived,
         },
     )?;
-    let feature_geometry_tables = feature_geometry_table_records(ctx, scan)?;
+    let feature_geometry_tables = feature_geometry_table_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -768,7 +736,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_loop_history_entries = feature_loop_history_entry_records(ctx, scan)?;
+    let feature_loop_history_entries = feature_loop_history_entry_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -783,7 +751,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_affected_ids = feature_affected_id_records(ctx, scan)?;
+    let feature_affected_ids = feature_affected_id_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -798,7 +766,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_replay_affected_ids = feature_replay_affected_id_records(ctx, scan)?;
+    let feature_replay_affected_ids = feature_replay_affected_id_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -813,7 +781,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(ctx, scan)?;
+    let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -828,7 +796,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_loop_restore_directions = feature_loop_restore_direction_records(ctx, scan)?;
+    let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -843,7 +811,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_revolution_extents = feature_revolution_extent_records(ctx, scan)?;
+    let feature_revolution_extents = feature_revolution_extent_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -858,7 +826,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::Derived,
         },
     )?;
-    let feature_rows = feature_row_records(ctx, scan)?;
+    let feature_rows = feature_row_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -873,7 +841,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let depdb_recipe_rows = depdb_recipe_row_records(ctx, scan)?;
+    let depdb_recipe_rows = depdb_recipe_row_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -888,7 +856,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_choices = feature_choice_records(ctx, scan)?;
+    let feature_choices = feature_choice_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -903,7 +871,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_choice_fields = feature_choice_field_records(ctx, scan)?;
+    let feature_choice_fields = feature_choice_field_records(scan);
     emit_uniform(
         ctx,
         ir,
@@ -935,7 +903,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     // Bespoke annotation: the source offset comes from the parallel scan rows, not
     // the record, so annotation zips the two before the arena is stored.
-    let curve_expressions = curve_expression_records(ctx, scan)?;
+    let curve_expressions = curve_expression_records(scan);
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
         let source_section = source_section_ref(scan, source.expression_offset);
         annotate(
@@ -949,7 +917,7 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     store_arena(ctx, ir, CreoArena::CurveExpressions, &curve_expressions)?;
-    let feature_operation_states = feature_operation_state_records(ctx, scan)?;
+    let feature_operation_states = feature_operation_state_records(scan)?;
     emit_arena(
         ctx,
         ir,
@@ -975,7 +943,7 @@ pub(super) fn emit_geometry_arenas(
             Ok(())
         },
     )?;
-    let feature_reference_names = feature_reference_name_records(ctx, scan)?;
+    let feature_reference_names = feature_reference_name_records(scan);
     emit_uniform(
         ctx,
         ir,

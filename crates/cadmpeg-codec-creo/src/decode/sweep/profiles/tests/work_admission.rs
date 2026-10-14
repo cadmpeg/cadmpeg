@@ -21,39 +21,24 @@ fn fixture() -> (CadIr, SketchId) {
 }
 
 #[test]
-fn resolved_profile_lookups_scale_and_closure_refuse_work() {
+fn closed_circle_sketch_resolves_one_profile() {
     let (ir, sketch_id) = fixture();
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let profiles = crate::test_support::assert_work_boundaries(
-        &[
-            "creo profile sketch lookup",
-            "creo profile entity lookup",
-            "creo resolved profile row scan",
-            "creo resolved profile scale",
-            "creo resolved profile closure",
-        ],
-        |ctx| super::super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1),
-    );
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
+    })
+    .expect("resolved profiles");
     assert_eq!(profiles.expect("closed circle").len(), 1);
 }
 
 #[test]
-fn connected_profile_lookups_connectivity_and_projection_refuse_work() {
+fn closed_circle_sketch_projects_connected_vertices() {
     let (ir, sketch_id) = fixture();
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let profiles = crate::test_support::assert_work_boundaries(
-        &[
-            "creo profile sketch lookup",
-            "creo profile entity lookup",
-            "creo connected profile row scan",
-            "creo connected profile scale",
-            "creo connected profile closure",
-            "creo connected profile projection",
-        ],
-        |ctx| {
-            super::super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
-                .map(Iterator::collect::<Vec<_>>)
-        },
-    );
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
+            .map(Iterator::collect::<Vec<_>>)
+    })
+    .expect("connected profile vertices");
     assert_eq!(profiles, vec![(0, vec![[3.0, 0.0]])]);
 }

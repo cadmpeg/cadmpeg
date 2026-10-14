@@ -50,45 +50,6 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
 
-fn draft_neutral_plane_selection_with_service(
-    scan: &crate::container::ContainerScan<'_>,
-    feature_id: u32,
-) -> FaceSelection {
-    crate::decode::with_test_decode_ctx(|ctx| draft_neutral_plane_selection(ctx, scan, feature_id))
-        .expect("service profile admits draft neutral plane selection")
-}
-
-fn thicken_plane_offset_with_service(
-    transitions: &[(u32, u32)],
-    planes: &BTreeMap<u32, PlaneEquation>,
-    rows: &[crate::surface::SurfaceRow],
-) -> Option<(f64, ThickenSide)> {
-    crate::decode::with_test_decode_ctx(|ctx| thicken_plane_offset(ctx, transitions, planes, rows))
-        .expect("service profile admits thicken plane offsets")
-}
-
-fn feature_surface_transitions_with_service(
-    feature_id: u32,
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
-) -> Option<Vec<(u32, u32)>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        feature_surface_transitions(ctx, feature_id, tables, rows)
-    })
-    .expect("service profile admits surface transitions")
-}
-
-fn surface_transition_dependencies_with_service(
-    feature_id: u32,
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
-) -> Vec<u32> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        surface_transition_dependencies(ctx, feature_id, tables, rows)
-    })
-    .expect("service profile admits transition dependencies")
-}
-
 const EPS_FULL_TURN: f64 = 1e-12;
 
 fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
@@ -860,16 +821,13 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     let rows = vec![row(11, 3), row(12, 4), row(201, 17), row(202, 17)];
 
     assert_eq!(
-        feature_surface_transitions_with_service(17, std::slice::from_ref(&table), &rows),
+        feature_surface_transitions(17, std::slice::from_ref(&table), &rows),
         Some(vec![(11, 201), (12, 202)])
     );
 
     let mut partial = table.clone();
     partial.entries.pop();
-    assert_eq!(
-        feature_surface_transitions_with_service(17, &[partial], &rows),
-        None
-    );
+    assert_eq!(feature_surface_transitions(17, &[partial], &rows), None);
 
     let mut conflicting = table.clone();
     conflicting.entries[3].payload = crate::feature::entity::EntryPayload::Related(
@@ -880,10 +838,7 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         )
         .expect("valid related fixture"),
     );
-    assert_eq!(
-        feature_surface_transitions_with_service(17, &[conflicting], &rows),
-        None
-    );
+    assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
     let mut wrong_predecessor_class = table.clone();
     wrong_predecessor_class.entries[0].payload = crate::feature::entity::EntryPayload::Related(
         crate::feature::entity::RelatedPayload::new(
@@ -897,11 +852,11 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         .entries
         .push(entry(999, 214, Some(888)));
     assert_eq!(
-        feature_surface_transitions_with_service(17, &[wrong_predecessor_class], &rows),
+        feature_surface_transitions(17, &[wrong_predecessor_class], &rows),
         None
     );
     assert_eq!(
-        surface_transition_dependencies_with_service(17, std::slice::from_ref(&table), &rows),
+        surface_transition_dependencies(17, std::slice::from_ref(&table), &rows),
         [3, 4]
     );
 }
@@ -943,13 +898,13 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         .rows
         .push(row(226, crate::surface::SurfaceKind::Plane, 225));
     assert_eq!(
-        draft_neutral_plane_selection_with_service(&scan, 225),
+        draft_neutral_plane_selection(&scan, 225),
         FaceSelection::Native("creo:visibgeom:surface#226".to_string())
     );
 
     scan.features.entity_tables[0].mark_surface_ids([]);
     assert_eq!(
-        draft_neutral_plane_selection_with_service(&scan, 225),
+        draft_neutral_plane_selection(&scan, 225),
         FaceSelection::Unresolved
     );
     scan.features.entity_tables[0].mark_surface_ids([226]);
@@ -960,7 +915,7 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         .rows
         .push(row(227, crate::surface::SurfaceKind::Plane, 225));
     assert_eq!(
-        draft_neutral_plane_selection_with_service(&scan, 225),
+        draft_neutral_plane_selection(&scan, 225),
         FaceSelection::Unresolved
     );
 }
@@ -997,7 +952,7 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
             offset: 0,
         });
         assert_eq!(
-            draft_neutral_plane_selection_with_service(&scan, 225),
+            draft_neutral_plane_selection(&scan, 225),
             FaceSelection::Unresolved
         );
     }
@@ -1030,215 +985,187 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
     ];
 
     assert_eq!(
-        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        thicken_plane_offset(&transitions, &planes, &rows),
         Some((5.0, ThickenSide::Reverse))
     );
 
     planes.get_mut(&201).expect("plane").origin[1] = 7.0;
     planes.get_mut(&202).expect("plane").origin[0] = 9.0;
     assert_eq!(
-        thicken_plane_offset_with_service(&transitions, &planes, &rows),
+        thicken_plane_offset(&transitions, &planes, &rows),
         Some((5.0, ThickenSide::Forward))
     );
 
     planes.get_mut(&202).expect("plane").origin[0] = -2.0;
-    assert_eq!(
-        thicken_plane_offset_with_service(&transitions, &planes, &rows),
-        None
-    );
+    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
 
     planes.get_mut(&202).expect("plane").origin[0] = -1.0;
     planes.get_mut(&202).expect("plane").normal = [0.0, 1.0, 0.0];
-    assert_eq!(
-        thicken_plane_offset_with_service(&transitions, &planes, &rows),
-        None
-    );
+    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
 
     planes.get_mut(&202).expect("plane").normal = [1.0, 0.0, 0.0];
     rows[3].reversed = false;
-    assert_eq!(
-        thicken_plane_offset_with_service(&transitions, &planes, &rows),
-        None
-    );
+    assert_eq!(thicken_plane_offset(&transitions, &planes, &rows), None);
 }
 
 #[test]
 fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        let definition = crate::feature::definitions::FeatureDefinition {
-            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-                schema_id: std::num::NonZeroU32::new(822),
-                owner_feature_id: Some(822),
-            },
-            body: Vec::new(),
-            parameter_frames: Vec::new(),
-            outlines: Vec::new(),
-            variables: None,
-            segments: None,
-            trim_entities: None,
-            trim_vertices: None,
-            order_table: None,
-            section_3d: Some(crate::feature::definitions::FeatureSection3d {
-                sketch_plane_entity_id: None,
-                sketch_plane_flip: None,
-                reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
-                reference_plane_datum_geometry_id: None,
-                orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
-                dimension_ids: Vec::new(),
-                offset: 90,
-            }),
-            dimensions: None,
-            relations: None,
-            saved_section: None,
-            offset: 80,
-        };
-        let transform = crate::placement::FeatureSectionTransform::new(
-            822,
-            Some(822),
-            [0.0; 3],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            90,
-        )
-        .expect("valid section frame");
+    let definition = crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(822),
+            owner_feature_id: Some(822),
+        },
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
+            sketch_plane_entity_id: None,
+            sketch_plane_flip: None,
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 90,
+        }),
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 80,
+    };
+    let transform = crate::placement::FeatureSectionTransform::new(
+        822,
+        Some(822),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        90,
+    )
+    .expect("valid section frame");
 
-        let mismatched_transform = crate::placement::FeatureSectionTransform::new(
-            transform.definition_id,
-            Some(900),
-            transform.origin(),
-            transform.u_axis(),
-            transform.v_axis(),
-            transform.offset,
-        )
-        .expect("valid section frame");
-        assert_eq!(
-            unique_feature_profile_definition(
-                ctx,
-                std::slice::from_ref(&definition),
-                std::slice::from_ref(&transform),
-                822,
-            )
-            .expect("admitted unique lookup")
-            .map(|definition| definition.identity.id()),
-            Some(822)
-        );
-        assert_eq!(
-            unique_feature_profile_definition(ctx, std::slice::from_ref(&definition), &[], 822)
-                .expect("admitted unique lookup")
-                .map(|definition| definition.identity.id()),
-            Some(822)
-        );
-        assert!(unique_feature_profile_definition(
-            ctx,
-            &[definition.clone(), definition.clone()],
-            &[],
-            822,
-        )
-        .expect("admitted unique lookup")
-        .is_none());
-        assert!(unique_feature_profile_definition(
-            ctx,
+    let mismatched_transform = crate::placement::FeatureSectionTransform::new(
+        transform.definition_id,
+        Some(900),
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        transform.offset,
+    )
+    .expect("valid section frame");
+    assert_eq!(
+        unique_feature_profile_definition(
             std::slice::from_ref(&definition),
-            &[transform.clone(), transform.clone()],
-            822,
+            std::slice::from_ref(&transform),
+            822
         )
-        .expect("admitted unique lookup")
-        .is_none());
-        assert_eq!(
-            unique_feature_profile_definition(
-                ctx,
-                std::slice::from_ref(&definition),
-                std::slice::from_ref(&mismatched_transform),
-                822,
-            )
-            .expect("admitted unique lookup")
+        .map(|definition| definition.identity.id()),
+        Some(822)
+    );
+    assert_eq!(
+        unique_feature_profile_definition(std::slice::from_ref(&definition), &[], 822)
             .map(|definition| definition.identity.id()),
-            Some(822)
-        );
-
-        let mismatched_section_transform = crate::placement::FeatureSectionTransform::new(
-            900,
-            Some(822),
-            transform.origin(),
-            transform.u_axis(),
-            transform.v_axis(),
-            transform.offset,
-        )
-        .expect("valid section frame");
-        assert!(unique_feature_profile_definition(
-            ctx,
+        Some(822)
+    );
+    assert!(
+        unique_feature_profile_definition(&[definition.clone(), definition.clone()], &[], 822)
+            .is_none()
+    );
+    assert!(unique_feature_profile_definition(
+        std::slice::from_ref(&definition),
+        &[transform.clone(), transform.clone()],
+        822
+    )
+    .is_none());
+    assert_eq!(
+        unique_feature_profile_definition(
             std::slice::from_ref(&definition),
-            std::slice::from_ref(&mismatched_section_transform),
-            822,
+            std::slice::from_ref(&mismatched_transform),
+            822
         )
-        .expect("admitted unique lookup")
-        .is_none());
+        .map(|definition| definition.identity.id()),
+        Some(822)
+    );
 
-        let mut scan = crate::test_support::empty_container_scan();
-        scan.features.definitions.push(definition);
-        let mut ir = CadIr::empty();
-        for kind in ["Revolve", "Revolve 2"] {
-            assert!(matches!(
-                crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, kind)),
-                Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
-                    ref construction,
-                    op: BooleanOp::Unresolved,
-                }))) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
-                    if profile == "creo:featdefs:sketch#822")
-                    && construction.axis().is_none()
-                    && construction.extent().is_none()
-            ));
-        }
+    let mismatched_section_transform = crate::placement::FeatureSectionTransform::new(
+        900,
+        Some(822),
+        transform.origin(),
+        transform.u_axis(),
+        transform.v_axis(),
+        transform.offset,
+    )
+    .expect("valid section frame");
+    assert!(unique_feature_profile_definition(
+        std::slice::from_ref(&definition),
+        std::slice::from_ref(&mismatched_section_transform),
+        822
+    )
+    .is_none());
 
-        scan.features
-            .revolution_extents
-            .push(crate::feature::rows::FeatureRevolutionExtent {
-                feature_id: 822,
-                offset: 1,
-            });
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.definitions.push(definition);
+    let mut ir = CadIr::empty();
+    for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
-            crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, "Revolve")),
+            crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, kind)),
             Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
                 ref construction,
-                ..
-            }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                        termination: AngularTermination::Angle { angle: value },
-                    }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
+                op: BooleanOp::Unresolved,
+            }))) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
+                if profile == "creo:featdefs:sketch#822")
+                && construction.axis().is_none()
+                && construction.extent().is_none()
         ));
+    }
 
-        let sketch =
-            SketchId::mint("creo:model:sketch#822".to_string()).expect("valid test fixture");
-        ir.model.sketches.push(Sketch {
-            id: sketch.clone(),
-            name: None,
-            configuration: None,
-            visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
-            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-            native_ref: Some("creo:featdefs:sketch#822".to_string()),
+    scan.features
+        .revolution_extents
+        .push(crate::feature::rows::FeatureRevolutionExtent {
+            feature_id: 822,
+            offset: 1,
         });
-        assert!(matches!(
-            crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(ctx, &scan, &ir, 822)).expect("filled surface admitted"),
-            IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
-                boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
-                ..
-            }) if boundary == sketch
-        ));
+    assert!(matches!(
+        crate::decode::with_test_decode_ctx(|ctx| named_feature_definition(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 822, "Revolve")),
+        Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
+            ref construction,
+            ..
+        }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: value },
+                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
+    ));
 
-        scan.features
-            .definitions
-            .push(scan.features.definitions[0].clone());
-        assert!(matches!(
-            crate::decode::with_test_decode_ctx(|ctx| filled_surface_feature_definition(
-                ctx, &scan, &ir, 822
-            ))
-            .expect("filled surface admitted"),
-            IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
-                boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
-                ..
-            })
-        ));
+    let sketch = SketchId::mint("creo:model:sketch#822".to_string()).expect("valid test fixture");
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: Some("creo:featdefs:sketch#822".to_string()),
     });
+    assert!(matches!(
+        filled_surface_feature_definition(&scan, &ir, 822),
+        IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
+            boundary: SurfaceBoundary::Path(PathRef::Sketch(boundary)),
+            ..
+        }) if boundary == sketch
+    ));
+
+    scan.features
+        .definitions
+        .push(scan.features.definitions[0].clone());
+    assert!(matches!(
+        filled_surface_feature_definition(&scan, &ir, 822),
+        IrFeatureDefinition::Operation(IrFeatureOperation::FilledSurface {
+            boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+            ..
+        })
+    ));
 }
 
 #[test]
