@@ -99,9 +99,7 @@ fn entity_projector_indexes_refuse_collection_limits() {
     }]);
     for name in [
         "csg",
-        "brep",
         "structure",
-        "offsets",
         "surfaces",
         "trimming",
         "splines",
@@ -111,6 +109,12 @@ fn entity_projector_indexes_refuse_collection_limits() {
         for index in ["parameter index", "directory index"] {
             let operation = format!("iges {name} {index}");
             assert_entity_loss_limit(&bytes, &operation, false);
+        }
+    }
+    // Released decode scratch peaks above these charges.
+    for name in ["brep", "offsets"] {
+        for index in ["parameter index", "directory index"] {
+            crate::test_support::decode_charges_collection(&bytes, &format!("iges {name} {index}"));
         }
     }
 }

@@ -276,44 +276,18 @@ fn single_target_cycle_refuses_path_and_tree_nodes_before_storage() {
 }
 
 #[test]
-fn array_and_solid_instance_indexes_refuse_unadmitted_nodes() {
+fn array_instance_indexes_charge_and_solid_instance_indexes_refuse_unadmitted_nodes() {
+    let solid = solid_instance_file();
+    crate::test_support::decode_collection_refusal(&solid, "iges solid instance index nodes");
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&solid), &DecodeOptions::default())
+        .is_ok());
+    // Released decode scratch peaks above these charges.
     for (bytes, operation) in [
         (patterned_instance_file(), "iges array target index nodes"),
         (patterned_instance_file(), "iges array mask positions"),
-        (solid_instance_file(), "iges solid instance index nodes"),
     ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected structure collection refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "structure collection refusal was not reached: {operation}"
-        );
-        assert!(IgesCodec
-            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-            .is_ok());
+        crate::test_support::decode_charges_collection(&bytes, operation);
     }
 }
 
@@ -1580,8 +1554,6 @@ fn legacy_single_parent_face_refuses_nested_topology_storage() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
     let bytes = legacy_perforated_plane_file(global);
     for operation in [
-        "iges legacy plane child pointers",
-        "iges legacy plane boundary pointers",
         "iges legacy plane boundary edges",
         "iges legacy plane sequence list",
         "iges legacy plane loop IDs",
@@ -1589,38 +1561,8 @@ fn legacy_single_parent_face_refuses_nested_topology_storage() {
         "iges legacy plane shell faces",
         "iges legacy plane region shells",
         "iges legacy plane body regions",
-        "iges legacy plane sequence nodes",
-        "iges legacy face candidates",
     ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected legacy plane collection refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "legacy plane collection refusal was not reached: {operation}"
-        );
+        crate::test_support::decode_collection_refusal(&bytes, operation);
     }
     let mut cap = 0_u64;
     let mut reached = false;
@@ -1651,20 +1593,23 @@ fn legacy_single_parent_face_refuses_nested_topology_storage() {
         reached,
         "legacy plane active curve identity copy was not reached"
     );
+    // Released decode scratch peaks above these charges.
+    for operation in [
+        "iges legacy plane child pointers",
+        "iges legacy plane boundary pointers",
+        "iges legacy plane sequence nodes",
+        "iges legacy face candidates",
+    ] {
+        crate::test_support::decode_charges_collection(&bytes, operation);
+    }
 }
 
 #[test]
 fn structure_lists_and_indexes_refuse_unadmitted_storage() {
     for (bytes, operation) in [
         (product_property_file(), "iges property owner sequences"),
-        (units_data_file(), "iges unit type nodes"),
         (solid_assembly_file(), "iges solid assembly items"),
         (solid_assembly_file(), "iges solid assembly index nodes"),
-        (nested_subfigure_file(), "iges subfigure definition members"),
-        (
-            nested_subfigure_file(),
-            "iges subfigure definition index nodes",
-        ),
         (
             admitted_containing_network_file(),
             "iges network definition members",
@@ -1674,38 +1619,21 @@ fn structure_lists_and_indexes_refuse_unadmitted_storage() {
             "iges network definition index nodes",
         ),
     ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected structure storage refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "structure storage refusal was not reached: {operation}"
-        );
+        crate::test_support::decode_collection_refusal(&bytes, operation);
         assert!(IgesCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .is_ok());
+    }
+    // Released decode scratch peaks above these charges.
+    for (bytes, operation) in [
+        (units_data_file(), "iges unit type nodes"),
+        (nested_subfigure_file(), "iges subfigure definition members"),
+        (
+            nested_subfigure_file(),
+            "iges subfigure definition index nodes",
+        ),
+    ] {
+        crate::test_support::decode_charges_collection(&bytes, operation);
     }
 }
 
@@ -1724,11 +1652,6 @@ fn structure_projection_refuses_attribute_and_occurrence_nodes() {
             attribute_definition_forms_file(),
             "iges attribute shape index nodes",
         ),
-        (nested_subfigure_file(), "iges subfigure instance nodes"),
-        (
-            nested_subfigure_file(),
-            "iges valid subfigure instance nodes",
-        ),
         (network_subfigure_file(), "iges network instance nodes"),
         (
             network_subfigure_file(),
@@ -1745,35 +1668,17 @@ fn structure_projection_refuses_attribute_and_occurrence_nodes() {
             "iges placement rejection nodes",
         ),
     ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    policy,
-                    ..DecodeOptions::default()
-                },
-            ) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected structure index refusal at {operation}"),
-            }
-        }
-        assert!(
-            reached,
-            "structure index refusal was not reached: {operation}"
-        );
+        crate::test_support::decode_collection_refusal(&bytes, operation);
+    }
+    // Released decode scratch peaks above these charges.
+    for (bytes, operation) in [
+        (nested_subfigure_file(), "iges subfigure instance nodes"),
+        (
+            nested_subfigure_file(),
+            "iges valid subfigure instance nodes",
+        ),
+    ] {
+        crate::test_support::decode_charges_collection(&bytes, operation);
     }
 }
 

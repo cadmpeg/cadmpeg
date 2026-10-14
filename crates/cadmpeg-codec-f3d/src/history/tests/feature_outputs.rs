@@ -267,8 +267,11 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
 
 #[test]
 fn feature_output_bodies_refuse_collection_limit() {
-    // The two snapshot cache entries and one body-closure vector add three slots.
-    let error = bound_output_error(12, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D feature output bodies",
+        |cap| Err::<(), cadmpeg_core::CodecError>(bound_output_error(cap, u64::MAX)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D feature output bodies")
@@ -329,17 +332,23 @@ fn changed_topology_members_refuse_collection_limit() {
 fn affected_history_bodies_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (_, _, history, _) = output_binding_inputs();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 7;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::affected_body_refs(
-        &ctx,
-        &history.states[0],
-        Some(&history.states[1]),
-        &mut super::super::HistoricalBodyClosureCache::default(),
-    )
-    .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D affected history bodies",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::affected_body_refs(
+                &ctx,
+                &history.states[0],
+                Some(&history.states[1]),
+                &mut super::super::HistoricalBodyClosureCache::default(),
+            )
+            .map(|_| ())
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D affected history bodies")

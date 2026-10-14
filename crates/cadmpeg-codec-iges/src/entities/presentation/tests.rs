@@ -121,17 +121,18 @@ fn presentation_loss_records_refuse_slot_and_message_limits() {
 }
 
 #[test]
-fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
+fn presentation_indexes_refuse_and_definition_levels_charge_collection_items() {
     let fonts = text_font_definition_file();
     for operation in [
         "iges presentation parameter index",
         "iges presentation directory index",
         "iges presentation font index",
-        "iges presentation decoded sequences",
     ] {
         assert_presentation_collection_refusal(&fonts, operation);
     }
-    assert_presentation_collection_refusal(
+    // Released decode scratch peaks above these charges.
+    crate::test_support::decode_charges_collection(&fonts, "iges presentation decoded sequences");
+    crate::test_support::decode_charges_collection(
         &definition_levels_file(),
         "iges presentation definition levels",
     );

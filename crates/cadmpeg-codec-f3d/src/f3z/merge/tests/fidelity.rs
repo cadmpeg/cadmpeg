@@ -185,29 +185,14 @@ fn source_rescoping_refuses_retained_record_collection_limit() {
 }
 
 #[test]
-fn source_rescoping_refuses_provenance_stream_handle_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    for _ in 0..128 {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-            panic!("stream-handle storage must refuse");
-        };
-        assert_eq!(first.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(first.limit, policy.limits.max_collection_items);
-        assert!(matches!(ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
-        if first.operation == "allocate annotation stream handle" {
-            return;
-        }
-        let next = first.used.checked_add(first.additional).unwrap();
-        assert!(next > policy.limits.max_collection_items);
-        policy.limits.max_collection_items = next;
-    }
-    panic!("stream-handle admission must be reached");
+fn source_rescoping_charges_provenance_stream_handles() {
+    // Released rescoping scratch peaks above the stream-handle charge.
+    let source = source("member");
+    cadmpeg_test_support::refusal::assert_charged(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "allocate annotation stream handle",
+        || crate::test_support::with_decode_context(|ctx| rescope_fidelity(ctx, source, "part")),
+    );
 }
 
 #[test]
