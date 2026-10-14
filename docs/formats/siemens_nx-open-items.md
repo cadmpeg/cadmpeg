@@ -758,13 +758,13 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-44. `BRIDGE_CURVE` construction roles
 
-**Question.** Which serialized source curves, end conditions, and continuity fields define a `BRIDGE_CURVE` operation?
+**Question.** Which serialized relation assigns ordered source curves, end-condition modes, and continuity controls to each `BRIDGE_CURVE` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `BRIDGE_CURVE` operation label identifies" defines the bridge-curve family. The operation has no body output, and its complete curve construction is not present in the admitted operation record fields.
+**Known.** `siemens_nx.md` §7.1 "The `BRIDGE_CURVE` operation label identifies" defines the family, owning construction-class chain, and storage/reference limits. The history features retain unresolved neutral construction without admitted body outputs or body-write bridges.
 
-**Need.** We must identify the ordered source curves, end-condition modes, continuity constraints, and any fit or tolerance controls.
+**Need.** Identify operation-to-curve ownership, ordered endpoint/source identities, end-condition and continuity modes, direction reversal, tangent magnitude, shape controls, and any independently assigned fit or tolerance quantities.
 
-**Conflict.** The label identifies a bridge-curve family, but the operation-header slots are null and the bounded payload does not assign a unique source-curve or continuity relation.
+**Conflict.** The seven varying construction references select physical column fragments whose boundaries can split rows. Terminal references can reuse one column across distinct operations. Both equal `0.04` atoms also occur in generic operation headers, so they do not independently identify two endpoint quantities. Long record bounds can include global lifecycle rows. Shared boundary curves have two perpendicular incident-curve candidates at each endpoint; sheet-local topology attributes differ between copies. Neither list order, geometric coincidence, nor these attributes assign authored source ownership or end modes.
 
 ### OM-45. `FILL_HOLE` construction roles
 

@@ -2458,8 +2458,23 @@ relation assigns the source and reference roles of a complete axis line.
 A cylinder or cone axis alone supplies no datum-axis ownership relation.
 
 The `BRIDGE_CURVE` operation label identifies a bridge-curve history operation.
-Its source curves, end conditions, and continuity remain unresolved until the
-serialized construction roles establish a complete curve.
+Its leading nonzero selector resolves in the owning one-based OM registry to
+`UGS::BRIDGECRV_tang_ends_parms`, derived through
+`UGS::BRIDGECRV_shape_parms` and `UGS::BRIDGECRV_feature_parms` from
+`UGS::FEATURE_CURVE_PARMS`. A registry field declaration belongs to its class;
+it is not a per-operation source reference.
+
+Bridge construction references and terminal common-frame references retain
+the addressing rules of their offset store. A referenced column block can
+split a serialized row or value and can be shared by distinct operations.
+Its block identity alone assigns no endpoint, continuity, or output-curve role.
+A bounded history-record extent can also contain global lifecycle rows after
+the construction fields; the record extent does not define their ownership.
+
+The source curves, end conditions, and continuity remain unresolved until a
+serialized relation assigns the complete construction. Geometrically equal
+curves on adjacent sheets and sheet-local topology attributes do not establish
+a bridge-feature identity or an authored source-curve relation.
 
 The `THRU_CURVE_MESH` operation label identifies a through-curve mesh surface
 construction. Its curve networks, mesh directions, continuity, and result mode
