@@ -1243,11 +1243,7 @@ fn rolling_ball_site(values: [FiniteReal; 10]) -> Option<RollingBallSite> {
 
 /// Decode framed `a8 <flag> 20` UV jet records.
 #[cfg(test)]
-fn a8_pcurves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<A8Pcurve>, CodecError> {
-    let scan_work = u64_from_index(data.len()).checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("catia_object_stream_frame_scan", u64::MAX - 1, u64::MAX)
-    })?;
-
+fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     let mut pcurves = Vec::new();
     for frame in
         object_stream_frames(data).filter(|frame| frame.class == 0x20 && frame.family == 0xa8)
@@ -1258,7 +1254,7 @@ fn a8_pcurves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<A8Pcurve>, Cod
             pcurves.push(pcurve);
         }
     }
-    Ok(pcurves)
+    pcurves
 }
 
 /// Decode framed `a8 <flag> 20` and `b5 <flag> 20` object-stream UV jet records.

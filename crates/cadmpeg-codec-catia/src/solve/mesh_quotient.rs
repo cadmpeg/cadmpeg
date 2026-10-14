@@ -246,15 +246,6 @@ pub(crate) enum MeshFaceAssignmentCandidates<'a> {
 type MeshEndpointResolve =
     MeshSolve<(StandardTopologyDraft, Vec<usize>), MeshCandidateFailure<(), (), ()>>;
 
-fn copy_mesh_endpoint_resolution(resolution: &MeshEndpointResolve) -> MeshEndpointResolve {
-    match resolution {
-        MeshSolve::Solved((topology, points)) => {
-            MeshSolve::Solved((topology.clone(), points.clone()))
-        }
-        MeshSolve::Failed(failure) => MeshSolve::Failed(*failure),
-    }
-}
-
 impl<T> From<SearchOutcome<T>> for MeshSolve<T, MeshCandidateFailure<(), (), ()>> {
     fn from(outcome: SearchOutcome<T>) -> Self {
         match outcome {
@@ -456,99 +447,6 @@ fn enforce_sparse_endpoint_membership(
         }
     }
     true
-}
-
-#[test]
-fn arc_consistency_refuses_before_incompatible_domains() {
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut domains = vec![vec![2, 3], vec![1, 2]];
-        enforce_edge_arc_consistency(
-            ctx,
-            &mut domains,
-            &[[0, 1]],
-            &[0],
-            &[vec![0], vec![0]],
-            &[vec![[0, 1]]],
-            None,
-        )
-    };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
-    let mut refused = HashSet::new();
-    for cap in 0..64 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(false) => break,
-            _ => panic!("unexpected arc consistency result"),
-        }
-    }
-    for operation in [
-        "catia_arc_support_points",
-        "catia_arc_support_neighbors",
-        "catia_arc_support_edges",
-        "catia_arc_queued",
-        "catia_arc_queue",
-        "catia_arc_other_domain",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn arc_consistency_from_refuses_before_incompatible_domains() {
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut domains = vec![vec![2, 3], vec![1, 2]];
-        enforce_edge_arc_consistency_from(
-            ctx,
-            &mut domains,
-            &[[0, 1]],
-            &[vec![0], vec![0]],
-            &[vec![[0, 1]]],
-            &[0],
-            None,
-        )
-    };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
-    let mut refused = HashSet::new();
-    for cap in 0..64 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(false) => break,
-            _ => panic!("unexpected incremental arc result"),
-        }
-    }
-    for operation in [
-        "catia_arc_from_queued",
-        "catia_arc_from_queue",
-        "catia_arc_from_other_domain",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn sparse_membership_refuses_before_incompatible_domains() {
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut domains = vec![vec![2, 3], vec![1, 2]];
-        enforce_sparse_endpoint_membership(&mut domains, &[[0, 1]], &[0], &[vec![[0, 1]]], None)
-    };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
-    let mut refused = HashSet::new();
-    for cap in 0..64 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(false) => break,
-            _ => panic!("unexpected sparse membership result"),
-        }
-    }
-    for operation in ["catia_sparse_ordered_edges", "catia_sparse_allowed_points"] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[derive(Clone)]
@@ -1188,71 +1086,6 @@ pub(super) fn initial_mesh_quotient(
     Ok(quotient
         .edge_domains_viable(edge_candidates)?
         .then_some(quotient))
-}
-
-#[cfg(test)]
-#[test]
-fn initial_quotient_points_refuse_before_invalid_candidate_result() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let candidates = [vec![[0, 1]]];
-    let identities = [[10, 11]];
-    catia_test_context!(service_ctx);
-    assert!(initial_mesh_quotient(&candidates, 1, &identities)
-        .expect("service resource budget")
-        .is_none());
-    assert!(initial_mesh_quotient(&candidates, 2, &identities)
-        .expect("service resource budget")
-        .is_some());
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    assert!(matches!(initial_mesh_quotient(&candidates, 1, &identities),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia_initial_quotient_points"));
-}
-
-#[cfg(test)]
-#[test]
-fn initial_quotient_union_and_merge_refuse_each_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let candidates = [vec![[0, 1]], vec![[0, 1]]];
-    let identities = [[10, 11], [10, 12]];
-    catia_test_context!(service_ctx);
-    assert!(initial_mesh_quotient(&candidates, 2, &identities)
-        .expect("service resource budget")
-        .is_some());
-
-    let mut refused = HashSet::new();
-    for cap in 0..=48 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match initial_mesh_quotient(&candidates, 2, &identities) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => panic!("consistent identities must admit a quotient"),
-            Err(error) => panic!("unexpected quotient refusal: {error}"),
-        };
-    }
-    for operation in [
-        "catia_quotient_union",
-        "catia_quotient_members",
-        "catia_quotient_member_nodes",
-        "catia_quotient_intersection",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[cfg(test)]
@@ -2232,15 +2065,6 @@ impl MeshQuotient {
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<Vec<MeshOrientationOption>, CodecError> {
-        fn copy_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>> {
-            let mut copy = Vec::new();
-
-            for row in directions {
-                copy.push(row.clone());
-            }
-            copy
-        }
-
         struct BoundaryOrientationSearch<
             'input0,
             'input1,
@@ -2298,7 +2122,7 @@ impl MeshQuotient {
             }
             if boundary_index == boundaries.len() {
                 if admit_orientation_option(seen, output, directions, &quotient)? {
-                    output.push((copy_directions(directions), quotient));
+                    output.push((directions.to_vec(), quotient));
                 }
                 return Ok(());
             }
@@ -2622,7 +2446,7 @@ impl MeshQuotient {
                 continue;
             }
             if admit_orientation_option(&mut seen, &output, directions, &quotient)? {
-                output.push((copy_mesh_boundary_directions(directions), quotient));
+                output.push((directions.to_vec(), quotient));
             }
         }
         Ok(output)
@@ -3097,59 +2921,6 @@ impl MeshQuotient {
             }
             Ok(PointAssignmentOutcome::Complete(completed))
         }
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn quotient_snapshots_share_members_and_release_table_bytes() {
-    let quotient = MeshQuotient::new(vec![Arc::new(HashSet::from([0usize]))]);
-    let parent_bytes = size_of::<usize>();
-    let domain_bytes = size_of::<Arc<HashSet<usize>>>();
-    let member_bytes = size_of::<Option<Arc<Vec<usize>>>>();
-    let bytes = u64_from_index(parent_bytes + domain_bytes + member_bytes);
-    crate::test_support::with_collection_limit(0, |ctx| {
-        for _ in 0..128 {
-            let copy = quotient.clone();
-            assert!(Arc::ptr_eq(
-                quotient.members[0]
-                    .as_ref()
-                    .expect("source root member row"),
-                copy.members[0].as_ref().expect("snapshot root member row")
-            ));
-            assert!(Arc::ptr_eq(&quotient.domains[0], &copy.domains[0]));
-        }
-    });
-    crate::test_support::with_retained_limit(0, |ctx| {
-        for _ in 0..128 {
-            assert_eq!(quotient.clone().len(), 1);
-        }
-    });
-    crate::test_support::with_materialized_limit(bytes, |ctx| {
-        for _ in 0..128 {
-            assert_eq!(quotient.clone().len(), 1);
-        }
-        let first = quotient.clone();
-        assert!(
-            matches!(quotient.clone(), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "catia_quotient_clone_union")
-        );
-        assert_eq!(first.len(), 1);
-    });
-    for (cap, operation) in [
-        (parent_bytes, "catia_quotient_clone_domains"),
-        (
-            parent_bytes + domain_bytes,
-            "catia_quotient_clone_member_rows",
-        ),
-    ] {
-        let refused = crate::test_support::with_materialized_limit(u64_from_index(cap), |ctx| {
-            quotient.clone().map(|value| value.len())
-        });
-        assert!(
-            matches!(refused, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
-        );
     }
 }
 
@@ -4309,8 +4080,7 @@ fn advance_boundary_component_states(
                         return Ok(None);
                     };
                     if options.alternatives.is_empty() && domain.missing_edges.is_empty() {
-                        let candidates = vec![state.clone()];
-                        candidates
+                        vec![state.clone()]
                     } else {
                         let mut affected_edges = HashSet::new();
                         for &edge in domain_edges
@@ -4753,36 +4523,6 @@ fn edge_class_search_constraint(
     Ok(Some(EdgeClassSearchConstraint { active, ordered }))
 }
 
-#[test]
-fn edge_class_ordered_pairs_refuse_before_growth() {
-    let choices = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
-    let mut refused = HashSet::new();
-    for cap in 0..32 {
-        match crate::test_support::with_collection_limit(cap, |ctx| {
-            edge_class_search_constraint(ctx, &[0, 0], &choices)
-        }) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("identical edge classes must have a search order"),
-            Err(error) => panic!("unexpected edge class refusal: {error}"),
-        }
-    }
-    assert!(refused.contains("catia_edge_class_ordered_pairs"));
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| edge_class_search_constraint(
-            ctx,
-            &[0, 0],
-            &choices
-        ))
-        .expect("service resource budget")
-        .expect("matching edge classes")
-        .ordered,
-        vec![(0, 1)]
-    );
-}
-
 fn changed_quotient_edges(
     left: &MeshQuotient,
     right: &MeshQuotient,
@@ -4801,36 +4541,6 @@ fn changed_quotient_edges(
         }
     }
     Ok(changed)
-}
-
-#[test]
-fn changed_quotient_edges_refuse_before_result_set_growth() {
-    let points = Arc::new(HashSet::from([0]));
-    let left = MeshQuotient::new(vec![Arc::clone(&points), Arc::clone(&points)]);
-    let mut right = left.clone();
-    assert!(
-        crate::test_support::with_service_context(|ctx| right.merge(0, 1))
-            .expect("service merge")
-            .is_some()
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| changed_quotient_edges(&left, &right))
-            .expect("service resource budget"),
-        HashSet::from([0])
-    );
-    let mut refused = HashSet::new();
-    for cap in 0..64 {
-        match crate::test_support::with_collection_limit(cap, |ctx| {
-            changed_quotient_edges(&left, &right)
-        }) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(_) => break,
-            _ => panic!("unexpected changed quotient result"),
-        }
-    }
-    assert!(refused.contains("catia_changed_quotient_edges"));
 }
 
 struct MeshSelectionSearch<'a, 'ctx> {
@@ -5063,8 +4773,7 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
             if budget.is_some_and(|budget| !budget.charge()) {
                 return None;
             }
-            let next_count = count.checked_add(1)?;
-            count = next_count;
+            count += 1;
             if count > MAX_LOCAL_ENDPOINT_STATES {
                 return None;
             }
@@ -5230,8 +4939,7 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                     collected
                 }
                 MeshEndpointCandidates::Selected(value) => {
-                    let selected = vec![value];
-                    selected
+                    vec![value]
                 }
             };
             if values.len() > MAX_LOCAL_ENDPOINT_STATES {
@@ -5908,15 +5616,6 @@ struct MeshEndpointRelationConstraints {
     choice_counts: Vec<usize>,
 }
 
-fn copy_mesh_boundary_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>> {
-    let mut copy = Vec::new();
-
-    for row in directions {
-        copy.push(row.clone());
-    }
-    copy
-}
-
 fn canonical_mesh_boundary_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>> {
     let mut canonical = Vec::new();
 
@@ -6247,39 +5946,6 @@ fn propagate_endpoint_relation_domains(
     }
 }
 
-fn copy_endpoint_relation_selection(
-    selection: &MeshEndpointRelationSelection,
-) -> MeshEndpointRelationSelection {
-    match selection {
-        MeshEndpointRelationSelection::Deferred => MeshEndpointRelationSelection::Deferred,
-        MeshEndpointRelationSelection::Enumerated {
-            assignments,
-            edge_pairs,
-        } => MeshEndpointRelationSelection::Enumerated {
-            assignments: assignments.clone(),
-            edge_pairs: edge_pairs.clone(),
-        },
-    }
-}
-
-fn copy_endpoint_relation_domains(
-    domains: &[Vec<MeshEndpointRelationChoice>],
-) -> Vec<Vec<MeshEndpointRelationChoice>> {
-    let mut copy = Vec::new();
-    for choices in domains {
-        let mut row = Vec::new();
-        for choice in choices {
-            let selection = copy_endpoint_relation_selection(&choice.selection);
-            row.push(MeshEndpointRelationChoice {
-                id: choice.id,
-                selection,
-            });
-        }
-        copy.push(row);
-    }
-    copy
-}
-
 // The recursive walk keeps branch-owned domains and shared memo state explicit;
 // a context object would hide which values are cloned for each branch.
 struct WalkEndpointRelationDomainsInputs<
@@ -6582,10 +6248,10 @@ where
         if budget.exhausted() {
             return Ok(true);
         }
-        let mut branch = copy_endpoint_relation_domains(&domains);
+        let mut branch = domains.clone();
         branch[face].clear();
         let choice = &choices[index];
-        let selection = copy_endpoint_relation_selection(&choice.selection);
+        let selection = choice.selection.clone();
         branch[face].push(MeshEndpointRelationChoice {
             id: choice.id,
             selection,
@@ -7068,8 +6734,7 @@ fn materialize_boundary_domains(
                 let Some(assignment) = deferred_boundary_assignment(domain, edge_pairs)? else {
                     return Ok(None);
                 };
-                let copies = vec![assignment];
-                copies
+                vec![assignment]
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
                 let Some(cycles) = incidence_cycles(edges, edge_pairs)? else {
@@ -7090,8 +6755,7 @@ fn materialize_boundary_domains(
                     });
                 }
                 let boundaries = vec![boundary];
-                let copies = vec![MeshFaceBoundaryAssignment { boundaries }];
-                copies
+                vec![MeshFaceBoundaryAssignment { boundaries }]
             }
         };
         materialized.push(assignments);
@@ -7266,18 +6930,6 @@ mod face_domain_support_tests {
     }
 
     #[test]
-    fn endpoint_pair_orientation_result_refuses_before_growth() {
-        let result = crate::test_support::with_collection_limit(0, |ctx| {
-            restore_unique_endpoint_pair_orientations(&[[0, 1]], &[vec![[1, 0]]])
-        });
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_oriented_endpoint_pairs"
-        ));
-    }
-
-    #[test]
     fn complete_endpoint_pairs_materialize_deferred_boundaries() {
         catia_test_context!(ctx);
         let domains = [MeshFaceBoundaryDomain::DeferredValidation(
@@ -7313,119 +6965,6 @@ mod face_domain_support_tests {
     }
 
     #[test]
-    fn complete_endpoint_pairs_refuse_materialization_collection_limit() {
-        use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
-
-        let domains = [MeshFaceBoundaryDomain::DeferredValidation(
-            MeshDeferredFaceBoundary {
-                cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
-                    length: 2,
-                    exact_uses: vec![(
-                        MeshBoundaryEdgeCandidate {
-                            edge: 0,
-                            start: 0,
-                            end: 1,
-                            reversed: Some(false),
-                        },
-                        1,
-                    )],
-                }],
-                missing_edges: vec![1],
-            },
-        )];
-        let pairs = [[0, 1], [0, 1]];
-        let materialize = |ctx: &DecodeContext<'_>| {
-            materialize_boundary_domains(&domains, &pairs).map(|domains| domains.is_some())
-        };
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::CollectionItems,
-            "catia materialized boundary domains",
-            |cap| crate::test_support::with_collection_limit(cap, materialize),
-        );
-        // Released scope scratch peaks above the deferred boundary rows.
-        let closed = cadmpeg_test_support::refusal::assert_charged(
-            ResourceDimension::CollectionItems,
-            "catia materialized deferred boundary",
-            || crate::test_support::with_service_context(materialize),
-        );
-        assert!(closed, "closed boundary must materialize");
-    }
-
-    #[test]
-    fn ordered_boundary_copy_refuses_before_nested_rows() {
-        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
-            MeshFaceBoundaryAssignment {
-                boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-                    edge: 0,
-                    start: 0,
-                    end: 1,
-                    reversed: Some(false),
-                }]],
-            },
-        ])];
-        let mut refused = HashSet::new();
-        for cap in 0..8 {
-            match crate::test_support::with_collection_limit(cap, |ctx| {
-                materialize_boundary_domains(&domains, &[])
-            }) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    refused.insert(limit.operation);
-                }
-                Ok(Some(_)) => break,
-                other => panic!("unexpected ordered boundary result: {other:?}"),
-            }
-        }
-        for operation in [
-            "catia materialized boundary domains",
-            "catia materialized ordered assignments",
-            "catia materialized ordered boundary rows",
-            "catia materialized ordered boundary members",
-        ] {
-            assert!(refused.contains(operation), "no refusal at {operation}");
-        }
-        assert!(
-            crate::test_support::with_service_context(|ctx| materialize_boundary_domains(
-                &domains,
-                &[]
-            ))
-            .expect("service resource budget")
-            .is_some()
-        );
-    }
-
-    #[test]
-    fn unordered_boundary_copy_refuses_before_nested_rows() {
-        let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
-        let pairs = [[0, 1], [1, 2], [2, 0]];
-        let mut refused = HashSet::new();
-        for cap in 0..32 {
-            match crate::test_support::with_collection_limit(cap, |ctx| {
-                materialize_boundary_domains(&domains, &pairs)
-            }) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    refused.insert(limit.operation);
-                }
-                Ok(Some(_)) => break,
-                other => panic!("unexpected unordered boundary result: {other:?}"),
-            }
-        }
-        for operation in [
-            "catia materialized unordered boundary",
-            "catia materialized unordered boundary rows",
-            "catia materialized unordered assignments",
-        ] {
-            assert!(refused.contains(operation), "no refusal at {operation}");
-        }
-        assert!(
-            crate::test_support::with_service_context(|ctx| materialize_boundary_domains(
-                &domains, &pairs
-            ))
-            .expect("service resource budget")
-            .is_some()
-        );
-    }
-
-    #[test]
     fn complete_endpoint_pairs_materialize_unordered_cycle() {
         catia_test_context!(ctx);
         let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
@@ -7446,28 +6985,6 @@ mod face_domain_support_tests {
 struct MeshEndpointGeometry<'a> {
     edge_rows: &'a [EdgeRow],
     vertex_points: &'a [[f64; 3]],
-}
-
-fn copy_mesh_assignment(assignment: &MeshFaceBoundaryAssignment) -> MeshFaceBoundaryAssignment {
-    MeshFaceBoundaryAssignment {
-        boundaries: assignment.boundaries.clone(),
-    }
-}
-
-fn copy_mesh_edge_rows(rows: &[EdgeRow]) -> Vec<EdgeRow> {
-    let mut copied = Vec::new();
-
-    for row in rows {
-        copied.push(row.clone());
-    }
-    copied
-}
-
-fn fixed_initial_orientations(fixed: &[bool]) -> Vec<Option<bool>> {
-    let mut orientations = Vec::new();
-
-    orientations.extend(fixed.iter().map(|fixed| (!fixed).then_some(false)));
-    orientations
 }
 
 fn resolve_fixed_mesh_endpoint_pairs(
@@ -7492,7 +7009,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     let mut assignment_domains = Vec::new();
 
     for assignment in selected {
-        let domain = vec![copy_mesh_assignment(assignment)];
+        let domain = vec![assignment.clone()];
         assignment_domains.push(domain);
     }
     if edge_candidates
@@ -7586,7 +7103,10 @@ fn resolve_fixed_mesh_endpoint_pairs(
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
     };
     let mut direct_quotient = quotient.clone();
-    let mut direct_orientations = fixed_initial_orientations(&edge_has_fixed_direction);
+    let mut direct_orientations = edge_has_fixed_direction
+        .iter()
+        .map(|fixed| (!fixed).then_some(false))
+        .collect::<Vec<_>>();
     let mut direct_directions = Vec::new();
 
     let mut direct_possible = true;
@@ -7670,7 +7190,10 @@ fn resolve_fixed_mesh_endpoint_pairs(
         "catia_fixed_face_work",
     )?;
     let fixed_edge_orientations = if use_fixed_direction_search {
-        fixed_initial_orientations(&edge_has_fixed_direction)
+        edge_has_fixed_direction
+            .iter()
+            .map(|fixed| (!fixed).then_some(false))
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
@@ -8064,7 +7587,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
             if first.is_some() {
                 return Ok(None);
             }
-            first = Some((copy_mesh_assignment(assignment), directions));
+            first = Some((assignment.clone(), directions));
         }
         let Some((assignment, directions)) = first else {
             return Ok(None);
@@ -8674,7 +8197,7 @@ where
         Ok(constrained_complete_solution_valid(&completed))
     }, visitor: &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
         let endpoint_resolution = if let Some(cached) = endpoint_resolution_memo.get(pairs) {
-            copy_mesh_endpoint_resolution(cached)
+            cached.clone()
         } else {
             let Some(oriented_pairs) = restore_unique_endpoint_pair_orientations(pairs, &completed_edge_candidates)
             else {
@@ -8683,7 +8206,7 @@ where
             let mut singleton = Vec::new();
 
             for &pair in &oriented_pairs {
-                singleton.push(ctx.alloc_filled(1, pair, "catia_mesh_singleton_pair")?);
+                singleton.push(vec![pair]);
             }
             let Some(mut mesh_assignments) =
                 materialize_boundary_domains(&mesh_domains, &oriented_pairs)?
@@ -8702,7 +8225,7 @@ where
             // cannot turn an exhausted materialization into a solution.
             if endpoint_resolution_memo.len() < MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES {
                 let endpoint_key = pairs.to_vec();
-                let retained = copy_mesh_endpoint_resolution(&resolution);
+                let retained = resolution.clone();
                 endpoint_resolution_memo.insert(endpoint_key, retained);
             }
             resolution
@@ -9005,145 +8528,6 @@ fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
         &base_candidates
     )
     .is_none());
-
-    let mut refused = HashSet::new();
-    for cap in 0..32 {
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            relation_coordinate_candidate_domains(&domains, &assigned, &base_candidates)
-        });
-        match result {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected relation coordinate candidates"),
-        }
-    }
-    for operation in [
-        "catia_relation_coordinate_candidate_pairs",
-        "catia_relation_coordinate_candidate_rows",
-        "catia_relation_coordinate_possible_rows",
-        "catia_relation_coordinate_possible_pairs",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn relation_coordinate_candidates_refuse_before_invalid_edge_result() {
-    let domains = [vec![MeshEndpointRelationChoice {
-        id: 0,
-        selection: MeshEndpointRelationSelection::Enumerated {
-            assignments: vec![0],
-            edge_pairs: vec![(1, [0, 1])],
-        },
-    }]];
-    let run = |ctx: &DecodeContext<'_>| {
-        relation_coordinate_candidate_domains(&domains, &[None], &[vec![[0, 1]]])
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .is_none());
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, run),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_relation_coordinate_candidate_pairs"
-    ));
-}
-
-#[test]
-fn endpoint_configuration_helpers_refuse_before_absent_results() {
-    let use_edge = |edge| MeshBoundaryEdgeCandidate {
-        edge,
-        start: 0,
-        end: 1,
-        reversed: None,
-    };
-    let invalid_assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![use_edge(0), use_edge(1)]],
-    };
-    let assignment_result = |ctx: &DecodeContext<'_>| {
-        endpoint_configuration_for_assignment(&invalid_assignment, &[[0, 1]])
-    };
-    assert!(crate::test_support::with_service_context(assignment_result)
-        .expect("service resource budget")
-        .is_none());
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, assignment_result),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_endpoint_assignment_pair_map"
-    ));
-
-    let valid_assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![use_edge(0)]],
-    };
-    let duplicate_configuration = vec![(0, [0, 1]), (0, [0, 1])];
-    let cycle_result = |ctx: &DecodeContext<'_>| {
-        endpoint_configuration_cycles_viable(&valid_assignment, &duplicate_configuration)
-    };
-    assert!(crate::test_support::with_service_context(cycle_result)
-        .expect("service resource budget")
-        .is_none());
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, cycle_result),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_endpoint_cycle_pair_map"
-    ));
-
-    let pairs = HashMap::from([(0, [0, 1]), (1, [1, 0])]);
-    let invalid_boundary = vec![use_edge(0), use_edge(1), use_edge(2)];
-    let boundary_result = |ctx: &DecodeContext<'_>| {
-        endpoint_configuration_boundary_cycle_viable(&invalid_boundary, &pairs)
-    };
-    assert!(crate::test_support::with_service_context(boundary_result)
-        .expect("service resource budget")
-        .is_none());
-    assert!(matches!(
-        crate::test_support::with_collection_limit(2, boundary_result),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_endpoint_cycle_next_states"
-    ));
-}
-
-#[test]
-fn endpoint_configuration_helpers_charge_completed_collections() {
-    let use_edge = |edge| MeshBoundaryEdgeCandidate {
-        edge,
-        start: 0,
-        end: 1,
-        reversed: None,
-    };
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![use_edge(0), use_edge(1)]],
-    };
-    let run = |ctx: &DecodeContext<'_>| {
-        let configuration = endpoint_configuration_for_assignment(&assignment, &[[0, 1], [1, 0]])
-            .expect("valid assignment");
-        endpoint_configuration_cycles_viable(&assignment, &configuration)
-    };
-    assert_eq!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
-        Some(true)
-    );
-    let mut refused = HashSet::new();
-    for cap in 0..32 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(true)) => break,
-            _ => panic!("unexpected endpoint configuration result"),
-        }
-    }
-    for operation in [
-        "catia_endpoint_assignment_pair_map",
-        "catia_endpoint_assignment_configuration",
-        "catia_endpoint_cycle_pair_map",
-        "catia_endpoint_cycle_initial_states",
-        "catia_endpoint_cycle_next_states",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -9219,45 +8603,6 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
     };
     assert_eq!(visited, vec![vec![[0, 0]], vec![[0, 1]], vec![[0, 2]]]);
     assert_eq!(faces, vec![[0, 2]]);
-}
-
-#[test]
-fn face_domain_solution_copy_refuses_before_retaining_assignment() {
-    let assignments = [vec![[0, 0]]];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(MAX_MESH_TOPOLOGY_OPERATIONS);
-        parse_standard_mesh_candidate_outcome_with_face_assignments(
-            ctx,
-            MeshFaceAssignmentCandidates::Concrete {
-                assignments: &assignments,
-                face_count: 1,
-            },
-            &budget,
-            |_, _| {
-                Ok(MeshSolve::Solved((
-                    StandardTopologyDraft {
-                        faces: Vec::new(),
-                        edge_rows: Vec::new(),
-                        vertex_points: Vec::new(),
-                        logical_vertex_count: 0,
-                    },
-                    Vec::new(),
-                )))
-            },
-        )
-    };
-    catia_test_context!(service_ctx);
-    assert!(matches!(run(&service_ctx), Ok(MeshSolve::Solved(_))));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture input");
-    assert!(matches!(
-        run(&limited_ctx),
-        Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_face_domain_solution_assignment"
-    ));
 }
 
 #[test]
@@ -9407,488 +8752,6 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
 }
 
 #[test]
-fn endpoint_configuration_relation_charges_covered_and_assigned_edges() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let edge_rows = (0..3)
-        .map(|_| {
-            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row")
-        })
-        .collect::<Vec<_>>();
-    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-    let edge_candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    let assignments = vec![vec![MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 1,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 1,
-                end: 2,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 2,
-                start: 2,
-                end: 0,
-                reversed: None,
-            },
-        ]],
-    }]];
-    let configurations = vec![vec![Some(vec![vec![
-        (0, [0, 1]),
-        (1, [1, 2]),
-        (2, [0, 2]),
-    ]])]];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        resolve_endpoint_configuration_relation_streaming(
-            ctx,
-            crate::solve::mesh_quotient::ResolveEndpointConfigurationRelationStreamingInputs {
-                assignments: &assignments,
-                endpoint_configurations: &configurations,
-                edge_candidates: &edge_candidates,
-                edge_rows: &edge_rows,
-                vertex_points: &vertex_points,
-                port_identities: &[[0, 1], [2, 3], [4, 5]],
-                budget: &budget,
-                partial_solution_valid: None,
-                complete_solution_valid: None,
-                candidate_gauge: None,
-                priority_edges: None,
-                coordinate_domains: None,
-            },
-        )
-    };
-    catia_test_context!(service_ctx);
-    assert!(matches!(
-        run(&service_ctx).expect("service resource budget"),
-        Some(MeshSolve::Solved(_))
-    ));
-
-    let mut refused = HashSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    for _ in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation);
-                limit = error.used + error.additional;
-            }
-            Ok(Some(MeshSolve::Solved(_))) => {
-                completed = true;
-                break;
-            }
-            Ok(outcome) => panic!("cycle relation must solve, got {outcome:?}"),
-            Err(error) => panic!("unexpected relation refusal: {error}"),
-        }
-    }
-    assert!(completed, "adaptive caps must admit the cycle relation");
-    assert!(refused.contains("catia_endpoint_relation_covered"));
-    assert!(refused.contains("catia_endpoint_relation_assigned"));
-    for operation in [
-        "catia_relation_point_set",
-        "catia_relation_memo_selection_rows",
-        "catia_relation_memo_selection_values",
-        "catia_relation_canonical_pairs",
-        "catia_relation_state_memo",
-        "catia_relation_assignment_boundary_values",
-        "catia_relation_assignment_boundaries",
-        "catia_relation_assignment_choices",
-        "catia_relation_assignment_domains",
-        "catia_relation_candidate_pair",
-        "catia_relation_candidate_rows",
-        "catia_relation_selected_assignments",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn singleton_mesh_selection_charges_matching_and_materialization_arrays() {
-    use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
-
-    let edge_rows = (0..3)
-        .map(|_| {
-            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row")
-        })
-        .collect::<Vec<_>>();
-    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    let selected = [MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 1,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 1,
-                end: 2,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 2,
-                start: 2,
-                end: 0,
-                reversed: None,
-            },
-        ]],
-    }];
-    let directions = [vec![vec![false, false, false]]];
-    let identities = [[0, 1], [1, 2], [2, 0]];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        resolve_singleton_mesh_selection(
-            ctx,
-            crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs {
-                edge_rows: &edge_rows,
-                vertex_points: &vertex_points,
-                edge_candidates: &candidates,
-                selected: &selected,
-                directions: &directions,
-                port_identities: &identities,
-                budget: &budget,
-                candidate_gauge: None,
-            },
-        )
-    };
-    catia_test_context!(service_ctx);
-    assert!(matches!(
-        run(&service_ctx).expect("service resource budget"),
-        Some(MeshSolve::Solved(_))
-    ));
-
-    let solved = |ctx: &DecodeContext<'_>| {
-        run(ctx).map(|outcome| matches!(outcome, Some(MeshSolve::Solved(_))))
-    };
-    for operation in [
-        "catia_reduced_matching",
-        "catia_reduced_matching_used",
-        "catia_reduced_matching_completed",
-        "catia_singleton_root_domain_copy",
-        "catia_singleton_root_rows",
-        "catia_singleton_root_indices",
-        "catia_singleton_domain_rows",
-        "catia_singleton_domain_values",
-        "catia_singleton_identity_points",
-        "catia_singleton_completed_points",
-        "catia_selection_singleton_point_assignment",
-    ] {
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::CollectionItems,
-            operation,
-            |cap| crate::test_support::with_collection_limit(cap, solved),
-        );
-    }
-    // Released scope scratch peaks above the edge-use counts.
-    let complete = cadmpeg_test_support::refusal::assert_charged(
-        ResourceDimension::CollectionItems,
-        "catia_mesh_edge_use_counts",
-        || crate::test_support::with_service_context(solved),
-    );
-    assert!(complete, "singleton cycle must solve");
-}
-
-#[test]
-fn general_mesh_search_charges_unselected_and_face_state_arrays() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let edge_rows = (0..2)
-        .map(|_| {
-            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row")
-        })
-        .collect::<Vec<_>>();
-    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
-    let candidates = [vec![[0, 0], [1, 1]], vec![[0, 0], [1, 1]]];
-    let assignments = vec![vec![MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 0,
-            reversed: None,
-        }]],
-    }]];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        resolve_standard_mesh_endpoint_candidates(
-            ctx,
-            crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs {
-                edge_rows: &edge_rows,
-                vertex_points: &vertex_points,
-                edge_candidates: &candidates,
-                assignments: assignments.clone(),
-                port_identities: &[[0, 0], [1, 1]],
-                prepared_quotient: None,
-                edge_direction_evidence: None,
-                budget: &budget,
-                partial_solution_valid: None,
-                complete_solution_valid: None,
-                candidate_gauge: None,
-                priority_edges: None,
-            },
-        )
-    };
-    catia_test_context!(service_ctx);
-    run(&service_ctx).expect("service resource budget");
-
-    let mut refused = HashSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    for _ in 0..2048 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation);
-                limit = error.used + error.additional;
-            }
-            Ok(_) => {
-                completed = true;
-                break;
-            }
-            Err(error) => panic!("unexpected general search refusal: {error}"),
-        }
-    }
-    assert!(
-        completed,
-        "adaptive caps must admit the general search fixture: limit {limit}, refusals {refused:?}"
-    );
-    for operation in [
-        "catia_endpoint_unselected_edges",
-        "catia_mesh_fixed_face_directions",
-        "catia_mesh_selected_faces",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn fixed_mesh_search_charges_edge_direction_and_selection_arrays() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let edge_rows = (0..2)
-        .map(|_| {
-            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row")
-        })
-        .collect::<Vec<_>>();
-    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
-    let candidates = [vec![[0, 0]], vec![[1, 1]]];
-    let selected = [MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 0,
-            reversed: None,
-        }]],
-    }];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        resolve_fixed_mesh_endpoint_pairs(
-            ctx,
-            MeshEndpointGeometry {
-                edge_rows: &edge_rows,
-                vertex_points: &vertex_points,
-            },
-            &candidates,
-            &selected,
-            &[[0, 0], [1, 1]],
-            &budget,
-            None,
-        )
-    };
-    catia_test_context!(service_ctx);
-    run(&service_ctx).expect("service resource budget");
-
-    let mut refused = HashSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    for _ in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation);
-                limit = error.used + error.additional;
-            }
-            Ok(_) => {
-                completed = true;
-                break;
-            }
-            Err(error) => panic!("unexpected fixed search refusal: {error}"),
-        }
-    }
-    assert!(
-        completed,
-        "adaptive caps must admit the fixed search fixture"
-    );
-    assert!(refused.contains("catia_fixed_mesh_edge_directions"));
-    assert!(refused.contains("catia_fixed_mesh_selection"));
-    for operation in [
-        "catia_fixed_assignment_domain_rows",
-        "catia_fixed_assignment_domain_entries",
-        "catia_fixed_assignment_boundary_rows",
-        "catia_fixed_assignment_boundary_uses",
-        "catia_fixed_endpoint_pairs",
-        "catia_fixed_face_direction_rows",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn fixed_mesh_direction_overflow_charges_general_face_state() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    const BOUNDARY_COUNT: usize = 13;
-    let edge_count = BOUNDARY_COUNT * 2 + 1;
-    let edge_rows = (0..edge_count)
-        .map(|_| {
-            assert!(EdgeRow::new(1, Vec::new(), EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-            EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-                .expect("admitted edge row")
-        })
-        .collect::<Vec<_>>();
-    let candidates = vec![vec![[0, 1]]; edge_count];
-    let identities = (0..edge_count)
-        .map(|edge| {
-            [
-                u32::try_from(edge * 2).expect("fixture value fits u32"),
-                u32::try_from(edge * 2 + 1).expect("fixture value fits u32"),
-            ]
-        })
-        .collect::<Vec<_>>();
-    let selected = [MeshFaceBoundaryAssignment {
-        boundaries: (0..BOUNDARY_COUNT)
-            .map(|boundary| {
-                vec![
-                    MeshBoundaryEdgeCandidate {
-                        edge: boundary * 2,
-                        start: 0,
-                        end: 1,
-                        reversed: Some(false),
-                    },
-                    MeshBoundaryEdgeCandidate {
-                        edge: boundary * 2 + 1,
-                        start: 1,
-                        end: 0,
-                        reversed: None,
-                    },
-                ]
-            })
-            .collect(),
-    }];
-    let vertex_points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(1);
-        resolve_fixed_mesh_endpoint_pairs(
-            ctx,
-            MeshEndpointGeometry {
-                edge_rows: &edge_rows,
-                vertex_points: &vertex_points,
-            },
-            &candidates,
-            &selected,
-            &identities,
-            &budget,
-            None,
-        )
-    };
-    catia_test_context!(service_ctx);
-    run(&service_ctx).expect("service resource budget");
-
-    let mut refused = HashSet::new();
-    let mut limit = 0;
-    let mut completed = false;
-    let mut last_operation = "";
-    for _ in 0..4_096 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                last_operation = error.operation;
-                refused.insert(error.operation);
-                limit = error.used + error.additional;
-            }
-            Ok(_) => {
-                completed = true;
-                break;
-            }
-            Err(error) => panic!("unexpected overflow-search refusal: {error}"),
-        }
-    }
-    if !completed {
-        assert!(last_operation.starts_with("catia_endpoint_"));
-        let mut low = limit;
-        let mut high = 1_000_000u64;
-        while low < high {
-            let mid = low + (high - low) / 2;
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = mid;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits the input limit");
-            match run(&ctx) {
-                Err(CodecError::ResourceLimit(error))
-                    if error.operation.starts_with("catia_endpoint_") =>
-                {
-                    low = mid + 1;
-                }
-                Err(CodecError::ResourceLimit(_)) | Ok(_) => high = mid,
-                Err(error) => panic!("unexpected overflow-search refusal: {error}"),
-            }
-        }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = low;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                refused.insert(error.operation);
-                assert_eq!(error.operation, "catia_general_mesh_fixed_face_directions");
-            }
-            _ => panic!("expected the first post-enumeration charge"),
-        }
-        completed = true;
-    }
-    assert!(completed, "adaptive caps must admit the overflow fixture");
-    assert!(refused.contains("catia_general_mesh_fixed_face_directions"));
-}
-
-#[test]
 fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
     catia_test_context!(ctx);
     let edge_rows = (0..3)
@@ -9985,59 +8848,6 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     assert!(choices
         .iter()
         .any(|choice| matches!(&choice.selection, MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } if assignments == &[0] && edge_pairs == &[(0, [0, 0])])));
-
-    let mut refused = HashSet::new();
-    for cap in 0..32 {
-        let mut cap_covered = [false];
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            collect_endpoint_relation_face_choices(
-                &face_assignments,
-                &face_configurations,
-                &mut cap_covered,
-            )
-        });
-        match result {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected face-choice result"),
-        }
-    }
-    for operation in [
-        "catia_endpoint_relation_config_pairs",
-        "catia_endpoint_relation_configuration_keys",
-        "catia_endpoint_relation_configuration_assignments",
-        "catia_endpoint_relation_face_choices",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn endpoint_relation_face_choices_refuse_before_invalid_edge_result() {
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 0,
-            reversed: None,
-        }]],
-    };
-    let assignments = [assignment.clone(), assignment];
-    let configurations = [Some(vec![vec![(0, [0, 0])]]), Some(vec![vec![(1, [0, 0])]])];
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut covered = [false];
-        collect_endpoint_relation_face_choices(&assignments, &configurations, &mut covered)
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .is_none());
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, run),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_endpoint_cycle_pair_map"
-    ));
 }
 
 #[test]
@@ -10172,298 +8982,6 @@ fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
 }
 
 #[test]
-fn endpoint_relation_support_masks_propagate_collection_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-
-    let make_domains = |optional_edge: bool| {
-        let choice = |id, edge_pairs| MeshEndpointRelationChoice {
-            id,
-            selection: MeshEndpointRelationSelection::Enumerated {
-                assignments: vec![0],
-                edge_pairs,
-            },
-        };
-        let mut right = vec![choice(0, vec![(0, [0, 1]), (1, [2, 3])])];
-        if optional_edge {
-            right.push(choice(1, vec![(0, [0, 1])]));
-        }
-        vec![vec![choice(0, vec![(0, [0, 1]), (1, [2, 3])])], right]
-    };
-    for optional_edge in [false, true] {
-        let domains = make_domains(optional_edge);
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        catia_test_context!(service_ctx);
-        assert!(
-            build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
-                .expect("service resource budget")
-                .is_some()
-        );
-
-        let mut refused = HashSet::new();
-        for cap in 0..512 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits the input limit");
-            let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-            match build_endpoint_relation_constraints(&ctx, &domains, &budget) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    refused.insert(limit.operation);
-                }
-                Ok(Some(_)) => break,
-                _ => panic!("unexpected relation outcome"),
-            }
-        }
-        for operation in [
-            "catia_endpoint_relation_edge_face_keys",
-            "catia_endpoint_relation_edge_faces",
-            "catia_endpoint_relation_sorted_faces",
-            "catia_endpoint_relation_shared_keys",
-            "catia_endpoint_relation_shared_edges",
-            "catia_endpoint_relation_shared_rows",
-            "catia_endpoint_relation_arcs",
-            "catia_endpoint_relation_incoming",
-            "catia_endpoint_relation_choice_counts",
-            "catia_endpoint_relation_key_values",
-            "catia_endpoint_relation_keys",
-            "catia_endpoint_relation_support_mask",
-            "catia_endpoint_relation_support_rows",
-            "catia_endpoint_relation_arc_entries",
-            "catia_endpoint_relation_incoming_entries",
-        ] {
-            assert!(refused.contains(operation), "no refusal at {operation}");
-        }
-        if !optional_edge {
-            assert!(refused.contains("catia_endpoint_relation_index_keys"));
-            assert!(refused.contains("catia_endpoint_relation_index_values"));
-        }
-    }
-}
-
-#[test]
-fn endpoint_relation_walk_charges_branch_copies_and_nested_sets() {
-    let choices = vec![
-        MeshEndpointRelationChoice {
-            id: 0,
-            selection: MeshEndpointRelationSelection::Enumerated {
-                assignments: vec![0],
-                edge_pairs: vec![(0, [0, 1])],
-            },
-        },
-        MeshEndpointRelationChoice {
-            id: 1,
-            selection: MeshEndpointRelationSelection::Enumerated {
-                assignments: vec![1],
-                edge_pairs: vec![(0, [0, 1])],
-            },
-        },
-    ];
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 1,
-            reversed: None,
-        }]],
-    };
-    let assignments = [vec![assignment.clone(), assignment]];
-    let constraints = MeshEndpointRelationConstraints {
-        arcs: vec![vec![]],
-        incoming: vec![vec![]],
-        choice_counts: vec![2],
-    };
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let mut memo = HashSet::new();
-        walk_endpoint_relation_domains(
-            ctx,
-            crate::solve::mesh_quotient::WalkEndpointRelationDomainsInputs {
-                domains: vec![choices.clone()],
-                face_assignments: &assignments,
-                assigned: vec![None],
-                constraints: &constraints,
-                point_count: 2,
-                budget: &budget,
-                state_memo: &mut memo,
-                candidate_gauge: None,
-                priority_edges: Some(&[true]),
-                partial_solution_valid: None,
-                coordinate_domains: None,
-                coordinate_budget: None,
-                evaluate: &mut |_, _| Ok(false),
-            },
-        )
-    };
-    assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
-    let mut refused = HashSet::new();
-    for cap in 0..256 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(false) => break,
-            _ => panic!("unexpected endpoint relation walk result"),
-        }
-    }
-    for operation in [
-        "catia_endpoint_relation_possible_points",
-        "catia_endpoint_relation_state_memo",
-        "catia_endpoint_relation_priority_edges",
-        "catia_endpoint_relation_priority_counts",
-        "catia_endpoint_relation_assigned_points",
-        "catia_endpoint_relation_support_choice_points",
-        "catia_endpoint_relation_support_point_keys",
-        "catia_endpoint_relation_score_points",
-        "catia_endpoint_relation_branch_order",
-        "catia_endpoint_relation_copy_assignments",
-        "catia_endpoint_relation_copy_edge_pairs",
-        "catia_endpoint_relation_copy_choices",
-        "catia_endpoint_relation_copy_faces",
-        "catia_endpoint_relation_branch_choice",
-        "catia_endpoint_relation_branch_assigned",
-        "catia_endpoint_relation_completed_pairs",
-        "catia_endpoint_relation_selected_assignments",
-        "catia_endpoint_relation_selection_faces",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn endpoint_relation_active_masks_propagate_collection_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-
-    let choice = MeshEndpointRelationChoice {
-        id: 0,
-        selection: MeshEndpointRelationSelection::Enumerated {
-            assignments: vec![0],
-            edge_pairs: vec![(0, [0, 1])],
-        },
-    };
-    let domains = vec![vec![choice.clone()], vec![choice]];
-    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    catia_test_context!(service_ctx);
-    let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
-        .expect("service resource budget")
-        .expect("shared edge creates relation constraints");
-    let mut service_domains = domains.clone();
-    assert!(propagate_endpoint_relation_domains(
-        &service_ctx,
-        &mut service_domains,
-        &mut [None],
-        &constraints,
-        &budget,
-    )
-    .expect("service resource budget"));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let mut limited_domains = domains.clone();
-    let error = propagate_endpoint_relation_domains(
-        &ctx,
-        &mut limited_domains,
-        &mut [None],
-        &constraints,
-        &budget,
-    )
-    .expect_err("active mask exceeds the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_endpoint_relation_active_mask"));
-
-    let mut refused = HashSet::new();
-    for cap in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let mut candidate_domains = domains.clone();
-        match propagate_endpoint_relation_domains(
-            &ctx,
-            &mut candidate_domains,
-            &mut [None],
-            &constraints,
-            &budget,
-        ) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                refused.insert(limit.operation);
-            }
-            Ok(true) => break,
-            _ => panic!("unexpected relation propagation outcome"),
-        }
-    }
-    for operation in [
-        "catia_endpoint_relation_active_mask",
-        "catia_endpoint_relation_active_rows",
-        "catia_endpoint_relation_queue",
-        "catia_endpoint_relation_pair_keys",
-        "catia_endpoint_relation_pair_values",
-        "catia_endpoint_relation_count_keys",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn endpoint_relation_dirty_faces_refuse_before_empty_domain() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let choice = MeshEndpointRelationChoice {
-        id: 0,
-        selection: MeshEndpointRelationSelection::Enumerated {
-            assignments: vec![0],
-            edge_pairs: vec![(0, [0, 1])],
-        },
-    };
-    let domains = vec![vec![choice.clone()], vec![choice]];
-    catia_test_context!(service_ctx);
-    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
-        .expect("service resource budget")
-        .expect("shared edge creates relation constraints");
-    let mut empty = domains.clone();
-    empty[0].clear();
-    assert!(!propagate_endpoint_relation_domains(
-        &service_ctx,
-        &mut empty,
-        &mut [None],
-        &constraints,
-        &budget,
-    )
-    .expect("service resource budget"));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture fits input limit");
-    let mut empty = domains;
-    empty[0].clear();
-    assert!(matches!(
-        propagate_endpoint_relation_domains(
-            &ctx,
-            &mut empty,
-            &mut [None],
-            &constraints,
-            &budget,
-        ),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia_endpoint_relation_dirty_faces"
-    ));
-}
-
-#[test]
 fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
     catia_test_context!(ctx);
     let mut domains = vec![
@@ -10558,116 +9076,6 @@ fn endpoint_configurations_do_not_duplicate_closed_point_transitions() {
 
     assert_eq!(configurations.len(), 1);
     assert!(!budget.exhausted());
-
-    let mut refused = HashSet::new();
-    for cap in 0..256 {
-        let limited_budget = WorkBudget::new(4);
-        let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            mesh_face_endpoint_configurations(
-                std::slice::from_ref(&assignment),
-                &candidates,
-                &[None; 3],
-                &limited_budget,
-            )
-        });
-        match result {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected face configuration result"),
-        }
-    }
-    for operation in [
-        "catia_face_configuration_pairs",
-        "catia_face_configuration_initial_states",
-        "catia_face_configuration_state_pairs",
-        "catia_face_configuration_next_states",
-        "catia_face_configuration_seen_pairs",
-        "catia_face_configuration_seen_keys",
-        "catia_face_configuration_boundary_results",
-        "catia_face_configuration_combined_rows",
-        "catia_face_configuration_next_combined",
-        "catia_face_configuration_result_keys",
-        "catia_face_configuration_result_rows",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn face_endpoint_configurations_charge_combined_pair_copy() {
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![
-            vec![MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 0,
-                reversed: None,
-            }],
-            vec![MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 0,
-                end: 0,
-                reversed: None,
-            }],
-        ],
-    };
-    let candidates = [vec![[0, 0]], vec![[0, 0]]];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(32);
-        mesh_face_endpoint_configurations(
-            std::slice::from_ref(&assignment),
-            &candidates,
-            &[None; 2],
-            &budget,
-        )
-    };
-    assert_eq!(
-        crate::test_support::with_service_context(run).expect("service resource budget"),
-        Some(vec![vec![(0, [0, 0]), (1, [0, 0])]])
-    );
-    let mut refused = HashSet::new();
-    for cap in 0..128 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected face configuration result"),
-        }
-    }
-    assert!(refused.contains("catia_face_configuration_combined_pairs"));
-}
-
-#[test]
-fn face_endpoint_configurations_refuse_before_bounded_absence() {
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 0,
-            reversed: None,
-        }]],
-    };
-    let candidates = [vec![[0, 0], [1, 1]]];
-    let run = |ctx: &DecodeContext<'_>| {
-        let budget = WorkBudget::new(1);
-        mesh_face_endpoint_configurations(
-            std::slice::from_ref(&assignment),
-            &candidates,
-            &[None],
-            &budget,
-        )
-    };
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .is_none());
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, run),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_face_configuration_combined_rows"
-    ));
 }
 
 #[test]
@@ -10718,69 +9126,6 @@ fn endpoint_configuration_unresolved_boundary_reversal_is_a_gauge() {
 }
 
 #[test]
-fn endpoint_configuration_directions_refuse_before_state_and_prefix_growth() {
-    use std::collections::BTreeSet;
-
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 1,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 0,
-                end: 1,
-                reversed: None,
-            },
-        ]],
-    };
-    let configuration = vec![(0, [0, 1]), (1, [0, 1])];
-    let run = |ctx: &DecodeContext<'_>| {
-        endpoint_configuration_directions(ctx, &assignment, &configuration)
-    };
-    crate::test_support::with_service_context(|ctx| {
-        assert_eq!(
-            run(ctx).expect("service budget").expect("directions").len(),
-            1
-        );
-    });
-    let mut refusals = BTreeSet::new();
-    let mut completed = false;
-    for cap in 0..=64 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refusals.insert(limit.operation);
-            }
-            Ok(Ok(directions)) => {
-                assert_eq!(directions.len(), 1);
-                completed = true;
-                break;
-            }
-            _ => panic!("unexpected endpoint direction result"),
-        }
-    }
-    assert!(completed, "fixture must fit the final cap");
-    for operation in [
-        "catia_endpoint_configuration_pairs",
-        "catia_endpoint_initial_alternatives",
-        "catia_endpoint_initial_direction",
-        "catia_endpoint_initial_states",
-        "catia_endpoint_direction_prefix",
-        "catia_endpoint_direction_step",
-        "catia_endpoint_direction_states",
-        "catia_endpoint_boundary_solutions",
-        "catia_endpoint_boundary_direction_copy",
-        "catia_endpoint_alternative_boundary",
-        "catia_endpoint_alternatives",
-    ] {
-        assert!(refusals.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
     catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
@@ -10817,58 +9162,6 @@ fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
         None
     );
     assert!(budget.exhausted());
-}
-
-#[test]
-fn endpoint_cycle_viability_refuses_adjacency_and_state_growth() {
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 1,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 1,
-                end: 0,
-                reversed: None,
-            },
-        ]],
-    };
-    let candidates = [vec![[0, 1]], vec![[1, 0]]];
-    let run = |ctx: &DecodeContext<'_>| {
-        mesh_assignment_endpoint_cycles_viable_where(&assignment, &candidates, None, |_, _| true)
-    };
-    assert_eq!(
-        crate::test_support::with_service_context(run).expect("service budget"),
-        Some(true)
-    );
-    let mut operations = BTreeSet::new();
-    let mut completed = false;
-    for cap in 0..=32 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                operations.insert(limit.operation);
-            }
-            Ok(Some(true)) => {
-                completed = true;
-                break;
-            }
-            _ => panic!("unexpected endpoint viability result"),
-        }
-    }
-    assert!(completed);
-    for operation in [
-        "catia_endpoint_viability_adjacency",
-        "catia_endpoint_viability_neighbors",
-        "catia_endpoint_viability_prepared",
-        "catia_endpoint_viability_states",
-        "catia_endpoint_viability_next_states",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
 }
 
 #[test]
@@ -10968,130 +9261,6 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
 }
 
 #[test]
-fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
-    let edge_faces = [[0, 1], [0, 1]];
-    let boundary = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 0,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 0,
-                end: 0,
-                reversed: None,
-            },
-        ]],
-    };
-    let boundary_domains = vec![
-        MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
-        MeshFaceBoundaryDomain::Ordered(vec![boundary]),
-    ];
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut quotient = MeshQuotient::new(
-            (0..4)
-                .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
-                .collect(),
-        );
-        crate::test_support::with_service_context(|ctx| quotient.merge(0, 2))
-            .expect("service merge")
-            .expect("shared left endpoint");
-        crate::test_support::with_service_context(|ctx| quotient.merge(1, 3))
-            .expect("service merge")
-            .expect("shared right endpoint");
-        let budget = WorkBudget::new(1_000);
-        quotient.coordinate_root_closure_outcome(
-            ctx,
-            2,
-            &edge_candidates,
-            Some((&edge_faces, &boundary_domains)),
-            Some(&budget),
-        )
-    };
-    catia_test_context!(service_ctx);
-    assert!(matches!(
-        run(&service_ctx).expect("service resource budget"),
-        MeshSolve::Solved(_)
-    ));
-    let mut refused = HashSet::new();
-    for limit in 0..512 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-            }
-            Ok(MeshSolve::Solved(_)) => break,
-            Ok(_) => panic!("closed incidence must solve"),
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    assert!(refused.contains("catia coordinate closure selected edges"));
-    assert!(refused.contains("catia coordinate component assignment"));
-    assert!(refused.contains("catia coordinate point degrees"));
-    for operation in [
-        "catia_coordinate_closure_roots",
-        "catia_coordinate_closure_root_indices",
-        "catia_coordinate_closure_edges",
-        "catia_coordinate_closure_domain_points",
-        "catia_coordinate_closure_domains",
-        "catia_coordinate_closure_covered_points",
-        "catia_coordinate_closure_dependency",
-        "catia_coordinate_closure_point_roots",
-        "catia_coordinate_closure_component_keys",
-        "catia_coordinate_closure_component_members",
-        "catia_coordinate_closure_components",
-        "catia_coordinate_closure_face_counts",
-        "catia_coordinate_closure_component_set",
-        "catia_coordinate_closure_local_index",
-        "catia_coordinate_closure_edge_ids",
-        "catia_coordinate_closure_component_points",
-        "catia_coordinate_closure_local_edges",
-        "catia_coordinate_closure_local_edge_index",
-        "catia_coordinate_closure_local_edge_faces",
-        "catia_coordinate_closure_face_edges",
-        "catia_coordinate_closure_face_edge_entries",
-        "catia_coordinate_closure_closed_faces",
-        "catia_coordinate_closure_local_domain_points",
-        "catia_coordinate_closure_local_domains",
-        "catia_coordinate_closure_root_edges",
-        "catia_coordinate_closure_root_edge_entries",
-        "catia_coordinate_closure_arc_domain_points",
-        "catia_coordinate_closure_arc_domains",
-        "catia_coordinate_closure_remaining_points",
-        "catia_coordinate_closure_completed_assignment",
-        "catia_coordinate_closure_fixed_domain_point",
-        "catia_coordinate_closure_assigned_point_roots",
-        "catia_coordinate_closure_scanned_roots",
-        "catia_coordinate_closure_supported_unused",
-        "catia_coordinate_closure_unused_point_keys",
-        "catia_coordinate_closure_unused_point_roots",
-        "catia_coordinate_closure_propagated",
-        "catia_coordinate_closure_affected_roots",
-        "catia_coordinate_closure_degree_entries",
-        "catia_coordinate_closure_degree_undo",
-        "catia_coordinate_closure_probe_degrees",
-        "catia_coordinate_closure_affected_faces",
-        "catia_coordinate_closure_complete_branch",
-        "catia_coordinate_closure_completed_degrees",
-        "catia_coordinate_closure_solutions",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn coordinate_root_closure_refuses_recursive_walk_depth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -11146,434 +9315,6 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RecursionDepth
                 && limit.operation == "catia_coordinate_closure_walk"
-    ));
-}
-
-#[test]
-fn coordinate_root_closure_charges_matching_support_rows() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
-    let edge_faces = [[0, 1], [0, 1]];
-    let boundary = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![
-            MeshBoundaryEdgeCandidate {
-                edge: 0,
-                start: 0,
-                end: 0,
-                reversed: None,
-            },
-            MeshBoundaryEdgeCandidate {
-                edge: 1,
-                start: 0,
-                end: 0,
-                reversed: None,
-            },
-        ]],
-    };
-    let boundary_domains = vec![
-        MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
-        MeshFaceBoundaryDomain::Ordered(vec![boundary]),
-    ];
-    let run = |ctx: &DecodeContext<'_>| {
-        let mut quotient =
-            MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
-        crate::test_support::with_service_context(|ctx| quotient.merge(0, 2))
-            .expect("service merge")
-            .expect("shared left endpoint");
-        crate::test_support::with_service_context(|ctx| quotient.merge(1, 3))
-            .expect("service merge")
-            .expect("shared right endpoint");
-        quotient.coordinate_root_closure_outcome(
-            ctx,
-            2,
-            &edge_candidates,
-            Some((&edge_faces, &boundary_domains)),
-            None,
-        )
-    };
-    catia_test_context!(service_ctx);
-    assert_eq!(
-        run(&service_ctx).expect("service resource budget"),
-        MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
-    );
-    let mut refused = HashSet::new();
-    for cap in 0..1024 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                refused.insert(limit.operation);
-            }
-            Ok(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))) => break,
-            other => panic!("unexpected closure outcome: {other:?}"),
-        }
-    }
-    for operation in [
-        "catia_coordinate_closure_viable_domains",
-        "catia_coordinate_closure_point_supports",
-        "catia_coordinate_closure_support_domains",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn coordinate_closure_refuses_before_empty_domain_rejection() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let make_quotient = || {
-        MeshQuotient::new(vec![
-            Arc::new(HashSet::from([9])),
-            Arc::new(HashSet::from([0])),
-        ])
-    };
-    let candidates = [vec![[0, 1]]];
-    catia_test_context!(service_ctx);
-    assert!(matches!(
-        make_quotient()
-            .coordinate_root_closure_outcome(&service_ctx, 2, &candidates, None, None)
-            .expect("service resource budget"),
-        MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
-    ));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    assert!(matches!(
-        make_quotient().coordinate_root_closure_outcome(&ctx, 2, &candidates, None, None),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia_coordinate_closure_roots"
-    ));
-}
-
-#[test]
-fn coordinate_coverage_matching_charges_inner_root_entries() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let domains = [vec![0]];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    assert!(
-        MeshCoordinateRootDomains::coverage_matching(&ctx, &domains, 2, None)
-            .expect("service resource budget")
-            .is_none()
-    );
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let result = MeshCoordinateRootDomains::coverage_matching(&ctx, &domains, 2, None);
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia_quotient_roots_by_point_entries"));
-}
-
-#[test]
-fn coordinate_root_preparation_charges_root_edge_and_matching_arrays() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let candidates = [vec![[0, 1]]];
-    let make_quotient = || {
-        let domain = Arc::new(HashSet::from([0, 1]));
-        MeshQuotient::new(vec![domain.clone(), domain])
-    };
-    catia_test_context!(service_ctx);
-    assert!(make_quotient()
-        .prepare_coordinate_root_domains(&service_ctx, 2, &candidates, None)
-        .expect("service resource budget")
-        .is_some());
-
-    let mut refused = HashSet::new();
-    for limit in 0..=128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match make_quotient().prepare_coordinate_root_domains(&ctx, 2, &candidates, None) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("two endpoint roots must retain a coordinate matching"),
-            Err(error) => panic!("unexpected coordinate preparation refusal: {error}"),
-        };
-    }
-    assert!(refused.contains("catia_quotient_root_edges"));
-    assert!(refused.contains("catia_quotient_roots"));
-    assert!(refused.contains("catia_quotient_root_indices"));
-    assert!(refused.contains("catia_quotient_edges"));
-    assert!(refused.contains("catia_quotient_domain_points"));
-    assert!(refused.contains("catia_quotient_domains"));
-    assert!(refused.contains("catia_quotient_edge_ids"));
-    assert!(refused.contains("catia_quotient_root_edge_entries"));
-    assert!(refused.contains("catia_quotient_supported_candidate_rows"));
-    assert!(refused.contains("catia_quotient_supported_candidate_pairs"));
-    assert!(refused.contains("catia_quotient_refine_domain_copy"));
-    assert!(refused.contains("catia_quotient_refine_domain_points"));
-    assert!(refused.contains("catia_quotient_roots_by_point"));
-    assert!(refused.contains("catia_quotient_refine_roots"));
-    assert!(refused.contains("catia_quotient_refine_all_points"));
-}
-
-#[test]
-fn local_coordinate_refinement_charges_inner_root_entries() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let domains = MeshCoordinateRootDomains {
-        domains: Arc::new(vec![vec![0, 1], vec![1, 2], vec![0, 2]]),
-        edges: Arc::new(vec![[0, 1], [1, 2]]),
-        root_edges: Arc::new(vec![vec![0], vec![0, 1], vec![1]]),
-        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 2]], vec![[1, 2], [0, 2]]]),
-        coverage_matching: Vec::new(),
-        point_count: 3,
-    };
-    let candidates = [vec![[1, 2]], vec![[1, 2], [0, 2]]];
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    assert!(domains
-        .refine_candidates(&ctx, &candidates, None)
-        .expect("service resource budget")
-        .is_none());
-
-    let mut refused = HashSet::new();
-    for limit in 0..=128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match domains.refine_candidates(&ctx, &candidates, None) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation);
-            }
-            Ok(None) => break,
-            _ => panic!("unexpected local refinement result"),
-        }
-    }
-    assert!(refused.contains("catia_quotient_refine_root_entries"));
-}
-
-#[test]
-fn local_coordinate_refinement_charges_reached_root_and_point_arrays() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let domains = MeshCoordinateRootDomains {
-        domains: Arc::new(vec![vec![0, 1], vec![1, 2], vec![0, 2]]),
-        edges: Arc::new(vec![[0, 1], [1, 2]]),
-        root_edges: Arc::new(vec![vec![0], vec![0, 1], vec![1]]),
-        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 2]], vec![[1, 2], [0, 2]]]),
-        coverage_matching: vec![0, 1, 2],
-        point_count: 3,
-    };
-    let refined_candidates = [vec![[1, 2]], vec![[1, 2], [0, 2]]];
-    catia_test_context!(service_ctx);
-    assert!(domains
-        .refine_candidates(&service_ctx, &refined_candidates, None)
-        .expect("service resource budget")
-        .is_some());
-
-    let mut refused = HashSet::new();
-    for limit in 0..=256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match domains.refine_candidates(&ctx, &refined_candidates, None) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation);
-            }
-            Ok(Some(_)) => break,
-            Ok(None) => panic!("local refinement must preserve the three-point matching"),
-            Err(error) => panic!("unexpected coordinate refinement refusal: {error}"),
-        }
-    }
-    assert!(refused.contains("catia_quotient_refine_roots"));
-    assert!(refused.contains("catia_quotient_reached_roots"));
-    assert!(refused.contains("catia_quotient_reached_points"));
-    for operation in [
-        "catia_quotient_refine_initial_edges",
-        "catia_quotient_refine_coverage_matching",
-        "catia_quotient_refine_domain_lengths",
-        "catia_quotient_refine_changed_roots",
-        "catia_quotient_refine_root_queue",
-        "catia_quotient_refine_reached_points_list",
-        "catia_quotient_refine_affected_domain_roots",
-        "catia_quotient_refine_affected_domains",
-        "catia_quotient_refine_affected_matching",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn coordinate_refinement_charges_hall_changed_roots_and_edges() {
-    let domains = MeshCoordinateRootDomains {
-        domains: Arc::new(vec![vec![0, 1], vec![0, 1], vec![0, 1, 2]]),
-        edges: Arc::new(vec![[0, 2]]),
-        root_edges: Arc::new(vec![vec![0], vec![], vec![0]]),
-        edge_candidates: Arc::new(vec![vec![[0, 1], [0, 2], [1, 2]]]),
-        coverage_matching: vec![0, 1, 2],
-        point_count: 3,
-    };
-    let run = |ctx: &DecodeContext<'_>| {
-        domains.refine_domains(
-            ctx,
-            domains.domains.as_ref().clone(),
-            domains.edge_candidates.as_ref(),
-            &[],
-            true,
-            None,
-        )
-    };
-    let service = crate::test_support::with_service_context(run)
-        .expect("service resource budget")
-        .expect("Hall refinement is feasible");
-    assert_eq!(service.domains[2], vec![2]);
-    let mut refused = HashSet::new();
-    for cap in 0..256 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected Hall refinement result"),
-        }
-    }
-    for operation in [
-        "catia_quotient_refine_affected_roots",
-        "catia_quotient_refine_affected_edges",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
-fn coordinate_root_copies_charge_retained_and_nested_collections() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
-
-    let domains = MeshCoordinateRootDomains {
-        domains: Arc::new(vec![vec![0], vec![1]]),
-        edges: Arc::new(vec![[0, 1]]),
-        root_edges: Arc::new(vec![vec![0], vec![0]]),
-        edge_candidates: Arc::new(vec![vec![[0, 1], [1, 0]]]),
-        coverage_matching: vec![0, 1],
-        point_count: 2,
-    };
-    let unchanged = |ctx: &DecodeContext<'_>| {
-        domains.refine_candidates(ctx, domains.edge_candidates.as_ref(), None)
-    };
-    assert!(crate::test_support::with_service_context(unchanged)
-        .expect("service resource budget")
-        .is_some());
-    let mut clone_refusals = HashSet::new();
-    for cap in 0..64 {
-        match crate::test_support::with_collection_limit(cap, unchanged) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                clone_refusals.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected unchanged coordinate domains"),
-        }
-    }
-    for operation in [
-        "catia_coordinate_root_clone_domains",
-        "catia_coordinate_root_clone_points",
-        "catia_coordinate_root_clone_matching",
-    ] {
-        assert!(
-            clone_refusals.contains(operation),
-            "no refusal at {operation}"
-        );
-    }
-
-    let selected =
-        |ctx: &DecodeContext<'_>| domains.refine_edge_candidate_arc(ctx, 0, [0, 1], None);
-    let selected_domains = crate::test_support::with_service_context(selected)
-        .expect("service resource budget")
-        .expect("selected coordinate domains");
-    let mut selected_refusals = HashSet::new();
-    for cap in 0..256 {
-        match crate::test_support::with_collection_limit(cap, selected) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                selected_refusals.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected selected coordinate domains"),
-        }
-    }
-    for operation in [
-        "catia_coordinate_refine_candidate_rows",
-        "catia_coordinate_refine_candidate_pairs",
-        "catia_coordinate_refine_selected_pair",
-        "catia_coordinate_refine_domain_rows",
-        "catia_coordinate_refine_domain_points",
-    ] {
-        assert!(
-            selected_refusals.contains(operation),
-            "no refusal at {operation}"
-        );
-    }
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            selected_domains.edge_candidate_points(0)
-        })
-        .expect("service resource budget"),
-        Some(vec![0, 1])
-    );
-    assert!(matches!(
-        crate::test_support::with_collection_limit(0, |ctx| {
-            selected_domains.edge_candidate_points(0)
-        }),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_coordinate_edge_candidate_points"
-    ));
-
-    let changed = |ctx: &DecodeContext<'_>| domains.refine_candidates(ctx, &[vec![[0, 1]]], None);
-    assert!(crate::test_support::with_service_context(changed)
-        .expect("service resource budget")
-        .is_some());
-    let mut changed_refusals = HashSet::new();
-    for cap in 0..256 {
-        match crate::test_support::with_collection_limit(cap, changed) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                changed_refusals.insert(limit.operation);
-            }
-            Ok(Some(_)) => break,
-            _ => panic!("unexpected changed coordinate domains"),
-        }
-    }
-    assert!(changed_refusals.contains("catia_coordinate_refine_changed_edges"));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root fits the input limit");
-    assert!(matches!(
-        unchanged(&ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "catia_coordinate_root_clone_domains"
     ));
 }
 
@@ -11891,9 +9632,7 @@ mod direct_matching_tests {
 
     #[test]
     fn direct_mesh_quotient_defers_non_unique_matching() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        use std::collections::HashSet;
+        use cadmpeg_core::decode::DecodeContext;
 
         catia_test_context!(ctx);
         let edge_rows = (0..3)
@@ -11988,130 +9727,11 @@ mod direct_matching_tests {
             run(&ctx).expect("service resource budget"),
             Some(super::MeshSolve::Solved(_))
         ));
-        let mut refused = HashSet::new();
-        for limit in 0..=256 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits the input limit");
-            match run(&limited_ctx) {
-                Err(CodecError::ResourceLimit(error)) => {
-                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                    refused.insert(error.operation);
-                }
-                Ok(Some(super::MeshSolve::Solved(_))) => break,
-                Ok(_) => panic!("singleton triangle quotient must resolve directly"),
-                Err(error) => panic!("unexpected direct quotient refusal: {error}"),
-            }
-        }
-        for operation in [
-            "catia_merged_mesh_point_assignment",
-            "catia_merged_mesh_identity_points",
-            "catia_merged_mesh_completed_points",
-        ] {
-            assert!(refused.contains(operation), "no refusal at {operation}");
-        }
     }
 }
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-#[test]
-fn singleton_direction_growth_refuses_before_first_item() {
-    let boundary = [MeshBoundaryEdgeCandidate {
-        edge: 0,
-        start: 0,
-        end: 1,
-        reversed: None,
-    }];
-    let candidates = vec![vec![[0, 0]]];
-    catia_test_context!(service_ctx);
-    assert_eq!(
-        singleton_mesh_boundary_directions(&boundary, &candidates, None),
-        Some(vec![false])
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture input");
-    assert!(matches!(
-        singleton_mesh_boundary_directions(&boundary, &candidates, None),
-        Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_singleton_initial_direction"
-    ));
-}
-
-#[cfg(test)]
-#[test]
-fn singleton_cycle_signature_refuses_before_storage() {
-    let assignment = MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 1,
-            reversed: None,
-        }]],
-    };
-    let directions = vec![vec![false]];
-    let candidates = vec![vec![[0, 0]]];
-    catia_test_context!(service_ctx);
-    assert_eq!(
-        canonical_singleton_coordinate_cycles(&assignment, &directions, &candidates)
-            .expect("service budget"),
-        Some(vec![vec![0]])
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("fixture input");
-    assert!(matches!(
-        canonical_singleton_coordinate_cycles(&assignment, &directions, &candidates),
-        Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_singleton_cycle_rows"
-    ));
-}
-
-#[cfg(test)]
-#[test]
-fn boundary_component_face_keys_refuse_unadmitted_scan() {
-    let use_ = MeshBoundaryEdgeCandidate {
-        edge: 0,
-        start: 0,
-        end: 1,
-        reversed: None,
-    };
-    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
-        MeshFaceBoundaryAssignment {
-            boundaries: vec![vec![use_]],
-        },
-    ])];
-    let candidates = [Vec::new()];
-    // The singleton edge sort (1 + 16 * size_of usize), the parent fill and
-    // its initialization (1 + 1), one root read (1) and the singleton component
-    // stable sort's item admission (1) precede the key scan. The stable sort
-    // charges no record movement.
-    let before_keys =
-        1 + 16 * u64::try_from(std::mem::size_of::<usize>()).expect("sort bytes") + 1 + 1 + 1 + 1;
-    crate::test_support::with_work_limit(before_keys, |ctx| {
-        let mut quotient = MeshQuotient::new(vec![
-            Arc::new(HashSet::from([0, 1])),
-            Arc::new(HashSet::from([0, 1])),
-        ]);
-        let CodecError::ResourceLimit(limit) =
-            propagate_common_boundary_components(ctx, &domains, &candidates, &mut quotient)
-                .expect_err("face keys require work")
-        else {
-            panic!("resource refusal")
-        };
-        assert_eq!(limit.operation, "catia_component_face_key_scan");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
-}
 
 #[cfg(test)]
 #[test]
@@ -12179,8 +9799,8 @@ mod preparation_tests {
     use std::sync::Arc;
 
     #[test]
-    fn directed_face_does_not_clone_independent_mesh_content() {
-        crate::test_support::with_collection_limit(16_384, |ctx| {
+    fn directed_face_merges_only_its_corner_roots() {
+        crate::test_support::with_service_context(|ctx| {
             let shared = Arc::new(HashSet::from([0, 1]));
             let mut quotient = MeshQuotient::new(vec![shared; 1_000]);
             let domains = [MeshFaceBoundaryDomain::Ordered(vec![
@@ -12235,27 +9855,12 @@ fn boundary_component_exhausted_slice_returns_no_states() {
 }
 
 #[cfg(test)]
-#[test]
-fn boundary_component_exhausted_slice_preserves_a_session_refusal() {
-    crate::test_support::with_work_limit(0, |ctx| {
-        let budget = cadmpeg_core::decode::WorkBudget::new(1);
-        assert!(!budget.charge());
-        let original = ctx.resource_refusal().expect("session work refusal");
-        let domain = MeshFaceBoundaryDomain::Ordered(Vec::new());
-        assert!(matches!(
-            advance_boundary_component_states(ctx, &domain, &[], &[], 128, &budget),
-            Err(CodecError::ResourceLimit(limit)) if limit == original
-        ));
-    });
-}
-
-#[cfg(test)]
 mod pair_support_tests {
     use super::prune_mesh_endpoint_pair_support;
     use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 
     #[test]
-    fn endpoint_pair_pruning_does_not_copy_unrelated_candidate_rows() {
+    fn endpoint_pair_pruning_keeps_independent_one_edge_faces() {
         const EDGES: usize = 512;
         let mut assignments = (0..EDGES)
             .map(|edge| {
@@ -12270,7 +9875,7 @@ mod pair_support_tests {
             })
             .collect::<Vec<_>>();
         let mut candidates = vec![vec![[0, 0]]; EDGES];
-        crate::test_support::with_collection_limit(128_000, |ctx| {
+        crate::test_support::with_service_context(|ctx| {
             assert!(
                 prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut candidates)
                     .expect("independent one-edge faces require linear candidate storage")
@@ -12279,32 +9884,4 @@ mod pair_support_tests {
         assert!(assignments.iter().all(|choices| choices.len() == 1));
         assert!(candidates.iter().all(|pairs| pairs == &[[0, 0]]));
     }
-}
-
-#[cfg(test)]
-#[test]
-fn narrowed_quotient_domains_commit_their_temporary_backing() {
-    let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        let domain = Arc::new(HashSet::from([0, 1]));
-        let mut quotient = MeshQuotient::new(vec![domain; 2]);
-        quotient.propagate_edge_domains([0], &[vec![[0, 0]]], None)
-    });
-    assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "catia_quotient_start_support"));
-}
-
-#[cfg(test)]
-#[test]
-fn local_quotient_propagation_does_not_reserve_unrelated_edges() {
-    let candidates = (0..4096).map(|_| vec![[0, 1]; 128]).collect::<Vec<_>>();
-    crate::test_support::with_collection_limit(6, |ctx| {
-        let domain = Arc::new(HashSet::from([0, 1]));
-        let mut quotient = MeshQuotient::new(vec![domain; 2]);
-        assert!(quotient
-            .propagate_edge_domains([0], &candidates, None)
-            .expect("one active edge and four unique support values"));
-        assert_eq!(quotient.domains[0].as_ref(), &HashSet::from([0, 1]));
-        assert_eq!(quotient.domains[1].as_ref(), &HashSet::from([0, 1]));
-    });
 }

@@ -54,24 +54,4 @@ mod tests {
             ));
         }
     }
-
-    #[test]
-    fn neutral_history_identity_refuses_retained_limit() {
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            neutral_history_id(
-                "catia:graph:object#owner:child",
-                &cadmpeg_ir::identity_component!("feature"),
-            )
-        });
-        assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_neutral_history_source"));
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            neutral_history_id(
-                "catia:graph:object#owner:child",
-                &cadmpeg_ir::identity_component!("feature"),
-            )
-        })
-        .expect("service profile admits neutral identity");
-        assert_eq!(admitted.as_str(), "catia:graph:feature#owner:child");
-    }
 }

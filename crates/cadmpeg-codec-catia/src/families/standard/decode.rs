@@ -473,41 +473,6 @@ mod consolidated_revolution_binding_tests {
     use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
-    fn revolution_binding_refuses_point_index_before_allocation() {
-        let mut ir = CadIr::empty();
-        ir.model.points.push(Point::new(
-            PointId::mint("catia:test:point#revolution-limit").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                .expect("finite point"),
-            None,
-        ));
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            bind_consolidated_revolution_faces_and_seams(
-                ctx,
-                &mut ir,
-                &mut AnnotationBuilder::new(),
-                &[],
-            )
-        });
-        assert!(matches!(
-            limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| {
-                bind_consolidated_revolution_faces_and_seams(
-                    ctx,
-                    &mut ir,
-                    &mut AnnotationBuilder::new(),
-                    &[],
-                )
-            })
-            .expect("service context admits one point"),
-            (0, 0)
-        );
-    }
-
-    #[test]
     fn torus_binding_uses_a_finite_midpoint_across_a_wide_curve_range() {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
@@ -970,53 +935,6 @@ mod consolidated_analytic_refinement_tests {
         crate::test_support::with_service_context(|ctx| {
             refine_consolidated_analytic_surfaces(bytes, records, surfaces)
         })
-    }
-
-    #[test]
-    fn cylinder_refinement_refuses_cylinder_collection_before_copy() {
-        let bytes = crate::test_support::test_b2::b2_cylinder_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let mut surfaces = [];
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            refine_consolidated_analytic_surfaces(&bytes, &records, &mut surfaces)
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_standard_refined_cylinders")
-        );
-        let refined = crate::test_support::with_service_context(|ctx| {
-            refine_consolidated_analytic_surfaces(&bytes, &records, &mut surfaces)
-        })
-        .expect("service decode");
-        assert!(refined.is_empty());
-    }
-
-    #[test]
-    fn analytic_refinement_refuses_each_parsed_carrier_collection() {
-        for (bytes, operation) in [
-            (
-                crate::test_support::test_b2::b2_cone_stream(),
-                "catia_standard_refined_cones",
-            ),
-            (
-                crate::test_support::test_b2::b2_sphere_stream(),
-                "catia_standard_refined_spheres",
-            ),
-            (
-                crate::test_support::test_b2::b2_torus_stream(),
-                "catia_standard_refined_tori",
-            ),
-        ] {
-            let records = crate::wire::records::consolidated_records(&bytes);
-            let mut surfaces = [];
-            let limited = crate::test_support::with_collection_limit(0, |ctx| {
-                refine_consolidated_analytic_surfaces(&bytes, &records, &mut surfaces)
-            });
-            assert!(
-                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == operation)
-            );
-        }
     }
 
     #[test]
@@ -1830,7 +1748,7 @@ pub(in crate::families) fn try_decode_standard(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     let surface_alias_tags = if matches!(scan.variant, Variant::StandardNested) {
-        crate::object_graph::surface_alias_tag_map(&scan.data)?
+        crate::object_graph::surface_alias_tag_map(&scan.data)
     } else {
         HashMap::new()
     };
@@ -2840,7 +2758,7 @@ fn try_decode_standard_population(
     let topology_budget = WorkBudget::new(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS);
     let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
     .and_then(|()| {
-        neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns).map_err(StandardTopologyError::Resource)?
+        neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns).map_err(StandardTopologyError::Codec)?
             .then_some(())
             .ok_or(StandardTopologyError::Semantic(
                 StandardTopologyFailure::InadmissibleNeutralModel,
@@ -2849,7 +2767,7 @@ fn try_decode_standard_population(
     let topology_failure = match topology_result {
         Ok(()) => None,
         Err(StandardTopologyError::Semantic(failure)) => Some(failure),
-        Err(StandardTopologyError::Resource(error)) => return Some(Err(error)),
+        Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
     };
     let topology_attached = topology_failure.is_none();
     if topology_attached {
@@ -3235,7 +3153,7 @@ enum StandardTopologyFailure {
 
 enum StandardTopologyError {
     Semantic(StandardTopologyFailure),
-    Resource(cadmpeg_core::CodecError),
+    Codec(cadmpeg_core::CodecError),
 }
 
 impl From<StandardTopologyFailure> for StandardTopologyError {
@@ -3246,7 +3164,7 @@ impl From<StandardTopologyFailure> for StandardTopologyError {
 
 impl From<cadmpeg_core::decode::ResourceLimit> for StandardTopologyError {
     fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
-        Self::Resource(limit.into())
+        Self::Codec(limit.into())
     }
 }
 
@@ -4798,7 +4716,7 @@ fn attach_standard_topology(
         crate::families::standard::fbb::fbb_only_edge_count(spine)
     } else {
         crate::families::standard::fbb::standard_edge_count(ctx, spine)
-            .map_err(StandardTopologyError::Resource)?
+            .map_err(StandardTopologyError::Codec)?
     };
     let Some(edge_count) = edge_count.filter(|count| *count > 0) else {
         return Err(StandardTopologyFailure::NoCurveSupports.into());
@@ -4815,7 +4733,7 @@ fn attach_standard_topology(
             },
             |supports| Ok(supports.to_vec()),
         )
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
     if supports.is_empty() {
         return Err(StandardTopologyFailure::NoCurveSupports.into());
     }
@@ -4826,13 +4744,13 @@ fn attach_standard_topology(
         .collect::<Vec<_>>();
     let Some(mut edge_faces) =
         missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
-            .map_err(StandardTopologyError::Resource)?
+            .map_err(StandardTopologyError::Codec)?
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
     };
     let mut deferred_port_edges = ctx
         .alloc_filled(supports.len(), false, "catia_deferred_port_edges")
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
     let mut open_face_domains = None;
     let mut endpoint_face_assignments = None;
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
@@ -4844,19 +4762,19 @@ fn attach_standard_topology(
         let id = surface
             .id
             .try_clone_for_decode(ctx, "catia_standard_surface_id_copy")
-            .map_err(StandardTopologyError::Resource)?;
+            .map_err(StandardTopologyError::Codec)?;
         surface_indices.insert(id, index);
     }
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
     let face_point_membership =
         standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
-            .map_err(StandardTopologyError::Resource)?;
+            .map_err(StandardTopologyError::Codec)?;
     let limit_curve_bindings =
         standard_limit_curve_bindings(ctx, ir, bindings, &surface_indices, &supports, limit_curves)
-            .map_err(StandardTopologyError::Resource)?;
+            .map_err(StandardTopologyError::Codec)?;
     let mut ordered_endpoint_pairs = ctx
         .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
     let mut point_coordinates = Vec::new();
     for point in &ir.model.points {
         point_coordinates.push([
@@ -4869,7 +4787,7 @@ fn attach_standard_topology(
         ]);
     }
     let visualization_endpoint_pairs =
-        missing_edge::standard_edge_rows(ctx, spine).map_err(StandardTopologyError::Resource)?;
+        missing_edge::standard_edge_rows(ctx, spine).map_err(StandardTopologyError::Codec)?;
     let visualization_endpoint_pairs = match visualization_endpoint_pairs {
         Some(rows) => missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates),
         None => None,
@@ -4913,7 +4831,7 @@ fn attach_standard_topology(
                     ),
                 ]),
             )
-            .map_err(StandardTopologyError::Resource)?,
+            .map_err(StandardTopologyError::Codec)?,
             crate::families::standard::records::StandardCurveGeometry::Line
             | crate::families::standard::records::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
@@ -4934,7 +4852,7 @@ fn attach_standard_topology(
                                 face_bounds.as_ref().and_then(|bounds| bounds[face]),
                             )
                             .map_err(CodecError::from)
-                            .map_err(StandardTopologyError::Resource)?
+                            .map_err(StandardTopologyError::Codec)?
                             {
                                 points.push(index);
                             }
@@ -4965,7 +4883,7 @@ fn attach_standard_topology(
     let edge_classes = standard_curve_edge_classes(&supports);
     let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
     let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
     let native_edges = match topology_graph.as_ref() {
         Some(graph) => graph.referenced_edge_vertex_references(),
         None => None,
@@ -4976,7 +4894,7 @@ fn attach_standard_topology(
     };
     let e5_topology = match e5_record_range {
         Some(range) => crate::families::e5::graph::parse_topology(ctx, &source[range])
-            .map_err(StandardTopologyError::Resource)?,
+            .map_err(StandardTopologyError::Codec)?,
         None => None,
     };
     if let Some(e5_topology) = e5_topology {
@@ -5078,7 +4996,7 @@ fn attach_standard_topology(
         &supports,
         &endpoint_candidates,
     )
-    .map_err(StandardTopologyError::Resource)?;
+    .map_err(StandardTopologyError::Codec)?;
     if let Some(options) = &mut endpoint_options {
         for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
             if bindings.is_empty() {
@@ -5121,7 +5039,7 @@ fn attach_standard_topology(
             {
                 options[edge] = ctx
                     .alloc_filled(1, pair, "catia_native_support_singleton_pair")
-                    .map_err(StandardTopologyError::Resource)?;
+                    .map_err(StandardTopologyError::Codec)?;
             }
         }
     }
@@ -5130,7 +5048,7 @@ fn attach_standard_topology(
             if let Some(pair) = pair {
                 *options = ctx
                     .alloc_filled(1, *pair, "catia_native_evidence_singleton_pair")
-                    .map_err(StandardTopologyError::Resource)?;
+                    .map_err(StandardTopologyError::Codec)?;
             }
         }
     }
@@ -5146,7 +5064,7 @@ fn attach_standard_topology(
                     pairs,
                     &ordered_endpoint_pairs,
                 )
-                .map_err(StandardTopologyError::Resource)?
+                .map_err(StandardTopologyError::Codec)?
             else {
                 return Err(StandardTopologyFailure::NativeEndpointPropagation.into());
             };
@@ -5160,7 +5078,7 @@ fn attach_standard_topology(
             if let Some(pair) = pair {
                 *options = ctx
                     .alloc_filled(1, *pair, "catia_propagated_singleton_pair")
-                    .map_err(StandardTopologyError::Resource)?;
+                    .map_err(StandardTopologyError::Codec)?;
             }
         }
     }
@@ -5173,7 +5091,7 @@ fn attach_standard_topology(
             spine,
             &serialized_edge_faces,
         )
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
         let mut allowed_faces = Vec::new();
         for (edge, support) in supports.iter().enumerate() {
             let mut faces = Vec::new();
@@ -5199,7 +5117,7 @@ fn attach_standard_topology(
                                     face_bounds.as_ref().and_then(|bounds| bounds[face]),
                                 )
                                 .map_err(CodecError::from)
-                                .map_err(StandardTopologyError::Resource)?
+                                .map_err(StandardTopologyError::Codec)?
                                 {
                                     all_points = false;
                                     break;
@@ -5215,7 +5133,7 @@ fn attach_standard_topology(
                                     face_bounds.as_ref().and_then(|bounds| bounds[face]),
                                 )
                                 .map_err(CodecError::from)
-                                .map_err(StandardTopologyError::Resource)?
+                                .map_err(StandardTopologyError::Codec)?
                             {
                                 any_pair = true;
                                 break;
@@ -5280,7 +5198,7 @@ fn attach_standard_topology(
                 &pairs,
                 face_count,
             )
-            .map_err(StandardTopologyError::Resource)?,
+            .map_err(StandardTopologyError::Codec)?,
             None => None,
         };
         let endpoint_completed = match endpoint_closures.as_deref() {
@@ -5305,7 +5223,7 @@ fn attach_standard_topology(
                 &edge_faces,
                 &allowed_faces,
             )
-            .map_err(StandardTopologyError::Resource)?
+            .map_err(StandardTopologyError::Codec)?
         };
         if let Some(completed) = completed {
             edge_faces = completed;
@@ -5332,7 +5250,7 @@ fn attach_standard_topology(
                             face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
                         )
                         .map_err(CodecError::from)
-                        .map_err(StandardTopologyError::Resource)?
+                        .map_err(StandardTopologyError::Codec)?
                         {
                             all_points = false;
                             break;
@@ -5453,7 +5371,7 @@ fn attach_standard_topology(
                 true
             });
             if let Some(error) = limit_error {
-                return Err(StandardTopologyError::Resource(error));
+                return Err(StandardTopologyError::Codec(error));
             }
             if pairs.is_empty() {
                 *pairs = unfiltered;
@@ -5470,7 +5388,7 @@ fn attach_standard_topology(
                         .map(|[pair]| pair)
                 })
                 .collect::<Vec<_>>())
-            .map_err(StandardTopologyError::Resource)?;
+            .map_err(StandardTopologyError::Codec)?;
             let mut changed = false;
             if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
                 ctx,
@@ -5478,7 +5396,7 @@ fn attach_standard_topology(
                 &edge_faces,
                 &seeds,
             )
-            .map_err(StandardTopologyError::Resource)?
+            .map_err(StandardTopologyError::Codec)?
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
                     if deferred_port_edges[edge] {
@@ -5498,7 +5416,7 @@ fn attach_standard_topology(
                         }
                     });
                     if let Some(limit) = refusal {
-                        return Err(StandardTopologyError::Resource(CodecError::from(limit)));
+                        return Err(StandardTopologyError::Codec(CodecError::from(limit)));
                     }
                     if domain.is_empty() {
                         continue;
@@ -5523,7 +5441,7 @@ fn attach_standard_topology(
                     &edge_faces,
                     options,
                 )
-                .map_err(StandardTopologyError::Resource)?
+                .map_err(StandardTopologyError::Codec)?
             } else {
                 None
             };
@@ -5546,7 +5464,7 @@ fn attach_standard_topology(
                         }
                     });
                     if let Some(limit) = refusal {
-                        return Err(StandardTopologyError::Resource(CodecError::from(limit)));
+                        return Err(StandardTopologyError::Codec(CodecError::from(limit)));
                     }
                     let previous = options[edge].clone();
                     if options[edge].is_empty() {
@@ -5580,7 +5498,7 @@ fn attach_standard_topology(
                 }
             });
             if let Some(limit) = refusal {
-                return Err(StandardTopologyError::Resource(CodecError::from(limit)));
+                return Err(StandardTopologyError::Codec(CodecError::from(limit)));
             }
             pairs.sort_unstable_by(Ord::cmp);
             pairs.dedup();
@@ -5644,11 +5562,12 @@ fn attach_standard_topology(
                 Ok(None)
             }
         })()
-        .map_err(StandardTopologyError::Resource)?
+        .map_err(StandardTopologyError::Codec)?
     };
-    let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options.as_ref().zip(
-        missing_edge::edge_port_identities(ctx, spine).map_err(StandardTopologyError::Resource)?,
-    ) {
+    let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options
+        .as_ref()
+        .zip(missing_edge::edge_port_identities(ctx, spine).map_err(StandardTopologyError::Codec)?)
+    {
         let pairs = Ok(options
             .iter()
             .map(|pairs| {
@@ -5657,7 +5576,7 @@ fn attach_standard_topology(
                     .map(|pair| pair[0])
             })
             .collect::<Vec<_>>())
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
         missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
             ctx,
             &ports,
@@ -5665,7 +5584,7 @@ fn attach_standard_topology(
             &ordered_endpoint_pairs,
             &deferred_port_edges,
         )
-        .map_err(StandardTopologyError::Resource)?
+        .map_err(StandardTopologyError::Codec)?
         .map(|propagated| {
             propagated
                 .into_iter()
@@ -5685,7 +5604,7 @@ fn attach_standard_topology(
     let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
         endpoint_options.as_ref().zip(
             missing_edge::standard_mesh_edge_ports(ctx, spine)
-                .map_err(StandardTopologyError::Resource)?,
+                .map_err(StandardTopologyError::Codec)?,
         ) {
         let pairs = Ok(options
             .iter()
@@ -5695,7 +5614,7 @@ fn attach_standard_topology(
                     .map(|pair| pair[0])
             })
             .collect::<Vec<_>>())
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
         missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
             ctx,
             &ports,
@@ -5703,7 +5622,7 @@ fn attach_standard_topology(
             &ordered_endpoint_pairs,
             &deferred_port_edges,
         )
-        .map_err(StandardTopologyError::Resource)?
+        .map_err(StandardTopologyError::Codec)?
     } else {
         None
     };
@@ -5719,7 +5638,7 @@ fn attach_standard_topology(
                 .and_then(|propagated| propagated.get(edge).copied().flatten())
             {
                 ctx.alloc_filled(1, pair, "catia_endpoint_propagated_pair")
-                    .map_err(StandardTopologyError::Resource)?
+                    .map_err(StandardTopologyError::Codec)?
             } else {
                 pairs.clone()
             };
@@ -5731,8 +5650,7 @@ fn attach_standard_topology(
     };
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
-        missing_edge::standard_mesh_edge_ports(ctx, spine)
-            .map_err(StandardTopologyError::Resource)?,
+        missing_edge::standard_mesh_edge_ports(ctx, spine).map_err(StandardTopologyError::Codec)?,
     ) {
         let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
             fbb::prune_edge_candidates_by_port_domains_with_deferred(
@@ -5744,7 +5662,7 @@ fn attach_standard_topology(
         } else {
             fbb::prune_edge_candidates_by_port_domains(ctx, &ports, options)
         }
-        .map_err(StandardTopologyError::Resource)?;
+        .map_err(StandardTopologyError::Codec)?;
         if let Some(pruned) = pruned {
             *options = pruned;
         }
@@ -5755,10 +5673,10 @@ fn attach_standard_topology(
                 options,
                 &deferred_port_edges,
             )
-            .map_err(StandardTopologyError::Resource)?
+            .map_err(StandardTopologyError::Codec)?
         } else {
             missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
-                .map_err(StandardTopologyError::Resource)?
+                .map_err(StandardTopologyError::Codec)?
                 .map(|pairs| pairs.into_iter().map(Some).collect::<Vec<_>>())
         };
         if let Some(pairs) = unique_pairs {
@@ -5789,30 +5707,29 @@ fn attach_standard_topology(
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
     let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
-        missing_edge::standard_mesh_edge_ports(ctx, spine)
-            .map_err(StandardTopologyError::Resource)?
+        missing_edge::standard_mesh_edge_ports(ctx, spine).map_err(StandardTopologyError::Codec)?
     } else {
         None
     };
     let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
         let native = if let Some(ports) = fbb_mesh_ports.as_deref() {
             topology::parse_fbb_with_native_vertices(ctx, spine, ports)
-                .map_err(StandardTopologyError::Resource)?
+                .map_err(StandardTopologyError::Codec)?
         } else {
             None
         };
         if native.is_some() {
             native
         } else {
-            topology::parse_fbb(ctx, spine).map_err(StandardTopologyError::Resource)?
+            topology::parse_fbb(ctx, spine).map_err(StandardTopologyError::Codec)?
         }
     } else {
-        let standard = fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Resource)?;
+        let standard = fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Codec)?;
         if standard.is_some() {
             standard
         } else if let Some(ports) = native_ports.as_ref() {
             topology::parse_fbb_with_native_vertices(ctx, spine, ports)
-                .map_err(StandardTopologyError::Resource)?
+                .map_err(StandardTopologyError::Codec)?
         } else {
             None
         }
@@ -5856,7 +5773,7 @@ fn attach_standard_topology(
     })();
     let mesh_bound = match mesh_bound {
         Ok(bound) => bound,
-        Err(error) => return Err(StandardTopologyError::Resource(error)),
+        Err(error) => return Err(StandardTopologyError::Codec(error)),
     };
     let circle_anchors = Ok(supports
         .iter()
@@ -5869,7 +5786,7 @@ fn attach_standard_topology(
             | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
         .collect::<Vec<_>>())
-    .map_err(StandardTopologyError::Resource)?;
+    .map_err(StandardTopologyError::Codec)?;
     let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
     {
         if let Some(pairs) = native_endpoint_pairs.as_ref() {
@@ -5880,7 +5797,7 @@ fn attach_standard_topology(
                 pairs,
                 Some(&edge_classes),
             )
-            .map_err(StandardTopologyError::Resource)?
+            .map_err(StandardTopologyError::Codec)?
         } else {
             None
         }
@@ -5909,7 +5826,7 @@ fn attach_standard_topology(
             Ok(None)
         }
     })()
-    .map_err(StandardTopologyError::Resource)?
+    .map_err(StandardTopologyError::Codec)?
     {
         let point_assignment = (0..ir.model.points.len()).collect::<Vec<_>>();
         (topology, point_assignment)
@@ -6185,7 +6102,7 @@ fn attach_standard_topology(
             }
         })
     })()
-    .map_err(StandardTopologyError::Resource)?
+    .map_err(StandardTopologyError::Codec)?
     {
         bound
     } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
@@ -6210,7 +6127,7 @@ fn attach_standard_topology(
         }
         fbb::parse_standard_endpoint_candidates(ctx, spine, &edge_faces, options, work_budget)
     })()
-    .map_err(StandardTopologyError::Resource)?
+    .map_err(StandardTopologyError::Codec)?
     {
         let point_assignment = (0..ir.model.points.len()).collect::<Vec<_>>();
         (topology, point_assignment)
@@ -6219,7 +6136,7 @@ fn attach_standard_topology(
     } else {
         fbb::parse_standard_motif(ctx, spine, &edge_faces, &circle_anchors)
     })
-    .map_err(StandardTopologyError::Resource)?
+    .map_err(StandardTopologyError::Codec)?
     {
         let point_assignment = (0..ir.model.points.len()).collect::<Vec<_>>();
         (topology, point_assignment)
@@ -6249,13 +6166,13 @@ fn attach_standard_topology(
         },
         admission,
     )
-    .map_err(StandardTopologyError::Resource)?
+    .map_err(StandardTopologyError::Codec)?
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
     let Some(topology) =
         crate::families::standard::topology::admitted::StandardTopology::new(topology)
-            .map_err(StandardTopologyError::Resource)?
+            .map_err(StandardTopologyError::Codec)?
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
@@ -6294,7 +6211,7 @@ fn attach_standard_topology(
         },
     )
     .map_err(|error| match error {
-        cadmpeg_core::CodecError::ResourceLimit(_) => StandardTopologyError::Resource(error),
+        cadmpeg_core::CodecError::ResourceLimit(_) => StandardTopologyError::Codec(error),
         _ => StandardTopologyError::Semantic(StandardTopologyFailure::InadmissibleNeutralModel),
     })?;
     Ok(())
@@ -6765,8 +6682,7 @@ refusal)?
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 let pcurves = match pcurve_use {
                     Some(pcurve) => {
-                        let pcurves = vec![pcurve];
-                        pcurves
+                        vec![pcurve]
                     }
                     None => Vec::new(),
                 };

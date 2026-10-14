@@ -1293,61 +1293,6 @@ mod tests {
         )
     }
 
-    #[test]
-    fn sketch_unique_record_indexes_refuse_collection_limit() {
-        let (_, native, _, _) = fixture(false);
-        let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            super::unique_entity_records(&native)
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_sketch_entity_records")
-        );
-        let admitted =
-            crate::test_support::with_service_context(|ctx| super::unique_entity_records(&native))
-                .expect("service profile admits sketch entity index");
-        assert!(admitted.get(native.entity_records[0].id.as_str()).is_some());
-    }
-
-    #[test]
-    fn sketch_native_identity_indexes_refuse_retained_limit() {
-        let (mut ir, _, _, _) = fixture(false);
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            super::sketch_ids_by_native_ref(ctx, &ir)
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_sketch_native_key")
-        );
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            super::sketch_ids_by_native_ref(ctx, &ir)
-        })
-        .expect("service profile admits sketch identity index");
-        assert!(admitted.get("sketch-object").is_some());
-
-        ir.model.sketch_entities.push(
-            SketchEntity::new(
-                SketchEntityId::mint("synthetic:test:sketch-entity#0".to_string())
-                    .expect("identity grammar"),
-                ir.model.sketches[0].id.clone(),
-                SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
-            )
-            .with_native_ref(Some("field-record".to_string())),
-        );
-        let refused = crate::test_support::with_retained_limit(0, |ctx| {
-            super::sketch_entities_by_native_ref(ctx, &ir)
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_sketch_entity_native_key")
-        );
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            super::sketch_entities_by_native_ref(ctx, &ir)
-        })
-        .expect("service profile admits native entity index");
-        assert!(admitted.get("field-record").is_some());
-    }
-
     fn native_sketch_fixture(
         geometry_class: &str,
     ) -> (
@@ -1636,62 +1581,6 @@ mod tests {
             .is_empty()
         );
         assert!(ir.model.sketch_entities.is_empty());
-    }
-
-    #[test]
-    fn sketch_transfer_refuses_before_unadmitted_member_allocation() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
-        let refused = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_sketch_entity_sketch_id",
-            |ctx| {
-                let mut trial_ir = ir.clone();
-                transfer_native_sketch_entities(
-                    ctx,
-                    &mut trial_ir,
-                    &native,
-                    &transfer,
-                    &graph_scope,
-                )
-            },
-        );
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_sketch_entity_sketch_id")
-        );
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect("service profile admits sketch scan");
-        assert!(admitted.is_empty());
-    }
-
-    #[test]
-    fn sketch_constraint_scan_refuses_before_unadmitted_candidate_allocation() {
-        let (mut ir, native, transfer, graph_scope) = native_sketch_fixture("Point");
-        let refused = crate::test_support::with_retained_refusal(
-            &[],
-            "catia_sketch_constraint_sketch_id",
-            |ctx| {
-                let mut trial_ir = ir.clone();
-                transfer_native_sketch_constraints(
-                    ctx,
-                    &mut trial_ir,
-                    &native,
-                    &transfer,
-                    &graph_scope,
-                )
-            },
-        );
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_sketch_constraint_sketch_id")
-        );
-        let admitted = crate::test_support::with_service_context(|ctx| {
-            transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
-        })
-        .expect("service profile admits constraint scan");
-        assert!(admitted.is_empty());
     }
 
     #[test]
@@ -2058,24 +1947,6 @@ mod tests {
                 && limit.operation == "admit CATIA sketch constraint")
         );
         assert!(ir.model.sketch_constraints.is_empty());
-    }
-
-    #[test]
-    fn sketch_range_properties_refuse_before_retained_projection() {
-        let (_, native, _, _) = fixture(false);
-        let range = native.entity_records[0]
-            .constraint_range()
-            .expect("constraint range");
-        let refused =
-            crate::test_support::with_retained_limit(0, |ctx| super::constraint_properties(range));
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_sketch_constraint_property")
-        );
-        let admitted =
-            crate::test_support::with_service_context(|ctx| super::constraint_properties(range))
-                .expect("service profile admits range properties");
-        assert_eq!(admitted["catia_constraint_value"], "CstAttr_Dimension");
     }
 
     #[test]

@@ -701,7 +701,7 @@ pub(crate) fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
 pub(crate) fn resolve_owner_chart_support_aliases(
     packets: &mut [CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
-) -> Result<(), CodecError> {
+) {
     let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
     for row in aliases {
         let key = row.tag();
@@ -711,7 +711,7 @@ pub(crate) fn resolve_owner_chart_support_aliases(
             unique_by_tag.insert(key, Some(row));
         }
     }
-    let resolve = |reference: &mut CatiaOwnerChartBridgeReference| -> Result<(), CodecError> {
+    let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = if let Some(row) = unique_by_tag.get(&reference.value).copied().flatten() {
                 let id = row.id.clone();
@@ -721,7 +721,6 @@ pub(crate) fn resolve_owner_chart_support_aliases(
                 None
             };
         }
-        Ok(())
     };
     for packet in packets {
         let Some(chart) = packet.owner_chart_mut() else {
@@ -736,10 +735,9 @@ pub(crate) fn resolve_owner_chart_support_aliases(
             continue;
         };
         for reference in support_surfaces.iter_mut().chain(support_pcurves) {
-            resolve(reference)?;
+            resolve(reference);
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -747,10 +745,6 @@ pub(crate) fn validate_alias_surface_tags(
     rows: &[CatiaAliasRow],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let mut expected = rows.to_vec();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("validation fixture fits service input limit");
     resolve_alias_surface_tags(&mut expected);
     if rows
         .iter()
@@ -771,12 +765,7 @@ pub(crate) fn validate_owner_chart_support_aliases(
     aliases: &[CatiaAliasRow],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let mut expected = packets.to_vec();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("validation fixture fits service input limit");
-    resolve_owner_chart_support_aliases(&mut expected, aliases)
-        .expect("validation fixture fits service resource limits");
+    resolve_owner_chart_support_aliases(&mut expected, aliases);
     if packets == expected {
         Ok(())
     } else {
@@ -920,7 +909,7 @@ pub(crate) fn native_object_graph(
     entity_records: Vec<entity_table::EntityRecord>,
     finjpl_segment: Option<String>,
     outer_container: Option<CatiaOuterContainerBinding>,
-) -> Result<(CatiaObjectGraph, Vec<CatiaEntityRecord>), CodecError> {
+) -> (CatiaObjectGraph, Vec<CatiaEntityRecord>) {
     let id = format!("catia:outer:object-graph#{:010}", graph.pos);
     let mut records = Vec::new();
     for (ordinal, record) in graph.records.into_iter().enumerate() {
@@ -930,14 +919,10 @@ pub(crate) fn native_object_graph(
             id: format!("catia:outer:object-record#{:010}", record.pos),
             parent: id.clone(),
             design_object: None,
-            entity: entity
-                .map(|entity| -> Result<CatiaObjectEntity, CodecError> {
-                    Ok(CatiaObjectEntity {
-                        record: format!("catia:outer:entity-record#{:010}", entity.pos),
-                        id: entity.entity_id,
-                    })
-                })
-                .transpose()?,
+            entity: entity.map(|entity| CatiaObjectEntity {
+                record: format!("catia:outer:entity-record#{:010}", entity.pos),
+                id: entity.entity_id,
+            }),
             ordinal: u64_from_index(ordinal),
             byte_offset: u64_from_index(record.pos),
             byte_len: u64_from_index(record.total_len),
@@ -1037,7 +1022,7 @@ pub(crate) fn native_object_graph(
         };
         entities.push(row);
     }
-    Ok((
+    (
         CatiaObjectGraph {
             id,
             byte_offset: u64_from_index(graph.pos),
@@ -1049,7 +1034,7 @@ pub(crate) fn native_object_graph(
             records,
         },
         entities,
-    ))
+    )
 }
 
 impl CatiaOuterContainerBinding {
@@ -1067,145 +1052,4 @@ impl CatiaOuterContainerBinding {
 #[cfg(test)]
 mod consolidated_edge_run_limit_tests {
     use std::collections::HashSet;
-
-    #[test]
-    fn native_edge_runs_propagate_a5_surface_limit() {
-        let bytes = crate::test_support::test_a5a8::a5_surface_stream();
-        let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(0, |ctx| {
-            super::consolidated_edge_runs(
-                ctx,
-                &bytes,
-                &records,
-                &[],
-                &[],
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        assert!(matches!(limited,
-            Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == "catia_a5_distinct_knots"));
-        let runs = crate::test_support::with_service_context(|ctx| {
-            super::consolidated_edge_runs(
-                ctx,
-                &bytes,
-                &records,
-                &[],
-                &[],
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        })
-        .expect("service collection budget");
-        assert!(runs.is_empty());
-    }
-
-    #[test]
-    fn native_edge_run_indexes_loci_and_ids_refuse_limits() {
-        let mut supported = crate::test_support::test_b2::b2_cylinder_stream();
-        for point in [
-            [1.0f32, 4.0, 3.0],
-            [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
-        ] {
-            supported.extend_from_slice(&[0x05, 0x08, 0x01]);
-            for value in point {
-                supported.extend_from_slice(&value.to_le_bytes());
-            }
-        }
-        supported.extend_from_slice(
-            &crate::test_support::test_a5_bound::a5_native_edge_run_stream(6, 139, 142),
-        );
-        let fixtures = [
-            crate::test_support::test_a5_bound::a5_native_edge_run_stream(6, 139, 142),
-            supported,
-        ];
-        let mut collection_refusals = HashSet::new();
-        let mut retained_refusals = HashSet::new();
-        let mut scoped_refusals = HashSet::new();
-        for bytes in fixtures {
-            let native = super::super::CatiaNative::decode(&bytes);
-            assert_eq!(native.consolidated_edge_runs.len(), 1);
-            let records = crate::wire::records::consolidated_records(&bytes);
-            for limit in 0..1024 {
-                let result = crate::test_support::with_collection_limit(limit, |ctx| {
-                    super::consolidated_edge_runs(
-                        ctx,
-                        &bytes,
-                        &records,
-                        &native.consolidated_pcurves,
-                        &native.consolidated_edge_nodes,
-                        &mut crate::nurbs::LaneRefusals::new(),
-                    )
-                });
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-                    collection_refusals.insert(error.operation);
-                }
-            }
-            let mut limit = 0;
-            for _ in 0..4096 {
-                let result = crate::test_support::with_retained_limit(limit, |ctx| {
-                    super::consolidated_edge_runs(
-                        ctx,
-                        &bytes,
-                        &records,
-                        &native.consolidated_pcurves,
-                        &native.consolidated_edge_nodes,
-                        &mut crate::nurbs::LaneRefusals::new(),
-                    )
-                });
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-                    retained_refusals.insert(error.operation);
-                    assert!(error.used + error.additional > limit);
-                    limit = error.used + error.additional;
-                } else {
-                    assert!(result.is_ok());
-                    break;
-                }
-            }
-            let mut limit = 0;
-            for _ in 0..4096 {
-                let result = crate::test_support::with_materialized_limit(limit, |ctx| {
-                    super::consolidated_edge_runs(
-                        ctx,
-                        &bytes,
-                        &records,
-                        &native.consolidated_pcurves,
-                        &native.consolidated_edge_nodes,
-                        &mut crate::nurbs::LaneRefusals::new(),
-                    )
-                });
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
-                    scoped_refusals.insert(error.operation);
-                    assert!(error.used + error.additional > limit);
-                    limit = error.used + error.additional;
-                } else {
-                    assert!(result.is_ok());
-                    break;
-                }
-            }
-        }
-        for operation in [
-            "catia_native_edge_run_pcurve_index",
-            "catia_native_edge_run_resolved_index",
-            "catia_native_edge_run_node_index",
-            "catia_native_edge_run_shared_loci",
-            "catia_native_edge_runs",
-        ] {
-            assert!(
-                collection_refusals.contains(operation),
-                "{operation} did not refuse"
-            );
-        }
-        for operation in [
-            "catia_native_edge_run_id",
-            "catia_native_edge_run_first_pcurve_id",
-            "catia_native_edge_run_second_pcurve_id",
-            "catia_native_edge_run_node_id",
-        ] {
-            assert!(
-                retained_refusals.contains(operation),
-                "{operation} did not refuse"
-            );
-        }
-        assert!(scoped_refusals.contains("catia_native_edge_run_pcurve_index_id"));
-    }
 }

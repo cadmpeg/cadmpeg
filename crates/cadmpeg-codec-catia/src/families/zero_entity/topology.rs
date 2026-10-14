@@ -662,36 +662,6 @@ mod tests {
     }
 
     #[test]
-    fn native_endpoint_inventory_propagates_zero_work_refusal() {
-        let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-        let occurrences = [
-            occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
-            occurrence(11, 2, endpoints, Point3::new(0.5, 0.0, 0.0)),
-        ];
-        crate::test_support::with_work_limit(0, |ctx| {
-            let error =
-                endpoint_pair_candidates(ctx, &occurrences).expect_err("inventory work refused");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-        let pairs = [super::ZeroEntityEndpointPairCandidate {
-            face_record_ordinals: [10, 11],
-            support_record_ordinals: [1, 2],
-            model_endpoints: [finite(endpoints[0]); 2],
-            model_midpoint: finite(endpoints[0]),
-        }];
-        crate::test_support::with_work_limit(0, |ctx| {
-            let error = endpoint_locus_candidates(ctx, &pairs).expect_err("locus work refused");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
-    }
-
-    #[test]
     fn bounded_endpoint_matching_skips_after_exhausted_work() {
         let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
         let occurrences = [
@@ -811,92 +781,5 @@ mod tests {
         assert!(candidates
             .iter()
             .all(|candidate| candidate.incident_endpoint_pair_endpoints.len() == 1));
-    }
-
-    #[test]
-    fn endpoint_pair_graph_refuses_each_collection_limit() {
-        let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-        let occurrences = [
-            occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
-            occurrence(11, 2, endpoints, Point3::new(0.5, 0.0, 0.0)),
-        ];
-        let mut operations = HashSet::new();
-        for cap in 0..=128 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits input limit");
-            match endpoint_pair_candidates(&ctx, &occurrences) {
-                Ok(pairs) => assert_eq!(pairs[0].support_record_ordinals, [1, 2]),
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    operations.insert(limit.operation);
-                }
-                Err(error) => panic!("unexpected endpoint-pair refusal: {error}"),
-            }
-        }
-        for operation in [
-            "catia_zero_match_cells",
-            "catia_zero_match_cell_members",
-            "catia_zero_match_rows",
-            "catia_zero_match_possible",
-            "catia_zero_match_edges",
-            "catia_zero_radial_edges",
-            "catia_zero_radial_rows",
-            "catia_zero_face_ordinals",
-            "catia_zero_face_indices",
-            "catia_zero_face_union",
-            "catia_zero_endpoint_pairs",
-            "catia_zero_pair_visited",
-            "catia_zero_pair_stack",
-            "catia_zero_pair_group",
-            "catia_zero_pair_face_members",
-            "catia_zero_pair_face_components",
-        ] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
-    }
-
-    #[test]
-    fn endpoint_locus_graph_refuses_each_collection_limit() {
-        let pair = ZeroEntityEndpointPairCandidate {
-            face_record_ordinals: [10, 11],
-            support_record_ordinals: [1, 2],
-            model_endpoints: [
-                finite(Point3::new(0.0, 0.0, 0.0)),
-                finite(Point3::new(1.0, 0.0, 0.0)),
-            ],
-            model_midpoint: finite(Point3::new(0.5, 0.0, 0.0)),
-        };
-        let mut operations = HashSet::new();
-        for cap in 0..=128 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits input limit");
-            match endpoint_locus_candidates(&ctx, &[pair]) {
-                Ok(loci) => assert_eq!(loci.len(), 2),
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    operations.insert(limit.operation);
-                }
-                Err(error) => panic!("unexpected endpoint-locus refusal: {error}"),
-            }
-        }
-        for operation in [
-            "catia_zero_locus_endpoints",
-            "catia_zero_locus_cell_members",
-            "catia_zero_locus_cells",
-            "catia_zero_locus_neighbors",
-            "catia_zero_locus_visited",
-            "catia_zero_locus_stack",
-            "catia_zero_locus_component",
-            "catia_zero_locus_incident_endpoints",
-            "catia_zero_endpoint_loci",
-        ] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
     }
 }

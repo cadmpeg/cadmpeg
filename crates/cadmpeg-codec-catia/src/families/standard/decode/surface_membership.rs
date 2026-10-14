@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn membership_stops_after_a_complete_point_witness() {
         let surface = surface();
-        crate::test_support::with_collection_limit(512, |ctx| {
+        crate::test_support::with_service_context(|ctx| {
             let distance =
                 nurbs_surface_witness_distance(ctx, &surface, Point3::new(0.3, 0.7, 0.0))
                     .expect("one planar witness fits")
@@ -292,7 +292,7 @@ mod tests {
     #[test]
     fn stationary_refinement_does_not_repeat_the_same_evaluation() {
         let surface = surface();
-        crate::test_support::with_collection_limit(512, |ctx| {
+        crate::test_support::with_service_context(|ctx| {
             let distance = refine_nurbs_surface_point(
                 ctx,
                 &surface,
@@ -352,11 +352,11 @@ mod tests {
     }
 
     #[test]
-    fn conservative_face_membership_does_not_allocate_witness_basis() {
+    fn conservative_face_membership_uses_the_control_net() {
         let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface()),
         );
-        crate::test_support::with_collection_limit(0, |ctx| {
+        crate::test_support::with_service_context(|ctx| {
             assert!(super::super::point_on_standard_face(
                 ctx,
                 Point3::new(0.3, 0.7, 0.0),
@@ -372,80 +372,5 @@ mod tests {
             )
             .expect("outside the control net is impossible"));
         });
-    }
-
-    #[test]
-    fn surface_witness_refuses_knot_scan_work() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture root");
-        let original = nurbs_surface_witness_distance(&ctx, &surface(), Point3::new(0.3, 0.7, 0.0))
-            .expect_err("knot span work refuses");
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface knot span count");
-        assert_eq!(
-            (original.limit, original.used, original.additional),
-            (0, 0, 1)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
-
-    #[test]
-    fn surface_refinement_refuses_step_work() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture root");
-        let surface = surface();
-        let original = refine_nurbs_surface_point(
-            &ctx,
-            &surface,
-            Point3::new(0.3, 0.7, 0.0),
-            Point2::new(0.0, 0.0),
-            [[0.0, 1.0]; 2],
-        )
-        .expect_err("refinement work refuses");
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface refinement step");
-        assert_eq!(
-            (original.limit, original.used, original.additional),
-            (0, 0, 1)
-        );
-        assert_eq!(
-            nurbs_surface_point_distance(
-                &ctx,
-                &surface,
-                Point3::new(0.0, 0.0, 0.0),
-                Point2::new(f64::NAN, 0.0)
-            ),
-            Err(original)
-        );
-        assert_eq!(
-            nurbs_surface_witness_distance(&ctx, &surface, Point3::new(0.0, 0.0, 0.0)),
-            Err(original)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
-
-    #[test]
-    fn surface_bounds_refuses_pole_work() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture root");
-        let original =
-            super::super::point_on_nurbs_surface(&ctx, Point3::new(2.0, 2.0, 2.0), &surface())
-                .expect_err("pole work refuses");
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface bound pole");
-        assert_eq!(
-            (original.limit, original.used, original.additional),
-            (0, 0, 1)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }

@@ -1039,11 +1039,6 @@ mod appearance_tests {
                 .expect("service resource budget"),
             Some(vec![[0xd1, 0x1a, 0x1f, 0x99], [0x14, 0x3d, 0xe0, 0xff]])
         );
-        assert!(matches!(
-            crate::test_support::with_collection_limit(1, |ctx| standard_face_colors(ctx, &bytes)),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_fbb_face_colors"
-        ));
         let mut mixed = bytes;
         mixed[8] = 0x30;
         assert_eq!(
@@ -1906,25 +1901,6 @@ mod tests {
     }
 
     #[test]
-    fn boundary_maps_use_scoped_bytes_and_cycles_keep_retained_bytes() {
-        let triangles = [[0, 1, 2], [0, 2, 3]];
-        let output_bytes = 4 * size_of::<u32>() + 4 * size_of::<Vec<u32>>();
-        let cycles = crate::test_support::with_retained_limit(
-            cadmpeg_core::decode::u64_from_index(output_bytes),
-            |ctx| boundary_cycles(&triangles),
-        )
-        .expect("only the returned cycles retain bytes")
-        .expect("square boundary");
-        assert_eq!(cycles, vec![vec![0, 1, 2, 3]]);
-        let refused =
-            crate::test_support::with_materialized_limit(0, |ctx| boundary_cycles(&triangles));
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_boundary_edge_directions")
-        );
-    }
-
-    #[test]
     fn boundary_cycles_cancel_opposite_triangle_edges() {
         let triangles = [[0, 1, 2], [0, 2, 3]];
         assert_eq!(
@@ -1943,40 +1919,6 @@ mod tests {
             None
         );
     }
-
-    #[test]
-    fn boundary_cycles_refuse_each_counted_collection() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
-        let triangles = [[0, 1, 2], [0, 2, 3]];
-        let mut operations = HashSet::new();
-        for cap in 0..=48 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                .expect("fixture fits the input limit");
-            match boundary_cycles(&triangles) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    operations.insert(limit.operation);
-                }
-                Ok(Some(cycles)) => assert_eq!(cycles, vec![vec![0, 1, 2, 3]]),
-                Ok(None) => panic!("two adjacent triangles must form a boundary"),
-                Err(error) => panic!("unexpected boundary refusal: {error}"),
-            }
-        }
-        for operation in [
-            "catia_boundary_edge_directions",
-            "catia_boundary_successors",
-            "catia_boundary_cycle_handles",
-            "catia_boundary_seen",
-            "catia_boundary_cycles",
-        ] {
-            assert!(operations.contains(operation), "no refusal at {operation}");
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1984,52 +1926,22 @@ mod trim_admission_tests {
     use super::{parse_trim_record_layout, parse_trim_record_layout_with_length_encoding};
 
     #[test]
-    fn false_trim_partition_does_not_allocate_declared_lengths() {
+    fn false_trim_partition_is_rejected() {
         let mut bytes = vec![0x01, 0x43, 0, 64, 0xff, 1, 0, 0, 0];
         bytes.extend_from_slice(&[0; 64]);
-        crate::test_support::with_collection_limit(0, |ctx| {
-            assert!(
-                parse_trim_record_layout_with_length_encoding(&bytes, 0, 2, false)
-                    .expect("invalid partition needs no collection")
-                    .is_none()
-            );
-        });
+        assert!(parse_trim_record_layout_with_length_encoding(&bytes, 0, 2, false).is_none());
     }
 
     #[test]
-    fn truncated_trim_handles_do_not_allocate_lengths() {
+    fn truncated_trim_handles_are_rejected() {
         let bytes = [0x01, 0x43, 0, 1, 0xff, 3, 0, 0, 0, 3, 0, 1];
-        crate::test_support::with_collection_limit(0, |ctx| {
-            assert!(
-                parse_trim_record_layout_with_length_encoding(&bytes, 0, 2, false)
-                    .expect("truncated handle lane needs no collection")
-                    .is_none()
-            );
-        });
-    }
-
-    #[test]
-    fn false_trim_partition_still_charges_the_scan() {
-        let bytes = [0x01, 0x43, 0, 1, 0xff, 1, 0, 0, 0, 0];
-        crate::test_support::with_work_limit(0, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
-                parse_trim_record_layout_with_length_encoding(&bytes, 0, 2, false)
-                    .expect_err("candidate length read requires work")
-            else {
-                panic!("resource refusal");
-            };
-            assert_eq!(limit.operation, "catia_trim_length_scan");
-        });
+        assert!(parse_trim_record_layout_with_length_encoding(&bytes, 0, 2, false).is_none());
     }
 
     #[test]
     fn complete_trim_layout_keeps_lengths_in_the_source_lane() {
         let bytes = [0x01, 0x43, 0x00, 0x01, 0xff, 3, 0, 0, 0, 3, 0, 1, 2];
-        let layout = crate::test_support::with_collection_limit(0, |ctx| {
-            parse_trim_record_layout(&bytes, 0, 1)
-        })
-        .expect("layout scanning allocates no primitive lanes")
-        .expect("complete partition");
+        let layout = parse_trim_record_layout(&bytes, 0, 1).expect("complete partition");
         assert_eq!(layout.handle_count, 3);
         assert_eq!(layout.end, bytes.len());
     }

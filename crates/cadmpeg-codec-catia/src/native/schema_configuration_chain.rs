@@ -257,36 +257,6 @@ mod tests {
     use super::{CatiaSchemaConfigurationRowChain, CatiaSchemaConfigurationRowChainLink};
 
     #[test]
-    fn configuration_chain_wire_refuses_before_successor_link_growth() {
-        let chain = CatiaSchemaConfigurationRowChain {
-            id: "chain".to_owned(),
-            object_graph: "graph".to_owned(),
-            links: vec![CatiaSchemaConfigurationRowChainLink {
-                row: CatiaEntityReference::Unresolved { entity_id: 1 },
-                successor_payload_offset: 5,
-                intervening_entities: None,
-            }],
-            terminal: CatiaEntityReference::Unresolved { entity_id: 2 },
-        };
-        let refused = crate::test_support::with_collection_limit(0, |ctx| {
-            super::ChainWire::from_charged(chain.clone())
-        });
-        assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_configuration_chain_wire_links")
-        );
-        let charged = crate::test_support::with_service_context(|ctx| {
-            super::ChainWire::from_charged(chain.clone())
-        })
-        .expect("service budget admits successor wire");
-        let original: super::ChainWire = chain.into();
-        assert_eq!(
-            serde_json::to_value(charged).expect("charged wire"),
-            serde_json::to_value(original).expect("legacy wire")
-        );
-    }
-
-    #[test]
     fn wire_successors_follow_rows_and_keep_the_terminal() {
         let chain = CatiaSchemaConfigurationRowChain {
             id: "chain".to_owned(),

@@ -1205,12 +1205,8 @@ pub(super) fn build_standard_edge_curve(
                         None => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                                 record: Some(
-                                    Ok(("catia:payload:unknown#brep-stream").to_owned()).and_then(
-                                        |text| {
-                                            UnknownId::mint(text)
-                                                .map_err(cadmpeg_core::CodecError::malformed)
-                                        },
-                                    )?,
+                                    UnknownId::mint("catia:payload:unknown#brep-stream".to_owned())
+                                        .map_err(cadmpeg_core::CodecError::malformed)?,
                                 ),
                             }),
                             None,
@@ -1287,12 +1283,8 @@ pub(super) fn build_standard_edge_curve(
                 None => (
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: Some(
-                            Ok(("catia:payload:unknown#brep-stream").to_owned()).and_then(
-                                |text| {
-                                    UnknownId::mint(text)
-                                        .map_err(cadmpeg_core::CodecError::malformed)
-                                },
-                            )?,
+                            UnknownId::mint("catia:payload:unknown#brep-stream".to_owned())
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
                         ),
                     }),
                     None,
