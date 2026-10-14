@@ -410,6 +410,54 @@ fn circular_pcurve_quarter_circle_spans_quarter_turn() {
 }
 
 #[test]
+fn extrusion_cap_pcurve_wraps_an_arc_stored_beyond_one_turn() {
+    use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, TAU};
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: Point2::new(0.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(1.0).expect("finite length fixture"),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).expect("finite angle fixture"),
+        end_angle: cadmpeg_ir::scalar::Angle::new(TAU + FRAC_PI_2).expect("finite angle fixture"),
+    })
+    .expect("valid test fixture");
+    for (reversed, start, end) in [
+        (false, [1.0, 0.0], [0.0, 1.0]),
+        (true, [0.0, 1.0], [1.0, 0.0]),
+    ] {
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| {
+            super::extrusion_cap_pcurve(
+                ctx,
+                &arc,
+                reversed,
+                start,
+                end,
+                &"wrapped arc cap",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })
+        .expect("service allocation")
+        .expect("quarter-turn cap geometry");
+        // One quarter turn: the curve midpoint is the angular midpoint.
+        for (parameter, expected) in [
+            (0.0, start),
+            (0.5, [FRAC_1_SQRT_2, FRAC_1_SQRT_2]),
+            (1.0, end),
+        ] {
+            let point = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &pcurve,
+                parameter,
+            )
+            .expect("finite pcurve point");
+            assert!(
+                (point.u - expected[0]).abs() < EPS_QUARTER_CIRCLE_SEAM
+                    && (point.v - expected[1]).abs() < EPS_QUARTER_CIRCLE_SEAM,
+                "reversed {reversed} parameter {parameter}: {point:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn overflowing_circular_pcurve_records_refusal_text() {
     const REASON: &str = "control_points contains a non-finite point";
 
