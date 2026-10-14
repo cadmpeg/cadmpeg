@@ -148,14 +148,11 @@ impl CodecBackend for IgesCodec {
 
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+
         Ok(representation::confidence(prefix))
     }
 
@@ -172,11 +169,11 @@ impl CodecBackend for IgesCodec {
                 reader::inspect(ctx, root.window(), representation, root.window().len())
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                let normalized = compressed::normalize(root.window())?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                let normalized = binary::normalize(root.window())?;
                 reader::inspect(ctx, &normalized, representation, root.window().len())
             }
         }
@@ -191,11 +188,11 @@ impl CodecBackend for IgesCodec {
                 reader::decode(root.window(), root.window(), representation, ctx)
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window(), ctx)?;
+                let normalized = compressed::normalize(root.window())?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
             representation::Representation::Binary => {
-                let normalized = binary::normalize(root.window(), ctx)?;
+                let normalized = binary::normalize(root.window())?;
                 reader::decode(&normalized, root.window(), representation, ctx)
             }
         }

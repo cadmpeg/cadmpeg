@@ -3,9 +3,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
@@ -17,77 +17,6 @@ use crate::test_support::test_curves_and_surfaces::{
 };
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
-
-fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::decode::resource_refusal_at(
-        &crate::IgesCodec,
-        bytes,
-        &mut DecodeOptions {
-            policy: DecodePolicy::service(),
-            ..DecodeOptions::default()
-        },
-        ResourceDimension::CollectionItems,
-        operation,
-        0,
-    );
-}
-
-#[test]
-fn spline_identity_copies_refuse_retained_byte_limit() {
-    let bytes = parametric_spline_curve_file();
-    IgesCodec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .unwrap();
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == "iges splines identity copy" {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            Ok(_) => panic!("spline identity refusal was not reached at cap {cap}"),
-            Err(error) => panic!("expected spline identity refusal: {error:?}"),
-        }
-    }
-    panic!("spline identity refusal was not reached within 4096 boundaries");
-}
-
-#[test]
-fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
-    let curve = parametric_spline_curve_file();
-    for operation in [
-        "iges spline curve knots",
-        "iges spline neutral point slots",
-        "iges spline neutral vertex slots",
-        "iges spline neutral curve slots",
-        "iges spline neutral edge slots",
-        "iges spline wire edge slots",
-        "iges entity loss slots",
-    ] {
-        assert_spline_collection_refusal(&curve, operation);
-    }
-    let surface = parametric_spline_surface_file();
-    for operation in [
-        "iges spline surface u knots",
-        "iges spline surface v knots",
-        "iges spline surface pole rows",
-        "iges spline surface pole row controls",
-        "iges spline neutral surface slots",
-    ] {
-        assert_spline_collection_refusal(&surface, operation);
-    }
-}
 
 fn type_112_parameters(
     continuity: i64,
@@ -114,29 +43,26 @@ fn type_112_parameters(
 }
 
 #[test]
-fn decode_refuses_a_parametric_spline_segment_count_over_its_projection_limit() {
-    let error = IgesCodec
+fn decode_skips_a_parametric_spline_segment_count_over_its_projection_limit() {
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(parametric_spline_curve_file_with_parameters(
                 b"112,3,1,3,100001;",
             )),
             &DecodeOptions::default(),
         )
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Codec("iges_spline_segments")
-                && limit.limit == 100_000
-                && limit.used == 100_000
-                && limit.additional == 1
-    ));
+    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
+            && loss.message.contains("segment count is outside 1..=100000")
+    }));
 }
 
 #[test]
-fn decode_refuses_a_parametric_spline_surface_over_its_pole_limit() {
-    let error = IgesCodec
+fn decode_skips_a_parametric_spline_surface_over_its_pole_limit() {
+    let decoded = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
                 entity_type: 114,
@@ -147,36 +73,30 @@ fn decode_refuses_a_parametric_spline_surface_over_its_pole_limit() {
             }])),
             &DecodeOptions::default(),
         )
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Codec("iges_spline_surface_poles")
-                && limit.limit == 1_000_000
-                && limit.used == 1_000_000
-                && limit.additional == 8_006_001
-    ));
+    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
+            && loss
+                .message
+                .contains("spline-surface pole count exceeds 1000000")
+    }));
 }
 
 #[test]
-fn spline_surface_patch_projection_fits_required_collection_storage() {
+fn spline_surface_patch_projects_a_bicubic_nurbs_carrier() {
     let bytes = parametric_spline_surface_file();
-    let scan = crate::test_support::scan(&bytes).unwrap();
+    let scan = crate::card::scan(&bytes).unwrap();
     let (global, _) = crate::test_support::parse_global(&scan).unwrap();
     let (directory, parameters) = crate::test_support::with_service_context(&bytes, |ctx| {
         let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)?;
-        let parameters =
-            crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, ctx)?;
+        let parameters = crate::parameter::assemble(&scan, &directory, &quarantined, &global)?;
         Ok::<_, CodecError>((directory, parameters))
     })
     .unwrap();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // A 4-by-4 surface needs fewer than 100 projection slots. Its 48
-    // coefficients are a fixed array and do not need heap collection slots.
-    policy.limits.max_collection_items = 100;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let result = super::project(
         &mut ir,
