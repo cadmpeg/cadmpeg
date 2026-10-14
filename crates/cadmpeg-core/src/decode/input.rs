@@ -31,14 +31,14 @@ impl DecodeContext<'_> {
         let mut chunk = [0_u8; INPUT_CHUNK];
         while bytes.len() < length {
             let count = (length - bytes.len()).min(chunk.len());
-            self.charge_work(u64_from_index(count), "read input prefix")?;
+
             let read = reader.read(&mut chunk[..count]).map_err(CodecError::Io)?;
             if read == 0 {
                 break;
             }
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
-            self.charge_work(u64_from_index(read), "copy input prefix")?;
+
             bytes.try_reserve_exact(read).map_err(|_| {
                 self.budget.refuse(
                     ResourceDimension::InputBytes,
@@ -68,23 +68,19 @@ impl DecodeContext<'_> {
             let count = if remaining >= u64_from_index(INPUT_CHUNK) {
                 INPUT_CHUNK
             } else {
-                usize::try_from(remaining).map_err(|_| {
-                    self.refuse_codec_limit(
-                        "address input chunk",
-                        u64_from_index(INPUT_CHUNK),
-                        remaining,
-                    )
-                })?
+                usize::try_from(remaining)
+                    .map_err(|_| self.refuse_input_limit(remaining, "address input chunk"))?
             };
-            let length = bytes.len().checked_add(count).ok_or_else(|| {
-                self.refuse_codec_limit("address complete input", u64_from_index(usize::MAX), max)
-            })?;
+            let length = bytes
+                .len()
+                .checked_add(count)
+                .ok_or_else(|| self.refuse_input_limit(max, "address complete input"))?;
             self.extend_input_prefix(reader, bytes, length)?;
             if count == 0 || bytes.len() < length {
                 break;
             }
         }
-        self.charge_work(1, "input end probe")?;
+
         if reader.read(&mut [0_u8; 1])? != 0 {
             return Err(self.refuse_input_limit(1, "complete input"));
         }
@@ -109,20 +105,6 @@ mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
     use std::io::Cursor;
-
-    #[test]
-    fn raw_input_storage_does_not_consume_decoded_collection_slots() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // One arena-registry entry; payload bytes are not decoded items.
-        policy.limits.max_collection_items = 1;
-        let source = vec![b'x'; 9000];
-        let (ctx, root) =
-            DecodeContext::read_root(&mut Cursor::new(&source), &arena, &policy, false)
-                .expect("physical input is governed by input bytes");
-        assert_eq!(root.window(), source);
-        ctx.finish_session().expect("no collection refusal");
-    }
 
     #[test]
     fn input_prefix_refusal_keeps_input_dimension() {

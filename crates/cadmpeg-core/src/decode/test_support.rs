@@ -147,13 +147,9 @@ pub(super) fn charge_limit(
         let ceiling = match dimension {
             ResourceDimension::InputBytes => limits.max_input_bytes,
             ResourceDimension::DecompressedBytes => limits.max_decompressed_bytes_total,
-            ResourceDimension::MaterializedBytes => limits.max_materialized_bytes,
             ResourceDimension::RetainedBytes => limits.max_retained_bytes,
             ResourceDimension::Entities => limits.max_entities,
-            ResourceDimension::CollectionItems => limits.max_collection_items,
             ResourceDimension::RecursionDepth => limits.max_recursion_depth,
-            ResourceDimension::WorkUnits => limits.max_work_units,
-            ResourceDimension::Codec(_) => return None,
         };
         if ceiling != u64::MAX {
             return None;
