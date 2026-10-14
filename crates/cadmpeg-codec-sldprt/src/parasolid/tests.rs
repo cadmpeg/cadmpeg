@@ -104,7 +104,7 @@ fn inner_parasolid_frame_retention_refuses_before_exposing_output() {
 }
 
 #[test]
-fn declared_frame_above_local_cap_refuses_without_allocation() {
+fn declared_frame_above_local_cap_is_skipped_without_allocation() {
     let member = zlib_member(b"x");
     let declared = 512_u32 * 1024 * 1024 + 1;
     let mut payload = WRAPPED_MAGIC.to_vec();
@@ -118,18 +118,49 @@ fn declared_frame_above_local_cap_refuses_without_allocation() {
     let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
         super::inflate_zlib_frame_budgeted(&ctx, &member, usize::try_from(declared).unwrap())
     });
-    let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
-        panic!("expected the local frame refusal");
-    };
-    assert_eq!(
-        limit.dimension,
-        ResourceDimension::Codec("inflate Parasolid frame")
-    );
-    assert_eq!(
-        limit.limit,
-        cadmpeg_core::decode::u64_from_index(super::MAX_WRAPPED_FRAME_UNCOMPRESSED)
-    );
+    assert!(result.unwrap().is_none());
     assert_eq!(allocations, 0);
+    assert!(
+        crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(ctx.finish_session().is_ok());
+}
+
+/// A payload with an unusable wrapper magic, `junk` zlib-header byte pairs
+/// that do not inflate, and one zlib member holding a Parasolid stream.
+fn zlib_probe_payload(stream: &[u8], junk: usize) -> Vec<u8> {
+    let mut payload = vec![0; 100];
+    payload.extend_from_slice(&WRAPPED_MAGIC);
+    payload.extend_from_slice(&[0; 8]);
+    for _ in 0..junk {
+        payload.extend_from_slice(&[0x78, 0x9c]);
+    }
+    payload.extend_from_slice(&zlib_member(stream));
+    payload
+}
+
+#[test]
+fn zlib_probe_work_cap_ends_the_probe_without_fusing_the_session() {
+    // Trailing zeros make deflate emit a compressed block, so the stream
+    // bytes do not appear literally in the payload.
+    let mut stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
+    stream.extend([0; 512]);
+    let within = zlib_probe_payload(&stream, 4);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let streams = crate::parasolid::extract_streams_with_offsets(&within, &ctx).unwrap();
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].payload, stream);
+
+    let beyond = zlib_probe_payload(&stream, 200);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(
+        crate::parasolid::extract_streams_with_offsets(&beyond, &ctx)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(ctx.finish_session().is_ok());
 }
 
 #[test]

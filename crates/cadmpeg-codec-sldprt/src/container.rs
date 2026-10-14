@@ -737,12 +737,10 @@ fn try_block_budgeted(
     let Some((frame, payload_start, payload_end)) = read_block_frame(bytes, off) else {
         return Ok(None);
     };
+    // A marker candidate that declares more than the block ceiling is not a
+    // block; the marker walk continues with the next candidate.
     if index_from_u32(frame.uncomp_sz) > MAX_UNCOMP {
-        return Err(ctx.refuse_codec_limit(
-            "expand SLDPRT native block",
-            u64_from_index(MAX_UNCOMP),
-            u64::from(frame.uncomp_sz),
-        ));
+        return Ok(None);
     }
     let Some(abs_start) = root.start().checked_add(payload_start) else {
         return Ok(None);

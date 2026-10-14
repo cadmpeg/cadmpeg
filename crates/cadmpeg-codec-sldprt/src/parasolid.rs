@@ -131,27 +131,14 @@ pub(crate) fn extract_streams_with_offsets(
             )
         })?;
     let work = ctx.work_budget(local_limit);
-    let mut work_used = 0_u64;
     let mut i = 0usize;
     while i + 2 <= payload.len() {
         if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
-            {
-                let effort = u64::try_from(payload.len() - i).map_err(|_| {
-                    CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
-                })?;
-                if !work.charge_by(payload.len() - i) {
-                    ctx.charge_work(0, "probe Parasolid zlib candidates")?;
-                    return Err(ctx.refuse_codec_limit(
-                        "probe Parasolid zlib candidates",
-                        local_limit,
-                        work_used.checked_add(effort).ok_or_else(|| {
-                            CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
-                        })?,
-                    ));
-                }
-                work_used = work_used.checked_add(effort).ok_or_else(|| {
-                    CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
-                })?;
+            if !work.charge_by(payload.len() - i) {
+                // A zero charge observes a session refusal; local exhaustion
+                // ends the best-effort probe with the streams found so far.
+                ctx.charge_work(0, "probe Parasolid zlib candidates")?;
+                break;
             }
             let inner = match inflate_zlib_member(
                 ctx,
@@ -359,12 +346,10 @@ fn inflate_zlib_frame_budgeted(
     }
     let declared = u64::try_from(expected)
         .map_err(|_| CodecError::NotImplemented("Parasolid frame length exceeds u64".into()))?;
+    // A frame that declares more than the frame ceiling is not extracted; the
+    // block keeps its other stream candidates.
     if expected > MAX_WRAPPED_FRAME_UNCOMPRESSED {
-        return Err(ctx.refuse_codec_limit(
-            "inflate Parasolid frame",
-            cadmpeg_core::decode::u64_from_index(MAX_WRAPPED_FRAME_UNCOMPRESSED),
-            declared,
-        ));
+        return Ok(None);
     }
     let reservation = ctx.reserve_scoped(declared, "inflate Parasolid frame")?;
     let mut output = ctx.begin_expand(ExpandSpec::Exact(declared))?;

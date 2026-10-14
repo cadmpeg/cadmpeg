@@ -1060,12 +1060,9 @@ fn parse_value<'a>(
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
     let _depth = ctx.enter_nested("parse SLDPRT PMI MessagePack")?;
     ctx.charge_work(1, "parse SLDPRT PMI MessagePack")?;
+    // The nesting cap rejects this one MessagePack value.
     if depth > 16 {
-        return Err(ctx.refuse_codec_limit(
-            "parse SLDPRT PMI MessagePack depth",
-            16,
-            cadmpeg_core::decode::u64_from_index(depth),
-        ));
+        return Ok(None);
     }
     let start = *cursor;
     let Some(marker) = take_u8(bytes, cursor).map(Marker::from_u8) else {

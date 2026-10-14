@@ -450,13 +450,10 @@ pub(crate) fn decode_inner(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx
-            .refuse_codec_limit(
-                "Rhino curve depth limit",
-                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-                cadmpeg_core::decode::u64_from_index(depth),
-            )
-            .into());
+        return Err(GeometryError::malformed(
+            range.start,
+            "curve recursion limit exceeded",
+        ));
     }
     if class_uuid == CURVE_ON_SURFACE {
         let construction =
@@ -556,13 +553,10 @@ pub(crate) fn decode_embedded_curve(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx
-            .refuse_codec_limit(
-                "Rhino embedded curve depth limit",
-                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-                cadmpeg_core::decode::u64_from_index(depth),
-            )
-            .into());
+        return Err(GeometryError::malformed(
+            reader.position(),
+            "curve recursion limit exceeded",
+        ));
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -619,13 +613,10 @@ pub(crate) fn decode_embedded_curve_2d(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx
-            .refuse_codec_limit(
-                "Rhino embedded C2 curve depth limit",
-                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-                cadmpeg_core::decode::u64_from_index(depth),
-            )
-            .into());
+        return Err(GeometryError::malformed(
+            reader.position(),
+            "plane-space curve recursion limit exceeded",
+        ));
     }
     let start = reader.position();
     let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
@@ -1322,13 +1313,10 @@ pub(crate) fn decode_inner_2d(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino C2 curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(ctx
-            .refuse_codec_limit(
-                "Rhino C2 curve depth limit",
-                cadmpeg_core::decode::u64_from_index(MAX_CURVE_DEPTH),
-                cadmpeg_core::decode::u64_from_index(depth),
-            )
-            .into());
+        return Err(GeometryError::malformed(
+            range.start,
+            "C2 curve recursion limit exceeded",
+        ));
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
@@ -2825,13 +2813,11 @@ mod tests {
             MAX_CURVE_DEPTH + 1,
         )
         .expect_err("excessive cross-family recursion must stop before payload parsing");
-        assert!(
-            matches!(error, GeometryError::Codec(CodecError::ResourceLimit(refusal))
-            if refusal.operation == "Rhino curve depth limit" && refusal.limit == 32 && refusal.additional == 1)
-        );
+        assert!(matches!(error, GeometryError::Malformed(_)));
+        assert!(error.to_string().contains("curve recursion limit exceeded"));
     }
     #[test]
-    fn curve_depth_gates_preserve_context_refusal() {
+    fn curve_depth_gates_fail_one_curve_without_fusing_the_session() {
         for gate in 0..4 {
             with_test_context(|ctx| {
                 let mut reader = BoundedReader::new(&[], 0, 0).expect("empty reader");
@@ -2868,12 +2854,12 @@ mod tests {
                     )
                     .expect_err("depth"),
                 };
-                let GeometryError::Codec(CodecError::ResourceLimit(refusal)) = error else {
-                    panic!("depth must be a resource refusal");
-                };
-                assert_eq!(refusal.limit, 32);
-                assert_eq!(refusal.additional, 1);
-                assert_eq!(ctx.resource_refusal(), Some(refusal));
+                assert!(
+                    matches!(error, GeometryError::Malformed(_)),
+                    "depth must fail the one curve: {error}"
+                );
+                assert!(error.to_string().contains("recursion limit exceeded"));
+                assert_eq!(ctx.resource_refusal(), None);
             });
         }
     }
