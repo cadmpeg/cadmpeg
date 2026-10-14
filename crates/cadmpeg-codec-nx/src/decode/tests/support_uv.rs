@@ -568,3 +568,61 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         assert!(!pcurve_present(&unseeded));
     });
 }
+
+#[test]
+fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = EditableDecodeResult::from(result);
+    let (procedural_id, parameter_range) = {
+        let procedural = &result.ir().model.procedural_curves[0];
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            panic!("typed intersection");
+        };
+        assert!(context
+            .sides()
+            .iter()
+            .any(|side| side.surface.is_some() && side.pcurve.is_some()));
+        (procedural.id.clone(), context.parameter_range().endpoints())
+    };
+    let pending = vec![(
+        procedural_id,
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            parameter_range.to_vec(),
+        )
+        .unwrap(),
+        0.01,
+        SerializedSupportUv::default(),
+    )];
+    let lanes_before = serde_json::to_value(&result.ir().model.procedural_curves).unwrap();
+
+    crate::test_support::with_decode_context(|ctx| {
+        let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
+        let geometry_budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(ctx, 0);
+        assert!(!geometry_budget.charge());
+        let validation =
+            crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                ctx,
+                &mut result.ir_mut(),
+                &pending,
+                &BTreeSet::new(),
+                &support_budget,
+                &geometry_budget,
+                true,
+            )
+            .expect("an exhausted geometry slice skips the pending lanes");
+        assert!(geometry_budget.exhausted());
+        assert!(validation.endpoint_witnesses.is_empty());
+        assert!(ctx.resource_refusal().is_none());
+    });
+    assert_eq!(
+        serde_json::to_value(&result.ir().model.procedural_curves).unwrap(),
+        lanes_before
+    );
+}

@@ -41,39 +41,63 @@ fn flat_relation_scans_refuse_caller_work() {
 }
 
 #[test]
-fn relation_unit_recursion_refuses_caller_and_local_depth() {
-    for depth in [0, 1024] {
-        let source = if depth == 0 {
-            "((mm))".to_owned()
-        } else {
-            format!("{}mm{}", "(".repeat(129), ")".repeat(129))
-        };
+fn relation_unit_recursion_refuses_caller_depth() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let error = with_policy(policy, |ctx| {
+        relation_unit(ctx, "((mm))").map(|unit| unit.is_some())
+    })
+    .expect_err("session nesting must refuse");
+    assert!(matches!(error, CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn relation_unit_local_depth_ceiling_leaves_the_unit_unresolved() {
+    let source = format!("{}mm{}", "(".repeat(129), ")".repeat(129));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1024;
+    let resolved = with_policy(policy, |ctx| {
+        let resolved = relation_unit(ctx, &source).map(|unit| unit.is_some());
+        assert!(ctx.resource_refusal().is_none());
+        resolved
+    })
+    .expect("the local unit ceiling is not a decode failure");
+    assert!(!resolved);
+    let admitted = format!("{}mm{}", "(".repeat(128), ")".repeat(128));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1024;
+    assert!(with_policy(policy, |ctx| {
+        relation_unit(ctx, &admitted).map(|unit| unit.is_some())
+    })
+    .expect("nesting at the ceiling parses"));
+}
+
+/// Parse `source` with session depth above the local ceiling and assert
+/// the local ceiling leaves the expression unevaluated without a refusal.
+fn assert_local_nesting_ceiling_skips(source: &str, admitted: &str) {
+    for (source, evaluated) in [(source, false), (admitted, true)] {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_recursion_depth = depth;
-        let error = with_policy(policy, |ctx| {
-            relation_unit(ctx, &source).map(|unit| unit.is_some())
+        policy.limits.max_recursion_depth = 1024;
+        let value = with_policy(policy, |ctx| {
+            let value = parse_relation_expression::<CurveExpressionValue>(
+                ctx,
+                source,
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            );
+            assert!(ctx.resource_refusal().is_none());
+            value
         })
-        .expect_err("unit nesting must refuse");
-        assert!(matches!(error, CodecError::ResourceLimit(_)));
+        .expect("the local nesting ceiling is not a decode failure");
+        assert_eq!(value.is_some(), evaluated, "{source}");
     }
 }
 
 #[test]
-fn relation_local_nesting_ceiling_refuses() {
-    let source = format!("{}1{}", "(".repeat(129), ")".repeat(129));
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 1024;
-    let error = with_policy(policy, |ctx| {
-        parse_relation_expression::<CurveExpressionValue>(
-            ctx,
-            &source,
-            &BTreeMap::new(),
-            RelationEvaluationContext::default(),
-        )
-    })
-    .expect_err("local nesting ceiling");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo relation nesting ceiling")
+fn relation_local_nesting_ceiling_leaves_the_expression_unevaluated() {
+    assert_local_nesting_ceiling_skips(
+        &format!("{}1{}", "(".repeat(129), ")".repeat(129)),
+        &format!("{}1{}", "(".repeat(128), ")".repeat(128)),
     );
 }
 
@@ -151,7 +175,7 @@ fn relation_quantity_serialization_preserves_base_power_fields() {
     );
 }
 
-fn nonlinear_ceiling_error(left: &str, seed: f64) -> CodecError {
+fn nonlinear_ceiling_solution(left: &str, seed: f64) -> Option<Vec<f64>> {
     use crate::curve::{
         refine_nonlinear_solution, CurveExpressionEquation, CurveExpressionSolveBlock,
         RelationDimension, SolveUnknown,
@@ -172,70 +196,45 @@ fn nonlinear_ceiling_error(left: &str, seed: f64) -> CodecError {
         for_offset: 1,
     };
     with_policy(DecodePolicy::service(), |ctx| {
-        refine_nonlinear_solution(
+        let solution = refine_nonlinear_solution(
             ctx,
             &block,
             &BTreeMap::new(),
             &[RelationDimension::default()],
             &[seed],
             RelationEvaluationContext::default(),
-        )
+        );
+        assert!(ctx.resource_refusal().is_none());
+        solution
     })
-    .expect_err("local solver ceiling refuses")
+    .expect("a local solver ceiling is not a decode failure")
 }
 
 #[test]
-fn nonlinear_iteration_ceiling_refuses_a_progressing_smooth_system() {
-    let error = nonlinear_ceiling_error("x+100000000000000000000*x*x*x+0.001", 0.0);
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo nonlinear iteration ceiling")
-    );
+fn nonlinear_iteration_ceiling_leaves_a_progressing_smooth_system_unsolved() {
+    assert!(nonlinear_ceiling_solution("x+100000000000000000000*x*x*x+0.001", 0.0).is_none());
+    assert!(nonlinear_ceiling_solution("x*x*x+x-2", 0.5).is_some());
 }
 
 #[test]
-fn nonlinear_line_search_ceiling_refuses_valid_non_improving_probes() {
+fn nonlinear_line_search_ceiling_leaves_valid_non_improving_probes_unsolved() {
     const SMALL_NONZERO_SEED: f64 = 0.000_000_1;
-    let error = nonlinear_ceiling_error("x*x+1", SMALL_NONZERO_SEED);
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo nonlinear line-search ceiling")
+    assert!(nonlinear_ceiling_solution("x*x+1", SMALL_NONZERO_SEED).is_none());
+}
+
+#[test]
+fn relation_local_exponent_nesting_ceiling_leaves_the_expression_unevaluated() {
+    assert_local_nesting_ceiling_skips(
+        &format!("{}1", "1^".repeat(129)),
+        &format!("{}1", "1^".repeat(128)),
     );
 }
 
 #[test]
-fn relation_local_exponent_nesting_ceiling_refuses() {
-    let source = format!("{}1", "1^".repeat(129));
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 1024;
-    let error = with_policy(policy, |ctx| {
-        parse_relation_expression::<CurveExpressionValue>(
-            ctx,
-            &source,
-            &BTreeMap::new(),
-            RelationEvaluationContext::default(),
-        )
-    })
-    .expect_err("local exponent nesting ceiling");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo relation nesting ceiling")
-    );
-}
-
-#[test]
-fn relation_local_function_nesting_ceiling_refuses() {
-    let source = format!("{}1{}", "abs(".repeat(129), ")".repeat(129));
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 1024;
-    let error = with_policy(policy, |ctx| {
-        parse_relation_expression::<CurveExpressionValue>(
-            ctx,
-            &source,
-            &BTreeMap::new(),
-            RelationEvaluationContext::default(),
-        )
-    })
-    .expect_err("local function nesting ceiling");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "creo relation nesting ceiling")
+fn relation_local_function_nesting_ceiling_leaves_the_expression_unevaluated() {
+    assert_local_nesting_ceiling_skips(
+        &format!("{}1{}", "abs(".repeat(129), ")".repeat(129)),
+        &format!("{}1{}", "abs(".repeat(128), ")".repeat(128)),
     );
 }
 
