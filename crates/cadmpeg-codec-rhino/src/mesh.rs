@@ -1695,6 +1695,55 @@ mod tests {
         f(MeshExpand::new(&ctx, root))
     }
 
+    fn raw_channels_with_one_vertex([normal, uv, curvature, color]: [bool; 4]) -> Vec<u8> {
+        let mut raw = Vec::new();
+        raw.extend(1_i32.to_le_bytes());
+        raw.extend([0_u8; 12]);
+        for (present, bytes) in [(normal, 12), (uv, 8), (curvature, 16), (color, 4)] {
+            raw.extend(i32::from(present).to_le_bytes());
+            if present {
+                raw.extend(std::iter::repeat_n(0_u8, bytes));
+            }
+        }
+        raw
+    }
+
+    #[test]
+    fn raw_mesh_channels_refuse_retained_bytes_one_below_the_channel() {
+        for (uv, curvature, color, byte_count) in [
+            (true, false, false, 8),
+            (false, true, false, 16),
+            (false, false, true, 4),
+        ] {
+            let raw = raw_channels_with_one_vertex([false, uv, curvature, color]);
+            let read = |cap: u64| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                with_expand_policy(&raw, policy, |expand| {
+                    let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+                    let mut channels = Vec::new();
+                    super::read_raw_channels(
+                        expand.ctx(),
+                        &mut reader,
+                        1,
+                        &mut Vec::new(),
+                        &mut None,
+                        &mut channels,
+                        &mut Diagnostics::new(),
+                    )
+                    .map(|()| channels.len())
+                })
+            };
+            let refused = read(byte_count - 1).expect_err("one byte below the channel");
+            assert!(matches!(
+                refused,
+                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if limit.operation == "Rhino mesh raw channel"
+            ));
+            assert_eq!(read(byte_count).expect("exact channel bytes"), 1);
+        }
+    }
+
     fn chunk(body: &[u8]) -> Vec<u8> {
         let mut result = 0x4000_8000_u32.to_le_bytes().to_vec();
         result
