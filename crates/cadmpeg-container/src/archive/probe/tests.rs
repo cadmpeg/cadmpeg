@@ -86,11 +86,9 @@ fn zip64_end_record_with_maximum_comment_keeps_the_directory_namespace() {
         bytes.resize(bytes.len() + usize::from(u16::MAX), b'c');
         bytes[0] ^= 1;
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 256 * 1024;
-        policy.limits.max_collection_items = 32;
+        let policy = DecodePolicy::service();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+        let image = read(&ctx, &mut Cursor::new(&bytes))
             .expect("probe")
             .expect("namespace image");
         assert!(ArchiveSnapshot::contains_matching_name(
@@ -99,7 +97,6 @@ fn zip64_end_record_with_maximum_comment_keeps_the_directory_namespace() {
             |name| name == "Document.xml"
         )
         .expect("admitted namespace"));
-        drop((image, storage));
         let snapshot = ArchiveSnapshot::new(&ctx, root).expect("native ZIP64 namespace");
         assert!(snapshot.entry("Document.xml").is_some());
         ctx.finish_session().expect("session");
@@ -107,7 +104,7 @@ fn zip64_end_record_with_maximum_comment_keeps_the_directory_namespace() {
 }
 
 #[test]
-fn an_end_signature_inside_an_opaque_comment_does_not_reserve_payload_workspace() {
+fn an_end_signature_inside_an_opaque_comment_does_not_select_payload_bytes() {
     use cadmpeg_test_support::bytes::put_u32;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     writer
@@ -128,10 +125,9 @@ fn an_end_signature_inside_an_opaque_comment_does_not_reserve_payload_workspace(
         .expect("opaque comment");
     let bytes = writer.finish().expect("archive").into_inner();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 256 * 1024;
+    let policy = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-    let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+    let image = read(&ctx, &mut Cursor::new(&bytes))
         .expect("probe")
         .expect("namespace image");
     assert!(image.len() < 1024);
@@ -141,7 +137,6 @@ fn an_end_signature_inside_an_opaque_comment_does_not_reserve_payload_workspace(
         |name| name == "Document.xml"
     )
     .expect("namespace"));
-    drop((image, storage));
     let snapshot = ArchiveSnapshot::new(&ctx, root)
         .expect("opaque footer signatures do not change native namespace selection");
     assert!(snapshot.entry("Document.xml").is_some());
@@ -200,10 +195,9 @@ fn a_false_comment_directory_is_framed_before_its_declared_bytes_are_acquired() 
             u32::try_from(payload_start).expect("offset"),
         );
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 256 * 1024;
+        let policy = DecodePolicy::service();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
-        let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+        let image = read(&ctx, &mut Cursor::new(&bytes))
             .expect("invalid comment declaration is skipped before allocation")
             .expect("directory");
         assert!(image.len() < 1024);
@@ -213,7 +207,6 @@ fn a_false_comment_directory_is_framed_before_its_declared_bytes_are_acquired() 
             |name| name == "Document.xml"
         )
         .expect("namespace"));
-        drop((image, storage));
         assert!(ArchiveSnapshot::new(&ctx, root)
             .expect("original archive")
             .entry("Document.xml")
@@ -244,7 +237,7 @@ fn signed_directory_detection_handles_included_and_excluded_signature_sizes() {
             let arena = DecodeArena::new();
             let policy = DecodePolicy::service();
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-            let (image, storage) = read(&ctx, &mut Cursor::new(&bytes))
+            let image = read(&ctx, &mut Cursor::new(&bytes))
                 .expect("probe")
                 .expect("signed directory");
             assert!(ArchiveSnapshot::contains_matching_name(
@@ -253,7 +246,6 @@ fn signed_directory_detection_handles_included_and_excluded_signature_sizes() {
                 |name| name == "Document.xml"
             )
             .expect("namespace"));
-            drop((image, storage));
             ctx.finish_session().expect("session");
         }
     }
@@ -284,9 +276,7 @@ fn an_embedded_member_directory_does_not_acquire_the_outer_payload_as_index_meta
         .expect("required payload");
     let bytes = writer.finish().expect("archive").into_inner();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 256 * 1024;
-    policy.limits.max_collection_items = 32;
+    let policy = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
     let snapshot =
         ArchiveSnapshot::new(&ctx, root).expect("only outer directory metadata is acquired");

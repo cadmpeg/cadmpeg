@@ -951,7 +951,7 @@ mod tests {
     fn contextual_resource_errors_retain_evidence_and_the_requesting_stage() {
         use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
         let limit = ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
+            ResourceDimension::RetainedBytes,
             8,
             4,
             "synthetic allocation",
