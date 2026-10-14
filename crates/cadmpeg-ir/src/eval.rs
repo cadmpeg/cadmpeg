@@ -749,12 +749,10 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         Ok(Some(bound))
     })();
     ctx.charge_work(0, "IR surface segment completion")?;
+    // An exhausted caller budget leaves the chord uncertified; a session
+    // refusal has already returned above.
     if budget.exhausted() {
-        let limit = u64_from_index(budget.consumed());
-        let requested = limit.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("IR surface segment work", u64::MAX - 1, u64::MAX)
-        })?;
-        return Err(ctx.refuse_codec_limit("IR surface segment work", limit, requested));
+        return Ok(None);
     }
     result
 }

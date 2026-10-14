@@ -129,17 +129,13 @@ fn surface_segment_bound_preserves_session_and_local_refusals() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let budget = ctx.work_budget(0);
-    let error = crate::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
+    let bound = crate::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
         &ctx, &surface, parameters, chord, &budget,
     )
-    .unwrap_err();
-    assert!(
-        matches!(&error, CodecError::ResourceLimit(limit) if limit.operation == "IR surface segment work")
-    );
-    assert_eq!(
-        ctx.finish_session().unwrap_err().to_string(),
-        error.to_string()
-    );
+    .expect("an exhausted caller budget is not a session refusal");
+    assert!(bound.is_none());
+    assert!(budget.exhausted());
+    ctx.finish_session().unwrap();
 }
 
 #[test]
