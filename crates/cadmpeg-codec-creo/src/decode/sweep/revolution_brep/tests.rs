@@ -316,6 +316,32 @@ fn revolution_refuses_at_collection_boundary(operation: &'static str) {
     panic!("the named {operation} boundary was not reached; last refusal: {last_refusal:?}");
 }
 
+fn revolution_route(ctx: &DecodeContext<'_>) -> Result<usize, cadmpeg_core::CodecError> {
+    let (scan, mut ir) = closed_off_axis_revolution();
+    transfer_resolved_revolution_breps(
+        ctx,
+        &scan,
+        &mut ir,
+        &mut AnnotationBuilder::new(),
+        &mut Vec::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+}
+
+// These collections are charged after scoped scratch is released, so the
+// live count stays below an earlier peak and no ceiling refuses them first.
+macro_rules! revolution_collection_charge_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_eq!(
+                crate::test_support::assert_collection_charged(&[], $operation, revolution_route),
+                1
+            );
+        }
+    };
+}
+
 macro_rules! revolution_collection_limit_test {
     ($name:ident, $operation:literal) => {
         #[test]
@@ -333,20 +359,20 @@ revolution_collection_limit_test!(
     revolution_surface_geometries_refuse_limit,
     "creo revolution surface geometries"
 );
-revolution_collection_limit_test!(
-    revolution_segment_boundaries_refuse_limit,
+revolution_collection_charge_test!(
+    revolution_segment_boundaries_charge_collection_items,
     "creo revolution segment boundaries"
 );
-revolution_collection_limit_test!(
-    revolution_boundary_rows_refuse_limit,
+revolution_collection_charge_test!(
+    revolution_boundary_rows_charge_collection_items,
     "creo revolution boundary rows"
 );
-revolution_collection_limit_test!(
-    revolution_face_senses_refuse_limit,
+revolution_collection_charge_test!(
+    revolution_face_senses_charge_collection_items,
     "creo revolution face senses"
 );
-revolution_collection_limit_test!(
-    revolution_profile_edges_refuse_limit,
+revolution_collection_charge_test!(
+    revolution_profile_edges_charge_collection_items,
     "creo revolution profile edges"
 );
 revolution_collection_limit_test!(
@@ -358,8 +384,8 @@ revolution_collection_limit_test!(
     "loop ring members"
 );
 revolution_collection_limit_test!(revolution_loops_refuse_limit, "creo model revolution loops");
-revolution_collection_limit_test!(
-    revolution_coedge_pcurves_refuse_limit,
+revolution_collection_charge_test!(
+    revolution_coedge_pcurves_charge_collection_items,
     "creo revolution coedge pcurves"
 );
 revolution_collection_limit_test!(
