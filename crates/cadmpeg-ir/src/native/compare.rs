@@ -1,45 +1,88 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Compare serialized records against borrowed JSON without copying payload arrays.
+//! Compare a typed serialization against a stored record's text without
+//! parsing its payload into a value tree.
+//!
+//! The stored text is canonical: `serde_json` wrote it from a value tree, and the
+//! expected side renders each scalar the same way, so equal scalars have equal
+//! text.
 
-use super::{canon, NativeConvertError, NativeRecord, MAX_NATIVE_NESTING_DEPTH};
+use super::{canon, replay, NativeConvertError, NativeRecord, MAX_NATIVE_NESTING_DEPTH};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard};
 use serde::{ser, Serialize};
-use serde_json::Value;
 use std::collections::BTreeSet;
 
 type Error = canon::CanonError;
 const OPERATION: &str = "compare native record";
 const RAW_VALUE_STRUCT: &str = "$serde_json::private::RawValue";
 
+/// One stored JSON value, as its text, or the absence of one.
 #[derive(Clone, Copy)]
 enum Borrowed<'a> {
-    Record(&'a NativeRecord),
-    Value(&'a Value),
     Text(&'a str),
     Missing,
 }
 impl<'a> Borrowed<'a> {
-    fn text(self) -> Option<&'a str> {
+    /// States whether this value is the text `expected` renders to.
+    fn renders<T: Serialize + ?Sized>(self, expected: &T) -> bool {
+        let Self::Text(actual) = self else {
+            return false;
+        };
+        let mut rest = SameText {
+            rest: actual.as_bytes(),
+        };
+        serde_json::to_writer(&mut rest, expected).is_ok() && rest.rest.is_empty()
+    }
+    /// States whether this value is `expected` once parsed.
+    fn parses_to(self, expected: &serde_json::Value) -> bool {
+        let Self::Text(actual) = self else {
+            return false;
+        };
+        replay::value(actual).is_ok_and(|actual| actual == *expected)
+    }
+    /// The members of this object, read in one scan, or `None` when this is
+    /// not an object.
+    fn members(self, ctx: &DecodeContext<'_>) -> Result<Option<replay::MemberTexts<'a>>, Error> {
+        let Self::Text(json) = self else {
+            return Ok(None);
+        };
+        let Some(count) = replay::member_count(json) else {
+            return Ok(None);
+        };
+        ctx.charge_work(u64_from_index(count), OPERATION)?;
+        let mut members = Vec::new();
+        ctx.reserve_vec(&mut members, count, OPERATION)?;
+        Ok(replay::members(json, &mut members).then_some(members))
+    }
+    fn elements(self) -> Option<replay::Elements<'a>> {
         match self {
-            Self::Text(text) => Some(text),
-            Self::Value(value) => value.as_str(),
-            _ => None,
+            Self::Text(json) => replay::Elements::of(json),
+            Self::Missing => None,
         }
     }
-    fn member(self, key: &str) -> Self {
+    fn len(self) -> usize {
         match self {
-            Self::Record(record) if key == "id" => Self::Text(record.id()),
-            Self::Record(record) => record.fields().get(key).map_or(Self::Missing, Self::Value),
-            Self::Value(Value::Object(map)) => map.get(key).map_or(Self::Missing, Self::Value),
-            _ => Self::Missing,
+            Self::Text(json) => json.len(),
+            Self::Missing => 0,
         }
     }
-    fn members(self) -> Option<usize> {
-        match self {
-            Self::Record(record) => Some(record.fields().len() + 1),
-            Self::Value(Value::Object(map)) => Some(map.len()),
-            _ => None,
+}
+
+/// Accepts written bytes while they continue the stored text.
+struct SameText<'a> {
+    rest: &'a [u8],
+}
+impl std::io::Write for SameText<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        match self.rest.strip_prefix(bytes) {
+            Some(rest) => {
+                self.rest = rest;
+                Ok(bytes.len())
+            }
+            None => Err(std::io::Error::other("differs from the stored text")),
         }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -52,7 +95,7 @@ pub(super) fn matches<T: Serialize + ?Sized>(
         expected
             .serialize(Matcher {
                 ctx,
-                actual: Borrowed::Record(actual),
+                actual: Borrowed::Text(&actual.json),
                 remaining: MAX_NATIVE_NESTING_DEPTH + 1,
             })
             .map_err(|error| error.into_native(ctx))
@@ -90,7 +133,7 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         let expected = value
             .serialize(canon::CanonValue::for_record_with_sink(self.ctx, None))?
             .into_value();
-        Ok(matches!(self.actual, Borrowed::Value(actual) if *actual == expected))
+        Ok(self.actual.renders(&expected))
     }
     fn sequence(
         self,
@@ -98,15 +141,12 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         parent_matches: bool,
     ) -> Result<Sequence<'a, 'arena>, Error> {
         let nested = self.container()?;
-        let actual = match self.actual {
-            Borrowed::Value(Value::Array(array)) => Some(array.as_slice()),
-            _ => None,
-        };
+        let actual = self.actual.elements();
         Ok(Sequence {
             matcher: self,
+            matched: parent_matches && actual.is_some(),
             actual,
             index: 0,
-            matched: parent_matches && actual.is_some(),
             _nested: nested,
             _outer: outer,
         })
@@ -117,11 +157,13 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         parent_matches: bool,
     ) -> Result<Object<'a, 'arena>, Error> {
         let nested = self.container()?;
+        let members = self.actual.members(self.ctx)?;
         Ok(Object {
             matcher: self,
+            matched: parent_matches && members.is_some(),
+            members,
             seen: BTreeSet::new(),
             key: None,
-            matched: parent_matches && self.actual.members().is_some(),
             raw: false,
             _nested: nested,
             _outer: outer,
@@ -131,11 +173,12 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         let outer = self.container()?;
         self.ctx
             .charge_work(u64_from_index(variant.len()), OPERATION)?;
-        Ok((
-            self.child(self.actual.member(variant))?,
-            outer,
-            self.actual.members() == Some(1),
-        ))
+        let members = self.actual.members(self.ctx)?.unwrap_or_default();
+        let payload = match members.as_slice() {
+            [(key, payload)] if key == variant => Borrowed::Text(payload),
+            _ => Borrowed::Missing,
+        };
+        Ok((self.child(payload)?, outer, members.len() == 1))
     }
 }
 
@@ -178,7 +221,7 @@ impl<'a, 'arena> ser::Serializer for Matcher<'a, 'arena> {
                 .refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
         })?;
         self.ctx.charge_work(work, OPERATION)?;
-        Ok(self.actual.text() == Some(value))
+        Ok(self.actual.renders(value))
     }
     fn serialize_bytes(self, value: &[u8]) -> Result<bool, Error> {
         let mut sequence = self.sequence(None, true)?;
@@ -277,13 +320,13 @@ impl<'a, 'arena> ser::Serializer for Matcher<'a, 'arena> {
         let expected = canon::CanonValue::for_record_with_sink(self.ctx, None)
             .collect_str(value)?
             .into_value();
-        Ok(self.actual.text() == expected.as_str())
+        Ok(expected.is_string() && self.actual.renders(&expected))
     }
 }
 
 struct Sequence<'a, 'arena> {
     matcher: Matcher<'a, 'arena>,
-    actual: Option<&'a [Value]>,
+    actual: Option<replay::Elements<'a>>,
     index: usize,
     matched: bool,
     _nested: DepthGuard<'a>,
@@ -293,8 +336,9 @@ impl Sequence<'_, '_> {
     fn element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         let actual = self
             .actual
-            .and_then(|array| array.get(self.index))
-            .map_or(Borrowed::Missing, Borrowed::Value);
+            .as_mut()
+            .and_then(Iterator::next)
+            .map_or(Borrowed::Missing, Borrowed::Text);
         self.matched &= value
             .serialize(self.matcher.child(actual)?)
             .map_err(|error| {
@@ -307,7 +351,7 @@ impl Sequence<'_, '_> {
         Ok(())
     }
     fn finish(self) -> bool {
-        self.matched && self.actual.is_some_and(|array| array.len() == self.index)
+        self.matched && self.actual.is_some_and(|mut rest| rest.next().is_none())
     }
 }
 macro_rules! sequences {
@@ -329,6 +373,8 @@ sequences!(
 
 struct Object<'a, 'arena> {
     matcher: Matcher<'a, 'arena>,
+    /// The stored object's members, or `None` when it is not an object.
+    members: Option<replay::MemberTexts<'a>>,
     seen: BTreeSet<String>,
     key: Option<String>,
     matched: bool,
@@ -351,39 +397,29 @@ impl Object<'_, '_> {
                     None,
                 ))?
                 .into_value();
-            self.matched &= match self.matcher.actual {
-                Borrowed::Value(actual) => *actual == expected,
-                Borrowed::Text(actual) => expected.as_str() == Some(actual),
-                Borrowed::Record(actual) => expected.as_object().is_some_and(|object| {
-                    object.len() == actual.fields().len() + 1
-                        && object.get("id").and_then(Value::as_str) == Some(actual.id())
-                        && actual
-                            .fields()
-                            .iter()
-                            .all(|(key, value)| object.get(key) == Some(value))
-                }),
-                Borrowed::Missing => false,
-            };
+            self.matcher
+                .ctx
+                .charge_work(u64_from_index(self.matcher.actual.len()), OPERATION)?;
+            self.matched &= self.matcher.actual.parses_to(&expected);
             self.matcher
                 .ctx
                 .insert_btree_set(&mut self.seen, key, OPERATION)?;
             return Ok(());
         }
-        let members = u64_from_index(self.matcher.actual.members().unwrap_or(0));
-        // A B-tree search compares at most eleven keys per tree level.
-        let comparisons = u64::from(u64::BITS - members.leading_zeros())
-            .checked_mul(11)
-            .and_then(|count| count.checked_add(1));
+        let members = self.members.as_deref().unwrap_or_default();
         let work = u64_from_index(key.len())
             .checked_add(1)
-            .and_then(|bytes| bytes.checked_mul(comparisons?))
+            .and_then(|bytes| bytes.checked_mul(u64_from_index(members.len())))
             .ok_or_else(|| {
                 self.matcher
                     .ctx
                     .refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
             })?;
         self.matcher.ctx.charge_work(work, OPERATION)?;
-        let actual = self.matcher.actual.member(&key);
+        let actual = members
+            .iter()
+            .find(|(member, _)| *member == key)
+            .map_or(Borrowed::Missing, |(_, value)| Borrowed::Text(value));
         self.matched &= value
             .serialize(self.matcher.child(actual)?)
             .map_err(|error| {
@@ -414,7 +450,7 @@ impl Object<'_, '_> {
             && if self.raw {
                 self.seen.len() == 1
             } else {
-                self.matcher.actual.members() == Some(self.seen.len())
+                self.members.as_ref().map(Vec::len) == Some(self.seen.len())
             })
     }
 }
