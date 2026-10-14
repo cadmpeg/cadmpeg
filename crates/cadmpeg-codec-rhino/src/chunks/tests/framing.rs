@@ -42,6 +42,24 @@ fn class_end_alone_is_one_checksum_child() {
 }
 
 #[test]
+fn class_end_checksum_children_ceiling_is_a_framing_error() {
+    let archive = ArchiveVersion::V8;
+    let cap = super::super::CHECKSUM_CHILD_CAP;
+    let child = short_chunk(archive, TCODE_SHORT | 7, 0);
+    let class_end = short_chunk(archive, TCODE_CLASS_END, 0);
+    let mut bytes = child.repeat(cap);
+    bytes.extend(&class_end);
+    let error =
+        checksum_children_through_class_end(&bytes, 0..bytes.len(), archive, "class stream")
+            .expect_err("child ceiling rejects the class-end slot");
+    assert!(
+        matches!(error, FramingError::InvalidLength { offset, value }
+        if offset == bytes.len() - class_end.len()
+            && value == i128::try_from(cap).expect("fixture count fits"))
+    );
+}
+
+#[test]
 fn class_end_checksum_children_accept_the_ceiling() {
     let archive = ArchiveVersion::V8;
     let cap = super::super::CHECKSUM_CHILD_CAP;
