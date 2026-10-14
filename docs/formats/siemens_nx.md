@@ -2440,8 +2440,22 @@ A datum-plane descriptor block is exactly 40 bytes: `lowercase_hex_identity, 3f 
 The `DATUM_PLANE` operation label establishes a reference-plane feature family. Its neutral construction remains unresolved until the payload fields establish a complete model-space plane frame.
 
 The `DATUM_AXIS` and `EXTRACT_DATUM_AXIS` operation labels identify datum-axis
-history operations. Their model-space origin and direction remain unresolved
-until the serialized source and reference roles establish a complete axis line.
+history operations. Their leading nonzero class selector resolves at ordinal
+`selector - 1` in the owning OM section. The construction classes are
+`UGS::DAXIS_CONSTR_PARMS` and `UGS::DATUM_axis_extract_parms`, respectively.
+A class identity does not assign a source-geometry role.
+
+Datum-axis input indices retain the addressing rules of their owning offset
+store. A column block is a physical storage partition; its boundary can split
+a serialized value or registry name. An input that addresses that block does
+not identify a complete source object. Repeated state ordinals identify
+lifecycle rows in their own OM section. Neither a state ordinal nor a selector
+shared with datum-plane or string-extraction records identifies a unique
+geometric axis.
+
+The model-space origin and direction remain unresolved until a serialized
+relation assigns the source and reference roles of a complete axis line.
+A cylinder or cone axis alone supplies no datum-axis ownership relation.
 
 The `BRIDGE_CURVE` operation label identifies a bridge-curve history operation.
 Its source curves, end conditions, and continuity remain unresolved until the

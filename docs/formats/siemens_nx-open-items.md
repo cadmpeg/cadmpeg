@@ -748,13 +748,13 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-43. `DATUM_AXIS` construction roles
 
-**Question.** Which serialized source and reference fields define the model-space origin and direction of a `DATUM_AXIS` or `EXTRACT_DATUM_AXIS` operation?
+**Question.** Which serialized relation assigns a complete model-space line and its source/reference roles to each `DATUM_AXIS` or `EXTRACT_DATUM_AXIS` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `DATUM_AXIS` and `EXTRACT_DATUM_AXIS` operation labels identify" defines the datum-axis family. The operations have no body output, and their complete neutral axis lines are not present in the admitted operation record fields.
+**Known.** `siemens_nx.md` §7.1 "The `DATUM_AXIS` and `EXTRACT_DATUM_AXIS` operation labels identify" defines the family, owning construction classes, column-storage limits, and owner-local state relation. These history features have no admitted body output or body-write bridge. Their neutral axis definitions remain unresolved.
 
-**Need.** We must identify the source geometry, model-space origin, direction, and any orientation controls that define each datum axis.
+**Need.** Identify the operation-to-geometry relation, finite origin and direction, authored source/reference roles, and orientation controls. Any association with semantic lines in a sibling representation must establish identity independently of list order or analytic proximity.
 
-**Conflict.** The operation labels identify a datum-axis family, but the four operation-header object-index slots, input-block identity, and bounded payload do not assign a unique source/reference relation or finite origin and direction.
+**Conflict.** Direct input indices can address column fragments shared with earlier operations and split inside serialized values. Extracted-axis selectors collide among distinct persistent identities and also occur on datum-plane and string-extraction records. Semantic centre lines can outnumber extracted-axis operations and need not coincide with cylinder or cone axes. None of these relations uniquely assigns a line to an operation.
 
 ### OM-44. `BRIDGE_CURVE` construction roles
 
