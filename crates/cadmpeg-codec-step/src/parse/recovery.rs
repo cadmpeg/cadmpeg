@@ -12,20 +12,12 @@ impl Parser<'_, '_, '_> {
         offset: usize,
         kind: ParseDiagnosticKind,
         message: std::fmt::Arguments<'_>,
-    ) -> Result<(), ParseError> {
-        let message = self
-            .budget
-            .format_retained(message, "step_recovery_diagnostic_text")?;
-        self.budget.push_vec(
-            &mut self.diagnostics,
-            ParseDiagnostic {
-                offset,
-                kind,
-                message,
-            },
-            "step_parse_diagnostics",
-        )?;
-        Ok(())
+    ) {
+        self.diagnostics.push(ParseDiagnostic {
+            offset,
+            kind,
+            message: message.to_string(),
+        });
     }
 
     fn omit_record(
@@ -33,11 +25,9 @@ impl Parser<'_, '_, '_> {
         span: Range<usize>,
         omitted: &mut Vec<Range<usize>>,
         reason: std::fmt::Arguments<'_>,
-    ) -> Result<(), ParseError> {
-        self.diagnostic(span.start, ParseDiagnosticKind::RecordOmitted, reason)?;
-        self.budget
-            .push_vec(omitted, span, "step_omitted_record_spans")?;
-        Ok(())
+    ) {
+        self.diagnostic(span.start, ParseDiagnosticKind::RecordOmitted, reason);
+        omitted.push(span);
     }
 
     pub(super) fn recover_header_record(
@@ -62,21 +52,15 @@ impl Parser<'_, '_, '_> {
             Err(error @ (ParseError::Resource(_) | ParseError::Lex(_))) => Err(error),
             Err(error @ ParseError::Syntax { .. }) => {
                 self.diagnostics.truncate(diagnostic_start);
-                let end = statement_end(
-                    self.lexer.input(),
-                    start,
-                    self.lexer.is_draft(),
-                    self.budget,
-                )?;
+                let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
                 self.diagnostic(
                     start,
                     ParseDiagnosticKind::HeaderMetadataNoncanonical,
                     format_args!(
                         "bounded HEADER statement omitted: {error}; exact source retained"
                     ),
-                )?;
-                self.budget
-                    .push_vec(omitted, start..end, "step_omitted_record_spans")?;
+                );
+                omitted.push(start..end);
                 self.lexer
                     .set_literal_admission(super::LiteralAdmission::Metadata);
                 self.lexer.seek(end);
@@ -106,25 +90,19 @@ impl Parser<'_, '_, '_> {
             Err(error @ ParseError::Lex(_)) => return Err(error),
             Err(error @ ParseError::Syntax { .. }) => {
                 self.diagnostics.truncate(diagnostic_start);
-                let end = statement_end(
-                    self.lexer.input(),
-                    start,
-                    self.lexer.is_draft(),
-                    self.budget,
-                )?;
+                let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
                 self.omit_record(
                     start..end,
                     omitted,
                     format_args!("bounded DATA record omitted: {error}; exact source retained"),
-                )?;
+                );
                 if let Some(id) = source_id {
                     if let Some(previous) = records.remove(&id) {
-                        self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"))?;
+                        self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
                     }
                     // A readable name in a defective statement cannot give a
                     // later statement permission to select another definition.
-                    self.budget
-                        .insert_btree_set(ambiguous, id, "step_ambiguous_instance_ids")?;
+                    ambiguous.insert(id);
                 }
                 self.lexer
                     .set_literal_admission(super::LiteralAdmission::Required);
@@ -136,15 +114,13 @@ impl Parser<'_, '_, '_> {
         };
         if ambiguous.contains(&id) || records.contains_key(&id) {
             if let Some(previous) = records.remove(&id) {
-                self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"))?;
+                self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
             }
-            self.budget
-                .insert_btree_set(ambiguous, id, "step_ambiguous_instance_ids")?;
-            self.omit_record(record.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"))?;
+            ambiguous.insert(id);
+            self.omit_record(record.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
             return Ok(());
         }
-        self.budget
-            .insert_btree_map(records, id, record, "step_parse_record_table_storage")?;
+        records.insert(id, record);
         Ok(())
     }
 
@@ -174,9 +150,8 @@ impl Parser<'_, '_, '_> {
             }
             if let Some((target, value_instance)) = missing {
                 let prefix = if value_instance { '@' } else { '#' };
-                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"))?;
-                self.budget
-                    .push_vec(&mut pending, id, "step_unresolved_instances")?;
+                self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"));
+                pending.push(id);
             }
         }
         if pending.is_empty() {
@@ -185,54 +160,33 @@ impl Parser<'_, '_, '_> {
         // Build the reverse graph only when an omission must propagate. Each
         // edge is indexed once; each removed node unlocks its direct users.
         let mut reverse = BTreeMap::<u64, Vec<u64>>::new();
-        let mut storage = self
-            .budget
-            .reserve_scoped(0, "step_recovery_reverse_storage")?;
-        storage.with_storage(|| {
-            for (&id, record) in records.iter() {
-                for partial in &record.partials {
-                    for value in &partial.parameters {
-                        visit_references(value, self.budget, &mut |target, value_instance| {
-                            if !value_instance {
-                                self.budget.push_btree_group(
-                                    &mut reverse,
-                                    target,
-                                    id,
-                                    "step_recovery_reverse_nodes",
-                                    "step_recovery_reverse_edges",
-                                )?;
-                            }
-                            Ok(())
-                        })?;
-                    }
+
+        for (&id, record) in records.iter() {
+            for partial in &record.partials {
+                for value in &partial.parameters {
+                    visit_references(value, self.budget, &mut |target, value_instance| {
+                        if !value_instance {
+                            reverse.entry(target).or_default().push(id);
+                        }
+                        Ok(())
+                    })?;
                 }
             }
-            Ok::<(), ParseError>(())
-        })?;
-        let mut queued = self
-            .budget
-            .collect_btree_set(pending.iter().copied(), "step_recovery_queued_instances")?;
+        }
+        let mut queued = pending
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
         while let Some(id) = pending.pop() {
             if let Some(record) = records.remove(&id) {
-                self.budget
-                    .push_vec(omitted, record.span, "step_omitted_record_spans")?;
+                omitted.push(record.span);
             }
             if let Some(users) = reverse.get(&id) {
                 for &user in users {
-                    self.budget
-                        .charge_work(1, "step_recovery_dependency_edge")?;
-                    if self.budget.insert_btree_set(
-                        &mut queued,
-                        user,
-                        "step_recovery_queued_instances",
-                    )? {
+                    if queued.insert(user) {
                         if let Some(record) = records.get(&user) {
-                            self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"))?;
-                            self.budget.push_vec(
-                                &mut pending,
-                                user,
-                                "step_unresolved_instances",
-                            )?;
+                            self.diagnostic(record.span.start, ParseDiagnosticKind::RecordOmitted, format_args!("instance #{user} omitted: depends on omitted instance #{id}; exact source retained"));
+                            pending.push(user);
                         }
                     }
                 }
@@ -248,7 +202,7 @@ pub(super) fn visit_references(
     visit: &mut impl FnMut(u64, bool) -> Result<(), ParseError>,
 ) -> Result<(), ParseError> {
     let _depth = budget.enter_nested("step_reference_visit_depth")?;
-    budget.charge_work(1, "step_reference_visit")?;
+
     match value {
         Value::Reference(id) => visit(*id, false)?,
         Value::ExternalReference(id) => visit(*id, true)?,
@@ -265,15 +219,9 @@ pub(super) fn visit_references(
 
 /// A semicolon outside a literal or comment bounds a defective statement.
 /// An unterminated literal or comment supplies no continuation boundary.
-fn statement_end(
-    input: &[u8],
-    start: usize,
-    draft: bool,
-    budget: &DecodeContext<'_>,
-) -> Result<usize, ParseError> {
+fn statement_end(input: &[u8], start: usize, draft: bool) -> Result<usize, ParseError> {
     let mut at = start;
     while let Some(&byte) = input.get(at) {
-        budget.charge_work(1, "step_record_recovery_scan")?;
         if at > start && matches!(byte, b'#' | b'@') {
             let mut next = at + 1;
             let mut digits = false;
@@ -282,14 +230,13 @@ fn statement_end(
                     break;
                 }
                 digits |= byte.is_ascii_digit();
-                budget.charge_work(1, "step_record_recovery_scan")?;
+
                 next += 1;
             }
             while input
                 .get(next)
                 .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
             {
-                budget.charge_work(1, "step_record_recovery_scan")?;
                 next += 1;
             }
             if digits && input.get(next) == Some(&b'=') {
@@ -310,7 +257,7 @@ fn statement_end(
                 while input.get(end).is_some_and(u8::is_ascii_control) {
                     end += 1;
                 }
-                budget.charge_work(super::u64_from_index(end - at), "step_record_recovery_scan")?;
+
                 if input
                     .get(end)
                     .is_some_and(|byte| matches!(byte, b' ' | b';'))
@@ -336,7 +283,7 @@ fn statement_end(
                         "statement recovery cannot establish a boundary: unterminated comment",
                     );
                 }
-                budget.charge_work(1, "step_record_recovery_scan")?;
+
                 at += 1;
             }
             at += 2;
@@ -356,16 +303,12 @@ fn statement_end(
                         "statement recovery cannot establish a boundary: unterminated literal",
                     );
                 };
-                budget.charge_work(1, "step_record_recovery_scan")?;
+
                 if byte == delimiter {
                     if delimiter == b'\'' {
                         if let Some(end) =
                             crate::lex::match_exact_ignoring_controls(input, at, b"''")
                         {
-                            budget.charge_work(
-                                super::u64_from_index(end - at),
-                                "step_record_recovery_scan",
-                            )?;
                             at = end;
                             continue;
                         }

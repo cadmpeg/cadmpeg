@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fallible, allocation-free traversal of STEP entity references.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard};
+use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use crate::parse::Value;
@@ -38,11 +38,9 @@ pub(super) fn references<'a, 'ctx, 'arena>(
 impl<'a> References<'a, '_, '_> {
     fn push_frame(&mut self, value: &'a Value) -> Result<(), CodecError> {
         if self.active == MAX_VALUE_FRAMES {
-            return Err(self.ctx.refuse_codec_limit(
-                "step_reference_value_frames",
-                u64_from_index(MAX_VALUE_FRAMES),
-                u64_from_index(self.active + 1),
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "STEP value nesting exceeds {MAX_VALUE_FRAMES} levels"
+            )));
         }
         let depth = self.ctx.enter_nested("step_reference_value_walk")?;
         self.frames[self.active] = Some(Frame {
@@ -59,7 +57,6 @@ impl<'a> References<'a, '_, '_> {
             self.push_frame(root)?;
         }
         while self.active > 0 {
-            self.ctx.charge_work(1, "step_reference_value_walk")?;
             let Some(frame) = self.frames[self.active - 1].as_mut() else {
                 return Err(CodecError::malformed(
                     "STEP reference traversal has no active frame",
@@ -121,7 +118,7 @@ pub(super) fn first_matching<'a>(
     for value in values {
         for reference in references(value, ctx) {
             let id = reference?;
-            ctx.charge_work(1, "step_reference_predicate")?;
+
             if predicate(id) {
                 return Ok(Some(id));
             }
@@ -191,12 +188,12 @@ mod tests {
         with_policy_context(b"", &policy, |_, ctx| {
             assert!(
                 matches!(references(&value, ctx).collect::<Result<Vec<_>, _>>(),
-                Err(CodecError::ResourceLimit(refusal)) if refusal.operation == "step_reference_value_frames")
+                Err(CodecError::Malformed(message)) if message == "STEP value nesting exceeds 513 levels")
             );
         });
         with_policy_context(b"", &policy, |_, ctx| {
             assert!(matches!(first_matching([&value], ctx, |_| true),
-                Err(CodecError::ResourceLimit(refusal)) if refusal.operation == "step_reference_value_frames"));
+                Err(CodecError::Malformed(message)) if message == "STEP value nesting exceeds 513 levels"));
         });
     }
 
@@ -212,19 +209,6 @@ mod tests {
             assert!(matches!(first_matching([&value], ctx, |_| true),
                 Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::RecursionDepth
                     && refusal.operation == "step_reference_value_walk"));
-        });
-    }
-
-    #[test]
-    fn reference_walk_propagates_caller_work_refusal() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        with_policy_context(b"", &policy, |_, ctx| {
-            assert!(
-                matches!(first_matching([&Value::Reference(9)], ctx, |_| true),
-                Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "step_reference_value_walk")
-            );
         });
     }
 
