@@ -7,10 +7,7 @@ fn operation_reference_fields(
     record: crate::om::operation_record::OperationPayload<'_>,
     kind: ReferenceFieldKind,
 ) -> Vec<DirectReferenceFrame<usize>> {
-    crate::test_support::with_decode_context(|ctx| {
-        crate::om::direct_reference::operation_reference_fields(ctx, record, kind)
-    })
-    .unwrap()
+    crate::om::direct_reference::operation_reference_fields(record, kind)
 }
 
 fn tagged_field(index: &[u8]) -> Vec<u8> {

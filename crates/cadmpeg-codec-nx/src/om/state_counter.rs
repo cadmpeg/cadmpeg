@@ -3,8 +3,6 @@
 
 use super::discriminators::OperationStateCounterKind;
 use super::state_index::StateIndexToken;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StateCounter<O = u64> {
@@ -120,16 +118,9 @@ impl StateCounterMap {
     /// state, state, 4e` rows whose remaining bounded tail is small enough to be
     /// an area footer. This end anchor prevents a syntactically valid short lane in
     /// an operation payload from becoming a state map.
-    pub(super) fn read(
-        ctx: &DecodeContext<'_>,
-        bytes: &[u8],
-        base_offset: usize,
-    ) -> Result<Option<Self>, CodecError> {
+    pub(super) fn read(bytes: &[u8], base_offset: usize) -> Option<Self> {
         const MAX_COUNTER_TAIL_BYTES: usize = 64;
-        ctx.charge_work(
-            u64_from_index(bytes.len()),
-            "scan NX operation-state counter map",
-        )?;
+
         let mut best: Option<(usize, usize, usize)> = None;
         let mut run_start = 0;
         let mut run_end = 0;
@@ -146,9 +137,7 @@ impl StateCounterMap {
             let Some(row) = StateCounter::read(bytes, at, base_offset) else {
                 continue;
             };
-            let Some(row_end) = at.checked_add(row.byte_len()) else {
-                return Ok(None);
-            };
+            let row_end = at.checked_add(row.byte_len())?;
             if at == run_end {
                 run_end = row_end;
                 run_len += 1;
@@ -167,38 +156,22 @@ impl StateCounterMap {
                 best = Some((run_start, run_end, run_len));
             }
         }
-        let Some((start, end, row_count)) = best else {
-            return Ok(None);
-        };
-        let Some(first) = StateCounter::read(bytes, start, base_offset) else {
-            return Ok(None);
-        };
-        let Some(second_at) = start.checked_add(first.byte_len()) else {
-            return Ok(None);
-        };
-        let Some(second) = StateCounter::read(bytes, second_at, base_offset) else {
-            return Ok(None);
-        };
-        let rest_count = row_count - 2;
-        let operation = "NX operation-state counter rows";
-        let mut rest = ctx.collection_vec(rest_count, operation)?;
-        let Some(mut cursor) = second_at.checked_add(second.byte_len()) else {
-            return Ok(None);
-        };
+        let (start, end, _) = best?;
+        let first = StateCounter::read(bytes, start, base_offset)?;
+        let second_at = start.checked_add(first.byte_len())?;
+        let second = StateCounter::read(bytes, second_at, base_offset)?;
+        let mut rest = Vec::new();
+        let mut cursor = second_at.checked_add(second.byte_len())?;
         while cursor < end {
-            let Some(row) = StateCounter::read(bytes, cursor, base_offset) else {
-                return Ok(None);
-            };
-            let Some(next) = cursor.checked_add(row.byte_len()) else {
-                return Ok(None);
-            };
+            let row = StateCounter::read(bytes, cursor, base_offset)?;
+            let next = cursor.checked_add(row.byte_len())?;
             cursor = next;
             rest.push(row);
         }
-        Ok((cursor == end).then_some(Self {
+        (cursor == end).then_some(Self {
             first: [first, second],
             rest,
-        }))
+        })
     }
 }
 
@@ -216,11 +189,8 @@ mod tests {
             0xf1, 0xed,
         ]);
 
-        let map = crate::test_support::with_decode_context(|ctx| {
-            crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 1000)
-        })
-        .unwrap()
-        .expect("counter-map suffix");
+        let map = crate::om::state_counter::StateCounterMap::read(&bytes, 1000)
+            .expect("counter-map suffix");
         assert_eq!(map.offset(), 1004);
         let rows: Vec<_> = map.into_rows().collect();
         assert_eq!(rows.len(), 3);
@@ -247,73 +217,6 @@ mod tests {
             0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
             0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
         ];
-        assert!(crate::test_support::with_decode_context(|ctx| {
-            crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 0)
-        })
-        .unwrap()
-        .is_none());
-    }
-
-    #[test]
-    fn operation_state_counter_map_refuses_collection_limit() {
-        let bytes = [
-            0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
-            0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
-        ];
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| {
-                policy.limits.max_collection_items = 0;
-            },
-            |ctx| {
-                let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn operation_state_counter_map_refuses_retained_limit() {
-        let bytes = [
-            0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
-            0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
-        ];
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn operation_state_counter_map_refuses_work_limit() {
-        let bytes = [
-            0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
-            0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
-        ];
-
-        crate::test_support::with_decode_context_over(
-            &bytes,
-            |policy| {
-                policy.limits.max_work_units = 0;
-            },
-            |ctx| {
-                let error = super::StateCounterMap::read(ctx, &bytes, 0).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-                );
-            },
-        );
+        assert!(crate::om::state_counter::StateCounterMap::read(&bytes, 0).is_none());
     }
 }

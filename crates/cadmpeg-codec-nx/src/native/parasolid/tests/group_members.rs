@@ -17,12 +17,11 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     let head_member = record(16, 101, Some(51), Vec::new());
     let records = [group, tail, head, tail_member, head_member];
 
-    let members = crate::test_support::with_decode_context(|ctx| {
+    let members = {
         let mut members = Vec::new();
-        crate::native::parasolid::group_members_from_records(ctx, 4, &records, &mut members)
-            .unwrap();
+        crate::native::parasolid::group_members_from_records(4, &records, &mut members);
         members
-    });
+    };
 
     assert_eq!(members.len(), 2);
     assert_eq!(members[0].list_record_xmt, 20);
@@ -52,21 +51,17 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     broken[2].family = crate::deltas::record_family::RecordFamily::Type91 {
         references: [10, 101, 3, 4, 1, 99],
     };
-    let broken_members = crate::test_support::with_decode_context(|ctx| {
+    let broken_members = {
         let mut members = Vec::new();
-        crate::native::parasolid::group_members_from_records(ctx, 4, &broken, &mut members)
-            .unwrap();
+        crate::native::parasolid::group_members_from_records(4, &broken, &mut members);
         members
-    });
+    };
     assert!(broken_members.is_empty());
 }
 
 #[test]
 fn group_member_xmt_is_checked_before_node_identity_fallback() {
-    let graph = crate::test_support::with_decode_context(|ctx| {
-        Graph::parse(ctx, &many_face_partition_stream(1_000))
-    })
-    .unwrap();
+    let graph = Graph::parse(&many_face_partition_stream(1_000));
     let resolve =
         |member: &ParasolidGroupMember| match member.target.resolve(&graph, member.member_xmt) {
             GroupMemberTarget::Fin => None,
@@ -123,10 +118,8 @@ fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
         ),
     ];
 
-    let groups = crate::test_support::with_decode_context(|ctx| {
-        crate::native::parasolid::parasolid_group_records(ctx, &streams, &BTreeMap::new(), &[])
-    })
-    .unwrap();
+    let groups =
+        crate::native::parasolid::parasolid_group_records(&streams, &BTreeMap::new(), &[]).unwrap();
 
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].node_id, groups[1].node_id);
@@ -159,10 +152,9 @@ fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);
     let pairs = BTreeMap::from([(0, vec![1])]);
 
-    let groups = crate::test_support::with_decode_context(|ctx| {
-        crate::native::parasolid::parasolid_group_records(ctx, &streams, &pairs, &events.records)
-    })
-    .unwrap();
+    let groups =
+        crate::native::parasolid::parasolid_group_records(&streams, &pairs, &events.records)
+            .unwrap();
 
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));

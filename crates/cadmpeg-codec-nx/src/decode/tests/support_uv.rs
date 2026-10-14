@@ -132,9 +132,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         let support_budget = WorkBudget::new(10);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
 
         crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
@@ -312,9 +310,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(
-                crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-            ),
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
         );
 
         let witnesses =
@@ -616,4 +612,121 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         serde_json::to_value(&result.ir().model.procedural_curves).unwrap(),
         lanes_before
     );
+}
+
+#[test]
+fn support_uv_validation_reports_an_exhausted_lane_slice() {
+    use cadmpeg_ir::geometry::{PlacedSurface, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::transform::Transform;
+
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let mut result = EditableDecodeResult::from(result);
+    let (procedural_id, support, parameter_range) = {
+        let procedural = &result.ir().model.procedural_curves[0];
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            panic!("typed intersection");
+        };
+        let support = context
+            .sides()
+            .iter()
+            .find(|side| side.surface.is_some() && side.pcurve.is_some())
+            .and_then(|side| side.surface.clone())
+            .expect("charted support lane");
+        (
+            procedural.id.clone(),
+            support,
+            context.parameter_range().endpoints(),
+        )
+    };
+    // A placed carrier charges one geometry work unit per evaluation; the
+    // decoded plane charges none. The identity placement keeps every point.
+    {
+        let mut ir = result.ir_mut();
+        let surface = ir
+            .model
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.id == support)
+            .expect("support surface");
+        let SurfaceGeometry::Solved(solved) = &surface.geometry else {
+            panic!("solved support surface");
+        };
+        let placed = PlacedSurface::try_new(Box::new(solved.clone()), Transform::identity())
+            .expect("identity placement");
+        surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed));
+    }
+    let pending = vec![(
+        procedural_id,
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            parameter_range.to_vec(),
+        )
+        .unwrap(),
+        0.01,
+        SerializedSupportUv::default(),
+    )];
+    let support_lane_is_charted = |ir: &cadmpeg_ir::CadIr| {
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            ir.model.procedural_curves[0].definition()
+        else {
+            panic!("typed intersection");
+        };
+        context
+            .sides()
+            .iter()
+            .any(|side| side.surface.as_ref() == Some(&support) && side.pcurve.is_some())
+    };
+
+    crate::test_support::with_decode_context(|ctx| {
+        let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
+        // The model slice has no work left but has refused no charge, so the
+        // lane is admitted with an empty child slice.
+        let geometry_budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(ctx, 0);
+        assert!(!geometry_budget.exhausted());
+        let validation =
+            crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                ctx,
+                &mut result.ir_mut(),
+                &pending,
+                &BTreeSet::new(),
+                &support_budget,
+                &geometry_budget,
+                true,
+            )
+            .expect("an exhausted lane slice skips the lane");
+        assert!(validation.lane_geometry_exhausted);
+        assert!(validation.endpoint_witnesses.is_empty());
+        assert!(ctx.resource_refusal().is_none());
+    });
+    // The skipped lane keeps its pcurve. The plane lane needs no geometry work,
+    // so it is still validated against the samples.
+    assert!(support_lane_is_charted(result.ir()));
+
+    crate::test_support::with_decode_context(|ctx| {
+        let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
+        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            ctx,
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        );
+        let validation =
+            crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                ctx,
+                &mut result.ir_mut(),
+                &pending,
+                &BTreeSet::new(),
+                &support_budget,
+                &geometry_budget,
+                true,
+            )
+            .expect("a lane slice with work validates the lane");
+        assert!(!validation.lane_geometry_exhausted);
+    });
+    // With work, the samples invalidate the same lane.
+    assert!(!support_lane_is_charted(result.ir()));
 }

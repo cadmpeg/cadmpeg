@@ -21,12 +21,9 @@ fn periodic_circle_inverse_refuses_nonfinite_seeds() {
                     &circle,
                     Point3::new(1.0, 0.0, 0.0),
                     Some(seed),
-                    &GeometryWorkBudget::from_context(
-                        geometry_ctx,
-                        cadmpeg_core::decode::u64_from_index(100)
-                    ),
+                    &GeometryWorkBudget::from_context(geometry_ctx, 100),
                 ),
-                Ok(None)
+                None
             );
         }
     });
@@ -72,10 +69,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
                 &p,
                 Point3::new(0.3, 0., 0.),
                 None,
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100_000),
-                ),
+                &GeometryWorkBudget::from_context(geometry_ctx, 100_000),
             )
             .unwrap()
             .unwrap();
@@ -108,16 +102,13 @@ fn numerical_0922_large_ellipse_keeps_inverse() {
                 &g,
                 Point3::new(scale, 0., 0.),
                 None,
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(10000),
-                ),
+                &GeometryWorkBudget::from_context(geometry_ctx, 10000),
             );
             println!(
                 "NX ellipse axes ({scale:e}, {}), exact major tip: {r:?}",
                 scale * 0.5
             );
-            assert_eq!(r, Ok(Some(0.)));
+            assert_eq!(r, Some(0.));
         }
     });
 }
@@ -138,13 +129,10 @@ fn numerical_0922_far_ellipse_query_keeps_inverse() {
             &g,
             Point3::new(2., 0., 1e200),
             None,
-            &GeometryWorkBudget::from_context(
-                geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(10000),
-            ),
+            &GeometryWorkBudget::from_context(geometry_ctx, 10000),
         );
         println!("NX ordinary ellipse with query z1e200: {r:?}");
-        assert_eq!(r, Ok(Some(0.)));
+        assert_eq!(r, Some(0.));
     });
 }
 
@@ -172,10 +160,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
                 0.,
             )
             .unwrap();
-            let budget = GeometryWorkBudget::from_context(
-                geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(100_000),
-            );
+            let budget = GeometryWorkBudget::from_context(geometry_ctx, 100_000);
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
                 .expect("evaluator allocation succeeds")
                 .unwrap();
@@ -218,10 +203,7 @@ fn numerical_0922b_small_domain_inverse() {
                 0.75 * d,
             )
             .unwrap();
-            let budget = GeometryWorkBudget::from_context(
-                geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(100_000),
-            );
+            let budget = GeometryWorkBudget::from_context(geometry_ctx, 100_000);
             let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
                 .expect("evaluator allocation succeeds")
                 .unwrap();
@@ -261,10 +243,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
             &curve,
             target,
             None,
-            &GeometryWorkBudget::from_context(
-                geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(100_000),
-            ),
+            &GeometryWorkBudget::from_context(geometry_ctx, 100_000),
         )
         .expect("evaluator allocation succeeds")
         .unwrap();
@@ -292,10 +271,7 @@ fn numerical_0922b_common_weight_inverse() {
             )
             .expect("fixture constructor admission")
             .unwrap();
-            let budget = GeometryWorkBudget::from_context(
-                geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(100_000),
-            );
+            let budget = GeometryWorkBudget::from_context(geometry_ctx, 100_000);
             let p = closest_nurbs_curve_parameter_with_budget(
                 &curve,
                 Point3::new(0., 0., 0.),
@@ -367,10 +343,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                 &curve,
                 Point3::new(0.3, 0., 0.),
                 None,
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100_000),
-                ),
+                &GeometryWorkBudget::from_context(geometry_ctx, 100_000),
             )
             .expect("evaluator allocation succeeds")
             .unwrap();
@@ -416,29 +389,10 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                     < 64. * f64::EPSILON
             );
         }
+        assert_eq!(scalar_bezier_value(&[0., 1.], 0., [-1e308, 1e308]), 0.5);
         assert_eq!(
-            scalar_bezier_value(
-                &[0., 1.],
-                0.,
-                [-1e308, 1e308],
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100)
-                )
-            ),
-            Ok(0.5)
-        );
-        assert_eq!(
-            homogeneous_residual_distance(
-                &[[-0.5, 0., 1.], [0.5, 0., 1.]],
-                0.,
-                [-1e308, 1e308],
-                &GeometryWorkBudget::from_context(
-                    geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100)
-                ),
-            ),
-            Ok(0.)
+            homogeneous_residual_distance(&[[-0.5, 0., 1.], [0.5, 0., 1.]], 0., [-1e308, 1e308]),
+            0.
         );
     });
 }
@@ -469,10 +423,7 @@ fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let (ir, surface_id, geometry) = overflowing_plane_model();
         let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
-        let budget = GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(1024),
-        );
+        let budget = GeometryWorkBudget::from_context(geometry_ctx, 1024);
         for point in [
             decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
                 .expect("evaluator allocation succeeds"),
@@ -528,10 +479,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
             source_object: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
-        let budget = GeometryWorkBudget::from_context(
-            geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(1024),
-        );
+        let budget = GeometryWorkBudget::from_context(geometry_ctx, 1024);
         for point in [
             decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
                 .expect("evaluator allocation succeeds"),
@@ -569,32 +517,6 @@ fn closest_pcurve_helpers_preserve_session_depth_refusal() {
     for coarse in [false, true] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let limit = if coarse {
-            closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0))
-        } else {
-            closest_pcurve_parameter_from_seed(&ctx, &line, Point2::new(0.5, 0.0), 0.2)
-        }
-        .expect_err("first sample or local step charges work");
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-        assert_eq!(
-            limit.operation,
-            if coarse {
-                "nx pcurve coarse sample"
-            } else {
-                "nx pcurve local step"
-            }
-        );
-        assert_eq!(
-            ctx.charge_work_limit(0, "observe pcurve refusal"),
-            Err(limit)
-        );
-    }
-    for coarse in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let result = if coarse {
@@ -605,10 +527,7 @@ fn closest_pcurve_helpers_preserve_session_depth_refusal() {
         let limit = result.expect_err("first evaluator frame refuses");
         assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
         assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-        assert_eq!(
-            ctx.charge_work_limit(0, "observe pcurve refusal"),
-            Err(limit)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
         assert_eq!(
             closest_pcurve_parameter_from_coarse_grid(&ctx, &line, Point2::new(0.5, 0.0)),
             Err(limit)
