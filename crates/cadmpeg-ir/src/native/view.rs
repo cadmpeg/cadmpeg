@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed product identities and links during staged source admission.
 
+use std::borrow::Cow;
+
 use super::NativeRecord;
 use crate::document::CadIr;
 use crate::unknown::UnknownRecord;
@@ -19,11 +21,13 @@ impl<'a> NativeEntity<'a> {
         }
     }
 
+    /// The string members of this entity's links. A product record parses
+    /// them from its text, so they are owned; source links are borrowed.
     pub(crate) fn links<'ctx>(
         self,
         ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<
-        impl Iterator<Item = Result<&'a str, cadmpeg_core::CodecError>> + 'ctx,
+        impl Iterator<Item = Result<Cow<'a, str>, cadmpeg_core::CodecError>> + 'ctx,
         cadmpeg_core::CodecError,
     >
     where
@@ -31,15 +35,16 @@ impl<'a> NativeEntity<'a> {
     {
         let product = match self {
             Self::Product(record) => {
-                for _ in 0..=record.fields().len() {
-                    ctx.charge_work(6, "native link field lookup")?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(record.text_len()),
+                    "native link field lookup",
+                )?;
+                match record.field("links") {
+                    Some(serde_json::Value::Array(links)) => links,
+                    _ => Vec::new(),
                 }
-                record
-                    .fields()
-                    .get("links")
-                    .and_then(serde_json::Value::as_array)
             }
-            Self::Source(_) => None,
+            Self::Source(_) => Vec::new(),
         };
         let source = match self {
             Self::Source(record) => record.links(),
@@ -47,16 +52,18 @@ impl<'a> NativeEntity<'a> {
         };
         Ok(product
             .into_iter()
-            .flatten()
             .filter_map(
                 move |value| match ctx.charge_work(1, "native outgoing link scan") {
                     Err(error) => Some(Err(error)),
-                    Ok(()) => value.as_str().map(Ok),
+                    Ok(()) => match value {
+                        serde_json::Value::String(link) => Some(Ok(Cow::Owned(link))),
+                        _ => None,
+                    },
                 },
             )
             .chain(source.iter().map(move |text| {
                 ctx.charge_work(1, "native outgoing link scan")?;
-                Ok(text.as_str())
+                Ok(Cow::Borrowed(text.as_str()))
             })))
     }
 }
