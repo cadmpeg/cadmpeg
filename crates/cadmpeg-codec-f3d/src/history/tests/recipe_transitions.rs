@@ -3,8 +3,8 @@
 
 use crate::history::{
     bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    complete_table_binding_budget_exceeded, historical_brep_source,
-    select_legacy_extrude_face_candidate, LegacyFaceResolution,
+    complete_table_binding_cost, historical_brep_source, select_legacy_extrude_face_candidate,
+    LegacyFaceResolution, TableBindingCost,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -590,25 +590,35 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
 
 #[test]
 fn history_binding_budget_charges_materialized_state_tables() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    let materialized_only = |mut limits: cadmpeg_core::decode::ResourceLimits| {
+        limits.max_work_units = u64::MAX;
+        limits
+    };
+    let mut limits = materialized_only(cadmpeg_core::decode::ResourceLimits::desktop());
     limits.max_materialized_bytes = 1920;
-    assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
-    assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
-    assert!(complete_table_binding_budget_exceeded(
-        [usize::MAX, 1],
-        &limits,
-    ));
+    assert_eq!(
+        complete_table_binding_cost([5, 5], &limits),
+        TableBindingCost::Admitted
+    );
+    assert_eq!(
+        complete_table_binding_cost([10, 1], &limits),
+        TableBindingCost::Exceeded
+    );
+    assert_eq!(
+        complete_table_binding_cost([usize::MAX, 1], &limits),
+        TableBindingCost::Exceeded
+    );
 
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    assert!(!complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &desktop,
-    ));
-    assert!(complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &service,
-    ));
+    let desktop = materialized_only(cadmpeg_core::decode::ResourceLimits::desktop());
+    let service = materialized_only(cadmpeg_core::decode::ResourceLimits::service());
+    assert_eq!(
+        complete_table_binding_cost([18_000_000], &desktop),
+        TableBindingCost::Admitted
+    );
+    assert_eq!(
+        complete_table_binding_cost([18_000_000], &service),
+        TableBindingCost::Exceeded
+    );
 }
 
 #[test]

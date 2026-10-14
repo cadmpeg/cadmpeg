@@ -5,7 +5,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::{
-    history_topology_work_budget_exceeded, HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
+    complete_table_binding_cost, TableBindingCost, HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
 };
 
 #[test]
@@ -977,73 +977,44 @@ fn history_delta_offsets_refuse_collection_limit() {
 
 #[test]
 fn history_binding_work_budget_charges_state_record_cross_product() {
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let desktop_entries = desktop.max_work_units / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY;
-    assert!(!history_topology_work_budget_exceeded(
-        [usize::try_from(desktop_entries).expect("desktop entry budget fits usize")],
-        &desktop
-    ));
-    assert!(history_topology_work_budget_exceeded(
-        [usize::try_from(desktop_entries + 1).expect("desktop entry overflow fits usize")],
-        &desktop
-    ));
-    assert!(history_topology_work_budget_exceeded(
-        [usize::MAX, 1],
-        &desktop
-    ));
-
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    let service_entries = service.max_work_units / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY;
-    assert!(!history_topology_work_budget_exceeded(
-        [usize::try_from(service_entries).expect("service entry budget fits usize")],
-        &service
-    ));
-    assert!(history_topology_work_budget_exceeded(
-        [usize::try_from(service_entries + 1).expect("service entry overflow fits usize")],
-        &service
-    ));
+    for limits in [
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+        cadmpeg_core::decode::ResourceLimits::service(),
+    ] {
+        let entries =
+            usize::try_from(limits.max_work_units / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY)
+                .expect("entry budget fits usize");
+        assert_eq!(
+            complete_table_binding_cost([entries], &limits),
+            TableBindingCost::Admitted
+        );
+        assert_eq!(
+            complete_table_binding_cost([entries + 1], &limits),
+            TableBindingCost::Exceeded
+        );
+        assert_eq!(
+            complete_table_binding_cost([usize::MAX, 1], &limits),
+            TableBindingCost::Exceeded
+        );
+    }
 }
 
 #[test]
-fn history_complete_table_binding_refuses_materialized_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = super::super::HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY - 1;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap()
-        .0;
-    let error = super::super::admit_complete_table_binding_budget(
-        &ctx,
-        [1_usize].into_iter(),
-        &policy.limits,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.operation == "bind F3D complete history topology bytes")
+fn history_complete_table_binding_skips_over_materialized_limit() {
+    let mut limits = cadmpeg_core::decode::ResourceLimits::service();
+    limits.max_materialized_bytes = super::super::HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY - 1;
+    assert_eq!(
+        complete_table_binding_cost([1], &limits),
+        TableBindingCost::Exceeded
     );
 }
 
 #[test]
-fn history_complete_table_binding_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY - 1;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap()
-        .0;
-    let error = super::super::admit_complete_table_binding_budget(
-        &ctx,
-        [1_usize].into_iter(),
-        &policy.limits,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.operation == "bind F3D complete history topology work")
+fn history_complete_table_binding_skips_over_work_limit() {
+    let mut limits = cadmpeg_core::decode::ResourceLimits::service();
+    limits.max_work_units = HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY - 1;
+    assert_eq!(
+        complete_table_binding_cost([1], &limits),
+        TableBindingCost::Exceeded
     );
 }
