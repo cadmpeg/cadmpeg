@@ -4453,36 +4453,49 @@ fn validate_component_occurrences(
             (stream, key),
             "index F3D occurrence GUIDs",
         )?;
-        let unique_record = if unique_identity {
-            ctx.decode.insert_hash_set(
-                &mut record_indices,
-                (stream, occurrence.record_index),
-                "index F3D occurrence record indices",
-            )?
-        } else {
-            false
-        };
-        let valid = unique_identity && unique_record && match occurrence.placement() {
+        let unique_record = ctx.decode.insert_hash_set(
+            &mut record_indices,
+            (stream, occurrence.record_index),
+            "index F3D occurrence record indices",
+        )?;
+        // A class-256 carrier stores a placed frame only after its first
+        // occurrence; every other carrier class can place ordinal one.
+        let placement_admitted = match occurrence.placement() {
             records::feature::assembly_features::DesignComponentOccurrencePlacement::Base => true,
             records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
                 ordinal,
                 ..
-            } => occurrence.class_tag.as_str() == "327" || ordinal.get() > 1,
+            } => occurrence.class_tag.as_str() != "256" || ordinal.get() > 1,
         };
         // The duplicated references must agree within one carrier, which
         // the decoder checks. The component GUID is the reusable-definition
         // identity; a different carrier-local component-record reference
         // does not contradict it.
-        if !valid {
-            ctx.push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design component occurrence has an invalid fixed frame",
-                Some(
-                    ctx.decode
-                        .copy_retained_text(&occurrence.id, "retain F3D validation entity")?,
-                ),
-            )?;
+        for (holds, message) in [
+            (
+                unique_identity,
+                "Fusion Design component occurrence GUID repeats in its Design stream",
+            ),
+            (
+                unique_record,
+                "Fusion Design component occurrence record index repeats in its Design stream",
+            ),
+            (
+                placement_admitted,
+                "Fusion Design class-256 component occurrence has a placed frame at ordinal one",
+            ),
+        ] {
+            if !holds {
+                ctx.push_constant_finding(
+                    findings,
+                    Check::NativeLinks,
+                    message,
+                    Some(
+                        ctx.decode
+                            .copy_retained_text(&occurrence.id, "retain F3D validation entity")?,
+                    ),
+                )?;
+            }
         }
     }
     Ok(())
