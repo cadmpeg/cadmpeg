@@ -361,7 +361,7 @@ fn native_record_slot_refuses_collection_limit_before_json_materialization() {
 }
 
 #[test]
-fn second_native_record_refuses_before_output_vec_growth() {
+fn native_record_slots_charge_collection_items() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let records = [
@@ -369,34 +369,23 @@ fn second_native_record_refuses_before_output_vec_growth() {
         serde_json::json!({"id": "test:native:record#first", "payload": 1}),
     ];
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // The first record charges its slot and one item for each of its two
-    // canonical object members.
-    policy.limits.max_collection_items = 3;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::native::arena_from(
-        &limited,
-        records
-            .iter()
-            .map(Ok::<_, crate::native::NativeConvertError>),
-    )
-    .unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
-    else {
-        panic!("second native row must preserve its resource refusal")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "store native record");
-
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let stored = crate::native::arena_from(
-        &service,
-        records
-            .iter()
-            .map(Ok::<_, crate::native::NativeConvertError>),
-    )
-    .unwrap();
+    // Each record's temporary value tree is released after its text is
+    // stored, so the slot charges stay below that peak; prove they are made.
+    let stored = cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "store native record",
+        || {
+            let (service, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+            crate::native::arena_from(
+                &service,
+                records
+                    .iter()
+                    .map(Ok::<_, crate::native::NativeConvertError>),
+            )
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    );
     assert_eq!(stored.len(), 2);
     assert_eq!(stored[0].id(), "test:native:record#first");
     assert_eq!(stored[1].id(), "test:native:record#second");
