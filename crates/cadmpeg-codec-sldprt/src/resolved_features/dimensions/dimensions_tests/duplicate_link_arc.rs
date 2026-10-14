@@ -126,14 +126,12 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
     )
-    .unwrap()
     .expect("duplicate-link arc carrier");
     assert_eq!(carrier.marker.id(), "arc");
     assert_eq!(carrier.center(), [0.010, 0.020]);
@@ -158,14 +156,12 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
         &operand,
         5.0,
     )
-    .unwrap()
     .is_none());
 
     let mut non_arc_lane = lane.clone();
@@ -176,14 +172,12 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&non_arc_lane),
         &non_arc_markers,
         "feature",
         &operand,
         5.0,
     )
-    .unwrap()
     .is_none());
 
     let mut ambiguous_lane = lane.clone();
@@ -233,13 +227,11 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
-        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         5.0,
     )
-    .unwrap()
     .is_none());
 }

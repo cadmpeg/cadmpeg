@@ -3,55 +3,11 @@
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
-use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 
-fn retained_text(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut retained = String::new();
-    ctx.try_reserve_retained_text(&mut retained, text.len(), operation)?;
-    retained.push_str(text);
-    Ok(retained)
-}
-
-fn record_id(
-    ctx: &DecodeContext<'_>,
-    family: &'static str,
-    lane_key: &str,
-    offset: usize,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let digits = if offset == 0 {
-        1
-    } else {
-        index_from_u32(offset.ilog10()) + 1
-    };
-    let length = "sldprt:feature-input:"
-        .len()
-        .checked_add(family.len())
-        .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(lane_key.len()))
-        .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "retain SLDPRT feature input record ID",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    let mut id = String::new();
-    ctx.try_reserve_retained_text(&mut id, length, "retain SLDPRT feature input record ID")?;
-    std::fmt::Write::write_fmt(
-        &mut id,
-        format_args!("sldprt:feature-input:{family}#{lane_key}:{offset}"),
-    )
-    .map_err(|_| {
-        cadmpeg_core::CodecError::malformed("cannot format SLDPRT feature input record ID")
-    })?;
-    Ok(id)
+fn record_id(family: &'static str, lane_key: &str, offset: usize) -> String {
+    format!("sldprt:feature-input:{family}#{lane_key}:{offset}")
 }
 
 pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonBlankString {
@@ -75,16 +31,8 @@ pub(crate) fn object_names(
 ) -> Result<Vec<FeatureInputName>, cadmpeg_core::CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut names = Vec::new();
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "scan SLDPRT feature input names",
-    )?;
-    ctx.charge_work(
-        u64_from_index(payload.len()),
-        "find SLDPRT feature input name class",
-    )?;
     for (offset, object_id, units) in payload_name_candidates(payload) {
-        let (decoded, _name_reservation) = match ctx.utf16le_scoped_text(
+        let decoded = match ctx.utf16le_text(
             units,
             units.len() / 2,
             false,
@@ -94,32 +42,19 @@ pub(crate) fn object_names(
             Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        ctx.charge_work(
-            u64_from_index(decoded.len()),
-            "validate SLDPRT feature input name",
-        )?;
         if decoded.chars().any(char::is_control) {
             continue;
         }
-        let ordinal = names.len();
-        ctx.charge_work(
-            u64_from_index(decoded.len()),
-            "retain SLDPRT feature input name",
-        )?;
-        let value = ctx.copy_retained_text(&decoded, "retain SLDPRT feature input name")?;
-        let id = record_id(ctx, "name", lane_key, offset)?;
-        let parent = retained_text(ctx, parent, "retain SLDPRT feature input name parent")?;
-        let ordinal = u32::try_from(ordinal).map_err(|_| {
-            ctx.refuse_codec_limit("collect SLDPRT feature input names", u64::MAX - 1, u64::MAX)
+        let ordinal = u32::try_from(names.len()).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("SLDPRT feature input name ordinal overflows u32")
         })?;
-        ctx.reserve_vec(&mut names, 1, "collect SLDPRT feature input names")?;
         names.push(FeatureInputName {
-            id,
-            parent,
+            id: record_id("name", lane_key, offset),
+            parent: parent.to_owned(),
             ordinal,
             offset: u64_from_index(offset),
             object_id,
-            value,
+            value: decoded,
         });
     }
     Ok(names)
@@ -292,56 +227,37 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
 }
 
 pub(crate) fn class_declarations(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<FeatureInputClass>, cadmpeg_core::CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut classes = Vec::new();
     for (ordinal, (offset, name)) in payload_classes(payload).enumerate() {
-        let id = record_id(ctx, "class", lane_key, offset)?;
-        let parent = retained_text(ctx, parent, "retain SLDPRT feature input class parent")?;
-        let name = retained_text(ctx, name, "retain SLDPRT feature input class name")?;
         let ordinal = u32::try_from(ordinal).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "collect SLDPRT feature input classes",
-                u64::MAX - 1,
-                u64::MAX,
-            )
+            cadmpeg_core::CodecError::malformed("SLDPRT feature input class ordinal overflows u32")
         })?;
-        ctx.reserve_vec(&mut classes, 1, "collect SLDPRT feature input classes")?;
         classes.push(FeatureInputClass {
-            id,
-            parent,
+            id: record_id("class", lane_key, offset),
+            parent: parent.to_owned(),
             ordinal,
             offset: u64_from_index(offset),
-            name,
+            name: name.to_owned(),
         });
     }
     Ok(classes)
 }
 
-pub(super) fn configuration(
-    ctx: &DecodeContext<'_>,
-    section: &str,
-) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(start) = section.find("Config-") else {
-        return Ok(None);
-    };
-    let start = start + "Config-".len();
+pub(super) fn configuration(section: &str) -> Option<String> {
+    let start = section.find("Config-")? + "Config-".len();
     let tail = &section[start..];
     let end = tail
         .find("-ResolvedFeatures")
         .or_else(|| tail.find('/'))
         .unwrap_or(tail.len());
     if tail[..end].is_empty() {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(retained_text(
-        ctx,
-        &tail[..end],
-        "retain SLDPRT feature input configuration",
-    )?))
+    Some(tail[..end].to_owned())
 }
 
 #[cfg(test)]

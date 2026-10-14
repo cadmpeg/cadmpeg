@@ -49,17 +49,13 @@ pub fn spline_surfaces(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
 
 /// Exercise topology record scanning.
 pub fn topology(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
-    drop(crate::brep::topology::scan(&ctx, data)?);
+    drop(crate::brep::topology::scan(data));
     Ok(())
 }
 
 /// Exercise entity record scanning.
 pub fn entity(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
-    drop(crate::brep::entity::scan_metadata(&ctx, data, false)?);
+    drop(crate::brep::entity::scan_metadata(data, false));
     Ok(())
 }
 
@@ -85,19 +81,7 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         if data.get(start..end).is_none() {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(data.len()),
-            "patch SLDPRT PMI fuzz payload",
-        )?;
-        let _patched_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(data.len()),
-            "patch SLDPRT PMI fuzz payload",
-        )?;
-        let mut patched = Vec::new();
-        patched.try_reserve_exact(data.len()).map_err(|_| {
-            ctx.refuse_codec_limit("patch SLDPRT PMI fuzz payload", u64::MAX - 1, u64::MAX)
-        })?;
-        patched.extend_from_slice(data);
+        let mut patched = data.to_vec();
         let edited = f64::from_bits(record.value.get().to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
         let mut again_losses = Vec::new();

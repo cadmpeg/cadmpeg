@@ -190,14 +190,12 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
     } = direct_circle_fixture();
 
     reconcile_direct_circle_dimension_carriers(
-        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
 
     assert!(!entities.iter().any(|entity| entity.id().clone()
         == SketchEntityId::mint("synthetic:test:id#native-circle").unwrap()));
@@ -229,14 +227,12 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
     let mut sketches = vec![sketch(&sketch_id, Vec::new())];
 
     reconcile_direct_circle_dimension_carriers(
-        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
 
     assert_eq!(entities.len(), 1);
     assert!(matches!(
@@ -246,8 +242,8 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
 }
 
 #[test]
-fn marker_circle_projection_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn marker_circle_projection_adds_the_typed_circle_profile() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -273,38 +269,4 @@ fn marker_circle_projection_refuses_retained_limit() {
     assert_eq!(sketches[0].profiles.len(), 2);
     assert_eq!(sketches[0].profiles[0].len(), 1);
     assert_eq!(sketches[0].profiles[0][0].entity, typed_id);
-
-    let DirectCircleFixture {
-        feature,
-        lane,
-        entities,
-        sketches,
-        ..
-    } = direct_circle_fixture();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT circle carrier entity identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut entities = entities.clone();
-            let mut sketches = sketches.clone();
-            let feature = feature.clone();
-            let lane = lane.clone();
-            super::super::project_marker_dimensioned_circles(
-                &limited,
-                &mut entities,
-                &mut sketches,
-                &[feature],
-                &[],
-                &[lane],
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT circle carrier entity identity")
-    );
 }

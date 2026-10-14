@@ -155,13 +155,8 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             native_ref: None,
         },
     ];
-    let aliases = ParameterAliases::new(
-        &cadmpeg_test_support::service_decode_context(),
-        &parameters,
-        &HashMap::new(),
-        &HashSet::from([global_owner]),
-    )
-    .unwrap();
+    let aliases =
+        ParameterAliases::new(&parameters, &HashMap::new(), &HashSet::from([global_owner]));
 
     for owner in [
         Some(local_owner),
@@ -181,10 +176,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     use crate::history::parameters::{
         definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let tokens = expression_identifier_tokens(&ctx, "\"\" + Width")
-        .unwrap()
-        .expect("closed quotes");
+    let tokens = expression_identifier_tokens("\"\" + Width").expect("closed quotes");
     assert_eq!(
         tokens
             .iter()
@@ -194,9 +186,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     );
     assert!(!tokens.iter().any(definite_parameter_reference));
 
-    let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
-        .unwrap()
-        .expect("closed quotes");
+    let named = expression_identifier_tokens("\"D1@Sketch1\"").expect("closed quotes");
     assert_eq!(
         named
             .iter()
@@ -254,13 +244,8 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
     );
     assert!(!unquoted_expression_identifier("4"));
     assert_eq!(
-        rewrite_parameter_expression(
-            &cadmpeg_test_support::service_decode_context(),
-            "Width * 2",
-            &HashMap::from([("Width".into(), "4".into())]),
-        )
-        .unwrap()
-        .as_deref(),
+        rewrite_parameter_expression("Width * 2", &HashMap::from([("Width".into(), "4".into())]),)
+            .as_deref(),
         Some("\"4\" * 2")
     );
 }
@@ -485,55 +470,9 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
 
     assert!(projected[2].dependencies.is_empty());
     assert_eq!(
-        incomplete_history_reference_features(
-            &cadmpeg_test_support::service_decode_context(),
-            &[history],
-        )
-        .unwrap(),
+        incomplete_history_reference_features(&[history],).unwrap(),
         4
     );
-}
-
-#[test]
-fn incomplete_history_reference_index_refuses_collection_limit() {
-    let history = FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![feature("first", Some("1"), 0)],
-    };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"history", &arena, &policy).unwrap();
-    let error = incomplete_history_reference_features(&ctx, &[history])
-        .err()
-        .unwrap();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn incomplete_history_reference_scan_refuses_work_limit() {
-    let history = FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![feature("first", Some("1"), 0)],
-    };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"history", &arena, &policy).unwrap();
-    let error = incomplete_history_reference_features(&ctx, &[history])
-        .err()
-        .unwrap();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -565,12 +504,7 @@ fn stored_configuration_id_precedes_ordinal_fallback() {
     let lanes = [feature_input_lane("lane", Some("1"))];
 
     assert_eq!(
-        configuration_lane_assignments(
-            &cadmpeg_test_support::service_decode_context(),
-            &configurations,
-            &lanes
-        )
-        .unwrap(),
+        configuration_lane_assignments(&configurations, &lanes),
         [(0, 0)]
     );
 }

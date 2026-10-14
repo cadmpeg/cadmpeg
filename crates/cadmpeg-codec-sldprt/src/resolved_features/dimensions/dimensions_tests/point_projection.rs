@@ -5,7 +5,6 @@ use crate::records::{
     FeatureInputReference, FeatureInputRelationFamily, FeatureInputRelationInstance,
     SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{
@@ -135,14 +134,9 @@ fn explicit_point_circle_input() -> (
 
 #[test]
 fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"point projection", &arena, &DecodePolicy::service())
-            .unwrap();
     let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
 
     project_relation_point_dimensioned_circles(
-        &ctx,
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -162,7 +156,6 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     classless_lane.references[0].class_ref = None;
     let mut classless_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
-        &ctx,
         &mut classless_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -186,7 +179,6 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     object_index_lane.relation_instances[0].operands[0].entity_index = 1;
     let mut object_index_entities = vec![entities[0].clone()];
     project_relation_point_dimensioned_circles(
-        &ctx,
         &mut object_index_entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -203,35 +195,9 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
 }
 
 #[test]
-fn point_dimension_projection_refuses_retained_limit() {
-    let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &policy).unwrap();
-    let error = project_relation_point_dimensioned_circles(
-        &ctx,
-        &mut entities,
-        std::slice::from_ref(&feature),
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&lane),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-    ));
-}
-
-#[test]
-fn point_dimension_projection_refuses_work_limit() {
-    let arena = DecodeArena::new();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+fn point_dimension_projection_adds_the_explicit_point_circle() {
     let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
     project_relation_point_dimensioned_circles(
-        &service,
         &mut entities,
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
@@ -242,21 +208,4 @@ fn point_dimension_projection_refuses_work_limit() {
     assert!(matches!(entities[1].geometry.definition(),
         SketchGeometryDefinition::Circle { center, radius }
             if *center == Point2::new(1.0, 2.0) && radius.get() == 2.0));
-
-    let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_relation_point_dimensioned_circles(
-        &limited,
-        &mut entities,
-        std::slice::from_ref(&feature),
-        std::slice::from_ref(&parameter),
-        std::slice::from_ref(&lane),
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
 }

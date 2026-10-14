@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rib, loft, sweep, and revolve projection.
 
-use super::copy_projected_feature_text;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, PartialRevolveConstruction,
     PathRef, PlanarProfileRef, ProfileRef, RevolutionAxis, RevolveConstruction, RevolveExtent,
@@ -20,24 +17,18 @@ use crate::history::literals::{
 };
 
 pub(super) fn project_rib(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> Result<FeatureDefinition, CodecError> {
-    let profile = feature
-        .properties
-        .get("Profile")
-        .map(|profile| {
-            copy_projected_feature_text(
-                ctx,
-                native_by_source
-                    .get(profile.as_str())
-                    .copied()
-                    .unwrap_or(profile.as_str()),
-            )
-            .map(PlanarProfileRef::native)
-        })
-        .transpose()?;
+) -> FeatureDefinition {
+    let profile = feature.properties.get("Profile").map(|profile| {
+        PlanarProfileRef::native(
+            native_by_source
+                .get(profile.as_str())
+                .copied()
+                .unwrap_or(profile.as_str())
+                .to_owned(),
+        )
+    });
     let direction = feature
         .properties
         .get("Direction")
@@ -48,7 +39,7 @@ pub(super) fn project_rib(
             .map_or(RibDraft::Unresolved, RibDraft::Angle),
         None => RibDraft::None,
     };
-    Ok(FeatureDefinition::Operation(FeatureOperation::Rib {
+    FeatureDefinition::Operation(FeatureOperation::Rib {
         construction: RibConstruction {
             profile,
             direction,
@@ -75,23 +66,18 @@ pub(super) fn project_rib(
             .get("Operation")
             .and_then(|value| parse_boolean_op(value))
             .unwrap_or(BooleanOp::Unresolved),
-    }))
+    })
 }
 
 pub(super) fn project_loft(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(closed) = feature
+) -> Option<FeatureDefinition> {
+    let closed = feature
         .properties
         .get("Closed")
-        .map_or(Some(false), |closed| parse_bool(closed))
-    else {
-        return Ok(None);
-    };
+        .map_or(Some(false), |closed| parse_bool(closed))?;
     let sections = project_native_refs(
-        ctx,
         feature.properties.get("Profiles").map(String::as_str),
         native_by_source,
         |profile| {
@@ -99,14 +85,13 @@ pub(super) fn project_loft(
                 PlanarProfileRef::Native(profile),
             ))
         },
-    )?;
+    );
     let guides = project_native_refs(
-        ctx,
         feature.properties.get("Guides").map(String::as_str),
         native_by_source,
         PathRef::Native,
-    )?;
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Loft {
+    );
+    Some(FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
         guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
         op: feature
@@ -131,61 +116,49 @@ pub(super) fn project_loft(
         linearize: false,
         max_degree: None,
         allow_multi_profile_faces: None,
-    })))
+    }))
 }
 
 fn project_native_refs<T>(
-    ctx: &DecodeContext<'_>,
     value: Option<&str>,
     native_by_source: &HashMap<String, &str>,
     mut wrap: impl FnMut(String) -> T,
-) -> Result<Vec<T>, CodecError> {
+) -> Vec<T> {
     let mut references = Vec::new();
     let Some(value) = value else {
-        return Ok(references);
+        return references;
     };
-    ctx.charge_work(
-        u64_from_index(value.len()),
-        "project SLDPRT loft references",
-    )?;
     for source in value
         .split(',')
         .map(str::trim)
         .filter(|source| !source.is_empty())
     {
-        ctx.reserve_vec(&mut references, 1, "project SLDPRT loft references")?;
         let reference = native_by_source.get(source).copied().unwrap_or(source);
-        let reference =
-            ctx.format_retained(format_args!("{reference}"), "retain SLDPRT loft reference")?;
+        let reference = reference.to_string();
         references.push(wrap(reference));
     }
-    Ok(references)
+    references
 }
 
 pub(super) fn project_sweep(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> Result<Option<FeatureDefinition>, CodecError> {
+) -> Option<FeatureDefinition> {
     let native_ref = |source: &String| {
-        copy_projected_feature_text(
-            ctx,
-            native_by_source
-                .get(source.as_str())
-                .copied()
-                .unwrap_or(source.as_str()),
-        )
+        native_by_source
+            .get(source.as_str())
+            .copied()
+            .unwrap_or(source.as_str())
+            .to_owned()
     };
     let profile = feature
         .properties
         .get("Profile")
-        .map(|source| native_ref(source).map(PlanarProfileRef::native))
-        .transpose()?;
+        .map(|source| PlanarProfileRef::native(native_ref(source)));
     let path = feature
         .properties
         .get("Path")
-        .map(|source| native_ref(source).map(PathRef::Native))
-        .transpose()?;
+        .map(|source| PathRef::Native(native_ref(source)));
     let mode = if feature_input_class(feature, NativeClassKind::SweepReferenceSurface)
         || feature.xml_tag == "Surface-Sweep"
         || feature.kind == "Surface-Sweep"
@@ -204,7 +177,7 @@ pub(super) fn project_sweep(
     } else {
         SweepMode::Unresolved {}
     };
-    let Some((twist, scale)) = (|| {
+    let (twist, scale) = (|| {
         let twist = match feature.parameters.get("Twist") {
             Some(value) => Some(parse_angle_rad(value)?),
             None => None,
@@ -220,35 +193,31 @@ pub(super) fn project_sweep(
             None => None,
         };
         Some((twist, scale))
-    })() else {
-        return Ok(None);
-    };
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                mode,
-                profile.map_or(
-                    cadmpeg_ir::features::SweepSection::Unresolved(None),
-                    cadmpeg_ir::features::SweepSection::Profile,
-                ),
-                Vec::new(),
+    })()?;
+    Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
+        shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+            mode,
+            profile.map_or(
+                cadmpeg_ir::features::SweepSection::Unresolved(None),
+                cadmpeg_ir::features::SweepSection::Profile,
             ),
+            Vec::new(),
+        ),
 
-            path,
+        path,
 
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            scale,
-            allow_multi_profile_faces: None,
-        },
-    )))
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
+        twist,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
+        scale,
+        allow_multi_profile_faces: None,
+    }))
 }
 
 fn sweep_mode(op: BooleanOp) -> SweepMode {
@@ -291,24 +260,9 @@ fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
 }
 
 pub(super) fn project_revolve(
-    ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
-) -> Result<FeatureDefinition, CodecError> {
-    ctx.charge_work(
-        u64_from_index(feature.content.len()),
-        "scan SLDPRT revolve dimension order",
-    )?;
-    if feature
-        .properties
-        .get("EndCondition")
-        .is_some_and(|condition| condition == "TwoSided")
-    {
-        ctx.charge_work(
-            u64_from_index(feature.content.len()),
-            "scan SLDPRT revolve dimension order",
-        )?;
-    }
+) -> FeatureDefinition {
     let ordered_angle = |ordinal| {
         feature
             .content
@@ -351,8 +305,7 @@ pub(super) fn project_revolve(
         .properties
         .get("Profile")
         .and_then(|source| native_by_source.get(source.as_str()))
-        .map(|id| copy_projected_feature_text(ctx, id).map(PlanarProfileRef::native))
-        .transpose()?;
+        .map(|id| PlanarProfileRef::native((*id).to_owned()));
     let axis = feature
         .properties
         .get("AxisOrigin")
@@ -377,7 +330,7 @@ pub(super) fn project_revolve(
         })
         .unwrap_or(BooleanOp::Unresolved);
     let solid = Some(true);
-    Ok(FeatureDefinition::Operation(FeatureOperation::Revolve {
+    FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match (profile, axis, extent) {
             (None, axis, extent) => {
                 RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
@@ -420,5 +373,5 @@ pub(super) fn project_revolve(
             },
         },
         op,
-    }))
+    })
 }

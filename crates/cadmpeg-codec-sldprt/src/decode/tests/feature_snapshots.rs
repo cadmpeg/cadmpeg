@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::snapshot_active_configuration;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::patterns::{
     CompositePattern, PatternKind, PatternSeed, PatternStage, PatternTransform,
@@ -13,7 +13,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
-fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
+fn run() -> Result<(), CodecError> {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let dependency = FeatureId::mint("synthetic:test:id#snapshot-dependency").unwrap();
     let stages = vec![
@@ -100,7 +100,7 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
     });
     let features = ir.model.features.clone();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
     snapshot_active_configuration(&ctx, &mut ir)?;
     assert_eq!(ir.model.features, features);
     assert_eq!(
@@ -121,60 +121,7 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn assert_refusal(dimension: ResourceDimension) {
-    let set_limit = |policy: &mut DecodePolicy, limit| match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-        _ => panic!("unexpected snapshot limit"),
-    };
-    run(&DecodePolicy::service()).unwrap();
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        let mut policy = DecodePolicy::service();
-        set_limit(&mut policy, upper);
-        match run(&policy) {
-            Ok(()) => break,
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
-                upper = upper.checked_mul(2).unwrap();
-            }
-            Err(error) => panic!("unexpected snapshot error: {error}"),
-        }
-    }
-    while lower < upper {
-        let midpoint = lower + (upper - lower) / 2;
-        let mut policy = DecodePolicy::service();
-        set_limit(&mut policy, midpoint);
-        match run(&policy) {
-            Ok(()) => upper = midpoint,
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
-                lower = midpoint + 1;
-            }
-            Err(error) => panic!("unexpected snapshot error: {error}"),
-        }
-    }
-    assert!(upper > 0);
-    let mut policy = DecodePolicy::service();
-    set_limit(&mut policy, upper);
-    run(&policy).unwrap();
-    set_limit(&mut policy, upper - 1);
-    assert!(
-        matches!(run(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
-}
-
 #[test]
-fn active_feature_snapshot_refuses_collection_limit() {
-    assert_refusal(ResourceDimension::CollectionItems);
-}
-#[test]
-fn active_feature_snapshot_refuses_retained_limit() {
-    assert_refusal(ResourceDimension::RetainedBytes);
-}
-#[test]
-fn active_feature_snapshot_refuses_work_limit() {
-    assert_refusal(ResourceDimension::WorkUnits);
+fn active_feature_snapshot_copies_feature_states() {
+    run().unwrap();
 }

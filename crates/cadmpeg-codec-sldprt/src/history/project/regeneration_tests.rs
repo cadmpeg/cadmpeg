@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Regeneration binding and feature projection refusal tests.
+//! Regeneration binding and feature projection tests.
 #![allow(clippy::unwrap_used)]
 
 use crate::history::bind::bind_definition_sketch;
-use crate::history::project::neutral_feature_id_charged;
-use crate::history::project::project_feature_dependencies;
+use crate::history::project::neutral_feature_id;
 use crate::history::project::project_feature_model;
 use crate::history::project::project_features;
 use crate::history::tests::feature;
@@ -18,15 +17,6 @@ use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::features::ProfileRef;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
-
-fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test decode context");
-    run(&ctx)
-}
 
 #[test]
 fn profile_consumers_require_a_regeneration_profile() {
@@ -51,15 +41,13 @@ fn profile_consumers_require_a_regeneration_profile() {
     });
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
 
-    assert!(!with_test_ctx(|ctx| bind_definition_sketch(
-        ctx,
+    assert!(!bind_definition_sketch(
         &mut definition,
         "sketch-native",
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         false,
-    ))
-    .unwrap());
+    ));
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -67,15 +55,13 @@ fn profile_consumers_require_a_regeneration_profile() {
             ..
         })
     ));
-    assert!(with_test_ctx(|ctx| bind_definition_sketch(
-        ctx,
+    assert!(bind_definition_sketch(
         &mut definition,
         "sketch-native",
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         true,
-    ))
-    .unwrap());
+    ));
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -113,9 +99,7 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
 
     let projected =
         project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
-    let sketch_id =
-        neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), "sketch")
-            .unwrap();
+    let sketch_id = neutral_feature_id("sketch").unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -158,102 +142,4 @@ fn a_regeneration_edge_the_model_refuses_is_reported_as_one_loss() {
         "{}",
         losses[0].message
     );
-}
-
-#[test]
-fn projected_tree_child_refuses_collection_limit() {
-    let mut parent = feature("sldprt:history:feature#0:1", None, 0);
-    parent.xml_tag = "Feature".to_owned();
-    parent.kind = "EquationDriven".to_owned();
-    let mut child = feature("sldprt:history:feature#0:2", None, 1);
-    child.tree_parent = Some(crate::records::TreeParent::Record {
-        record_id: parent.id.clone(),
-        source_id: None,
-    });
-    let history = FeatureHistory {
-        id: "history".to_owned(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![parent, child],
-    };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"tree", &arena, &policy).unwrap();
-    let error = project_feature_model(&ctx, &[history]).err().unwrap();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn projected_feature_text_refuses_retained_limit() {
-    let mut projected = feature("sldprt:history:feature#0:1", None, 0);
-    projected.name = "Named feature".to_owned();
-    let history = FeatureHistory {
-        id: "history".to_owned(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![projected],
-    };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"feature", &arena, &policy).unwrap();
-    let error = project_feature_model(&ctx, &[history]).err().unwrap();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
-}
-
-#[test]
-fn projected_source_index_refuses_collection_limit() {
-    let history = FeatureHistory {
-        id: "history".to_owned(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![feature("sldprt:history:feature#0:1", None, 0)],
-    };
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"source", &arena, &policy).unwrap();
-    let error = project_feature_model(&ctx, &[history]).err().unwrap();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "index SLDPRT projected source features"
-    ));
-}
-
-#[test]
-fn projected_dependencies_refuse_collection_limit() {
-    let mut consumer = feature("sldprt:history:feature#0:1", None, 0);
-    consumer.properties.insert(
-        cadmpeg_core::nonblank_literal!("Dependency"),
-        "2".to_owned(),
-    );
-    let source = HashMap::from([(
-        "2".to_owned(),
-        FeatureId::mint("sldprt:model:feature#0:2").unwrap(),
-    )]);
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"dependencies", &arena, &policy)
-            .unwrap();
-    let error = project_feature_dependencies(&ctx, &consumer, &source)
-        .err()
-        .unwrap();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "collect SLDPRT feature dependencies"
-    ));
 }

@@ -107,30 +107,17 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn set_limit(policy: &mut DecodePolicy, dimension: ResourceDimension, limit: u64) {
-    match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-        ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = limit,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
-        _ => panic!("unexpected test dimension"),
-    }
-}
-
-fn assert_projection_refusal(
-    dimension: ResourceDimension,
-    project: fn(&DecodePolicy) -> Result<(), CodecError>,
-) {
+fn assert_nesting_refusal(project: fn(&DecodePolicy) -> Result<(), CodecError>) {
     let mut policy = DecodePolicy::service();
     project(&policy).unwrap();
     let mut lower = 0;
     let mut upper = 1;
     loop {
-        set_limit(&mut policy, dimension, upper);
+        policy.limits.max_recursion_depth = upper;
         match project(&policy) {
             Ok(()) => break,
             Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
                 upper = upper.checked_mul(2).unwrap();
             }
             Err(error) => panic!("unexpected route error: {error}"),
@@ -138,43 +125,28 @@ fn assert_projection_refusal(
     }
     while lower < upper {
         let midpoint = lower + (upper - lower) / 2;
-        set_limit(&mut policy, dimension, midpoint);
+        policy.limits.max_recursion_depth = midpoint;
         match project(&policy) {
             Ok(()) => upper = midpoint,
             Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
                 lower = midpoint + 1;
             }
             Err(error) => panic!("unexpected route error: {error}"),
         }
     }
     assert!(upper > 0);
-    set_limit(&mut policy, dimension, upper);
+    policy.limits.max_recursion_depth = upper;
     project(&policy).unwrap();
-    set_limit(&mut policy, dimension, upper - 1);
+    policy.limits.max_recursion_depth = upper - 1;
     assert!(
-        matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+        matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RecursionDepth)
     );
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_carrier_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_carrier_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run);
-}
-
-#[test]
 fn configuration_sketch_projection_refuses_carrier_nesting_limit() {
-    assert_projection_refusal(ResourceDimension::RecursionDepth, run);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_carrier_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run);
+    assert_nesting_refusal(run);
 }
 
 fn datum_model() -> cadmpeg_ir::CadIr {
@@ -292,23 +264,8 @@ fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 #[test]
-fn configuration_datum_state_projection_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_datum);
-}
-
-#[test]
-fn configuration_datum_state_projection_refuses_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_datum);
-}
-
-#[test]
 fn configuration_datum_state_projection_refuses_nesting_limit() {
-    assert_projection_refusal(ResourceDimension::RecursionDepth, run_datum);
-}
-
-#[test]
-fn configuration_datum_state_projection_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_datum);
+    assert_nesting_refusal(run_datum);
 }
 
 fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -373,16 +330,6 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-#[test]
-fn configuration_design_projection_refuses_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_design);
-}
-
-#[test]
-fn configuration_design_projection_refuses_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_design);
-}
-
 fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         DatumPlaneReference, FeatureDefinition, FeatureId, FeatureOperation,
@@ -419,21 +366,6 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
     Ok(())
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_unscoped_datum_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_unscoped_datum);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_unscoped_datum_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_unscoped_datum);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_unscoped_datum_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_unscoped_datum);
 }
 
 fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -515,21 +447,6 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
     Ok(())
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_ownership_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_spatial_ownership);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_ownership_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_spatial_ownership);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_ownership_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_spatial_ownership);
 }
 
 fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -640,21 +557,6 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
     Ok(())
 }
 
-#[test]
-fn configuration_sketch_projection_refuses_hole_construction_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_hole_construction);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_construction_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_hole_construction);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_construction_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_construction);
-}
-
 fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, HoleShape};
     use cadmpeg_ir::features::{
@@ -742,21 +644,6 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
     Ok(())
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_operand_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_hole_operands);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_operand_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_hole_operands);
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_operand_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_operands);
 }
 
 fn profile_termination_operands() -> (
@@ -978,27 +865,6 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
     Ok(())
 }
 
-#[test]
-fn configuration_sketch_projection_refuses_hole_profile_termination_collection_limit() {
-    assert_projection_refusal(
-        ResourceDimension::CollectionItems,
-        run_hole_profile_termination,
-    );
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_profile_termination_retained_limit() {
-    assert_projection_refusal(
-        ResourceDimension::RetainedBytes,
-        run_hole_profile_termination,
-    );
-}
-
-#[test]
-fn configuration_sketch_projection_refuses_hole_profile_termination_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_profile_termination);
-}
-
 fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         DesignParameter, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
@@ -1092,18 +958,38 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_parameter_overlay_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems, run_parameter_overlay);
+fn configuration_design_projection_runs_under_service_policy() {
+    run_design(&DecodePolicy::service()).unwrap();
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_parameter_overlay_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes, run_parameter_overlay);
+fn configuration_sketch_projection_unscoped_datum_runs_under_service_policy() {
+    run_unscoped_datum(&DecodePolicy::service()).unwrap();
 }
 
 #[test]
-fn configuration_sketch_projection_refuses_parameter_overlay_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits, run_parameter_overlay);
+fn configuration_sketch_projection_ownership_runs_under_service_policy() {
+    run_spatial_ownership(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_hole_construction_runs_under_service_policy() {
+    run_hole_construction(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_hole_operand_runs_under_service_policy() {
+    run_hole_operands(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_hole_profile_termination_runs_under_service_policy() {
+    run_hole_profile_termination(&DecodePolicy::service()).unwrap();
+}
+
+#[test]
+fn configuration_sketch_projection_parameter_overlay_runs_under_service_policy() {
+    run_parameter_overlay(&DecodePolicy::service()).unwrap();
 }
 
 mod feature_copies;

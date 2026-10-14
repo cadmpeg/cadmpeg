@@ -1,7 +1,5 @@
 //! Tests for the `curves` module.
 
-const EPS_REFUSAL_GEOMETRY: f64 = 1.0e-9;
-
 use super::super::endpoints::{compact_legacy_code_one_line_endpoint_indices, minor_arc_geometry};
 use super::super::markers::sketch_input_entities;
 use super::super::typed_relations::compact_legacy_object_line_endpoints;
@@ -12,184 +10,21 @@ use super::{
     closed_marker_profiles_allowing_shared_endpoints, compact_bounded_curve_tangent,
     compact_legacy_rectangle_line_endpoints, compact_line_chain_addresses,
     compact_line_region_addresses, complete_ordered_compact_line_profile,
-    current_linked_semicircle_record, legacy_extended_rectangle_diagonal_endpoint,
-    ordered_compact_line_profile, ordered_rectangle_corners, resolve_two_center_semicircle_profile,
-    tangent_bounded_curve, unique_dimensioned_rectangle_markers,
+    current_linked_semicircle_record, indexed_rectangle_from_line_cycle,
+    legacy_extended_rectangle_diagonal_endpoint, ordered_compact_line_profile,
+    ordered_rectangle_corners, resolve_two_center_semicircle_profile, tangent_bounded_curve,
+    unique_dimensioned_rectangle_markers,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
-#[test]
-fn sketch_plane_frames_refuse_collection_limit() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PrincipalPlane};
-    use std::collections::BTreeMap;
-
-    let native = crate::records::Feature {
-        id: "plane-native".into(),
-        parent: "history".into(),
-        xml_tag: "Feature".into(),
-        tree_parent: None,
-        source_id: crate::records::FeatureSource::from_value(3),
-        ordinal: 0,
-        name: "Top".into(),
-        kind: "Plane".into(),
-        input_class: None,
-        suppressed: false,
-        parameters: BTreeMap::new(),
-        dimension_properties: BTreeMap::new(),
-        properties: BTreeMap::new(),
-        text: None,
-        content: Vec::new(),
-    };
-    let history = crate::records::FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![native],
-    };
-    let neutral = cadmpeg_ir::features::Feature {
-        id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#plane").unwrap(),
-        ordinal: 0,
-        name: Some("Top".into()),
-        suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
-                plane: PrincipalPlane::Top,
-            }),
-        ),
-        native_ref: Some("plane-native".into()),
-    };
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::sketch_plane_frames(&ctx, &[neutral], &[history]).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT sketch plane sources"));
-}
-
-fn indexed_rectangle_from_line_cycle(
-    payload: &[u8],
-    markers: &[&SketchInputEntity],
-) -> Option<[Point2; 4]> {
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
-    super::indexed_rectangle_from_line_cycle(&ctx, payload, markers).unwrap()
-}
-
 fn resolve_connected_arc_test(entities: &mut [SketchEntity], tolerance: f64) {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    super::resolve_connected_marker_arcs(&ctx, entities, tolerance).unwrap();
-}
-
-fn connected_arc_limit_entities() -> Vec<SketchEntity> {
-    let sketch = SketchId::mint("synthetic:test:id#limit-sketch").unwrap();
-    vec![
-        SketchEntity::new(
-            SketchEntityId::mint("synthetic:test:id#limit-point").unwrap(),
-            sketch.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: Point2::new(0.0, 0.0),
-            })
-            .unwrap(),
-        )
-        .with_native_ref(Some("p".into())),
-        SketchEntity::new(
-            SketchEntityId::mint("synthetic:test:id#limit-arc").unwrap(),
-            sketch,
-            SketchGeometry::native(
-                cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2").unwrap(),
-            ),
-        )
-        .with_native_ref(Some("arc".into()))
-        .with_endpoint_refs(vec!["p".into(), "q".into()]),
-    ]
-}
-
-#[test]
-fn connected_arc_refuses_collection_limit() {
-    let mut entities = connected_arc_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT connected arc points"));
-}
-
-#[test]
-fn connected_arc_refuses_retained_limit() {
-    let mut entities = connected_arc_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT connected arc point identity"));
-}
-
-#[test]
-fn connected_arc_refuses_work_limit() {
-    let mut entities = connected_arc_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT connected arc neighbors"));
-}
-
-#[test]
-fn indexed_rectangle_refuses_collection_limit() {
-    let markers = rectangle_limit_markers();
-    let marker_refs = markers.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::indexed_rectangle_from_line_cycle(&ctx, &[], &marker_refs).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT rectangle marker roster"));
-}
-
-#[test]
-fn indexed_rectangle_refuses_work_limit() {
-    let markers = rectangle_limit_markers();
-    let marker_refs = markers.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    // Four elements, eight bytes each, three bit-length levels plus one, eight work units per byte.
-    policy.limits.max_work_units = 4 + 4 * 8 * 4 * 8 - 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::indexed_rectangle_from_line_cycle(&ctx, &[], &marker_refs).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "sldprt rectangle marker roster sort"));
+    super::resolve_connected_marker_arcs(entities, tolerance);
 }
 
 fn compact_region_payload() -> Vec<u8> {
@@ -237,55 +72,6 @@ fn chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     compact_line_chain_addresses(&ctx, payload).unwrap()
 }
 
-fn rectangle_limit_markers() -> [SketchInputEntity; 4] {
-    let marker = |id: &str, u, v| {
-        let mut entity = SketchInputEntity::new(
-            id.to_owned(),
-            "lane".to_owned(),
-            0,
-            0,
-            SketchInputKind::Point,
-        );
-        entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u, v]);
-        entity
-    };
-    [
-        marker("lower-left", 0.0, 0.0),
-        marker("lower-right", 0.0055, 0.0),
-        marker("upper-right", 0.0055, 0.0085),
-        marker("upper-left", 0.0, 0.0085),
-    ]
-}
-
-#[test]
-fn dimensioned_rectangle_refuses_collection_limit() {
-    let markers = rectangle_limit_markers();
-    let marker_refs = markers.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT rectangle points"));
-}
-
-#[test]
-fn dimensioned_rectangle_refuses_work_limit() {
-    let markers = rectangle_limit_markers();
-    let marker_refs = markers.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    // Four i64 cells, eight bytes each, three bit-length levels plus one, eight work units per byte.
-    policy.limits.max_work_units = 4 + 4 * 8 * 4 * 8 - 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "sldprt rectangle cells u sort"));
-}
-
 #[test]
 fn shared_endpoint_block_cycles_remain_profile_chains() {
     let sketch = SketchId::mint("synthetic:test:id#block-sketch").unwrap();
@@ -310,81 +96,10 @@ fn shared_endpoint_block_cycles_remain_profile_chains() {
         line("synthetic:test:id#diagonal", "p0", "p2"),
     ];
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::closed_marker_profiles(&ctx, &entities)
-        .unwrap()
-        .is_empty());
-    let profiles = closed_marker_profiles_allowing_shared_endpoints(&ctx, &entities).unwrap();
+    assert!(super::closed_marker_profiles(&entities).is_empty());
+    let profiles = closed_marker_profiles_allowing_shared_endpoints(&entities);
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
-}
-
-fn closed_profile_limit_entities() -> Vec<SketchEntity> {
-    let sketch = SketchId::mint("synthetic:test:id#closed-limit-sketch").unwrap();
-    [
-        ("synthetic:test:id#closed-limit-first", "p0", "p1"),
-        ("synthetic:test:id#closed-limit-second", "p1", "p0"),
-    ]
-    .into_iter()
-    .map(|(id, start_ref, end_ref)| {
-        SketchEntity::new(
-            SketchEntityId::mint(id).unwrap(),
-            sketch.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(0.0, 0.0),
-                end: Point2::new(1.0, 0.0),
-            })
-            .unwrap(),
-        )
-        .with_endpoint_refs(vec![start_ref.into(), end_ref.into()])
-    })
-    .collect()
-}
-
-#[test]
-fn closed_profile_refuses_collection_limit() {
-    let entities = closed_profile_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT closed curves"));
-}
-
-#[test]
-fn closed_profile_refuses_retained_limit() {
-    let entities = closed_profile_limit_entities();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT closed curve identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::closed_marker_profiles(&ctx, &entities).map(|_| ())
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT closed curve identity"));
-}
-
-#[test]
-fn closed_profile_refuses_work_limit() {
-    let entities = closed_profile_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT closed curve incidence"));
 }
 
 #[test]
@@ -404,45 +119,6 @@ fn compact_line_chain_is_an_ordered_one_based_vertex_roster() {
 }
 
 #[test]
-fn compact_line_region_refuses_collection_limit() {
-    let payload = compact_region_payload();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error = compact_line_region_addresses(&ctx, &payload).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT compact region addresses"));
-}
-
-#[test]
-fn compact_line_chain_refuses_collection_limit() {
-    let payload = compact_chain_payload();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error = compact_line_chain_addresses(&ctx, &payload).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT compact chain addresses"));
-}
-
-#[test]
-fn compact_line_address_scan_refuses_work_limit() {
-    let payload = compact_region_payload();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64_from_index(payload.len() - 1);
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error = compact_line_region_addresses(&ctx, &payload).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT compact region"));
-}
-
-#[test]
 fn compact_rectangle_requires_each_axis_corner_exactly_once() {
     let corners = [
         Point2::new(25.75, 14.15),
@@ -451,8 +127,7 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
         Point2::new(25.75, -14.15),
     ];
     assert_eq!(
-        ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &corners)
-            .unwrap(),
+        ordered_rectangle_corners(&corners),
         Some([
             Point2::new(-25.75, -14.15),
             Point2::new(25.75, -14.15),
@@ -462,25 +137,14 @@ fn compact_rectangle_requires_each_axis_corner_exactly_once() {
     );
 
     let duplicate = [corners[0], corners[0], corners[2], corners[3]];
-    assert_eq!(
-        ordered_rectangle_corners(&cadmpeg_test_support::service_decode_context(), &duplicate)
-            .unwrap(),
-        None
-    );
+    assert_eq!(ordered_rectangle_corners(&duplicate), None);
     let non_rectangular = [
         corners[0],
         corners[1],
         corners[2],
         Point2::new(24.0, -14.15),
     ];
-    assert_eq!(
-        ordered_rectangle_corners(
-            &cadmpeg_test_support::service_decode_context(),
-            &non_rectangular
-        )
-        .unwrap(),
-        None
-    );
+    assert_eq!(ordered_rectangle_corners(&non_rectangular), None);
 }
 
 #[test]
@@ -604,14 +268,14 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     adjacent[1].coordinates_m = None;
     adjacent[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.025, 0.011]);
     assert_eq!(
-        indexed_rectangle_from_line_cycle(&payload, &adjacent.iter().collect::<Vec<_>>(),),
+        indexed_rectangle_from_line_cycle(&payload, &adjacent.iter().collect::<Vec<_>>()),
         None
     );
 
     let mut three_corners = markers;
     three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.025, -0.011]);
     assert_eq!(
-        indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
+        indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>()),
         Some([
             Point2::new(-0.025, -0.011),
             Point2::new(0.025, -0.011),
@@ -638,7 +302,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     assert_eq!(
         indexed_rectangle_from_line_cycle(
             &current_payload,
-            &current_corners.iter().collect::<Vec<_>>(),
+            &current_corners.iter().collect::<Vec<_>>()
         ),
         Some([
             Point2::new(-0.025, -0.011),
@@ -649,7 +313,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     );
     three_corners[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.024, -0.010]);
     assert_eq!(
-        indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
+        indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>()),
         None
     );
     three_corners[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.013, -0.025]);
@@ -667,7 +331,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     payload[CURVE_START + 3 * 84 + 72..CURVE_START + 4 * 84].fill(0);
     payload.truncate(CURVE_START + 4 * 84);
     assert_eq!(
-        indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>(),),
+        indexed_rectangle_from_line_cycle(&payload, &three_corners.iter().collect::<Vec<_>>()),
         Some([
             Point2::new(0.0, -0.03),
             Point2::new(0.01, -0.03),
@@ -724,7 +388,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
         });
     }
     assert_eq!(
-        indexed_rectangle_from_line_cycle(&wide, &wide_markers.iter().collect::<Vec<_>>(),),
+        indexed_rectangle_from_line_cycle(&wide, &wide_markers.iter().collect::<Vec<_>>()),
         Some([
             Point2::new(0.0, -0.03),
             Point2::new(0.01, -0.03),
@@ -748,7 +412,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     assert_eq!(
         indexed_rectangle_from_line_cycle(
             &three_sides,
-            &three_side_markers.iter().collect::<Vec<_>>(),
+            &three_side_markers.iter().collect::<Vec<_>>()
         ),
         Some([
             Point2::new(0.0, -0.03),
@@ -761,13 +425,13 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
     assert_eq!(
         indexed_rectangle_from_line_cycle(
             &three_sides,
-            &three_side_markers.iter().collect::<Vec<_>>(),
+            &three_side_markers.iter().collect::<Vec<_>>()
         ),
         None
     );
     wide[CURVE_START + 3 * 92 + 17..CURVE_START + 3 * 92 + 21].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        indexed_rectangle_from_line_cycle(&wide, &wide_markers.iter().collect::<Vec<_>>(),),
+        indexed_rectangle_from_line_cycle(&wide, &wide_markers.iter().collect::<Vec<_>>()),
         None
     );
 }
@@ -917,7 +581,7 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
     diagonal[2].coordinates_m = None;
     diagonal[3].coordinates_m = None;
     assert_eq!(
-        indexed_rectangle_from_line_cycle(&geometry_locus, &diagonal.iter().collect::<Vec<_>>(),),
+        indexed_rectangle_from_line_cycle(&geometry_locus, &diagonal.iter().collect::<Vec<_>>()),
         Some([
             Point2::new(0.0, 0.0),
             Point2::new(2.0, 0.0),
@@ -1081,20 +745,17 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         marker("origin", 0.0, 0.0),
     ];
     let marker_refs = markers.iter().collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5])
-            .unwrap()
+        unique_dimensioned_rectangle_markers(&marker_refs, &[8.5, 5.5])
             .map(|markers| markers.map(crate::records::SketchInputEntity::id)),
         Some(["lower-left", "lower-right", "upper-right", "upper-left"])
     );
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5]).unwrap(),
+        unique_dimensioned_rectangle_markers(&marker_refs, &[8.5]),
         None
     );
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[28.3, 5.5]).unwrap(),
+        unique_dimensioned_rectangle_markers(&marker_refs, &[28.3, 5.5]),
         None
     );
 
@@ -1110,7 +771,7 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         .chain(second_rectangle.iter())
         .collect::<Vec<_>>();
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&ctx, &ambiguous, &[8.5, 5.5]).unwrap(),
+        unique_dimensioned_rectangle_markers(&ambiguous, &[8.5, 5.5]),
         None
     );
 }
@@ -1181,44 +842,6 @@ fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
         complete_ordered_compact_line_profile(&ctx, &lines, 5).unwrap(),
         None
     );
-}
-
-#[test]
-fn compact_line_profile_reports_collection_limit() {
-    let marker = SketchInputEntity::new("marker", "lane", 0, 0, SketchInputKind::Point);
-    let point = |u, v| Point2::new(u, v);
-    let lines = [
-        (
-            SketchEntityId::mint("synthetic:test:id#a").unwrap(),
-            &marker,
-            &marker,
-            point(0.0, 0.0),
-            point(1.0, 0.0),
-        ),
-        (
-            SketchEntityId::mint("synthetic:test:id#b").unwrap(),
-            &marker,
-            &marker,
-            point(1.0, 0.0),
-            point(0.0, 1.0),
-        ),
-        (
-            SketchEntityId::mint("synthetic:test:id#c").unwrap(),
-            &marker,
-            &marker,
-            point(0.0, 1.0),
-            point(0.0, 0.0),
-        ),
-    ];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = complete_ordered_compact_line_profile(&ctx, &lines, lines.len())
-        .expect_err("three usage slots exceed the collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "SLDPRT compact line profile usage"));
 }
 
 fn linked_semicircle_fixture() -> (Vec<u8>, [SketchInputEntity; 2], Vec<SketchEntity>) {
@@ -1306,57 +929,11 @@ fn linked_semicircle_fixture() -> (Vec<u8>, [SketchInputEntity; 2], Vec<SketchEn
 }
 
 #[test]
-fn linked_semicircle_refuses_collection_limit() {
-    let (payload, records, mut entities) = linked_semicircle_fixture();
-    let markers = records.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error =
-        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
-            .unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT semicircle records"));
-}
-
-#[test]
-fn linked_semicircle_refuses_retained_limit() {
-    let (payload, records, entities) = linked_semicircle_fixture();
-    let markers = records.iter().collect::<Vec<_>>();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT semicircle point identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-            let mut entities = entities.clone();
-            resolve_two_center_semicircle_profile(
-                &ctx,
-                &payload,
-                &markers,
-                &mut entities,
-                EPS_REFUSAL_GEOMETRY,
-            )
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT semicircle point identity"));
-}
-
-#[test]
 fn linked_semicircle_records_close_a_two_center_profile() {
     let (payload, records, mut entities) = linked_semicircle_fixture();
     let markers = records.iter().collect::<Vec<_>>();
 
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
+    resolve_two_center_semicircle_profile(&payload, &markers, &mut entities, 1.0e-9);
 
     assert_eq!(
         entities
@@ -1857,61 +1434,4 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
     assert!(entities
         .iter()
         .all(|entity| entity.kind() == SketchInputKind::from_handle_code(0)));
-}
-
-#[test]
-fn linked_semicircle_refuses_work_at_minimum_admission() {
-    const EPS_SEMICIRCLE_TEST: f64 = 1.0e-9;
-    let (payload, records, entities) = linked_semicircle_fixture();
-    let markers = records.iter().collect::<Vec<_>>();
-    let run = |policy: &DecodePolicy| {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, policy).unwrap();
-        let mut output = entities.clone();
-        resolve_two_center_semicircle_profile(
-            &ctx,
-            &payload,
-            &markers,
-            &mut output,
-            EPS_SEMICIRCLE_TEST,
-        )?;
-        Ok::<_, CodecError>(output)
-    };
-    let mut policy = DecodePolicy::service();
-    let expected = run(&policy).unwrap();
-    assert_ne!(expected, entities);
-    let admitted = |policy: &DecodePolicy| match run(policy) {
-        Ok(actual) => {
-            assert_eq!(actual, expected);
-            true
-        }
-        Err(CodecError::ResourceLimit(limit)) => {
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            false
-        }
-        Err(error) => panic!("unexpected linked semicircle error: {error}"),
-    };
-    let mut lower = 0;
-    let mut upper = 1_u64;
-    loop {
-        policy.limits.max_work_units = upper;
-        if admitted(&policy) {
-            break;
-        }
-        upper = upper.checked_mul(2).unwrap();
-    }
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        policy.limits.max_work_units = middle;
-        if admitted(&policy) {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    policy.limits.max_work_units = upper;
-    assert!(admitted(&policy));
-    policy.limits.max_work_units = upper - 1;
-    assert!(!admitted(&policy));
 }
