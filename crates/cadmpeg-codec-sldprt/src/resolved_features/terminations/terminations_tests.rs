@@ -1786,8 +1786,8 @@ fn combine_selection_enrichment_binds_target_and_tool_paths() {
     );
 }
 
-mod combine_projection_limits;
+mod combine_projection;
 mod route_limits;
-mod surface_sweep_limits;
+mod surface_sweep_projection;
 
 mod component_text;

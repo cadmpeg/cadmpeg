@@ -1639,6 +1639,6 @@ mod geometry_predicates;
 
 mod cone_supports;
 
-mod resource_admission;
+mod planar_trim;
 
 mod arc_trims;
