@@ -2208,15 +2208,11 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     }
 
     fn refusal_at_operation(source: &str, operation: &str) -> cadmpeg_core::CodecError {
-        for limit in 0..512 {
-            let error = parse_small_limit(source, limit, u64::MAX);
-            if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.operation == operation)
-            {
-                return error;
-            }
-        }
-        panic!("operation {operation} did not refuse a collection limit");
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| Err::<(), cadmpeg_core::CodecError>(parse_small_limit(source, cap, u64::MAX)),
+        )
     }
 
     macro_rules! tsm_quad_projection_limit_test {
@@ -2281,11 +2277,23 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         symmetry_quad_source(),
         "type T-spline symmetry blocks"
     );
-    tsm_quad_projection_limit_test!(
-        tsm_projected_symmetry_refuses_collection_limit,
-        symmetry_quad_source(),
-        "project T-spline symmetries"
-    );
+
+    #[test]
+    fn tsm_projected_symmetry_charges_collection_items() {
+        // Released symmetry typing scratch peaks above this charge.
+        let source = symmetry_quad_source();
+        cadmpeg_test_support::refusal::assert_charged(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "project T-spline symmetries",
+            || {
+                let arena = DecodeArena::new();
+                let policy = DecodePolicy::service();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
+                super::parse(&ctx, "synthetic.tsm", source.as_bytes())
+            },
+        );
+    }
 
     fn fan_limit(items: u64) -> cadmpeg_core::CodecError {
         let mut policy = DecodePolicy::service();

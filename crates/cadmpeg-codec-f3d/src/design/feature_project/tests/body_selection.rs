@@ -205,8 +205,19 @@ fn assert_copied_body_output_refusal(operation: &'static str, retained: bool) {
 }
 
 #[test]
-fn copied_body_output_refuses_collection_limit() {
-    assert_copied_body_output_refusal("f3d copied body output", false);
+fn copied_body_output_charges_collection_items() {
+    // Released selection scratch peaks above the output charge.
+    let (scope, binding) = copied_body_fixture();
+    let features = cadmpeg_test_support::refusal::assert_charged(
+        ResourceDimension::CollectionItems,
+        "f3d copied body output",
+        || {
+            crate::test_support::with_decode_context(|decode_ctx| {
+                project_copied_body(decode_ctx, &scope, &binding)
+            })
+        },
+    );
+    assert_eq!(features.len(), 1);
 }
 
 #[test]
