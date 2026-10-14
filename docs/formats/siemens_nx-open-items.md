@@ -582,16 +582,13 @@ face or feature set assigns either group a selection role. Compact values that e
 
 ### OM-19. Pattern-row scalar roles
 
-**Question.** What does each scalar in a counted pattern row mean?
+**Question.** Which owning-pattern relations assign each counted instance-row scalar its physical role, units, scale, and reference frame?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define the Q1.55 and wide-row scalar encodings, row order, exact values, and boundaries.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define shifted binary scalar encodings, exact values, row order, and boundaries. `siemens_nx.md` §7.1 "The pattern row schema index addresses the owning OM section class declaration" defines the instance-class identity.
 
-**Need.** We must know the roles to construct pattern coordinates, spacing, angles, and other controls.
+**Need.** Identify the owning pattern definition, scalar field roles, unit and scale rules, reference frame, and meaning of the fifth wide-row cell before constructing neutral pattern coordinates or controls.
 
-**Conflict.** Row schemas and terminal modes select byte layout and scalar
-width, not physical meaning. The Q1.55 and binary scalar lanes retain finite
-values, order, selectors, and row ordinals, but provide no units, axis or
-spacing labels, or relation to a seed/reference role.
+**Conflict.** The instance class and terminal modes select object identity and byte layout; they do not assign pitch, span, angle, axis, or coordinate roles. Equality with an expression or a final-geometry coordinate does not bind a row to that expression or geometric instance. A rotation-matrix identity in four wide-row cells does not assign the fifth cell. Counted-row selectors have no resolved instance or frame relation.
 
 ### OM-20. Pattern-row selector roles
 
