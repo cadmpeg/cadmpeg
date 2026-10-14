@@ -1099,13 +1099,6 @@ fn expanded_sections(
         let Some(expected_length) = section.section.expanded_length else {
             continue;
         };
-        if expected_length > MAX_EXPANDED_SECTION {
-            return Err(ctx.refuse_codec_limit(
-                "creo expanded section ceiling",
-                cadmpeg_core::decode::u64_from_index(MAX_EXPANDED_SECTION),
-                cadmpeg_core::decode::u64_from_index(expected_length),
-            ));
-        }
         let Some(header_length) = section.section.raw_name.len().checked_add(2) else {
             continue;
         };
@@ -1118,11 +1111,16 @@ fn expanded_sections(
         if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
             continue;
         }
-        let expansion = match crate::compress::decode(ctx, payload, expected_length) {
-            Ok(Some(expanded)) => Ok(expanded),
-            Ok(None) => Err("invalid or incomplete LZW framing".into()),
-            Err(CodecError::Malformed(reason)) => Err(reason),
-            Err(error) => return Err(error),
+        // A section above the expansion ceiling is left compressed.
+        let expansion = if expected_length > MAX_EXPANDED_SECTION {
+            Err("declared expansion exceeds the 256 MiB section ceiling".into())
+        } else {
+            match crate::compress::decode(ctx, payload, expected_length) {
+                Ok(Some(expanded)) => Ok(expanded),
+                Ok(None) => Err("invalid or incomplete LZW framing".into()),
+                Err(CodecError::Malformed(reason)) => Err(reason),
+                Err(error) => return Err(error),
+            }
         };
         let expanded = match expansion {
             Ok(expanded) => expanded,

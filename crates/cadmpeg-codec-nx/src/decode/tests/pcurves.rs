@@ -13,7 +13,7 @@ use crate::decode::pcurves::{
     coincident_pcurve_pair, complete_tolerant_intersection_pcurves_from_serialized_branches,
     exact_boundary_pcurve, orient_tolerant_intersection_pcurve, pcurve_matches_edge,
 };
-use cadmpeg_core::decode::{ResourceDimension, WorkBudget};
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
@@ -985,16 +985,13 @@ fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
             cadmpeg_core::decode::u64_from_index(0),
         );
 
-        let refusal = crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
+        let fit = crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
             support, support, 0.01, 0.02, true, &budget,
         )
-        .expect_err("an empty geometry work slice refuses certification");
-        assert_eq!(
-            refusal.dimension,
-            ResourceDimension::Codec("nx adaptive geometry work")
-        );
-        assert_eq!(refusal.limit, 0);
+        .expect("an empty geometry work slice skips certification");
+        assert!(fit.is_none());
         assert!(budget.exhausted());
+        assert!(geometry_ctx.resource_refusal().is_none());
     });
 }
 
@@ -1010,15 +1007,11 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
             controls: vec![-1.0, 1.0],
         };
 
-        let refusal = crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
-            .err()
-            .expect("an empty geometry work slice refuses root isolation");
-        assert_eq!(
-            refusal.dimension,
-            ResourceDimension::Codec("nx adaptive geometry work")
-        );
-        assert_eq!(refusal.limit, 0);
+        let roots = crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
+            .expect("an empty geometry work slice skips root isolation");
+        assert!(roots.is_none());
         assert!(budget.exhausted());
+        assert!(geometry_ctx.resource_refusal().is_none());
     });
 }
 

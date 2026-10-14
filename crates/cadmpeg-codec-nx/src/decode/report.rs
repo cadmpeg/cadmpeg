@@ -169,6 +169,116 @@ pub(super) struct GeometryReportFacts<'inputs> {
     pub(super) notes: &'inputs [String],
 }
 
+/// Reports each model-wide geometric phase that stopped at its local work
+/// bound. The phase skipped its remaining items; decode continued.
+fn push_bounded_completion_losses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    ir: &CadIr,
+    completion_budget: CompletionBudgetStatus,
+    adaptive_geometry_exhausted: bool,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let unresolved_intersection_lanes = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|procedural| {
+            let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+                procedural.definition()
+            else {
+                return None;
+            };
+            Some(
+                context
+                    .sides()
+                    .iter()
+                    .filter(|side| {
+                        pcurve_requires_completion(
+                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
+                        )
+                    })
+                    .count(),
+            )
+        })
+        .sum::<usize>();
+    if unresolved_intersection_lanes > 0
+        && (completion_budget.pcurves.exact_boundary_exhausted
+            || completion_budget.pcurves.transfer_exhausted
+            || completion_budget.serialized.samples_exhausted
+            || completion_budget.direct.samples_exhausted
+            || completion_budget.coupled.samples_exhausted
+            || completion_budget.pcurves.geometry_exhausted
+            || completion_budget.serialized.geometry_exhausted
+            || completion_budget.direct.geometry_exhausted
+            || completion_budget.coupled.geometry_exhausted
+            || completion_budget.support_uv_lane_geometry_exhausted)
+    {
+        let bounded_phases = [
+            completion_budget
+                .pcurves
+                .exact_boundary_exhausted
+                .then_some("exact-boundary transfer"),
+            completion_budget
+                .pcurves
+                .transfer_exhausted
+                .then_some("opposite-chart transfer"),
+            completion_budget
+                .serialized
+                .samples_exhausted
+                .then_some("support-UV consistency checks"),
+            completion_budget
+                .direct
+                .samples_exhausted
+                .then_some("EXT11 support-UV fitting"),
+            completion_budget
+                .coupled
+                .samples_exhausted
+                .then_some("coupled EXT11 support-UV fitting"),
+            completion_budget
+                .pcurves
+                .geometry_exhausted
+                .then_some("pcurve geometry fitting"),
+            completion_budget
+                .serialized
+                .geometry_exhausted
+                .then_some("serialized support-UV geometry fitting"),
+            completion_budget
+                .direct
+                .geometry_exhausted
+                .then_some("support-UV geometry fitting"),
+            completion_budget
+                .coupled
+                .geometry_exhausted
+                .then_some("coupled support-UV geometry fitting"),
+            completion_budget
+                .support_uv_lane_geometry_exhausted
+                .then_some("support-UV lane geometry slices"),
+        ];
+        push_report_loss(ctx, losses, NxLossCode::IntersectionPcurveCompletionBounded, format_args!(
+            "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
+            JoinedLabels { labels: &bounded_phases, separator: " and " },
+            MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+            completion_budget.transfer_limit,
+            completion_budget.support_uv_limit,
+            completion_budget.support_uv_limit,
+            completion_budget.support_uv_limit,
+            MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
+            MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+            unresolved_intersection_lanes,
+        ))?;
+    }
+
+    if adaptive_geometry_exhausted {
+        push_report_loss(ctx, losses, NxLossCode::GeometryAdaptiveWorkBounded, format_args!(
+            "Model-wide adaptive geometry certification stopped at its {MAX_ADAPTIVE_GEOMETRY_WORK}-unit work bound; \
+             unresolved adaptive geometry certification results were left untyped.",
+        ))?;
+    }
+    Ok(())
+}
+
 pub(super) fn build_geometry_report(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan,
@@ -248,104 +358,13 @@ pub(super) fn build_geometry_report(
         ))?;
     }
 
-    let unresolved_intersection_lanes = ir
-        .model
-        .procedural_curves
-        .iter()
-        .filter_map(|procedural| {
-            let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-                procedural.definition()
-            else {
-                return None;
-            };
-            Some(
-                context
-                    .sides()
-                    .iter()
-                    .filter(|side| {
-                        pcurve_requires_completion(
-                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                        )
-                    })
-                    .count(),
-            )
-        })
-        .sum::<usize>();
-    if unresolved_intersection_lanes > 0
-        && (completion_budget.pcurves.exact_boundary_exhausted
-            || completion_budget.pcurves.transfer_exhausted
-            || completion_budget.serialized.samples_exhausted
-            || completion_budget.direct.samples_exhausted
-            || completion_budget.coupled.samples_exhausted
-            || completion_budget.pcurves.geometry_exhausted
-            || completion_budget.serialized.geometry_exhausted
-            || completion_budget.direct.geometry_exhausted
-            || completion_budget.coupled.geometry_exhausted
-            || completion_budget.support_uv_lane_geometry_exhausted)
-    {
-        let bounded_phases = [
-            completion_budget
-                .pcurves
-                .exact_boundary_exhausted
-                .then_some("exact-boundary transfer"),
-            completion_budget
-                .pcurves
-                .transfer_exhausted
-                .then_some("opposite-chart transfer"),
-            completion_budget
-                .serialized
-                .samples_exhausted
-                .then_some("support-UV consistency checks"),
-            completion_budget
-                .direct
-                .samples_exhausted
-                .then_some("EXT11 support-UV fitting"),
-            completion_budget
-                .coupled
-                .samples_exhausted
-                .then_some("coupled EXT11 support-UV fitting"),
-            completion_budget
-                .pcurves
-                .geometry_exhausted
-                .then_some("pcurve geometry fitting"),
-            completion_budget
-                .serialized
-                .geometry_exhausted
-                .then_some("serialized support-UV geometry fitting"),
-            completion_budget
-                .direct
-                .geometry_exhausted
-                .then_some("support-UV geometry fitting"),
-            completion_budget
-                .coupled
-                .geometry_exhausted
-                .then_some("coupled support-UV geometry fitting"),
-            completion_budget
-                .support_uv_lane_geometry_exhausted
-                .then_some("support-UV lane geometry slices"),
-        ];
-        push_report_loss(ctx, &mut losses, NxLossCode::IntersectionPcurveCompletionBounded, format_args!(
-            "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
-            JoinedLabels { labels: &bounded_phases, separator: " and " },
-            MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
-            completion_budget.transfer_limit,
-            completion_budget.support_uv_limit,
-            completion_budget.support_uv_limit,
-            completion_budget.support_uv_limit,
-            MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
-            MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
-            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
-            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
-            unresolved_intersection_lanes,
-        ))?;
-    }
-
-    if adaptive_geometry_exhausted {
-        push_report_loss(ctx, &mut losses, NxLossCode::GeometryAdaptiveWorkBounded, format_args!(
-            "Model-wide adaptive geometry certification stopped at its {MAX_ADAPTIVE_GEOMETRY_WORK}-unit work bound; \
-             unresolved adaptive geometry certification results were left untyped.",
-        ))?;
-    }
+    push_bounded_completion_losses(
+        ctx,
+        &mut losses,
+        ir,
+        completion_budget,
+        adaptive_geometry_exhausted,
+    )?;
 
     if scan.count(ctx, StreamKind::Deltas)? > 0 {
         let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
@@ -1122,5 +1141,106 @@ mod tests {
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "nx report current body identity")
         );
+    }
+
+    fn unresolved_intersection_ir() -> CadIr {
+        use cadmpeg_ir::geometry::{
+            Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+            ProceduralCurveDefinition, SolvedCurveGeometry,
+        };
+        use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
+
+        let mut ir = CadIr::empty();
+        let carrier = CurveId::mint("test:model:entity#report-intersection-carrier")
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            parameter_range: None,
+            id: carrier.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &carrier,
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint("test:model:entity#report-intersection")
+                        .expect("identity grammar"),
+                    ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext::try_new(
+                            [None, None].map(|surface| IntcurveSupportSide {
+                                surface,
+                                pcurve: None,
+                            }),
+                            [0.0, 1.0],
+                            [Vec::new(), Vec::new(), Vec::new()],
+                        )
+                        .expect("support context"),
+                        discontinuity_flag: false,
+                        cache: None,
+                    },
+                ),
+            )
+            .expect("standard admission")
+            .expect("procedural attachment");
+        ir
+    }
+
+    #[test]
+    fn locally_exhausted_geometry_phases_report_bounded_losses() {
+        use super::{CompletionBudgetStatus, PcurveCompletionStatus, SupportUvPhaseStatus};
+        use crate::decode::geometry_work::GeometryWorkBudget;
+        use crate::loss::NxLossCode;
+
+        crate::test_support::with_decode_context(|ctx| {
+            let adaptive = GeometryWorkBudget::from_context(ctx, 0);
+            let completion = GeometryWorkBudget::from_context(ctx, 0);
+            assert!(!adaptive.charge());
+            assert!(!completion.charge());
+            let completion_budget = CompletionBudgetStatus {
+                pcurves: PcurveCompletionStatus {
+                    geometry_exhausted: completion.exhausted(),
+                    ..PcurveCompletionStatus::default()
+                },
+                serialized: SupportUvPhaseStatus::default(),
+                direct: SupportUvPhaseStatus::default(),
+                coupled: SupportUvPhaseStatus::default(),
+                support_uv_lane_geometry_exhausted: false,
+                transfer_limit: 0,
+                support_uv_limit: 0,
+            };
+            let adaptive_geometry_exhausted = adaptive.exhausted();
+            assert!(completion_budget.pcurves.geometry_exhausted);
+            assert!(adaptive_geometry_exhausted);
+            // The geometry route charges zero work after the phases; a local
+            // slice exhaustion must leave that charge admissible.
+            ctx.charge_work(0, "nx geometry work completion")
+                .expect("local exhaustion does not fuse the session");
+
+            let mut losses = Vec::new();
+            super::push_bounded_completion_losses(
+                ctx,
+                &mut losses,
+                &unresolved_intersection_ir(),
+                completion_budget,
+                adaptive_geometry_exhausted,
+            )
+            .expect("bounded completion losses");
+            for code in [
+                NxLossCode::IntersectionPcurveCompletionBounded,
+                NxLossCode::GeometryAdaptiveWorkBounded,
+            ] {
+                assert!(
+                    losses.iter().any(|loss| loss.code == code.kind()),
+                    "{} reported",
+                    code.code()
+                );
+            }
+            assert!(losses
+                .iter()
+                .any(|loss| loss.message.contains("pcurve geometry fitting")
+                    && loss.message.contains("2 intersection pcurve lane(s)")));
+            assert!(ctx.resource_refusal().is_none());
+        });
     }
 }
