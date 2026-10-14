@@ -78,7 +78,7 @@ fn relation_row_sort_refuses_endpoint_signature_bytes() {
 }
 
 #[test]
-fn coordinate_gauge_refuses_unsearched_eight_point_class() {
+fn coordinate_gauge_keeps_identity_for_unsearched_eight_point_class() {
     let rows = [
         EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun)
             .expect("nonempty handles"),
@@ -86,8 +86,8 @@ fn coordinate_gauge_refuses_unsearched_eight_point_class() {
     let candidates = [(0..8)
         .flat_map(|left| (left + 1..8).map(move |right| [left, right]))
         .collect::<Vec<_>>()];
-    let result = crate::test_support::with_service_context(|ctx| {
-        super::build_mesh_coordinate_gauge(
+    let (result, refusal) = crate::test_support::with_service_context(|ctx| {
+        let result = super::build_mesh_coordinate_gauge(
             ctx,
             8,
             &rows,
@@ -95,10 +95,17 @@ fn coordinate_gauge_refuses_unsearched_eight_point_class() {
             &[MeshEdgeGeometry::Line],
             &candidates,
             &[false],
-        )
+        );
+        (result, ctx.resource_refusal())
     });
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_gauge_permutation_limit"));
+    // 8! orders exceed the permutation limit: the class is not searched and
+    // its component keeps the identity order only.
+    let gauge = result.expect("the permutation limit skips the class search");
+    assert_eq!(refusal, None);
+    assert!(!gauge.components.is_empty());
+    for permutations in &gauge.components {
+        assert_eq!(permutations, &vec![(0..8).collect::<Vec<_>>()]);
+    }
 }
 
 #[test]

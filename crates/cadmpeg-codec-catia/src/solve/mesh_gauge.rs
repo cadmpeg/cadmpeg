@@ -551,30 +551,21 @@ fn enumerate_coordinate_permutations(
     Ok(())
 }
 
+/// Return `value!`, or `None` when it exceeds `limit`.
 fn bounded_factorial(
     ctx: &DecodeContext<'_>,
     value: usize,
     limit: usize,
-) -> Result<usize, CodecError> {
+) -> Result<Option<usize>, CodecError> {
     ctx.charge_work(u64_from_index(value), "catia_gauge_permutation_count")?;
     let mut result = 1usize;
     for factor in 2..=value {
-        result = result.checked_mul(factor).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "catia_gauge_permutation_limit",
-                u64_from_index(limit),
-                u64::MAX,
-            )
-        })?;
-        if result > limit {
-            return Err(ctx.refuse_codec_limit(
-                "catia_gauge_permutation_limit",
-                u64_from_index(limit),
-                u64_from_index(result),
-            ));
+        match result.checked_mul(factor) {
+            Some(next) if next <= limit => result = next,
+            _ => return Ok(None),
         }
     }
-    Ok(result)
+    Ok(Some(result))
 }
 
 fn intern_gauge_signatures<T: Ord>(
@@ -1014,13 +1005,20 @@ pub(super) fn build_mesh_coordinate_gauge(
             identity_order,
             "catia_gauge_local_orders",
         )?;
+        let mut bounded = true;
         for class in color_classes.values() {
             ctx.charge_work(1, "catia_gauge_color_class_shape")?;
             if class.len() == 1 {
                 continue;
             }
             let remaining_limit = MAX_COORDINATE_GAUGE_PERMUTATIONS / local_orders.len();
-            let class_order_count = bounded_factorial(ctx, class.len(), remaining_limit)?;
+            // A class with more orders than the permutation limit leaves this
+            // component with the identity gauge only.
+            let Some(class_order_count) = bounded_factorial(ctx, class.len(), remaining_limit)?
+            else {
+                bounded = false;
+                break;
+            };
             let mut used = ctx.alloc_filled(class.len(), false, "catia_coordinate_gauge_used")?;
             let mut class_orders = Vec::new();
             enumerate_coordinate_permutations(
@@ -1051,6 +1049,21 @@ pub(super) fn build_mesh_coordinate_gauge(
                 }
             }
             local_orders = next;
+        }
+        if !bounded {
+            let mut identity_order = Vec::new();
+            ctx.reserve_vec(
+                &mut identity_order,
+                point_count,
+                "catia_gauge_identity_order",
+            )?;
+            identity_order.extend(0..point_count);
+            local_orders.clear();
+            ctx.push_vec(
+                &mut local_orders,
+                identity_order,
+                "catia_gauge_local_orders",
+            )?;
         }
         let mut permutations = Vec::new();
         for permutation in local_orders {

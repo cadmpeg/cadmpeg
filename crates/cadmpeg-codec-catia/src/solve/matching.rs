@@ -14,25 +14,25 @@ pub(super) fn domains_have_distinct_matching<'a>(
     Ok(distinct_domain_matching_with_budget(ctx, domains, point_count, None, None)?.is_some())
 }
 
+/// Charge one matching visit to the session and to the caller's slice.
+///
+/// Returns `false` when the caller's slice is used up; the search then ends
+/// without a matching. A session refusal is an error.
 fn charge_matching_work(
     ctx: &DecodeContext<'_>,
     budget: Option<&WorkBudget<'_>>,
-) -> Result<(), CodecError> {
+) -> Result<bool, CodecError> {
     ctx.charge_work(0, "catia matching work")?;
     if budget.is_some_and(|budget| budget.exhausted() || budget.remaining() == 0) {
-        return Err(ctx.refuse_codec_limit("catia matching work", 0, 1));
+        return Ok(false);
     }
     let visit = ctx.work_budget(1);
     if !visit.charge() {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(limit.into());
-        }
-        return Err(ctx.refuse_codec_limit("catia matching work", 0, 1));
+        // A one-unit session slice refuses only through a session refusal.
+        ctx.charge_work(0, "catia matching work")?;
+        return Ok(false);
     }
-    if budget.is_some_and(|budget| budget.consume_child(&visit).is_err()) {
-        return Err(ctx.refuse_codec_limit("catia matching work", 0, 1));
-    }
-    Ok(())
+    Ok(budget.is_none_or(|budget| budget.consume_child(&visit).is_ok()))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -87,7 +87,9 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 continue;
             }
             for &point in domains[root] {
-                charge_matching_work(ctx, budget)?;
+                if !charge_matching_work(ctx, budget)? {
+                    return Ok(None);
+                }
                 if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
                     continue;
                 }
@@ -123,7 +125,9 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
                 while cursor[root] < domains[root].len() {
                     let point = domains[root][cursor[root]];
                     cursor[root] += 1;
-                    charge_matching_work(ctx, budget)?;
+                    if !charge_matching_work(ctx, budget)? {
+                        return Ok(None);
+                    }
                     if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
                         continue;
                     }
@@ -234,7 +238,9 @@ pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
         let mut free_point = None;
         while let Some(domain) = queue.pop_front() {
             for &point in domains[domain] {
-                charge_matching_work(ctx, budget)?;
+                if !charge_matching_work(ctx, budget)? {
+                    return Ok(None);
+                }
                 if point >= point_count || seen_points[point] {
                     continue;
                 }
@@ -310,7 +316,9 @@ pub(crate) fn retain_distinct_matching_supports(
             if point >= point_count {
                 return Ok(None);
             }
-            charge_matching_work(ctx, budget)?;
+            if !charge_matching_work(ctx, budget)? {
+                return Ok(None);
+            }
             let point_node = domains.len() + point;
             let (from, to) = if point == matching[domain] {
                 (point_node, domain)
@@ -338,7 +346,9 @@ pub(crate) fn retain_distinct_matching_supports(
                     (node, edge_index + 1),
                     "catia_match_support_stack",
                 )?;
-                charge_matching_work(ctx, budget)?;
+                if !charge_matching_work(ctx, budget)? {
+                    return Ok(None);
+                }
                 if !visited[next] {
                     visited[next] = true;
                     ctx.push_vec(&mut stack, (next, 0), "catia_match_support_stack")?;
@@ -360,7 +370,9 @@ pub(crate) fn retain_distinct_matching_supports(
         ctx.push_vec(&mut stack, start, "catia_match_support_component_stack")?;
         while let Some(node) = stack.pop() {
             for &next in &reverse[node] {
-                charge_matching_work(ctx, budget)?;
+                if !charge_matching_work(ctx, budget)? {
+                    return Ok(None);
+                }
                 if component[next].is_none() {
                     component[next] = Some(component_count);
                     ctx.push_vec(&mut stack, next, "catia_match_support_component_stack")?;
@@ -381,7 +393,9 @@ pub(crate) fn retain_distinct_matching_supports(
     }
     while let Some(node) = queue.pop_front() {
         for &previous in &reverse[node] {
-            charge_matching_work(ctx, budget)?;
+            if !charge_matching_work(ctx, budget)? {
+                return Ok(None);
+            }
             if !reaches_free[previous] {
                 reaches_free[previous] = true;
                 ctx.push_back(&mut queue, previous, "catia_match_support_free_queue")?;
@@ -664,13 +678,34 @@ mod tests {
     fn matching_visit_charges_the_attached_session_once() {
         crate::test_support::with_work_limit(1, |ctx| {
             let budget = ctx.work_budget(1);
-            super::charge_matching_work(ctx, Some(&budget)).expect("one visit fits exactly");
+            assert!(
+                super::charge_matching_work(ctx, Some(&budget)).expect("one visit fits exactly")
+            );
             assert_eq!(budget.remaining(), 0);
             assert!(ctx.resource_refusal().is_none());
-            assert!(matches!(
-                super::charge_matching_work(ctx, Some(&budget)),
-                Err(CodecError::ResourceLimit(_))
-            ));
+            assert!(!super::charge_matching_work(ctx, Some(&budget))
+                .expect("a used-up caller slice ends the search"));
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
+
+    #[test]
+    fn used_up_caller_slice_skips_the_matching_without_fusing_the_session() {
+        crate::test_support::with_service_context(|ctx| {
+            let budget = ctx.work_budget(1);
+            let domains: [&[usize]; 2] = [&[0, 1], &[0, 1]];
+            assert_eq!(
+                distinct_domain_matching_with_budget(ctx, domains, 2, Some(&budget), None)
+                    .expect("caller slice exhaustion is not a session refusal"),
+                None
+            );
+            assert!(budget.exhausted() || budget.remaining() == 0);
+            assert!(ctx.resource_refusal().is_none());
+            assert!(
+                distinct_domain_matching_with_budget(ctx, domains, 2, None, None)
+                    .expect("an unbounded caller completes")
+                    .is_some()
+            );
         });
     }
 
