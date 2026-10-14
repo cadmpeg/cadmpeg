@@ -600,7 +600,7 @@ fn terminate_counts(
     Ok(())
 }
 
-pub(crate) fn scan_with_context(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
+pub(crate) fn scan(source: &[u8]) -> Result<CardScan<'_>, CodecError> {
     if source.is_empty() {
         return Err(CodecError::WrongFormat("empty IGES source".into()));
     }

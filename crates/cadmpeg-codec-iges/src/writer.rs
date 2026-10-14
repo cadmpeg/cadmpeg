@@ -7016,7 +7016,10 @@ fn encode_nurbs(
             }
             weights.into_iter().map(FiniteReal::from).collect()
         }
-        None => vec![FiniteReal::ONE; nurbs.control_points().len()],
+        None => {
+            let poles = nurbs.control_points();
+            vec![FiniteReal::ONE; poles.len()]
+        }
     };
     let polynomial = weights
         .first()
