@@ -36,27 +36,19 @@ fn standard_color(number: i64) -> Option<Color> {
     Color::new(r, g, b, 1.0)
 }
 
-fn retained_utf8(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<Option<String>, CodecError> {
+fn retained_utf8(bytes: &[u8]) -> Option<String> {
     let Ok(value) = std::str::from_utf8(bytes) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some(
-        ctx.format_retained(format_args!("{value}"), operation)?,
-    ))
+    Some(value.to_string())
 }
 
 fn push_presentation_loss(
-    ctx: &DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     entry: &DirectoryEntry,
     reason: &str,
-) -> Result<(), CodecError> {
+) {
     push_attributed_loss(
-        ctx,
         losses,
         entry,
         IgesLossCode::DisplayDataNotProjected,
@@ -64,7 +56,7 @@ fn push_presentation_loss(
             "IGES entity type {} form {} display data was not projected: {reason}",
             entry.entity_type, entry.form
         ),
-    )
+    );
 }
 
 fn text_font_definition_pointer_valid(
@@ -163,11 +155,6 @@ fn appearance(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if ir.model.appearances.iter().all(|item| item.id != id) {
-        ctx.reserve_vec(
-            &mut ir.model.appearances,
-            1,
-            "iges neutral appearance slots",
-        )?;
         ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearances.push(Appearance {
             id,
@@ -176,9 +163,7 @@ fn appearance(
             library_id: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some(
-                ctx.format_retained(format_args!("IGES color"), "iges appearance schema")?,
-            ),
+            schema: Some("IGES color".to_string()),
             category: None,
             base_color: Some(color),
             properties: BTreeMap::new(),
@@ -262,21 +247,11 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges presentation parameter index",
-        )?;
+        records.insert(record.directory_sequence, record);
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges presentation directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -291,12 +266,7 @@ pub(super) fn project(
             .copied()
             .and_then(|record| text_font_definition(entry, record, &entries, global.global_table()))
         {
-            ctx.insert_btree_map(
-                &mut text_fonts,
-                entry.sequence,
-                font,
-                "iges presentation font index",
-            )?;
+            text_fonts.insert(entry.sequence, font);
         }
     }
     let mut visited_fonts = BTreeSet::new();
@@ -305,24 +275,20 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, ctx, |sequence| {
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, |sequence| {
             text_fonts
                 .get(&sequence)
                 .and_then(|font| font.supersedes)
                 .into_iter()
-        })?;
+        });
         let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
             font.supersedes
                 .is_none_or(|target| text_fonts.contains_key(&target))
         });
         if target_valid && !cyclic {
-            ctx.insert_btree_set(
-                &mut decoded,
-                entry.sequence,
-                "iges presentation decoded sequences",
-            )?;
+            decoded.insert(entry.sequence);
         } else {
-            push_presentation_loss(ctx, &mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid")?;
+            push_presentation_loss(&mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid");
         }
     }
 
@@ -331,7 +297,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
             continue;
         };
         let parameter_end = record.parameter_end();
@@ -355,13 +321,9 @@ pub(super) fn project(
                 .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
-            ctx.insert_btree_set(
-                &mut decoded,
-                entry.sequence,
-                "iges presentation decoded sequences",
-            )?;
+            decoded.insert(entry.sequence);
         } else {
-            push_presentation_loss(ctx, &mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid")?;
+            push_presentation_loss(&mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid");
         }
     }
 
@@ -370,7 +332,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
             continue;
         };
         let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
@@ -381,11 +343,7 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                if !ctx.insert_btree_set(
-                    &mut levels,
-                    level,
-                    "iges presentation definition levels",
-                )? {
+                if !levels.insert(level) {
                     valid = false;
                     break;
                 }
@@ -395,18 +353,13 @@ pub(super) fn project(
             false
         };
         if levels_valid {
-            ctx.insert_btree_set(
-                &mut decoded,
-                entry.sequence,
-                "iges presentation decoded sequences",
-            )?;
+            decoded.insert(entry.sequence);
         } else {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "definition-level count, value, or uniqueness is invalid",
-            )?;
+            );
         }
     }
 
@@ -415,16 +368,15 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
             continue;
         };
         if !line_font_definition_directory_valid(entry, global.global_table()) {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
-            )?;
+            );
             continue;
         }
         let valid = if entry.form == 1 {
@@ -464,18 +416,13 @@ pub(super) fn project(
             })
         };
         if valid {
-            ctx.insert_btree_set(
-                &mut decoded,
-                entry.sequence,
-                "iges presentation decoded sequences",
-            )?;
+            decoded.insert(entry.sequence);
         } else {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "line-font definition parameters are invalid",
-            )?;
+            );
         }
     }
 
@@ -484,7 +431,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
             continue;
         };
         let components = [1, 2, 3].map(|index| {
@@ -494,17 +441,16 @@ pub(super) fn project(
         });
         let [Some(red), Some(green), Some(blue)] = components else {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "RGB percentage is outside 0 through 100",
-            )?;
+            );
             continue;
         };
         let name = match record.value(4) {
             None | Some(crate::parameter::TokenValue::Omitted) => None,
             Some(crate::parameter::TokenValue::String(_)) => match record.string(4) {
-                Some(bytes) => retained_utf8(ctx, bytes, "iges color definition name")?,
+                Some(bytes) => retained_utf8(bytes),
                 None => None,
             },
             Some(crate::parameter::TokenValue::Integer(0))
@@ -517,12 +463,7 @@ pub(super) fn project(
                 | crate::parameter::TokenValue::Real(_)
                 | crate::parameter::TokenValue::Unreadable(_),
             ) => {
-                push_presentation_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    "optional color name is not a string",
-                )?;
+                push_presentation_loss(&mut losses, entry, "optional color name is not a string");
                 continue;
             }
         };
@@ -531,11 +472,10 @@ pub(super) fn project(
             && entry.color.is_none_or(|color| matches!(color, 0..=8));
         if !directory_valid {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "color definition Directory fields are invalid",
-            )?;
+            );
             continue;
         }
         let color = cadmpeg_core::convert::f32_from_f64(red / 100.0)
@@ -544,34 +484,21 @@ pub(super) fn project(
             .and_then(|((red, green), blue)| Color::new(red, green, blue, 1.0));
         let Some(color) = color else {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "color definition components are outside [0, 100]",
-            )?;
+            );
             continue;
         };
-        ctx.insert_btree_map(
-            &mut defined,
-            entry.sequence,
-            color,
-            "iges presentation defined colors",
-        )?;
+        defined.insert(entry.sequence, color);
         appearance(
             ir,
-            crate::ids::appearance_color_admitted(
-                &crate::ids::Stem::directory(entry.sequence),
-                ctx,
-            )?,
+            crate::ids::appearance_color(&crate::ids::Stem::directory(entry.sequence)),
             name,
             color,
             ctx,
         )?;
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges presentation decoded sequences",
-        )?;
+        decoded.insert(entry.sequence);
     }
 
     let resolve_color = |value: i64| -> Option<Color> {
@@ -593,7 +520,7 @@ pub(super) fn project(
             return Ok(None);
         };
         let id = if value > 0 {
-            crate::ids::appearance_standard_admitted(&crate::ids::Stem::number(value), ctx)?
+            crate::ids::appearance_standard(&crate::ids::Stem::number(value))
         } else {
             let Some(sequence) = value
                 .checked_neg()
@@ -601,7 +528,7 @@ pub(super) fn project(
             else {
                 return Ok(None);
             };
-            crate::ids::appearance_color_admitted(&crate::ids::Stem::directory(sequence), ctx)?
+            crate::ids::appearance_color(&crate::ids::Stem::directory(sequence))
         };
         Ok(Some((id, color)))
     };
@@ -615,11 +542,10 @@ pub(super) fn project(
             .is_some_and(|number| resolve_color(number).is_none())
         {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "Directory color number or definition pointer is invalid",
-            )?;
+            );
         }
     }
     for (entry, level) in directory.iter().filter_map(|entry| {
@@ -636,11 +562,10 @@ pub(super) fn project(
                     .is_none_or(|target| target.entity_type != 406 || target.form != 1)
         }) {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "negative Directory level does not reference a decoded Definition Levels property",
-            )?;
+            );
         }
     }
     for entry in directory.iter().filter(|entry| {
@@ -652,11 +577,10 @@ pub(super) fn project(
             .is_some_and(|number| !global.line_weight_number_is_valid(number))
         {
             push_presentation_loss(
-                ctx,
                 &mut losses,
                 entry,
                 "line-weight number is outside the Global gradation range",
-            )?;
+            );
         }
     }
 
@@ -690,35 +614,21 @@ pub(super) fn project(
             continue;
         };
         let body = &mut ir.model.bodies[index];
-        let body_id = body
-            .id
-            .try_clone_for_decode(ctx, "iges appearance body ID copy")?;
+        let body_id = body.id.clone();
         body.color = Some(color);
         body.visible = Some(visible);
-        appearance(
-            ir,
-            appearance_id.try_clone_for_decode(ctx, "iges appearance ID copy")?,
-            None,
-            color,
-            ctx,
-        )?;
-        ctx.reserve_vec(
-            &mut ir.model.appearance_bindings,
-            1,
-            "iges appearance binding slots",
-        )?;
+        appearance(ir, appearance_id.clone(), None, color, ctx)?;
+
         ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: crate::ids::appearance_binding_admitted(
-                &crate::ids::Stem::word_directory(crate::ids::Word::Body, sequence),
-                ctx,
-            )?,
+            id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
+                crate::ids::Word::Body,
+                sequence,
+            )),
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(
-                ctx.format_retained(format_args!("Body"), "iges appearance object type")?,
-            ),
+            object_type: Some("Body".to_string()),
             visible: None,
             channels: BTreeMap::new(),
         });
@@ -757,18 +667,17 @@ pub(super) fn project(
         if first.is_some_and(|first| names.any(|name| name != first)) {
             if let Some(entry) = entries.get(&sequence) {
                 push_attributed_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     IgesLossCode::BodyNameAmbiguous,
                     format_args!(
                         "IGES body owner D{sequence} has conflicting valid Type 406 Form 15 names"
                     ),
-                )?;
+                );
             }
         } else {
             body.name = match first {
-                Some(name) => retained_utf8(ctx, name.as_bytes(), "iges body property name")?,
+                Some(name) => retained_utf8(name.as_bytes()),
                 None => None,
             };
         }
@@ -787,34 +696,20 @@ pub(super) fn project(
             continue;
         };
         let face = &mut ir.model.faces[index];
-        let face_id = face
-            .id
-            .try_clone_for_decode(ctx, "iges appearance face ID copy")?;
+        let face_id = face.id.clone();
         face.color = Some(color);
-        appearance(
-            ir,
-            appearance_id.try_clone_for_decode(ctx, "iges appearance ID copy")?,
-            None,
-            color,
-            ctx,
-        )?;
-        ctx.reserve_vec(
-            &mut ir.model.appearance_bindings,
-            1,
-            "iges appearance binding slots",
-        )?;
+        appearance(ir, appearance_id.clone(), None, color, ctx)?;
+
         ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: crate::ids::appearance_binding_admitted(
-                &crate::ids::Stem::word_directory(crate::ids::Word::Face, sequence),
-                ctx,
-            )?,
+            id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
+                crate::ids::Word::Face,
+                sequence,
+            )),
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(
-                ctx.format_retained(format_args!("Face"), "iges appearance object type")?,
-            ),
+            object_type: Some("Face".to_string()),
             visible: None,
             channels: BTreeMap::new(),
         });

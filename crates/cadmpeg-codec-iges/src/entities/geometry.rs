@@ -6,7 +6,7 @@ use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
-use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
@@ -44,12 +44,9 @@ pub(crate) fn curve_is_line(curve: &Curve) -> bool {
     curve.geometry.solved().is_some_and(is_line)
 }
 
-pub(super) fn planar_polyline_has_self_intersection(
-    points: &[[f64; 2]],
-    ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool {
     if points.len() < 3 {
-        return Ok(false);
+        return false;
     }
     let last = points.len() - 1;
     let point_at = |index: usize| {
@@ -61,7 +58,6 @@ pub(super) fn planar_polyline_has_self_intersection(
     };
     for first_index in 0..last {
         for second_index in first_index + 1..last {
-            ctx.charge_work(1, "iges planar self-intersection comparisons")?;
             let allowed_endpoint = if second_index == first_index + 1 {
                 Some(point_at(second_index))
             } else if first_index == 0 && second_index + 1 == last {
@@ -74,50 +70,43 @@ pub(super) fn planar_polyline_has_self_intersection(
                 [point_at(second_index), point_at(second_index + 1)],
                 allowed_endpoint,
             ) {
-                return Ok(true);
+                return true;
             }
         }
     }
-    Ok(false)
+    false
 }
 
-pub(super) fn planar_polylines_intersect(
-    first: &[[f64; 2]],
-    second: &[[f64; 2]],
-    ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+pub(super) fn planar_polylines_intersect(first: &[[f64; 2]], second: &[[f64; 2]]) -> bool {
     for first_segment in first.windows(2) {
         for second_segment in second.windows(2) {
-            ctx.charge_work(1, "iges planar ring intersection comparisons")?;
             if planar_segments_intersect_beyond_endpoint(
                 [first_segment[0], first_segment[1]],
                 [second_segment[0], second_segment[1]],
                 None,
             ) {
-                return Ok(true);
+                return true;
             }
         }
     }
-    Ok(false)
+    false
 }
 
 pub(super) fn closed_polyline_has_duplicate<T>(
     points: &[T],
     coincident: impl Fn(&T, &T) -> bool,
-    ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> bool {
     for (first, left) in points.iter().enumerate() {
         for (second, right) in points.iter().enumerate().skip(first + 1) {
-            ctx.charge_work(1, "iges closed polyline duplicate comparisons")?;
             if first == 0 && second + 1 == points.len() {
                 continue;
             }
             if coincident(left, right) {
-                return Ok(true);
+                return true;
             }
         }
     }
-    Ok(false)
+    false
 }
 
 pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2]; 2]) -> bool {
@@ -127,7 +116,6 @@ pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2];
 pub(super) fn plane_coordinates(
     points: &[Point3],
     plane: (Point3, Vector3),
-    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
     let Some(normal) = plane.1.unit() else {
         return Ok(None);
@@ -145,11 +133,13 @@ pub(super) fn plane_coordinates(
     let Some(v_axis) = normal.cross(u_axis).unit() else {
         return Ok(None);
     };
-    let coordinates = ctx.collect_indexed_vec(points.len(), "iges plane coordinates", |index| {
-        let point = points[index];
-        let displacement = point.vector_from(plane.0);
-        Ok([displacement.dot(u_axis), displacement.dot(v_axis)])
-    })?;
+    let coordinates = (0..points.len())
+        .map(|index| {
+            let point = points[index];
+            let displacement = point.vector_from(plane.0);
+            Ok([displacement.dot(u_axis), displacement.dot(v_axis)])
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(coordinates
         .iter()
         .flatten()
@@ -478,9 +468,8 @@ impl DeclaredInterval {
 pub(super) fn type126_declared_control_points(
     record: &ParameterRecord,
     precision: RealPrecision,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
-    let Some((control_count, pole_start)) = (|| {
+) -> Option<Vec<[DeclaredInterval; 3]>> {
+    let (control_count, pole_start) = (|| {
         let control_count = record.count(1)?.checked_add(1)?;
         let degree = usize::try_from(record.integer(2)?).ok()?;
         let knot_count = control_count.checked_add(degree)?.checked_add(1)?;
@@ -490,24 +479,16 @@ pub(super) fn type126_declared_control_points(
         let range_start = pole_start.checked_add(pole_value_count)?;
         (record.parameter_end() >= range_start.checked_add(2)?)
             .then_some((control_count, pole_start))
-    })() else {
-        return Ok(None);
-    };
-    let mut controls =
-        ctx.collection_vec(control_count, "iges Type126 declared control intervals")?;
+    })()?;
+    let mut controls = Vec::new();
     for point in 0..control_count {
         let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
         for (coordinate, value) in coordinates.iter_mut().enumerate() {
-            let Some(index) = point
+            let index = point
                 .checked_mul(3)
                 .and_then(|offset| pole_start.checked_add(offset))
-                .and_then(|offset| offset.checked_add(coordinate))
-            else {
-                return Ok(None);
-            };
-            let Some(number) = record.number(index) else {
-                return Ok(None);
-            };
+                .and_then(|offset| offset.checked_add(coordinate))?;
+            let number = record.number(index)?;
             *value = DeclaredInterval::around(
                 number,
                 record.number_uncertainty(index, number, precision),
@@ -515,7 +496,7 @@ pub(super) fn type126_declared_control_points(
         }
         controls.push(coordinates);
     }
-    Ok(Some(controls))
+    Some(controls)
 }
 
 /// Return whether finite declared intervals prove one affine progression.
@@ -800,7 +781,7 @@ pub(crate) fn resolve_transform(
     if path.contains(&sequence) {
         return Err("transformation chain is cyclic".into());
     }
-    ctx.insert_btree_set(path, sequence, "iges transform chain path")?;
+    path.insert(sequence);
     let result: Result<Transform, TransformResolutionError> = (|| {
         let entry = entries
             .get(&sequence)
@@ -902,72 +883,6 @@ pub(crate) fn resolve_transform(
     result
 }
 
-pub(crate) fn enforce_transform_depth(
-    directory: &[DirectoryEntry],
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let depth_limit = usize::try_from(ctx.policy().limits.max_recursion_depth)
-        .ok()
-        .map_or(MAX_TRANSFORM_DEPTH, |policy| {
-            policy.min(MAX_TRANSFORM_DEPTH)
-        });
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges transform preflight directory index",
-        )?;
-    }
-
-    for entry in directory {
-        let Some(mut sequence) = u32::try_from(entry.transform)
-            .ok()
-            .filter(|sequence| sequence % 2 == 1)
-        else {
-            continue;
-        };
-        let mut path = BTreeSet::new();
-        let mut depth = 0_usize;
-        loop {
-            if depth >= depth_limit {
-                let requested = depth.checked_add(1).map(u64_from_index).ok_or_else(|| {
-                    refuse_local_limit(
-                        "iges_transform_depth",
-                        cadmpeg_core::decode::u64_from_index(depth_limit),
-                        u64::MAX,
-                    )
-                })?;
-                return Err(refuse_local_limit(
-                    "iges_transform_depth",
-                    cadmpeg_core::decode::u64_from_index(depth_limit),
-                    requested,
-                ));
-            }
-            ctx.charge_work(1, "iges transform preflight walk")?;
-            if !ctx.insert_btree_set(&mut path, sequence, "iges transform preflight path")? {
-                break;
-            }
-            depth += 1;
-            let Some(transform) = entries.get(&sequence).copied() else {
-                break;
-            };
-            if transform.entity_type != 124 || !matches!(transform.form, 0 | 1) {
-                break;
-            }
-            let Some(next) = u32::try_from(transform.transform)
-                .ok()
-                .filter(|sequence| sequence % 2 == 1)
-            else {
-                break;
-            };
-            sequence = next;
-        }
-    }
-    Ok(())
-}
-
 /// One sub-projector's result: the directory sequences whose records emitted
 /// a neutral entity, and the losses the pass charged. The generic retention
 /// pass spares a record only when it is decoded, consumed, or already
@@ -1010,18 +925,12 @@ pub(crate) struct BoundaryVertexDerivation {
 // outcome field cannot be dropped silently at the merge site. The accumulator
 // element types are pairwise distinct, so arguments cannot be transposed.
 impl ProjectionOutcome {
-    fn merge_into(
-        self,
-        decoded: &mut BTreeSet<u32>,
-        losses: &mut Vec<LossNote>,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
+    fn merge_into(self, decoded: &mut BTreeSet<u32>, losses: &mut Vec<LossNote>) {
         for sequence in self.decoded {
-            ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
+            decoded.insert(sequence);
         }
-        ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
+
         losses.extend(self.losses);
-        Ok(())
     }
 }
 
@@ -1039,20 +948,14 @@ impl WireProjectionOutcome {
         decoded: &mut BTreeSet<u32>,
         losses: &mut Vec<LossNote>,
         wire_edges: &mut Vec<EdgeId>,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
+    ) {
         for sequence in self.decoded {
-            ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
+            decoded.insert(sequence);
         }
-        ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
+
         losses.extend(self.losses);
-        ctx.reserve_vec(
-            wire_edges,
-            self.wire_edges.len(),
-            "iges merged wire edge slots",
-        )?;
+
         wire_edges.extend(self.wire_edges);
-        Ok(())
     }
 }
 
@@ -1079,16 +982,10 @@ fn positive_sequence(value: i64) -> Option<u32> {
 fn consumed_support_sequences(
     directory: &[DirectoryEntry],
     records: &BTreeMap<u32, &ParameterRecord>,
-    ctx: &DecodeContext<'_>,
-) -> Result<BTreeSet<u32>, CodecError> {
+) -> BTreeSet<u32> {
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges consumed-support directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut transform_sequences = BTreeSet::new();
     for entry in directory {
@@ -1097,11 +994,7 @@ fn consumed_support_sequences(
                 .get(sequence)
                 .is_some_and(|target| target.entity_type == 124)
         }) {
-            ctx.insert_btree_set(
-                &mut transform_sequences,
-                sequence,
-                "iges consumed-support transforms",
-            )?;
+            transform_sequences.insert(sequence);
         }
     }
     for entry in directory
@@ -1124,11 +1017,7 @@ fn consumed_support_sequences(
                         .is_some_and(|target| target.entity_type == 124)
                 })
             {
-                ctx.insert_btree_set(
-                    &mut transform_sequences,
-                    sequence,
-                    "iges consumed-support transforms",
-                )?;
+                transform_sequences.insert(sequence);
             }
         }
     }
@@ -1159,18 +1048,14 @@ fn consumed_support_sequences(
                             .is_some_and(|target| target.entity_type == 123 && target.form == 0)
                     })
             {
-                ctx.insert_btree_set(
-                    &mut direction_sequences,
-                    sequence,
-                    "iges consumed-support directions",
-                )?;
+                direction_sequences.insert(sequence);
             }
         }
     }
 
     let mut consumed = direction_sequences;
     while let Some(sequence) = transform_sequences.pop_first() {
-        if !ctx.insert_btree_set(&mut consumed, sequence, "iges consumed-support closure")? {
+        if !consumed.insert(sequence) {
             continue;
         }
         let Some(entry) = entries.get(&sequence).copied() else {
@@ -1181,14 +1066,10 @@ fn consumed_support_sequences(
                 .get(parent)
                 .is_some_and(|target| target.entity_type == 124)
         }) {
-            ctx.insert_btree_set(
-                &mut transform_sequences,
-                parent,
-                "iges consumed-support transforms",
-            )?;
+            transform_sequences.insert(parent);
         }
     }
-    Ok(consumed)
+    consumed
 }
 
 fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> bool {
@@ -1293,7 +1174,6 @@ pub(super) fn curve_geometry_coplanar(
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
             for segment in segments {
-                ctx.charge_work(1, "iges coplanar composite segments")?;
                 let Some(curve) = index.curves(segment.curve.as_str(), ctx)? else {
                     valid = false;
                     break;
@@ -1302,10 +1182,8 @@ pub(super) fn curve_geometry_coplanar(
                     valid = false;
                     break;
                 }
-                let active_id = segment
-                    .curve
-                    .try_clone_for_decode(ctx, "iges coplanar active curve id")?;
-                ctx.insert_btree_set(active, active_id, "iges coplanar active curves")?;
+                let active_id = segment.curve.clone();
+                active.insert(active_id);
                 let Some(geometry) = curve.geometry.solved() else {
                     valid = false;
                     break;
@@ -1343,13 +1221,12 @@ pub(super) fn admit<T>(
     result: Result<T, &str>,
     entry: &DirectoryEntry,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<T>, CodecError> {
+) -> Option<T> {
     match result {
-        Ok(value) => Ok(Some(value)),
+        Ok(value) => Some(value),
         Err(message) => {
-            super::push_geometry_loss(ctx, losses, entry, format_args!("{message}"))?;
-            Ok(None)
+            super::push_geometry_loss(losses, entry, format_args!("{message}"));
+            None
         }
     }
 }
@@ -1389,120 +1266,33 @@ pub(crate) struct SourceSequences {
 }
 
 impl SourceSequences {
-    fn insert<K: Ord>(
-        values: &mut BTreeMap<K, u32>,
-        id: &K,
-        sequence: u32,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-        copy: impl FnOnce(&K, &DecodeContext<'_>) -> Result<K, CodecError>,
-    ) -> Result<(), CodecError> {
-        if let Some(existing) = values.get_mut(id) {
-            *existing = sequence;
-            return Ok(());
-        }
-        let key = copy(id, ctx)?;
-        ctx.insert_btree_map(values, key, sequence, operation)?;
-        Ok(())
-    }
-
     /// Records the entry a body was decoded from, and -- when the body's key is
     /// rooted at that entry -- that the body is its neutral form.
-    pub(super) fn record_body(
-        &mut self,
-        id: &BodyId,
-        sequence: u32,
-        stem: &crate::ids::Stem,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
-        Self::insert(
-            &mut self.bodies,
-            id,
-            sequence,
-            ctx,
-            "iges source body sequences",
-            |id, ctx| id.try_clone_for_decode(ctx, "iges source sequence key"),
-        )?;
+    pub(super) fn record_body(&mut self, id: &BodyId, sequence: u32, stem: &crate::ids::Stem) {
+        self.bodies.insert(id.clone(), sequence);
         if let Some(origin) = stem.origin() {
-            Self::insert(
-                &mut self.body_neutral_forms,
-                id,
-                origin,
-                ctx,
-                "iges source neutral body forms",
-                |id, ctx| id.try_clone_for_decode(ctx, "iges source sequence key"),
-            )?;
+            self.body_neutral_forms.insert(id.clone(), origin);
         }
-        Ok(())
     }
 
-    pub(super) fn record_face(
-        &mut self,
-        id: &FaceId,
-        sequence: u32,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
-        Self::insert(
-            &mut self.faces,
-            id,
-            sequence,
-            ctx,
-            "iges source face sequences",
-            |id, ctx| id.try_clone_for_decode(ctx, "iges source sequence key"),
-        )
+    pub(super) fn record_face(&mut self, id: &FaceId, sequence: u32) {
+        self.faces.insert(id.clone(), sequence);
     }
 
-    pub(super) fn record_curve(
-        &mut self,
-        id: &CurveId,
-        sequence: u32,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
-        Self::insert(
-            &mut self.curves,
-            id,
-            sequence,
-            ctx,
-            "iges source curve sequences",
-            |id, ctx| id.try_clone_for_decode(ctx, "iges source sequence key"),
-        )
+    pub(super) fn record_curve(&mut self, id: &CurveId, sequence: u32) {
+        self.curves.insert(id.clone(), sequence);
     }
 
-    pub(super) fn record_surface(
-        &mut self,
-        id: &SurfaceId,
-        sequence: u32,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
-        Self::insert(
-            &mut self.surfaces,
-            id,
-            sequence,
-            ctx,
-            "iges source surface sequences",
-            |id, ctx| id.try_clone_for_decode(ctx, "iges source sequence key"),
-        )
+    pub(super) fn record_surface(&mut self, id: &SurfaceId, sequence: u32) {
+        self.surfaces.insert(id.clone(), sequence);
     }
 
     /// Records the entry a point is the neutral form of, when its key is rooted
     /// at one.
-    pub(super) fn record_point(
-        &mut self,
-        id: &PointId,
-        stem: &crate::ids::Stem,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
+    pub(super) fn record_point(&mut self, id: &PointId, stem: &crate::ids::Stem) {
         if let Some(sequence) = stem.origin() {
-            Self::insert(
-                &mut self.points,
-                id,
-                sequence,
-                ctx,
-                "iges source point sequences",
-                |id, ctx| id.try_clone_for_decode(ctx, "iges source sequence key"),
-            )?;
+            self.points.insert(id.clone(), sequence);
         }
-        Ok(())
     }
 
     pub(super) fn body(&self, id: &BodyId) -> Option<u32> {
@@ -1536,22 +1326,14 @@ impl SourceSequences {
 
 pub(super) fn source_object(
     entry: &DirectoryEntry,
-    ctx: &DecodeContext<'_>,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
-    let render = |args: std::fmt::Arguments<'_>, operation: &'static str| {
-        ctx.format_retained(args, operation)
-    };
-    let object_id = render(format_args!("D{}", entry.sequence), "iges source object ID")?;
+    let object_id = format!("D{}", entry.sequence);
     let name = std::str::from_utf8(&entry.label)
         .ok()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| render(format_args!("{value}"), "iges source object name"))
-        .transpose()?;
-    let layer = entry
-        .level
-        .map(|level| render(format_args!("{level}"), "iges source object layer"))
-        .transpose()?;
+        .map(str::to_owned);
+    let layer = entry.level.map(|level| level.to_string());
     Ok(SourceObjectAssociation {
         geometry_role: Some(if entry.status.is_physically_dependent() {
             cadmpeg_ir::SourceGeometryRole::Support
@@ -1594,60 +1376,49 @@ pub(crate) fn project_geometry(
                 super::push_entity_loss
             };
             push_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "Entity Use Flag {:02} is outside the effective specification family",
                     entry.status.use_flag_code()
                 ),
-            )?;
+            );
             continue;
         };
         if !base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table) {
-            super::push_geometry_loss(ctx, &mut losses, entry, format_args!(
+            super::push_geometry_loss(&mut losses, entry, format_args!(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
                     entry.status.use_flag_code()
-                ))?;
+                ));
         } else if !entry.line_font.is_none_or(|font| {
             base_geometry_line_font_valid(entry.entity_type, entry.form, font, global_table)
         }) {
-            ctx.push_vec(&mut losses, crate::loss::IgesLossCode::DirectoryMetadataNoncanonical.note(ctx.format_retained(
-                format_args!("Directory D{} Line Font must be nonzero for this IGES 4.0 geometry entity; geometry retained", entry.sequence),
-                "IGES directory metadata diagnostic")?), "IGES directory metadata losses")?;
+            losses.push(crate::loss::IgesLossCode::DirectoryMetadataNoncanonical.note(format!("Directory D{} Line Font must be nonzero for this IGES 4.0 geometry entity; geometry retained", entry.sequence)));
         }
     }
     let admitted_directory = if directory.iter().any(|entry| !admitted(entry)) {
-        let admitted_count = directory.iter().filter(|entry| admitted(entry)).count();
-        let mut admitted_entries =
-            ctx.collection_vec(admitted_count, "iges admitted geometry directory")?;
-        admitted_entries.extend(directory.iter().filter(|entry| admitted(entry)).cloned());
-        Some(admitted_entries)
+        Some(
+            directory
+                .iter()
+                .filter(|entry| admitted(entry))
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
     } else {
         None
     };
     let directory = admitted_directory.as_deref().unwrap_or(directory);
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges geometry parameter index",
-        )?;
+        records.insert(record.directory_sequence, record);
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges geometry directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut decoded = BTreeSet::new();
     let mut boundary_vertex_derivations = Vec::new();
-    let consumed = consumed_support_sequences(directory, &records, ctx)?;
+    let consumed = consumed_support_sequences(directory, &records);
     let mut analytic_surface_locations = BTreeSet::new();
     for entry in directory.iter().filter(|entry| {
         matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
@@ -1657,11 +1428,7 @@ pub(crate) fn project_geometry(
             .and_then(|record| record.integer(1))
             .and_then(|value| u32::try_from(value).ok())
         {
-            ctx.insert_btree_set(
-                &mut analytic_surface_locations,
-                sequence,
-                "iges analytic-surface locations",
-            )?;
+            analytic_surface_locations.insert(sequence);
         }
     }
     let mut free_vertices = Vec::new();
@@ -1672,52 +1439,47 @@ pub(crate) fn project_geometry(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let components = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = components else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "direction components are not numeric"),
-            )?;
+            );
             continue;
         };
         let direction = Vector3::new(x, y, z);
         if !is_finite_nonzero_vector(direction) {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "direction is zero or non-finite"),
-            )?;
+            );
             continue;
         }
         if !entry.status.is_physically_dependent() {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Direction Entity is not marked physically dependent"),
-            )?;
+            );
             continue;
         }
         if entry.transform != 0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "{}",
                     "Direction Entity references a prohibited transformation"
                 ),
-            )?;
+            );
         }
     }
     for entry in directory
@@ -1727,11 +1489,10 @@ pub(crate) fn project_geometry(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let mut values = [FiniteReal::ZERO; 7];
@@ -1744,11 +1505,10 @@ pub(crate) fn project_geometry(
         }
         if let Some(index) = malformed {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("arc parameter {index} is not a finite number"),
-            )?;
+            );
             continue;
         }
         let values = values.map(|value| value.get() * factor);
@@ -1764,7 +1524,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
@@ -1773,11 +1533,10 @@ pub(crate) fn project_geometry(
             .map(cadmpeg_ir::features::FiniteVector3::get)
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite vector"),
-            )?;
+            );
             continue;
         };
         let Some(basis_y) = transform
@@ -1785,11 +1544,10 @@ pub(crate) fn project_geometry(
             .map(cadmpeg_ir::features::FiniteVector3::get)
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite vector"),
-            )?;
+            );
             continue;
         };
         let scale_x = basis_x.norm();
@@ -1801,40 +1559,36 @@ pub(crate) fn project_geometry(
             || basis_x.dot(basis_y).abs() > scale_x * scale_y * COMPUTATION_TOLERANCE
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "affine placement does not preserve circular geometry"),
-            )?;
+            );
             continue;
         }
         let Some(center) = transform.apply_point(Point3::new(values[1], values[2], values[0]))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let Some(start) = transform.apply_point(Point3::new(values[3], values[4], values[0]))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let Some(end) = transform.apply_point(Point3::new(values[5], values[6], values[0])) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let start_delta = start.vector_from(center.get());
@@ -1846,11 +1600,10 @@ pub(crate) fn project_geometry(
             (n.is_finite() && n > 0.0).then(|| start_delta.scale(1.0 / n))
         }) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "arc start point equals its center"),
-            )?;
+            );
             continue;
         };
         let ref_direction = UnitVector3::normalized_by_reciprocal(start_delta);
@@ -1861,11 +1614,10 @@ pub(crate) fn project_geometry(
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
         }) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "arc placement collapses its plane"),
-            )?;
+            );
             continue;
         };
         let axis = UnitVector3::normalized_by_reciprocal(basis_x.cross(basis_y));
@@ -1875,11 +1627,10 @@ pub(crate) fn project_geometry(
             .max(radius.max(end_radius).max(1.0) * COMPUTATION_TOLERANCE);
         if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "arc start and terminate points have different radii"),
-            )?;
+            );
             continue;
         }
         let Some(end_raw) = ({
@@ -1887,11 +1638,10 @@ pub(crate) fn project_geometry(
             (n.is_finite() && n > 0.0).then(|| end_delta.scale(1.0 / n))
         }) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "arc terminate point equals its center"),
-            )?;
+            );
             continue;
         };
         let end_direction = UnitVector3::normalized_by_reciprocal(end_delta);
@@ -1904,53 +1654,40 @@ pub(crate) fn project_geometry(
             angle = std::f64::consts::TAU;
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-        sequences.record_point(&start_point, &stem, ctx)?;
-        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        sequences.record_point(&end_point, &stem, ctx)?;
-        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        let curve = crate::ids::curve_admitted(&stem, ctx)?;
-        let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        ctx.reserve_vec(&mut ir.model.points, 2, "iges circle neutral point slots")?;
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
+
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.points.extend([
-            Point::new(
-                start_point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
-                start,
-                None,
-            ),
-            Point::new(
-                end_point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
-                end,
-                None,
-            ),
+            Point::new(start_point.clone(), start, None),
+            Point::new(end_point.clone(), end, None),
         ]);
-        ctx.reserve_vec(
-            &mut ir.model.vertices,
-            2,
-            "iges circle neutral vertex slots",
-        )?;
+
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex
-                    .try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
             },
         ]);
-        sequences.record_curve(&curve, entry.sequence, ctx)?;
-        ctx.reserve_vec(&mut ir.model.curves, 1, "iges circle neutral curve slots")?;
+        sequences.record_curve(&curve, entry.sequence);
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
             parameter_range: None,
-            id: curve.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     center,
@@ -1968,25 +1705,21 @@ pub(crate) fn project_geometry(
                     })?,
                 ),
             )),
-            source_object: Some(source_object(entry, ctx)?),
+            source_object: Some(source_object(entry)?),
         });
-        ctx.reserve_vec(&mut ir.model.edges, 1, "iges circle neutral edge slots")?;
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
-            id: edge.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, angle]))
                 .map_err(CodecError::malformed)?,
             start: start_vertex,
             end: end_vertex,
             tolerance: None,
         });
-        ctx.reserve_vec(&mut wire_edges, 1, "iges circle wire edge slots")?;
+
         wire_edges.push(edge);
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges circle decoded sequences",
-        )?;
+        decoded.insert(entry.sequence);
     }
     for entry in directory
         .iter()
@@ -1995,26 +1728,24 @@ pub(crate) fn project_geometry(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let coordinates = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "X, Y, or Z is not numeric"),
-            )?;
+            );
             continue;
         };
         if !point_display_symbol_valid(record, &entries, global.global_table()) {
-            super::push_attributed_loss(ctx, &mut losses, entry, IgesLossCode::DisplayDataNotProjected,
-                format_args!("Type 116 display symbol pointer is invalid for the effective specification family"))?;
+            super::push_attributed_loss(&mut losses, entry, IgesLossCode::DisplayDataNotProjected,
+                format_args!("Type 116 display symbol pointer is invalid for the effective specification family"));
         }
         let transform = match resolve_transform(
             entry.transform,
@@ -2028,46 +1759,44 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
         let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
-        let point = crate::ids::point_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
-        ctx.reserve_vec(&mut ir.model.points, 1, "iges point neutral point slots")?;
+        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.points.push(Point::new(
-            point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            point.clone(),
             position,
-            Some(source_object(entry, ctx)?),
+            Some(source_object(entry)?),
         ));
         if !entry.status.is_physically_dependent()
             && (entry.status.subordinate() == Some(Subordinate::Independent)
                 || !analytic_surface_locations.contains(&entry.sequence))
         {
-            let vertex =
-                crate::ids::vertex_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-            ctx.reserve_vec(&mut ir.model.vertices, 1, "iges point neutral vertex slots")?;
+            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
+
             ctx.charge_entities(1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
-                id: vertex.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: vertex.clone(),
                 point,
                 tolerance: None,
             });
-            ctx.reserve_vec(&mut free_vertices, 1, "iges point free vertex slots")?;
+
             free_vertices.push(vertex);
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges point decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
     for entry in directory
         .iter()
@@ -2076,39 +1805,35 @@ pub(crate) fn project_geometry(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let coordinates = [record.number(1), record.number(2)];
         let [Some(x), Some(y)] = coordinates else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "X or Y reference coordinate is not numeric"),
-            )?;
+            );
             continue;
         };
         let Some(x) = FiniteReal::new(x) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "X or Y reference coordinate is not finite"),
-            )?;
+            );
             continue;
         };
         let Some(y) = FiniteReal::new(y) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "X or Y reference coordinate is not finite"),
-            )?;
+            );
             continue;
         };
         let required_real = |index| record.number(index).is_some();
@@ -2123,21 +1848,19 @@ pub(crate) fn project_geometry(
         };
         if !shape_parameters_valid {
             super::push_attributed_loss(
-                ctx,
                 &mut losses,
                 entry,
                 IgesLossCode::DisplayDataNotProjected,
                 format_args!("Type 125 flash shape parameters are incomplete or non-finite"),
-            )?;
+            );
         }
         if entry.form == 0 && record.integer_or(6, 0).is_none_or(|pointer| pointer == 0) {
             super::push_attributed_loss(
-                ctx,
                 &mut losses,
                 entry,
                 IgesLossCode::DisplayDataNotProjected,
                 format_args!("Type 125 Form 0 has no defining entity pointer"),
-            )?;
+            );
         }
         let transform = match resolve_transform(
             entry.transform,
@@ -2151,7 +1874,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
@@ -2159,39 +1882,37 @@ pub(crate) fn project_geometry(
             transform.apply_point(Point3::new(x.get() * factor, y.get() * factor, 0.0))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
-        let point = crate::ids::point_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
-        ctx.reserve_vec(&mut ir.model.points, 1, "iges flash neutral point slots")?;
+        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.points.push(Point::new(
-            point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            point.clone(),
             position,
-            Some(source_object(entry, ctx)?),
+            Some(source_object(entry)?),
         ));
         if !entry.status.is_physically_dependent()
             && (entry.status.subordinate() == Some(Subordinate::Independent)
                 || !analytic_surface_locations.contains(&entry.sequence))
         {
-            let vertex =
-                crate::ids::vertex_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-            ctx.reserve_vec(&mut ir.model.vertices, 1, "iges flash neutral vertex slots")?;
+            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
+
             ctx.charge_entities(1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
-                id: vertex.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: vertex.clone(),
                 point,
                 tolerance: None,
             });
-            ctx.reserve_vec(&mut free_vertices, 1, "iges flash free vertex slots")?;
+
             free_vertices.push(vertex);
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges flash decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
     for entry in directory
         .iter()
@@ -2200,11 +1921,10 @@ pub(crate) fn project_geometry(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let mut coordinates = [FiniteReal::ZERO; 6];
@@ -2217,11 +1937,10 @@ pub(crate) fn project_geometry(
         }
         if let Some(index) = malformed {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("endpoint coordinate {index} is not a finite number"),
-            )?;
+            );
             continue;
         }
         let coordinates = coordinates.map(|coordinate| coordinate.get() * factor);
@@ -2237,7 +1956,7 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
@@ -2245,104 +1964,92 @@ pub(crate) fn project_geometry(
             transform.apply_point(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let Some(end) =
             transform.apply_point(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "placement produces a non-finite point"),
-            )?;
+            );
             continue;
         };
         let delta = end.vector_from(start.get());
         let length = delta.norm();
         if !length.is_finite() || length <= 0.0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "transformed endpoints are coincident or non-finite"),
-            )?;
+            );
             continue;
         }
         let direction = UnitVector3::normalized_with_length(delta)
             .map(|(direction, _)| direction)
             .ok_or_else(|| CodecError::malformed("LineCurve.direction must have unit length"))?;
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let curve = crate::ids::curve_admitted(&stem, ctx)?;
-        sequences.record_curve(&curve, entry.sequence, ctx)?;
-        ctx.reserve_vec(&mut ir.model.curves, 1, "iges line neutral curve slots")?;
+        let curve = crate::ids::curve(&stem);
+        sequences.record_curve(&curve, entry.sequence);
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
             parameter_range: None,
-            id: curve.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
             )),
-            source_object: Some(source_object(entry, ctx)?),
+            source_object: Some(source_object(entry)?),
         });
         if entry.form != 0 {
-            ctx.insert_btree_set(&mut decoded, entry.sequence, "iges line decoded sequences")?;
+            decoded.insert(entry.sequence);
             continue;
         }
-        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-        sequences.record_point(&start_point, &stem, ctx)?;
-        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        sequences.record_point(&end_point, &stem, ctx)?;
-        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        ctx.reserve_vec(&mut ir.model.points, 2, "iges line neutral point slots")?;
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let edge = crate::ids::edge(&stem);
+
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.points.extend([
-            Point::new(
-                start_point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
-                start,
-                None,
-            ),
-            Point::new(
-                end_point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
-                end,
-                None,
-            ),
+            Point::new(start_point.clone(), start, None),
+            Point::new(end_point.clone(), end, None),
         ]);
-        ctx.reserve_vec(&mut ir.model.vertices, 2, "iges line neutral vertex slots")?;
+
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex
-                    .try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
             },
         ]);
-        ctx.reserve_vec(&mut ir.model.edges, 1, "iges line neutral edge slots")?;
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
-            id: edge.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, length]))
                 .map_err(CodecError::malformed)?,
             start: start_vertex,
             end: end_vertex,
             tolerance: None,
         });
-        ctx.reserve_vec(&mut wire_edges, 1, "iges line wire edge slots")?;
+
         wire_edges.push(edge);
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges line decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
     for entry in directory
         .iter()
@@ -2351,20 +2058,18 @@ pub(crate) fn project_geometry(
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let Some(k) = record.count(1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "upper control-point index K is invalid"),
-            )?;
+            );
             continue;
         };
         let Some(degree) = record
@@ -2372,21 +2077,19 @@ pub(crate) fn project_geometry(
             .and_then(|value| u32::try_from(value).ok())
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "basis degree M is invalid"),
-            )?;
+            );
             continue;
         };
         let degree_usize = index_from_u32(degree);
         if k < degree_usize {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "control-point count is smaller than degree plus one"),
-            )?;
+            );
             continue;
         }
         let flags = [
@@ -2397,20 +2100,18 @@ pub(crate) fn project_geometry(
         ];
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
             super::push_attributed_loss(
-                ctx,
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!("{}", "one or more spline flags are not 0 or 1"),
-            )?;
+            );
         }
         let Some(control_count) = k.checked_add(1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "control-point count overflows"),
-            )?;
+            );
             continue;
         };
         let Some(knot_count) = control_count
@@ -2418,110 +2119,88 @@ pub(crate) fn project_geometry(
             .and_then(|value| value.checked_add(1))
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "knot count overflows"),
-            )?;
+            );
             continue;
         };
         let knot_start = 7_usize;
         let Some(weight_start) = knot_start.checked_add(knot_count) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "weight offset overflows"),
-            )?;
+            );
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(control_count) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "control-point offset overflows"),
-            )?;
+            );
             continue;
         };
         let Some(pole_value_count) = control_count.checked_mul(3) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "control-point value count overflows"),
-            )?;
+            );
             continue;
         };
         let Some(range_start) = pole_start.checked_add(pole_value_count) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "parameter-range offset overflows"),
-            )?;
+            );
             continue;
         };
-        let collect_numbers = |start: usize,
-                               count: usize,
-                               operation: &'static str|
-         -> Result<Option<Vec<FiniteReal>>, CodecError> {
-            let Some(end) = start.checked_add(count) else {
-                return Ok(None);
-            };
-            ctx.collect_options(
-                (start..end).map(|index| record.number(index).and_then(FiniteReal::new)),
-                operation,
-            )
+        let collect_numbers = |start: usize, count: usize| -> Option<Vec<FiniteReal>> {
+            let end = start.checked_add(count)?;
+            (start..end)
+                .map(|index| record.number(index).and_then(FiniteReal::new))
+                .collect()
         };
-        let Some(finite_knots) =
-            collect_numbers(knot_start, knot_count, "iges NURBS source knots")?
-        else {
+        let Some(finite_knots) = collect_numbers(knot_start, knot_count) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "knot vector is truncated or non-finite"),
-            )?;
+            );
             continue;
         };
         let domain_start = finite_knots[degree_usize];
         let domain_end = finite_knots[control_count];
-        let mut raw_knots = ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")?;
-        raw_knots.extend(finite_knots.into_iter().map(FiniteReal::get));
+        let raw_knots = finite_knots.into_iter().map(FiniteReal::get).collect();
         let Ok(knots) = KnotVector::new(ctx, raw_knots)? else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "knot vector is decreasing"),
-            )?;
+            );
             continue;
         };
-        let Some(native_weights) =
-            collect_numbers(weight_start, control_count, "iges NURBS source weights")?
-        else {
+        let Some(native_weights) = collect_numbers(weight_start, control_count) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "weight vector is truncated or non-finite"),
-            )?;
+            );
             continue;
         };
-        let Some(native_weights) = ctx.collect_options(
-            native_weights
-                .into_iter()
-                .map(|weight| PositiveReal::try_from(weight).ok()),
-            "iges NURBS positive weights",
-        )?
+        let Some(native_weights) = native_weights
+            .into_iter()
+            .map(|weight| PositiveReal::try_from(weight).ok())
+            .collect::<Option<Vec<_>>>()
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "weights are not strictly positive"),
-            )?;
+            );
             continue;
         };
         let precision = global.real_precision();
@@ -2545,16 +2224,14 @@ pub(crate) fn project_geometry(
         let declared_polynomial = flags[2] == Some(1);
         if declared_polynomial && !equal_weights {
             super::push_attributed_loss(
-                ctx,
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!("{}", "polynomial spline has unequal weights"),
-            )?;
+            );
         }
         if !declared_polynomial && equal_weights {
             super::push_attributed_loss(
-                ctx,
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
@@ -2562,32 +2239,27 @@ pub(crate) fn project_geometry(
                     "{}",
                     "rational spline has equal weights but PROP3 declares rational"
                 ),
-            )?;
+            );
         }
         let polynomial = native_weights.first().is_some_and(|first| {
             native_weights
                 .iter()
                 .all(|weight| weight.get() == first.get())
         });
-        let Some(native_poles) =
-            collect_numbers(pole_start, pole_value_count, "iges NURBS source poles")?
-        else {
+        let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "control-point vector is truncated or non-finite"),
-            )?;
+            );
             continue;
         };
-        let Some(mut parameter_range) = collect_numbers(range_start, 2, "iges NURBS source range")?
-        else {
+        let Some(mut parameter_range) = collect_numbers(range_start, 2) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "parameter range is missing or non-finite"),
-            )?;
+            );
             continue;
         };
         if parameter_range[0].get() < domain_start.get()
@@ -2619,11 +2291,10 @@ pub(crate) fn project_geometry(
             );
         let Some(parameter_interval) = parameter_interval else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "parameter range lies outside the spline knot domain"),
-            )?;
+            );
             continue;
         };
         let transform = match resolve_transform(
@@ -2638,31 +2309,29 @@ pub(crate) fn project_geometry(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
         };
-        let Some(control_points) = ctx.collect_options(
-            native_poles.chunks_exact(3).map(|point| {
+        let Some(control_points) = native_poles
+            .chunks_exact(3)
+            .map(|point| {
                 transform.apply_point(Point3::new(
                     point[0].get() * factor,
                     point[1].get() * factor,
                     point[2].get() * factor,
                 ))
-            }),
-            "iges NURBS placed controls",
-        )?
+            })
+            .collect::<Option<Vec<_>>>()
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "transformed control-point vector is non-finite"),
-            )?;
+            );
             continue;
         };
-        let mut raw_control_points =
-            ctx.collection_vec(control_points.len(), "iges NURBS plane controls")?;
+        let mut raw_control_points = Vec::new();
         raw_control_points.extend(native_poles.chunks_exact(3).map(|point| {
             Point3::new(
                 point[0].get() * factor,
@@ -2706,15 +2375,14 @@ pub(crate) fn project_geometry(
             !matches!(plane, ControlPointPlane::Unique)
         };
         if !plane_claim_valid {
-            super::push_attributed_loss(ctx, &mut losses, entry,
+            super::push_attributed_loss(&mut losses, entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
-                format_args!("spline planarity or normal claim disagrees with its carrier; retained the serialized knots, poles, weights and active bounds"))?;
+                format_args!("spline planarity or normal claim disagrees with its carrier; retained the serialized knots, poles, weights and active bounds"));
         }
         let weights = if polynomial {
             None
         } else {
-            let mut values =
-                ctx.collection_vec(native_weights.len(), "iges NURBS neutral weights")?;
+            let mut values = Vec::new();
             values.extend(native_weights.into_iter().map(NonZeroReal::from));
             Some(values)
         };
@@ -2731,11 +2399,10 @@ pub(crate) fn project_geometry(
             Ok(nurbs) => nurbs,
             Err(error) => {
                 super::push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("spline cardinalities are inconsistent: {error}"),
-                )?;
+                );
                 continue;
             }
         };
@@ -2744,11 +2411,10 @@ pub(crate) fn project_geometry(
         )?)?
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline start point cannot be evaluated"),
-            )?;
+            );
             continue;
         };
         let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
@@ -2756,11 +2422,10 @@ pub(crate) fn project_geometry(
         )?)?
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "spline end point cannot be evaluated"),
-            )?;
+            );
             continue;
         };
         let endpoint_distance = start.distance(end.get());
@@ -2768,7 +2433,6 @@ pub(crate) fn project_geometry(
         let closed = endpoint_distance == 0.0 || endpoint_distance < resolution;
         if flags[1] != Some(i64::from(closed)) {
             super::push_attributed_loss(
-                ctx,
                 &mut losses,
                 entry,
                 crate::loss::IgesLossCode::SplineClaimRecovered,
@@ -2776,67 +2440,58 @@ pub(crate) fn project_geometry(
                     "{}",
                     "closed spline flag disagrees with evaluated endpoints"
                 ),
-            )?;
+            );
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-        sequences.record_point(&start_point, &stem, ctx)?;
-        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        sequences.record_point(&end_point, &stem, ctx)?;
-        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        let curve = crate::ids::curve_admitted(&stem, ctx)?;
-        let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        ctx.reserve_vec(&mut ir.model.points, 2, "iges NURBS neutral point slots")?;
+        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        sequences.record_point(&start_point, &stem);
+        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        sequences.record_point(&end_point, &stem);
+        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
+        let curve = crate::ids::curve(&stem);
+        let edge = crate::ids::edge(&stem);
+
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.points.extend([
-            Point::new(
-                start_point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
-                start,
-                None,
-            ),
-            Point::new(
-                end_point.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
-                end,
-                None,
-            ),
+            Point::new(start_point.clone(), start, None),
+            Point::new(end_point.clone(), end, None),
         ]);
-        ctx.reserve_vec(&mut ir.model.vertices, 2, "iges NURBS neutral vertex slots")?;
+
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex
-                    .try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+                id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
             },
         ]);
-        sequences.record_curve(&curve, entry.sequence, ctx)?;
-        ctx.reserve_vec(&mut ir.model.curves, 1, "iges NURBS neutral curve slots")?;
+        sequences.record_curve(&curve, entry.sequence);
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
             parameter_range: None,
-            id: curve.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry, ctx)?),
+            source_object: Some(source_object(entry)?),
         });
-        ctx.reserve_vec(&mut ir.model.edges, 1, "iges NURBS neutral edge slots")?;
+
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
-            id: edge.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_interval.into()),
             start: start_vertex,
             end: end_vertex,
             tolerance: None,
         });
-        ctx.reserve_vec(&mut wire_edges, 1, "iges NURBS wire edge slots")?;
+
         wire_edges.push(edge);
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges NURBS decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
     // The stanza sequence keeps source order in losses, wire edges, and free
     // vertices. Each projection admits its model entities before creation.
@@ -2844,37 +2499,32 @@ pub(crate) fn project_geometry(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
-        ctx,
-    )?;
+    );
 
     super::copious::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
         &mut free_vertices,
-        ctx,
-    )?;
+    );
 
     super::splines::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
-        ctx,
-    )?;
+    );
 
     super::composite::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
-        ctx,
-    )?;
+    );
 
     super::offsets::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
-        ctx,
-    )?;
+    );
 
     // A valid V5 Type 130 constituent is deferred until its exact offset
     // carrier has been projected above. The second composite pass consumes
@@ -2887,37 +2537,24 @@ pub(crate) fn project_geometry(
         ctx,
         &mut sequences,
     )?
-    .merge_into(&mut decoded, &mut losses, &mut wire_edges, ctx)?;
+    .merge_into(&mut decoded, &mut losses, &mut wire_edges);
 
     super::analytic_surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)?
-        .merge_into(&mut decoded, &mut losses, ctx)?;
+        .merge_into(&mut decoded, &mut losses);
 
-    super::surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
-        &mut decoded,
-        &mut losses,
-        ctx,
-    )?;
+    super::surfaces::project(ir, directory, parameters, global, ctx, &mut sequences)?
+        .merge_into(&mut decoded, &mut losses);
 
     let mut free_geometry_shell = None;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
-        let body = crate::ids::body_admitted(
-            &crate::ids::Stem::word(crate::ids::Word::FreeGeometry),
-            ctx,
-        )?;
-        let region = crate::ids::region_admitted(
-            &crate::ids::Stem::word(crate::ids::Word::FreeGeometry),
-            ctx,
-        )?;
-        let shell = crate::ids::shell_admitted(
-            &crate::ids::Stem::word(crate::ids::Word::FreeGeometry),
-            ctx,
-        )?;
-        let mut body_regions = ctx.collection_vec(1, "iges free wire body regions")?;
-        body_regions.push(region.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?);
-        ctx.reserve_vec(&mut ir.model.bodies, 1, "iges free wire body slots")?;
+        let body = crate::ids::body(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let region = crate::ids::region(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let shell = crate::ids::shell(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let body_regions = vec![region.clone()];
+
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         ir.model.bodies.push(Body {
-            id: body.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: body.clone(),
             kind: BodyKind::Wire,
             regions: body_regions,
             transform: None,
@@ -2925,55 +2562,35 @@ pub(crate) fn project_geometry(
             color: None,
             visible: None,
         });
-        let mut region_shells = ctx.collection_vec(1, "iges free wire region shells")?;
-        region_shells.push(shell.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?);
-        ctx.reserve_vec(&mut ir.model.regions, 1, "iges free wire region slots")?;
+        let region_shells = vec![shell.clone()];
+
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         ir.model.regions.push(Region {
-            id: region.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
+            id: region.clone(),
             body,
             shells: region_shells,
         });
-        ctx.reserve_vec(&mut ir.model.shells, 1, "iges free wire shell slots")?;
+
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         let shell = match Shell::new(shell, region, Vec::new(), wire_edges, free_vertices) {
             Ok(shell) => shell,
-            Err(message) => {
-                return Err(CodecError::Malformed(ctx.format_retained(
-                    format_args!("{message}"),
-                    "iges free-wire shell error",
-                )?))
-            }
+            Err(message) => return Err(CodecError::Malformed(format!("{message}"))),
         };
-        free_geometry_shell = Some(
-            shell
-                .id
-                .try_clone_for_decode(ctx, "iges free geometry shell identity")?,
-        );
+        free_geometry_shell = Some(shell.id.clone());
         ir.model.shells.push(shell);
     }
 
     let (trimming_projection, trimming_vertex_derivations) =
         super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences)?;
-    ctx.reserve_vec(
-        &mut boundary_vertex_derivations,
-        trimming_vertex_derivations.len(),
-        "iges merged boundary vertex derivations",
-    )?;
+
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
-    trimming_projection.merge_into(&mut decoded, &mut losses, ctx)?;
+    trimming_projection.merge_into(&mut decoded, &mut losses);
 
-    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
-        &mut decoded,
-        &mut losses,
-        ctx,
-    )?;
+    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?
+        .merge_into(&mut decoded, &mut losses);
 
-    super::csg::project(ir, directory, parameters, global, ctx)?.merge_into(
-        &mut decoded,
-        &mut losses,
-        ctx,
-    )?;
+    super::csg::project(ir, directory, parameters, global, ctx)?
+        .merge_into(&mut decoded, &mut losses);
 
     let (structure_projection, placement_rejections) = super::structure::project(
         ir,
@@ -2984,9 +2601,9 @@ pub(crate) fn project_geometry(
         ctx,
         &mut sequences,
     )?;
-    structure_projection.merge_into(&mut decoded, &mut losses, ctx)?;
+    structure_projection.merge_into(&mut decoded, &mut losses);
     if let Some(shell) = free_geometry_shell {
-        free_geometry::retain_independent(ir, &shell, &entries, &mut sequences, ctx)?;
+        free_geometry::retain_independent(ir, &shell, &entries, &mut sequences)?;
     }
 
     super::presentation::project(
@@ -2998,7 +2615,7 @@ pub(crate) fn project_geometry(
         ctx,
         &sequences,
     )?
-    .merge_into(&mut decoded, &mut losses, ctx)?;
+    .merge_into(&mut decoded, &mut losses);
 
     super::drawing::project(
         ir,
@@ -3008,21 +2625,14 @@ pub(crate) fn project_geometry(
         global,
         ctx,
     )?
-    .merge_into(&mut decoded, &mut losses, ctx)?;
+    .merge_into(&mut decoded, &mut losses);
 
-    super::annotation::project(ir, directory, parameters, global, ctx)?.merge_into(
-        &mut decoded,
-        &mut losses,
-        ctx,
-    )?;
+    super::annotation::project(ir, directory, parameters, global, ctx)?
+        .merge_into(&mut decoded, &mut losses);
 
     let mut vertex_points = BTreeSet::new();
     for vertex in &ir.model.vertices {
-        ctx.insert_btree_set(
-            &mut vertex_points,
-            &vertex.point,
-            "iges analytic-surface vertex point index",
-        )?;
+        vertex_points.insert(&vertex.point);
     }
     ir.model.points.retain(|point| {
         !sequences

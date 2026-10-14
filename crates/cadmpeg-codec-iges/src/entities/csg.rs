@@ -75,7 +75,7 @@ fn boolean_tree_is_valid(
     if let Some(valid) = memo.get(&sequence) {
         return Ok(*valid);
     }
-    if !ctx.insert_btree_set(path, sequence, "iges boolean validation path")? {
+    if !path.insert(sequence) {
         return Ok(false);
     }
     let Some(entry) = entries.get(&sequence) else {
@@ -97,7 +97,6 @@ fn boolean_tree_is_valid(
     });
     let mut operands_valid = true;
     for term in terms {
-        ctx.charge_work(1, "iges boolean term validation")?;
         let valid = match term {
             BooleanTerm::Operation => true,
             BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
@@ -128,7 +127,7 @@ fn boolean_tree_is_valid(
     }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
     path.remove(&sequence);
-    ctx.insert_btree_map(memo, sequence, valid, "iges boolean validity memo")?;
+    memo.insert(sequence, valid);
     Ok(valid)
 }
 
@@ -141,21 +140,11 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges csg parameter index",
-        )?;
+        records.insert(record.directory_sequence, record);
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges csg directory index",
-        )?;
+        entries.insert(entry.sequence, entry);
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -165,11 +154,10 @@ pub(super) fn project(
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let factor = global.length_factor_mm();
@@ -184,11 +172,10 @@ pub(super) fn project(
         ) {
             error.non_resource()?;
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive placement is invalid"),
-            )?;
+            );
             continue;
         }
         let dimension_count = match entry.entity_type {
@@ -215,11 +202,10 @@ pub(super) fn project(
         }
         if !dimensions_present {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive dimensions are not numeric"),
-            )?;
+            );
             continue;
         }
         let dimensions = &dimensions[..dimension_count];
@@ -259,11 +245,10 @@ pub(super) fn project(
         };
         if !dimensions_valid {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive dimension invariant is violated"),
-            )?;
+            );
             continue;
         }
         let (origin_start, x_axis_start, z_axis_start) = match entry.entity_type {
@@ -276,30 +261,27 @@ pub(super) fn project(
             168 => (4, Some(7), Some(10)),
             _ => {
                 super::push_geometry_loss(
-                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", "primitive solid type is unsupported"),
-                )?;
+                );
                 continue;
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive origin is invalid"),
-            )?;
+            );
             continue;
         };
         if !origin.is_finite() {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive origin is non-finite"),
-            )?;
+            );
             continue;
         }
         let x_axis =
@@ -325,14 +307,13 @@ pub(super) fn project(
                 })
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive axes are not orthonormal"),
-            )?;
+            );
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
 
     for entry in directory.iter().filter(|entry| {
@@ -341,21 +322,19 @@ pub(super) fn project(
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid profile curve pointer is invalid"),
-            )?;
+            );
             continue;
         };
         let mut profile_storage = [0_u8; 64];
@@ -368,11 +347,10 @@ pub(super) fn project(
             .any(|curve| Some(curve.id.as_str()) == profile_id)
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid profile curve pointer is invalid"),
-            )?;
+            );
             continue;
         }
         let Some(amount) = record
@@ -380,20 +358,18 @@ pub(super) fn project(
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep amount is invalid"),
-            )?;
+            );
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid revolution fraction is greater than one"),
-            )?;
+            );
             continue;
         }
         let (origin, direction_start) = if entry.entity_type == 162 {
@@ -409,31 +385,28 @@ pub(super) fn project(
             })
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep axis is invalid"),
-            )?;
+            );
             continue;
         }
         let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid profile endpoints are unavailable"),
-            )?;
+            );
             continue;
         };
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep form disagrees with profile closure"),
-            )?;
+            );
             continue;
         }
         if let Err(error) = resolve_transform(
@@ -447,14 +420,13 @@ pub(super) fn project(
         ) {
             error.non_resource()?;
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep placement is invalid"),
-            )?;
+            );
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
 
     let mut boolean_definitions = BTreeMap::new();
@@ -464,23 +436,21 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean postfix length is not greater than two"),
-            )?;
+            );
             continue;
         };
-        let mut terms = ctx.collection_vec(count, "iges Boolean postfix terms")?;
+        let mut terms = Vec::new();
         let mut terms_valid = true;
         for index in 0..count {
             let term = (|| {
@@ -503,11 +473,10 @@ pub(super) fn project(
         }
         if !terms_valid {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean postfix term is invalid"),
-            )?;
+            );
             continue;
         }
         let mut depth = 0_usize;
@@ -524,19 +493,13 @@ pub(super) fn project(
         });
         if !valid_stack || depth != 1 {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean postfix stack is unbalanced"),
-            )?;
+            );
             continue;
         }
-        ctx.insert_btree_map(
-            &mut boolean_definitions,
-            entry.sequence,
-            terms,
-            "iges Boolean definition nodes",
-        )?;
+        boolean_definitions.insert(entry.sequence, terms);
     }
     let mut visited = BTreeSet::new();
     let mut boolean_validity = BTreeMap::new();
@@ -550,7 +513,7 @@ pub(super) fn project(
             &mut boolean_validity,
             ctx,
         )?;
-        let cyclic = super::directed_cycle(*sequence, &mut visited, ctx, |sequence| {
+        let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
             boolean_definitions
                 .get(&sequence)
                 .into_iter()
@@ -561,17 +524,16 @@ pub(super) fn project(
                     }
                     BooleanTerm::Operand(_) | BooleanTerm::Operation => None,
                 })
-        })?;
+        });
         if !operands_valid || cyclic {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "{}",
                     "Boolean operands, form, or reference acyclicity is invalid"
                 ),
-            )?;
+            );
             continue;
         }
         let factor = global.length_factor_mm();
@@ -586,14 +548,13 @@ pub(super) fn project(
         ) {
             error.non_resource()?;
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean result placement is invalid"),
-            )?;
+            );
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, *sequence, "iges csg decoded sequences")?;
+        decoded.insert(*sequence);
     }
 
     for entry in directory
@@ -602,11 +563,10 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
-            )?;
+            );
             continue;
         };
         let Some(_tree) = pointer(record, 1).filter(|sequence| {
@@ -616,24 +576,22 @@ pub(super) fn project(
                     .is_some_and(|target| target.entity_type == 180)
         }) else {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "selected-component Boolean tree pointer is invalid"),
-            )?;
+            );
             continue;
         };
         let point_valid = (2..=4).all(|index| record.number(index).is_some());
         if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!(
                     "{}",
                     "selected-component point or entity-use flag is invalid"
                 ),
-            )?;
+            );
             continue;
         }
         let factor = global.length_factor_mm();
@@ -648,14 +606,13 @@ pub(super) fn project(
         ) {
             error.non_resource()?;
             super::push_geometry_loss(
-                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "selected-component placement is invalid"),
-            )?;
+            );
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        decoded.insert(entry.sequence);
     }
 
     Ok(ProjectionOutcome { decoded, losses })

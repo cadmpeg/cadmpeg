@@ -31,9 +31,7 @@ use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use crate::IgesVersion;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -45,34 +43,22 @@ include!("dialect/registry_ids.rs");
 /// [`classify`] and this function consume the same recovery fact. A verified
 /// Global therefore cannot enter the unverified message construction, and no
 /// independently supplied match can contradict the declaration being reported.
-pub(crate) fn dialect_loss(
-    global: &ResolvedGlobal,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<LossNote>, CodecError> {
+pub(crate) fn dialect_loss(global: &ResolvedGlobal) -> Option<LossNote> {
     let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
-        return Ok(None);
+        return None;
     };
     let declared = global.declared_version_flag();
     let version = global.version_name();
     let names = VerifiedVersionNames;
     let message = match recovery {
-        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => ctx.format_retained(format_args!(
-                "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
-            ), "iges dialect loss message")?,
-        UnverifiedDialectRecovery::Clamped => ctx.format_retained(format_args!(
-                "IGES Global version flag {declared} names effective specification version {version} after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions {names}",
-                global.effective_version_flag(),
-            ), "iges dialect loss message")?,
-        UnverifiedDialectRecovery::UnverifiedVersion => ctx.format_retained(format_args!(
-                "IGES Global version flag {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
-            ), "iges dialect loss message")?,
+        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => format!("IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}"),
+        UnverifiedDialectRecovery::Clamped => format!("IGES Global version flag {declared} names effective specification version {version} after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions {names}",
+        global.effective_version_flag()),
+        UnverifiedDialectRecovery::UnverifiedVersion => format!("IGES Global version flag {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}"),
     };
     let code = IgesLossCode::SourceDialectUnverified;
-    ctx.charge_retained(
-        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
-        "iges dialect loss kind",
-    )?;
-    Ok(Some(code.note(message)))
+
+    Some(code.note(message))
 }
 
 struct VerifiedVersionNames;
