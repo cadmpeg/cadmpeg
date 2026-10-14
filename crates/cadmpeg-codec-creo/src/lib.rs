@@ -106,14 +106,10 @@ impl CodecBackend for CreoCodec {
 
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
         // UGC signatures identify the Creo/Pro-E PSB container and
         // distinguish it from a Siemens NX `.prt` sharing the extension.
         if container::looks_like_creo(prefix) {
@@ -129,8 +125,8 @@ impl CodecBackend for CreoCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(ctx, root.window())?;
-        let classification = dialect::classify(ctx, &scan)?;
-        container::summarize(ctx, &scan, classification)
+        let classification = dialect::classify(&scan)?;
+        Ok(container::summarize(&scan, classification))
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

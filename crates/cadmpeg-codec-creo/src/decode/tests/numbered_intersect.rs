@@ -32,18 +32,14 @@ fn section_linear_distance_coordinate(
     saved_segment_points: &[(u32, [f64; 2])],
     ambiguous_point_ids: &std::collections::BTreeSet<u32>,
 ) -> Option<SectionAxis> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        section_linear_distance_coordinate_admitted(
-            ctx,
-            definition,
-            segments,
-            [first, second],
-            coordinates,
-            saved_segment_points,
-            ambiguous_point_ids,
-        )
-    })
-    .expect("test linear distance coordinate")
+    section_linear_distance_coordinate_admitted(
+        definition,
+        segments,
+        [first, second],
+        coordinates,
+        saved_segment_points,
+        ambiguous_point_ids,
+    )
 }
 use crate::decode::sketch::equations_coordinate::{
     solve_section_coordinate_equations, solve_unsigned_dimension_coordinates,
@@ -80,34 +76,13 @@ fn service_feature_plane_equations(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<Vec<([f64; 3], [f64; 3])>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sweep::planes::feature_plane_equations(
-            ctx,
-            scan,
-            ir,
-            source_carriers,
-            feature_id,
-        )
-        .map(|result| {
-            result.map(|planes| {
-                planes
-                    .into_iter()
-                    .map(|plane| (plane.origin, plane.normal))
-                    .collect::<Vec<_>>()
-            })
+    crate::decode::sweep::planes::feature_plane_equations(scan, ir, source_carriers, feature_id)
+        .map(|planes| {
+            planes
+                .into_iter()
+                .map(|plane| (plane.origin, plane.normal))
+                .collect::<Vec<_>>()
         })
-    })
-    .expect("service resources")
-}
-
-fn service_feature_outline_planes(
-    scan: &crate::container::ContainerScan<'_>,
-    feature_id: u32,
-) -> Option<Vec<crate::decode::sweep::planes::FeatureOutlinePlane>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id)
-    })
-    .expect("service resources")
 }
 
 fn feature_edge_selection_with_service(
@@ -149,27 +124,6 @@ fn generated_surface_face_refs_with_service(
     .expect("service profile admits generated surface references")
 }
 
-fn knit_class_100_operand_entity_ids_with_service(
-    feature_id: u32,
-    tables: &[crate::feature::entity::FeatureEntityTable],
-) -> Option<Vec<u32>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        knit_class_100_operand_entity_ids(ctx, feature_id, tables)
-    })
-    .expect("service profile admits knit class 100 operands")
-}
-
-fn knit_operand_surface_ids_with_service(
-    scan: &crate::container::ContainerScan<'_>,
-    feature_id: u32,
-    quilt_ids: &[u32],
-) -> Option<Vec<u32>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        knit_operand_surface_ids(ctx, scan, feature_id, quilt_ids)
-    })
-    .expect("service profile admits knit operand surfaces")
-}
-
 fn native_feature_dependency_ids_with_service(
     affected_ids: &[crate::feature::rows::FeatureAffectedIds],
     operations: &[crate::feature::operations::FeatureOperation],
@@ -179,9 +133,8 @@ fn native_feature_dependency_ids_with_service(
     feature_id: u32,
     prototype_dependencies: &[u32],
 ) -> Vec<u32> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    {
         native_feature_dependency_ids(
-            ctx,
             affected_ids,
             operations,
             entity_tables,
@@ -189,39 +142,7 @@ fn native_feature_dependency_ids_with_service(
             surface_rows,
             (feature_id, prototype_dependencies),
         )
-    })
-    .expect("service profile admits native feature dependencies")
-}
-
-fn feature_entity_dependencies_with_service(
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    feature_id: u32,
-) -> Vec<u32> {
-    crate::decode::with_test_decode_ctx(|ctx| feature_entity_dependencies(ctx, tables, feature_id))
-        .expect("service profile admits entity dependencies")
-}
-
-fn feature_output_surface_dependencies_with_service(
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
-    feature_id: u32,
-) -> Vec<u32> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        feature_output_surface_dependencies(ctx, tables, rows, feature_id)
-    })
-    .expect("service profile admits output surface dependencies")
-}
-
-fn surface_merge_entity_dependencies_with_service(
-    affected: &[crate::feature::rows::FeatureAffectedIds],
-    replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    feature_id: u32,
-) -> Vec<u32> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        surface_merge_entity_dependencies(ctx, affected, replay, tables, feature_id)
-    })
-    .expect("service profile admits surface merge dependencies")
+    }
 }
 
 const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
@@ -455,20 +376,20 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
         .outlines
         .extend([plane(31, 0.0), plane(32, 5.0)]);
 
-    assert!(service_feature_outline_planes(&scan, 911).is_none());
+    assert!(crate::decode::sweep::planes::feature_outline_planes(&scan, 911).is_none());
 
     scan.planes.outlines.push(plane(33, 10.0));
     assert_eq!(
-        service_feature_outline_planes(&scan, 911).map(|planes| planes.len()),
+        crate::decode::sweep::planes::feature_outline_planes(&scan, 911).map(|planes| planes.len()),
         Some(3)
     );
-    assert!(
-        hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes"))
-            .is_none()
-    );
+    assert!(hole_placement(
+        crate::decode::sweep::planes::feature_outline_planes(&scan, 911).expect("complete planes")
+    )
+    .is_none());
 
     scan.planes.outlines.push(plane(33, 10.0));
-    assert!(service_feature_outline_planes(&scan, 911).is_none());
+    assert!(crate::decode::sweep::planes::feature_outline_planes(&scan, 911).is_none());
 }
 
 #[test]
@@ -496,14 +417,17 @@ fn hole_outline_placement_preserves_stored_plane_order() {
         .extend([plane(902, 0.0), plane(701, 6.5)]);
 
     assert_eq!(
-        service_feature_outline_planes(&scan, 911),
+        crate::decode::sweep::planes::feature_outline_planes(&scan, 911),
         Some(vec![
             (902, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
             (701, [0.0, 0.0, 6.5], [0.0, 0.0, 1.0]),
         ])
     );
     assert_eq!(
-        hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes")),
+        hole_placement(
+            crate::decode::sweep::planes::feature_outline_planes(&scan, 911)
+                .expect("complete planes")
+        ),
         Some((
             902,
             [0.0, 0.0, 1.0],
@@ -666,7 +590,7 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
     let consumer = table(416, 100, vec![entry(192, 98, None)]);
 
     assert_eq!(
-        feature_entity_dependencies_with_service(&[producer.clone(), consumer.clone()], 416),
+        feature_entity_dependencies(&[producer.clone(), consumer.clone()], 416),
         [175]
     );
     let duplicate_owned_producer = table(
@@ -675,41 +599,32 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         vec![entry(192, 200, Some(175)), entry(192, 200, Some(175))],
     );
     assert_eq!(
-        feature_entity_dependencies_with_service(
-            &[duplicate_owned_producer.clone(), consumer.clone()],
-            416
-        ),
+        feature_entity_dependencies(&[duplicate_owned_producer.clone(), consumer.clone()], 416),
         [175]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(
-            416,
-            &[duplicate_owned_producer, consumer.clone()]
-        ),
+        knit_class_100_operand_entity_ids(416, &[duplicate_owned_producer, consumer.clone()]),
         None
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(416, &[producer.clone(), consumer.clone()]),
+        knit_class_100_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
         Some(vec![192])
     );
     let source_missing_entry = table(175, 67, vec![entry(192, 200, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(
-            416,
-            &[source_missing_entry.clone(), consumer.clone()]
-        ),
+        knit_class_100_operand_entity_ids(416, &[source_missing_entry.clone(), consumer.clone()]),
         Some(vec![192])
     );
     assert_eq!(
-        feature_entity_dependencies_with_service(&[source_missing_entry, consumer.clone()], 416),
+        feature_entity_dependencies(&[source_missing_entry, consumer.clone()], 416),
         [175]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(416, &[consumer.clone(), producer.clone()]),
+        knit_class_100_operand_entity_ids(416, &[consumer.clone(), producer.clone()]),
         None
     );
     assert_eq!(
-        feature_entity_dependencies_with_service(&[consumer.clone(), producer.clone()], 416),
+        feature_entity_dependencies(&[consumer.clone(), producer.clone()], 416),
         [175]
     );
     assert_eq!(
@@ -725,13 +640,13 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         [40, 175]
     );
     let conflicting = table(312, 67, vec![entry(192, 200, Some(312))]);
-    assert!(feature_entity_dependencies_with_service(
+    assert!(feature_entity_dependencies(
         &[producer.clone(), conflicting.clone(), consumer.clone()],
         416
     )
     .is_empty());
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(
+        knit_class_100_operand_entity_ids(
             416,
             &[producer.clone(), conflicting.clone(), consumer.clone()]
         ),
@@ -758,29 +673,26 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         ],
     );
     assert_eq!(
-        feature_entity_dependencies_with_service(
+        feature_entity_dependencies(
             &[producer.clone(), second_producer, mixed_consumer.clone()],
             419,
         ),
         [175, 176]
     );
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(419, &[producer.clone(), mixed_consumer]),
+        knit_class_100_operand_entity_ids(419, &[producer.clone(), mixed_consumer]),
         None
     );
     let missing = table(417, 100, vec![entry(193, 98, None)]);
-    assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(417, &[missing]),
-        None
-    );
+    assert_eq!(knit_class_100_operand_entity_ids(417, &[missing]), None);
     let duplicate = table(418, 100, vec![entry(192, 98, None), entry(192, 98, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(418, &[producer.clone(), duplicate]),
+        knit_class_100_operand_entity_ids(418, &[producer.clone(), duplicate]),
         None
     );
     let self_reference = table(175, 100, vec![entry(192, 98, None)]);
     assert_eq!(
-        knit_class_100_operand_entity_ids_with_service(175, &[producer, self_reference]),
+        knit_class_100_operand_entity_ids(175, &[producer, self_reference]),
         None
     );
 }
@@ -821,20 +733,13 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
     };
 
     assert_eq!(
-        feature_output_surface_dependencies_with_service(
-            &tables,
-            std::slice::from_ref(&surface),
-            2976
-        ),
+        feature_output_surface_dependencies(&tables, std::slice::from_ref(&surface), 2976),
         [97]
     );
 
     let mut current_surface = surface;
     current_surface.feature_id = 2976;
-    assert!(
-        feature_output_surface_dependencies_with_service(&tables, &[current_surface], 2976)
-            .is_empty()
-    );
+    assert!(feature_output_surface_dependencies(&tables, &[current_surface], 2976).is_empty());
 }
 
 #[test]
@@ -873,12 +778,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     ];
 
     assert_eq!(
-        surface_merge_entity_dependencies_with_service(
-            &[],
-            std::slice::from_ref(&replay),
-            &tables,
-            416
-        ),
+        surface_merge_entity_dependencies(&[], std::slice::from_ref(&replay), &tables, 416),
         [97, 175, 312]
     );
     assert_eq!(
@@ -900,7 +800,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     )
     .with_surface_ids([]);
     assert_eq!(
-        surface_merge_entity_dependencies_with_service(
+        surface_merge_entity_dependencies(
             &[],
             std::slice::from_ref(&replay),
             &[producer(97, 103, 10), wrong_class, producer(312, 329, 30)],
@@ -920,7 +820,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
         offset: 100,
     };
-    assert!(surface_merge_entity_dependencies_with_service(
+    assert!(surface_merge_entity_dependencies(
         &[],
         std::slice::from_ref(&future_replay),
         std::slice::from_ref(&future),
@@ -1049,17 +949,14 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         .push(replay(416, vec![103, 150], 100));
 
     assert_eq!(
-        knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]),
+        knit_operand_surface_ids(&scan, 416, &[103, 150]),
         Some(vec![98, 145])
     );
 
     scan.features
         .entity_tables
         .push(table(312, 67, vec![entry(103, 200, Some(312), 51)], 50));
-    assert_eq!(
-        knit_operand_surface_ids_with_service(&scan, 416, &[103, 150]),
-        None
-    );
+    assert_eq!(knit_operand_surface_ids(&scan, 416, &[103, 150]), None);
 
     scan.features
         .entity_tables
@@ -1067,10 +964,7 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     scan.features
         .surface_merge_replay_affected_ids
         .push(replay(417, vec![777], 100));
-    assert_eq!(
-        knit_operand_surface_ids_with_service(&scan, 417, &[777]),
-        None
-    );
+    assert_eq!(knit_operand_surface_ids(&scan, 417, &[777]), None);
 }
 
 #[test]
@@ -1294,8 +1188,7 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
         });
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| geometry_generator_features(ctx, &scan))
-            .expect("service profile admits generator features"),
+        geometry_generator_features(&scan),
         [GeometryGeneratorFeature {
             feature_id: 50,
             offset: 100,
@@ -1338,8 +1231,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         });
 
     let available_features =
-        crate::decode::with_test_decode_ctx(|ctx| model_feature_ids(ctx, &scan))
-            .expect("service profile admits feature identities");
+        model_feature_ids(&scan).expect("service profile admits feature identities");
     assert_eq!(
         available_features,
         BTreeSet::from([
@@ -1434,10 +1326,7 @@ fn closed_fallback_profile_selects_revolution_segments() {
     ]];
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            profile_segment_ids(ctx, 2, &segments.iter().collect::<Vec<_>>(), &profiles)
-        })
-        .expect("service profile admits two segment ID nodes"),
+        profile_segment_ids(2, &segments.iter().collect::<Vec<_>>(), &profiles),
         BTreeSet::from([9, 11])
     );
 }

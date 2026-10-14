@@ -5,7 +5,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{IdentityError, IdentityNamespace};
@@ -39,106 +38,45 @@ pub(crate) fn section_namespace(name: &str) -> Option<IdentityNamespace> {
 
 /// Build a typed identity after admitting its exact retained text length.
 pub(crate) fn compose_checked<I>(
-    ctx: &DecodeContext<'_>,
     namespace: &IdentityNamespace,
     key: impl Display,
-    operation: &'static str,
 ) -> Result<I, CodecError>
 where
     I: TryFrom<String, Error = IdentityError>,
 {
-    let text = ctx.format_retained(
-        format_args!(
-            "{}:{}:{}#{key}",
-            namespace.format(),
-            namespace.scope(),
-            namespace.kind()
-        ),
-        operation,
-    )?;
+    let text = format!(
+        "{}:{}:{}#{key}",
+        namespace.format(),
+        namespace.scope(),
+        namespace.kind()
+    );
     I::try_from(text).map_err(|_| CodecError::malformed("generated Creo identity is invalid"))
 }
 
-/// Build a temporary typed identity while holding its scoped byte reservation.
-pub(crate) fn compose_scoped<'a, I>(
-    ctx: &'a DecodeContext<'_>,
-    namespace: &IdentityNamespace,
-    key: impl Display,
-    operation: &'static str,
-) -> Result<(I, ScopedReservation<'a>), CodecError>
-where
-    I: TryFrom<String, Error = IdentityError>,
-{
-    let (text, reservation) = ctx.format_scoped(
-        format_args!(
-            "{}:{}:{}#{key}",
-            namespace.format(),
-            namespace.scope(),
-            namespace.kind()
-        ),
-        operation,
-    )?;
-    let id = I::try_from(text)
-        .map_err(|_| CodecError::malformed("generated Creo identity is invalid"))?;
-    Ok((id, reservation))
-}
-
 /// Copy an existing typed identity after admitting its retained text.
-pub(crate) fn copy_checked_id<I>(
-    ctx: &DecodeContext<'_>,
-    source: &str,
-    operation: &'static str,
-) -> Result<I, CodecError>
+pub(crate) fn copy_checked_id<I>(source: &str) -> Result<I, CodecError>
 where
     I: TryFrom<String, Error = IdentityError>,
 {
-    I::try_from(ctx.copy_retained_text(source, operation)?)
+    I::try_from(source.to_owned())
         .map_err(|_| CodecError::malformed("copied Creo identity is invalid"))
 }
 
 /// Build a source-object identity after admitting its retained text.
-pub(crate) fn source_object_id_checked(
-    ctx: &DecodeContext<'_>,
-    value: impl Display,
-    operation: &'static str,
-) -> Result<NonBlankString, CodecError> {
-    NonBlankString::new(ctx.format_retained(format_args!("{value}"), operation)?)
+pub(crate) fn source_object_id_checked(value: impl Display) -> Result<NonBlankString, CodecError> {
+    NonBlankString::new(format!("{value}"))
         .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
 }
 
-/// Return unique native rows after admitting the count map and selected rows.
-pub(crate) fn uniquely_identified_rows_checked<'a, T>(
-    ctx: &DecodeContext<'_>,
-    rows: &'a [T],
-    id: impl Fn(&T) -> u32,
-) -> Result<Vec<&'a T>, CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(rows.len());
-    let lookup_work = 24 * (u64::from(u64::BITS - count.leading_zeros()) + 1);
+/// Return the rows whose identifier occurs exactly once, in input order.
+pub(crate) fn uniquely_identified_rows<T>(rows: &[T], id: impl Fn(&T) -> u32) -> Vec<&T> {
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in rows {
-        ctx.charge_work(lookup_work, "creo unique-row identity work")?;
-        let key = id(row);
-        ctx.admit_btree_entry(&counts, &key, "creo unique-row count nodes")?;
-        match counts.entry(key) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = entry.get().checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo unique-row multiplicity", u64::MAX, u64::MAX)
-                })?;
-            }
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(1);
-            }
-        }
+        *counts.entry(id(row)).or_default() += 1;
     }
-    let mut unique = Vec::new();
-    for row in rows {
-        ctx.charge_work(lookup_work, "creo unique-row identity work")?;
-        if counts.get(&id(row)) == Some(&1) {
-            ctx.reserve_vec(&mut unique, 1, "creo unique-row projection")?;
-            unique.push(row);
-        }
-    }
-    Ok(unique)
+    rows.iter()
+        .filter(|row| counts.get(&id(row)) == Some(&1))
+        .collect()
 }
 
 /// Compare a numbered identity without constructing a temporary identity string.
@@ -258,117 +196,17 @@ pub(crate) const VISIBGEOM_TABULATED_EXTRUSION: IdentityNamespace =
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        compose_checked, compose_scoped, copy_checked_id, matches_numbered_identity,
-        source_object_id_checked,
-    };
+    use super::{compose_checked, copy_checked_id, matches_numbered_identity};
 
-    #[test]
-    fn scoped_identity_refuses_scoped_limit_and_releases_reservation() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = compose_scoped::<ShellId>(
-            &ctx,
-            &crate::identity::VISIBGEOM_SHELL,
-            7,
-            "creo temporary curve identity",
-        )
-        .expect_err("temporary identity exceeds scoped limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::MaterializedBytes
-                && resource.operation == "creo temporary curve identity"));
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:visibgeom:shell#7".len());
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited root admitted");
-        let (id, reservation) = compose_scoped::<ShellId>(
-            &ctx,
-            &crate::identity::VISIBGEOM_SHELL,
-            7,
-            "creo temporary curve identity",
-        )
-        .expect("service temporary identity admitted");
-        assert_eq!(id.as_str(), "creo:visibgeom:shell#7");
-        drop(reservation);
-        compose_scoped::<ShellId>(
-            &ctx,
-            &crate::identity::VISIBGEOM_SHELL,
-            7,
-            "creo temporary curve identity",
-        )
-        .expect("released reservation admits another identity");
-    }
-
-    #[test]
-    fn source_object_identity_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = source_object_id_checked(
-            &ctx,
-            format_args!("VisibGeom:{}", 7),
-            "creo source object identity",
-        )
-        .expect_err("retained identity exceeds the limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo source object identity"));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service root admitted");
-        let id = source_object_id_checked(
-            &ctx,
-            format_args!("VisibGeom:{}", 7),
-            "creo source object identity",
-        )
-        .expect("service identity admitted");
-        assert_eq!(id.as_str(), "VisibGeom:7");
-    }
-
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::ids::ShellId;
 
     #[test]
-    fn composed_identity_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = compose_checked::<ShellId>(
-            &ctx,
-            &crate::identity::VISIBGEOM_SHELL,
-            format_args!("1:{}", 2),
-            "creo B-rep shell identity",
-        )
-        .expect_err("identity text refused");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo B-rep shell identity"));
-    }
-
-    #[test]
     fn checked_identity_preserves_compose_and_copy() {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let composed = compose_checked::<ShellId>(
-            &ctx,
-            &crate::identity::VISIBGEOM_SHELL,
-            format_args!("1:{}", 2),
-            "creo B-rep shell identity",
-        )
-        .expect("service identity admitted");
+        let composed =
+            compose_checked::<ShellId>(&crate::identity::VISIBGEOM_SHELL, format_args!("1:{}", 2))
+                .expect("service identity admitted");
         let copied =
-            copy_checked_id::<ShellId>(&ctx, composed.as_str(), "creo B-rep shell identity copies")
-                .expect("service identity copy admitted");
+            copy_checked_id::<ShellId>(composed.as_str()).expect("service identity copy admitted");
         assert_eq!(
             composed,
             ShellId::compose(

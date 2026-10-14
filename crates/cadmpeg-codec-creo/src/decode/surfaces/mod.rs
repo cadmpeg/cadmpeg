@@ -92,16 +92,10 @@ fn native_surface_namespace(
 
 /// Construct the selected surface identity for a native topology identifier.
 pub(super) fn native_surface_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     surface_id: u32,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
-    crate::identity::compose_checked(
-        ctx,
-        &native_surface_namespace(scan, surface_id).0,
-        surface_id,
-        "creo native surface identity",
-    )
+    crate::identity::compose_checked(&native_surface_namespace(scan, surface_id).0, surface_id)
 }
 
 /// Compare a selected native surface identity without constructing one.
@@ -135,165 +129,8 @@ pub(super) fn unique_native_surface_row<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        matches_native_surface_id, native_surface_id, native_surface_namespace,
-        transfer_part_product,
-    };
+    use super::{matches_native_surface_id, native_surface_id, native_surface_namespace};
     use crate::surface::{SurfaceKind, SurfaceRow};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    fn named_scan() -> crate::container::ContainerScan<'static> {
-        let mut scan = crate::test_support::empty_container_scan();
-        scan.framing.model_name = Some(crate::container::ModelName {
-            name: "wheel".into(),
-            offset: 0,
-        });
-        scan
-    }
-
-    fn limited_product(
-        scan: &crate::container::ContainerScan<'_>,
-        collection_limit: u64,
-        retained_limit: u64,
-        with_body: bool,
-    ) -> Result<bool, cadmpeg_core::CodecError> {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_limit;
-        policy.limits.max_retained_bytes = retained_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut ir = cadmpeg_ir::document::CadIr::empty();
-        if with_body {
-            ir.model.bodies.push(cadmpeg_ir::topology::Body {
-                id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#1").expect("identity grammar"),
-                kind: cadmpeg_ir::topology::BodyKind::Solid,
-                regions: Vec::new(),
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-            });
-        }
-        transfer_part_product(
-            &ctx,
-            scan,
-            &mut ir,
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-    }
-
-    #[test]
-    fn part_product_refuses_before_model_vector_growth() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, false)
-            .expect_err("product exceeds the configured resource limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo model product definitions")
-        );
-    }
-
-    #[test]
-    fn part_product_name_copies_refuse_before_each_retained_growth() {
-        // Each copy boundary includes the preceding annotation backing nodes.
-        for operation in [
-            "creo product definition reference",
-            "creo product source name",
-            "creo product label",
-            "creo product part number",
-            "creo occurrence name",
-        ] {
-            let error = cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::RetainedBytes,
-                operation,
-                |cap| limited_product(&named_scan(), u64::MAX, cap, false),
-            );
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation),
-                "{operation}: {error:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn part_product_identities_refuse_before_allocation() {
-        let error = limited_product(&named_scan(), u64::MAX, 0, false)
-            .expect_err("product exceeds the configured resource limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo occurrence identity")
-        );
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = transfer_part_product(
-            &ctx,
-            &named_scan(),
-            &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-        .expect_err("product identity exceeds temporary-byte limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::MaterializedBytes
-                && resource.operation == "creo product identity")
-        );
-    }
-
-    #[test]
-    fn part_product_refuses_before_body_reference_rows_and_ids() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, true)
-            .expect_err("product exceeds the configured resource limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo product body references"),
-            "{error:?}"
-        );
-        // Admit annotation and body-reference slots before refusing the copied body identity.
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "creo product body IDs",
-            |cap| limited_product(&named_scan(), u64::MAX, cap, true),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo product body IDs"),
-            "{error:?}"
-        );
-    }
-
-    #[test]
-    fn part_product_identity_retention_refuses_before_occurrence_transfer() {
-        let product_id_len = cadmpeg_core::decode::u64_from_index(
-            cadmpeg_ir::ids::ProductDefinitionId::compose(
-                &crate::identity::MODEL_PRODUCT_DEFINITION,
-                cadmpeg_ir::identity_key!("root"),
-            )
-            .as_str()
-            .len(),
-        );
-        // Identity retention follows annotation nodes and product-vector capacity.
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "creo product identity",
-            |cap| limited_product(&named_scan(), u64::MAX, cap, false),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "creo product identity"
-                && limit.additional == product_id_len)
-        );
-    }
 
     #[test]
     fn native_surface_id_preserves_nonvisible_namespace() {
@@ -308,8 +145,8 @@ mod tests {
             offset: 0,
         });
 
-        let native = crate::decode::with_test_decode_ctx(|ctx| native_surface_id(ctx, &scan, 17))
-            .expect("service native surface identity admitted");
+        let native =
+            native_surface_id(&scan, 17).expect("service native surface identity admitted");
         assert_eq!(native.as_str(), "creo:novisgeom:surface#17");
         let prefix = native_surface_namespace(&scan, 17).1;
         assert!(crate::identity::matches_numbered_identity(
@@ -326,22 +163,6 @@ mod tests {
         ));
         assert!(!matches_native_surface_id(&scan, 17, &visible));
     }
-
-    #[test]
-    fn native_surface_id_refuses_retained_limit() {
-        let scan = named_scan();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = native_surface_id(&ctx, &scan, 17).expect_err("surface ID refused");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native surface identity")
-        );
-    }
 }
 
 pub(super) fn transfer_part_product(
@@ -356,18 +177,13 @@ pub(super) fn transfer_part_product(
     };
     let model_name_offset = model_name.offset;
     let model_name = &model_name.name;
-    let (product_id, product_id_reservation) =
-        crate::identity::compose_scoped::<ProductDefinitionId>(
-            ctx,
-            &crate::identity::MODEL_PRODUCT_DEFINITION,
-            "root",
-            "creo product identity",
-        )?;
+    let product_id = crate::identity::compose_checked::<ProductDefinitionId>(
+        &crate::identity::MODEL_PRODUCT_DEFINITION,
+        "root",
+    )?;
     let occurrence_id = crate::identity::compose_checked::<OccurrenceId>(
-        ctx,
         &crate::identity::MODEL_OCCURRENCE,
         "root",
-        "creo occurrence identity",
     )?;
     annotate(
         ctx,
@@ -389,29 +205,17 @@ pub(super) fn transfer_part_product(
     )?;
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
     let mut bodies = Vec::new();
-    ctx.reserve_vec(
-        &mut bodies,
-        ir.model.bodies.len(),
-        "creo product body references",
-    )?;
     for body in &ir.model.bodies {
-        let body_id = ctx.copy_retained_text(body.id.as_str(), "creo product body IDs")?;
+        let body_id = body.id.as_str().to_owned();
         bodies.push(
             cadmpeg_ir::ids::BodyId::mint(body_id).map_err(cadmpeg_core::CodecError::malformed)?,
         );
     }
-    let product_ref = ProductDefinitionId::mint(
-        ctx.copy_retained_text(product_id.as_str(), "creo product definition reference")?,
-    )
-    .map_err(cadmpeg_core::CodecError::malformed)?;
-    let source_name = ctx.copy_retained_text(model_name, "creo product source name")?;
-    let label = ctx.copy_retained_text(model_name, "creo product label")?;
-    let part_number = ctx.copy_retained_text(model_name, "creo product part number")?;
-    ctx.reserve_vec(
-        &mut ir.model.product_definitions,
-        1,
-        "creo model product definitions",
-    )?;
+    let product_ref = ProductDefinitionId::mint(product_id.as_str().to_owned())
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    let source_name = model_name.to_owned();
+    let label = model_name.to_owned();
+    let part_number = model_name.to_owned();
     ir.model.product_definitions.push(ProductDefinition {
         id: product_ref,
         kind: ProductDefinitionKind::Part,
@@ -424,10 +228,8 @@ pub(super) fn transfer_part_product(
         native_ref: None,
     });
     ctx.charge_entities(1, "admit Creo model occurrences")?;
-    let occurrence_name = ctx.copy_retained_text(model_name, "creo occurrence name")?;
-    product_id_reservation.commit()?;
+    let occurrence_name = model_name.to_owned();
     source_carriers.admit_occurrence(
-        ctx,
         ir,
         Occurrence {
             id: occurrence_id,
@@ -639,7 +441,6 @@ pub(super) fn transfer_fc05_cap_circles(
             axis_sign,
         );
         let witness = crate::decode::analytic::planes::fc05_cylinder_model_witness(
-            ctx,
             scan,
             cylinder_id,
             crate::decode::analytic::equations::CylinderEquation {
@@ -648,17 +449,15 @@ pub(super) fn transfer_fc05_cap_circles(
                 ref_direction: legacy_frame.2,
                 radius: circle.radius_mm,
             },
-        )?;
+        );
         let mut surface_origin = witness.origin;
         if let Some(frame) = pair_frame {
             surface_origin[axis_index.index()] = frame.origin[axis_index.index()];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
         let id = crate::identity::compose_checked::<CurveId>(
-            ctx,
             &crate::identity::VISIBGEOM_CURVE,
             circle.curve_id,
-            "creo FC05 cap circle identity",
         )?;
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -689,10 +488,10 @@ pub(super) fn transfer_fc05_cap_circles(
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                            format_args!("VisibGeom:{}", circle.curve_id),
-                            "creo FC05 cap circle source object ID",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                            "VisibGeom:{}",
+                            circle.curve_id
+                        ))
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -708,10 +507,8 @@ pub(super) fn transfer_fc05_cap_circles(
             )?;
         }
         let surface_id = crate::identity::compose_checked::<SurfaceId>(
-            ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             cylinder_id,
-            "creo FC05 axis cylinder identity",
         )?;
         if ir
             .model
@@ -750,10 +547,9 @@ pub(super) fn transfer_fc05_cap_circles(
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
-                        format_args!("VisibGeom:{cylinder_id}"),
-                        "creo FC05 axis cylinder source object ID",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{cylinder_id}"
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,

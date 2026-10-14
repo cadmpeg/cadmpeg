@@ -30,9 +30,9 @@ use super::super::feature_history::named::{
     retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
-    copy_body_id, decoded_feature_reference_name, feature_output_bodies, feature_parameters,
-    feature_reference_name, feature_source_properties, insert_feature_source_property,
-    schema_operation_kind, SchemaClassList,
+    copy_body_id, feature_output_bodies, feature_parameters, feature_reference_name,
+    feature_source_properties, insert_feature_source_property, schema_operation_kind,
+    SchemaClassList,
 };
 use super::super::native::annotate;
 use super::super::sketch_ids::owning_feature_definition_ref;
@@ -43,22 +43,15 @@ use crate::decode::sketch_transfer::recipe::{
     feature_schema_class, row_feature_schema_classes,
 };
 
-fn compose_feature_id<'a>(
-    ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
-    feature_id: u32,
-) -> Result<(IrFeatureId, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::CodecError> {
+fn compose_feature_id(feature_id: u32) -> Result<IrFeatureId, cadmpeg_core::CodecError> {
     let namespace = &crate::identity::MODEL_FEATURE;
-    let (text, reservation) = ctx.format_scoped(
-        format_args!(
-            "{}:{}:{}#{feature_id}",
-            namespace.format(),
-            namespace.scope(),
-            namespace.kind()
-        ),
-        "creo model feature identity",
-    )?;
-    let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
-    Ok((id, reservation))
+    let text = format!(
+        "{}:{}:{}#{feature_id}",
+        namespace.format(),
+        namespace.scope(),
+        namespace.kind()
+    );
+    IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 fn append_regeneration_edge(
@@ -67,7 +60,6 @@ fn append_regeneration_edge(
     child: &IrFeatureId,
     parent: &IrFeatureId,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.reserve_vec(edges, 1, "creo regeneration edges")?;
     let child = child.try_clone_for_decode(ctx, "creo regeneration child identity")?;
     let parent = parent.try_clone_for_decode(ctx, "creo regeneration parent identity")?;
     edges.push((child, parent));
@@ -91,7 +83,6 @@ fn refresh_feature_outputs(
     scan: &ContainerScan,
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut update_storage = ctx.reserve_scoped(0, "Creo feature output update storage")?;
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
@@ -107,9 +98,6 @@ fn refresh_feature_outputs(
             ctx,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
-        update_storage.with_storage(|| {
-            ctx.reserve_vec(&mut output_updates, 1, "creo feature output update rows")
-        })?;
         output_updates.push((index, outputs));
     }
     for (index, outputs) in output_updates {
@@ -118,33 +106,24 @@ fn refresh_feature_outputs(
     Ok(())
 }
 
-fn ordered_row_feature_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    rows: &[crate::feature::rows::FeatureRow],
-) -> Result<Vec<u32>, cadmpeg_core::CodecError> {
-    let mut seen_storage = ctx.reserve_scoped(0, "Creo row feature identity lookup")?;
+fn ordered_row_feature_ids(rows: &[crate::feature::rows::FeatureRow]) -> Vec<u32> {
     let mut seen = BTreeSet::new();
     let mut ids = Vec::new();
     for row in rows {
-        if seen_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut seen, row.feature_id, "creo feature row identity nodes")
-        })? {
-            ctx.reserve_vec(&mut ids, 1, "creo feature row IDs")?;
+        if seen.insert(row.feature_id) {
             ids.push(row.feature_id);
         }
     }
-    Ok(ids)
+    ids
 }
 
 fn merge_feature_source_properties(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     incoming: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for (key, value) in incoming {
-        ctx.insert_btree_map(target, key, value, "creo IR Feature source property nodes")?;
+        target.insert(key, value);
     }
-    Ok(())
 }
 
 fn merge_feature_dependencies(
@@ -165,25 +144,17 @@ pub(super) fn emit_model_features(
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let mut lookup_storage = ctx.reserve_scoped(0, "Creo feature emission lookup storage")?;
     let mut regeneration_edges = Vec::new();
-    let prototype_feature_dependencies =
-        lookup_storage.with_storage(|| surface_prototype_feature_dependencies(ctx, scan))?;
+    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     let mut operation_feature_ids = BTreeSet::new();
     for operation in &scan.features.operations {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut operation_feature_ids,
-                operation.feature_id,
-                "creo operation feature identity nodes",
-            )
-        })?;
+        operation_feature_ids.insert(operation.feature_id);
     }
     for datum in &scan.planes.datums {
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
         }
-        let (id, id_bytes) = compose_feature_id(ctx, datum.feature_id)?;
+        let id = compose_feature_id(datum.feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -197,7 +168,6 @@ pub(super) fn emit_model_features(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
-        id_bytes.commit()?;
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -210,8 +180,7 @@ pub(super) fn emit_model_features(
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                if unique_feature_datum_plane(ctx, &scan.planes.datums, datum.feature_id)?.is_some()
-                {
+                if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id).is_some() {
                     datum_plane_feature_definition(&datum.plane())
                 } else {
                     IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
@@ -223,12 +192,11 @@ pub(super) fn emit_model_features(
         };
         source_carriers.admit_feature(ctx, ir, feature)?;
     }
-    let row_feature_ids =
-        lookup_storage.with_storage(|| ordered_row_feature_ids(ctx, &scan.features.rows))?;
+    let row_feature_ids = ordered_row_feature_ids(&scan.features.rows);
     let mut geometry_generator_feature_count = 0;
-    for generator in lookup_storage.with_storage(|| geometry_generator_features(ctx, scan))? {
+    for generator in geometry_generator_features(scan) {
         let feature_id = generator.feature_id;
-        let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
+        let id = compose_feature_id(feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -242,7 +210,6 @@ pub(super) fn emit_model_features(
             Exactness::ByteExact,
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
-        id_bytes.commit()?;
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -299,18 +266,17 @@ pub(super) fn emit_model_features(
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
-        let mut source_properties = feature_source_properties(ctx, scan, operation.feature_id)?;
+        let mut source_properties = feature_source_properties(scan, operation.feature_id);
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
             insert_feature_source_property(
-                ctx,
                 &mut source_properties,
                 "mdl_stored_name_prefix",
                 char::from(prefix),
-            )?;
+            );
         }
-        let mut parameters = feature_parameters(ctx, scan, operation.feature_id)?;
+        let mut parameters = feature_parameters(scan, operation.feature_id);
         let schema_class = feature_schema_class(scan, operation.feature_id);
         let definition = schema_class.map_or_else(
             || {
@@ -341,7 +307,6 @@ pub(super) fn emit_model_features(
                     })
                     .or_else(|| {
                         match unbounded_feature_plane_definition(
-                            ctx,
                             scan,
                             ir,
                             source_carriers,
@@ -354,13 +319,9 @@ pub(super) fn emit_model_features(
                     })
                     .unwrap_or_else(|| {
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                            kind: ctx
-                                .copy_retained_text(
-                                    current_operation.map_or("Native Feature", |operation| {
-                                        operation.kind.as_str()
-                                    }),
-                                    "creo native Feature kind",
-                                )?
+                            kind: current_operation
+                                .map_or("Native Feature", |operation| operation.kind.as_str())
+                                .to_owned()
                                 .into(),
                             parameters: cadmpeg_core::text::named_entries_for_decode(
                                 ctx,
@@ -382,9 +343,8 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
+        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(
-            ctx,
             scan,
             ir,
             operation.feature_id,
@@ -413,14 +373,12 @@ pub(super) fn emit_model_features(
                         bytes.strip_prefix(prefix.as_bytes())
                     })
                     .unwrap_or(bytes);
-                ctx.copy_retained_lossy_utf8(stripped, "creo stored Feature name")
-            })
-            .transpose()?;
+                String::from_utf8_lossy(stripped).into_owned()
+            });
         let source_tag = current_feature_recipe(&scan.features.operations, operation.feature_id)
-            .map(|recipe| ctx.copy_retained_text(recipe.name(), "creo Feature source tag"))
-            .transpose()?;
-        let native_ref = owning_feature_definition_ref(ctx, scan, operation.feature_id)?;
-        let (id, id_bytes) = compose_feature_id(ctx, operation.feature_id)?;
+            .map(|recipe| recipe.name().to_owned());
+        let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
+        let id = compose_feature_id(operation.feature_id)?;
         let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
             .and_then(|parent_feature_id| {
                 ir.model.features.iter().find(|feature| {
@@ -433,9 +391,7 @@ pub(super) fn emit_model_features(
             })
             .map(|feature| &feature.id);
         if let Some(parent) = parent {
-            lookup_storage.with_storage(|| {
-                append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)
-            })?;
+            append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)?;
         }
         if let Some(existing) = ir
             .model
@@ -464,14 +420,13 @@ pub(super) fn emit_model_features(
             }
             merge_feature_dependencies(ctx, &mut existing.dependencies, dependencies)?;
             merge_feature_source_properties(
-                ctx,
                 &mut existing.source_properties,
                 cadmpeg_core::text::named_entries_for_decode(
                     ctx,
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
                 )?,
-            )?;
+            );
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
             }
@@ -480,13 +435,11 @@ pub(super) fn emit_model_features(
             }
             let mut combined_outputs = Vec::new();
             for body in existing.evaluation.outputs() {
-                let copy = copy_body_id(ctx, body)?;
-                ctx.reserve_vec(&mut combined_outputs, 1, "creo combined feature outputs")?;
+                let copy = copy_body_id(body)?;
                 combined_outputs.push(copy);
             }
             for output in outputs {
                 if !combined_outputs.contains(&output) {
-                    ctx.reserve_vec(&mut combined_outputs, 1, "creo combined feature outputs")?;
                     combined_outputs.push(output);
                 }
             }
@@ -513,7 +466,6 @@ pub(super) fn emit_model_features(
             operation_annotation_kind,
             operation_exactness,
         )?;
-        id_bytes.commit()?;
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
@@ -541,7 +493,7 @@ pub(super) fn emit_model_features(
         refresh_feature_outputs(ctx, scan, ir)?;
     }
     for feature_id in row_feature_ids {
-        let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
+        let id = compose_feature_id(feature_id)?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -557,9 +509,7 @@ pub(super) fn emit_model_features(
             continue;
         };
         ctx.charge_entities(1, "admit Creo model features")?;
-        let reference_name = feature_reference_name(scan, feature_id)
-            .map(|bytes| decoded_feature_reference_name(ctx, bytes))
-            .transpose()?;
+        let reference_name = feature_reference_name(scan, feature_id).map(String::from_utf8_lossy);
         let reference_name = reference_name.as_deref();
         let kind = reference_name.unwrap_or_else(|| {
             schema_class
@@ -575,8 +525,8 @@ pub(super) fn emit_model_features(
             "schema_feature_operation",
             Exactness::ByteExact,
         )?;
-        let mut parameters = feature_parameters(ctx, scan, feature_id)?;
-        let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
+        let mut parameters = feature_parameters(scan, feature_id);
+        let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
             || match match named_feature_definition(
                 ctx,
@@ -587,15 +537,11 @@ pub(super) fn emit_model_features(
                 kind,
             )? {
                 Some(definition) => Some(definition),
-                None => {
-                    unbounded_feature_plane_definition(ctx, scan, ir, source_carriers, feature_id)?
-                }
+                None => unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id)?,
             } {
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                    kind: ctx
-                        .copy_retained_text(kind, "creo native row Feature kind")?
-                        .into(),
+                    kind: kind.to_owned().into(),
                     parameters: cadmpeg_core::text::named_entries_for_decode(
                         ctx,
                         format_args!("creo:model:feature#{feature_id}"),
@@ -615,10 +561,9 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        let row_schema_classes = row_feature_schema_classes(ctx, &scan.features.rows, feature_id)?;
+        let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
         if schema_class.is_none() {
             insert_feature_source_property(
-                ctx,
                 &mut source_properties,
                 "featdefs_schema_state",
                 if row_schema_classes.is_empty() {
@@ -626,31 +571,26 @@ pub(super) fn emit_model_features(
                 } else {
                     "ambiguous"
                 },
-            )?;
+            );
         }
         if !row_schema_classes.is_empty() {
             insert_feature_source_property(
-                ctx,
                 &mut source_properties,
                 "featdefs_row_schema_classes",
                 SchemaClassList(&row_schema_classes),
-            )?;
+            );
         }
-        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
-        id_bytes.commit()?;
+        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let feature = Feature {
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: Some(match reference_name {
-                Some(name) => ctx.copy_retained_text(name, "creo row Feature name")?,
-                None => ctx.format_retained(
-                    format_args!("{kind} id {feature_id}"),
-                    "creo row Feature name",
-                )?,
+                Some(name) => name.to_owned(),
+                None => format!("{kind} id {feature_id}"),
             }),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                feature_dependencies(ctx, scan, ir, feature_id, &prototype_feature_dependencies)?,
+                feature_dependencies(scan, ir, feature_id, &prototype_feature_dependencies)?,
                 ctx,
             )
             .map_err(cadmpeg_core::CodecError::from)?,
@@ -671,7 +611,7 @@ pub(super) fn emit_model_features(
                 )
                 .map_err(cadmpeg_core::CodecError::from)?,
             ),
-            native_ref: owning_feature_definition_ref(ctx, scan, feature_id)?,
+            native_ref: owning_feature_definition_ref(scan, feature_id),
         };
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
@@ -688,9 +628,7 @@ pub(super) fn finish_feature_transfers(
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
-    let mut lookup_storage = ctx.reserve_scoped(0, "Creo final feature prototype lookup")?;
-    let prototype_feature_dependencies =
-        lookup_storage.with_storage(|| surface_prototype_feature_dependencies(ctx, scan))?;
+    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(ctx, scan, ir)?;
     reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;
