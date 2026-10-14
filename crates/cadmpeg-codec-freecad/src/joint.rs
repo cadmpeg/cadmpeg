@@ -17,17 +17,12 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
-    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD joint owner storage")?;
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            owner_storage
-                .with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd joint owner index"))?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            owner_storage
-                .with_storage(|| ctx.reserve_vec(owned, 1, "fcstd joint owner properties"))?;
             owned.push(property);
         }
     }
@@ -36,20 +31,15 @@ pub(crate) fn transfer(
         let source = by_owner
             .get(object.id().as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = owner_storage
-            .with_storage(|| ctx.collection_vec(source.len(), "fcstd joint selected properties"))?;
+        let mut owned = Vec::new();
         owned.extend_from_slice(source);
-        let grounded_property = sole_named_property(ctx, "joint", &owned, "ObjectToGround")?;
-        let joint_type_property = sole_named_property(ctx, "joint", &owned, "JointType")?;
+        let grounded_property = sole_named_property("joint", &owned, "ObjectToGround")?;
+        let joint_type_property = sole_named_property("joint", &owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
-            return Err(crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "joint object {} carries both ObjectToGround and JointType",
-                    object.id()
-                ),
-                "fcstd joint diagnostic",
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "joint object {} carries both ObjectToGround and JointType",
+                object.id()
+            )));
         }
         if let Some(property) = grounded_property {
             let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
@@ -62,40 +52,31 @@ pub(crate) fn transfer(
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
             ) && !legacy_empty_sub
             {
-                return Err(crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint property {} has the wrong runtime type for ObjectToGround",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                ));
+                return Err(CodecError::malformed(format_args!(
+                    "joint property {} has the wrong runtime type for ObjectToGround",
+                    property.id
+                )));
             }
         }
         if let Some(property) = joint_type_property {
             if property.type_name != "App::PropertyEnumeration" {
-                return Err(crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint property {} has the wrong runtime type for JointType",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                ));
+                return Err(CodecError::malformed(format_args!(
+                    "joint property {} has the wrong runtime type for JointType",
+                    property.id
+                )));
             }
         }
         let joint_type = joint_type_property
             .map(|property| enumeration_value(ctx, property))
             .transpose()?;
         let body = if grounded_property.is_some() {
-            let placement = placement(ctx, &owned, "Placement")?.unwrap_or_default();
+            let placement = placement(&owned, "Placement")?.unwrap_or_default();
             let reference = grounded_property
                 .into_iter()
                 .flat_map(PropertyRecord::links)
                 .flatten()
                 .find(|link| link.document().is_some() || link.object().is_some())
-                .map(|link| link.clone_with_context(ctx))
-                .transpose()?;
+                .cloned();
             JointBody::Grounded {
                 reference,
                 placement,
@@ -107,9 +88,9 @@ pub(crate) fn transfer(
                                     offset_name: &str|
              -> Result<JointConnectorRecord, CodecError> {
                 Ok(JointConnectorRecord {
-                    reference: connector(ctx, owned, reference_name)?,
-                    placement: placement(ctx, owned, placement_name)?.unwrap_or_default(),
-                    offset: placement(ctx, owned, offset_name)?.unwrap_or_default(),
+                    reference: connector(owned, reference_name)?,
+                    placement: placement(owned, placement_name)?.unwrap_or_default(),
+                    offset: placement(owned, offset_name)?.unwrap_or_default(),
                 })
             };
             JointBody::Pair {
@@ -142,20 +123,13 @@ pub(crate) fn transfer(
                     | "Suppressed"
             )
         }) {
-            if let Some(value) = scalar_parameter(ctx, property)? {
-                ctx.insert_btree_map(
-                    &mut parameters,
-                    ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?,
-                    value,
-                    "fcstd joint parameters",
-                )?;
+            if let Some(value) = scalar_parameter(property)? {
+                parameters.insert(property.name.clone(), value);
             }
         }
-        ctx.reserve_vec(&mut output, 1, "fcstd joint records")?;
         output.push(JointRecord::try_new(
-            ctx,
-            crate::native::native_id_charged(ctx, "joint", object.name())?,
-            ctx.copy_retained_text(object.id(), "fcstd joint object")?,
+            crate::native::native_id("joint", object.name()),
+            object.id().to_owned(),
             body,
             parameters,
         )?);
@@ -168,19 +142,7 @@ pub(crate) fn transfer_neutral(
     records: &[JointRecord],
     occurrences: &[Occurrence],
 ) -> Result<Vec<AssemblyJoint>, CodecError> {
-    let count = occurrences
-        .iter()
-        .filter(|occurrence| occurrence.native_ref.is_some())
-        .count();
-    let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD joint occurrence lookup")?;
     let mut occurrence_by_native = HashMap::new();
-    lookup_storage.with_storage(|| {
-        ctx.reserve_map(
-            &mut occurrence_by_native,
-            count,
-            "fcstd joint occurrence index",
-        )
-    })?;
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
             occurrence_by_native.insert(native, &occurrence.id);
@@ -232,24 +194,20 @@ pub(crate) fn transfer_neutral(
             let Some(name) = reference.object() else {
                 return Ok(None);
             };
-            let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
-            let mut subelements = ctx.collection_vec(
-                reference.subelements().len(),
-                "fcstd joint operand subelements",
-            )?;
+            let object = name.to_owned();
+            let mut subelements = Vec::new();
             for name in reference
                 .subelements()
                 .iter()
                 .filter(|name| !name.is_empty())
             {
-                subelements.push(ctx.copy_retained_text(name, "fcstd joint operand subelement")?);
+                subelements.push(name.to_owned());
             }
             if let Some(document) = reference.document() {
-                let document = crate::product::external_document_reference_charged(
-                    ctx,
+                let document = crate::product::external_document_reference(
                     document.as_str(),
                     document.attribute(),
-                )?;
+                );
                 return Ok(Some(JointOperand::external(document, object, subelements)));
             }
             Ok(Some(match occurrence_by_native.get(name).copied() {
@@ -261,12 +219,11 @@ pub(crate) fn transfer_neutral(
                 None => JointOperand::root(object, subelements),
             }))
         };
-        let id = JointId::mint(crate::native::model_id_charged(
-            ctx,
+        let id = JointId::mint(crate::native::model_id(
             "joint",
             record.object(),
             "constraint",
-        )?)
+        ))
         .map_err(CodecError::malformed)?;
         let angle = scalar("Angle").map(|value| value.get().to_radians());
         let distance = scalar("Distance");
@@ -309,7 +266,6 @@ pub(crate) fn transfer_neutral(
             JointBody::Pair { kind, connectors } => {
                 let [first, second] = connectors.as_ref();
                 let kind = joint_kind(
-                    ctx,
                     kind,
                     angle,
                     distance,
@@ -349,16 +305,14 @@ pub(crate) fn transfer_neutral(
             }
         };
         joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
-        joint.native_ref =
-            Some(ctx.copy_retained_text(record.id(), "fcstd joint native reference")?);
-        ctx.reserve_vec(&mut output, 1, "fcstd neutral joints")?;
+        joint.native_ref = Some(record.id().to_owned());
+
         output.push(joint);
     }
     Ok(output)
 }
 
 fn joint_kind(
-    ctx: &DecodeContext<'_>,
     kind: &PairedJointFamily,
     angle: Option<f64>,
     distance: Option<FiniteReal>,
@@ -371,13 +325,8 @@ fn joint_kind(
             .ok_or_else(|| CodecError::Malformed("joint scalar must be finite".into()))
     };
     let angle = angle.map(finite_angle).transpose()?;
-    let (mut lower, _reservation) =
-        ctx.temporary_vec::<u8>(kind.as_str().len(), "fcstd joint kind matching")?;
-    lower.extend_from_slice(kind.as_str().as_bytes());
-    lower.make_ascii_lowercase();
-    let lower = std::str::from_utf8(&lower)
-        .map_err(|_| CodecError::Malformed("joint kind lost UTF-8 encoding".into()))?;
-    Ok(match lower {
+    let lower = kind.as_str().to_ascii_lowercase();
+    Ok(match lower.as_str() {
         "fixed" => PairedJointKind::Fixed {
             angle,
             translation_offset: None,
@@ -418,7 +367,7 @@ fn joint_kind(
             distance2,
         },
         _ => PairedJointKind::Native {
-            name: ctx.copy_retained_text(kind.as_str(), "fcstd native joint kind")?,
+            name: kind.as_str().to_owned(),
             angle,
             translation_offset: None,
             distance,
@@ -439,162 +388,110 @@ fn enumeration_value(
             let CodecError::Malformed(error) = error else {
                 return error;
             };
-            crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "joint enumeration property {} has invalid XML: {error}",
-                    property.id
-                ),
-                "fcstd joint diagnostic",
-            )
+            CodecError::malformed(format_args!(
+                "joint enumeration property {} has invalid XML: {error}",
+                property.id
+            ))
         })?;
     let document = admitted_document.document();
     let root = document.root_element();
     if !root.has_tag_name("Property") {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint enumeration property {} has no Property root",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint enumeration property {} has no Property root",
+            property.id
+        )));
     }
     let mut values = root.children().filter(roxmltree::Node::is_element);
     let Some(integer) = values.next().filter(|value| value.has_tag_name("Integer")) else {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint enumeration property {} requires one direct Integer value",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint enumeration property {} requires one direct Integer value",
+            property.id
+        )));
     };
     if integer.children().any(|value| value.is_element()) {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint enumeration property {} has nested Integer values",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint enumeration property {} has nested Integer values",
+            property.id
+        )));
     }
     let custom_list = values.next();
     if values.next().is_some()
         || custom_list.is_some_and(|value| !value.has_tag_name("CustomEnumList"))
     {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint enumeration property {} has extra direct value roots",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint enumeration property {} has extra direct value roots",
+            property.id
+        )));
     }
     let custom = match integer.attribute("CustomEnum") {
         None => false,
         Some("true") => true,
         Some(_) => {
-            return Err(crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "joint enumeration property {} has an invalid CustomEnum marker",
-                    property.id
-                ),
-                "fcstd joint diagnostic",
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "joint enumeration property {} has an invalid CustomEnum marker",
+                property.id
+            )));
         }
     };
     if custom != custom_list.is_some() {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint enumeration property {} has inconsistent custom enumeration carriers",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint enumeration property {} has inconsistent custom enumeration carriers",
+            property.id
+        )));
     }
     let index = integer
         .attribute("value")
         .ok_or_else(|| {
-            crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "joint enumeration property {} has no Integer value",
-                    property.id
-                ),
-                "fcstd joint diagnostic",
-            )
+            CodecError::malformed(format_args!(
+                "joint enumeration property {} has no Integer value",
+                property.id
+            ))
         })?
         .parse::<usize>()
         .map_err(|_| {
-            crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "joint enumeration property {} has an invalid Integer value",
-                    property.id
-                ),
-                "fcstd joint diagnostic",
-            )
+            CodecError::malformed(format_args!(
+                "joint enumeration property {} has an invalid Integer value",
+                property.id
+            ))
         })?;
     let selected = if let Some(custom_list) = custom_list {
         let count = custom_list
             .attribute("count")
             .ok_or_else(|| {
-                crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint enumeration property {} CustomEnumList has no count",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                )
+                CodecError::malformed(format_args!(
+                    "joint enumeration property {} CustomEnumList has no count",
+                    property.id
+                ))
             })?
             .parse::<usize>()
             .map_err(|_| {
-                crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint enumeration property {} CustomEnumList count is invalid",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                )
+                CodecError::malformed(format_args!(
+                    "joint enumeration property {} CustomEnumList count is invalid",
+                    property.id
+                ))
             })?;
         let values = custom_list.children().filter(roxmltree::Node::is_element);
         let found = values.clone().count();
         if found != count || values.clone().any(|value| !value.has_tag_name("Enum")) {
-            return Err(crate::resource::malformed_charged(ctx, format_args!(
+            return Err(CodecError::malformed(format_args!(
                 "joint enumeration property {} CustomEnumList count={count} but {} direct Enum values were found",
                 property.id,
                 found
-            ), "fcstd joint diagnostic"));
+            )));
         }
         let mut selected = None;
         for (position, value) in values.enumerate() {
             if value.children().any(|child| child.is_element()) {
-                return Err(crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint enumeration property {} has nested Enum values",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                ));
+                return Err(CodecError::malformed(format_args!(
+                    "joint enumeration property {} has nested Enum values",
+                    property.id
+                )));
             }
             let text = value.attribute("value").ok_or_else(|| {
-                crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint enumeration property {} Enum has no value",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                )
+                CodecError::malformed(format_args!(
+                    "joint enumeration property {} Enum has no value",
+                    property.id
+                ))
             })?;
             if position == index {
                 selected = Some(text);
@@ -604,16 +501,13 @@ fn enumeration_value(
     } else {
         None
     };
-    match selected {
-        Some(value) => ctx.copy_retained_text(value, "fcstd joint enumeration value"),
-        None => ctx.format_retained(format_args!("{index}"), "fcstd joint enumeration index"),
-    }
+    Ok(match selected {
+        Some(value) => value.to_owned(),
+        None => index.to_string(),
+    })
 }
 
-fn scalar_parameter(
-    ctx: &DecodeContext<'_>,
-    property: &PropertyRecord,
-) -> Result<Option<String>, CodecError> {
+fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
     let (expected_type, expected_tag) = match property.name.as_str() {
         "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
         "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
@@ -622,41 +516,28 @@ fn scalar_parameter(
         _ => return Ok(None),
     };
     if property.type_name != expected_type {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {} has runtime type {}, expected {expected_type}",
-                property.id, property.type_name
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint parameter property {} has runtime type {}, expected {expected_type}",
+            property.id, property.type_name
+        )));
     }
     let [value] = property.values() else {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {} requires one {expected_tag} value",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint parameter property {} requires one {expected_tag} value",
+            property.id
+        )));
     };
     if value.tag != expected_tag {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {} requires a {expected_tag} value",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint parameter property {} requires a {expected_tag} value",
+            property.id
+        )));
     }
     let value = value.attributes.get("value").ok_or_else(|| {
-        crate::resource::malformed_charged(
-            ctx,
-            format_args!("joint parameter property {} has no value", property.id),
-            "fcstd joint diagnostic",
-        )
+        CodecError::malformed(format_args!(
+            "joint parameter property {} has no value",
+            property.id
+        ))
     })?;
     if expected_tag == "Float"
         && value
@@ -665,83 +546,60 @@ fn scalar_parameter(
             .and_then(FiniteReal::new)
             .is_none()
     {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {}: joint parameter {} has an invalid value {value:?}",
-                property.id, property.name,
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint parameter property {}: joint parameter {} has an invalid value {value:?}",
+            property.id, property.name,
+        )));
     }
-    Ok(Some(ctx.copy_retained_text(
-        value,
-        "fcstd joint scalar parameter",
-    )?))
+    Ok(Some(value.to_owned()))
 }
 
 fn connector(
-    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = sole_named_property(ctx, "joint", properties, name)? else {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!("joint connector {name} is missing"),
-            "fcstd joint diagnostic",
-        ));
+    let Some(property) = sole_named_property("joint", properties, name)? else {
+        return Err(CodecError::malformed(format_args!(
+            "joint connector {name} is missing"
+        )));
     };
     if !matches!(
         property.type_name.as_str(),
         "App::PropertyXLinkSub" | "App::PropertyXLinkSubHidden"
     ) {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint connector {} has runtime type {}, expected App::PropertyXLinkSub",
-                property.id, property.type_name
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint connector {} has runtime type {}, expected App::PropertyXLinkSub",
+            property.id, property.type_name
+        )));
     }
     if property
         .values()
         .first()
         .is_none_or(|value| value.tag != "XLink")
     {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!("joint connector {} requires one XLink value", property.id),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint connector {} requires one XLink value",
+            property.id
+        )));
     }
     let [target] = property.links() else {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint connector {} requires one target, found {}",
-                property.id,
-                property.links().len()
-            ),
-            "fcstd joint diagnostic",
-        ));
+        return Err(CodecError::malformed(format_args!(
+            "joint connector {} requires one target, found {}",
+            property.id,
+            property.links().len()
+        )));
     };
-    target
-        .as_ref()
-        .map(|target| target.clone_with_context(ctx))
-        .transpose()
+    Ok(target.clone())
 }
 
 fn placement(
-    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
-    let Some(property) = sole_named_property(ctx, "joint", properties, name)? else {
+    let Some(property) = sole_named_property("joint", properties, name)? else {
         return Ok(None);
     };
-    crate::placement::placement_matrix(ctx, property)
+    crate::placement::placement_matrix(property)
 }
 
 #[cfg(test)]
@@ -766,15 +624,6 @@ pub(crate) mod tests {
             order: 0,
             xml: crate::native::RetainedXml::from_text(xml.into(), 0).expect("valid retained span"),
         }
-    }
-
-    fn diagnostic_context<'a>(
-        arena: &'a cadmpeg_core::decode::DecodeArena,
-        policy: &'a cadmpeg_core::decode::DecodePolicy,
-    ) -> cadmpeg_core::decode::DecodeContext<'a> {
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, policy)
-            .expect("empty root is within policy")
-            .0
     }
 
     fn scalar_property(type_name: &str, xml: &str) -> crate::native::PropertyRecord {
@@ -806,325 +655,15 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn joint_enumeration_diagnostics_refuse_at_retained_limit() {
-        let cases = [
-            "<Wrapper/>",
-            "<Property/>",
-            "<Property><Integer><Child/></Integer></Property>",
-            "<Property><Integer value=\"0\"/><Extra/></Property>",
-            "<Property><Integer value=\"0\" CustomEnum=\"bad\"/></Property>",
-            "<Property><Integer value=\"0\" CustomEnum=\"true\"/></Property>",
-            "<Property><Integer/></Property>",
-            "<Property><Integer value=\"bad\"/></Property>",
-            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList/></Property>",
-            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"bad\"/></Property>",
-            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"2\"><Enum value=\"A\"/></CustomEnumList></Property>",
-            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\"><Enum value=\"A\"><Child/></Enum></CustomEnumList></Property>",
-            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\"><Enum/></CustomEnumList></Property>",
-        ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let ctx = diagnostic_context(&arena, &policy);
-        for xml in cases {
-            let property = diagnostic_property("JointType", "App::PropertyEnumeration", xml);
-            let error =
-                super::enumeration_value(&ctx, &property).expect_err("diagnostic must be admitted");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && failure.operation == "fcstd joint diagnostic"),
-                "{xml}: {error:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn joint_enumeration_index_refuses_at_retained_limit() {
-        let property = diagnostic_property(
-            "JointType",
-            "App::PropertyEnumeration",
-            "<Property><Integer value=\"10\"/></Property>",
-        );
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        let ctx = diagnostic_context(&arena, &policy);
-        let error = super::enumeration_value(&ctx, &property)
-            .expect_err("enumeration index text must be admitted");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && failure.operation == "fcstd joint enumeration index"),
-            "{error:?}"
-        );
-    }
-
-    #[test]
-    fn joint_scalar_diagnostics_refuse_at_retained_limit() {
-        let cases = [
-            (
-                "App::PropertyBool",
-                "<Property><Float value=\"1\"/></Property>",
-            ),
-            ("App::PropertyAngle", "<Property/>"),
-            (
-                "App::PropertyAngle",
-                "<Property><Integer value=\"1\"/></Property>",
-            ),
-            ("App::PropertyAngle", "<Property><Float/></Property>"),
-            (
-                "App::PropertyAngle",
-                "<Property><Float value=\"bad\"/></Property>",
-            ),
-        ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let ctx = diagnostic_context(&arena, &policy);
-        for (type_name, xml) in cases {
-            let property = scalar_property(type_name, xml);
-            let error =
-                super::scalar_parameter(&ctx, &property).expect_err("diagnostic must be admitted");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && failure.operation == "fcstd joint diagnostic"),
-                "{xml}: {error:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn joint_invalid_scalar_value_refuses_before_copy() {
+    fn joint_invalid_scalar_value_is_malformed() {
         let property = scalar_property(
             "App::PropertyAngle",
             "<Property><Float value=\"bad\"/></Property>",
         );
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let service = cadmpeg_core::decode::DecodePolicy::service();
-        let admitted = diagnostic_context(&arena, &service);
-        let message = super::scalar_parameter(&admitted, &property)
+        let message = super::scalar_parameter(&property)
             .expect_err("invalid source scalar")
             .to_string();
         assert_eq!(message, "malformed container: joint parameter property property: joint parameter Angle has an invalid value \"bad\"");
-        let mut constrained = cadmpeg_core::decode::DecodePolicy::service();
-        constrained.limits.max_retained_bytes = 0;
-        let refused = diagnostic_context(&arena, &constrained);
-        let error = super::scalar_parameter(&refused, &property)
-            .expect_err("diagnostic must be admitted before allocation");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && failure.operation == "fcstd joint diagnostic"),
-            "{error:?}"
-        );
-    }
-
-    #[test]
-    fn joint_connector_diagnostics_refuse_at_retained_limit() {
-        let cases = [
-            None,
-            Some(("App::PropertyString", "<Property/>")),
-            Some(("App::PropertyXLinkSub", "<Property/>")),
-            Some(("App::PropertyXLinkSub", "<Property><XLink/></Property>")),
-        ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let ctx = diagnostic_context(&arena, &policy);
-        for case in cases {
-            let property = case.map(|(type_name, xml)| {
-                let mut property = scalar_property(type_name, xml);
-                property.name = "Reference1".into();
-                property
-            });
-            let properties = property.as_ref().into_iter().collect::<Vec<_>>();
-            let error = super::connector(&ctx, &properties, "Reference1")
-                .expect_err("diagnostic must be admitted");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && failure.operation == "fcstd joint diagnostic"),
-                "{case:?}: {error:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn joint_carrier_diagnostics_refuse_at_retained_limit() {
-        let object = crate::native::ObjectRecord {
-            identity: crate::native::object_identity::ObjectIdentity::try_new(
-                "fcstd:native:object#Joint".into(),
-                "Joint".into(),
-            )
-            .expect("object identity"),
-            type_name: "App::FeaturePython".into(),
-            persistent_id: None,
-            view_type: None,
-            attributes: std::collections::BTreeMap::default(),
-            dependencies: Vec::new(),
-            dependency_allow_partial: None,
-            order: 0,
-            data: None,
-        };
-        let cases = [
-            vec![
-                diagnostic_property("ObjectToGround", "App::PropertyLink", "<Property/>"),
-                diagnostic_property("JointType", "App::PropertyEnumeration", "<Property/>"),
-            ],
-            vec![diagnostic_property(
-                "ObjectToGround",
-                "App::PropertyString",
-                "<Property/>",
-            )],
-            vec![diagnostic_property(
-                "JointType",
-                "App::PropertyString",
-                "<Property/>",
-            )],
-        ];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        for mut properties in cases {
-            for property in &mut properties {
-                property.owner = object.id().clone();
-            }
-            let ctx = diagnostic_context(&arena, &policy);
-            let error = super::transfer(&ctx, std::slice::from_ref(&object), &properties)
-                .expect_err("diagnostic must be admitted");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && failure.operation == "fcstd joint diagnostic"),
-                "{error:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn joint_invalid_enumeration_xml_diagnostic_refuses_at_retained_limit() {
-        let property = crate::native::PropertyRecord {
-            id: "property".into(),
-            owner: "joint".into(),
-            name: "JointType".into(),
-            type_name: "App::PropertyEnumeration".into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Transient,
-            order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property".into(), 0)
-                .expect("valid retained span"),
-        };
-        crate::test_support::assert_retained_refusal_at(&[], "fcstd joint diagnostic", |ctx| {
-            super::enumeration_value(ctx, &property)
-        });
-    }
-
-    #[test]
-    fn joint_record_collection_refuses_at_caller_limit() {
-        let object = crate::native::ObjectRecord {
-            identity: crate::native::object_identity::ObjectIdentity::try_new(
-                "fcstd:native:object#Joint".into(),
-                "Joint".into(),
-            )
-            .expect("object identity"),
-            type_name: "App::FeaturePython".into(),
-            persistent_id: None,
-            view_type: None,
-            attributes: std::collections::BTreeMap::default(),
-            dependencies: Vec::new(),
-            dependency_allow_partial: None,
-            order: 0,
-            data: None,
-        };
-        let property = crate::native::PropertyRecord {
-            id: "property".into(),
-            owner: object.id().clone(),
-            name: "ObjectToGround".into(),
-            type_name: "App::PropertyLink".into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Transient,
-            order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
-                .expect("valid XML span"),
-        };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::transfer(&ctx, &[object], &[property]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd joint records"));
-    }
-
-    #[test]
-    fn joint_native_identity_refuses_at_retained_limit() {
-        let object = crate::native::ObjectRecord {
-            identity: crate::native::object_identity::ObjectIdentity::try_new(
-                "fcstd:native:object#Joint".into(),
-                "Joint".into(),
-            )
-            .expect("object identity"),
-            type_name: "App::FeaturePython".into(),
-            persistent_id: None,
-            view_type: None,
-            attributes: std::collections::BTreeMap::default(),
-            dependencies: Vec::new(),
-            dependency_allow_partial: None,
-            order: 0,
-            data: None,
-        };
-        let property = crate::native::PropertyRecord {
-            id: "property".into(),
-            owner: object.id().clone(),
-            name: "ObjectToGround".into(),
-            type_name: "App::PropertyLink".into(),
-            family: crate::native::PropertyFamily::Unknown,
-            status: None,
-            body: crate::native::PropertyBody::Transient,
-            order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
-                .expect("valid XML span"),
-        };
-        crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native identity", |ctx| {
-            super::transfer(
-                ctx,
-                std::slice::from_ref(&object),
-                std::slice::from_ref(&property),
-            )
-        });
-    }
-
-    #[test]
-    fn joint_model_identity_refuses_at_retained_limit() {
-        let admission_arena = cadmpeg_core::decode::DecodeArena::new();
-        let admission_policy = cadmpeg_core::decode::DecodePolicy::service();
-        let admission_ctx = diagnostic_context(&admission_arena, &admission_policy);
-        let record = crate::native::joint::JointRecord::try_new(
-            &admission_ctx,
-            "fcstd:native:joint#Joint".into(),
-            "fcstd:native:object#Joint".into(),
-            crate::native::joint::JointBody::Grounded {
-                reference: None,
-                placement: crate::native::frame::FiniteFrame::default(),
-            },
-            std::collections::BTreeMap::default(),
-        )
-        .expect("grounded joint record");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            crate::native::model_id("joint", record.object(), "constraint").len(),
-        ) - 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::transfer_neutral(&ctx, &[record], &[]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD model identity"));
     }
     use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};
@@ -1135,10 +674,6 @@ pub(crate) mod tests {
 
     #[test]
     fn every_primary_joint_family_has_a_neutral_variant() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
         for family in [
             "Fixed",
             "Revolute",
@@ -1157,7 +692,6 @@ pub(crate) mod tests {
             assert!(
                 !matches!(
                     joint_kind(
-                        &ctx,
                         &super::PairedJointFamily::new(family.into()).unwrap(),
                         None,
                         None,
@@ -1171,21 +705,6 @@ pub(crate) mod tests {
                 "{family} must not fall through to a native joint family"
             );
         }
-    }
-
-    #[test]
-    fn neutral_joint_kind_refuses_at_materialized_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let kind = super::PairedJointFamily::new("Fixed".into()).expect("valid joint family");
-        assert!(
-            matches!(joint_kind(&ctx, &kind, None, None, None, None, None),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd joint kind matching")
-        );
     }
 
     #[test]

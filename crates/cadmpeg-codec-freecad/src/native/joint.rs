@@ -5,7 +5,6 @@ use cadmpeg_ir::ids::Identity;
 
 use super::frame::FiniteFrame;
 use super::LinkTarget;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
@@ -86,46 +85,6 @@ impl JointParameter {
 pub(crate) struct JointParameters(BTreeMap<String, JointParameter>);
 
 impl JointParameters {
-    fn from_raw_charged(
-        ctx: &DecodeContext<'_>,
-        parameters: BTreeMap<String, String>,
-        joint_id: &str,
-    ) -> Result<Self, CodecError> {
-        let mut checked = BTreeMap::new();
-        for (name, raw) in parameters {
-            let parameter = match parameter_kind(&name) {
-                ParameterKind::Scalar => {
-                    let value = raw
-                        .parse::<f64>()
-                        .ok()
-                        .and_then(FiniteReal::new)
-                        .ok_or_else(|| {
-                            crate::resource::malformed_charged(
-                                ctx,
-                                format_args!(
-                            "joint {joint_id}: joint parameter {name} has an invalid value {raw:?}"
-                        ),
-                                "fcstd joint checked parameter diagnostic",
-                            )
-                        })?;
-                    JointParameter::Scalar { raw, value }
-                }
-                ParameterKind::Boolean => JointParameter::Boolean {
-                    value: raw == "true",
-                    raw,
-                },
-                ParameterKind::Native => JointParameter::Native { raw },
-            };
-            ctx.insert_btree_map(
-                &mut checked,
-                name,
-                parameter,
-                "fcstd joint checked parameters",
-            )?;
-        }
-        Ok(Self(checked))
-    }
-
     fn from_raw(parameters: BTreeMap<String, String>, joint_id: &str) -> Result<Self, String> {
         parameters
             .into_iter()
@@ -216,23 +175,15 @@ fn admit_joint_identities(id: String, object: String) -> Result<(Identity, Ident
 
 impl JointRecord {
     pub(crate) fn try_new(
-        ctx: &DecodeContext<'_>,
         id: String,
         object: String,
         body: JointBody,
         parameters: BTreeMap<String, String>,
     ) -> Result<Self, CodecError> {
         // Identity admission scans separators, key bytes, whitespace and namespace.
-        for value in [&id, &object] {
-            let work = cadmpeg_core::decode::u64_from_index(value.len())
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("FCStd joint identity admission", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(work, "FCStd joint identity admission")?;
-        }
         let (id, object) = admit_joint_identities(id, object).map_err(CodecError::Malformed)?;
-        let parameters = JointParameters::from_raw_charged(ctx, parameters, id.as_str())?;
+        let parameters =
+            JointParameters::from_raw(parameters, id.as_str()).map_err(CodecError::Malformed)?;
         Ok(Self {
             id,
             object,
@@ -477,61 +428,26 @@ mod tests {
             ("fcstd:native:joint#Joint", "fcstd:native:joint#Joint"),
             ("fcstd:native:joint#Joint", "fcstd:native:object#has space"),
         ] {
-            crate::test_support::with_service_context(&[], |ctx| {
-                assert!(matches!(
-                    JointRecord::try_new(
-                        ctx,
-                        id.to_owned(),
-                        object.to_owned(),
-                        JointBody::Grounded {
-                            reference: None,
-                            placement: super::FiniteFrame::default()
-                        },
-                        BTreeMap::new()
-                    ),
-                    Err(cadmpeg_core::CodecError::Malformed(_))
-                ));
-            });
+            assert!(matches!(
+                JointRecord::try_new(
+                    id.to_owned(),
+                    object.to_owned(),
+                    JointBody::Grounded {
+                        reference: None,
+                        placement: super::FiniteFrame::default()
+                    },
+                    BTreeMap::new()
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
             let wire = serde_json::json!({"id": id, "object": object, "kind": "grounded", "references": [], "placements": [super::FiniteFrame::default().rows()], "offsets": [], "parameters": {}});
             assert!(serde_json::from_value::<JointRecord>(wire).is_err());
         }
     }
 
     #[test]
-    fn checked_joint_parameter_map_refuses_at_caller_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error = JointRecord::try_new(
-            &ctx,
-            "fcstd:native:joint#Joint".into(),
-            "fcstd:native:object#Joint".into(),
-            JointBody::Grounded {
-                reference: None,
-                placement: super::FiniteFrame::default(),
-            },
-            BTreeMap::from([("Angle".into(), "1".into())]),
-        )
-        .expect_err("checked parameter map must charge each entry");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && failure.operation == "fcstd joint checked parameters"),
-            "{error:?}"
-        );
-    }
-
-    #[test]
-    fn checked_joint_parameter_diagnostic_refuses_at_retained_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let service = cadmpeg_core::decode::DecodePolicy::service();
-        let (admitted, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
-                .expect("empty root is within policy");
+    fn checked_joint_parameter_reports_the_invalid_value() {
         let message = JointRecord::try_new(
-            &admitted,
             "fcstd:native:joint#Joint".into(),
             "fcstd:native:object#Joint".into(),
             JointBody::Grounded {
@@ -545,27 +461,6 @@ mod tests {
         assert_eq!(
             message,
             "malformed container: joint fcstd:native:joint#Joint: joint parameter Angle has an invalid value \"NaN\""
-        );
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error = JointRecord::try_new(
-            &ctx,
-            "fcstd:native:joint#Joint".into(),
-            "fcstd:native:object#Joint".into(),
-            JointBody::Grounded {
-                reference: None,
-                placement: super::FiniteFrame::default(),
-            },
-            BTreeMap::from([("Angle".into(), "NaN".into())]),
-        )
-        .expect_err("checked parameter diagnostic must be admitted");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && failure.operation == "fcstd joint checked parameter diagnostic"),
-            "{error:?}"
         );
     }
 
@@ -640,12 +535,7 @@ mod tests {
                 .try_into()
                 .unwrap(),
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
         let record = JointRecord::try_new(
-            &ctx,
             "fcstd:native:joint#Joint".into(),
             "fcstd:native:object#Joint".into(),
             JointBody::Pair {

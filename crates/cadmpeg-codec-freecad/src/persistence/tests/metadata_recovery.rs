@@ -5,7 +5,7 @@ use crate::native::PropertyBody;
 use std::fmt::Write as _;
 
 #[test]
-fn missing_and_legacy_counts_retain_the_actual_population_and_charge_diagnostics() {
+fn missing_and_legacy_counts_retain_the_actual_population_and_report_losses() {
     for (schema, declarations, data, record) in [
         ("4", "Objects", "ObjectData", "Object"),
         ("2", "Features", "FeatureData", "Feature"),
@@ -19,11 +19,6 @@ fn missing_and_legacy_counts_retain_the_actual_population_and_charge_diagnostics
         .unwrap();
         assert_eq!(graph.objects.len(), 1);
         assert_eq!(graph.losses.len(), 2);
-        crate::test_support::assert_retained_refusal_at(
-            xml.as_bytes(),
-            "FCStd persistence count diagnostic",
-            |ctx| super::super::parse_with_context(xml.as_bytes(), schema, ctx),
-        );
     }
 }
 
@@ -96,7 +91,7 @@ fn malformed_unused_links_remain_explicitly_source_only() {
 }
 
 #[test]
-fn many_unique_object_names_fit_a_linear_work_budget() {
+fn many_unique_object_names_decode() {
     let count = 16_000;
     let mut document = format!(r#"<Document SchemaVersion="4"><Objects Count="{count}">"#);
     for index in 0..count {
@@ -111,19 +106,15 @@ fn many_unique_object_names_fit_a_linear_work_budget() {
         write!(document, r#"<Object name="Object{index}"/>"#).unwrap();
     }
     document.push_str("</ObjectData></Document>");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 250_000_000;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
-            .unwrap();
-    let graph = super::super::parse_with_context(document.as_bytes(), "4", &ctx).unwrap();
+    let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        super::super::parse_with_context(document.as_bytes(), "4", ctx).unwrap()
+    });
     assert_eq!(graph.objects.len(), count);
     assert!(graph.objects.iter().all(|object| object.data.is_some()));
 }
 
 #[test]
-fn many_unique_properties_fit_a_linear_work_budget() {
+fn many_unique_properties_decode() {
     let count = 16_000;
     let mut document = format!(r#"<Document SchemaVersion="4"><Properties Count="{count}">"#);
     for index in 0..count {
@@ -134,13 +125,9 @@ fn many_unique_properties_fit_a_linear_work_budget() {
         .unwrap();
     }
     document.push_str("</Properties><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 250_000_000;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
-            .expect("root");
-    let graph = super::super::parse_with_context(document.as_bytes(), "4", &ctx)
-        .expect("unique-name index stays bounded");
+    let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        super::super::parse_with_context(document.as_bytes(), "4", ctx)
+            .expect("unique property names")
+    });
     assert_eq!(graph.properties.len(), count);
 }
