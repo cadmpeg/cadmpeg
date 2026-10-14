@@ -1,7 +1,7 @@
 {
   "decode": {
     "ir": {
-      "ir_version": "12",
+      "ir_version": "13",
       "model": {
         "appearance_bindings": [],
         "appearances": [],

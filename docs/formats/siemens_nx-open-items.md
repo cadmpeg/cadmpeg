@@ -558,9 +558,9 @@ marker assigns curve, surface, direction, or combination semantics.
 
 ### OM-17. `FSET` selection roles
 
-**Question.** What does the `FSET` selector mean, and what selection role does each ordered object-reference group have?
+**Question.** What does the `FSET` selector mean, what selection role does each ordered object-reference group have, and which target namespace and role do the counted compact indices use?
 
-**Known.** `siemens_nx.md` §7.1 "An `FSET` operation payload contains at most one two-group reference graph framed as" defines the selector, two separate reference groups, resolution rule, and logical payloads.
+**Known.** `siemens_nx.md` §7.1 "An `FSET` operation payload contains at most one two-group reference graph framed as" defines the selector, two separate reference groups, resolution rule, and logical payloads. `siemens_nx.md` §7.1 "A prefix-anchored `FSET` index lane is" defines the separate counted compact lane and explicit empty spelling.
 
 **Need.** We must know the roles to construct the selected face or feature set.
 
@@ -568,7 +568,7 @@ marker assigns curve, surface, direction, or combination semantics.
 two groups are distinguished only by their serialized first/second position.
 Every reference uses the same object-index form and resolves only to an
 offset-store block. No selector vocabulary, target schema, or relation to a
-face or feature set assigns either group a selection role.
+face or feature set assigns either group a selection role. Compact values that equal operation ordinals do not identify member features. An empty byte lane does not establish an empty neutral selected set.
 
 ### OM-18. Pattern construction-reference roles
 

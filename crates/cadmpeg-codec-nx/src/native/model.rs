@@ -211,6 +211,7 @@ use crate::native::features::extrude_32::{
 use crate::native::features::fset::{
     feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };
+use crate::native::features::fset_indices::{feature_fset_index_lanes, FeatureFsetIndexLane};
 use crate::native::features::holes::feature_hole_package_construction_group_lanes;
 use crate::native::features::holes::feature_hole_package_construction_group_uses;
 use crate::native::features::holes::feature_simple_hole_construction_groups;
@@ -415,6 +416,7 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_projected_curve_construction_strings:
         Vec<FeatureProjectedCurveConstructionString>,
     pub(super) feature_fset_reference_graphs: Vec<FeatureFsetReferenceGraph>,
+    pub(super) feature_fset_index_lanes: Vec<FeatureFsetIndexLane>,
     pub(super) feature_fset_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(super) feature_delete_reference_fields: Vec<FeatureDeleteReferenceField>,
     pub(super) feature_delete_construction_payloads: Vec<FeatureDeleteConstructionPayload>,
@@ -1101,6 +1103,7 @@ impl NativeModel {
                 &feature_projected_curve_construction_payloads,
             )?;
         let feature_fset_reference_graphs = feature_fset_reference_graphs(ctx, container)?;
+        let feature_fset_index_lanes = feature_fset_index_lanes(ctx, container)?;
         let feature_fset_construction_payloads =
             feature_fset_construction_payloads(ctx, container, &feature_fset_reference_graphs)?;
         let feature_delete_reference_fields = feature_delete_reference_fields(ctx, container)?;
@@ -1606,6 +1609,7 @@ impl NativeModel {
                 feature_projected_curve_construction_payloads,
                 feature_projected_curve_construction_strings,
                 feature_fset_reference_graphs,
+                feature_fset_index_lanes,
                 feature_fset_construction_payloads,
                 feature_delete_reference_fields,
                 feature_delete_construction_payloads,

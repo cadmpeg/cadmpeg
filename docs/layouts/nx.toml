@@ -2162,3 +2162,37 @@ area = "B_SURFACE and B_CURVE counted payload and reference tails (§6.2)"
 reason = "Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above."
 section = "6.2"
 anchor = "Types 125, 126, 135, and 136 may place an `ff` envelope escape before their xmt."
+
+
+[[record]]
+name = "fset_parameter_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/om/fset_indices.rs"
+kind = "byte"
+section = "7.1"
+anchor = "An `FSET` parameter payload begins with"
+size = 21
+endianness = "little"
+note = "The counted, empty, or two-group construction field follows this fixed parameter prefix."
+
+[[record.field]]
+name = "class_index"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`class_index:u8, 00 00 01, zero[17]`"
+
+[[record.field]]
+name = "fixed_prefix"
+offset = 1
+type = "bytes[3]"
+source = "spec"
+anchor = "`class_index:u8, 00 00 01, zero[17]`"
+value = [0, 0, 1]
+
+[[record.field]]
+name = "zeros"
+offset = 4
+type = "bytes[17]"
+source = "spec"
+anchor = "`class_index:u8, 00 00 01, zero[17]`"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

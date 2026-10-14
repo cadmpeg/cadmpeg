@@ -3225,6 +3225,14 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_fset_index_lanes",
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_fset_index_lanes, r, ns),
+        len: |m| m.features.feature_fset_index_lanes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_fset_construction_payloads",
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,

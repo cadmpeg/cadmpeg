@@ -19,6 +19,7 @@ pub(super) mod delete;
 pub(super) mod draft;
 pub(super) mod extrude_32;
 pub(super) mod fset;
+pub(super) mod fset_indices;
 use self::fset::FeatureFsetReferenceGroup;
 pub(super) mod holes;
 pub(super) mod pattern;

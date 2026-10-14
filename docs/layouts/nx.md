@@ -684,6 +684,21 @@ Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
 
+## `fset_parameter_prefix`
+
+Spec §7.1 · layout: byte offsets · size: 21 B
+
+The counted, empty, or two-group construction field follows this fixed parameter prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/om/fset_indices.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `class_index` | `u8` | little | spec | `class_index:u8, 00 00 01, zero[17]` |
+| 1 | 3 | `fixed_prefix` | `bytes[3]` | little | spec | `class_index:u8, 00 00 01, zero[17]` · value `[0, 0, 1]` |
+| 4 | 17 | `zeros` | `bytes[17]` | little | spec | `class_index:u8, 00 00 01, zero[17]` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

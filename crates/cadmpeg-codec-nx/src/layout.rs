@@ -521,3 +521,28 @@ pub(crate) mod nurbs_curve_descriptor_prefix {
     /// Offset of `periodic` (`u8`). Spec §6.2.
     pub(crate) const PERIODIC: usize = 17;
 }
+
+/// Byte offsets for the `fset_parameter_prefix` record.
+///
+/// Spec §7.1. Record length 21 B.
+///
+/// ```text
+/// The counted, empty, or two-group construction field follows this fixed parameter prefix.
+/// ```
+pub(crate) mod fset_parameter_prefix {
+    /// Record length in bytes. Spec §7.1.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `class_index` (`u8`). Spec §7.1.
+    pub(crate) const CLASS_INDEX: usize = 0;
+    /// Offset of `fixed_prefix` (`bytes[3]`). Spec §7.1.
+    pub(crate) const FIXED_PREFIX: usize = 1;
+    /// Stated value of `fixed_prefix` (`bytes[3]`). Spec §7.1.
+    pub(crate) const FIXED_PREFIX_VALUE: [u8; 3] = [0x00, 0x00, 0x01];
+    /// Offset of `zeros` (`bytes[17]`). Spec §7.1.
+    pub(crate) const ZEROS: usize = 4;
+    /// Stated value of `zeros` (`bytes[17]`). Spec §7.1.
+    pub(crate) const ZEROS_VALUE: [u8; 17] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+}

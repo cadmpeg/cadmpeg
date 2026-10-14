@@ -53,6 +53,7 @@ use crate::test_support::test_deltas::topology_with_fully_extended_geometry_head
 use crate::test_support::test_deltas::torus_topology_partition_stream;
 use crate::test_support::test_deltas::trimmed_topology_partition_stream;
 use crate::test_support::test_deltas::variable_status_framed_deltas_stream;
+use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_om::multi_section_feature_history_payload;
 use crate::test_support::test_om::offset_only_indexed_om_section;
 use crate::test_support::test_om::offset_only_indexed_om_section_with_control;
@@ -230,6 +231,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_extrude_payload_headers",
     "feature_extrude_profile_references",
     "feature_fset_construction_payloads",
+    "feature_fset_index_lanes",
     "feature_fset_reference_graphs",
     "feature_input_block_identity_groups",
     "feature_input_blocks",
@@ -384,7 +386,7 @@ const KNOWN_ARENAS: &[&str] = &[
 ];
 
 /// Minimum distinct arenas the golden fixtures must collectively populate.
-const ARENA_COVERAGE_FLOOR: usize = 123;
+const ARENA_COVERAGE_FLOOR: usize = 124;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
@@ -419,6 +421,28 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         prt_with_arrangement_attribute(None),
     ));
     f.push(("prt_with_indexed_om_section", prt_with_indexed_om_section()));
+    f.push((
+        "fset_counted_and_empty_lanes",
+        prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            composed_feature_history_payload(
+                &([
+                    &[1, 9, 121, 101, 82, 97, 84, 100, 0x85, 0x17, 94, 0, 3, 0][..],
+                    &[0, 0, 3, 0][..],
+                    &[1, 10, 28, 26, 43, 29, 27, 30, 31, 32, 33, 0, 3, 0][..],
+                ]
+                .into_iter()
+                .map(|lane| {
+                    let mut payload = vec![49, 0, 0, 1];
+                    payload.resize(21, 0);
+                    payload.extend_from_slice(lane);
+                    (b"\xff\xff\xff\xff".as_slice(), "FSET", payload)
+                })
+                .collect::<Vec<_>>()),
+                &[],
+            ),
+        )]),
+    ));
     f.push((
         "prt_with_size_framed_om_section",
         prt_with_size_framed_om_section(),
@@ -1017,7 +1041,7 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 255, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 256, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()

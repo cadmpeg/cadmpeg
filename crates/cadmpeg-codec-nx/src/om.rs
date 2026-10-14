@@ -95,6 +95,7 @@ use state_message::OperationStateMessage;
 use state_tagged_value::StateTaggedValue;
 pub(crate) mod counted_pattern_references;
 pub(crate) mod delete_references;
+pub(crate) mod fset_indices;
 pub(crate) mod fset_references;
 pub(crate) mod pattern;
 pub(crate) mod pattern_references;
