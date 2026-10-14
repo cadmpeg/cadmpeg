@@ -1301,9 +1301,10 @@ mod occurrence {
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
                 definition: format!("iges:entity:directory#{definition_sequence}"),
                 neutral_links,
-                instance_path: (0..path.len())
-                    .map(|index| format!("iges:entity:directory#{}", path[index]))
-                    .collect::<Vec<_>>(),
+                instance_path: path
+                    .iter()
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    .collect(),
                 local_transform,
                 world_transform,
             }
@@ -2416,9 +2417,9 @@ pub(crate) fn store(
         cadmpeg_core::decode::u64_from_index(directory.len()),
         "iges_native_entities",
     )?;
-    let mut entities = (0..directory.len())
-        .map(|index| {
-            let entry = &directory[index];
+    let mut entities = directory
+        .iter()
+        .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let trailing = trailing_pointer_analysis
                 .get(&entry.sequence)
@@ -4861,9 +4862,9 @@ pub(crate) fn store(
                             let start = 3 + offset * 4;
                             NativeLepLayerDefinition {
                                 exchange_level: record.integer(start),
-                                native_identifier: (string(start + 1)),
+                                native_identifier: string(start + 1),
                                 physical_layer: record.integer(start + 2),
-                                functional_identifier: (string(start + 3)),
+                                functional_identifier: string(start + 3),
                             }
                         })
                         .collect::<Vec<_>>(),
