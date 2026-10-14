@@ -12,35 +12,16 @@ use crate::decode::sketch_transfer::recipe::{
     feature_schema_class, unique_feature_revolution_extent,
 };
 use crate::feature::schema::SchemaClass;
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::topology::BodyKind;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(in super::super) fn copy_body_id(
-    ctx: &DecodeContext<'_>,
-    body: &BodyId,
-) -> Result<BodyId, CodecError> {
-    BodyId::mint(ctx.copy_retained_text(body.as_str(), "creo feature output body IDs")?)
-        .map_err(CodecError::malformed)
-}
-
-struct FeatureOutputHistory<'ctx> {
-    visiting: BTreeSet<u32>,
-    storage: ScopedReservation<'ctx>,
-}
-
-impl<'ctx> FeatureOutputHistory<'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
-        Ok(Self {
-            visiting: BTreeSet::new(),
-            storage: ctx.reserve_scoped(0, "Creo feature output history storage")?,
-        })
-    }
+pub(in super::super) fn copy_body_id(body: &BodyId) -> Result<BodyId, CodecError> {
+    BodyId::mint(body.as_str().to_owned()).map_err(CodecError::malformed)
 }
 
 pub(in super::super) fn feature_output_bodies(
@@ -49,13 +30,7 @@ pub(in super::super) fn feature_output_bodies(
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<Vec<BodyId>, CodecError> {
-    feature_output_bodies_with_history(
-        ctx,
-        scan,
-        ir,
-        feature_id,
-        &mut FeatureOutputHistory::new(ctx)?,
-    )
+    feature_output_bodies_with_history(ctx, scan, ir, feature_id, &mut BTreeSet::new())
 }
 
 fn feature_output_bodies_with_history(
@@ -63,19 +38,13 @@ fn feature_output_bodies_with_history(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-    history: &mut FeatureOutputHistory<'_>,
+    visiting: &mut BTreeSet<u32>,
 ) -> Result<Vec<BodyId>, CodecError> {
     let _depth = ctx.enter_nested("creo feature output history")?;
-    if history.visiting.contains(&feature_id) {
+    if visiting.contains(&feature_id) {
         return Ok(Vec::new());
     }
-    history.storage.with_storage(|| {
-        ctx.insert_btree_set(
-            &mut history.visiting,
-            feature_id,
-            "creo feature output visiting nodes",
-        )
-    })?;
+    visiting.insert(feature_id);
     let affected_geometry = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
@@ -95,21 +64,18 @@ fn feature_output_bodies_with_history(
                 .flat_map(crate::feature::entity::FeatureEntityTable::surface_ids_iter),
         )
         .chain(affected_geometry.into_iter().flatten().copied());
-    let mut outputs = evaluated_sweep_output_bodies(ctx, ir, feature_id)?;
+    let mut outputs = evaluated_sweep_output_bodies(ir, feature_id)?;
     let edge_outputs = match feature_edge_selection(ctx, scan, ir, feature_id)? {
-        Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ctx, ir, &edges)?,
+        Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges)?,
         Some(EdgeSelection::Generated { edges, .. }) => {
-            generated_edge_output_bodies(ctx, scan, ir, &edges, history)?
+            generated_edge_output_bodies(ctx, scan, ir, &edges, visiting)?
         }
         _ => Vec::new(),
     };
     let generated_input_outputs =
-        generated_input_output_bodies(ctx, scan, ir, feature_id, history)?;
+        generated_input_output_bodies(ctx, scan, ir, feature_id, visiting)?;
     for surface_id in generated_surfaces {
-        let (surface, _reservation) = ctx.format_scoped(
-            format_args!("creo:visibgeom:surface#{surface_id}"),
-            "creo generated surface lookup",
-        )?;
+        let surface = format!("creo:visibgeom:surface#{surface_id}");
         for face in ir
             .model
             .faces
@@ -133,19 +99,17 @@ fn feature_output_bodies_with_history(
                 continue;
             };
             if !outputs.contains(&region.body) {
-                let body = copy_body_id(ctx, &region.body)?;
-                ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
+                let body = copy_body_id(&region.body)?;
                 outputs.push(body);
             }
         }
     }
     for body in edge_outputs.into_iter().chain(generated_input_outputs) {
         if !outputs.contains(&body) {
-            ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
             outputs.push(body);
         }
     }
-    history.visiting.remove(&feature_id);
+    visiting.remove(&feature_id);
     Ok(outputs)
 }
 
@@ -154,12 +118,9 @@ fn generated_input_output_bodies(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-    history: &mut FeatureOutputHistory<'_>,
+    visiting: &mut BTreeSet<u32>,
 ) -> Result<Vec<BodyId>, CodecError> {
-    let (feature_id_text, reservation) = ctx.format_scoped(
-        format_args!("creo:model:feature#{feature_id}"),
-        "creo generated input feature lookup",
-    )?;
+    let feature_id_text = format!("creo:model:feature#{feature_id}");
     let Some(feature) = exactly_one(
         ir.model
             .features
@@ -169,12 +130,8 @@ fn generated_input_output_bodies(
         return Ok(Vec::new());
     };
     drop(feature_id_text);
-    drop(reservation);
     let mut outputs = Vec::new();
-    let mut dependency_storage = ctx.reserve_scoped(0, "Creo generated producer lookup")?;
-    for producer in dependency_storage
-        .with_storage(|| feature_generated_dependencies(ctx, feature.evaluation.definition()))?
-    {
+    for producer in feature_generated_dependencies(feature.evaluation.definition())? {
         let Some(producer_id) = producer
             .as_str()
             .strip_prefix("creo:model:feature#")
@@ -182,9 +139,8 @@ fn generated_input_output_bodies(
         else {
             continue;
         };
-        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, history)? {
+        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
             if !outputs.contains(&body) {
-                ctx.reserve_vec(&mut outputs, 1, "creo generated input output bodies")?;
                 outputs.push(body);
             }
         }
@@ -197,7 +153,7 @@ fn generated_edge_output_bodies(
     scan: &ContainerScan,
     ir: &CadIr,
     edges: &[GeneratedEdgeRef],
-    history: &mut FeatureOutputHistory<'_>,
+    visiting: &mut BTreeSet<u32>,
 ) -> Result<Vec<BodyId>, CodecError> {
     let mut outputs = Vec::new();
     for edge in edges {
@@ -209,9 +165,8 @@ fn generated_edge_output_bodies(
         else {
             continue;
         };
-        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, history)? {
+        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
             if !outputs.contains(&body) {
-                ctx.reserve_vec(&mut outputs, 1, "creo generated edge output bodies")?;
                 outputs.push(body);
             }
         }
@@ -219,17 +174,10 @@ fn generated_edge_output_bodies(
     Ok(outputs)
 }
 
-fn bodies_containing_edges(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    edges: &[EdgeId],
-) -> Result<Vec<BodyId>, CodecError> {
-    let mut lookup_storage = ctx.reserve_scoped(0, "Creo selected topology lookup")?;
+fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Result<Vec<BodyId>, CodecError> {
     let mut selected = BTreeSet::new();
     for edge in edges {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut selected, edge, "creo selected edge nodes")
-        })?;
+        selected.insert(edge);
     }
     let mut shell_ids = BTreeSet::new();
     for coedge in ir
@@ -249,9 +197,7 @@ fn bodies_containing_edges(
         else {
             continue;
         };
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut shell_ids, &face.shell, "creo selected shell nodes")
-        })?;
+        shell_ids.insert(&face.shell);
     }
     for shell in ir.model.shells.iter().filter(|shell| {
         shell
@@ -259,9 +205,7 @@ fn bodies_containing_edges(
             .iter()
             .any(|edge| selected.contains(edge))
     }) {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut shell_ids, &shell.id, "creo selected shell nodes")
-        })?;
+        shell_ids.insert(&shell.id);
     }
     let mut bodies = Vec::new();
     for shell_id in shell_ids {
@@ -280,9 +224,8 @@ fn bodies_containing_edges(
         }) else {
             continue;
         };
-        let body = copy_body_id(ctx, &region.body)?;
+        let body = copy_body_id(&region.body)?;
         if !bodies.contains(&body) {
-            ctx.reserve_vec(&mut bodies, 1, "creo bodies containing selected edges")?;
             bodies.push(body);
         }
     }
@@ -290,7 +233,6 @@ fn bodies_containing_edges(
 }
 
 pub(in super::super) fn evaluated_sweep_output_bodies(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<Vec<BodyId>, CodecError> {
@@ -299,15 +241,12 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
         &crate::identity::FEATURE_EXTRUSION,
         &crate::identity::FEATURE_REVOLUTION,
     ] {
-        let (candidate, _reservation) = ctx.format_scoped(
-            format_args!(
-                "{}:{}:{}#{feature_id}:body",
-                namespace.format(),
-                namespace.scope(),
-                namespace.kind(),
-            ),
-            "creo evaluated sweep body candidate",
-        )?;
+        let candidate = format!(
+            "{}:{}:{}#{feature_id}:body",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind(),
+        );
         if exactly_one(
             ir.model
                 .bodies
@@ -316,12 +255,7 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
         )
         .is_some()
         {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(candidate.len()),
-                "creo evaluated sweep body IDs",
-            )?;
             let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
-            ctx.reserve_vec(&mut outputs, 1, "creo evaluated sweep output bodies")?;
             outputs.push(body);
         }
     }
@@ -475,61 +409,45 @@ fn feature_field_text(
 }
 
 fn insert_feature_parameter(
-    ctx: &DecodeContext<'_>,
     parameters: &mut BTreeMap<String, String>,
     base: impl std::fmt::Display,
     value: impl std::fmt::Display,
-) -> Result<(), CodecError> {
-    let value = ctx.format_retained(format_args!("{value}"), "creo feature parameter value")?;
-    let (base, base_reservation) = ctx.format_scoped(
-        format_args!("{base}"),
-        "creo feature parameter key candidate",
-    )?;
-    let (key, key_reservation) = if parameters.contains_key(&base) {
+) {
+    let value = format!("{value}");
+    let base = format!("{base}");
+    let key = if parameters.contains_key(&base) {
         let mut occurrence = 2usize;
         loop {
-            let candidate = ctx.format_scoped(
-                format_args!("{base}#{occurrence}"),
-                "creo feature parameter key candidate",
-            )?;
-            if !parameters.contains_key(&candidate.0) {
+            let candidate = format!("{base}#{occurrence}");
+            if !parameters.contains_key(&candidate) {
                 break candidate;
             }
             occurrence += 1;
         }
     } else {
-        (base, base_reservation)
+        base
     };
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(key.len()),
-        "creo feature parameter key",
-    )?;
-    ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")?;
-    drop(key_reservation);
-    Ok(())
+    parameters.insert(key, value);
 }
 
 fn replace_feature_parameter(
-    ctx: &DecodeContext<'_>,
     parameters: &mut BTreeMap<String, String>,
     key: &'static str,
     value: impl std::fmt::Display,
-) -> Result<(), CodecError> {
-    let value = ctx.format_retained(format_args!("{value}"), "creo feature parameter value")?;
+) {
+    let value = format!("{value}");
     if let Some(existing) = parameters.get_mut(key) {
         *existing = value;
     } else {
-        let key = ctx.copy_retained_text(key, "creo feature parameter key")?;
-        ctx.insert_btree_map(parameters, key, value, "creo feature parameter nodes")?;
+        let key = key.to_owned();
+        parameters.insert(key, value);
     }
-    Ok(())
 }
 
 pub(in super::super) fn feature_parameters(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<BTreeMap<String, String>, CodecError> {
+) -> BTreeMap<String, String> {
     let mut parameters = BTreeMap::new();
     for field in scan
         .features
@@ -541,11 +459,10 @@ pub(in super::super) fn feature_parameters(
             continue;
         };
         insert_feature_parameter(
-            ctx,
             &mut parameters,
             format_args!("choice.{}.{}", field.choice_label, field.name),
             value,
-        )?;
+        );
     }
     for affected in scan
         .features
@@ -561,7 +478,7 @@ pub(in super::super) fn feature_parameters(
             crate::feature::rows::AffectedIdKind::Contours => "contour_ids",
             crate::feature::rows::AffectedIdKind::Quilts => "affected_quilt_ids",
         };
-        insert_feature_parameter(ctx, &mut parameters, name, CommaList(&affected.ids))?;
+        insert_feature_parameter(&mut parameters, name, CommaList(&affected.ids));
     }
     for affected in scan
         .features
@@ -570,35 +487,31 @@ pub(in super::super) fn feature_parameters(
         .filter(|record| record.feature_id == feature_id)
     {
         insert_feature_parameter(
-            ctx,
             &mut parameters,
             "replay_affected_geometry_ids",
             CommaList(&affected.geometry_ids),
-        )?;
+        );
         insert_feature_parameter(
-            ctx,
             &mut parameters,
             "replay_affected_edge_ids",
             CommaList(&affected.edge_ids),
-        )?;
+        );
         insert_feature_parameter(
-            ctx,
             &mut parameters,
             "replay_geometry_extent",
             match affected.geometry_extent {
                 crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
                 crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
             },
-        )?;
+        );
         insert_feature_parameter(
-            ctx,
             &mut parameters,
             "replay_edge_extent",
             match affected.edge_extent {
                 crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
                 crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
             },
-        )?;
+        );
     }
     for affected in scan
         .features
@@ -617,7 +530,7 @@ pub(in super::super) fn feature_parameters(
                 &affected.quilt_ids,
             ),
         ] {
-            insert_feature_parameter(ctx, &mut parameters, name, CommaList(ids))?;
+            insert_feature_parameter(&mut parameters, name, CommaList(ids));
         }
         for (name, extent) in [
             (
@@ -628,14 +541,13 @@ pub(in super::super) fn feature_parameters(
             ("surface_merge_replay_quilt_extent", affected.quilt_extent),
         ] {
             insert_feature_parameter(
-                ctx,
                 &mut parameters,
                 name,
                 match extent {
                     crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
                     crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
                 },
-            )?;
+            );
         }
     }
     for direction in scan
@@ -649,14 +561,13 @@ pub(in super::super) fn feature_parameters(
             crate::feature::rows::LoopRestoreDirectionLane::Secondary => "direction2",
         };
         insert_feature_parameter(
-            ctx,
             &mut parameters,
             format_args!("loop_restore.{name}"),
             direction.value,
-        )?;
+        );
     }
     if unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).is_some() {
-        replace_feature_parameter(ctx, &mut parameters, "revolution_extent", "full_turn")?;
+        replace_feature_parameter(&mut parameters, "revolution_extent", "full_turn");
     }
     for table in scan
         .features
@@ -669,20 +580,18 @@ pub(in super::super) fn feature_parameters(
                 continue;
             };
             insert_feature_parameter(
-                ctx,
                 &mut parameters,
                 format_args!(
                     "generated_entity.{}.source_section_entity_id",
                     entry.entity_id
                 ),
                 source_entity_id,
-            )?;
+            );
             insert_feature_parameter(
-                ctx,
                 &mut parameters,
                 format_args!("generated_entity.{}.entry_class", entry.entity_id),
                 entry.class_id(),
-            )?;
+            );
         }
     }
     if let Some(definition) = exactly_one(
@@ -692,23 +601,21 @@ pub(in super::super) fn feature_parameters(
             .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
     ) {
         replace_feature_parameter(
-            ctx,
             &mut parameters,
             "sketch_segment_count",
             definition
                 .segments
                 .as_ref()
                 .map_or(0, |segments| segments.rows.ordinary().count()),
-        )?;
+        );
         replace_feature_parameter(
-            ctx,
             &mut parameters,
             "dimension_count",
             definition
                 .dimensions
                 .as_ref()
                 .map_or(0, |dimensions| dimensions.rows.len()),
-        )?;
+        );
     }
     for transform in scan
         .features
@@ -717,31 +624,25 @@ pub(in super::super) fn feature_parameters(
         .filter(|transform| transform.feature_id == Some(feature_id))
     {
         let Some(definition) =
-            unique_feature_definition_for_transform(ctx, &scan.features.definitions, transform)?
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
-        let Some(profile_sketch) = model_sketch_id(ctx, scan, definition)? else {
+        let Some(profile_sketch) = model_sketch_id(scan, definition) else {
             continue;
         };
-        insert_feature_parameter(
-            ctx,
-            &mut parameters,
-            "profile_sketch",
-            profile_sketch.as_str(),
-        )?;
+        insert_feature_parameter(&mut parameters, "profile_sketch", profile_sketch.as_str());
         if feature_recipe(scan, feature_id)
             == Some(crate::feature::operations::FeatureRecipeKind::Extrude)
         {
             insert_feature_parameter(
-                ctx,
                 &mut parameters,
                 "sweep_direction",
                 CommaList(&transform.normal()),
-            )?;
+            );
         }
     }
-    Ok(parameters)
+    parameters
 }
 
 pub(in super::super) fn schema_operation_kind(schema_class: SchemaClass) -> Option<&'static str> {
@@ -772,18 +673,6 @@ pub(in super::super) fn feature_reference_name<'a>(
     records
         .all(|candidate| candidate.name_bytes.as_slice() == record.name_bytes.as_slice())
         .then_some(record.name_bytes.as_slice())
-}
-
-pub(in super::super) fn decoded_feature_reference_name<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Cow<'a, str>, CodecError> {
-    match std::str::from_utf8(bytes) {
-        Ok(name) => Ok(Cow::Borrowed(name)),
-        Err(_) => ctx
-            .copy_retained_lossy_utf8(bytes, "creo decoded feature reference name")
-            .map(Cow::Owned),
-    }
 }
 
 pub(in super::super) fn owned_section_feature_id(
@@ -825,36 +714,29 @@ pub(super) fn section_definition_for_history_feature<'a>(
 }
 
 pub(in super::super) fn feature_source_properties(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<BTreeMap<String, String>, CodecError> {
+) -> BTreeMap<String, String> {
     let mut properties = BTreeMap::new();
     if let Some(recipe) = current_feature_recipe(&scan.features.operations, feature_id) {
-        insert_feature_source_property(ctx, &mut properties, "recipe", recipe.name())?;
+        insert_feature_source_property(&mut properties, "recipe", recipe.name());
     }
     let schema_class = feature_schema_class(scan, feature_id);
     if let Some(schema_class) = schema_class {
-        insert_feature_source_property(
-            ctx,
-            &mut properties,
-            "featdefs_schema_class",
-            schema_class,
-        )?;
+        insert_feature_source_property(&mut properties, "featdefs_schema_class", schema_class);
     }
-    let row_schema_classes = feature_row_schema_classes(ctx, scan, feature_id)?;
+    let row_schema_classes = feature_row_schema_classes(scan, feature_id);
     if !row_schema_classes.is_empty() {
         insert_feature_source_property(
-            ctx,
             &mut properties,
             "featdefs_row_schema_classes",
             SchemaClassList(&row_schema_classes),
-        )?;
+        );
     }
     if schema_class.is_none() && !row_schema_classes.is_empty() {
-        insert_feature_source_property(ctx, &mut properties, "featdefs_schema_state", "ambiguous")?;
+        insert_feature_source_property(&mut properties, "featdefs_schema_state", "ambiguous");
     }
-    Ok(properties)
+    properties
 }
 
 pub(in super::super) struct SchemaClassList<'a>(pub &'a BTreeSet<SchemaClass>);
@@ -872,18 +754,13 @@ impl std::fmt::Display for SchemaClassList<'_> {
 }
 
 pub(in super::super) fn insert_feature_source_property(
-    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<String, String>,
     key: impl std::fmt::Display,
     value: impl std::fmt::Display,
-) -> Result<(), CodecError> {
-    let key = ctx.format_retained(format_args!("{key}"), "creo feature source property key")?;
-    let value = ctx.format_retained(
-        format_args!("{value}"),
-        "creo feature source property value",
-    )?;
-    ctx.insert_btree_map(properties, key, value, "creo feature source property nodes")?;
-    Ok(())
+) {
+    let key = format!("{key}");
+    let value = format!("{value}");
+    properties.insert(key, value);
 }
 
 #[cfg(test)]

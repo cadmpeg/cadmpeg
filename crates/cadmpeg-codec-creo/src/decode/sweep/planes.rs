@@ -9,7 +9,6 @@ use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled
 use crate::surface::SurfaceParameterRecord;
 use crate::vecmath::dot;
 use crate::vecmath::unit_length;
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
@@ -59,42 +58,33 @@ const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
 
 pub(in super::super) fn feature_plane_equations(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Result<Option<Vec<crate::decode::analytic::equations::PlaneEquation>>, CodecError> {
+) -> Option<Vec<crate::decode::analytic::equations::PlaneEquation>> {
     let mut ids = BTreeSet::new();
     for row in scan.surfaces.rows.iter().filter(|row| {
         row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
     }) {
-        ctx.insert_btree_set(&mut ids, row.id, "creo feature plane ID nodes")?;
+        ids.insert(row.id);
     }
     let mut local_planes = BTreeMap::new();
     for id in &ids {
         match feature_local_plane(scan, *id) {
             Ok(Some(plane)) => {
-                ctx.insert_btree_map(
-                    &mut local_planes,
-                    *id,
-                    plane,
-                    "creo feature local plane nodes",
-                )?;
+                local_planes.insert(*id, plane);
             }
             Ok(None) => {}
-            Err(()) => return Ok(None),
+            Err(()) => return None,
         }
     }
     let mut equations = Vec::new();
     for id in ids {
-        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, id) else {
-            return Ok(None);
-        };
-        ctx.reserve_vec(&mut equations, 1, "creo feature plane equations")?;
+        let plane = reconciled_model_plane(&local_planes, ir, source_carriers, id)?;
         equations.push(plane);
     }
-    Ok(Some(equations))
+    Some(equations)
 }
 
 pub(in super::super) type FeatureOutlinePlane = (u32, [f64; 3], [f64; 3]);
@@ -158,41 +148,31 @@ pub(in super::super) fn feature_outline_plane(
 /// unambiguous placed equations. Partial collections cannot establish ordered
 /// caps.
 pub(in super::super) fn feature_outline_planes(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<Option<Vec<FeatureOutlinePlane>>, CodecError> {
+) -> Option<Vec<FeatureOutlinePlane>> {
     let mut planes = Vec::new();
     for row in scan.surfaces.rows.iter().filter(|row| {
         row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
     }) {
-        let Some(plane) = feature_outline_plane(scan, feature_id, row.id) else {
-            return Ok(None);
-        };
-        ctx.reserve_vec(&mut planes, 1, "creo feature outline planes")?;
+        let plane = feature_outline_plane(scan, feature_id, row.id)?;
         planes.push(plane);
     }
-    Ok(Some(planes))
+    Some(planes)
 }
 
 pub(in super::super) fn generated_arc_cylinder_extent(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
-) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    let Some(feature_id) = definition.identity.owner_feature_id() else {
-        return Ok(None);
-    };
-    let Some(segments) = definition
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let feature_id = definition.identity.owner_feature_id()?;
+    let segments = definition
         .segments
         .as_ref()
-        .filter(|segments| segments.is_complete())
-    else {
-        return Ok(None);
-    };
+        .filter(|segments| segments.is_complete())?;
     let mut surface_ids = BTreeSet::new();
     for (_, entry) in scan
         .features
@@ -222,33 +202,22 @@ pub(in super::super) fn generated_arc_cylinder_extent(
             continue;
         };
         if surface_ids.contains(&row.id) {
-            return Ok(None);
+            return None;
         }
-        ctx.insert_btree_set(
-            &mut surface_ids,
-            row.id,
-            "creo generated arc cylinder ID nodes",
-        )?;
+        surface_ids.insert(row.id);
     }
-    let Some(frame_records) = unique_available_positional_cylinder_frame_records(
-        ctx,
+    let frame_records = unique_available_positional_cylinder_frame_records(
         &surface_ids,
         &scan.surfaces.parameters,
-    )?
-    else {
-        return Ok(None);
-    };
+    )?;
     if frame_records.is_empty()
         || !frame_records.iter().all(|(surface_id, frame)| {
             cylinder_frame_agrees_with_model(ir, *surface_id, frame, source_carriers)
         })
     {
-        return Ok(None);
+        return None;
     }
-    Ok(agreed_generated_cylinder_extent(
-        transform,
-        frame_records.iter().map(|(_, frame)| frame),
-    ))
+    agreed_generated_cylinder_extent(transform, frame_records.iter().map(|(_, frame)| frame))
 }
 
 fn cylinder_frame_agrees_with_model(
@@ -345,7 +314,6 @@ pub(super) fn ordered_parallel_cap_extent(
 }
 
 pub(in super::super) fn generated_cap_plane_extent(
-    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
@@ -377,7 +345,7 @@ pub(in super::super) fn generated_cap_plane_extent(
     })() else {
         return Ok(None);
     };
-    let local_planes = placed_planes(ctx, scan)?;
+    let local_planes = placed_planes(scan)?;
     let plane = |surface_id: u32| {
         let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
         (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
@@ -390,10 +358,9 @@ pub(in super::super) fn generated_cap_plane_extent(
 }
 
 pub(in super::super) fn unique_available_positional_cylinder_frame_records(
-    ctx: &DecodeContext<'_>,
     surface_ids: &BTreeSet<u32>,
     parameters: &[crate::surface::SurfaceParameterRecord],
-) -> Result<Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>>, CodecError> {
+) -> Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>> {
     let mut frames = Vec::new();
     for surface_id in surface_ids {
         let mut matching = parameters
@@ -401,14 +368,13 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
             .filter(|record| record.surface_id == *surface_id);
         let first = matching.next();
         if matching.next().is_some() {
-            return Ok(None);
+            return None;
         }
         if let Some(frame) = first.and_then(SurfaceParameterRecord::positional_cylinder_frame) {
-            ctx.reserve_vec(&mut frames, 1, "creo available positional cylinder frames")?;
             frames.push((*surface_id, frame));
         }
     }
-    Ok(Some(frames))
+    Some(frames)
 }
 
 pub(in super::super) fn agreed_generated_cylinder_extent<'a>(

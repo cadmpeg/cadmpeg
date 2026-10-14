@@ -2,17 +2,17 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::feature::definitions::placement_instruction_rows;
-use crate::feature::definitions::positional_saved_section as parse_positional_saved_section;
+use crate::feature::definitions::positional_saved_section;
 use crate::feature::definitions::saved_arc_scalar;
-use crate::feature::definitions::saved_circular_entities as parse_saved_circular_entities;
-use crate::feature::definitions::saved_conic_entities as parse_saved_conic_entities;
-use crate::feature::definitions::saved_line_entities as parse_saved_line_entities;
-use crate::feature::definitions::saved_positional_generated_entities as parse_saved_positional_generated_entities;
+use crate::feature::definitions::saved_circular_entities;
+use crate::feature::definitions::saved_conic_entities;
+use crate::feature::definitions::saved_line_entities;
+use crate::feature::definitions::saved_positional_generated_entities;
 use crate::feature::definitions::saved_section as parse_saved_section;
 use crate::feature::definitions::saved_section_scalar;
 use crate::feature::definitions::saved_spline_entities as parse_saved_spline_entities;
 use crate::feature::definitions::saved_spline_parameter;
-use crate::feature::definitions::variable_table as parse_variable_table;
+use crate::feature::definitions::variable_table;
 use crate::feature::definitions::FeatureOrderRow;
 use crate::feature::definitions::FeatureOrderTable;
 use crate::feature::definitions::FeatureSavedEntity;
@@ -26,8 +26,6 @@ use crate::feature::operations::FeatureReferenceName;
 use crate::feature::rows::FeatureFieldValue;
 use crate::psb;
 use crate::scalar;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 fn saved_section(
     payload: &[u8],
@@ -37,10 +35,8 @@ fn saved_section(
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
 ) -> Option<crate::feature::definitions::FeatureSavedSection> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_saved_section(ctx, payload, start, end, cache, order_table, segments)
-    })
-    .expect("saved section admitted")
+    { parse_saved_section(payload, start, end, cache, order_table, segments) }
+        .expect("saved section admitted")
 }
 
 fn saved_spline_entities(
@@ -49,93 +45,15 @@ fn saved_spline_entities(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Vec<FeatureSavedEntity> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_saved_spline_entities(ctx, payload, start, end, cache)
-    })
-    .expect("saved spline entities admitted")
+    { parse_saved_spline_entities(payload, start, end, cache) }
+        .expect("saved spline entities admitted")
 }
 
-fn saved_line_entities(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_saved_line_entities(ctx, payload, start, end, cache)
-    })
-    .expect("saved line entities admitted")
-}
-
-fn saved_circular_entities(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-    order_table: Option<&FeatureOrderTable>,
-    segments: Option<&FeatureSegmentTable>,
-) -> Vec<FeatureSavedEntity> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_saved_circular_entities(ctx, payload, start, end, cache, order_table, segments)
-    })
-    .expect("saved circular entities admitted")
-}
-
-fn saved_conic_entities(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_saved_conic_entities(ctx, payload, start, end, cache)
-    })
-    .expect("saved conic entities admitted")
-}
-
-fn positional_saved_section(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-    order_table: Option<&FeatureOrderTable>,
-    segments: Option<&FeatureSegmentTable>,
-) -> Option<crate::feature::definitions::FeatureSavedSection> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_saved_section(ctx, payload, start, end, cache, order_table, segments)
-    })
-    .expect("positional saved section admitted")
-}
-
-fn saved_positional_generated_entities(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-    order_table: Option<&FeatureOrderTable>,
-    segments: Option<&FeatureSegmentTable>,
-) -> Vec<FeatureSavedEntity> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_saved_positional_generated_entities(
-            ctx,
-            payload,
-            start,
-            end,
-            cache,
-            order_table,
-            segments,
-        )
-    })
-    .expect("positional generated entities admitted")
-}
-
-fn generated_row_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
+fn generated_row(
     kind: FeatureSegmentKind,
     vertical_horizontal: Option<u32>,
     scalar_count: usize,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+) -> Vec<FeatureSavedEntity> {
     let mut payload = vec![0xe3, 7, 0xe2];
     payload.extend(vec![0x0f; scalar_count]);
     payload.push(0xe3);
@@ -172,451 +90,70 @@ fn generated_row_with_limits(
         .collect(),
         offset: 0,
     };
-    with_saved_leaf_limits(&payload, collection_limit, retained_limit, |ctx| {
-        parse_saved_positional_generated_entities(
-            ctx,
-            &payload,
-            0,
-            payload.len(),
-            &scalar::ScalarCache::default(),
-            Some(&order),
-            Some(&segments),
-        )
-    })
-}
-
-fn generated_arc_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
-    generated_row_with_limits(
-        collection_limit,
-        retained_limit,
-        FeatureSegmentKind::Arc([1, 2]),
-        None,
-        12,
+    saved_positional_generated_entities(
+        &payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        Some(&order),
+        Some(&segments),
     )
 }
 
-fn generated_line_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
-    generated_row_with_limits(
-        collection_limit,
-        retained_limit,
-        FeatureSegmentKind::Line([1, 2]),
-        Some(0),
-        6,
-    )
-}
-
-macro_rules! generated_arc_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert!(matches!(generated_arc_with_limits($limit, u64::MAX),
-                Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == $operation));
-            let entities = generated_arc_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| generated_arc_with_limits(u64::MAX, cap))).expect("generated arc admitted");
-            let [FeatureSavedEntity::Arc(arc)] = entities.as_slice() else {
-                panic!("generated arc");
-            };
-            assert_eq!(arc.entity_id, 7);
-            assert_eq!(arc.body.len(), 14);
-        }
+#[test]
+fn saved_generated_arc_keeps_entity_id_and_body() {
+    let entities = generated_row(FeatureSegmentKind::Arc([1, 2]), None, 12);
+    let [FeatureSavedEntity::Arc(arc)] = entities.as_slice() else {
+        panic!("generated arc");
     };
-}
-
-generated_arc_collection_limit_test!(
-    saved_generated_segment_node_refuses_before_btree_insertion,
-    0,
-    "creo saved generated segment nodes"
-);
-generated_arc_collection_limit_test!(
-    saved_generated_row_start_refuses_before_vec_growth,
-    1,
-    "creo saved generated row starts"
-);
-generated_arc_collection_limit_test!(
-    saved_generated_arc_refuses_before_entity_append,
-    2,
-    "creo saved generated entities"
-);
-
-#[test]
-fn saved_generated_arc_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(generated_arc_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved generated arc body"), |cap| generated_arc_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved generated arc body")
-    );
-    assert_eq!(
-        generated_arc_with_limits(
-            3,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| generated_arc_with_limits(u64::MAX, cap)
-            )
-        )
-        .expect("generated arc admitted")
-        .len(),
-        1
-    );
+    assert_eq!(arc.entity_id, 7);
+    assert_eq!(arc.body.len(), 14);
 }
 
 #[test]
-fn saved_generated_line_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(generated_line_with_limits(3, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved generated line body"), |cap| generated_line_with_limits(3, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved generated line body")
-    );
-    let entities = generated_line_with_limits(
-        3,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            None,
-            |cap| generated_line_with_limits(u64::MAX, cap),
-        ),
-    )
-    .expect("generated line admitted");
+fn saved_generated_line_keeps_body() {
+    let entities = generated_row(FeatureSegmentKind::Line([1, 2]), Some(0), 6);
     let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
         panic!("generated line");
     };
     assert_eq!(line.body.len(), 8);
 }
 
-fn with_saved_leaf_limits<T>(
-    payload: &[u8],
-    collection_limit: u64,
-    retained_limit: u64,
-    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("saved leaf fits root policy");
-    run(&ctx)
-}
-
-const SAVED_CIRCULAR_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(arc)\0\xe0\x01id\0\x07\
-    \xe0\x00entity(circle)\0\xe0\x01id\0\x08";
-const SAVED_CONIC_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(conic)\0\xe0\x01id\0\x02\xe0\x01type\0\x3a";
-const SAVED_DUMMY_LIMIT_INPUT: &[u8] = b"\xe0\x00entity(dummy_ent)\0\x07";
-
-fn saved_circular_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
-    with_saved_leaf_limits(
-        SAVED_CIRCULAR_LIMIT_INPUT,
-        collection_limit,
-        retained_limit,
-        |ctx| {
-            parse_saved_circular_entities(
-                ctx,
-                SAVED_CIRCULAR_LIMIT_INPUT,
-                0,
-                SAVED_CIRCULAR_LIMIT_INPUT.len(),
-                &scalar::ScalarCache::default(),
-                None,
-                None,
-            )
-        },
-    )
-}
+const SAVED_CONIC_INPUT: &[u8] = b"\xe0\x00entity(conic)\0\xe0\x01id\0\x02\xe0\x01type\0\x3a";
 
 #[test]
-fn saved_arc_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(saved_circular_with_limits(2, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved arc body"), |cap| saved_circular_with_limits(2, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved arc body")
-    );
+fn saved_conic_entity_decodes() {
     assert_eq!(
-        saved_circular_with_limits(
-            2,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| saved_circular_with_limits(u64::MAX, cap)
-            )
+        saved_conic_entities(
+            SAVED_CONIC_INPUT,
+            0,
+            SAVED_CONIC_INPUT.len(),
+            &scalar::ScalarCache::default(),
         )
-        .expect("arc and circle admitted")
-        .len(),
-        2
-    );
-}
-
-#[test]
-fn saved_circle_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(saved_circular_with_limits(2, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved circle body"), |cap| saved_circular_with_limits(2, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved circle body")
-    );
-    assert_eq!(
-        saved_circular_with_limits(
-            2,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| saved_circular_with_limits(u64::MAX, cap)
-            )
-        )
-        .expect("arc and circle admitted")
-        .len(),
-        2
-    );
-}
-
-#[test]
-fn saved_circular_entities_refuse_before_each_append() {
-    for limit in [0, 1] {
-        assert!(matches!(saved_circular_with_limits(limit, u64::MAX),
-            Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo saved circular entities"));
-    }
-    assert_eq!(
-        saved_circular_with_limits(2, u64::MAX)
-            .expect("arc and circle admitted")
-            .len(),
-        2
-    );
-}
-
-#[test]
-fn saved_conic_body_refuses_before_retained_copy() {
-    let run = |collection, retained| {
-        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, collection, retained, |ctx| {
-            parse_saved_conic_entities(
-                ctx,
-                SAVED_CONIC_LIMIT_INPUT,
-                0,
-                SAVED_CONIC_LIMIT_INPUT.len(),
-                &scalar::ScalarCache::default(),
-            )
-        })
-    };
-    assert!(matches!(run(1, 13), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved conic body"));
-    assert_eq!(
-        run(
-            1,
-            14 + cadmpeg_core::decode::u64_from_index(
-                4 * std::mem::size_of::<super::FeatureSavedEntity>()
-            )
-        )
-        .expect("conic admitted")
         .len(),
         1
     );
 }
 
-#[test]
-fn saved_conic_entity_refuses_before_append() {
-    assert!(
-        matches!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 0, u64::MAX, |ctx| {
-        parse_saved_conic_entities(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
-            SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-    }), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo saved conic entities")
-    );
-    assert_eq!(
-        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 1, u64::MAX, |ctx| {
-            parse_saved_conic_entities(
-                ctx,
-                SAVED_CONIC_LIMIT_INPUT,
-                0,
-                SAVED_CONIC_LIMIT_INPUT.len(),
-                &scalar::ScalarCache::default(),
-            )
-        })
-        .expect("conic admitted")
-        .len(),
-        1
-    );
-}
-
-#[test]
-fn saved_dummy_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, 0, |ctx| {
-        crate::feature::definitions::saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
-            SAVED_DUMMY_LIMIT_INPUT.len())
-    }), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved dummy body")
-    );
-    assert_eq!(
-        with_saved_leaf_limits(
-            SAVED_DUMMY_LIMIT_INPUT,
-            1,
-            1 + cadmpeg_core::decode::u64_from_index(
-                4 * std::mem::size_of::<super::FeatureSavedEntity>()
-            ),
-            |ctx| {
-                crate::feature::definitions::saved_dummy_entities(
-                    ctx,
-                    SAVED_DUMMY_LIMIT_INPUT,
-                    0,
-                    SAVED_DUMMY_LIMIT_INPUT.len(),
-                )
-            }
-        )
-        .expect("dummy admitted")
-        .len(),
-        1
-    );
-}
-
-#[test]
-fn saved_dummy_entity_refuses_before_append() {
-    assert!(
-        matches!(with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 0, u64::MAX, |ctx| {
-        crate::feature::definitions::saved_dummy_entities(ctx, SAVED_DUMMY_LIMIT_INPUT, 0,
-            SAVED_DUMMY_LIMIT_INPUT.len())
-    }), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo saved dummy entities")
-    );
-    assert_eq!(
-        with_saved_leaf_limits(SAVED_DUMMY_LIMIT_INPUT, 1, u64::MAX, |ctx| {
-            crate::feature::definitions::saved_dummy_entities(
-                ctx,
-                SAVED_DUMMY_LIMIT_INPUT,
-                0,
-                SAVED_DUMMY_LIMIT_INPUT.len(),
-            )
-        })
-        .expect("dummy admitted")
-        .len(),
-        1
-    );
-}
-
-#[test]
-fn positional_saved_section_conic_refuses_before_aggregate_growth() {
-    assert!(
-        matches!(with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 1, u64::MAX, |ctx| {
-        parse_positional_saved_section(ctx, SAVED_CONIC_LIMIT_INPUT, 0,
-            SAVED_CONIC_LIMIT_INPUT.len(), &scalar::ScalarCache::default(), None, None)
-    }), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo positional saved section entities")
-    );
-    assert_eq!(
-        with_saved_leaf_limits(SAVED_CONIC_LIMIT_INPUT, 2, u64::MAX, |ctx| {
-            parse_positional_saved_section(
-                ctx,
-                SAVED_CONIC_LIMIT_INPUT,
-                0,
-                SAVED_CONIC_LIMIT_INPUT.len(),
-                &scalar::ScalarCache::default(),
-                None,
-                None,
-            )
-        })
-        .expect("section admitted")
-        .expect("conic section present")
-        .entities
-        .len(),
-        1
-    );
-}
-
-const SAVED_LINE_LIMIT_INPUT: &[u8] =
+const SAVED_LINE_INPUT: &[u8] =
     b"\xe0\x00entity(line)\0\xf7\x2a\xeb\x01\x02\x03\x04\x05\x07\xe2\x0f\x0f\x0f\xe3";
 
-fn saved_line_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(SAVED_LINE_LIMIT_INPUT, &arena, &policy)
-        .expect("saved line fits root policy");
-    parse_saved_line_entities(
-        &ctx,
-        SAVED_LINE_LIMIT_INPUT,
-        0,
-        SAVED_LINE_LIMIT_INPUT.len(),
-        &scalar::ScalarCache::default(),
-    )
-}
-
-macro_rules! saved_line_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert!(matches!(saved_line_with_limits($limit, u64::MAX),
-                Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == $operation));
-            let entities = saved_line_with_limits(4, u64::MAX).expect("saved line admitted");
-            let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
-                panic!("saved line");
-            };
-            assert_eq!(line.references, [42]);
-            assert_eq!(line.attributes, [[1, 2, 3, 4, 5]]);
-        }
-    };
-}
-
-saved_line_collection_limit_test!(
-    saved_line_references_refuse_before_vec_growth,
-    0,
-    "creo saved line references"
-);
-saved_line_collection_limit_test!(
-    saved_line_attributes_refuse_before_vec_growth,
-    1,
-    "creo saved line attributes"
-);
-saved_line_collection_limit_test!(
-    saved_line_block_refuses_before_entity_append,
-    2,
-    "creo saved line block entities"
-);
-saved_line_collection_limit_test!(
-    saved_line_group_refuses_before_entity_extend,
-    3,
-    "creo saved line entities"
-);
-
 #[test]
-fn saved_line_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(saved_line_with_limits(4, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo saved line body"), |cap| saved_line_with_limits(4, cap))), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo saved line body")
+fn saved_line_keeps_references_and_attributes() {
+    let entities = saved_line_entities(
+        SAVED_LINE_INPUT,
+        0,
+        SAVED_LINE_INPUT.len(),
+        &scalar::ScalarCache::default(),
     );
-    assert_eq!(
-        saved_line_with_limits(
-            4,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| saved_line_with_limits(u64::MAX, cap)
-            )
-        )
-        .expect("saved line admitted")
-        .len(),
-        1
-    );
+    let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
+        panic!("saved line");
+    };
+    assert_eq!(line.references, [42]);
+    assert_eq!(line.attributes, [[1, 2, 3, 4, 5]]);
 }
 
-const SAVED_SPLINE_LIMIT_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
+const SAVED_SPLINE_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
     \xe0\x01id\0\x07\
     \xe0\x02i_pnts\0\xf9\x02\x03\
     \xe4\x0f\x0d\x0f\xe4\x0f\
@@ -625,95 +162,27 @@ const SAVED_SPLINE_LIMIT_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
     \xe0\x02params\0\xf8\x02\x0f\xe4\
     \xe0\x01tan_cond\0\x00";
 
-fn saved_spline_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(SAVED_SPLINE_LIMIT_INPUT, &arena, &policy)
-        .expect("spline input fits root policy");
-    parse_saved_spline_entities(
-        &ctx,
-        SAVED_SPLINE_LIMIT_INPUT,
-        0,
-        SAVED_SPLINE_LIMIT_INPUT.len(),
-        &scalar::ScalarCache::default(),
-    )
+#[test]
+fn saved_spline_entity_decodes() {
+    assert_eq!(
+        parse_saved_spline_entities(
+            SAVED_SPLINE_INPUT,
+            0,
+            SAVED_SPLINE_INPUT.len(),
+            &scalar::ScalarCache::default(),
+        )
+        .expect("spline decodes")
+        .len(),
+        1
+    );
 }
-
-macro_rules! saved_spline_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert!(matches!(saved_spline_with_limits($limit, u64::MAX),
-                Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == $operation));
-            assert_eq!(saved_spline_with_limits(5, u64::MAX).expect("spline admitted").len(), 1);
-        }
-    };
-}
-
-saved_spline_collection_limit_test!(
-    saved_spline_points_refuse_before_reserve,
-    1,
-    "creo saved spline points"
-);
-saved_spline_collection_limit_test!(
-    saved_spline_parameters_refuse_before_reserve,
-    3,
-    "creo saved spline parameters"
-);
-saved_spline_collection_limit_test!(
-    saved_spline_entity_refuses_before_append,
-    4,
-    "creo saved spline entities"
-);
-
-macro_rules! saved_spline_retained_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            assert!(matches!(saved_spline_with_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some($operation), |cap| saved_spline_with_limits(u64::MAX, cap))),
-                Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == $operation));
-            assert_eq!(saved_spline_with_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| saved_spline_with_limits(u64::MAX, cap))).expect("spline admitted").len(), 1);
-        }
-    };
-}
-
-saved_spline_retained_limit_test!(
-    saved_spline_point_body_refuses_before_copy,
-    8,
-    "creo saved spline point body"
-);
-saved_spline_retained_limit_test!(
-    saved_spline_tangent_body_refuses_before_copy,
-    17,
-    "creo saved spline tangent body"
-);
-saved_spline_retained_limit_test!(
-    saved_spline_parameter_body_refuses_before_copy,
-    21,
-    "creo saved spline parameter body"
-);
 
 #[test]
-fn saved_section_entity_refuses_before_aggregate_growth() {
+fn saved_section_collects_spline_entity() {
     let mut payload = b"\xe0\x00p_saved_result\0".to_vec();
-    payload.extend_from_slice(SAVED_SPLINE_LIMIT_INPUT);
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-            .expect("saved section fits root policy");
+    payload.extend_from_slice(SAVED_SPLINE_INPUT);
+    assert_eq!(
         parse_saved_section(
-            &ctx,
             &payload,
             0,
             payload.len(),
@@ -721,108 +190,24 @@ fn saved_section_entity_refuses_before_aggregate_growth() {
             None,
             None,
         )
-    };
-    assert!(matches!(run(5), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo saved section entities"));
-    assert_eq!(
-        run(6)
-            .expect("section admitted")
-            .expect("section present")
-            .entities
-            .len(),
+        .expect("section decodes")
+        .expect("section present")
+        .entities
+        .len(),
         1
     );
-}
-
-fn variable_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    cache: &scalar::ScalarCache,
-) -> Option<crate::feature::definitions::FeatureVariableTable> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_variable_table(ctx, payload, start, end, cache))
-        .expect("variable table admitted")
-}
-
-fn variable_row_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<crate::feature::definitions::FeatureVariableTable, cadmpeg_core::CodecError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
-            \x00\x41\x18\x20\x96\x61\x01\x01\x82\x06\xe2";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
-    Ok(parse_variable_table(
-        &ctx,
-        payload,
-        0,
-        payload.len(),
-        &scalar::ScalarCache::default(),
-    )?
-    .expect("complete variable table"))
-}
-
-#[test]
-fn named_variable_row_vec_refuses_before_growth() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    assert_eq!(
-        variable_row_with_limits(1, u64::MAX)
-            .expect("one row admitted")
-            .rows
-            .len(),
-        1
-    );
-    let error = variable_row_with_limits(0, u64::MAX).expect_err("one row needs one item");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo variable rows"));
-}
-
-#[test]
-fn named_variable_value_body_refuses_before_retention() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let error = variable_row_with_limits(1, 0).expect_err("value needs one byte");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo variable value body"));
-}
-
-#[test]
-fn named_variable_guess_body_refuses_before_retention() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let error = variable_row_with_limits(1, 1).expect_err("guess needs three bytes");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo variable guess body"));
 }
 
 fn operation_states(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperationState> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        crate::feature::operations::operation_states(ctx, payload)
-    })
-    .expect("feature operation states are admitted")
+    crate::feature::operations::operation_states(payload)
 }
 
 fn operations(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperation> {
-    crate::decode::with_test_decode_ctx(|ctx| crate::feature::operations::operations(ctx, payload))
-        .expect("feature operations are admitted")
+    crate::feature::operations::operations(payload)
 }
 
 fn field_value(payload: &[u8]) -> crate::feature::rows::FeatureFieldValue {
-    crate::decode::with_test_decode_ctx(|ctx| crate::feature::rows::field_value(ctx, payload))
-        .expect("field value is admitted")
+    crate::feature::rows::field_value(payload)
 }
 
 #[test]
@@ -1849,11 +1234,7 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
     let payload = b"\0\xf7\x71\x2a\x05\x29Datum Plane id 41\0\x2a\x2a\x10\0\
             \xf7\x71\x30\x05\x2fBroken\0\x30\x31";
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("root input is admitted");
-    let names = reference_names(&ctx, payload).expect("reference names");
+    let names = reference_names(payload);
     assert_eq!(
         names,
         [FeatureReferenceName {

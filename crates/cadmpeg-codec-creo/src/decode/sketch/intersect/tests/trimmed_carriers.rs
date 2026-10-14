@@ -16,20 +16,19 @@ fn trimmed_section_segment_geometry(
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        let missing_line = saved_section_missing_line_geometry(ctx, definition)?;
-        let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, definition)?;
-        trimmed_section_segment_geometry_with_missing_line(
-            ctx,
-            definition,
-            points,
-            &radii,
-            trim_vertices,
-            segment,
-            missing_line.as_ref(),
-        )
+    let missing_line = saved_section_missing_line_geometry(definition);
+    let radii = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sketch::radii::resolved_section_radii(ctx, definition)
     })
-    .expect("test section geometry")
+    .expect("test section radii");
+    trimmed_section_segment_geometry_with_missing_line(
+        definition,
+        points,
+        &radii,
+        trim_vertices,
+        segment,
+        missing_line.as_ref(),
+    )
 }
 
 #[test]
@@ -330,7 +329,11 @@ fn arc_carriers_use_trim_vertices() {
                 trimmed_section_segment_geometry(&scaled, &BTreeMap::new(), &vertices, &segment);
             let resolved = crate::decode::with_test_decode_ctx(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &scaled)?;
-                resolved_trim_vertex_coordinates(ctx, &scaled, &BTreeMap::new(), &radii)
+                Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                    &scaled,
+                    &BTreeMap::new(),
+                    &radii,
+                ))
             })
             .expect("test section geometry");
             if factor == 1.0 {
