@@ -33,7 +33,7 @@ use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTe
 use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane_charged, read_f64_array,
+    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane, read_f64_array,
     u32_le_24, AllocationReferenceEncoding,
 };
 #[cfg(test)]
@@ -596,15 +596,13 @@ pub(crate) struct B2EdgeNode {
 #[cfg(test)]
 pub(in crate::families) fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_use_metadata_from_records(data, &records).expect("service decode")
-    })
+    crate::test_support::with_service_context(|ctx| b2_use_metadata_from_records(data, &records))
 }
 
 pub(in crate::families) fn b2_use_metadata_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2UseMetadata>, CodecError> {
+) -> Vec<B2UseMetadata> {
     let mut uses = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x06) {
         let payload = data[frame.payload..frame.end].to_vec();
@@ -651,7 +649,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
             kind,
         });
     }
-    Ok(uses)
+    uses
 }
 
 /// Decode class-`0x5e` payloads and their `0x0a <u16le>` reference tokens.
@@ -753,10 +751,10 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
 }
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
-pub(crate) fn b2_cone_faces(data: &[u8]) -> Result<Vec<B2ConeFace>, CodecError> {
+pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
     let mut faces = Vec::new();
     let Some(last) = data.len().checked_sub(5) else {
-        return Ok(faces);
+        return faces;
     };
     for pos in 0..last {
         let Some(width) = data[pos]
@@ -811,7 +809,7 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Result<Vec<B2ConeFace>, CodecError> 
             });
         }
     }
-    Ok(faces)
+    faces
 }
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
@@ -819,15 +817,13 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Result<Vec<B2ConeFace>, CodecError> 
 #[cfg(test)]
 fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_reference_lists_from_records(data, &records).expect("service decode")
-    })
+    crate::test_support::with_service_context(|ctx| b2_reference_lists_from_records(data, &records))
 }
 
 pub(crate) fn b2_reference_lists_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2ReferenceList>, CodecError> {
+) -> Vec<B2ReferenceList> {
     let mut lists = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x37) {
         if frame.header_token != 5
@@ -854,7 +850,7 @@ pub(crate) fn b2_reference_lists_from_records(
             });
         }
     }
-    Ok(lists)
+    lists
 }
 
 /// Decode class-`0x62` owner packets whose leading count fixes the persistent
@@ -870,7 +866,7 @@ fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
 pub(crate) fn b2_counted_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2CountedOwner>, CodecError> {
+) -> Vec<B2CountedOwner> {
     let mut owners = Vec::new();
     for (frame, source_index) in b2_owner_frames(records) {
         let Some(count) = data
@@ -911,7 +907,7 @@ pub(crate) fn b2_counted_owners_from_records(
             tail,
         });
     }
-    Ok(owners)
+    owners
 }
 
 /// Decode fixed-nine class-`0x62` owner packets whose references and numeric
@@ -947,7 +943,7 @@ pub(crate) fn b2_owner_packets_from_records<'a>(
 pub(crate) fn b2_owner_identity_targets_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OwnerIdentityTarget>, CodecError> {
+) -> Vec<B2OwnerIdentityTarget> {
     let mut packets = BTreeMap::new();
     for packet in b2_owner_packets_from_records(data, records) {
         packets.insert((packet.source_index, packet.pos), packet);
@@ -1013,7 +1009,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
             });
         }
     }
-    Ok(targets)
+    targets
 }
 
 /// Select a fixed-nine boundary only when its complete resolved target set is
@@ -1023,15 +1019,15 @@ pub(crate) fn b2_owner_identity_targets_from_records(
 pub(in crate::families) fn b2_closed_owner_boundary_edges(
     targets: &[B2OwnerIdentityTarget],
     endpoint_records: &HashMap<usize, [usize; 2]>,
-) -> Result<Option<[B2OwnerBoundaryEdge; 4]>, CodecError> {
+) -> Option<[B2OwnerBoundaryEdge; 4]> {
     let [first, second, third, fourth] = targets else {
-        return Ok(None);
+        return None;
     };
     if targets
         .iter()
         .any(|target| target.target_class != crate::native::CatiaOwnerIdentityClass::Edge)
     {
-        return Ok(None);
+        return None;
     }
     let edge = |target: &B2OwnerIdentityTarget| {
         Some(B2OwnerBoundaryEdge {
@@ -1043,16 +1039,16 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     let (Some(first), Some(second), Some(third), Some(fourth)) =
         (edge(first), edge(second), edge(third), edge(fourth))
     else {
-        return Ok(None);
+        return None;
     };
     let mut edges = [first, second, third, fourth];
-    edges.sort_unstable_by(|left, right| left.slot.cmp(&right.slot));
+    edges.sort_unstable_by_key(|left| left.slot);
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
         || edges
             .iter()
             .any(|edge| edge.endpoint_records[0] == edge.endpoint_records[1])
     {
-        return Ok(None);
+        return None;
     }
 
     let mut edge_keys = edges.map(|edge| {
@@ -1065,7 +1061,7 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     });
     edge_keys.sort_unstable_by(Ord::cmp);
     if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
-        return Ok(None);
+        return None;
     }
     let mut vertices = [
         edges[0].endpoint_records[0],
@@ -1078,21 +1074,21 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         edges[3].endpoint_records[1],
     ];
     vertices.sort_unstable_by(Ord::cmp);
-    Ok((vertices[0] == vertices[1]
+    (vertices[0] == vertices[1]
         && vertices[1] != vertices[2]
         && vertices[2] == vertices[3]
         && vertices[3] != vertices[4]
         && vertices[4] == vertices[5]
         && vertices[5] != vertices[6]
         && vertices[6] == vertices[7])
-        .then_some(edges))
+        .then_some(edges)
 }
 
 /// Decode source-closed carrier/reference/side/owner chart productions.
 pub(crate) fn b2_owner_charts_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OwnerChart>, CodecError> {
+) -> Vec<B2OwnerChart> {
     let mut owners = BTreeMap::new();
     for owner in b2_owner_packets_from_records(data, records) {
         owners.insert((owner.source_index, owner.pos), owner);
@@ -1156,7 +1152,7 @@ pub(crate) fn b2_owner_charts_from_records(
             charts.push(chart);
         }
     }
-    Ok(charts)
+    charts
 }
 
 fn owner_chart_bridge(
@@ -1429,15 +1425,13 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
 #[cfg(test)]
 fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_counted_61_from_records(data, &records).expect("service decode")
-    })
+    crate::test_support::with_service_context(|ctx| b2_counted_61_from_records(data, &records))
 }
 
 pub(crate) fn b2_counted_61_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Counted61>, CodecError> {
+) -> Vec<B2Counted61> {
     let mut output = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
         let Some(count) = data
@@ -1484,7 +1478,7 @@ pub(crate) fn b2_counted_61_from_records(
             tail,
         });
     }
-    Ok(output)
+    output
 }
 
 /// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
@@ -1493,15 +1487,13 @@ pub(crate) fn b2_counted_61_from_records(
 #[cfg(test)]
 fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        b2_long_61_from_records(data, &records).expect("service decode")
-    })
+    crate::test_support::with_service_context(|ctx| b2_long_61_from_records(data, &records))
 }
 
 pub(crate) fn b2_long_61_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Long61>, CodecError> {
+) -> Vec<B2Long61> {
     let mut output = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
         let Some(payload_len) = frame.end.checked_sub(frame.payload) else {
@@ -1575,7 +1567,7 @@ pub(crate) fn b2_long_61_from_records(
             scalar,
         });
     }
-    Ok(output)
+    output
 }
 
 /// Decode complete B-family class-`0x5b` and class-`0x5c` control records.
@@ -1665,14 +1657,14 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
 fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
     crate::test_support::with_service_context(|ctx| {
-        b2_adjacent_face_owners_from_records(data, &records).expect("service decode")
+        b2_adjacent_face_owners_from_records(data, &records)
     })
 }
 
 pub(crate) fn b2_adjacent_face_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2AdjacentFaceOwner>, CodecError> {
+) -> Vec<B2AdjacentFaceOwner> {
     let mut nodes = BTreeMap::new();
     for value in b2_face_nodes_5f_from_records(data, records) {
         nodes.insert(value.pos, value);
@@ -1702,7 +1694,7 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
             });
         }
     }
-    Ok(adjacent)
+    adjacent
 }
 
 /// Bind immediately adjacent `5f,62` records when the count-framed packet's
@@ -1720,7 +1712,7 @@ fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwne
 pub(crate) fn b2_adjacent_face_counted_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2AdjacentFaceCountedOwner>, CodecError> {
+) -> Vec<B2AdjacentFaceCountedOwner> {
     let mut nodes = BTreeMap::new();
     for value in
         b2_face_nodes_5f_from_records(data, records).filter(|value| value.terminal == [0x03, 0x05])
@@ -1728,7 +1720,7 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
         nodes.insert(value.pos, value);
     }
     let mut owners = BTreeMap::new();
-    for value in b2_counted_owners_from_records(data, records)? {
+    for value in b2_counted_owners_from_records(data, records) {
         owners.insert(value.pos, value);
     }
     let mut adjacent = Vec::new();
@@ -1754,7 +1746,7 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
             owner,
         });
     }
-    Ok(adjacent)
+    adjacent
 }
 
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
@@ -1819,7 +1811,7 @@ pub(crate) fn b2_plane_carriers(data: &[u8]) -> Vec<B2PlaneCarrier> {
 pub(crate) fn b2_plane_carriers_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2PlaneCarrier>, CodecError> {
+) -> Vec<B2PlaneCarrier> {
     let mut carriers = Vec::new();
     for record in records
         .iter()
@@ -1897,7 +1889,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                 }
             }
             _ => {
-                let Some(values) = finite_f64_lane_charged(lane)? else {
+                let Some(values) = finite_f64_lane(lane) else {
                     continue;
                 };
                 if values.is_empty() {
@@ -1918,7 +1910,7 @@ pub(crate) fn b2_plane_carriers_from_records(
             payload,
         });
     }
-    Ok(carriers)
+    carriers
 }
 
 /// Admit the plane chart of a direction-bearing class-`0x27` layout from its
@@ -1961,7 +1953,7 @@ pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option
 pub(in crate::families) fn b2_class25_descriptors_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2Class25Descriptor>, CodecError> {
+) -> Vec<B2Class25Descriptor> {
     let mut descriptors = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x18) {
         let parsed = (|| {
@@ -1981,7 +1973,7 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
         let Some((record_id, control, lane)) = parsed else {
             continue;
         };
-        let Some(values) = finite_f64_lane_charged(lane)? else {
+        let Some(values) = finite_f64_lane(lane) else {
             continue;
         };
         descriptors.push(B2Class25Descriptor {
@@ -1991,7 +1983,7 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
             values,
         });
     }
-    Ok(descriptors)
+    descriptors
 }
 
 /// Shared-edge parameter range stored in a `b2 03 23` packet.
@@ -2288,18 +2280,16 @@ fn parse_b2_nurbs_curve(
 
     knots.extend(std::iter::repeat_with(|| knot_start).take(control_count));
     knots.extend(std::iter::repeat_with(|| knot_end).take(control_count));
-    crate::nurbs::note_refusal(
+    Ok(crate::nurbs::note_refusal(
         NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, Some(weights), false)?,
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
     )
-    .map(|geometry| {
-        geometry.map(|geometry| B2NurbsCurve {
-            pos: frame.pos,
-            header_token: frame.header_token,
-            geometry,
-        })
-    })
+    .map(|geometry| B2NurbsCurve {
+        pos: frame.pos,
+        header_token: frame.header_token,
+        geometry,
+    }))
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
@@ -2590,7 +2580,7 @@ pub(crate) fn b2_embedded_cylinders_from_records<'a>(
 fn b2_construction_offset_supports_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OffsetSupport>, CodecError> {
+) -> Vec<B2OffsetSupport> {
     let mut out = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x30) {
         let pos = frame.pos;
@@ -2640,7 +2630,7 @@ fn b2_construction_offset_supports_from_records(
             v_range,
         });
     }
-    Ok(out)
+    out
 }
 
 /// Decode `b2 03 29` analytic cone charts.
@@ -3369,7 +3359,7 @@ fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
 pub(in crate::families) fn b2_offset_supports_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<B2OffsetSupport>, CodecError> {
+) -> Vec<B2OffsetSupport> {
     let mut offsets = family_frames_from_records(records, ConsolidatedFamily::B, 0x31)
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -3396,11 +3386,11 @@ pub(in crate::families) fn b2_offset_supports_from_records(
             })
         })
         .collect::<Vec<_>>();
-    let extra = b2_construction_offset_supports_from_records(data, records)?;
+    let extra = b2_construction_offset_supports_from_records(data, records);
 
     offsets.extend(extra);
-    offsets.sort_unstable_by(|left, right| left.pos.cmp(&right.pos));
-    Ok(offsets)
+    offsets.sort_unstable_by_key(|left| left.pos);
+    offsets
 }
 
 /// Bind each offset constructor to the unique consolidated NURBS carrier whose

@@ -35,9 +35,7 @@ type MeshEndpointSolutionVisitor<'a> =
     &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
 
-fn copy_incidence_degree_rows(
-    rows: &[BTreeMap<usize, u8>],
-) -> Result<Vec<BTreeMap<usize, u8>>, CodecError> {
+fn copy_incidence_degree_rows(rows: &[BTreeMap<usize, u8>]) -> Vec<BTreeMap<usize, u8>> {
     let mut copy = Vec::new();
 
     for row in rows {
@@ -47,16 +45,16 @@ fn copy_incidence_degree_rows(
         }
         copy.push(copied_row);
     }
-    Ok(copy)
+    copy
 }
 
-fn copy_incidence_edge_rows(rows: &[EdgeRow]) -> Result<Vec<EdgeRow>, CodecError> {
+fn copy_incidence_edge_rows(rows: &[EdgeRow]) -> Vec<EdgeRow> {
     let mut copy = Vec::new();
 
     for row in rows {
         copy.push(row.clone());
     }
-    Ok(copy)
+    copy
 }
 
 fn singleton_incidence_pairs(
@@ -166,18 +164,14 @@ fn prune_incidence_choices_with_explicit_support(
         edge_faces: &[[usize; 2]],
         edge: usize,
         retained: HashSet<usize>,
-    ) -> Result<Option<()>, CodecError> {
+    ) -> Option<()> {
         let mut removed = Vec::new();
 
         removed.extend(edge_supports[edge].difference(&retained).copied());
         for face in unique_faces(edge_faces[edge]) {
             for &point in &removed {
-                let Some(count) = supports[face].get_mut(&point) else {
-                    return Ok(None);
-                };
-                let Some(next) = count.checked_sub(1) else {
-                    return Ok(None);
-                };
+                let count = supports[face].get_mut(&point)?;
+                let next = count.checked_sub(1)?;
                 *count = next;
                 if *count == 0 {
                     supports[face].remove(&point);
@@ -185,7 +179,7 @@ fn prune_incidence_choices_with_explicit_support(
             }
         }
         edge_supports[edge] = retained;
-        Ok(Some(()))
+        Some(())
     }
 
     fn sole_supporting_edge(
@@ -200,12 +194,12 @@ fn prune_incidence_choices_with_explicit_support(
             .find(|&edge| edge_supports[edge].contains(&point))
     }
 
-    fn choice_points(choices: &[[usize; 2]]) -> Result<HashSet<usize>, CodecError> {
+    fn choice_points(choices: &[[usize; 2]]) -> HashSet<usize> {
         let mut points = HashSet::new();
         for point in choices.iter().flatten().copied() {
             points.insert(point);
         }
-        Ok(points)
+        points
     }
 
     fn degree_one_points(
@@ -243,7 +237,7 @@ fn prune_incidence_choices_with_explicit_support(
     let mut edge_supports = Vec::new();
 
     for pairs in choices.iter() {
-        edge_supports.push(choice_points(pairs)?);
+        edge_supports.push(choice_points(pairs));
     }
     let mut supports = ctx.alloc_filled(
         face_count,
@@ -291,8 +285,8 @@ fn prune_incidence_choices_with_explicit_support(
                 &mut edge_supports,
                 edge_faces,
                 edge,
-                choice_points(&choices[edge])?,
-            )?
+                choice_points(&choices[edge]),
+            )
             .is_none()
             {
                 return Ok(None);
@@ -318,7 +312,7 @@ fn prune_incidence_choices_with_explicit_support(
                 edge_faces,
                 edge,
                 HashSet::new(),
-            )?
+            )
             .is_none()
             {
                 return Ok(None);
@@ -348,8 +342,8 @@ fn prune_incidence_choices_with_explicit_support(
                                 &mut edge_supports,
                                 edge_faces,
                                 edge,
-                                choice_points(&choices[edge])?,
-                            )?
+                                choice_points(&choices[edge]),
+                            )
                             .is_none()
                             {
                                 return Ok(None);
@@ -381,9 +375,7 @@ fn incidence_choice_components(
             }
             for point in pairs.iter().flatten().copied() {
                 let next = point_nodes.len();
-                if !point_nodes.contains_key(&(face, point)) {
-                    point_nodes.insert((face, point), next);
-                }
+                point_nodes.entry((face, point)).or_insert(next);
             }
         }
     }
@@ -458,10 +450,10 @@ fn incidence_choice_components(
                     connect(edges)?;
                 }
                 MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                    connect(edges.to_vec())?;
+                    connect(edges.clone())?;
                 }
                 MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                    let mut edges = domain.missing_edges.to_vec();
+                    let mut edges = domain.missing_edges.clone();
                     for (use_, _) in domain.cycles.iter().flat_map(|cycle| &cycle.exact_uses) {
                         edges.push(use_.edge);
                     }
@@ -493,8 +485,7 @@ fn incidence_choice_components(
         if let Some(group) = by_root.get_mut(&root) {
             group.push(edge);
         } else {
-            let mut group = Vec::new();
-            group.push(edge);
+            let group = vec![edge];
             by_root.insert(root, group);
         }
     }
@@ -555,7 +546,7 @@ fn join_incidence_components_by_coupling(
     for (_, edges) in &mut joined_values {
         edges.sort_unstable_by(Ord::cmp);
     }
-    joined_values.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    joined_values.sort_unstable_by_key(|left| left.0);
     let mut output = Vec::new();
     for (_, edges) in joined_values {
         output.push(edges);
@@ -566,13 +557,13 @@ fn join_incidence_components_by_coupling(
 fn order_incidence_components_by_branch_width(
     components: &mut [Vec<usize>],
     choices: &[Vec<[usize; 2]>],
-) -> Result<Option<()>, CodecError> {
+) -> Option<()> {
     if components
         .iter()
         .flatten()
         .any(|edge| *edge >= choices.len())
     {
-        return Ok(None);
+        return None;
     }
     let branch_width = |component: &[usize]| {
         component.iter().try_fold(1usize, |width, edge| {
@@ -587,8 +578,8 @@ fn order_incidence_components_by_branch_width(
             component.first().copied().unwrap_or_default(),
         )
     };
-    components.sort_by(|left, right| order_key(left).cmp(&order_key(right)));
-    Ok(Some(()))
+    components.sort_by_key(|left| order_key(left));
+    Some(())
 }
 
 /// Order incidence components while preserving prerequisites between their
@@ -626,15 +617,12 @@ fn order_incidence_components_by_constraints(
         return Ok(None);
     }
     if assignment_order.is_none() {
-        return order_incidence_components_by_branch_width(components, choices);
+        return Ok(order_incidence_components_by_branch_width(
+            components, choices,
+        ));
     }
 
-    let edge_entry_count = components
-        .iter()
-        .try_fold(0usize, |count, edges| count.checked_add(edges.len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("catia incidence component edge indices", u64::MAX, u64::MAX)
-        })?;
+    let edge_entry_count = components.iter().map(Vec::len).sum::<usize>();
     let mut component_by_edge = HashMap::new();
 
     for (component, edges) in components.iter().enumerate() {
@@ -1023,7 +1011,7 @@ impl FaceFactorGraph {
         active: &mut [Vec<u64>],
         initial: impl IntoIterator<Item = usize>,
         budget: &WorkBudget<'_>,
-    ) -> Result<Option<bool>, CodecError> {
+    ) -> Option<bool> {
         let mut queue = VecDeque::new();
         for arc in initial {
             queue.push_back(arc);
@@ -1036,7 +1024,7 @@ impl FaceFactorGraph {
                     continue;
                 }
                 if !budget.charge_by(work_units(supports.len())) {
-                    return Ok(None);
+                    return None;
                 }
                 if supports
                     .iter()
@@ -1053,20 +1041,16 @@ impl FaceFactorGraph {
                 continue;
             }
             if active[arc.left].iter().all(|word| *word == 0) {
-                return Ok(Some(false));
+                return Some(false);
             }
             for &incoming in &self.incoming[arc.left] {
                 queue.push_back(incoming);
             }
         }
-        Ok(Some(true))
+        Some(true)
     }
 
-    fn propagate_all(
-        &self,
-        active: &mut [Vec<u64>],
-        budget: &WorkBudget<'_>,
-    ) -> Result<Option<bool>, CodecError> {
+    fn propagate_all(&self, active: &mut [Vec<u64>], budget: &WorkBudget<'_>) -> Option<bool> {
         self.propagate(active, 0..self.arcs.len(), budget)
     }
 
@@ -1075,7 +1059,7 @@ impl FaceFactorGraph {
         domain: usize,
         active: &mut [Vec<u64>],
         budget: &WorkBudget<'_>,
-    ) -> Result<Option<bool>, CodecError> {
+    ) -> Option<bool> {
         self.propagate(active, self.incoming[domain].iter().copied(), budget)
     }
 }
@@ -1086,15 +1070,12 @@ impl PreparedFaceFactors {
         &self.domains
     }
 
-    fn refine_edges(
-        &mut self,
-        assigned: &[(usize, [usize; 2])],
-    ) -> Result<FaceFactorRefinement, CodecError> {
+    fn refine_edges(&mut self, assigned: &[(usize, [usize; 2])]) -> FaceFactorRefinement {
         let Some(active) = &mut self.active else {
-            return Ok(FaceFactorRefinement::Untracked);
+            return FaceFactorRefinement::Untracked;
         };
         let checkpoint = FaceFactorCheckpoint {
-            active: active.to_vec(),
+            active: active.clone(),
         };
         for &(edge, pair) in assigned {
             let Some(factors) = self.factors_by_edge.get(edge) else {
@@ -1104,7 +1085,7 @@ impl PreparedFaceFactors {
                 let face = self.factor_faces[factor];
                 let Some(configurations) = self.domains.get(face).and_then(Option::as_ref) else {
                     self.active = Some(checkpoint.active);
-                    return Ok(FaceFactorRefinement::Rejected);
+                    return FaceFactorRefinement::Rejected;
                 };
                 for (configuration, pairs) in configurations.iter().enumerate() {
                     if !configuration_mask_contains(&active[factor], configuration)
@@ -1119,11 +1100,11 @@ impl PreparedFaceFactors {
                 }
                 if active[factor].iter().all(|word| *word == 0) {
                     self.active = Some(checkpoint.active);
-                    return Ok(FaceFactorRefinement::Rejected);
+                    return FaceFactorRefinement::Rejected;
                 }
             }
         }
-        Ok(FaceFactorRefinement::Tracked(checkpoint))
+        FaceFactorRefinement::Tracked(checkpoint)
     }
 
     fn restore(&mut self, checkpoint: Option<FaceFactorCheckpoint>) {
@@ -1292,7 +1273,7 @@ fn prune_face_configuration_singleton_support(
     };
     let mut active = graph.full_state(ctx)?;
     let active_clone_work = work_units(active.iter().map(Vec::len).sum::<usize>());
-    match graph.propagate_all(&mut active, budget)? {
+    match graph.propagate_all(&mut active, budget) {
         Some(true) => {}
         Some(false) => return Ok(false),
         None => return Ok(true),
@@ -1331,12 +1312,12 @@ fn prune_face_configuration_singleton_support(
                 let mut trial = Vec::new();
 
                 for mask in &active {
-                    trial.push(mask.to_vec());
+                    trial.push(mask.clone());
                 }
                 trial[domain].fill(0);
                 trial[domain][configuration / index_from_u32(u64::BITS)] =
                     1 << (configuration % index_from_u32(u64::BITS));
-                match graph.propagate_from(domain, &mut trial, budget)? {
+                match graph.propagate_from(domain, &mut trial, budget) {
                     Some(true) => {}
                     Some(false) => {
                         active[domain][configuration / index_from_u32(u64::BITS)] &=
@@ -1354,7 +1335,7 @@ fn prune_face_configuration_singleton_support(
                 return Ok(false);
             }
             if domain_changed {
-                match graph.propagate_from(domain, &mut active, budget)? {
+                match graph.propagate_from(domain, &mut active, budget) {
                     Some(true) => {}
                     Some(false) => return Ok(false),
                     None => {
@@ -1401,7 +1382,7 @@ fn prune_ordered_face_endpoint_support(
             }
             let selected = ctx.alloc_filled(choices.len(), None, "catia_ordered_face_selection")?;
             let Some(configurations) =
-                mesh_face_endpoint_configurations(assignments, choices, &selected, budget)?
+                mesh_face_endpoint_configurations(assignments, choices, &selected, budget)
             else {
                 if budget.exhausted() {
                     return Ok(true);
@@ -1453,7 +1434,6 @@ fn prune_ordered_face_endpoint_support(
 }
 
 pub(super) fn prune_implicit_ordered_face_endpoint_support(
-    ctx: &DecodeContext<'_>,
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
     coordinate_domains: &MeshCoordinateRootDomains,
@@ -1469,7 +1449,6 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
             let mut assignment_found = false;
             for assignment in assignments {
                 let Some(support) = mesh_assignment_endpoint_cycle_support_by(
-                    ctx,
                     assignment,
                     Some(budget),
                     |edge| {
@@ -1484,8 +1463,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                             })
                     },
                     |_, _| true,
-                )?
-                else {
+                ) else {
                     return Ok(true);
                 };
                 if support.by_edge.is_empty() {
@@ -1517,7 +1495,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     }
                     collected
                 } else {
-                    current.to_vec()
+                    current.clone()
                 };
                 let mut retained = Vec::new();
                 for mut pair in values {
@@ -1582,7 +1560,7 @@ fn prepare_face_configuration_domains(
         }
         let budget = WorkBudget::new(MAX_FACE_ENDPOINT_CONFIGURATION_WORK);
         let Some(configurations) =
-            mesh_face_endpoint_configurations(assignments, choices, selected, &budget)?
+            mesh_face_endpoint_configurations(assignments, choices, selected, &budget)
         else {
             continue;
         };
@@ -1835,9 +1813,7 @@ enum CompactBoundaryAdvanceOutcome {
     Exhausted,
 }
 
-fn copy_quotient_states(
-    states: &[MeshQuotientGaugeState],
-) -> Result<Vec<MeshQuotientGaugeState>, CodecError> {
+fn copy_quotient_states(states: &[MeshQuotientGaugeState]) -> Vec<MeshQuotientGaugeState> {
     let mut copy = Vec::new();
 
     for (quotient, oriented) in states {
@@ -1846,7 +1822,7 @@ fn copy_quotient_states(
         oriented_copy.extend(oriented.iter().copied());
         copy.push((quotient.clone(), oriented_copy));
     }
-    Ok(copy)
+    copy
 }
 
 fn advance_compact_boundary_domains<'a>(
@@ -1912,7 +1888,7 @@ fn advance_compact_boundary_domains<'a>(
                     let mut boundaries = Vec::new();
 
                     for cycle in &alternative.boundaries {
-                        boundaries.push(cycle.to_vec());
+                        boundaries.push(cycle.clone());
                     }
                     copied.push(MeshFaceBoundaryAssignment { boundaries });
                 }
@@ -1935,18 +1911,15 @@ fn advance_compact_boundary_domains<'a>(
                         reversed: None,
                     });
                 }
-                let mut boundaries = Vec::new();
-                boundaries.push(uses);
-                let mut alternatives = Vec::new();
-                alternatives.push(MeshFaceBoundaryAssignment { boundaries });
+                let boundaries = vec![uses];
+                let alternatives = vec![MeshFaceBoundaryAssignment { boundaries }];
                 alternatives
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
                 let Some(materialized) = deferred_boundary_assignment(domain, &points)? else {
                     return Ok(CompactBoundaryAdvanceOutcome::Rejected);
                 };
-                let mut alternatives = Vec::new();
-                alternatives.push(materialized);
+                let alternatives = vec![materialized];
                 alternatives
             }
         };
@@ -1965,7 +1938,7 @@ fn advance_compact_boundary_domains<'a>(
         {
             vec![pair]
         } else {
-            choices[edge].to_vec()
+            choices[edge].clone()
         };
         candidates.push(row);
     }
@@ -2058,7 +2031,7 @@ fn adjust_incidence_degrees(
     edge_faces: &[[usize; 2]],
     edge: usize,
     pair: [usize; 2],
-) -> Result<IncidenceDegreeUndo, CodecError> {
+) -> IncidenceDegreeUndo {
     let mut undo = IncidenceDegreeUndo {
         entries: Vec::new(),
     };
@@ -2075,7 +2048,7 @@ fn adjust_incidence_degrees(
             undo.entries.push((face, point, previous));
         }
     }
-    Ok(undo)
+    undo
 }
 
 fn restore_incidence_degrees(degrees: &mut [BTreeMap<usize, u8>], undo: IncidenceDegreeUndo) {
@@ -2158,13 +2131,12 @@ impl IncidenceComponentSearch<'_, '_> {
         face: usize,
         point: usize,
         witness: (usize, [usize; 2]),
-    ) -> Result<(), CodecError> {
+    ) {
         let mut witnesses = self.degree_support_witnesses.borrow_mut();
         let entry = witnesses.entry((face, point)).or_default();
         if !entry.contains(&witness) {
             entry.push(witness);
         }
-        Ok(())
     }
 
     fn degree_candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
@@ -2309,7 +2281,7 @@ impl IncidenceComponentSearch<'_, '_> {
                                 face,
                                 point,
                                 (supporting_edge, witness),
-                            )?;
+                            );
                             return Ok(true);
                         }
                         if self.degree_support_budget.exhausted() {
@@ -2327,7 +2299,7 @@ impl IncidenceComponentSearch<'_, '_> {
                                 face,
                                 point,
                                 (supporting_edge, supporting_pair),
-                            )?;
+                            );
                             return Ok(true);
                         }
                     }
@@ -2454,7 +2426,6 @@ impl IncidenceComponentSearch<'_, '_> {
                 let Some(domain) = mesh_assignments.get(face) else {
                     return Ok(false);
                 };
-                let mut refusal = None;
                 let viable = match domain {
                     MeshFaceBoundaryDomain::Ordered(assignments) => self
                         .face_configuration_domains
@@ -2508,13 +2479,7 @@ impl IncidenceComponentSearch<'_, '_> {
                                         })
                                     },
                                 )
-                                .map_or_else(
-                                    |error| {
-                                        refusal = Some(error);
-                                        true
-                                    },
-                                    |result| result.unwrap_or(true),
-                                )
+                                .unwrap_or(true)
                             })
                         }),
                     _ => compact_boundary_domain_viable(
@@ -2524,9 +2489,6 @@ impl IncidenceComponentSearch<'_, '_> {
                         Some((edge, pair)),
                     )?,
                 };
-                if let Some(error) = refusal {
-                    return Err(error);
-                }
                 if !viable {
                     return Ok(false);
                 }
@@ -2608,13 +2570,13 @@ impl IncidenceComponentSearch<'_, '_> {
                 .filter(|_| self.choices[edge].is_empty())
                 .and_then(|domains| domains.implicit_edge_candidates(edge, None))
             {
-                candidates.width_upper_bound(self.ctx)?
+                candidates.width_upper_bound()
             } else {
                 self.choices[edge].len()
             };
             ordered_edges.push((edge, width));
         }
-        ordered_edges.sort_by(|left, right| left.1.cmp(&right.1));
+        ordered_edges.sort_by_key(|left| left.1);
         'edges: for (edge, width) in ordered_edges {
             if coordinate_domains
                 .filter(|_| self.choices[edge].is_empty())
@@ -2713,9 +2675,6 @@ impl IncidenceComponentSearch<'_, '_> {
                 .all(|&edge| self.assignment[edge].is_some())
         {
             let mut complete = Vec::new();
-            if self.solution_visitor.is_some() {
-            } else {
-            }
             complete.extend(
                 self.edges
                     .iter()
@@ -2731,7 +2690,7 @@ impl IncidenceComponentSearch<'_, '_> {
         Ok(Some(self.narrowest_edge_branch(edges, coordinate_domains)?))
     }
 
-    fn adjust(&mut self, edge: usize, pair: [usize; 2]) -> Result<IncidenceDegreeUndo, CodecError> {
+    fn adjust(&mut self, edge: usize, pair: [usize; 2]) -> IncidenceDegreeUndo {
         adjust_incidence_degrees(&mut self.degrees, self.edge_faces, edge, pair)
     }
 
@@ -2758,7 +2717,6 @@ impl IncidenceComponentSearch<'_, '_> {
             let Some(domain) = mesh_assignments.get(face) else {
                 return Ok(None);
             };
-            let mut refusal = None;
             let viable = match domain {
                 MeshFaceBoundaryDomain::Ordered(assignments) => self
                     .face_configuration_domains
@@ -2775,20 +2733,11 @@ impl IncidenceComponentSearch<'_, '_> {
                                         .is_none_or(|selected| same_unordered_pair(selected, pair))
                                 },
                             )
-                            .map_or_else(
-                                |error| {
-                                    refusal = Some(error);
-                                    true
-                                },
-                                |result| result.unwrap_or(true),
-                            )
+                            .unwrap_or(true)
                         })
                     }),
                 _ => compact_boundary_domain_viable(self.ctx, domain, &self.assignment, None)?,
             };
-            if let Some(error) = refusal {
-                return Err(error);
-            }
             if !viable {
                 return Ok(None);
             }
@@ -2823,19 +2772,19 @@ impl IncidenceComponentSearch<'_, '_> {
         Ok(self.advance_ordered_faces(faces, Vec::new())?.is_some())
     }
 
-    fn component_faces(&self) -> Result<Vec<usize>, CodecError> {
+    fn component_faces(&self) -> Vec<usize> {
         let mut faces = Vec::new();
         faces.extend(self.edges.iter().flat_map(|edge| self.edge_faces[*edge]));
         faces.sort_unstable_by(Ord::cmp);
         faces.dedup();
-        Ok(faces)
+        faces
     }
 
     #[cfg(test)]
     fn face_configuration_options(
         &self,
     ) -> Result<Option<MeshFaceEndpointConfigurations>, CodecError> {
-        self.face_configuration_options_for(&self.component_faces()?)
+        self.face_configuration_options_for(&self.component_faces())
     }
 
     fn face_configuration_options_for(
@@ -2876,7 +2825,7 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             Some((width?, face, assignments))
         }));
-        faces.sort_by(|left, right| (left.0, left.1).cmp(&(right.0, right.1)));
+        faces.sort_by_key(|left| (left.0, left.1));
         let mut domains = Vec::new();
         for (width, face, assignments) in faces {
             if !self.boundary_propagation_budget.charge() {
@@ -2907,7 +2856,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     {
                         continue;
                     }
-                    let copy = configuration.to_vec();
+                    let copy = configuration.clone();
                     selected.push(copy);
                 }
                 selected
@@ -2917,8 +2866,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     self.choices,
                     &self.assignment,
                     self.boundary_propagation_budget,
-                )?
-                else {
+                ) else {
                     if self.boundary_propagation_budget.exhausted() {
                         break;
                     }
@@ -3009,7 +2957,7 @@ impl IncidenceComponentSearch<'_, '_> {
             if let Some(applied) = self.apply_face_configuration(option, coordinate_domains)? {
                 if let Some(next_states) = self.advance_ordered_faces(
                     applied.affected_faces,
-                    copy_quotient_states(quotient_states)?,
+                    copy_quotient_states(quotient_states),
                 )? {
                     self.search_with_quotient(
                         &next_states,
@@ -3052,7 +3000,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 };
                 next_coordinate_domains = Some(refined);
             }
-            let undo = self.adjust(edge, pair)?;
+            let undo = self.adjust(edge, pair);
             self.assignment[edge] = Some(pair);
             assigned.push((edge, pair, undo));
             affected_faces.extend(self.edge_faces[edge]);
@@ -3081,7 +3029,7 @@ impl IncidenceComponentSearch<'_, '_> {
         let mut assigned_pairs = Vec::new();
         assigned_pairs.extend(assigned.iter().map(|(edge, pair, _)| (*edge, *pair)));
         let factor_checkpoint = match &mut self.face_configuration_domains {
-            Some(factors) => match factors.refine_edges(&assigned_pairs)? {
+            Some(factors) => match factors.refine_edges(&assigned_pairs) {
                 FaceFactorRefinement::Tracked(checkpoint) => Some(checkpoint),
                 FaceFactorRefinement::Untracked => None,
                 FaceFactorRefinement::Rejected => {
@@ -3118,7 +3066,7 @@ impl IncidenceComponentSearch<'_, '_> {
     ) -> Result<(), CodecError> {
         let mut assigned = Vec::new();
         let mut factor_checkpoint = None;
-        let mut states = copy_quotient_states(quotient_states)?;
+        let mut states = copy_quotient_states(quotient_states);
         let mut domains = coordinate_domains.cloned();
         while let Some(applied) = self.apply_face_configuration(option, domains.as_ref())? {
             let applied_factor_checkpoint = applied.factor_checkpoint;
@@ -3176,7 +3124,7 @@ impl IncidenceComponentSearch<'_, '_> {
 
     fn search(&mut self) -> Result<(), CodecError> {
         let quotient_states = Vec::new();
-        let component_faces = self.component_faces()?;
+        let component_faces = self.component_faces();
         let coordinate_domains = self
             .coordinate_domains
             .map(|domains| Arc::new(domains.clone()));
@@ -3308,10 +3256,10 @@ impl IncidenceComponentSearch<'_, '_> {
             } else {
                 None
             };
-            let undo = self.adjust(edge, pair)?;
+            let undo = self.adjust(edge, pair);
             self.assignment[edge] = Some(pair);
             let factor_checkpoint = match &mut self.face_configuration_domains {
-                Some(factors) => match factors.refine_edges(&[(edge, pair)])? {
+                Some(factors) => match factors.refine_edges(&[(edge, pair)]) {
                     FaceFactorRefinement::Tracked(checkpoint) => Some(checkpoint),
                     FaceFactorRefinement::Untracked => None,
                     FaceFactorRefinement::Rejected => {
@@ -3328,7 +3276,7 @@ impl IncidenceComponentSearch<'_, '_> {
             {
                 if let Some(next_states) = self.advance_ordered_faces(
                     self.edge_faces[edge],
-                    copy_quotient_states(quotient_states)?,
+                    copy_quotient_states(quotient_states),
                 )? {
                     self.search_with_quotient(
                         &next_states,
@@ -3354,7 +3302,7 @@ fn deferred_boundary_cycle_assignment(
     mesh: &MeshDeferredBoundaryCycle,
     incidence: &[(usize, bool)],
     missing: &HashSet<usize>,
-) -> Result<Option<Vec<MeshBoundaryEdgeCandidate>>, CodecError> {
+) -> Option<Vec<MeshBoundaryEdgeCandidate>> {
     if mesh.exact_uses.is_empty() {
         if incidence.len() <= mesh.length
             && incidence.iter().all(|(edge, _)| missing.contains(edge))
@@ -3373,9 +3321,9 @@ fn deferred_boundary_cycle_assignment(
                 });
                 start = (start + span) % mesh.length;
             }
-            return Ok(Some(boundary));
+            return Some(boundary);
         }
-        return Ok(None);
+        return None;
     }
     let mut expected = Vec::new();
 
@@ -3462,18 +3410,18 @@ fn deferred_boundary_cycle_assignment(
                     start = (start + span) % mesh.length;
                 }
             }
-            return Ok(Some(boundary));
+            return Some(boundary);
         }
     }
-    Ok(None)
+    None
 }
 
 pub(super) fn deferred_boundary_cycle_matches(
     mesh: &MeshDeferredBoundaryCycle,
     incidence: &[(usize, bool)],
     missing: &HashSet<usize>,
-) -> Result<bool, CodecError> {
-    Ok(deferred_boundary_cycle_assignment(mesh, incidence, missing)?.is_some())
+) -> bool {
+    deferred_boundary_cycle_assignment(mesh, incidence, missing).is_some()
 }
 
 fn augment_cycle_matching(
@@ -3527,7 +3475,7 @@ pub(super) fn deferred_boundary_assignment(
         for candidate in &incidence {
             row.push(deferred_boundary_cycle_assignment(
                 mesh, candidate, &missing,
-            )?);
+            ));
         }
         compatible.push(row);
     }
@@ -3557,9 +3505,7 @@ pub(super) fn deferred_boundary_assignment(
         let Some(mesh) = mesh else {
             return Ok(None);
         };
-        boundaries[mesh] = compatible[mesh][incidence]
-            .as_ref()
-            .map(|uses| uses.to_vec());
+        boundaries[mesh].clone_from(&compatible[mesh][incidence]);
     }
     let mut collected = Vec::new();
 
@@ -3601,7 +3547,7 @@ fn deferred_boundary_closes(
     for mesh in &domain.cycles {
         let mut row = Vec::new();
         for candidate in &incidence {
-            row.push(deferred_boundary_cycle_matches(mesh, candidate, &missing)?);
+            row.push(deferred_boundary_cycle_matches(mesh, candidate, &missing));
         }
         compatible.push(row);
     }
@@ -3699,7 +3645,6 @@ fn component_incidence_faces_viable(
         let Some(domain) = domains.and_then(|domains| domains.get(face)) else {
             continue;
         };
-        let mut refusal = None;
         let viable = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => {
                 assignments.iter().any(|boundary_assignment| {
@@ -3712,13 +3657,7 @@ fn component_incidence_faces_viable(
                                 .is_none_or(|selected| same_unordered_pair(selected, pair))
                         },
                     )
-                    .map_or_else(
-                        |error| {
-                            refusal = Some(error);
-                            true
-                        },
-                        |result| result.unwrap_or(true),
-                    )
+                    .unwrap_or(true)
                 })
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
@@ -3728,9 +3667,6 @@ fn component_incidence_faces_viable(
                 deferred_boundary_closes(domain, &points)?
             }
         };
-        if let Some(error) = refusal {
-            return Err(error);
-        }
         if !viable {
             return Ok(false);
         }
@@ -3971,7 +3907,7 @@ where
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices, edge_faces, face_count, point_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, solution_valid, visitor, session_budget: &budget })
+    visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices, edge_faces, face_count, point_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, solution_valid, visitor, search_budget: &budget })
 }
 
 struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
@@ -4000,7 +3936,7 @@ struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'input4>>,
     solution_valid: &'input5 F,
     visitor: &'input6 mut V,
-    session_budget: &'input8 WorkBudget<'input7>,
+    search_budget: &'input8 WorkBudget<'input7>,
 }
 
 fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
@@ -4119,7 +4055,7 @@ where
                 let candidate_points = if let Some(domains) =
                     coordinate_domains.filter(|_| choices[edge].is_empty())
                 {
-                    domains.edge_candidate_points(edge)?
+                    domains.edge_candidate_points(edge)
                 } else {
                     None
                 };
@@ -4136,9 +4072,9 @@ where
                 points.dedup();
                 for point in points {
                     constraints.insert((face, point));
-                    if !point_support_edges[face].contains_key(&point) {
-                        point_support_edges[face].insert(point, Vec::new());
-                    }
+                    point_support_edges[face]
+                        .entry(point)
+                        .or_insert_with(Vec::new);
                     if let Some(support) = point_support_edges[face].get_mut(&point) {
                         support.push(edge);
                     }
@@ -4221,7 +4157,7 @@ where
             edges: component,
             constraints,
             assignment: assignment.to_vec(),
-            degrees: copy_incidence_degree_rows(degrees)?,
+            degrees: copy_incidence_degree_rows(degrees),
             solutions: Vec::new(),
             solution_filter: Some(&filter),
             solution_visitor,
@@ -4292,7 +4228,7 @@ where
         orientation_budget: &'input19 WorkBudget<'input18>,
         coordinate_propagation_budget: &'input21 WorkBudget<'input20>,
         boundary_propagation_budget: &'input23 WorkBudget<'input22>,
-        session_budget: &'input25 WorkBudget<'input24>,
+        search_budget: &'input25 WorkBudget<'input24>,
     }
     fn visit_components<F, V>(
         ctx: &DecodeContext<'_>,
@@ -4354,7 +4290,7 @@ where
             orientation_budget,
             coordinate_propagation_budget,
             boundary_propagation_budget,
-            session_budget,
+            search_budget,
         } = inputs;
 
         let Some(component) = components.get(component_index) else {
@@ -4396,7 +4332,7 @@ where
                 else {
                     return Ok(ControlFlow::Continue(()));
                 };
-                let closure_budget = session_budget.child_slice(closure_limit);
+                let closure_budget = search_budget.child_slice(closure_limit);
                 let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
                     ctx,
                     point_count,
@@ -4431,7 +4367,7 @@ where
         };
 
         let base_assignment = assignment.to_vec();
-        let base_degrees = copy_incidence_degree_rows(degrees)?;
+        let base_degrees = copy_incidence_degree_rows(degrees);
         let mut downstream_control = Ok(ControlFlow::Continue(()));
         let mut visit_solution =
             |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
@@ -4444,7 +4380,7 @@ where
                     assignment[edge] = Some(pair);
                     degree_undo.push((
                         edge,
-                        adjust_incidence_degrees(degrees, edge_faces, edge, pair)?,
+                        adjust_incidence_degrees(degrees, edge_faces, edge, pair),
                     ));
                 }
                 let candidates = if coordinate_domains.is_some() {
@@ -4453,7 +4389,7 @@ where
                         candidates.push(if let Some(pair) = pair {
                             ctx.alloc_filled(1, *pair, "catia_incidence_fixed_candidate")?
                         } else {
-                            choices[edge].to_vec()
+                            choices[edge].clone()
                         });
                     }
                     Some(candidates)
@@ -4508,7 +4444,7 @@ where
                                 orientation_budget,
                                 coordinate_propagation_budget,
                                 boundary_propagation_budget,
-                                session_budget,
+                                search_budget,
                             },
                         )
                     } else {
@@ -4568,7 +4504,7 @@ where
         partial_solution_valid,
         solution_valid,
         visitor,
-        session_budget,
+        search_budget,
     } = inputs;
 
     let mut exhausted = false;
@@ -4594,7 +4530,7 @@ where
                 else {
                     return Ok(None);
                 };
-                let preparation_budget = session_budget.child_slice(preparation_limit);
+                let preparation_budget = search_budget.child_slice(preparation_limit);
                 let Some(domains) = quotient.prepare_coordinate_root_domains(
                     ctx,
                     point_count,
@@ -4617,13 +4553,11 @@ where
             .as_ref()
             .map_or(choices, MeshCoordinateRootDomains::edge_candidates))
         .to_vec();
-        let mut narrowed_choices = base_choices.to_vec();
+        let mut narrowed_choices = base_choices.clone();
         if let Some(domains) = mesh_assignments {
-            let implicit_support_budget =
-                session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let implicit_support_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let implicit_support_viable = if let Some(coordinate) = coordinate_domains.as_ref() {
                 prune_implicit_ordered_face_endpoint_support(
-                    ctx,
                     domains,
                     &mut narrowed_choices,
                     coordinate,
@@ -4637,10 +4571,10 @@ where
                 return Ok(None);
             }
             if implicit_support_budget.exhausted() {
-                narrowed_choices = base_choices.to_vec();
+                narrowed_choices.clone_from(&base_choices);
             }
-            let implicit_choices = narrowed_choices.to_vec();
-            let face_support_budget = session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let implicit_choices = narrowed_choices.clone();
+            let face_support_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             if !prune_ordered_face_endpoint_support(
                 ctx,
                 domains,
@@ -4653,14 +4587,14 @@ where
             if face_support_budget.exhausted() {
                 narrowed_choices = implicit_choices;
             } else if let Some(domains) = coordinate_domains.take() {
-                let refinement_budget = session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                let refinement_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
                 match domains.refine_candidates(ctx, &narrowed_choices, Some(&refinement_budget))? {
                     Some(refined) => {
                         narrowed_choices = refined.edge_candidates().to_vec();
                         coordinate_domains = Some(refined);
                     }
                     None if refinement_budget.exhausted() => {
-                        narrowed_choices = base_choices.to_vec();
+                        narrowed_choices.clone_from(&base_choices);
                         coordinate_domains = Some(domains);
                     }
                     None => {
@@ -4743,7 +4677,7 @@ where
                 else {
                     return Ok(None);
                 };
-                let budget = session_budget.child_slice(closure_limit);
+                let budget = search_budget.child_slice(closure_limit);
                 let Some(domains) = mesh_assignments else {
                     if !quotient.point_assignment_exists(
                         ctx,
@@ -4800,17 +4734,17 @@ where
             // Exhaustion leaves the component unknown; the complete composition
             // below remains the sound decision point.
             let component_preflight_budget =
-                session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let preflight_orientation_budget =
-                session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let coordinate_preflight_budget =
-                session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let boundary_preflight_budget =
-                session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+                search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
             let mut accept_first =
                 |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
-                    let mut completed = fixed.to_vec();
+                    let mut completed = fixed.clone();
                     for &(edge, pair) in solution {
                         completed[edge] = Some(pair);
                     }
@@ -4825,7 +4759,7 @@ where
                                     "catia_incidence_preflight_fixed_candidate",
                                 )?
                             } else {
-                                choices[edge].to_vec()
+                                choices[edge].clone()
                             });
                         }
                         domains
@@ -4874,13 +4808,12 @@ where
             }
         }
         rejection = IncidenceRejection::ComponentComposition;
-        let orientation_budget = session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let orientation_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         // These deductions can reduce composition work but cannot establish a
         // solution. Keep their exhaustion independent of the exact search budget.
         let coordinate_propagation_budget =
-            session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-        let boundary_propagation_budget =
-            session_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+            search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let boundary_propagation_budget = search_budget.child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         match visit_components(
             ctx,
             VisitComponentsInputs {
@@ -4897,16 +4830,16 @@ where
                 assignment: &mut fixed,
                 degrees: &mut degrees,
                 point_count,
-                budget: session_budget,
+                budget: search_budget,
                 visitor,
                 visited: &mut visited,
                 ambiguous: &mut ambiguous,
                 components: &components,
-                component_budget: session_budget,
+                component_budget: search_budget,
                 orientation_budget: &orientation_budget,
                 coordinate_propagation_budget: &coordinate_propagation_budget,
                 boundary_propagation_budget: &boundary_propagation_budget,
-                session_budget,
+                search_budget,
             },
         ) {
             Err(IncidenceVisitError::Resource(error)) => return Err(error),
@@ -5029,7 +4962,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     };
     reconstruct_incidence(
         ctx,
-        copy_incidence_edge_rows(edge_rows)?,
+        copy_incidence_edge_rows(edge_rows),
         vertex_points.to_vec(),
         edge_faces,
         &solution_pairs,
@@ -5225,7 +5158,7 @@ where
         }
         Ok(reconstruct_incidence(
             ctx,
-            copy_incidence_edge_rows(edge_rows)?,
+            copy_incidence_edge_rows(edge_rows),
             vertex_points.to_vec(),
             edge_faces,
             points,
@@ -5241,8 +5174,8 @@ where
         }
     };
     let fallback_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let session_budget = complete_solution_budget.unwrap_or(&fallback_budget);
-    let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices: &choices, edge_faces, face_count, point_count: vertex_points.len(), mesh_assignments, mesh_quotient, coordinate_root_policy, partial_solution_valid, solution_valid: &complete_valid, visitor: &mut budgeted_visitor, session_budget })?;
+    let search_budget = complete_solution_budget.unwrap_or(&fallback_budget);
+    let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices: &choices, edge_faces, face_count, point_count: vertex_points.len(), mesh_assignments, mesh_quotient, coordinate_root_policy, partial_solution_valid, solution_valid: &complete_valid, visitor: &mut budgeted_visitor, search_budget })?;
     if complete_solution_budget.is_some_and(WorkBudget::exhausted) {
         Ok(IncidenceSolve::Exhausted)
     } else {

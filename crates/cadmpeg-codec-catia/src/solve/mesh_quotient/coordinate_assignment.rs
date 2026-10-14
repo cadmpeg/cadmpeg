@@ -64,9 +64,9 @@ fn partial_compact_assignment_viable(
 
     let relevant = match domain {
         MeshFaceBoundaryDomain::Ordered(_) => return Ok(true),
-        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.to_vec(),
+        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
         MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-            let mut edges = domain.missing_edges.to_vec();
+            let mut edges = domain.missing_edges.clone();
             for edge in domain
                 .cycles
                 .iter()
@@ -169,7 +169,7 @@ fn partial_compact_assignment_viable(
                     "catia_deferred_compatible_cycles",
                 )?;
                 for (slot, cycle) in row.iter_mut().zip(&domain.cycles) {
-                    *slot = deferred_boundary_cycle_matches(cycle, incidence.as_slice(), &missing)?;
+                    *slot = deferred_boundary_cycle_matches(cycle, incidence.as_slice(), &missing);
                 }
             }
             let mut matched =
@@ -551,7 +551,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             root_edges: &[Vec<usize>],
             edges: &[[usize; 2]],
             incidence: Option<&LocalIncidence<'_>>,
-        ) -> Result<HashSet<usize>, CodecError> {
+        ) -> HashSet<usize> {
             let mut affected = HashSet::new();
             for &edge in &root_edges[root] {
                 for point in edges[edge] {
@@ -573,7 +573,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 }
             }
             affected.remove(&root);
-            Ok(affected)
+            affected
         }
 
         let CoordinateClosureSearch {
@@ -830,7 +830,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     propagated.push((root, *point, undo));
                     progress = true;
                     if incidence.is_some() || bounded_scan {
-                        pending_roots = Some(affected_roots(root, root_edges, edges, incidence)?);
+                        pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                         break;
                     }
                 } else {
@@ -881,7 +881,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             for support in unused_point_roots {
                 point_supports.push(support);
             }
-            point_supports.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+            point_supports.sort_unstable_by_key(|left| left.0);
             let mut uniquely_required = Vec::new();
             for (point, roots) in &point_supports {
                 if let Ok(&[root]) = <&[usize; 1]>::try_from(roots.as_slice()) {
@@ -911,7 +911,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 };
                 point_uses[point] += 1;
                 propagated.push((root, point, undo));
-                pending_roots = Some(affected_roots(root, root_edges, edges, incidence)?);
+                pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                 continue;
             }
             let matching_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
@@ -1001,7 +1001,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     };
                     point_uses[point] += 1;
                     propagated.push((root, point, undo));
-                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence)?);
+                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                     continue;
                 }
                 for (root, values) in &mut viable_domains {
@@ -1033,7 +1033,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     };
                     point_uses[point] += 1;
                     propagated.push((root, point, undo));
-                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence)?);
+                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                     continue;
                 }
             }
@@ -1296,12 +1296,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     let mut components = HashMap::<usize, Vec<usize>>::new();
     for root in 0..roots.len() {
         let component = dependency.find(root)?;
-        if !components.contains_key(&component) {
-            components.insert(component, Vec::new());
-        }
-        if let Some(members) = components.get_mut(&component) {
-            members.push(root);
-        }
+        components.entry(component).or_default().push(root);
     }
     let mut ordered_components = Vec::new();
     for component in components.into_values() {
@@ -1443,7 +1438,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         };
         let mut local_domains = Vec::new();
         for &root in &component {
-            let domain = domains[root].to_vec();
+            let domain = domains[root].clone();
             local_domains.push(domain);
         }
         let mut root_edges = ctx.alloc_filled(
@@ -1463,7 +1458,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             &edge_ids,
             edge_candidates,
             budget,
-        )? {
+        ) {
             if budget.is_some_and(WorkBudget::exhausted) {
                 exhausted.set(true);
             }
@@ -1471,7 +1466,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
         let mut arc_domains = Vec::new();
         for domain in &local_domains {
-            let copy = domain.to_vec();
+            let copy = domain.clone();
             arc_domains.push(copy);
         }
         let arc_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
@@ -1572,7 +1567,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     let mut root_by_point = HashMap::new();
     for (&root, &point) in roots.iter().zip(&assignment) {
         if let Some(previous) = root_by_point.insert(point, root) {
-            let Some(merged) = quotient.merge_charged(previous, root)? else {
+            let Some(merged) = quotient.merge(previous, root)? else {
                 return Ok(None);
             };
             root_by_point.insert(point, merged);

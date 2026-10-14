@@ -446,19 +446,11 @@ pub(crate) fn parse_topology(
         let mut pcurves = BTreeMap::new();
         for record in &records {
             if record.class == 0xff {
-                let edge = match parse_edge(record) {
-                    Ok(Some(edge)) => edge,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let edge = parse_edge(record)?;
                 edges.insert(record.id, edge);
             }
             if matches!(record.class, 0x96 | 0x97 | 0xa0 | 0xaa) {
-                let pcurve = match parse_pcurve(record) {
-                    Ok(Some(pcurve)) => pcurve,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let pcurve = parse_pcurve(record)?;
                 pcurves.insert(record.id, pcurve);
             }
         }
@@ -484,35 +476,19 @@ pub(crate) fn parse_topology(
         for record in &records {
             match record.class {
                 0x0e => {
-                    let value = match parse_bounds(record) {
-                        Ok(Some(value)) => value,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    let value = parse_bounds(record)?;
                     bounds.insert(record.id, value);
                 }
                 0xc0 | 0xc1 => {
-                    let value = match parse_curve_support(record) {
-                        Ok(Some(value)) => value,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    let value = parse_curve_support(record)?;
                     curve_supports.insert(record.id, value);
                 }
                 0x09 => {
-                    let value = match parse_loop(record) {
-                        Ok(Some(value)) => value,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    let value = parse_loop(record)?;
                     loops.insert(record.id, value);
                 }
                 0x00 => {
-                    let value = match parse_face(record) {
-                        Ok(Some(value)) => value,
-                        Ok(None) => return None,
-                        Err(error) => return Some(Err(error)),
-                    };
+                    let value = parse_face(record)?;
                     raw_faces.push(value);
                 }
                 0xfe => {
@@ -546,11 +522,7 @@ pub(crate) fn parse_topology(
                 if raw.pcurves.len() != raw.edges.len() {
                     return None;
                 }
-                let reversed = match solve_loop_chain(&raw.edges, &edges) {
-                    Ok(Some(reversed)) => reversed,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let reversed = solve_loop_chain(&raw.edges, &edges)?;
                 if reversed.len() != raw.edges.len() {
                     return None;
                 }
@@ -587,11 +559,8 @@ pub(crate) fn parse_topology(
                     }
                     let support = curve_supports.get(&edge.support)?;
                     for reference in support.pcurves() {
-                        match curve_support_reference_closes(*reference, &pcurves, &curve_supports)
-                        {
-                            Ok(true) => {}
-                            Ok(false) => return None,
-                            Err(error) => return Some(Err(error)),
+                        if !curve_support_reference_closes(*reference, &pcurves, &curve_supports) {
+                            return None;
                         }
                     }
                     reachable_edges.insert(*edge_id);
@@ -652,11 +621,7 @@ pub(crate) fn parse_topology(
         }
         vertex_refs.sort_unstable_by(Ord::cmp);
         vertex_refs.dedup();
-        let bodies = match parse_bodies(&records, &by_id) {
-            Ok(Some(bodies)) => bodies,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        let bodies = parse_bodies(&records, &by_id)?;
         if !bodies.is_empty() {
             let mut roster = Vec::new();
             for body in &bodies {
@@ -723,9 +688,9 @@ fn curve_support_reference_closes(
     reference: u32,
     pcurves: &BTreeMap<u32, E5Pcurve>,
     supports: &BTreeMap<u32, E5CurveSupport>,
-) -> Result<bool, CodecError> {
+) -> bool {
     if pcurves.contains_key(&reference) {
-        return Ok(true);
+        return true;
     }
     let mut visiting = HashSet::new();
     let mut stack = Vec::new();
@@ -738,14 +703,14 @@ fn curve_support_reference_closes(
             .get(&reference)
             .filter(|support| support.is_intersection())
         else {
-            return Ok(false);
+            return false;
         };
         if leaving {
             visiting.remove(&reference);
             continue;
         }
         if !visiting.insert(reference) {
-            return Ok(false);
+            return false;
         }
         stack.push((reference, true));
         for child in support.pcurves().iter().rev() {
@@ -757,12 +722,12 @@ fn curve_support_reference_closes(
                 .is_some_and(E5CurveSupport::is_intersection)
                 || visiting.contains(child)
             {
-                return Ok(false);
+                return false;
             }
             stack.push((*child, false));
         }
     }
-    Ok(true)
+    true
 }
 
 fn bound_representation_parameter(
@@ -779,115 +744,86 @@ fn bound_representation_parameter(
     entries.next().is_none().then_some(parameter)
 }
 
-fn parse_curve_support(record: &Record<'_>) -> Result<Option<E5CurveSupport>, CodecError> {
+fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
     let expected = if record.class == 0xc0 { 1 } else { 2 };
     if record.payload.first() != Some(&(0x80 + expected)) {
-        return Ok(None);
+        return None;
     }
     let mut position = 1;
     let mut pcurves = [0u32; 2];
     for pcurve in pcurves.iter_mut().take(usize::from(expected)) {
-        let Some(reference) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-            return Ok(None);
-        };
+        let reference = wire::tokens::object_ref(record.payload, &mut position, false)?;
         *pcurve = reference;
     }
     if record.payload.get(position) != Some(&0x81) {
-        return Ok(None);
+        return None;
     }
     position += 1;
-    let Some(&mode) = record.payload.get(position) else {
-        return Ok(None);
-    };
+    let &mode = record.payload.get(position)?;
     position += 1;
     if record.payload.get(position) != Some(&0x00) {
-        return Ok(None);
+        return None;
     }
     position += 1;
     let mut view = View::over_retained(record.payload);
-    if view.seek(position).is_none() {
-        return Ok(None);
-    }
-    let Some(range) = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))() else {
-        return Ok(None);
-    };
+    view.seek(position)?;
+    let range = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))()?;
     position = view.position();
-    let Some(kind) =
-        E5CurveSupportKind::from_parts(record.class == 0xc1, &pcurves[..usize::from(expected)])
-    else {
-        return Ok(None);
-    };
+    let kind =
+        E5CurveSupportKind::from_parts(record.class == 0xc1, &pcurves[..usize::from(expected)])?;
     let tail = record.payload[position..].to_vec();
-    Ok(Some(E5CurveSupport {
+    Some(E5CurveSupport {
         kind,
         mode,
         range,
         tail,
-    }))
+    })
 }
 
-fn parse_bounds(record: &Record<'_>) -> Result<Option<E5Bounds>, CodecError> {
-    let Some(count) = record
+fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
+    let count = record
         .payload
         .first()
         .and_then(|lead| lead.checked_sub(0x80))
-        .map(usize::from)
-    else {
-        return Ok(None);
-    };
+        .map(usize::from)?;
     let mut position = 1;
     let mut representations = Vec::new();
     for _ in 0..count {
-        let Some(reference) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-            return Ok(None);
-        };
+        let reference = wire::tokens::object_ref(record.payload, &mut position, false)?;
         representations.push(reference);
     }
-    let Some(expected_head) = u8::try_from(count)
+    let expected_head = u8::try_from(count)
         .ok()
-        .and_then(|count| 0x80u8.checked_add(count))
-    else {
-        return Ok(None);
-    };
+        .and_then(|count| 0x80u8.checked_add(count))?;
     if record.payload.get(position) != Some(&expected_head) {
-        return Ok(None);
+        return None;
     }
     position += 1;
     let mut view = View::over_retained(record.payload);
-    if view.seek(position).is_none() {
-        return Ok(None);
-    }
+    view.seek(position)?;
     let mut entries = Vec::new();
     for representation in representations {
-        let Some((parameter, code)) =
-            (|| Some((FiniteReal::new(view.f64_le()?)?, view.u32_le()?)))()
-        else {
-            return Ok(None);
-        };
+        let (parameter, code) = (|| Some((FiniteReal::new(view.f64_le()?)?, view.u32_le()?)))()?;
         entries.push(E5BoundEntry {
             representation,
             parameter,
             code,
         });
     }
-    Ok(view.is_empty().then_some(E5Bounds { entries }))
+    view.is_empty().then_some(E5Bounds { entries })
 }
 
-fn parse_pcurve(record: &Record<'_>) -> Result<Option<E5Pcurve>, CodecError> {
+fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
     if record.payload.first() != Some(&0x81) {
-        return Ok(None);
+        return None;
     }
     let mut position = 1;
-    let Some(surface) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
+    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
     let mut view = View::over_retained(record.payload);
-    if view.seek(position).is_none() {
-        return Ok(None);
-    }
+    view.seek(position)?;
     match record.class {
         0x96 => {
-            let Some(values) = (|| {
+            let values = (|| {
                 Some([
                     finite_f64_le(&mut view)?,
                     finite_f64_le(&mut view)?,
@@ -896,21 +832,19 @@ fn parse_pcurve(record: &Record<'_>) -> Result<Option<E5Pcurve>, CodecError> {
                     finite_f64_le(&mut view)?,
                     finite_f64_le(&mut view)?,
                 ])
-            })() else {
-                return Ok(None);
-            };
+            })()?;
             if !view.is_empty() {
-                return Ok(None);
+                return None;
             }
-            Ok(Some(E5Pcurve::Line {
+            Some(E5Pcurve::Line {
                 surface,
                 origin: [values[0], values[1]],
                 direction: [values[2], values[3]],
                 range: [values[4], values[5]],
-            }))
+            })
         }
         0x97 => {
-            let Some((center, codes, values)) = (|| {
+            let (center, codes, values) = (|| {
                 Some((
                     [finite_f64_le(&mut view)?, finite_f64_le(&mut view)?],
                     [view.u32_le()?, view.u32_le()?],
@@ -922,27 +856,23 @@ fn parse_pcurve(record: &Record<'_>) -> Result<Option<E5Pcurve>, CodecError> {
                         finite_f64_le(&mut view)?,
                     ],
                 ))
-            })() else {
-                return Ok(None);
-            };
+            })()?;
             if !view.is_empty() {
-                return Ok(None);
+                return None;
             }
-            let Some(radius) = PositiveReal::new(values[0].get()) else {
-                return Ok(None);
-            };
-            Ok(Some(E5Pcurve::Circle {
+            let radius = PositiveReal::new(values[0].get())?;
+            Some(E5Pcurve::Circle {
                 surface,
                 center: [center[0], center[1]],
                 codes,
                 radius,
                 range: [values[1], values[2]],
                 tail: [values[3], values[4]],
-            }))
+            })
         }
         0xa0 => parse_jet_pcurve(record.payload, position, surface),
         0xaa => parse_nurbs_pcurve(record.payload, position, surface),
-        _ => Ok(None),
+        _ => None,
     }
 }
 
@@ -952,16 +882,12 @@ fn finite_f64_le(view: &mut View<'_>) -> Option<FiniteReal> {
     FiniteReal::new(view.f64_le()?)
 }
 
-fn parse_nurbs_pcurve(
-    payload: &[u8],
-    position: usize,
-    surface: u32,
-) -> Result<Option<E5Pcurve>, CodecError> {
+fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
     let mut view = View::over_retained(payload);
     if view.seek(position).is_none() || view.u16_le() != Some(0) {
-        return Ok(None);
+        return None;
     }
-    let Some((degree, zero0, zero1, knot_count, zero2)) = (|| {
+    let (degree, zero0, zero1, knot_count, zero2) = (|| {
         Some((
             view.u32_le()?,
             view.u32_le()?,
@@ -969,82 +895,59 @@ fn parse_nurbs_pcurve(
             usize::try_from(view.u32_le()?).ok()?,
             view.u32_le()?,
         ))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     if degree == 0 || knot_count == 0 || [zero0, zero1, zero2] != [0; 3] {
-        return Ok(None);
+        return None;
     }
     let knot_count_u64 = u64_from_index(knot_count);
-    if view.counted(knot_count_u64, 12).is_none() {
-        return Ok(None);
-    }
+    view.counted(knot_count_u64, 12)?;
     let mut knots = Vec::new();
 
     for _ in 0..knot_count {
-        let Some(knot) = finite_f64_le(&mut view) else {
-            return Ok(None);
-        };
+        let knot = finite_f64_le(&mut view)?;
         knots.push(knot);
     }
     let mut multiplicities = Vec::new();
 
     for _ in 0..knot_count {
-        let Some(multiplicity) = view.u32_le() else {
-            return Ok(None);
-        };
+        let multiplicity = view.u32_le()?;
         multiplicities.push(multiplicity);
     }
-    let Some(max_control_count) = view
+    let max_control_count = view
         .remaining()
         .checked_sub(E5_NURBS_PCURVE_TAIL_BYTES)
-        .map(|remaining| remaining / 16)
-    else {
-        return Ok(None);
-    };
-    let Some((expanded_knots, control_count)) =
-        expand_nurbs_knots_limited(degree, &knots, &multiplicities, max_control_count)?
-    else {
-        return Ok(None);
-    };
+        .map(|remaining| remaining / 16)?;
+    let (expanded_knots, control_count) =
+        expand_nurbs_knots_limited(degree, &knots, &multiplicities, max_control_count)?;
     let control_count_u64 = u64_from_index(control_count);
-    if view.counted(control_count_u64, 16).is_none() {
-        return Ok(None);
-    }
+    view.counted(control_count_u64, 16)?;
 
     let mut control_points = Vec::new();
 
     for _ in 0..control_count {
-        let Some(point) = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))()
-        else {
-            return Ok(None);
-        };
+        let point = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))()?;
         control_points.push(point);
     }
     if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES {
-        return Ok(None);
+        return None;
     }
-    let Some(range) = usize::try_from(degree).ok().and_then(|degree| {
+    let range = usize::try_from(degree).ok().and_then(|degree| {
         Some([
             *expanded_knots.get(degree)?,
             *expanded_knots.get(control_count)?,
         ])
-    }) else {
-        return Ok(None);
-    };
+    })?;
     if range[0] >= range[1] {
-        return Ok(None);
+        return None;
     }
-    if view.skip(E5_NURBS_PCURVE_TAIL_BYTES).is_none() {
-        return Ok(None);
-    }
-    Ok(view.is_empty().then_some(E5Pcurve::Nurbs {
+    view.skip(E5_NURBS_PCURVE_TAIL_BYTES)?;
+    view.is_empty().then_some(E5Pcurve::Nurbs {
         surface,
         degree,
         knots: expanded_knots,
         control_points,
         range,
-    }))
+    })
 }
 
 fn expand_nurbs_knots_limited(
@@ -1052,31 +955,25 @@ fn expand_nurbs_knots_limited(
     knots: &[FiniteReal],
     multiplicities: &[u32],
     max_control_count: usize,
-) -> Result<Option<(Vec<FiniteReal>, usize)>, CodecError> {
+) -> Option<(Vec<FiniteReal>, usize)> {
     if knots.len() != multiplicities.len()
         || knots.is_empty()
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities.contains(&0)
     {
-        return Ok(None);
+        return None;
     }
 
-    let Some(total) = multiplicities
+    let total = multiplicities
         .iter()
         .try_fold(0usize, |total, &multiplicity| {
             total.checked_add(index_from_u32(multiplicity))
-        })
-    else {
-        return Ok(None);
-    };
-    let Some((degree, control_count)) = usize::try_from(degree)
+        })?;
+    let (degree, control_count) = usize::try_from(degree)
         .ok()
-        .and_then(|degree| Some((degree, total.checked_sub(degree.checked_add(1)?)?)))
-    else {
-        return Ok(None);
-    };
+        .and_then(|degree| Some((degree, total.checked_sub(degree.checked_add(1)?)?)))?;
     if control_count <= degree || control_count > max_control_count {
-        return Ok(None);
+        return None;
     }
 
     let mut expanded = Vec::new();
@@ -1084,54 +981,37 @@ fn expand_nurbs_knots_limited(
     for (knot, multiplicity) in knots.iter().zip(multiplicities) {
         expanded.extend(std::iter::repeat_with(|| *knot).take(index_from_u32(*multiplicity)));
     }
-    Ok((expanded.len() == total).then_some((expanded, control_count)))
+    (expanded.len() == total).then_some((expanded, control_count))
 }
 
-fn read_finite_lane(
-    view: &mut View<'_>,
-    count: usize,
-) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+fn read_finite_lane(view: &mut View<'_>, count: usize) -> Option<Vec<FiniteReal>> {
     let count_u64 = u64_from_index(count);
-    if view.counted(count_u64, 8).is_none() {
-        return Ok(None);
-    }
+    view.counted(count_u64, 8)?;
     let mut values = Vec::new();
 
     for _ in 0..count {
-        let Some(value) = finite_f64_le(view) else {
-            return Ok(None);
-        };
+        let value = finite_f64_le(view)?;
         values.push(value);
     }
-    Ok(Some(values))
+    Some(values)
 }
 
-fn read_u32_lane(view: &mut View<'_>, count: usize) -> Result<Option<Vec<u32>>, CodecError> {
+fn read_u32_lane(view: &mut View<'_>, count: usize) -> Option<Vec<u32>> {
     let count_u64 = u64_from_index(count);
-    if view.counted(count_u64, 4).is_none() {
-        return Ok(None);
-    }
+    view.counted(count_u64, 4)?;
     let mut values = Vec::new();
 
     for _ in 0..count {
-        let Some(value) = view.u32_le() else {
-            return Ok(None);
-        };
+        let value = view.u32_le()?;
         values.push(value);
     }
-    Ok(Some(values))
+    Some(values)
 }
 
-fn parse_jet_pcurve(
-    payload: &[u8],
-    position: usize,
-    surface: u32,
-) -> Result<Option<E5Pcurve>, CodecError> {
+fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
     let mut view = View::over_retained(payload);
-    if view.seek(position).is_none() {
-        return Ok(None);
-    }
-    let Some((degree, zero0, zero1, site_count, zero2, zero3, zero4)) = (|| {
+    view.seek(position)?;
+    let (degree, zero0, zero1, site_count, zero2, zero3, zero4) = (|| {
         Some((
             view.u32_le()?,
             view.u32_le()?,
@@ -1141,56 +1021,31 @@ fn parse_jet_pcurve(
             view.u32_le()?,
             view.u32_le()?,
         ))
-    })() else {
-        return Ok(None);
-    };
+    })()?;
     if degree != 5 || site_count == 0 || [zero0, zero1, zero2, zero3, zero4] != [0; 5] {
-        return Ok(None);
+        return None;
     }
-    let Some(knot_tail_count) = site_count.checked_sub(1) else {
-        return Ok(None);
-    };
-    let Some(knot_tail) = read_finite_lane(&mut view, knot_tail_count)? else {
-        return Ok(None);
-    };
+    let knot_tail_count = site_count.checked_sub(1)?;
+    let knot_tail = read_finite_lane(&mut view, knot_tail_count)?;
     let mut knots = Vec::new();
 
     knots.push(FiniteReal::ZERO);
     knots.extend(knot_tail);
-    let Some(multiplicities) = read_u32_lane(&mut view, site_count)? else {
-        return Ok(None);
-    };
+    let multiplicities = read_u32_lane(&mut view, site_count)?;
     if view.u32_le().and_then(|count| usize::try_from(count).ok()) != Some(site_count) {
-        return Ok(None);
+        return None;
     }
-    let Some(x) = read_finite_lane(&mut view, site_count)? else {
-        return Ok(None);
-    };
-    let Some(y) = read_finite_lane(&mut view, site_count)? else {
-        return Ok(None);
-    };
-    let Some(dx) = read_finite_lane(&mut view, site_count)? else {
-        return Ok(None);
-    };
-    let Some(dy) = read_finite_lane(&mut view, site_count)? else {
-        return Ok(None);
-    };
+    let x = read_finite_lane(&mut view, site_count)?;
+    let y = read_finite_lane(&mut view, site_count)?;
+    let dx = read_finite_lane(&mut view, site_count)?;
+    let dy = read_finite_lane(&mut view, site_count)?;
     if view.u16_le() != Some(1) {
-        return Ok(None);
+        return None;
     }
-    let Some(ddx) = read_finite_lane(&mut view, site_count)? else {
-        return Ok(None);
-    };
-    let Some(ddy) = read_finite_lane(&mut view, site_count)? else {
-        return Ok(None);
-    };
-    let Some(range_values) = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))()
-    else {
-        return Ok(None);
-    };
-    let Some(final_knot) = knots.last().map(|knot| knot.get()) else {
-        return Ok(None);
-    };
+    let ddx = read_finite_lane(&mut view, site_count)?;
+    let ddy = read_finite_lane(&mut view, site_count)?;
+    let range_values = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))()?;
+    let final_knot = knots.last().map(|knot| knot.get())?;
     let expected_sum = u32::try_from(site_count)
         .ok()
         .and_then(|count| count.checked_mul(3))
@@ -1215,7 +1070,7 @@ fn parse_jet_pcurve(
         || range_values[0].get() != 0.0
         || (range_values[1].get() - final_knot).abs() > EPS_PARAMETER_ENDPOINT * final_knot.abs()
     {
-        return Ok(None);
+        return None;
     }
 
     let mut sites = Vec::new();
@@ -1237,11 +1092,11 @@ fn parse_jet_pcurve(
             second_derivatives: [ddu, ddv],
         });
     }
-    Ok(Some(E5Pcurve::Jet {
+    Some(E5Pcurve::Jet {
         surface,
         sites,
         range: [range_values[0], range_values[1]],
-    }))
+    })
 }
 
 /// Derive the exact global-sense anchor for a plane-cap split circle.
@@ -1634,70 +1489,53 @@ fn solve_absolute_orientation(
     Ok(solved.into_iter().all(|value| value.is_some()))
 }
 
-fn parse_bodies(
-    records: &[Record<'_>],
-    by_id: &HashMap<u32, &Record<'_>>,
-) -> Result<Option<Vec<E5Body>>, CodecError> {
+fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Option<Vec<E5Body>> {
     let mut bodies = Vec::new();
     for record in records.iter().filter(|record| record.class == 0x01) {
         if record.payload.first() != Some(&0x81) {
-            return Ok(None);
+            return None;
         }
         let mut position = 1;
-        let Some(root_id) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-            return Ok(None);
-        };
+        let root_id = wire::tokens::object_ref(record.payload, &mut position, false)?;
         if position != record.payload.len() {
-            return Ok(None);
+            return None;
         }
-        let Some(root) = by_id.get(&root_id) else {
-            return Ok(None);
-        };
+        let root = by_id.get(&root_id)?;
         if root.class != 0x08 {
-            return Ok(None);
+            return None;
         }
-        let Some(faces) = parse_body_root(root.payload)? else {
-            return Ok(None);
-        };
+        let faces = parse_body_root(root.payload)?;
         if faces
             .iter()
             .any(|face| by_id.get(face).is_none_or(|target| target.class != 0x00))
         {
-            return Ok(None);
+            return None;
         }
         bodies.push(E5Body {
             record_id: record.id,
             faces,
         });
     }
-    Ok(Some(bodies))
+    Some(bodies)
 }
 
-fn parse_body_root(payload: &[u8]) -> Result<Option<Vec<u32>>, CodecError> {
+fn parse_body_root(payload: &[u8]) -> Option<Vec<u32>> {
     let (count, mut position, narrow) = if payload.first() == Some(&0x08) {
-        let Some(count) = payload.get(1) else {
-            return Ok(None);
-        };
+        let count = payload.get(1)?;
         (usize::from(*count), 2, true)
     } else {
-        let Some(count) = payload.first().and_then(|lead| lead.checked_sub(0x80)) else {
-            return Ok(None);
-        };
+        let count = payload.first().and_then(|lead| lead.checked_sub(0x80))?;
         (usize::from(count), 1, false)
     };
     let mut faces = Vec::new();
     for _ in 0..count {
-        let Some(face) = wire::tokens::object_ref(payload, &mut position, false) else {
-            return Ok(None);
-        };
+        let face = wire::tokens::object_ref(payload, &mut position, false)?;
         if narrow && face > u32::from(u16::MAX) {
-            return Ok(None);
+            return None;
         }
         faces.push(face);
     }
-    let Some(count) = u8::try_from(faces.len()).ok() else {
-        return Ok(None);
-    };
+    let count = u8::try_from(faces.len()).ok()?;
     if payload.get(position..position + 2) == Some(&[0x08, count]) {
         position += 2;
     } else if faces.len() <= 0x7f
@@ -1707,20 +1545,16 @@ fn parse_body_root(payload: &[u8]) -> Result<Option<Vec<u32>>, CodecError> {
     {
         position += 1;
     } else {
-        return Ok(None);
+        return None;
     }
-    let Some(sign_bytes) = payload.get(position..) else {
-        return Ok(None);
-    };
+    let sign_bytes = payload.get(position..)?;
     if sign_bytes.len() != (faces.len() + 2) * 2 {
-        return Ok(None);
+        return None;
     }
     for bytes in sign_bytes.chunks_exact(2) {
-        if View::i16_le_at(bytes, 0).and_then(Sign::from_i16).is_none() {
-            return Ok(None);
-        }
+        View::i16_le_at(bytes, 0).and_then(Sign::from_i16)?;
     }
-    Ok(Some(faces))
+    Some(faces)
 }
 
 fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
@@ -1749,86 +1583,64 @@ fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
     })
 }
 
-fn parse_face(record: &Record<'_>) -> Result<Option<RawFace>, CodecError> {
-    let Some(count) = record
+fn parse_face(record: &Record<'_>) -> Option<RawFace> {
+    let count = record
         .payload
         .first()
         .and_then(|lead| lead.checked_sub(0x81))
-        .map(usize::from)
-    else {
-        return Ok(None);
-    };
+        .map(usize::from)?;
     if count == 0 {
-        return Ok(None);
+        return None;
     }
     let mut position = 1;
-    let Some(surface) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
+    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
     let mut loops = Vec::new();
     for _ in 0..count {
-        let Some(loop_id) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-            return Ok(None);
-        };
+        let loop_id = wire::tokens::object_ref(record.payload, &mut position, false)?;
         loops.push(loop_id);
     }
-    let Some(trailer_sign) = View::i16_le_at(record.payload, position).and_then(Sign::from_i16)
-    else {
-        return Ok(None);
-    };
+    let trailer_sign = View::i16_le_at(record.payload, position).and_then(Sign::from_i16)?;
     if position + 2 != record.payload.len() {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(RawFace {
+    Some(RawFace {
         id: record.id,
         surface,
         loops,
         trailer_sign,
-    }))
+    })
 }
 
-fn parse_loop(record: &Record<'_>) -> Result<Option<RawLoop>, CodecError> {
-    let Some(member_count) = record
+fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
+    let member_count = record
         .payload
         .first()
         .and_then(|lead| lead.checked_sub(0x81))
-        .map(usize::from)
-    else {
-        return Ok(None);
-    };
+        .map(usize::from)?;
     if member_count == 0 || member_count % 2 != 0 {
-        return Ok(None);
+        return None;
     }
     let mut position = 1;
     let mut pcurves = Vec::new();
     let mut edges = Vec::new();
     for _ in 0..member_count / 2 {
-        let Some(pcurve) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-            return Ok(None);
-        };
-        let Some(edge) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-            return Ok(None);
-        };
+        let pcurve = wire::tokens::object_ref(record.payload, &mut position, false)?;
+        let edge = wire::tokens::object_ref(record.payload, &mut position, false)?;
         pcurves.push(pcurve);
         edges.push(edge);
     }
-    let Some(surface) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let Some(outer) = record
+    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let outer = record
         .payload
         .get(position..)
-        .and_then(|tail| parse_loop_signs(tail, member_count / 2).ok())
-    else {
-        return Ok(None);
-    };
-    Ok(Some(RawLoop {
+        .and_then(|tail| parse_loop_signs(tail, member_count / 2).ok())?;
+    Some(RawLoop {
         id: record.id,
         surface,
         pcurves,
         edges,
         outer,
-    }))
+    })
 }
 
 #[derive(Debug)]
@@ -1866,45 +1678,29 @@ fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<Option<bool>, 
     Ok(Some(outer == 1))
 }
 
-fn parse_edge(record: &Record<'_>) -> Result<Option<E5Edge>, CodecError> {
+fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
     if record.payload.first() != Some(&0x85) {
-        return Ok(None);
+        return None;
     }
     let mut position = 1;
-    let Some(support) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let Some(start_vertex) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let Some(end_vertex) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let Some(parameter_start) = wire::tokens::object_ref(record.payload, &mut position, false)
-    else {
-        return Ok(None);
-    };
-    let Some(parameter_end) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
+    let support = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let start_vertex = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let end_vertex = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let parameter_start = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let parameter_end = wire::tokens::object_ref(record.payload, &mut position, false)?;
     let tail = record.payload[position..].to_vec();
-    Ok(Some(E5Edge {
+    Some(E5Edge {
         support,
         start_vertex,
         end_vertex,
         parameter_start,
         parameter_end,
         tail,
-    }))
+    })
 }
 
-fn solve_loop_chain(
-    edge_ids: &[u32],
-    edges: &BTreeMap<u32, E5Edge>,
-) -> Result<Option<Vec<bool>>, CodecError> {
-    let Some(first) = edge_ids.first().and_then(|id| edges.get(id)) else {
-        return Ok(None);
-    };
+fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<Vec<bool>> {
+    let first = edge_ids.first().and_then(|id| edges.get(id))?;
     let mut solutions = Vec::new();
     for first_reversed in [false, true] {
         let initial = if first_reversed {
@@ -1921,9 +1717,7 @@ fn solve_loop_chain(
         senses.push(first_reversed);
         let mut valid = true;
         for edge_id in &edge_ids[1..] {
-            let Some(edge) = edges.get(edge_id) else {
-                return Ok(None);
-            };
+            let edge = edges.get(edge_id)?;
             match (edge.start_vertex == current, edge.end_vertex == current) {
                 (true, false) => {
                     senses.push(false);
@@ -1944,7 +1738,7 @@ fn solve_loop_chain(
         }
     }
     if solutions.len() == 1 {
-        return Ok(solutions.pop());
+        return solutions.pop();
     }
     if edge_ids.len() == 2
         && solutions.len() == 2
@@ -1953,9 +1747,9 @@ fn solve_loop_chain(
             .zip(&solutions[1])
             .all(|(left, right)| left != right)
     {
-        return Ok(solutions.into_iter().find(|solution| !solution[0]));
+        return solutions.into_iter().find(|solution| !solution[0]);
     }
-    Ok(None)
+    None
 }
 
 #[cfg(test)]

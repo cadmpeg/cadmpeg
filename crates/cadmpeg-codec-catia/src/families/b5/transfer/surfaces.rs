@@ -340,7 +340,7 @@ fn profile_nurbs(
             )?,
             refusal,
             format_args!("b5 line profile of a revolution surface: {record}"),
-        )?,
+        ),
         B5Profile::Arc {
             center,
             direction_x,
@@ -439,7 +439,7 @@ pub(super) fn rational_arc(
             return Ok(None);
         }
     }
-    crate::nurbs::note_refusal(
+    Ok(crate::nurbs::note_refusal(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             2,
@@ -450,7 +450,7 @@ pub(super) fn rational_arc(
         )?,
         refusal,
         format_args!("b5 rational arc profile of a revolution surface: {record}"),
-    )
+    ))
 }
 
 pub(super) fn revolve_nurbs(
@@ -537,27 +537,16 @@ pub(super) fn revolve_nurbs(
                 weights.push(profile_weight * angular_weight);
             }
         }
-        let row_len = angular_count;
         let profile_knots = profile.knots().as_slice().to_vec();
-        let point_rows = match ctx.copy_rows(
-            &control_points,
-            row_len,
-            "catia b5 revolution point rows",
-            "catia b5 revolution point row values",
-        ) {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
-        let weight_rows = match ctx.copy_rows(
-            &weights,
-            row_len,
-            "catia b5 revolution weight rows",
-            "catia b5 revolution weight row values",
-        ) {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
-        let surface = match crate::nurbs::note_refusal(
+        let point_rows = control_points
+            .chunks(angular_count)
+            .map(<[_]>::to_vec)
+            .collect::<Vec<_>>();
+        let weight_rows = weights
+            .chunks(angular_count)
+            .map(<[_]>::to_vec)
+            .collect::<Vec<_>>();
+        let surface = crate::nurbs::note_refusal(
             match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
                 ctx,
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
@@ -574,11 +563,7 @@ pub(super) fn revolve_nurbs(
             },
             refusal,
             format_args!("b5 revolution surface built from its profile: {record}"),
-        ) {
-            Ok(Some(surface)) => surface,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
+        )?;
         Some(Ok(surface))
     })()
     .transpose()
@@ -656,14 +641,7 @@ pub(super) fn emit_surfaces(
     let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
     let mut surface_ids = HashMap::new();
     for object_id in surface_plan.keys().copied() {
-        let index = usize::try_from(object_id).map_err(|_| {
-            admission.context().refuse_codec_limit(
-                "catia_b5_emitted_surface_id",
-                u64::MAX,
-                u64::MAX,
-            )
-        })?;
-        let id = crate::resource::compose_index_id(&namespace, index, SurfaceId::mint)?;
+        let id = crate::resource::compose_u32_id(&namespace, object_id, SurfaceId::mint)?;
         surface_ids.insert(object_id, id);
     }
     let mut face_surfaces = HashSet::new();

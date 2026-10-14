@@ -4,7 +4,6 @@
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::value_block_7c0b as value_block;
@@ -209,27 +208,8 @@ pub(crate) enum ValueField {
     },
 }
 
-pub(crate) fn copy_fields_charged(fields: &[ValueField]) -> Result<Vec<ValueField>, CodecError> {
-    let mut copied = Vec::new();
-    for field in fields {
-        let copy = match field {
-            ValueField::Inline { bytes, offset } => ValueField::Inline {
-                bytes: InlineBytes(bytes.0.to_vec().into()),
-                offset: *offset,
-            },
-            ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-                bytes: bytes.to_vec().into(),
-                offset: *offset,
-            },
-            other => other.clone(),
-        };
-        copied.push(copy);
-    }
-    Ok(copied)
-}
-
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
-pub(crate) fn parse(bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
+pub(crate) fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
     let mut blocks = Vec::<ValueBlock>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {
@@ -248,7 +228,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let Some(block) = parse_candidate(bytes, pos)? else {
+        let Some(block) = parse_candidate(bytes, pos) else {
             continue;
         };
         if let Some(block_end) = block.pos.checked_add(block.total_len()) {
@@ -256,11 +236,11 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
         }
         blocks.push(block);
     }
-    Ok(blocks)
+    blocks
 }
 
-fn parse_candidate(bytes: &[u8], pos: usize) -> Result<Option<ValueBlock>, CodecError> {
-    let Some(payload) = (|| -> Option<_> {
+fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
+    let payload = (|| -> Option<_> {
         let declared_len =
             usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
         if declared_len < value_block::LEN {
@@ -273,13 +253,11 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Result<Option<ValueBlock>, Codec
             return None;
         }
         Some(&bytes[pos + value_block::LEN..terminator])
-    })() else {
-        return Ok(None);
-    };
-    Ok(Some(ValueBlock {
+    })()?;
+    Some(ValueBlock {
         pos,
         payload: payload.to_vec(),
-    }))
+    })
 }
 
 pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
@@ -296,50 +274,6 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
         Ok(()) => fields,
         Err(never) => match never {},
     }
-}
-
-pub(crate) fn copy_field_charged(field: &ValueField) -> Result<ValueField, CodecError> {
-    Ok(match field {
-        ValueField::SchemaSelector { ordinal, offset } => ValueField::SchemaSelector {
-            ordinal: *ordinal,
-            offset: *offset,
-        },
-        ValueField::Binary64 { bits, offset } => ValueField::Binary64 {
-            bits: *bits,
-            offset: *offset,
-        },
-        ValueField::Marker { code, offset } => ValueField::Marker {
-            code: *code,
-            offset: *offset,
-        },
-        ValueField::Opcode { code, offset } => ValueField::Opcode {
-            code: *code,
-            offset: *offset,
-        },
-        ValueField::Separator { offset } => ValueField::Separator { offset: *offset },
-        ValueField::Inline { bytes, offset } => ValueField::Inline {
-            bytes: InlineBytes(bytes.as_slice().to_vec().into()),
-            offset: *offset,
-        },
-        ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-            bytes: bytes.to_vec().into(),
-            offset: *offset,
-        },
-        ValueField::Atom {
-            value,
-            width,
-            offset,
-        } => ValueField::Atom {
-            value: *value,
-            width: *width,
-            offset: *offset,
-        },
-        ValueField::Terminator { offset } => ValueField::Terminator { offset: *offset },
-        ValueField::Literal { value, offset } => ValueField::Literal {
-            value: *value,
-            offset: *offset,
-        },
-    })
 }
 
 fn tokenize_with<E>(

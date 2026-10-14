@@ -11,21 +11,19 @@ pub(crate) struct Boundary {
 }
 
 impl Boundary {
-    pub(crate) fn new(coedges: NonEmptyMembers<CoedgeUse>) -> Result<Option<Self>, CodecError> {
-        let Some(first) = coedges.first() else {
-            return Ok(None);
-        };
+    pub(crate) fn new(coedges: NonEmptyMembers<CoedgeUse>) -> Option<Self> {
+        let first = coedges.first()?;
         let mut next_start = first.start_vertex;
         for coedge in &coedges {
             if coedge.start_vertex != next_start {
-                return Ok(None);
+                return None;
             }
             next_start = coedge.end_vertex;
         }
         if next_start != first.start_vertex {
-            return Ok(None);
+            return None;
         }
-        Ok(Some(Self { coedges }))
+        Some(Self { coedges })
     }
 
     pub(crate) fn coedges(&self) -> &[CoedgeUse] {
@@ -73,7 +71,7 @@ impl StandardTopology {
         for face in draft_faces {
             let mut boundaries = Vec::new();
             for boundary in face.boundaries {
-                let Some(boundary) = Boundary::new(boundary.coedges)? else {
+                let Some(boundary) = Boundary::new(boundary.coedges) else {
                     return Ok(None);
                 };
 

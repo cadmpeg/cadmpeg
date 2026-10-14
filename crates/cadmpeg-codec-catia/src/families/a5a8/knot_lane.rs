@@ -15,11 +15,8 @@ impl A8KnotLane {
         &self.multiplicities
     }
 
-    pub(super) fn try_new(
-        distinct: Vec<FiniteReal>,
-        multiplicities: Vec<u32>,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        Ok((!distinct.is_empty()
+    pub(super) fn try_new(distinct: Vec<FiniteReal>, multiplicities: Vec<u32>) -> Option<Self> {
+        (!distinct.is_empty()
             && distinct.len() == multiplicities.len()
             && multiplicities.iter().all(|&value| value > 0)
             && distinct
@@ -28,7 +25,7 @@ impl A8KnotLane {
         .then_some(Self {
             distinct,
             multiplicities,
-        }))
+        })
     }
 
     /// Expanded knot vector of a lane whose pole count exceeds `degree`.

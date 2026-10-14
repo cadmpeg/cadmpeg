@@ -7,7 +7,6 @@
 //! between those position-threading loops and the cursor.
 
 use super::cursor::Cursor;
-use cadmpeg_core::CodecError;
 
 /// Reads a reference token at `*position`, advancing `*position` past it.
 ///
@@ -39,18 +38,13 @@ pub(crate) fn compact_uint(bytes: &[u8], position: &mut usize) -> Option<u32> {
 /// Returns the references and the offset just past the last token. Callers
 /// that require the payload to be fully consumed check the returned offset
 /// against the payload length themselves.
-pub(crate) fn counted_refs(
-    payload: &[u8],
-    extended: bool,
-) -> Result<Option<(Vec<u32>, usize)>, CodecError> {
-    let Some(count) = payload.first().and_then(|lead| lead.checked_sub(0x80)) else {
-        return Ok(None);
-    };
+pub(crate) fn counted_refs(payload: &[u8], extended: bool) -> Option<(Vec<u32>, usize)> {
+    let count = payload.first().and_then(|lead| lead.checked_sub(0x80))?;
     let mut position = 1;
     let references = (0..count)
         .map(|_| object_ref(payload, &mut position, extended))
         .collect::<Option<Vec<_>>>();
-    Ok(references.map(|references| (references, position)))
+    references.map(|references| (references, position))
 }
 
 /// Read a catalog/entity compact atom and return its value and end offset.

@@ -88,7 +88,7 @@ pub(crate) fn zero_entity_endpoint_pair_candidates(
     ctx: &DecodeContext<'_>,
     runs: &[ZeroEntitySupportRun],
 ) -> Result<Vec<ZeroEntityEndpointPairCandidate>, CodecError> {
-    endpoint_pair_candidates(ctx, &zero_entity_oriented_occurrences(runs)?)
+    endpoint_pair_candidates(ctx, &zero_entity_oriented_occurrences(runs))
 }
 
 pub(super) fn zero_entity_endpoint_pair_candidates_with_budget(
@@ -96,12 +96,12 @@ pub(super) fn zero_entity_endpoint_pair_candidates_with_budget(
     runs: &[ZeroEntitySupportRun],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
-    endpoint_pair_candidates_with_budget(ctx, &zero_entity_oriented_occurrences(runs)?, budget)
+    endpoint_pair_candidates_with_budget(ctx, &zero_entity_oriented_occurrences(runs), budget)
 }
 
 fn zero_entity_oriented_occurrences(
     runs: &[ZeroEntitySupportRun],
-) -> Result<Vec<ZeroEntityOrientedOccurrence>, CodecError> {
+) -> Vec<ZeroEntityOrientedOccurrence> {
     let mut occurrences = Vec::new();
     for run in runs {
         let Some(face) = run.face.as_ref() else {
@@ -132,24 +132,7 @@ fn zero_entity_oriented_occurrences(
             }
         }
     }
-    Ok(occurrences)
-}
-
-/// Charge one endpoint search step.
-///
-/// Returns `false` when the local slice is used up; the search then ends
-/// without candidates. A session refusal is an error.
-fn charge_endpoint_work(
-    ctx: &DecodeContext<'_>,
-    budget: &WorkBudget<'_>,
-) -> Result<bool, CodecError> {
-    if budget.charge() {
-        return Ok(true);
-    }
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(limit.into());
-    }
-    Ok(false)
+    occurrences
 }
 
 pub(crate) fn endpoint_pair_candidates(
@@ -168,7 +151,7 @@ fn endpoint_pair_candidates_with_budget(
     let Some(endpoint_matches) = endpoint_match_graph(ctx, occurrences, budget)? else {
         return Ok(None);
     };
-    let radial_matches = selected_radial_matches(occurrences, &endpoint_matches)?;
+    let radial_matches = selected_radial_matches(occurrences, &endpoint_matches);
     let mut face_ordinals = HashSet::new();
     for occurrence in occurrences {
         face_ordinals.insert(occurrence.face_record_ordinal);
@@ -236,8 +219,7 @@ fn endpoint_pair_candidates_with_budget(
             if let Some(group) = by_face_component.get_mut(&component) {
                 group.push(index);
             } else {
-                let mut group = Vec::new();
-                group.push(index);
+                let group = vec![index];
                 by_face_component.insert(component, group);
             }
         }
@@ -302,8 +284,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         if let Some(indices) = cells.get_mut(&cell) {
             indices.push(index);
         } else {
-            let mut indices = Vec::new();
-            indices.push(index);
+            let indices = vec![index];
             cells.insert(cell, indices);
         }
     }
@@ -328,7 +309,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                         if *other <= index {
                             continue;
                         }
-                        if !charge_endpoint_work(ctx, budget)? {
+                        if !budget.charge() {
                             return Ok(None);
                         }
                         if point.distance(endpoints[*other].2.get()) <= MODEL_POINT_TOLERANCE {
@@ -366,7 +347,7 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         let mut complete = true;
         for (position, left) in component.iter().enumerate() {
             for right in &component[position + 1..] {
-                if !charge_endpoint_work(ctx, budget)? {
+                if !budget.charge() {
                     return Ok(None);
                 }
                 let deviation = endpoints[*left].2.distance(endpoints[*right].2.get());
@@ -404,8 +385,7 @@ fn endpoint_match_graph(
             if let Some(indices) = cells.get_mut(&cell) {
                 indices.push(index);
             } else {
-                let mut indices = Vec::new();
-                indices.push(index);
+                let indices = vec![index];
                 cells.insert(cell, indices);
             }
         }
@@ -430,7 +410,7 @@ fn endpoint_match_graph(
                         let neighbor = [x, y, z];
                         if let Some(indices) = cells.get(&neighbor) {
                             for other in indices.iter().copied().filter(|other| *other > index) {
-                                if possible.insert(other) && !charge_endpoint_work(ctx, budget)? {
+                                if possible.insert(other) && !budget.charge() {
                                     return Ok(None);
                                 }
                             }
@@ -458,7 +438,7 @@ fn endpoint_match_graph(
 fn selected_radial_matches(
     occurrences: &[ZeroEntityOrientedOccurrence],
     endpoint_matches: &[Vec<usize>],
-) -> Result<Vec<Vec<usize>>, CodecError> {
+) -> Vec<Vec<usize>> {
     let mut radial = Vec::new();
     for (index, matches) in endpoint_matches.iter().enumerate() {
         let mut row = Vec::new();
@@ -473,7 +453,7 @@ fn selected_radial_matches(
         }
         radial.push(row);
     }
-    Ok(radial)
+    radial
 }
 
 fn endpoint_cell(point: FinitePoint3) -> Option<[i64; 3]> {

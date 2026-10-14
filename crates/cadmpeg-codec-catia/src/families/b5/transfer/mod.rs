@@ -117,12 +117,12 @@ struct OwnershipPlan {
 }
 
 impl OwnershipPlan {
-    fn components(&self) -> Result<BTreeMap<usize, Vec<usize>>, cadmpeg_core::CodecError> {
+    fn components(&self) -> BTreeMap<usize, Vec<usize>> {
         let mut components = BTreeMap::<usize, Vec<usize>>::new();
         for (face, &component) in self.face_components.iter().enumerate() {
             components.entry(component).or_default().push(face);
         }
-        Ok(components)
+        components
     }
 }
 
@@ -211,7 +211,7 @@ pub(in crate::families) fn transfer(
                         .is_some_and(|loop_| loop_.surface == face.surface)
                 })
         });
-        let loop_owner_counts = face_loop_owner_counts(&graph.faces)?;
+        let loop_owner_counts = face_loop_owner_counts(&graph.faces);
         graph.faces.retain(|face| {
             face.loops
                 .iter()
@@ -296,15 +296,10 @@ fn semantic_fallthrough_or_resource(
     }
 }
 
-fn add_referenced_surface(
-    referenced: &mut HashSet<u32>,
-    pending: &mut Vec<u32>,
-    surface_id: u32,
-) -> Result<(), cadmpeg_core::CodecError> {
+fn add_referenced_surface(referenced: &mut HashSet<u32>, pending: &mut Vec<u32>, surface_id: u32) {
     if referenced.insert(surface_id) {
         pending.push(surface_id);
     }
-    Ok(())
 }
 
 fn referenced_surface_ids(
@@ -313,31 +308,31 @@ fn referenced_surface_ids(
     supported: &BTreeMap<u32, B5SupportedSurface>,
     extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
     aliases: &BTreeMap<u32, u32>,
-) -> Result<HashSet<u32>, cadmpeg_core::CodecError> {
+) -> HashSet<u32> {
     let mut referenced = HashSet::new();
     let mut pending = Vec::new();
     for root in roots {
-        add_referenced_surface(&mut referenced, &mut pending, root)?;
+        add_referenced_surface(&mut referenced, &mut pending, root);
     }
     while let Some(surface_id) = pending.pop() {
         let Some(construction_id) = super::graph::canonical_surface_id(aliases, surface_id) else {
             continue;
         };
         if let Some(offset) = offsets.get(&construction_id) {
-            add_referenced_surface(&mut referenced, &mut pending, offset.source_surface)?;
-            add_referenced_surface(&mut referenced, &mut pending, offset.carrier_surface)?;
+            add_referenced_surface(&mut referenced, &mut pending, offset.source_surface);
+            add_referenced_surface(&mut referenced, &mut pending, offset.carrier_surface);
         } else if let Some(construction) = supported.get(&construction_id) {
             for &support in &construction.support_surfaces {
-                add_referenced_surface(&mut referenced, &mut pending, support)?;
+                add_referenced_surface(&mut referenced, &mut pending, support);
             }
-            add_referenced_surface(&mut referenced, &mut pending, construction.carrier_surface)?;
+            add_referenced_surface(&mut referenced, &mut pending, construction.carrier_surface);
         } else if let Some(extrusion) = extrusions.get(&construction_id) {
             for (support, _, _) in extrusion.directrix.supports() {
-                add_referenced_surface(&mut referenced, &mut pending, *support)?;
+                add_referenced_surface(&mut referenced, &mut pending, *support);
             }
         }
     }
-    Ok(referenced)
+    referenced
 }
 
 /// Resolve the whole graph into the cross-pass [`TransferPlan`]. Returns `None`
@@ -368,16 +363,13 @@ fn build_plan(
             Err(error) => return Some(Err(error)),
         };
 
-        let referenced_surfaces = match referenced_surface_ids(
+        let referenced_surfaces = referenced_surface_ids(
             graph.faces.iter().map(|face| face.surface),
             &graph.offset_surfaces,
             &graph.supported_surfaces,
             &graph.extrusion_surfaces,
             &graph.surface_aliases,
-        ) {
-            Ok(referenced) => referenced,
-            Err(error) => return Some(Err(error)),
-        };
+        );
         let mut surface_plan = BTreeMap::new();
         for surface_id in referenced_surfaces {
             let surface = graph.surfaces.get(&surface_id)?;
@@ -408,10 +400,7 @@ fn build_plan(
             if !loop_chain_closes(loop_, graph.vertices.edges()) {
                 return None;
             }
-            let senses = match loop_.edge_senses() {
-                Ok(senses) => senses,
-                Err(error) => return Some(Err(error)),
-            };
+            let senses = loop_.edge_senses();
             loop_senses.insert(loop_.object_id, senses);
             for member in &loop_.members {
                 let pcurve_id = member.pcurve;
@@ -459,7 +448,7 @@ fn build_plan(
                             }) {
                                 supports.push((loop_.surface, pcurve_id, support_range));
                             }
-                            if let Err(error) = merge_curve_plan(
+                            merge_curve_plan(
                                 &mut edge_curve_plan,
                                 &mut conflicting_edge_curves,
                                 edge_id,
@@ -469,9 +458,7 @@ fn build_plan(
                                     edge_tolerance: None,
                                     cache_fit_tolerance: None,
                                 },
-                            ) {
-                                return Some(Err(error));
-                            }
+                            );
                         }
                         edge_ids.insert(edge_id);
                         continue;
@@ -486,11 +473,7 @@ fn build_plan(
                 {
                     return None;
                 }
-                let knots = match pcurve_nurbs_knots(pcurve) {
-                    Ok(Some(knots)) => knots,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let knots = pcurve_nurbs_knots(pcurve)?;
                 let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
                 let parameter_range = pcurve_parameter_domain(pcurve)?;
                 let surface = graph.surfaces.get(&loop_.surface)?;
@@ -500,18 +483,15 @@ fn build_plan(
                     .iter()
                     .map(|point| neutral_pcurve_point(point.get(), surface))
                     .collect::<Vec<_>>();
-                let weights = match pcurve.weights.as_ref() {
-                    Some(weights) => Some(
-                        weights
-                            .iter()
-                            .copied()
-                            .map(PositiveReal::get)
-                            .collect::<Vec<_>>(),
-                    ),
-                    None => None,
-                };
+                let weights = pcurve.weights.as_ref().map(|weights| {
+                    weights
+                        .iter()
+                        .copied()
+                        .map(PositiveReal::get)
+                        .collect::<Vec<_>>()
+                });
                 let geometry = PcurveGeometry::Nurbs {
-                    nurbs: admitted!(crate::nurbs::note_refusal(
+                    nurbs: crate::nurbs::note_refusal(
                         admitted!(PcurveNurbs::from_lanes(
                             ctx,
                             pcurve.degree,
@@ -521,8 +501,8 @@ fn build_plan(
                             false
                         )),
                         refusal,
-                        format_args!("b5 object-stream pcurve record #{}", pcurve.object_id)
-                    ))?,
+                        format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
+                    )?,
                 };
                 pcurve_plan.entry(pcurve_id).or_insert((
                     geometry,
@@ -624,14 +604,12 @@ fn build_plan(
                         edge_tolerance: None,
                         cache_fit_tolerance: None,
                     });
-                    if let Err(error) = merge_curve_plan(
+                    merge_curve_plan(
                         &mut edge_curve_plan,
                         &mut conflicting_edge_curves,
                         edge_id,
                         plan,
-                    ) {
-                        return Some(Err(error));
-                    }
+                    );
                     if conflicting_edge_curves.contains(&edge_id) {
                         edge_helix_plan.remove(&edge_id);
                     }
@@ -665,7 +643,7 @@ fn build_plan(
                     {
                         return None;
                     }
-                    if let Err(error) = merge_curve_plan(
+                    merge_curve_plan(
                         &mut edge_curve_plan,
                         &mut conflicting_edge_curves,
                         edge_id,
@@ -681,9 +659,7 @@ fn build_plan(
                             )?),
                             cache_fit_tolerance: Some(helix.fit_tolerance),
                         },
-                    ) {
-                        return Some(Err(error));
-                    }
+                    );
                     if conflicting_edge_curves.contains(&edge_id) {
                         edge_helix_plan.remove(&edge_id);
                     } else {
@@ -963,7 +939,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     }) else {
         return Ok(None);
     };
-    let Some((knots, control_points)) = pcurve.bspline()? else {
+    let Some((knots, control_points)) = pcurve.bspline() else {
         return Ok(None);
     };
     let Some(nurbs) = crate::nurbs::note_refusal(
@@ -980,8 +956,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
         )?,
         refusal,
         format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     Ok(Some(ResolvedObjectStreamPcurve {
@@ -1225,11 +1200,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         Err(error) => return Some(Err(error)),
                     };
                 let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-                let knots = match pcurve_nurbs_knots(pcurve) {
-                    Ok(Some(knots)) => knots,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let knots = pcurve_nurbs_knots(pcurve)?;
                 let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
                 let domain = pcurve_parameter_domain(pcurve)?;
                 bounded_occurrence_range(pcurve_parameter_range, domain)?;
@@ -1238,21 +1209,14 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     .iter()
                     .map(|point| neutral_pcurve_point(point.get(), source_surface))
                     .collect::<Vec<_>>();
-                let weights = match pcurve
-                    .weights
-                    .as_ref()
-                    .map(|weights| {
-                        ctx.collect_vec(
-                            weights.iter().copied().map(PositiveReal::get),
-                            "catia_b5_extrusion_pcurve_weights",
-                        )
-                    })
-                    .transpose()
-                {
-                    Ok(weights) => weights,
-                    Err(error) => return Some(Err(error)),
-                };
-                let nurbs = match crate::nurbs::note_refusal(
+                let weights = pcurve.weights.as_ref().map(|weights| {
+                    weights
+                        .iter()
+                        .copied()
+                        .map(PositiveReal::get)
+                        .collect::<Vec<_>>()
+                });
+                let nurbs = crate::nurbs::note_refusal(
                     match PcurveNurbs::from_lanes(ctx, pcurve.degree, knots, points, weights, false)
                     {
                         Ok(result) => result,
@@ -1260,11 +1224,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     },
                     refusal,
                     format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
-                ) {
-                    Ok(Some(nurbs)) => nurbs,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                )?;
                 let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
                 let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
                     Ok(curve) => curve,
@@ -1480,7 +1440,7 @@ fn curve_on_parameter_range(
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             if source_per_target != 1.0 {
-                return crate::nurbs::note_refusal(
+                return Ok(crate::nurbs::note_refusal(
                     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                         ctx,
                         1,
@@ -1503,11 +1463,8 @@ fn curve_on_parameter_range(
                         "b5 line curve reparameterized onto its occurrence range: {record}"
                     ),
                 )
-                .map(|curve| {
-                    curve
-                        .map(SolvedCurveGeometry::Nurbs)
-                        .map(CurveGeometry::Solved)
-                });
+                .map(SolvedCurveGeometry::Nurbs)
+                .map(CurveGeometry::Solved));
             }
             Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(

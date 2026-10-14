@@ -25,11 +25,7 @@ fn duplicate_degree(row: &[(usize, u8)], point: usize) -> Option<u8> {
         .map(|index| row[index].1)
 }
 
-fn set_duplicate_degree(
-    row: &mut Vec<(usize, u8)>,
-    point: usize,
-    degree: u8,
-) -> Result<(), CodecError> {
+fn set_duplicate_degree(row: &mut Vec<(usize, u8)>, point: usize, degree: u8) {
     match row.binary_search_by_key(&point, |(key, _)| *key) {
         Ok(index) => row[index].1 = degree,
         Err(index) => {
@@ -37,7 +33,6 @@ fn set_duplicate_degree(
             row[index..].rotate_right(1);
         }
     }
-    Ok(())
 }
 
 fn restore_duplicate_degree(row: &mut Vec<(usize, u8)>, point: usize, before: Option<u8>) {
@@ -157,9 +152,7 @@ impl StandardTopologyDraft {
         for face in 0..self.faces.len() {
             let root = union.find(face)?;
             let next = labels.len();
-            if !labels.contains_key(&root) {
-                labels.insert(root, next);
-            }
+            labels.entry(root).or_insert(next);
             let component = labels[&root];
             if component == components.len() {
                 components.push(Vec::new());
@@ -324,12 +317,9 @@ impl StandardTopologyDraft {
     /// Native identities are global within the parsed topology. Equal values
     /// collapse face-local corners even when adjacent faces use different trim
     /// handles. The pair order is the physical edge-row direction.
-    fn with_native_edge_vertices(
-        &self,
-        edge_ports: &[[u32; 2]],
-    ) -> Result<Option<Self>, CodecError> {
+    fn with_native_edge_vertices(&self, edge_ports: &[[u32; 2]]) -> Option<Self> {
         if edge_ports.len() != self.edge_rows.len() {
-            return Ok(None);
+            return None;
         }
         let mut identities = HashMap::new();
         let mut edge_vertices = Vec::new();
@@ -358,7 +348,7 @@ impl StandardTopologyDraft {
             }
         }
         topology.logical_vertex_count = identities.len();
-        Ok(Some(topology))
+        Some(topology)
     }
 }
 
@@ -451,9 +441,8 @@ impl EdgeRow {
         true
     }
 
-    pub(crate) fn normalize_handles(&mut self) -> Result<(), CodecError> {
+    pub(crate) fn normalize_handles(&mut self) {
         self.handles.fill(0);
-        Ok(())
     }
 
     pub(crate) fn boundary_pattern(&self) -> Option<&[u32]> {
@@ -782,13 +771,13 @@ pub(super) fn complete_duplicate_face_slots(
                 &mut degrees[face],
                 start,
                 start_degree_before.unwrap_or_default() + start_add,
-            )?;
+            );
             if start != end {
                 set_duplicate_degree(
                     &mut degrees[face],
                     end,
                     end_degree_before.unwrap_or_default() + 1,
-                )?;
+                );
             }
             assignment[index] = face;
             used[index] = true;
@@ -844,7 +833,7 @@ pub(super) fn complete_duplicate_face_slots(
                 else {
                     return Ok(None);
                 };
-                set_duplicate_degree(&mut degrees[face], point, next)?;
+                set_duplicate_degree(&mut degrees[face], point, next);
             }
         }
     }
@@ -860,34 +849,19 @@ pub(super) fn complete_duplicate_face_slots(
         let [start, end] = edge_points[edge];
         let mut free_faces = 0usize;
         for face in &degrees {
-            let degree = |point| -> Result<u8, CodecError> {
-                let mut refusal = None;
-                let found = face.binary_search_by(|value| {
-                    if refusal.is_some() {
-                        return std::cmp::Ordering::Equal;
-                    }
-                    match ctx.charge_work(1, "catia standard duplicate free-face keys") {
-                        Ok(()) => value.0.cmp(&point),
-                        Err(error) => {
-                            refusal = Some(error);
-                            std::cmp::Ordering::Equal
-                        }
-                    }
-                });
-                if let Some(error) = refusal {
-                    return Err(error);
-                }
-                Ok(found.ok().map_or(0, |index| face[index].1))
+            let degree = |point| {
+                face.binary_search_by(|value| value.0.cmp(&point))
+                    .ok()
+                    .map_or(0, |index| face[index].1)
             };
-            if degree(start)? + 1 + u8::from(start == end) <= 2
-                && (start == end || degree(end)? < 2)
+            if degree(start) + 1 + u8::from(start == end) <= 2 && (start == end || degree(end) < 2)
             {
                 free_faces += 1;
             }
         }
         keyed.push((edge, free_faces));
     }
-    keyed.sort_by(|left, right| left.1.cmp(&right.1));
+    keyed.sort_by_key(|left| left.1);
 
     for (edge, (ordered, _)) in unresolved.iter_mut().zip(keyed) {
         *edge = ordered;
@@ -1151,8 +1125,7 @@ pub(crate) fn incidence_cycles(
             return Ok(None);
         };
         if start == end {
-            let mut members = Vec::new();
-            members.push((edge, false));
+            let members = vec![(edge, false)];
             let members = NonEmptyMembers::try_from(members).map_err(CodecError::malformed)?;
             cycles.push(members);
             continue;
@@ -1185,8 +1158,7 @@ pub(crate) fn incidence_cycles(
     if at_vertex.iter().any(|edges| edges.len() != 2) {
         return Ok(None);
     }
-    unseen
-        .sort_unstable_by(|left, right| std::cmp::Reverse(left.0).cmp(&std::cmp::Reverse(right.0)));
+    unseen.sort_unstable_by_key(|left| std::cmp::Reverse(left.0));
     while let Some((first, [start_vertex, mut vertex])) = unseen.pop() {
         let mut members = Vec::new();
         members.push((first, false));
@@ -1231,17 +1203,17 @@ pub(crate) fn parse_fbb(
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
     let Some((mut edge_rows, _, vertex_header, handle_width)) =
-        parse_fbb_edge_tables(bytes, after_faces)?
+        parse_fbb_edge_tables(bytes, after_faces)
     else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header)? else {
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
         return Ok(None);
     };
     let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    if classify_fbb_edge_layouts(ctx, &mut edge_rows, &trims)?.is_none() {
+    if classify_fbb_edge_layouts(&mut edge_rows, &trims).is_none() {
         return Ok(None);
     }
     reconstruct(ctx, edge_rows, vertex_points, &trims)
@@ -1258,7 +1230,7 @@ pub(super) fn parse_fbb_with_native_vertices(
     let Some(topology) = parse_fbb(ctx, bytes)? else {
         return Ok(None);
     };
-    topology.with_native_edge_vertices(edge_ports)
+    Ok(topology.with_native_edge_vertices(edge_ports))
 }
 
 pub(super) fn reconstruct(
@@ -1267,14 +1239,10 @@ pub(super) fn reconstruct(
     vertex_points: Vec<[f64; 3]>,
     trims: &[TrimRecord],
 ) -> Result<Option<StandardTopologyDraft>, CodecError> {
-    let node_count = edge_rows
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_reconstruct_union", u64::MAX, u64::MAX))?;
-    let mut union = UnionFind::new(node_count);
+    let mut union = UnionFind::new(edge_rows.len() * 2);
     let mut faces = Vec::new();
     for trim in trims {
-        let Some(cycles) = boundary_cycles(trim.packet.triangles(ctx)?)? else {
+        let Some(cycles) = boundary_cycles(trim.packet.triangles()) else {
             return Ok(None);
         };
         let mut boundaries = Vec::new();
@@ -1291,9 +1259,7 @@ pub(super) fn reconstruct(
     for node in 0..union.len() {
         let root = union.find(node)?;
         let next = roots.len();
-        if !roots.contains_key(&root) {
-            roots.insert(root, next);
-        }
+        roots.entry(root).or_insert(next);
     }
     for face in &mut faces {
         for boundary in &mut face.boundaries {
@@ -1313,7 +1279,6 @@ pub(super) fn reconstruct(
 }
 
 pub(crate) fn reconstruct_mesh_selection(
-    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     selected: &[impl std::borrow::Borrow<MeshFaceBoundaryAssignment>],
@@ -1322,10 +1287,7 @@ pub(crate) fn reconstruct_mesh_selection(
     if selected.len() != unmatched_reversed.len() {
         return Ok(None);
     }
-    let node_count = edge_rows
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_mesh_selection_union", u64::MAX, u64::MAX))?;
+    let node_count = edge_rows.len() * 2;
     let mut union = UnionFind::new(node_count);
     let mut faces = Vec::new();
     for (face, directions) in selected.iter().zip(unmatched_reversed) {
@@ -1404,9 +1366,7 @@ pub(crate) fn reconstruct_mesh_selection(
     for node in 0..union.len() {
         let root = union.find(node)?;
         let next = roots.len();
-        if !roots.contains_key(&root) {
-            roots.insert(root, next);
-        }
+        roots.entry(root).or_insert(next);
     }
     for face in &mut faces {
         for boundary in &mut face.boundaries {

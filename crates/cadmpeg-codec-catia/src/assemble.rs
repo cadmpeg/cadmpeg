@@ -101,9 +101,7 @@ pub(crate) fn neutral_model_is_admissible(
 ///
 /// A carrier is one record instance, so a report about them names the
 /// identities, not only how many there are.
-fn unresolved_carrier_ids<'a>(
-    ir: &'a CadIr,
-) -> Result<(Vec<&'a str>, Vec<&'a str>), cadmpeg_core::CodecError> {
+fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<&str>, Vec<&str>) {
     let mut resolved_curves = ir
         .model
         .curves
@@ -237,14 +235,14 @@ fn unresolved_carrier_ids<'a>(
         })
         .map(|surface| surface.id.as_str())
         .collect::<Vec<_>>();
-    Ok((curves, surfaces))
+    (curves, surfaces)
 }
 
 /// How many curve and surface carriers the transfer left unresolved.
 #[cfg(test)]
 fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
     crate::test_support::with_service_context(|ctx| {
-        let (curves, surfaces) = unresolved_carrier_ids(ir)?;
+        let (curves, surfaces) = unresolved_carrier_ids(ir);
         Ok::<_, cadmpeg_core::CodecError>((curves.len(), surfaces.len()))
     })
     .expect("service budget admits carrier count fixture")
@@ -272,23 +270,19 @@ fn carrier_clause<'a>(kind: &'a str, ids: &'a [&str]) -> impl std::fmt::Display 
     Clause { kind, ids }
 }
 
-pub(crate) fn insert_unresolved_carrier_loss(
-    ir: &CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ir)?;
+pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ir);
     if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
-        return Ok(());
+        return;
     }
     let statement = format!("The transferred model retains {} unresolved curve carriers and {} unresolved surface carriers without exact procedural constructions.{}{}",
     unresolved_curves.len(),
     unresolved_surfaces.len(),
     carrier_clause("Curve", &unresolved_curves),
-    carrier_clause("Surface", &unresolved_surfaces),);
+    carrier_clause("Surface", &unresolved_surfaces));
     let note = CatiaLossCode::GeometryUnresolvedCarriers.note(statement);
 
     losses.insert(0, note);
-    Ok(())
 }
 
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
@@ -568,7 +562,7 @@ pub(crate) fn build_geometry_report(
     (plane_faces, analytic_record_count): (usize, usize),
     report_counts: &GeometryReportCounts,
     topology_failure: Option<&str>,
-) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+) -> DecodeBody {
     let mut losses = Vec::new();
 
     losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
@@ -643,26 +637,27 @@ pub(crate) fn build_geometry_report(
         );
     }
 
-    insert_unresolved_carrier_loss(ir, &mut losses)?;
+    insert_unresolved_carrier_loss(ir, &mut losses);
 
     losses.push(
-        CatiaLossCode::AttributesMaterialsMetadataNotTransferred.note(format!(
+        CatiaLossCode::AttributesMaterialsMetadataNotTransferred.note(
             "Standard circles with an exact adjacent-carrier section normal or two \
                   non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or \
                   cone generators are transferred as curves. Standard spline edges retain exact \
                   two-surface intersection constructions and their identity-bound support \
                   pcurves when present, but unbound serialized 3D NURBS caches, materials, and \
-                  document metadata are not yet transferred.",
-        )),
+                  document metadata are not yet transferred."
+                .to_string(),
+        ),
     );
 
-    Ok(DecodeBody {
+    DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    })
+    }
 }
 
 pub(crate) fn build_metadata_fallback(
@@ -765,9 +760,7 @@ pub(crate) fn link_payload_carriers(
     Ok(())
 }
 
-pub(crate) fn build_container_report(
-    scan: &ContainerScan,
-) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     let mut losses = Vec::new();
     losses.push(CatiaLossCode::GeometryBrepNotTransferred.note(format!(
         "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
@@ -776,18 +769,21 @@ pub(crate) fn build_container_report(
         scan.variant.description()
     )));
 
-    losses.push(CatiaLossCode::TopologyGraphNotBuilt.note(format!(
-        "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
+    losses.push(
+        CatiaLossCode::TopologyGraphNotBuilt.note(
+            "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
                   for this file."
-    )));
+                .to_string(),
+        ),
+    );
 
-    Ok(DecodeBody {
+    DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    })
+    }
 }
 
 pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
@@ -899,7 +895,11 @@ pub(crate) fn rational_pcurve_arc(
         false,
     )? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => crate::nurbs::note_refusal(Err(error), refusal, record),
+        Err(error) => Ok(crate::nurbs::note_refusal::<PcurveGeometry>(
+            Err(error),
+            refusal,
+            record,
+        )),
     }
 }
 
@@ -913,7 +913,7 @@ pub(crate) fn quintic_jet_pcurve(
     record: impl std::fmt::Display,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let Some((full_knots, controls)) =
-        crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?
+        crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)
     else {
         return Ok(None);
     };
@@ -933,7 +933,11 @@ pub(crate) fn quintic_jet_pcurve(
         false,
     )? {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => crate::nurbs::note_refusal(Err(error), refusal, record),
+        Err(error) => Ok(crate::nurbs::note_refusal::<PcurveGeometry>(
+            Err(error),
+            refusal,
+            record,
+        )),
     }
 }
 

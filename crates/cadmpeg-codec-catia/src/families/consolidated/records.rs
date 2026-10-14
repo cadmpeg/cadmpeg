@@ -399,119 +399,81 @@ pub(crate) fn consolidated_edge_definition_data(
     class: u8,
     payload: &[u8],
 ) -> Option<ConsolidatedEdgeDefinitionData> {
-    match edge_definition_data_with(class, payload, |bytes| {
-        Ok::<_, std::convert::Infallible>(finite_f64_lane(bytes))
-    }) {
-        Ok(data) => data,
-        Err(never) => match never {},
+    if class == 0x24 && payload.first() == Some(&0x81) {
+        let mut at = 1;
+        let operand = compact_int(payload, &mut at)?;
+        return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
+            .then_some(ConsolidatedEdgeDefinitionData::Compact24 { operand });
     }
-}
-
-pub(crate) fn consolidated_edge_definition_data_charged(
-    class: u8,
-    payload: &[u8],
-) -> Result<Option<ConsolidatedEdgeDefinitionData>, CodecError> {
-    edge_definition_data_with(class, payload, |bytes| {
-        crate::wire::bytes::finite_f64_lane_charged(bytes)
-    })
-}
-
-fn edge_definition_data_with<E>(
-    class: u8,
-    payload: &[u8],
-    mut lane: impl FnMut(&[u8]) -> Result<Option<Vec<FiniteReal>>, E>,
-) -> Result<Option<ConsolidatedEdgeDefinitionData>, E> {
-    (|| {
-        if class == 0x24 && payload.first() == Some(&0x81) {
-            let mut at = 1;
-            let operand = compact_int(payload, &mut at)?;
-            return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
-                .then_some(Ok(ConsolidatedEdgeDefinitionData::Compact24 { operand }));
-        }
-        if class == 0x25 && payload.first() == Some(&0x82) {
-            let mut at = 1;
-            let first = allocation_ref(payload, &mut at)?;
-            let second = allocation_ref(payload, &mut at)?;
-            let (third, persistent_lead) = class25_persistent_ref(payload, &mut at)?;
-            let operands = [first, second, third];
-            let scalar_bytes = payload.get(at..)?;
-            if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
-                let values = match lane(scalar_bytes) {
-                    Ok(Some(values)) => values,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                return Some(Ok(ConsolidatedEdgeDefinitionData::Scalar25 {
-                    operands,
-                    persistent_lead,
-                    values: values.try_into().ok()?,
-                }));
-            }
-            let leading = read_f64_array::<5>(scalar_bytes, 0)?;
-            let marker = *scalar_bytes.get(40)?;
-            let tail = scalar_bytes.get(41..)?;
-            let marker = Class25ScalarMarker::try_from(marker).ok()?;
-            if !matches!(
-                (marker, tail.len()),
-                (Class25ScalarMarker::M82, 40 | 48 | 56)
-                    | (Class25ScalarMarker::M83, 64 | 72)
-                    | (Class25ScalarMarker::M89, 160)
-                    | (Class25ScalarMarker::M8b, 192)
-            ) {
-                return None;
-            }
-            let trailing = match lane(tail) {
-                Ok(Some(values)) => values,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            let segment =
-                Class25ScalarSegment::try_from(Class25ScalarSegmentWire { marker, trailing })
-                    .ok()?;
-            return Some(Ok(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
+    if class == 0x25 && payload.first() == Some(&0x82) {
+        let mut at = 1;
+        let first = allocation_ref(payload, &mut at)?;
+        let second = allocation_ref(payload, &mut at)?;
+        let (third, persistent_lead) = class25_persistent_ref(payload, &mut at)?;
+        let operands = [first, second, third];
+        let scalar_bytes = payload.get(at..)?;
+        if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
+            let values = finite_f64_lane(scalar_bytes)?;
+            return Some(ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands,
                 persistent_lead,
-                leading,
-                segment,
-            }));
+                values: values.try_into().ok()?,
+            });
         }
-        if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
+        let leading = read_f64_array::<5>(scalar_bytes, 0)?;
+        let marker = *scalar_bytes.get(40)?;
+        let tail = scalar_bytes.get(41..)?;
+        let marker = Class25ScalarMarker::try_from(marker).ok()?;
+        if !matches!(
+            (marker, tail.len()),
+            (Class25ScalarMarker::M82, 40 | 48 | 56)
+                | (Class25ScalarMarker::M83, 64 | 72)
+                | (Class25ScalarMarker::M89, 160)
+                | (Class25ScalarMarker::M8b, 192)
+        ) {
             return None;
         }
-        let mut at = 1;
-        let operands = [
-            compact_int(payload, &mut at)?,
-            compact_int(payload, &mut at)?,
-            persistent_ref(payload, &mut at)?,
-        ];
-        let scalar_bytes = payload.get(at..)?;
-        if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
-            return None;
-        }
-        let values = match lane(scalar_bytes) {
-            Ok(Some(values)) => values,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if values[2] != *values.last()? {
-            return None;
-        }
-        if values.len() == 9
-            && !(values[0] == values[3]
-                && values[0] == values[6]
-                && values[1] == values[4]
-                && values[1] == values[7]
-                && values[2] == values[5]
-                && values[5].get() == 1.0)
-        {
-            return None;
-        }
-        Some(Ok(ConsolidatedEdgeDefinitionData::Scalar {
+        let trailing = finite_f64_lane(tail)?;
+        let segment =
+            Class25ScalarSegment::try_from(Class25ScalarSegmentWire { marker, trailing }).ok()?;
+        return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands,
-            values: values.try_into().ok()?,
-        }))
-    })()
-    .transpose()
+            persistent_lead,
+            leading,
+            segment,
+        });
+    }
+    if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
+        return None;
+    }
+    let mut at = 1;
+    let operands = [
+        compact_int(payload, &mut at)?,
+        compact_int(payload, &mut at)?,
+        persistent_ref(payload, &mut at)?,
+    ];
+    let scalar_bytes = payload.get(at..)?;
+    if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
+        return None;
+    }
+    let values = finite_f64_lane(scalar_bytes)?;
+    if values[2] != *values.last()? {
+        return None;
+    }
+    if values.len() == 9
+        && !(values[0] == values[3]
+            && values[0] == values[6]
+            && values[1] == values[4]
+            && values[1] == values[7]
+            && values[2] == values[5]
+            && values[5].get() == 1.0)
+    {
+        return None;
+    }
+    Some(ConsolidatedEdgeDefinitionData::Scalar {
+        operands,
+        values: values.try_into().ok()?,
+    })
 }
 
 fn edge_definition_is_scalar_eight(definition: &ConsolidatedEdgeDefinition) -> bool {
@@ -703,10 +665,10 @@ fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
 fn consolidated_edge_blocks_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedEdgeBlock>, CodecError> {
+) -> Vec<ConsolidatedEdgeBlock> {
     let mut pcurves = BTreeMap::new();
     for family in [ConsolidatedFamily::A, ConsolidatedFamily::B] {
-        for value in family_pcurves_from_records(data, records, family)? {
+        for value in family_pcurves_from_records(data, records, family) {
             pcurves.insert(value.pos, value);
         }
     }
@@ -749,7 +711,7 @@ fn consolidated_edge_blocks_from_records(
             }
         }
     }
-    Ok(blocks)
+    blocks
 }
 
 /// Decode complete six-record consolidated edge runs. Records separated by any
@@ -768,7 +730,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedTopologyEdgeRun>, CodecError> {
     let mut edges = BTreeMap::new();
-    for edge in consolidated_edge_blocks_from_records(data, records)? {
+    for edge in consolidated_edge_blocks_from_records(data, records) {
         edges.insert(edge.pcurves[0].pos, edge);
     }
     let mut use_runs = BTreeMap::new();
@@ -913,7 +875,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedClass25EdgeRun>, CodecError> {
     let mut descriptors = BTreeMap::new();
-    for value in b2_class25_descriptors_from_records(data, records)? {
+    for value in b2_class25_descriptors_from_records(data, records) {
         descriptors.insert(value.pos, value);
     }
     let mut use_runs = BTreeMap::new();
@@ -957,7 +919,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
                 pos: descriptor.pos,
                 record_id: descriptor.record_id,
                 control: descriptor.control,
-                values: descriptor.values.to_vec(),
+                values: descriptor.values.clone(),
             },
             node,
         });
@@ -1001,7 +963,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         else {
             continue;
         };
-        let parsed_uses = b2_use_metadata_from_records(data, &window[..2])?;
+        let parsed_uses = b2_use_metadata_from_records(data, &window[..2]);
         let candidate = (|| {
             let node = node_value;
             let [first, second] = parsed_uses.as_slice() else {
@@ -1075,7 +1037,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         else {
             continue;
         };
-        let parsed_uses = b2_use_metadata_from_records(data, &window[2..])?;
+        let parsed_uses = b2_use_metadata_from_records(data, &window[2..]);
         let candidate = (|| {
             let node = node_value;
             let [first, second] = parsed_uses.as_slice() else {
@@ -1133,7 +1095,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
 pub(crate) fn consolidated_owned_edge_nodes_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedOwnedEdgeNode>, CodecError> {
+) -> Vec<ConsolidatedOwnedEdgeNode> {
     let mut indices = BTreeMap::new();
     for (index, record) in records.iter().enumerate() {
         indices.insert(record.byte_offset(), index);
@@ -1143,7 +1105,7 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
         nodes.insert(node.pos, node);
     }
     let mut owned = Vec::new();
-    for relation in b2_adjacent_face_counted_owners_from_records(data, records)? {
+    for relation in b2_adjacent_face_counted_owners_from_records(data, records) {
         let Some(&owner_index) = indices.get(&relation.owner.pos) else {
             continue;
         };
@@ -1188,7 +1150,7 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
             });
         }
     }
-    Ok(owned)
+    owned
 }
 
 /// Resolve compact edge endpoint references through the framed allocation walk.
@@ -1323,7 +1285,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
             endpoint_records: [records[start].byte_offset(), records[end].byte_offset()],
         });
     }
-    endpoints.sort_by(|left, right| left.node.pos.cmp(&right.node.pos));
+    endpoints.sort_by_key(|left| left.node.pos);
     Ok(endpoints)
 }
 
@@ -1350,13 +1312,12 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
         record_sources.insert(record.byte_offset(), record.source_index());
     }
     let mut targets_by_owner = BTreeMap::<(usize, usize), Vec<_>>::new();
-    for target in b2_owner_identity_targets_from_records(data, records)? {
+    for target in b2_owner_identity_targets_from_records(data, records) {
         let key = (target.source_index, target.owner_pos);
         if let Some(targets) = targets_by_owner.get_mut(&key) {
             targets.push(target);
         } else {
-            let mut targets = Vec::new();
-            targets.push(target);
+            let targets = vec![target];
             targets_by_owner.insert(key, targets);
         }
     }
@@ -1365,7 +1326,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
         let Some(targets) = targets_by_owner.get(&(packet.source_index, packet.pos)) else {
             continue;
         };
-        let Some(edges) = b2_closed_owner_boundary_edges(targets, &endpoint_records)? else {
+        let Some(edges) = b2_closed_owner_boundary_edges(targets, &endpoint_records) else {
             continue;
         };
         let cycle = {
@@ -1506,14 +1467,14 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
-    let points = object_stream_vertices_from_records(data, records)?;
+    let points = object_stream_vertices_from_records(data, records);
     let embedded = b2_embedded_cylinders_from_records(data, records).collect::<Vec<_>>();
     let standalone = b2_cylinders_from_records(data, records).collect::<Vec<_>>();
     let circles = b2_circles_from_records(data, records).collect::<Vec<_>>();
     let cones = b2_cones_from_records(data, records).collect::<Vec<_>>();
     let spheres = b2_spheres_from_records(data, records).collect::<Vec<_>>();
     let tori = b2_tori_from_records(data, records).collect::<Vec<_>>();
-    let planes = b2_plane_carriers_from_records(data, records)?;
+    let planes = b2_plane_carriers_from_records(data, records);
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         embedded_cylinders: &embedded,
@@ -1525,7 +1486,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         nurbs_surfaces: &surfaces,
     };
     let mut resolved = Vec::new();
-    for block in consolidated_edge_blocks_from_records(data, records)? {
+    for block in consolidated_edge_blocks_from_records(data, records) {
         let mut supports = [None, None];
         for side in [0, 1] {
             supports[side] = resolve_side_support(ctx, &block.pcurves[side], &points, &carriers)?;
@@ -2016,35 +1977,35 @@ pub(in crate::families) fn object_stream_vertices(
             data,
         ))),
     )?;
-    object_stream_vertices_from_records(data, &records)
+    Ok(object_stream_vertices_from_records(data, &records))
 }
 
 fn object_stream_vertices_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Result<Vec<FinitePoint3>, CodecError> {
+) -> Vec<FinitePoint3> {
     let mut points = Vec::new();
-    for range in object_stream_vertex_row_ranges_from_records(data, records)? {
-        for point in crate::wire::records::scan_vertex_records(&data[range])? {
+    for range in object_stream_vertex_row_ranges_from_records(data, records) {
+        for point in crate::wire::records::scan_vertex_records(&data[range]) {
             points.push(point);
         }
     }
-    Ok(points)
+    points
 }
 
 fn object_stream_vertex_row_ranges_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Result<Vec<Range<usize>>, CodecError> {
+) -> Vec<Range<usize>> {
     let mut ranges = records
         .iter()
         .filter_map(crate::wire::records::ConsolidatedRecord::range)
         .chain(crate::families::b5::graph::framed_ranges(data))
         .collect::<Vec<_>>();
     if ranges.is_empty() {
-        return Ok(Vec::new());
+        return Vec::new();
     }
-    ranges.sort_unstable_by(|left, right| (left.start, left.end).cmp(&(right.start, right.end)));
+    ranges.sort_unstable_by_key(|left| (left.start, left.end));
     let mut rows = Vec::new();
     let mut region_start = 0usize;
     for range in ranges {
@@ -2052,16 +2013,16 @@ fn object_stream_vertex_row_ranges_from_records(
             continue;
         }
         if range.start > region_start {
-            for row in scan_vertex_record_ranges(&data[region_start..range.start])? {
+            for row in scan_vertex_record_ranges(&data[region_start..range.start]) {
                 rows.push(row.start + region_start..row.end + region_start);
             }
         }
         region_start = region_start.max(range.end);
     }
-    for row in scan_vertex_record_ranges(&data[region_start..])? {
+    for row in scan_vertex_record_ranges(&data[region_start..]) {
         rows.push(row.start + region_start..row.end + region_start);
     }
-    Ok(rows)
+    rows
 }
 
 #[cfg(test)]

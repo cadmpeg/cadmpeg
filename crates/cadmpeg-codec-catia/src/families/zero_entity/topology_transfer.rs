@@ -267,15 +267,12 @@ pub(super) fn transfer_closed_face_topology(
                         .map(|pcurve| pcurve.parameter_range)
                 });
             let source_range = match source_range {
-                Some(range) => match canonical_model_curve_range(
+                Some(range) => canonical_model_curve_range(
                     &curve_geometry,
                     range,
                     refusal,
                     "zero-entity edge curve source parameter range",
-                ) {
-                    Ok(range) => range,
-                    Err(error) => return Some(Err(error)),
-                },
+                ),
                 None => None,
             };
             let raw_indices =
@@ -333,10 +330,6 @@ pub(super) fn transfer_closed_face_topology(
                                     refusal,
                                     "zero-entity edge curve reversed parameter range",
                                 );
-                                let canonical_range = match canonical_range {
-                                    Ok(range) => range,
-                                    Err(error) => return Some(Err(error)),
-                                };
                                 if let Some(parameter_range) = canonical_range {
                                     curve.geometry = geometry;
                                     admitted!(annotations
@@ -1004,8 +997,7 @@ pub(super) fn transfer_closed_face_topology(
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
-        let mut regions = Vec::new();
-        regions.push(copied_id!(region_id, RegionId));
+        let regions = vec![copied_id!(region_id, RegionId)];
         let body = Body {
             id: copied_id!(body_id, BodyId),
             kind: BodyKind::Solid,
@@ -1036,8 +1028,7 @@ pub(super) fn transfer_closed_face_topology(
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
-        let mut shells = Vec::new();
-        shells.push(copied_id!(shell_id, ShellId));
+        let shells = vec![copied_id!(shell_id, ShellId)];
         let region = Region {
             id: copied_id!(region_id, RegionId),
             body: body_id,
