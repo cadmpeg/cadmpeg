@@ -12,32 +12,12 @@ pub enum ResourceDimension {
     InputBytes,
     /// Bytes produced by decompression.
     DecompressedBytes,
-    /// Bytes held by scoped materializations.
-    MaterializedBytes,
     /// Bytes retained for the decode session outside expansion output.
     RetainedBytes,
     /// Admitted semantic or native entities.
     Entities,
-    /// Admitted items across decoded collections.
-    CollectionItems,
     /// Active recursive nesting depth.
     RecursionDepth,
-    /// Algorithm work units.
-    WorkUnits,
-    /// A codec-local resource dimension.
-    Codec(&'static str),
-}
-
-impl ResourceDimension {
-    /// Whether the session budget counts this dimension. Collection items,
-    /// work units, and materialized bytes are no longer counted; their
-    /// variants remain until every caller stops naming them.
-    pub(crate) const fn is_counted(self) -> bool {
-        !matches!(
-            self,
-            Self::CollectionItems | Self::WorkUnits | Self::MaterializedBytes
-        )
-    }
 }
 
 /// Why a resource request failed.

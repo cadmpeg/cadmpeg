@@ -8,8 +8,8 @@ use crate::CodecError;
 
 use super::u64_from_index;
 use super::{
-    refuse_local_limit, ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
-    ResourceDimension, ResourceLimits, WorkBudget,
+    ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ResourceDimension,
+    ResourceLimits, WorkBudget,
 };
 
 fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
@@ -21,8 +21,8 @@ fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
 #[test]
 fn allocation_failed_constructor_sets_refusal_fields() {
     let limit =
-        super::ResourceLimit::allocation_failed(ResourceDimension::Codec("test"), 12, 5, "test");
-    assert_eq!(limit.dimension, ResourceDimension::Codec("test"));
+        super::ResourceLimit::allocation_failed(ResourceDimension::RetainedBytes, 12, 5, "test");
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.reason, super::ResourceFailure::AllocationFailed);
     assert_eq!(limit.limit, 12);
     assert_eq!(limit.used, 0);
@@ -147,25 +147,6 @@ fn concatenation_and_stored_slices_have_distinct_spaces() {
 }
 
 #[test]
-fn scoped_reservations_release_and_commit_without_double_counting() {
-    let bytes = [0_u8; 1];
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| {
-        limits.max_materialized_bytes = 5;
-        limits.max_retained_bytes = 7;
-    });
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    {
-        let mut reservation = ctx.reserve_scoped(3, "temporary").unwrap();
-        reservation.grow(2).unwrap();
-    }
-    ctx.reserve_scoped(5, "released").unwrap();
-    let reservation = ctx.reserve_scoped(2, "retained").unwrap();
-    reservation.commit().unwrap();
-    ctx.charge_retained(5, "retained").unwrap();
-}
-
-#[test]
 fn every_session_dimension_refuses_and_fuses() {
     fn assert_dimension(
         edit: impl FnMut(&mut ResourceLimits),
@@ -208,49 +189,6 @@ fn every_session_dimension_refuses_and_fuses() {
         |ctx| ctx.enter_nested("nested").map(drop),
         ResourceDimension::RecursionDepth,
     );
-}
-
-#[test]
-fn uncounted_dimensions_never_refuse() {
-    let arena = DecodeArena::new();
-    let policy = policy_with(|limits| {
-        limits.max_materialized_bytes = 0;
-        limits.max_collection_items = 0;
-        limits.max_work_units = 0;
-        limits.max_retained_bytes = 0;
-    });
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    ctx.charge_collection_items(u64::MAX, "items").unwrap();
-    ctx.charge_work(u64::MAX, "work").unwrap();
-    ctx.charge_retained(u64::MAX, "per-site retained").unwrap();
-    drop(ctx.reserve_scoped(u64::MAX, "temporary").unwrap());
-    assert!(ctx.resource_refusal().is_none());
-}
-
-#[test]
-fn local_limit_refusal_uses_codec_dimension() {
-    assert!(matches!(
-        refuse_local_limit("records", 4, 5),
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("records")
-                && limit.operation == "records"
-    ));
-}
-
-#[test]
-fn codec_limit_refusal_leaves_the_session_open() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
-    assert!(matches!(
-        ctx.refuse_codec_limit("nested_records", 4, 5),
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("nested_records")
-                && limit.limit == 4
-                && limit.used == 4
-                && limit.additional == 1
-    ));
-    assert!(ctx.resource_refusal().is_none());
-    ctx.charge_entities(1, "after_codec_limit").unwrap();
 }
 
 #[test]
