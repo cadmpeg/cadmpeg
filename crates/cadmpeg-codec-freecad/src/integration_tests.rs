@@ -90,14 +90,10 @@ fn thumbnail_copy_refuses_at_matching_retained_limit() {
 }
 
 #[test]
-fn dialect_loss_output_refuses_at_matching_collection_limit() {
+fn dialect_loss_output_charges_collection_items() {
     let document = br#"<Document SchemaVersion="9" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive_entries(&[("Document.xml", document)]);
-    assert_decode_refusal_at(
-        &bytes,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "FCStd dialect loss output",
-    );
+    crate::test_support::assert_codec_charged(&bytes, "FCStd dialect loss output");
 }
 
 #[test]
@@ -112,7 +108,7 @@ fn missing_side_entry_diagnostic_refuses_at_matching_retained_limit() {
 }
 
 #[test]
-fn topology_loss_output_refuses_at_matching_collection_limit() {
+fn topology_loss_output_charges_collection_items() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
@@ -148,11 +144,7 @@ Co 1001000 +2 0 *
         .losses
         .iter()
         .any(|loss| loss.message.contains("curve2ds")));
-    assert_decode_refusal_at(
-        &bytes,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "FCStd topology loss output",
-    );
+    crate::test_support::assert_codec_charged(&bytes, "FCStd topology loss output");
 }
 
 #[test]
