@@ -912,50 +912,37 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 }
 
 #[test]
-fn generated_file_parameter_layout_obeys_default_decode_limits() {
-    let ordinary = super::Entity {
+fn generated_file_parameter_layout_scales_with_the_parameter_text() {
+    // The layout context reads the parameter text itself, and one byte holds
+    // at most one field, so the input-proportional item allowance always
+    // covers the fields. A stream past the allowance base, the old fixed
+    // ceiling, still encodes.
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (empty, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty input fits the policy");
+    let fields =
+        usize::try_from(empty.collection_items_allowance()).expect("allowance base fits usize") + 1;
+    let mut parameter_body = vec![b','; fields];
+    parameter_body.push(b';');
+    let large = super::Entity {
         type_code: 110,
         form: 0,
         label: "TEST",
         status: super::EntityStatus::Independent,
-        parameter_body: b"0,0,0,1,0,0;".to_vec(),
+        parameter_body,
         transform: None,
     };
     assert!(encode_file(
-        std::slice::from_ref(&ordinary),
+        &[large],
         &std::collections::BTreeMap::new(),
         IgesVersion::V5_3,
         0.001,
     )
     .is_ok());
-
-    let omitted_fields = usize::try_from(
-        cadmpeg_core::decode::DecodePolicy::default()
-            .limits
-            .max_collection_items,
-    )
-    .expect("test collection limit fits usize");
-    let mut parameter_body = vec![b','; omitted_fields];
-    parameter_body.push(b';');
-    let oversized = super::Entity {
-        parameter_body,
-        ..ordinary
-    };
-    let error = encode_file(
-        &[oversized],
-        &std::collections::BTreeMap::new(),
-        IgesVersion::V5_3,
-        0.001,
-    )
-    .expect_err("default policy must refuse the oversized parameter stream");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && refusal.operation == "iges parameter layout fields"
-                && refusal.used == u64::try_from(omitted_fields).expect("default collection limit fits u64")
-                && refusal.additional == 1
-    ));
 }
 
 #[test]
