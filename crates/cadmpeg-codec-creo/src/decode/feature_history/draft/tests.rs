@@ -340,14 +340,11 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn thicken_resource_error(collection: Option<u64>, retained: Option<u64>, operation: &'static str) {
+fn thicken_resource_error(retained: Option<u64>, operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = thicken_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    if let Some(limit) = collection {
-        policy.limits.max_collection_items = limit;
-    }
     if retained.is_some() {
         policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
@@ -377,16 +374,22 @@ fn thicken_resource_error(collection: Option<u64>, retained: Option<u64>, operat
     );
 }
 
+fn thicken_collection_charged(operation: &'static str) {
+    let scan = thicken_scan();
+    crate::test_support::assert_collection_charged(&[], operation, |ctx| {
+        thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17)
+    });
+}
+
 #[test]
-fn thicken_source_surface_ids_refuse_collection_limit() {
-    thicken_resource_error(Some(4), None, "creo thicken source surface IDs");
+fn thicken_source_surface_ids_charge_collection_items() {
+    thicken_collection_charged("creo thicken source surface IDs");
 }
 
 #[test]
 fn thicken_native_selection_refuses_retained_limit() {
     let identities = "creo:model:feature#3".len() + "creo:model:feature#17".len();
     thicken_resource_error(
-        None,
         Some(cadmpeg_core::decode::u64_from_index(identities)),
         "creo thicken native selection",
     );
@@ -398,15 +401,14 @@ fn thicken_face_ids_refuse_retained_limit() {
         + "creo:model:feature#17".len()
         + "creo:allfeatur:thicken_source_surfaces#17:11".len();
     thicken_resource_error(
-        None,
         Some(cadmpeg_core::decode::u64_from_index(prior)),
         "creo thicken face IDs",
     );
 }
 
 #[test]
-fn thicken_face_identities_refuse_collection_limit() {
-    thicken_resource_error(Some(23), None, "creo thicken face identities");
+fn thicken_face_identities_charge_collection_items() {
+    thicken_collection_charged("creo thicken face identities");
 }
 
 #[test]
@@ -417,7 +419,6 @@ fn thicken_generated_native_copy_refuses_retained_limit() {
         + "creo:visibgeom:face#11".len()
         + "surface#11".len();
     thicken_resource_error(
-        None,
         Some(cadmpeg_core::decode::u64_from_index(prior)),
         "creo thicken generated native selection",
     );
