@@ -25,43 +25,6 @@ fn with_test_context<R>(f: impl FnOnce(&DecodeContext<'_>) -> R) -> R {
     f(&ctx)
 }
 
-fn with_collection_limit<R>(
-    max_collection_items: u64,
-    f: impl FnOnce(&DecodeContext<'_>) -> R,
-) -> R {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context input fits service profile");
-    f(&ctx)
-}
-
-fn simple_extrusion_curves() -> (NurbsCurve, NurbsCurve) {
-    let knots = vec![0.0, 0.0, 1.0, 1.0];
-    let start = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        knots.clone(),
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("valid start profile");
-    let end = NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        knots,
-        vec![Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0)],
-        None,
-        false,
-    )
-    .expect("fixture constructor admission")
-    .expect("valid end profile");
-    (start, end)
-}
-
 fn decode(
     data: &[u8],
     class: Uuid,
@@ -77,7 +40,7 @@ fn read_knots(
     reader: &mut BoundedReader<'_>,
     count: usize,
 ) -> Result<Vec<cadmpeg_ir::scalar::FiniteReal>, GeometryError> {
-    with_test_context(|ctx| super::read_knots(ctx, reader, count))
+    super::read_knots(reader, count)
 }
 
 fn read_poles(
@@ -93,7 +56,7 @@ fn read_poles(
     ),
     GeometryError,
 > {
-    with_test_context(|ctx| super::read_poles(ctx, reader, count, rational, dimension, scale))
+    super::read_poles(reader, count, rational, dimension, scale)
 }
 
 fn read_nurbs_curve(
@@ -163,348 +126,6 @@ fn read_sum(
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
     with_test_context(|ctx| super::read_sum(ctx, data, reader, scale, archive, depth))
-}
-
-fn assert_resource(
-    error: &GeometryError,
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &'static str,
-) {
-    assert!(
-        matches!(error, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == dimension && limit.operation == operation)
-    );
-}
-
-#[test]
-fn nurbs_curve_knots_refuse_collection_limit_before_reserve() {
-    let bytes = curve_payload(0x10, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("curve input fits service profile");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
-    let refusal = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY)
-        .expect_err("seven knots exceed six collection items");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino NURBS knots",
-    );
-    assert!(read_nurbs_curve(
-        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds"),
-        MillimeterScale::IDENTITY
-    )
-    .is_ok());
-}
-
-#[test]
-fn nurbs_curve_knot_bytes_refuse_retained_limit_before_reserve() {
-    let bytes = curve_payload(0x10, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 55;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("curve input fits service profile");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
-    let refusal = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY)
-        .expect_err("seven f64 knots need 56 retained bytes");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "Rhino NURBS knots",
-    );
-    assert!(read_nurbs_curve(
-        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds"),
-        MillimeterScale::IDENTITY
-    )
-    .is_ok());
-}
-
-#[test]
-fn nurbs_curve_poles_refuse_collection_limit_before_reserve() {
-    let bytes = curve_payload(0x10, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 12;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("curve input fits service profile");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
-    let refusal = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY)
-        .expect_err("six poles exceed the remaining five collection items");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino NURBS poles",
-    );
-    assert!(read_nurbs_curve(
-        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds"),
-        MillimeterScale::IDENTITY
-    )
-    .is_ok());
-}
-
-#[test]
-fn nurbs_surface_grid_refuses_collection_limit_before_copy() {
-    let bytes = surface_payload(2, 2, 2, 3, false, &[0.0, 1.0], &[0.0, 1.0, 2.0]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 27;
-    let mut reached = false;
-    for _ in 0..128 {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("surface input fits service profile");
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("surface bounds");
-        let refusal = super::read_nurbs_surface(&ctx, &mut reader, MillimeterScale::IDENTITY)
-            .expect_err("the next collection exceeds the selected cap");
-        let GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(first)) = refusal else {
-            panic!("collection refusal");
-        };
-        assert_eq!(
-            first.dimension,
-            cadmpeg_core::decode::ResourceDimension::CollectionItems
-        );
-        assert_eq!(first.limit, policy.limits.max_collection_items);
-        assert!(matches!(ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
-        if first.operation == "Rhino NURBS surface pole grid" {
-            reached = true;
-            break;
-        }
-        let next = first.used.checked_add(first.additional).unwrap();
-        assert!(next > policy.limits.max_collection_items);
-        policy.limits.max_collection_items = next;
-    }
-    assert!(reached, "pole grid admission must be reached");
-    assert!(read_nurbs_surface(
-        &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("surface bounds"),
-        MillimeterScale::IDENTITY
-    )
-    .is_ok());
-}
-
-#[test]
-fn sum_surface_product_refuses_collection_limit_before_allocation() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input fits the service profile");
-    let refusal =
-        super::admit_sum_product(2, 3).expect_err("six output poles exceed five collection items");
-    assert!(
-        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
-        .expect("test input fits the service profile");
-    assert_eq!(
-        super::admit_sum_product(2, 3).expect("service admits six poles"),
-        6
-    );
-}
-
-#[test]
-fn sum_surface_temporary_lanes_refuse_materialized_limit_before_reserve() {
-    let first = test_curve(
-        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let second = test_curve(
-        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let needed = 4
-        * (std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>() + std::mem::size_of::<f64>())
-        + 4 * std::mem::size_of::<Point3>();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = u64::try_from(needed - 1).expect("test size fits u64");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input fits service profile");
-    let refusal = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
-        .expect_err("temporary lanes exceed the materialized limit");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "Rhino sum surface temporary lanes",
-    );
-    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
-}
-
-#[test]
-fn sum_surface_first_weights_refuse_collection_limit() {
-    let first = test_curve(
-        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let second = test_curve(
-        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 13;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input fits service profile");
-    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
-        .expect_err("two first-profile weights exceed the remaining item allowance");
-    assert_resource(
-        &error,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino sum-surface first weights",
-    );
-    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
-}
-
-#[test]
-fn sum_surface_second_weights_refuse_collection_limit() {
-    let first = test_curve(
-        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        Some(vec![1.0, 1.0]),
-        [0.0, 1.0],
-    );
-    let second = test_curve(
-        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 17;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input fits service profile");
-    let error = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
-        .expect_err("two second-profile weights exceed the remaining item allowance");
-    assert_resource(
-        &error,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino sum-surface second weights",
-    );
-    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
-}
-
-#[test]
-fn sum_surface_grid_refuses_retained_limit_before_copy() {
-    let first = test_curve(
-        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let second = test_curve(
-        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let grid_bytes = 4 * std::mem::size_of::<Point3>() + 2 * std::mem::size_of::<Vec<Point3>>();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(grid_bytes - 1).expect("test size fits u64");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input fits service profile");
-    let refusal = super::sum_nurbs(&ctx, &first, &second, Vector3::new(0.0, 0.0, 0.0), 0)
-        .expect_err("pole grid exceeds retained limit");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "Rhino sum surface pole grid",
-    );
-    assert!(sum_nurbs(&first, &second, Vector3::new(0.0, 0.0, 0.0), 0).is_ok());
-}
-
-#[test]
-fn revolution_temporary_lanes_refuse_materialized_limit_before_reserve() {
-    let profile = test_curve(
-        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let needed = 4 * std::mem::size_of::<(f64, f64)>()
-        + 2 * (std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
-            + std::mem::size_of::<f64>())
-        + 6 * (std::mem::size_of::<Point3>() + std::mem::size_of::<f64>());
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = u64::try_from(needed - 1).expect("test size fits u64");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input fits service profile");
-    let refusal = super::revolution_nurbs(
-        &ctx,
-        &profile,
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-        super::RevolutionIntervals {
-            angle: [0.0, std::f64::consts::FRAC_PI_2],
-            parameter: [0.0, 1.0],
-        },
-        false,
-        0,
-    )
-    .expect_err("temporary lanes exceed materialized limit");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "Rhino revolution temporary lanes",
-    );
-    assert!(revolution_nurbs(
-        &profile,
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-        [0.0, std::f64::consts::FRAC_PI_2],
-        [0.0, 1.0],
-        false,
-        0
-    )
-    .is_ok());
-}
-
-#[test]
-fn revolution_profile_weights_refuse_collection_limit() {
-    let profile = test_curve(
-        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        None,
-        [0.0, 1.0],
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 26;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("test input fits service profile");
-    let error = super::revolution_nurbs(
-        &ctx,
-        &profile,
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-        super::RevolutionIntervals {
-            angle: [0.0, std::f64::consts::FRAC_PI_2],
-            parameter: [0.0, 1.0],
-        },
-        false,
-        0,
-    )
-    .expect_err("two profile weights exceed the remaining item allowance");
-    assert_resource(
-        &error,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino revolution profile weights",
-    );
-    assert!(revolution_nurbs(
-        &profile,
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-        [0.0, std::f64::consts::FRAC_PI_2],
-        [0.0, 1.0],
-        false,
-        0,
-    )
-    .is_ok());
 }
 
 fn curve_payload(version: u8, rational: bool, knots: &[f64]) -> Vec<u8> {
@@ -1068,17 +689,13 @@ fn c2_nurbs_preserves_periodic_parameterization() {
 
 #[test]
 fn periodic_rule_matches_native_tolerance_and_rejects_clamping() {
-    assert!(
-        !periodic_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6).expect("periodic admission")
-    );
-    assert!(periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 6).expect("periodic admission"));
-    assert!(
-        !periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0], 3, 6).expect("periodic admission")
-    );
-    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0], 2, 4).expect("periodic admission"));
+    assert!(!periodic_knots(&[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0], 3, 6));
+    assert!(periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 6));
+    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0], 3, 6));
+    assert!(!periodic_knots(&[0.0, 1.0, 2.0, 3.0], 2, 4));
     let mut near = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
     near[6] += EPS_PERIODIC_PERTURBATION;
-    assert!(periodic_knots(&near, 3, 6).expect("periodic admission"));
+    assert!(periodic_knots(&near, 3, 6));
 }
 
 #[test]
@@ -1351,48 +968,6 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
         transposed.poles().into_iter().nth(3).unwrap(),
         end.control_points()[0]
     );
-}
-
-#[test]
-fn extrusion_surface_rows_refuse_collection_limit() {
-    let (start, end) = simple_extrusion_curves();
-    let refusal = with_collection_limit(5, |ctx| {
-        super::extrusion_nurbs(
-            ctx,
-            &start,
-            &end,
-            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
-            false,
-            0,
-        )
-    })
-    .expect_err("two rows and four poles exceed five collection items");
-    assert!(matches!(
-        refusal,
-        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino extrusion surface rows"
-    ));
-}
-
-#[test]
-fn extrusion_surface_knots_refuse_collection_limit() {
-    let (start, end) = simple_extrusion_curves();
-    let refusal = with_collection_limit(9, |ctx| {
-        super::extrusion_nurbs(
-            ctx,
-            &start,
-            &end,
-            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite path domain"),
-            false,
-            0,
-        )
-    })
-    .expect_err("surface knots exceed remaining collection items");
-    assert!(matches!(
-        refusal,
-        GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino extrusion surface knots"
-    ));
 }
 
 #[test]
@@ -1808,10 +1383,11 @@ fn plane_parameter_maps_preserve_extreme_finite_domains() {
 }
 #[test]
 fn large_nonperiodic_knot_gaps_remain_nonperiodic() {
-    assert!(
-        !super::periodic_knots(&[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308], 3, 5)
-            .expect("periodic admission")
-    );
+    assert!(!super::periodic_knots(
+        &[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308],
+        3,
+        5
+    ));
 }
 
 #[test]
@@ -1845,41 +1421,6 @@ fn numerical_followup_plane_map_retains_finite_extrapolated_controls() {
     assert!(result.is_finite());
     assert!((result / 1.2e308 - 1.).abs() < 16. * f64::EPSILON);
     assert_eq!(super::map_parameter(0.5, [0., 1.], [-1e308, 1e308]), 0.);
-}
-
-#[test]
-fn checked_knot_reconstruction_preserves_the_callers_resource_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let knots = (0..7)
-        .map(|value| cadmpeg_ir::scalar::FiniteReal::new(f64::from(value)).expect("finite knot"))
-        .collect::<Vec<_>>();
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::RetainedBytes,
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit))) =
-            super::reconstruct_checked_knots(&ctx, &knots, 3, 6)
-        else {
-            panic!("knot reconstruction must retain the caller refusal");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
 }
 
 mod reconstruction;

@@ -4,10 +4,9 @@
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{
-    evaluation, evaluation_properties, extended_geometry_json, parse_records, parse_value,
-    parse_value_with_warnings, poly_edge, project, structured_value_properties, uuid_list,
-    EmbeddedGeometry, GeometrySink, HistoryRecord, HistoryValue, RecordType, Value, ANONYMOUS,
-    HISTORY_CLASS, HISTORY_RECORD,
+    evaluation, evaluation_properties, extended_geometry_json, parse_value,
+    parse_value_with_warnings, poly_edge, project, structured_value_properties, EmbeddedGeometry,
+    GeometrySink, HistoryRecord, HistoryValue, RecordType, Value, ANONYMOUS, HISTORY_CLASS,
 };
 use crate::chunks::TCODE_CRC;
 use crate::chunks::{ArchiveVersion, BoundedReader};
@@ -43,183 +42,6 @@ fn value(type_code: i32, payload: &[u8]) -> Vec<u8> {
     body.extend(7_i32.to_le_bytes());
     body.extend(payload);
     anonymous_value(0, &body)
-}
-
-fn with_collection_limit<R>(
-    data: &[u8],
-    max_collection_items: u64,
-    apply: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
-) -> R {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = max_collection_items;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-        .expect("history fixture fits the root limit");
-    apply(&ctx)
-}
-
-#[test]
-fn history_value_array_refuses_collection_limit() {
-    let mut payload = 2_i32.to_le_bytes().to_vec();
-    payload.extend(11_i32.to_le_bytes());
-    payload.extend(12_i32.to_le_bytes());
-    let bytes = value(2, &payload);
-    let refusal = with_collection_limit(&bytes, 1, |ctx| {
-        parse_value_with_warnings(
-            ctx,
-            &bytes,
-            0,
-            bytes.len(),
-            ArchiveVersion::V8,
-            &mut Diagnostics::new(),
-        )
-    })
-    .expect_err("two history values exceed one collection item");
-    assert!(matches!(
-        refusal,
-        crate::chunks::FramingError::Resource(limit)
-            if limit.operation == "Rhino history value array"
-    ));
-}
-
-#[test]
-fn history_uuid_list_refuses_collection_limit() {
-    let mut body = 2_i32.to_le_bytes().to_vec();
-    body.extend(id(1).to_wire());
-    body.extend(id(2).to_wire());
-    let bytes = anonymous_value(0, &body);
-    let refusal = with_collection_limit(&bytes, 1, |ctx| {
-        uuid_list(&bytes, 0, bytes.len(), ArchiveVersion::V8)
-    })
-    .expect_err("two history UUIDs exceed one collection item");
-    assert!(matches!(
-        refusal,
-        crate::chunks::FramingError::Resource(limit)
-            if limit.operation == "Rhino history UUID list"
-    ));
-}
-
-#[test]
-fn history_record_slot_refuses_collection_limit() {
-    let bytes = source_band_history_record(ArchiveVersion::V5, 1);
-    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
-        .expect("history record chunk");
-    let record = crate::container::Record::long(HISTORY_RECORD, chunk.range(), chunk.body());
-    let refusal = with_collection_limit(&bytes, 0, |ctx| {
-        parse_records(
-            ctx,
-            &bytes,
-            &[record],
-            ArchiveVersion::V5,
-            &mut Diagnostics::new(),
-            0x1000_0026,
-        )
-    })
-    .expect_err("one admitted history record exceeds zero collection items");
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino history records"
-    ));
-}
-
-#[test]
-fn opaque_history_record_slot_refuses_collection_limit() {
-    let record = crate::container::Record::short(HISTORY_RECORD, 0..0, 0);
-    let warning_refusal = with_collection_limit(&[], 0, |ctx| {
-        parse_records(
-            ctx,
-            &[],
-            std::slice::from_ref(&record),
-            ArchiveVersion::V5,
-            &mut Diagnostics::new(),
-            0x1000_0026,
-        )
-    })
-    .expect_err("one diagnostic exceeds zero collection items");
-    assert!(matches!(
-        warning_refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino diagnostics"
-    ));
-    let refusal = with_collection_limit(&[], 1, |ctx| {
-        parse_records(
-            ctx,
-            &[],
-            &[record],
-            ArchiveVersion::V5,
-            &mut Diagnostics::new(),
-            0x1000_0026,
-        )
-    })
-    .expect_err("the diagnostic and opaque record exceed one collection item");
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino opaque history records"
-    ));
-}
-
-#[test]
-fn history_subd_edge_collections_refuse_collection_limits() {
-    let mut chain = id(42).to_wire().to_vec();
-    chain.extend(2_i32.to_le_bytes());
-    chain.extend(2_i32.to_le_bytes());
-    chain.extend(11_u32.to_le_bytes());
-    chain.extend(12_u32.to_le_bytes());
-    chain.extend(2_i32.to_le_bytes());
-    chain.extend([0, 1]);
-    let mut chains = 1_i32.to_le_bytes().to_vec();
-    chains.extend(anonymous_value(1, &chain));
-    let bytes = value(14, &anonymous_value(1, &chains));
-    for (limit, operation) in [
-        (0, "Rhino history SubD edge chains"),
-        (6, "Rhino history SubD edges"),
-    ] {
-        let refusal = with_collection_limit(&bytes, limit, |ctx| {
-            parse_value_with_warnings(
-                ctx,
-                &bytes,
-                0,
-                bytes.len(),
-                ArchiveVersion::V8,
-                &mut Diagnostics::new(),
-            )
-        })
-        .expect_err("SubD edge collection exceeds limit");
-        assert!(matches!(
-            refusal,
-            crate::chunks::FramingError::Resource(actual) if actual.operation == operation
-        ));
-    }
-}
-
-#[test]
-fn history_polyedge_list_refuses_collection_limit() {
-    let mut polyedge = 0_i32.to_le_bytes().to_vec();
-    polyedge.extend(2_i32.to_le_bytes());
-    polyedge.extend(0.25_f64.to_le_bytes());
-    polyedge.extend(0.75_f64.to_le_bytes());
-    polyedge.extend(3_i32.to_le_bytes());
-    let mut polyedges = 1_i32.to_le_bytes().to_vec();
-    polyedges.extend(anonymous_value(0, &polyedge));
-    let bytes = value(13, &anonymous_value(0, &polyedges));
-    let refusal = with_collection_limit(&bytes, 0, |ctx| {
-        parse_value_with_warnings(
-            ctx,
-            &bytes,
-            0,
-            bytes.len(),
-            ArchiveVersion::V8,
-            &mut Diagnostics::new(),
-        )
-    })
-    .expect_err("one polyedge exceeds zero collection items");
-    assert!(matches!(
-        refusal,
-        crate::chunks::FramingError::Resource(limit)
-            if limit.operation == "Rhino history polyedges"
-    ));
 }
 
 fn id(value: u8) -> Uuid {
@@ -349,35 +171,6 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     );
 }
 
-fn history_projection_id_refusal(limit: u64, operation: &str) {
-    let records = [record(1, 11, &[], &[])];
-    let refusal = with_collection_limit(&[], limit, |ctx| {
-        project(
-            ctx,
-            &records,
-            None,
-            &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut Diagnostics::new(),
-        )
-    })
-    .expect_err("one history record exceeds the configured collection limit");
-    assert!(matches!(
-        refusal,
-        super::ProjectionError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref limit))
-            if limit.operation == operation
-    ));
-}
-
-#[test]
-fn history_feature_ids_refuse_collection_limit() {
-    history_projection_id_refusal(0, "Rhino history feature ids");
-}
-
-#[test]
-fn history_native_ids_refuse_collection_limit() {
-    history_projection_id_refusal(1, "Rhino history native ids");
-}
-
 #[test]
 fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
@@ -432,27 +225,8 @@ fn unstored_evaluation_intervals_remain_absent() {
     let value = evaluation(&mut reader, 0).expect("evaluation");
     assert_eq!(value.intervals, [None, None, None]);
     let mut properties = BTreeMap::new();
-    evaluation_properties("evaluation", &value, &mut properties).expect("evaluation properties");
+    evaluation_properties("evaluation", &value, &mut properties);
     assert!(!properties.contains_key("evaluation.interval_0"));
-}
-
-#[test]
-fn history_evaluation_property_refuses_collection_limit() {
-    let value = super::EvaluationParameter {
-        parameter_type: 0,
-        component: [0, 0],
-        parameters: [0.0; 4],
-        intervals: [None; 3],
-    };
-    let refusal = with_collection_limit(&[], 0, |ctx| {
-        evaluation_properties("evaluation", &value, &mut BTreeMap::new())
-            .expect_err("one property exceeds zero collection items")
-    });
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino history property entries"
-    ));
 }
 
 #[test]
@@ -715,7 +489,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
 }
 
 #[test]
-fn embedded_history_point_cloud_refuses_collection_limit_without_omission() {
+fn embedded_history_point_cloud_projects_one_feature() {
     let payload =
         crate::test_support::test_archive::point_cloud_payload(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
     let geometry = EmbeddedGeometry {
@@ -725,29 +499,6 @@ fn embedded_history_point_cloud_refuses_collection_limit_without_omission() {
     };
     let mut source = record(3, 4, &[], &[]);
     source.values[0].value = Value::Geometries(vec![geometry]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-            .expect("history geometry fits input limit");
-    let expand = crate::mesh::MeshExpand::new(&ctx, root);
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let mut warnings = Diagnostics::new();
-    let refusal = project(
-        &cadmpeg_test_support::service_decode_context(),
-        &[source.clone()],
-        Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
-        &mut ir,
-        &mut warnings,
-    )
-    .expect_err("two points exceed the one-item limit");
-    assert!(
-        matches!(refusal, super::ProjectionError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-    assert!(ir.model.features.is_empty());
-    assert!(warnings.is_empty());
     crate::decode::with_expand_bytes(&payload, |expand| {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         assert_eq!(
@@ -1102,99 +853,6 @@ fn embedded_cage_projects_exact_construction_semantics() {
 }
 
 #[test]
-fn embedded_cage_resource_refusal_is_not_an_absent_value() {
-    let bytes = embedded_cage_payload();
-    let geometry = EmbeddedGeometry {
-        class_id: crate::cage::CLASS,
-        class_data_range: 0..bytes.len(),
-        userdata: Vec::new(),
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let mut refusal = None;
-    assert!(extended_geometry_json(
-        crate::mesh::MeshExpand::new(&ctx, root),
-        &geometry,
-        ArchiveVersion::V8,
-        None,
-        MillimeterScale::IDENTITY,
-        &mut Diagnostics::new(),
-        &mut refusal,
-    )
-    .is_none());
-    assert!(matches!(
-        refusal,
-        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino cage knot values"
-    ));
-}
-
-#[test]
-fn embedded_polyedge_resource_refusal_is_not_an_absent_value() {
-    let bytes = crate::polyedge::tests::polyedge_payload();
-    let geometry = EmbeddedGeometry {
-        class_id: crate::polyedge::CURVE_CLASS,
-        class_data_range: 0..bytes.len(),
-        userdata: Vec::new(),
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let mut refusal = None;
-    assert!(extended_geometry_json(
-        crate::mesh::MeshExpand::new(&ctx, root),
-        &geometry,
-        ArchiveVersion::V8,
-        None,
-        MillimeterScale::IDENTITY,
-        &mut Diagnostics::new(),
-        &mut refusal,
-    )
-    .is_none());
-    assert!(matches!(
-        refusal,
-        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino polyedge parameters"
-    ));
-}
-
-#[test]
-fn embedded_polyedge_semantic_json_refusal_is_not_an_absent_value() {
-    let bytes = crate::polyedge::tests::polyedge_payload();
-    let geometry = EmbeddedGeometry {
-        class_id: crate::polyedge::CURVE_CLASS,
-        class_data_range: 0..bytes.len(),
-        userdata: Vec::new(),
-    };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root bytes admitted");
-    let mut refusal = None;
-    assert!(extended_geometry_json(
-        crate::mesh::MeshExpand::new(&ctx, root),
-        &geometry,
-        ArchiveVersion::V8,
-        None,
-        MillimeterScale::IDENTITY,
-        &mut Diagnostics::new(),
-        &mut refusal,
-    )
-    .is_none());
-    assert!(matches!(
-        refusal,
-        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino polyedge semantic JSON"
-    ));
-}
-
-#[test]
 fn scan_retains_history_record_source_boundaries() {
     let archive = ArchiveVersion::V5;
     let history_record = crc_chunk(archive, 0x2000_807b, &[1, 2, 3, 4]);
@@ -1275,8 +933,8 @@ pub(crate) fn scan_decodes_history_identity_dependencies_and_typed_values() {
     let mut body = record_id.to_vec();
     body.extend(202_607_130_i32.to_le_bytes());
     body.extend(command_id);
-    body.extend(uuid_list());
-    body.extend(uuid_list());
+    body.extend(uuid_list(descendant));
+    body.extend(uuid_list(antecedent));
     body.extend(anonymous_chunk(archive, 0, &values_body));
     body.extend(1_i32.to_le_bytes());
     body.push(1);
@@ -1559,7 +1217,7 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
 }
 
 #[test]
-fn embedded_cage_json_preserves_bytes_and_refuses_retained_limit() {
+fn embedded_cage_json_preserves_bytes() {
     let bytes = embedded_cage_payload();
     let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
         crate::cage::decode(
@@ -1581,21 +1239,9 @@ fn embedded_cage_json_preserves_bytes_and_refuses_retained_limit() {
         "weights": cage.weights,
     })
     .to_string();
-    let value = super::embedded_json(&super::CageJson(&cage), &mut None)
-        .expect("service profile admits cage JSON");
+    let value =
+        crate::wire::canonical_json(&super::CageJson(&cage)).expect("embedded geometry JSON");
     assert_eq!(value, baseline);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(baseline.len() - 1).expect("test size fits");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let mut refusal = None;
-    assert!(super::embedded_json(&super::CageJson(&cage), &mut refusal).is_none());
-    assert!(matches!(
-        refusal,
-        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino embedded history geometry JSON"
-    ));
 }
 
 #[test]
@@ -1608,8 +1254,7 @@ fn embedded_subd_diagnostics_stream_without_message_vector() {
         neutral_metadata: &false,
         surface: &surface,
     };
-    let text = super::embedded_json(&value, &mut None)
-        .expect("service profile admits SubD diagnostic JSON");
+    let text = crate::wire::canonical_json(&value).expect("SubD diagnostic JSON");
     assert_eq!(
         text,
         "{\"enum_diagnostics\":[\"SubD symmetry type 9 mapped to neutral Unset\"],\"kind\":\"subd\",\"neutral_metadata\":false,\"surface\":{\"source\":\"subd\"}}"
@@ -1645,7 +1290,7 @@ fn embedded_history_mesh_keeps_geometry_and_checked_identity() {
 }
 
 #[test]
-fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
+fn embedded_mesh_json_preserves_bytes() {
     let bytes = crate::test_support::test_dump::mesh_payload();
     let mesh = crate::decode::with_expand_bytes(&bytes, |expand| {
         crate::mesh::decode(
@@ -1677,19 +1322,7 @@ fn embedded_mesh_json_preserves_bytes_and_refuses_retained_limit() {
         "channels": mesh.tessellation.channels(),
     })
     .to_string();
-    let text = super::embedded_json(&super::MeshJson(&mesh), &mut None)
-        .expect("service profile admits mesh JSON");
+    let text =
+        crate::wire::canonical_json(&super::MeshJson(&mesh)).expect("embedded geometry JSON");
     assert_eq!(text, baseline);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(baseline.len() - 1).expect("test size fits");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let mut refusal = None;
-    assert!(super::embedded_json(&super::MeshJson(&mesh), &mut refusal).is_none());
-    assert!(matches!(
-        refusal,
-        Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino embedded history geometry JSON"
-    ));
 }

@@ -78,13 +78,12 @@ fn assert_presentation_native_limit<T: serde::Serialize>(
 
 #[test]
 fn dimension_style_controls_stream_under_native_retained_limit() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let mut controls = DimensionControlEntries::default();
     controls
-        .insert_with(&ctx, "v5_dimension_scale", || Ok(serde_json::json!(2.0)))
+        .insert_with("v5_dimension_scale", || Ok(serde_json::json!(2.0)))
         .expect("dimension control admitted");
     controls
-        .insert_with(&ctx, "text_height", || Ok(serde_json::json!(4.0)))
+        .insert_with("text_height", || Ok(serde_json::json!(4.0)))
         .expect("text control admitted");
     let details = DimensionStyleDetails::Modern {
         parent_style_uuid: Some("11111111-1111-1111-1111-111111111111".to_owned()),
@@ -384,10 +383,6 @@ fn future_dimension_style_chunk() -> Vec<u8> {
 
 fn current_dimension_style_chunk() -> Vec<u8> {
     dimension_style_chunk(11, &[])
-}
-
-fn dimension_style_with_override_bits_chunk() -> Vec<u8> {
-    dimension_style_chunk(11, &[1])
 }
 
 fn v5_dimension_style_chunk() -> Vec<u8> {
@@ -1330,10 +1325,7 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     )
     .expect("second group");
     let mut groups = vec![first, second];
-    assert_eq!(
-        disambiguate_group_ids(&mut groups).expect("duplicate group IDs fit the service profile"),
-        2
-    );
+    assert_eq!(disambiguate_group_ids(&mut groups), 2);
     assert_ne!(groups[0].id, groups[1].id);
     assert_eq!(groups[0].archive_index, 7);
     assert_eq!(groups[1].archive_index, 7);
@@ -1845,31 +1837,5 @@ mod patterns;
 mod resource_limits;
 
 mod materials;
-
-#[test]
-fn legacy_rdk_material_optional_readers_propagate_tree_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let xml = "<xml><render-content-manager-data><material instance-id=\"AABBCCDD-EEFF-0011-2233-445566778899\" /></render-content-manager-data></xml>";
-    let bytes = legacy_rdk_payload(xml, false, &[]);
-    let userdata = [legacy_rdk_descriptor(0..bytes.len())];
-    for opaque in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = if opaque {
-            super::rdk_material_userdata_requires_opaque(&ctx, &bytes, &userdata).map(|_| ())
-        } else {
-            legacy_rdk_material_instance_id(&ctx, &bytes, &userdata).map(|_| ())
-        }
-        .unwrap_err();
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("tree admission must refuse");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "Rhino legacy RDK XML tree");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    }
-}
 
 mod utf16;

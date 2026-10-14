@@ -1615,17 +1615,12 @@ mod tests {
     mod resource_limits;
     mod work_admission;
     #[test]
-    fn document_mesh_budget_admission_refuses_overflow() {
+    fn document_mesh_budget_rejects_overflow() {
         let budget = super::MeshBudget {
             used: usize::MAX,
             limit: usize::MAX,
-            session_limit: usize::MAX,
         };
-        assert!(format!(
-            "{:?}",
-            budget.admit(&cadmpeg_test_support::service_decode_context(), 1)
-        )
-        .contains("ResourceLimit"));
+        assert_eq!(budget.admit(1), None);
     }
 
     #[test]
@@ -1637,10 +1632,8 @@ mod tests {
             Point3::new(0.0, 1.0e200, 0.0),
         ];
         assert_eq!(
-            with_expand(&[], |expand| {
-                super::triangulate_faces(&[[0, 1, 2, 3]], &vertices, |point| point)
-            })
-            .expect("one quad fits the service limit"),
+            super::triangulate_faces(&[[0, 1, 2, 3]], &vertices, |point| point)
+                .expect("one quad triangulates"),
             vec![[0, 1, 3], [1, 2, 3]]
         );
     }
@@ -1654,7 +1647,7 @@ mod tests {
 
     use super::{
         consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
-        quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons, read_raw_channels,
+        quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons,
         read_v4v5_ngon_userdata, synchronization_ok, triangulate_faces, MeshBudget, MeshBufferSpec,
         MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT, OPENNURBS4, V4V5_MESH_NGON_USERDATA,
         V5_MESH_DOUBLE_VERTICES,
@@ -1679,9 +1672,7 @@ mod tests {
     /// byte of the file, so its refusal names no offset instead of byte 0.
     #[test]
     fn a_point_channel_refusal_names_no_byte() {
-        let error = with_expand(&[0_u8; 5], |expand| {
-            parse_f32_points(&[0_u8; 5]).expect_err("channel length")
-        });
+        let error = parse_f32_points(&[0_u8; 5]).expect_err("channel length");
         assert!(matches!(
             error,
             GeometryError::Malformed(FramingError::Unpositioned { ref message })
@@ -1691,125 +1682,6 @@ mod tests {
             error.to_string(),
             "framing error: invalid f32 point channel length"
         );
-    }
-
-    #[test]
-    fn mesh_float_point_lanes_refuse_before_allocating_their_counts() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let f32_refusal = with_expand_policy(&[0_u8; 12], policy, |expand| {
-            parse_f32_points(&[0_u8; 12]).expect_err("one f32 point exceeds zero")
-        });
-        assert!(matches!(
-            f32_refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino mesh f32 points"
-        ));
-        let f64_refusal = with_expand_policy(&[0_u8; 24], policy, |expand| {
-            super::parse_f64_points(&[0_u8; 24]).expect_err("one f64 point exceeds zero")
-        });
-        assert!(matches!(
-            f64_refusal,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino mesh f64 points"
-        ));
-    }
-
-    fn raw_channels_with_one_vertex([normal, uv, curvature, color]: [bool; 4]) -> Vec<u8> {
-        let mut raw = Vec::new();
-        raw.extend(1_i32.to_le_bytes());
-        raw.extend([0_u8; 12]);
-        for (present, bytes) in [(normal, 12), (uv, 8), (curvature, 16), (color, 4)] {
-            raw.extend(i32::from(present).to_le_bytes());
-            if present {
-                raw.extend(std::iter::repeat_n(0_u8, bytes));
-            }
-        }
-        raw
-    }
-
-    #[test]
-    fn raw_mesh_channels_refuse_retained_copies_before_allocation() {
-        for (uv, curvature, color, _byte_limit, operation) in [
-            (true, false, false, 7, "Rhino mesh raw UV channel"),
-            (false, true, false, 15, "Rhino mesh raw curvature channel"),
-            (false, false, true, 3, "Rhino mesh raw color channel"),
-        ] {
-            let raw = raw_channels_with_one_vertex([false, uv, curvature, color]);
-            let run = |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = cap;
-                let refused = with_expand_policy(&raw, policy, |expand| {
-                    let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-                    read_raw_channels(
-                        expand.ctx(),
-                        &mut reader,
-                        1,
-                        &mut Vec::new(),
-                        &mut None,
-                        &mut Vec::new(),
-                        &mut Diagnostics::new(),
-                    )
-                    .expect_err("raw channel bytes exceed the retention limit")
-                });
-                refused
-            };
-            let refused = run(crate::test_support::retained_limit_at(
-                operation,
-                0,
-                |cap| match run(cap) {
-                    GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                },
-            ));
-            assert!(matches!(
-                refused,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == operation
-            ));
-        }
-    }
-
-    #[test]
-    fn raw_mesh_normal_collection_refusal_is_not_a_warning() {
-        let raw = raw_channels_with_one_vertex([true, false, false, false]);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let refused = with_expand_policy(&raw, policy, |expand| {
-            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            read_raw_channels(
-                expand.ctx(),
-                &mut reader,
-                1,
-                &mut Vec::new(),
-                &mut None,
-                &mut Vec::new(),
-                &mut Diagnostics::new(),
-            )
-            .expect_err("normal output exceeds two collection items")
-        });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino mesh f32 normals"
-        ));
-    }
-
-    #[test]
-    fn negative_raw_channel_diagnostic_refuses_collection_limit() {
-        let raw = (-1_i32).to_le_bytes();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let refused = with_expand_policy(&raw, policy, |expand| {
-            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            super::read_counted_raw(&mut reader, 1, 12, "normals", &mut Diagnostics::new())
-                .expect_err("diagnostic exceeds zero collection items")
-        });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino diagnostics"
-        ));
     }
 
     /// Like [`with_expand`], but under a caller-supplied policy.
@@ -1948,6 +1820,11 @@ mod tests {
     }
 
     fn compressed_mesh() -> Vec<u8> {
+        mesh_with_vertex_buffer_method(0)
+    }
+
+    /// A one-triangle mesh whose vertex buffer uses compression `method`.
+    pub(super) fn mesh_with_vertex_buffer_method(method: u8) -> Vec<u8> {
         let mut payload = vec![0x30];
         payload.extend(3_i32.to_le_bytes());
         payload.extend(1_i32.to_le_bytes());
@@ -1965,7 +1842,7 @@ mod tests {
         for value in [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
             vertices.extend(value.to_le_bytes());
         }
-        payload.extend(buffer(&vertices, 0));
+        payload.extend(buffer(&vertices, method));
         for _ in 0..4 {
             payload.extend(0_u32.to_le_bytes());
         }
@@ -2014,40 +1891,6 @@ mod tests {
         assert_eq!(normals.len(), 3);
         assert_eq!(normals[2].get(), Vector3::new(0.0, 0.0, 1.0));
         assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
-    }
-
-    #[test]
-    fn mesh_scaled_vertices_refuse_before_the_output_array() {
-        let bytes = compressed_mesh();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 4;
-        let refused = with_expand_policy(&bytes, policy, |expand| {
-            decode(
-                expand,
-                &bytes,
-                0..bytes.len(),
-                ArchiveVersion::V5,
-                MeshDecodeOptions {
-                    writer_version: None,
-                    association: None,
-                    id: crate::mesh::MeshId::Ready(
-                        cadmpeg_ir::tessellation::TessellationId::mint(
-                            "synthetic:test:tessellation#scaled-limit",
-                        )
-                        .expect("valid identity"),
-                    ),
-                    scale: MillimeterScale::IDENTITY,
-                    userdata: &[],
-                },
-                &mut MeshBudget::new(),
-            )
-            .expect_err("three scaled vertices exceed four cumulative items")
-        });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino mesh scaled vertices"
-        ));
     }
 
     #[test]
@@ -2117,49 +1960,6 @@ mod tests {
         .expect("V5 double userdata mesh");
         assert_eq!(decoded.tessellation.vertices()[1].x, 1.0 + delta);
         assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
-    }
-
-    #[test]
-    fn v5_double_userdata_collections_refuse_before_allocation() {
-        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
-        let mut bytes = compressed_mesh();
-        let payload_start = bytes.len();
-        bytes.extend(v5_double_userdata_payload(&points));
-        let descriptor = v5_double_userdata_descriptor(payload_start..bytes.len());
-        for (limit, operation) in [
-            (6, "Rhino V5 mesh double vertex values"),
-            (9, "Rhino V5 mesh admitted double vertices"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let refused = with_expand_policy(&bytes, policy, |expand| {
-                decode(
-                    expand,
-                    &bytes,
-                    0..payload_start,
-                    ArchiveVersion::V5,
-                    MeshDecodeOptions {
-                        writer_version: None,
-                        association: None,
-                        id: crate::mesh::MeshId::Ready(
-                            cadmpeg_ir::tessellation::TessellationId::mint(
-                                "synthetic:test:tessellation#v5-double-limit",
-                            )
-                            .expect("valid identity"),
-                        ),
-                        scale: MillimeterScale::IDENTITY,
-                        userdata: std::slice::from_ref(&descriptor),
-                    },
-                    &mut MeshBudget::new(),
-                )
-                .expect_err("double vertex collection exceeds its item limit")
-            });
-            assert!(matches!(
-                refused,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.operation == operation
-            ));
-        }
     }
 
     #[test]
@@ -2239,38 +2039,14 @@ mod tests {
     }
 
     #[test]
-    fn v4v5_ngon_userdata_refuses_record_and_index_work_limits() {
+    fn v4v5_ngon_userdata_reads_one_ngon() {
         let bytes = v4v5_ngon_userdata_payload(1, &[0, 1, 2], &[0, -1, -1], 1, 3, &[]);
         let descriptor = v4v5_ngon_userdata_descriptor(0..bytes.len());
         let extra = descriptor.known().expect("known n-gon userdata");
         assert_eq!(
-            with_expand(&bytes, |expand| {
-                read_v4v5_ngon_userdata(&bytes, extra, ArchiveVersion::V5, 3, 1)
-            })
-            .expect("one n-gon fits service limits"),
+            read_v4v5_ngon_userdata(&bytes, extra, ArchiveVersion::V5, 3, 1).expect("one n-gon"),
             Some(1)
         );
-        let checksum_body = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
-            .expect("bounded userdata chunk")
-            .body();
-        // One range validation and every direct checksum byte precede records.
-        let checksum_work = 1 + u64::try_from(checksum_body.len()).expect("fixture length fits");
-        for (work_limit, operation) in [
-            (checksum_work, "Rhino V4V5 mesh ngon records"),
-            (checksum_work + 6, "Rhino V4V5 mesh ngon indices"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = work_limit;
-            let refused = with_expand_policy(&bytes, policy, |expand| {
-                read_v4v5_ngon_userdata(&bytes, extra, ArchiveVersion::V5, 3, 1)
-                    .expect_err("n-gon work exceeds the configured limit")
-            });
-            assert!(matches!(
-                refused,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.operation == operation
-            ));
-        }
     }
 
     #[test]
@@ -2694,7 +2470,6 @@ mod tests {
             let mut document_budget = MeshBudget {
                 used: MAX_BUFFER_OUTPUT,
                 limit: MAX_BUFFER_OUTPUT,
-                session_limit: usize::MAX,
             };
             let error = read_buffer(
                 expand,
@@ -2714,24 +2489,6 @@ mod tests {
                 .contains("document mesh buffer budget exceeded"));
             assert_eq!(document_budget.used(), MAX_BUFFER_OUTPUT);
             assert_eq!(expand.ctx().resource_refusal(), None);
-        });
-    }
-
-    #[test]
-    fn session_retained_ceiling_below_the_document_cap_still_refuses() {
-        let bytes = buffer(&[1], 0);
-        with_expand(&bytes, |expand| {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            let mut document_budget = MeshBudget {
-                used: 4,
-                limit: 4,
-                session_limit: 4,
-            };
-            assert!(matches!(read_buffer(expand, &mut reader,
-                MeshBufferSpec { expected: 1, name: "budget" }, &mut Diagnostics::new(),
-                &mut document_budget, ArchiveVersion::V8),
-                Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
-                    if limit.operation == "Rhino document mesh buffer bytes"));
         });
     }
 
@@ -2841,13 +2598,13 @@ mod tests {
                     _ => unreachable!(),
                 }
             }
-            with_expand(&bytes, |expand| {
+            {
                 let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
                 assert_eq!(
                     read_faces(&mut reader, vertices, 1).expect("face"),
                     vec![[0, 1, 2, 2]]
                 );
-            });
+            };
         }
     }
 
@@ -2922,31 +2679,6 @@ mod tests {
         assert_eq!(reader.position(), end);
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("mapping tag CRC mismatch"));
-    }
-
-    #[test]
-    fn mapping_crc_diagnostic_refuses_collection_limit() {
-        let mut mapping = 1_i32.to_le_bytes().to_vec();
-        mapping.extend(1_i32.to_le_bytes());
-        mapping.extend([0; 16]);
-        mapping.extend(7_i32.to_le_bytes());
-        mapping.extend((0..16).flat_map(|_| 1.0_f64.to_le_bytes()));
-        mapping.extend(3_u32.to_le_bytes());
-        let mut bytes = chunk(&mapping);
-        let crc = bytes.len() - 1;
-        bytes[crc] ^= 1;
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let refused = with_expand_policy(&bytes, policy, |expand| {
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            read_mapping_tag(&mut reader, ArchiveVersion::V5, &mut Diagnostics::new())
-                .expect_err("checksum diagnostic exceeds zero collection items")
-        });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino diagnostics"
-        ));
     }
 
     #[test]
@@ -3077,79 +2809,15 @@ mod tests {
     }
 
     #[test]
-    fn stored_buffer_retention_limit_refuses_before_copy() {
-        let data = buffer(&[1, 2, 3], 0);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let refused = with_expand_policy(&data, policy, |expand| {
-            let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
-            read_buffer(
-                expand,
-                &mut reader,
-                MeshBufferSpec {
-                    expected: 3,
-                    name: "vertices",
-                },
-                &mut Diagnostics::new(),
-                &mut MeshBudget::new(),
-                ArchiveVersion::V8,
-            )
-            .expect_err("three stored bytes exceed the two-byte limit")
-        });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-    }
-
-    #[test]
     fn read_faces_preserves_quad_indices_until_vertices_are_available() {
         let mut raw = 1_i32.to_le_bytes().to_vec();
         raw.extend([0, 1, 2, 2]); // triangle (indices[2] == indices[3])
         raw.extend([0, 1, 2, 0]); // quad -> two triangles
-        with_expand(&raw, |expand| {
+        {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
             let faces = read_faces(&mut reader, 3, 2).expect("faces");
             assert_eq!(faces, vec![[0, 1, 2, 2], [0, 1, 2, 0]]);
-        });
-    }
-
-    #[test]
-    fn mesh_faces_refuse_a_collection_limit_below_the_face_count() {
-        let mut raw = 1_i32.to_le_bytes().to_vec();
-        raw.extend([0, 1, 2, 2]);
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let refused = with_expand_policy(&raw, policy, |expand| {
-            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            read_faces(&mut reader, 3, 1).expect_err("one face exceeds zero collection items")
-        });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino mesh faces"
-        ));
-    }
-
-    #[test]
-    fn mesh_triangles_refuse_a_collection_limit_below_the_quad_output() {
-        let vertices = [
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ];
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let refused = with_expand_policy(&[], policy, |expand| {
-            triangulate_faces(&[[0, 1, 2, 3]], &vertices, |point| point)
-                .expect_err("two triangles exceed one collection item")
-        });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino mesh triangles"
-        ));
+        };
     }
 
     #[test]
@@ -3161,10 +2829,8 @@ mod tests {
             Point3::new(1.0, 1.0, 0.0),
         ];
         assert_eq!(
-            with_expand(&[], |expand| {
-                triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices, |point| point)
-            })
-            .expect("quad and triangle fit the service limit"),
+            triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices, |point| point)
+                .expect("quad and triangle triangulate"),
             vec![[0, 1, 3], [1, 2, 3], [0, 1, 2]]
         );
         assert_eq!(quad_face_count(&[[0, 1, 2, 3], [0, 1, 2, 2]]), 1);
@@ -3174,9 +2840,9 @@ mod tests {
     fn read_faces_truncated_at_record_boundary() {
         let mut raw = 1_i32.to_le_bytes().to_vec();
         raw.extend([0, 1, 2, 2]); // only one of the two declared faces
-        with_expand(&raw, |expand| {
+        {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
             assert!(read_faces(&mut reader, 3, 2).is_err());
-        });
+        };
     }
 }

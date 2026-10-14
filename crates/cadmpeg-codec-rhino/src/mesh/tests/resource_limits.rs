@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    buffer, chunk, compressed_mesh, v5_double_userdata_descriptor, with_expand, with_expand_policy,
+    buffer, chunk, compressed_mesh, mesh_with_vertex_buffer_method, v5_double_userdata_descriptor,
+    with_expand, with_expand_policy,
 };
-use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::curves::GeometryError;
 use crate::loss::Diagnostics;
-use crate::mesh::{
-    decode, read_buffer, read_v5_double_vertices, MeshBudget, MeshBufferSpec, MeshDecodeOptions,
-    MeshId,
-};
+use crate::mesh::{decode, read_buffer, MeshBudget, MeshBufferSpec, MeshDecodeOptions, MeshId};
 use crate::settings::MillimeterScale;
-use cadmpeg_core::{decode::DecodePolicy, CodecError};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 #[test]
-fn mesh_per_buffer_ceiling_fuses_and_propagates_resource_refusal() {
+fn mesh_buffer_above_the_expansion_ceiling_fuses_the_session() {
     let bytes = buffer(&[0; 36], 1);
     let mut policy = DecodePolicy::service();
     policy.limits.max_decompressed_bytes_per_expand = 32;
@@ -34,17 +33,16 @@ fn mesh_per_buffer_ceiling_fuses_and_propagates_resource_refusal() {
         let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected unchanged codec resource refusal");
         };
-        assert_eq!(limit.operation, "Rhino mesh buffer output bytes");
+        assert_eq!(limit.dimension, ResourceDimension::DecompressedBytes);
         assert_eq!(limit.limit, 32);
         assert_eq!(limit.used + limit.additional, 36);
         assert_eq!(expand.ctx().resource_refusal(), Some(limit));
-        assert_eq!(reader.position(), 4);
     });
 }
 
 #[test]
-fn mesh_per_buffer_refusal_reaches_full_decode_with_other_geometry() {
-    let mesh = compressed_mesh();
+fn mesh_expansion_refusal_reaches_full_decode_with_other_geometry() {
+    let mesh = mesh_with_vertex_buffer_method(1);
     let bytes = crate::test_support::test_archive::archive(&[
         crate::test_support::test_archive::object_record(
             0x20,
@@ -62,7 +60,7 @@ fn mesh_per_buffer_refusal_reaches_full_decode_with_other_geometry() {
     let result = cadmpeg_test_support::decode::full(&crate::RhinoCodec, &bytes, &policy);
     assert!(
         matches!(result, Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit)))
-        if limit.operation == "Rhino mesh buffer output bytes")
+        if limit.dimension == ResourceDimension::DecompressedBytes)
     );
 }
 
@@ -139,30 +137,6 @@ fn independent_mesh_channels_each_use_the_per_expansion_ceiling() {
             assert!(expand.ctx().resource_refusal().is_none());
         });
     }
-}
-
-#[test]
-fn truncated_v5_double_vertices_are_malformed_before_collection_admission() {
-    let mut body = Vec::new();
-    for value in [1_u32, 0, 3, 3, 0, 0, 100_000] {
-        body.extend(value.to_le_bytes());
-    }
-    let bytes = chunk(&body);
-    let descriptor = v5_double_userdata_descriptor(0..bytes.len());
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    with_expand_policy(&bytes, policy, |expand| {
-        let result =
-            read_v5_double_vertices(&bytes, descriptor.known().unwrap(), ArchiveVersion::V5, &[]);
-        assert!(matches!(
-            result,
-            Err(GeometryError::Malformed(FramingError::Truncated {
-                needed: 2_400_000,
-                ..
-            }))
-        ));
-        assert!(expand.ctx().resource_refusal().is_none());
-    });
 }
 
 #[test]

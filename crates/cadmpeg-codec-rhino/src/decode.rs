@@ -5381,32 +5381,6 @@ fn stage_brep_procedural_surface(
     Ok(surface_id)
 }
 
-#[cfg(test)]
-fn stage_curve_tree(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    staged: &mut BrepDraft,
-    curve: crate::curves::DecodedCurve,
-    key: &str,
-    path: &str,
-    association: &SourceObjectAssociation,
-    unknown: &UnknownId,
-) -> Result<cadmpeg_ir::ids::CurveId, crate::curves::GeometryError> {
-    let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, staged.draft.model_mut())?;
-    stage_curve_tree_indexed(
-        &mut procedural_admission,
-        staged,
-        curve,
-        path,
-        &BrepStageContext {
-            ctx,
-            key,
-            association,
-            unknown,
-        },
-    )
-}
-
 fn stage_curve_tree_indexed(
     procedural_admission: &mut cadmpeg_ir::document::procedural::ProceduralAdmission<'_>,
     staged: &mut BrepDraft,

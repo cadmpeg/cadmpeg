@@ -925,7 +925,6 @@ pub(crate) fn validate_eof(
 
 #[cfg(test)]
 mod direct_range_tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     use super::{
         direct_checksum_ranges, verify_checksum_ranges, ChecksumKind, ChecksumStatus, Chunk,
@@ -934,23 +933,16 @@ mod direct_range_tests {
 
     #[test]
     fn direct_checksum_ranges_exclude_complete_sorted_children() {
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         let children = [30..40, 15..20];
         let direct = direct_checksum_ranges(&(10..50), &children).expect("valid nesting");
         assert_eq!(
-            (&direct)
-                .into_iter()
-                .collect::<Result<Vec<_>, _>>()
-                .expect("admitted traversal"),
+            (&direct).into_iter().collect::<Vec<_>>(),
             vec![10..15, 20..30, 40..50]
         );
     }
 
     #[test]
     fn direct_checksum_ranges_reject_overlap() {
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         assert!(matches!(
             direct_checksum_ranges(&(10..50), &[15..30, 20..40]),
             Err(FramingError::Structural { .. })
@@ -958,235 +950,34 @@ mod direct_range_tests {
     }
 
     #[test]
-    fn direct_checksum_ranges_order_scan_refuses_work_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        assert!(matches!(
-            direct_checksum_ranges( &(10..50), &[15..20, 30..40]),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "Rhino checksum child order scan"
-                    && Some(limit) == ctx.resource_refusal()
-        ));
-    }
-
-    #[test]
-    fn direct_checksum_ranges_validation_refuses_work_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // The one adjacent comparison fits; the first validation step does not.
-        policy.limits.max_work_units = 1;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        assert!(matches!(
-            direct_checksum_ranges( &(10..50), &[15..20, 30..40]),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "Rhino checksum child validation"
-                    && Some(limit) == ctx.resource_refusal()
-        ));
-    }
-
-    #[test]
-    fn direct_checksum_ranges_unsorted_sort_refuses_work_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Admit the order comparison, two copied ranges, and the core key scan.
-        policy.limits.max_work_units = 1 + 2 + 2;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let children = [30..40, 15..20];
-        assert!(matches!(
-            direct_checksum_ranges( &(10..50), &children),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "Rhino checksum child ordering sort"
-                    && Some(limit) == ctx.resource_refusal()
-        ));
-        assert_eq!(children, [30..40, 15..20]);
-    }
-
-    #[test]
-    fn direct_checksum_ranges_unsorted_copy_refuses_work_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        assert!(matches!(
-            direct_checksum_ranges( &(10..50), &[30..40, 15..20]),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "Rhino checksum child ordering copy"
-                    && Some(limit) == ctx.resource_refusal()
-        ));
-    }
-
-    #[test]
-    fn direct_checksum_ranges_unsorted_storage_refuses_materialized_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        assert!(matches!(
-            direct_checksum_ranges( &(10..50), &[30..40, 15..20]),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && Some(limit) == ctx.resource_refusal()
-        ));
-    }
-
-    #[test]
-    fn direct_checksum_ranges_unsorted_storage_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        assert!(matches!(
-            direct_checksum_ranges( &(10..50), &[30..40, 15..20]),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && Some(limit) == ctx.resource_refusal()
-        ));
-    }
-
-    #[test]
-    fn direct_checksum_ranges_sorted_children_need_no_storage() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let ctx = DecodeContext::new(&arena, &policy, false);
+    fn direct_checksum_ranges_exclude_sorted_children() {
         let children = [15..20, 30..40];
         let direct = direct_checksum_ranges(&(10..50), &children).expect("borrowed children");
         assert_eq!(
-            (&direct)
-                .into_iter()
-                .collect::<Result<Vec<_>, _>>()
-                .expect("admitted traversal"),
+            (&direct).into_iter().collect::<Vec<_>>(),
             vec![10..15, 20..30, 40..50]
         );
     }
 
     #[test]
     fn direct_checksum_ranges_unsorted_equal_starts_keep_input_order() {
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         let children = [30..40, 15..15, 15..20];
         let direct = direct_checksum_ranges(&(10..50), &children).expect("valid empty child");
         assert_eq!(
-            (&direct)
-                .into_iter()
-                .collect::<Result<Vec<_>, _>>()
-                .expect("admitted traversal"),
+            (&direct).into_iter().collect::<Vec<_>>(),
             vec![10..15, 20..30, 40..50]
         );
     }
 
     #[test]
-    fn direct_checksum_ranges_unsorted_storage_is_released() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        let storage =
-            cadmpeg_core::decode::u64_from_index(2 * std::mem::size_of::<std::ops::Range<usize>>());
-        policy.limits.max_materialized_bytes = storage;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 2;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let children = [30..40, 15..20];
-        let direct = direct_checksum_ranges(&(10..50), &children).expect("scoped ordering");
-        assert_eq!(
-            (&direct)
-                .into_iter()
-                .collect::<Result<Vec<_>, _>>()
-                .expect("admitted traversal"),
-            vec![10..15, 20..30, 40..50]
-        );
-        drop(direct);
-        assert!(ctx
-            .reserve_scoped(storage, "reuse checksum ordering storage")
-            .is_ok());
-    }
-
-    #[test]
-    fn direct_checksum_ranges_child_walk_refuses_instead_of_quiet_none() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Two order comparisons and three validation steps exhaust construction work.
-        policy.limits.max_work_units = 2 + 3;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let children = [10..15, 15..20, 20..25];
-        let direct = direct_checksum_ranges(&(10..25), &children).expect("admitted construction");
-        let mut iter = (&direct).into_iter();
-        assert!(
-            matches!(iter.next(), Some(Err(FramingError::Resource(limit)))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "Rhino checksum child traversal"
-                && Some(limit) == ctx.resource_refusal())
-        );
-        assert!(iter.next().is_none());
-    }
-
-    #[test]
-    fn direct_checksum_ranges_child_walk_is_linear() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Each of the three children needs one traversal step after construction.
-        policy.limits.max_work_units = 2 + 3 + 3;
-        let ctx = DecodeContext::new(&arena, &policy, false);
+    fn direct_checksum_ranges_of_a_covered_body_are_empty() {
         let children = [10..15, 15..20, 20..25];
         let direct = direct_checksum_ranges(&(10..25), &children).expect("admitted construction");
         assert_eq!((&direct).into_iter().next(), None);
-        assert!(matches!(ctx.charge_work(1, "after checksum traversal"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.used == 8));
-    }
-
-    fn assert_verification_walk_refusal(work: u64, kind: ChecksumKind) {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        let children = [0..4, 4..8];
-        let direct = direct_checksum_ranges(&(0..8), &children).expect("admitted construction");
-        let chunk = Chunk {
-            header_start: 0,
-            typecode: TCODE_CRC,
-            form: ChunkBody::Long {
-                body: 0..8,
-                checksum: Some(kind),
-            },
-        };
-        let mut bytes = vec![0; 8];
-        match kind {
-            ChecksumKind::Crc16 => bytes.extend(1u16.to_le_bytes()),
-            ChecksumKind::Crc32 => bytes.extend(crc32fast::hash(&[]).to_le_bytes()),
-        }
-        assert!(matches!(verify_checksum_ranges( &bytes, &chunk, &direct),
-            Err(FramingError::Resource(limit))
-                if limit.operation == "Rhino checksum child traversal"
-                    && limit.used == work && Some(limit) == ctx.resource_refusal()));
-    }
-
-    #[test]
-    fn direct_checksum_ranges_verify_propagates_validation_walk_refusal() {
-        // Construction takes three units; validation must charge its own child walk.
-        assert_verification_walk_refusal(3, ChecksumKind::Crc32);
-    }
-
-    #[test]
-    fn direct_checksum_ranges_verify_propagates_crc32_walk_refusal() {
-        // Validation consumes two more units; hashing must charge a fresh child walk.
-        assert_verification_walk_refusal(5, ChecksumKind::Crc32);
-    }
-
-    #[test]
-    fn direct_checksum_ranges_verify_propagates_crc16_walk_refusal() {
-        assert_verification_walk_refusal(5, ChecksumKind::Crc16);
     }
 
     #[test]
     fn direct_checksum_ranges_verify_preserves_valid_checksum() {
-        let arena = DecodeArena::new();
-        let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), false);
         let children = [2..4, 6..8];
         let direct = direct_checksum_ranges(&(0..10), &children).expect("valid children");
         let chunk = Chunk {

@@ -3145,26 +3145,14 @@ mod tests {
         data: &[u8],
         range: std::ops::Range<usize>,
     ) -> Result<super::V1NurbsCurve, cadmpeg_core::CodecError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            data,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )?;
-        super::v1_nurbs_curve_data(&ctx, data, range)
+        super::v1_nurbs_curve_data(data, range)
     }
 
     fn v1_nurbs_surface_data(
         data: &[u8],
         range: std::ops::Range<usize>,
     ) -> Result<super::V1NurbsSurface, cadmpeg_core::CodecError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            data,
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )?;
-        super::v1_nurbs_surface_data(&ctx, data, range)
+        super::v1_nurbs_surface_data(data, range)
     }
 
     #[test]
@@ -3209,19 +3197,9 @@ mod tests {
     }
 
     #[test]
-    fn v1_omitted_typecode_refuses_collection_limit() {
+    fn v1_omitted_typecode_reports_one_loss() {
         let mut data = archive(&[]);
         data.extend(chunk(0x1234_5678, b"unsupported"));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("V1 input fits service input limit");
-        assert!(matches!(
-            super::decode_v1(&ctx, &data),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino V1 omitted typecodes"
-        ));
         assert_eq!(
             decode_v1(&data)
                 .expect("service profile admits the record")
@@ -3233,19 +3211,9 @@ mod tests {
     }
 
     #[test]
-    fn v1_malformed_direct_diagnostic_refuses_collection_limit() {
+    fn v1_malformed_direct_record_adds_a_diagnostic_note() {
         let mut data = archive(&[]);
         data.extend(chunk(TCODE_TEXT_BLOCK, b"invalid direct record"));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("V1 input fits service input limit");
-        assert!(matches!(
-            super::decode_v1(&ctx, &data),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino V1 diagnostics"
-        ));
         assert_eq!(
             decode_v1(&data)
                 .expect("service profile admits the diagnostic")
@@ -3257,21 +3225,8 @@ mod tests {
     }
 
     #[test]
-    fn v1_report_notes_and_coverage_refuse_collection_limit() {
+    fn v1_empty_archive_reports_eight_coverage_nodes() {
         let data = archive(&[]);
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        for (limit, operation) in [(1, "Rhino V1 report notes"), (2, "decode coverage nodes")] {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-                    .expect("V1 input fits service input limit");
-            assert!(matches!(
-                super::decode_v1(&ctx, &data),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.operation == operation
-            ));
-        }
         assert_eq!(
             decode_v1(&data)
                 .expect("service profile admits the report")
@@ -3283,20 +3238,9 @@ mod tests {
     }
 
     #[test]
-    fn v1_direct_curve_knots_refuse_collection_limit_before_reserve() {
+    fn v1_direct_curve_retains_one_native_record() {
         let mut data = archive(&[]);
         data.extend(rhinoio_curve_object());
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("V1 direct curve fits service input limit");
-        let refusal = super::decode_v1(&ctx, &data)
-            .expect_err("two direct curve knots exceed the one-item limit");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
         assert_eq!(
             decode_v1(&data)
                 .expect("service admits direct curve")
@@ -3313,7 +3257,7 @@ mod tests {
     }
 
     #[test]
-    fn v1_spline_admitted_poles_refuse_collection_limit_before_constructor() {
+    fn v1_spline_decodes_two_poles() {
         let data = legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3);
         let curve =
             chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 curve wrapper");
@@ -3326,25 +3270,6 @@ mod tests {
         let spline_stuff = super::child_with_type(&data, spline.body(), TCODE_LEGACY_SPLSTUFF)
             .expect("V1 spline child framing")
             .expect("V1 spline-stuff child");
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 8;
-        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (limited_ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
-                .expect("V1 line fits service input limit");
-        let refusal = super::legacy_spline(
-            &limited_ctx,
-            &data,
-            spline_stuff.body(),
-            super::MillimeterScale::IDENTITY,
-        )
-        .expect_err("the constructor pole copy needs two more collection items");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "IR NURBS admitted poles"
-                && limit.used == 8)
-        );
         let service_arena = cadmpeg_core::decode::DecodeArena::new();
         let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &data,
@@ -3412,43 +3337,10 @@ mod tests {
     }
 
     #[test]
-    fn v1_surface_admitted_rows_refuse_collection_limit_before_constructor() {
+    fn v1_surface_decodes_two_pole_rows() {
         let data = legacy_surface();
         let surface =
             chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).expect("V1 surface wrapper");
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        // Stored knots use four slots, reconstructed knots eight, and flat poles four.
-        // The next allocation is the two-row grid that the constructor takes by move.
-        policy.limits.max_collection_items = 16;
-        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (limited_ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
-                .expect("V1 surface fits service input limit");
-        let refusal = super::legacy_surface(
-            &limited_ctx,
-            &data,
-            surface.body(),
-            super::MillimeterScale::IDENTITY,
-        )
-        .expect_err("the source grid needs two admitted row slots before construction");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "Rhino V1 surface pole rows"
-                && limit.used == 16)
-        );
-        policy.limits.max_collection_items = 22;
-        let exact_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (exact_ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &exact_arena, &policy)
-                .expect("V1 surface input admitted");
-        let exact = super::legacy_surface(
-            &exact_ctx, &data, surface.body(), super::MillimeterScale::IDENTITY,
-        ).expect("four stored knots, eight expanded knots, four flat poles, two rows and four grid poles");
-        assert_eq!(exact.pole_grid().u_count(), 2);
-        exact_ctx
-            .finish_session()
-            .expect("construction does not allocate admitted rows again");
         let service_arena = cadmpeg_core::decode::DecodeArena::new();
         let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &data,
@@ -3533,20 +3425,9 @@ mod tests {
     }
 
     #[test]
-    fn v1_annotation_points_refuse_collection_limit_before_reserve() {
+    fn v1_leader_retains_one_native_record() {
         let mut data = archive(&[]);
         data.extend(v1_annotation_records().remove(1));
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("V1 leader fits service input limit");
-        let refusal =
-            super::decode_v1(&ctx, &data).expect_err("two leader points exceed the one-item limit");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-        );
         assert_eq!(
             decode_v1(&data)
                 .expect("service admits leader")
@@ -3895,7 +3776,7 @@ mod tests {
         )
     }
 
-    fn legacy_trim(from: [f64; 3], flags: u8) -> Vec<u8> {
+    fn legacy_trim(from: [f64; 3], to: [f64; 3], flags: u8) -> Vec<u8> {
         let mut stuff = vec![flags];
         stuff.extend(0_i32.to_le_bytes());
         stuff.extend(0_i32.to_le_bytes());
@@ -3950,7 +3831,11 @@ mod tests {
             boundary.extend(value.to_le_bytes());
         }
         for index in 0..corners.len() {
-            boundary.extend(legacy_trim(corners[index], trim_flags[index]));
+            boundary.extend(legacy_trim(
+                corners[index],
+                corners[(index + 1) % corners.len()],
+                trim_flags[index],
+            ));
         }
         let boundary = legacy_chunk(
             TCODE_LEGACY_BND,
@@ -4041,142 +3926,8 @@ mod tests {
     }
 
     #[test]
-    fn v1_brep_parsing_workspace_refuses_materialized_limit_before_topology_buffers() {
+    fn v1_face_archive_decodes_one_body() {
         let data = legacy_face_archive();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
-            .expect("V1 Brep fits service input limit");
-        let refusal = super::decode_v1(&ctx, &data)
-            .expect_err("the first V1 Brep topology buffer exceeds the zero-byte workspace");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-        );
-        assert_eq!(
-            decode_v1(&data)
-                .expect("service admits Brep")
-                .ir
-                .model
-                .bodies
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn v1_brep_trim_paths_refuse_materialized_limit_before_reserve() {
-        let data = legacy_face_archive();
-        let header = super::parse_header(&data).expect("valid V1 header");
-        let comment = chunk_at(
-            &data,
-            header.start_offset + crate::layout::file_header::LEN,
-            data.len(),
-            ArchiveVersion::V1,
-            false,
-        )
-        .expect("V1 comment chunk");
-        let face = chunk_at(
-            &data,
-            comment.next_offset(),
-            data.len(),
-            ArchiveVersion::V1,
-            false,
-        )
-        .expect("V1 face chunk");
-        let parse_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (parse_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &data,
-            &parse_arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("V1 Brep fits service input limit");
-        let mut parse_workspace = parse_ctx
-            .reserve_scoped(0, "V1 test parsing workspace")
-            .expect("service parsing workspace");
-        let brep = super::legacy_brep(&parse_ctx, &data, &face, super::MillimeterScale::IDENTITY)
-            .expect("valid V1 Brep payload");
-        let trim_count = brep.faces[0].loops[0].trims.len();
-        let first_request = trim_count * std::mem::size_of::<(usize, usize, usize)>();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            u64::try_from(first_request - 1).expect("request fits u64");
-        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (limited_ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
-                .expect("V1 Brep fits service input limit");
-        let mut ir = CadIr::empty();
-        let refusal = super::append_legacy_brep(&limited_ctx, &mut ir, brep, "limited")
-            .expect_err("trim path bytes exceed the lowered workspace ceiling");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-        );
-        assert!(ir.model.bodies.is_empty());
-        assert_eq!(
-            decode_v1(&data)
-                .expect("service admits Brep")
-                .ir
-                .model
-                .bodies
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn v1_brep_group_maps_refuse_materialized_limit_before_insert() {
-        let data = legacy_face_archive();
-        let header = super::parse_header(&data).expect("valid V1 header");
-        let comment = chunk_at(
-            &data,
-            header.start_offset + crate::layout::file_header::LEN,
-            data.len(),
-            ArchiveVersion::V1,
-            false,
-        )
-        .expect("V1 comment chunk");
-        let face = chunk_at(
-            &data,
-            comment.next_offset(),
-            data.len(),
-            ArchiveVersion::V1,
-            false,
-        )
-        .expect("V1 face chunk");
-        let parse_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (parse_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &data,
-            &parse_arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("V1 Brep fits service input limit");
-        let mut parse_workspace = parse_ctx
-            .reserve_scoped(0, "V1 test parsing workspace")
-            .expect("service parsing workspace");
-        let brep = super::legacy_brep(&parse_ctx, &data, &face, super::MillimeterScale::IDENTITY)
-            .expect("valid V1 Brep payload");
-        let trim_count = brep.faces[0].loops[0].trims.len();
-        let prior_bytes = trim_count.max(4) * std::mem::size_of::<(usize, usize, usize)>()
-            + 4 * std::mem::size_of::<Vec<usize>>()
-            + 5 * trim_count.max(4) * std::mem::size_of::<usize>();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            u64::try_from(prior_bytes).expect("request fits u64");
-        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (limited_ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
-                .expect("V1 Brep fits service input limit");
-        let mut ir = CadIr::empty();
-        let refusal = super::append_legacy_brep(&limited_ctx, &mut ir, brep, "limited")
-            .expect_err("grouped map entries exceed the remaining workspace");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.used == policy.limits.max_materialized_bytes)
-        );
-        assert!(ir.model.bodies.is_empty());
         assert_eq!(
             decode_v1(&data)
                 .expect("service admits Brep")
