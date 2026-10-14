@@ -2445,21 +2445,6 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_operation_terminal_discriminators",
-        exactness: Exactness::ByteExact,
-        phase: Phase::ArenaOnly,
-        emit: |ctx, m, r, ns| {
-            emit_arena(
-                ctx,
-                &m.features.feature_operation_terminal_discriminators,
-                r,
-                ns,
-            )
-        },
-        len: |m| m.features.feature_operation_terminal_discriminators.len(),
-        counts_toward_emptiness: true,
-    },
-    CatalogueRow {
         arena: "feature_operation_terminal_frames",
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA {

@@ -43,7 +43,6 @@ pub(super) mod object_frame;
 pub(super) mod operation_record;
 pub(super) mod surface_branches;
 pub(super) mod swp104_branch;
-pub(super) mod terminal_discriminator;
 pub(super) mod thru_curve_branches;
 pub(super) mod unlabeled_record;
 use crate::native::om::column_row::{
@@ -2556,7 +2555,7 @@ pub(super) struct FeatureProjectedCurveReference {
     pub(super) id: String,
     /// Owning `CPROJ` or `CPROJ_CMB` operation label.
     pub(super) operation_label: String,
-    /// Zero-based order among the field's non-repeated references.
+    /// Zero-based order among the field's serialized reference occurrences.
     pub(super) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]

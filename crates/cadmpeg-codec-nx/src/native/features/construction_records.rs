@@ -8,7 +8,6 @@ use super::payload_name::FeaturePayloadName;
 use super::point_scalar_lane::{FeaturePointConstructionScalarLane, PointScalarPositions};
 use super::reference::ConstructionReference;
 use super::swp104_branch::FeatureSwp104LeadingBranch;
-use super::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use super::{
     construction_payload_frames, format_feature_child_id, format_feature_history_id,
     offset_data_block_bytes, parse_sketch_point_name, visit_feature_history_operation_records,
@@ -51,7 +50,7 @@ pub(super) fn resolved_feature_payload_references(
     decode: impl Fn(
         crate::om::operation_record::OperationPayload<'_>,
         u64,
-    ) -> Option<Vec<(PayloadIndexToken, u64)>>,
+    ) -> Result<Option<Vec<(PayloadIndexToken, u64)>>, CodecError>,
 ) -> Result<Vec<ResolvedFeaturePayloadReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
@@ -63,8 +62,13 @@ pub(super) fn resolved_feature_payload_references(
             if failure.is_some() {
                 return;
             }
-            let Some(decoded) = decode(record.payload_view(), entry_offset) else {
-                return;
+            let decoded = match decode(record.payload_view(), entry_offset) {
+                Ok(Some(decoded)) => decoded,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let projected = (|| -> Result<(), CodecError> {
                 for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
@@ -102,18 +106,24 @@ pub(in crate::native) fn feature_projected_curve_references(
     container: &Container,
 ) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(|field| {
-            field
-                .into_references()
-                .into_iter()
-                .map(|reference| {
-                    Some((
-                        reference.token,
-                        base.checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))?,
-                    ))
-                })
-                .collect()
-        })
+        Ok(
+            crate::om::projected_references::ProjectedCurveReferences::read(ctx, record)?.and_then(
+                |field| {
+                    field
+                        .into_references()
+                        .into_iter()
+                        .map(|reference| {
+                            Some((
+                                reference.token,
+                                base.checked_add(cadmpeg_core::decode::u64_from_index(
+                                    reference.offset,
+                                ))?,
+                            ))
+                        })
+                        .collect()
+                },
+            ),
+        )
     })?;
     let mut output = Vec::new();
     for reference in references {
@@ -184,9 +194,9 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         let Some(kind) = kinds.get(operation_label) else {
             continue;
         };
-        let (operation_kind, expected_len) = match *kind {
-            "CPROJ" => (FeatureProjectedCurveKind::Projected, 3),
-            "CPROJ_CMB" => (FeatureProjectedCurveKind::Combined, 8),
+        let operation_kind = match *kind {
+            "CPROJ" => FeatureProjectedCurveKind::Projected,
+            "CPROJ_CMB" => FeatureProjectedCurveKind::Combined,
             _ => continue,
         };
         ctx.charge_work(
@@ -213,7 +223,11 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             |_| 0,
             "sort NX projected curve references",
         )?;
-        if field.len() != expected_len
+        let complete_count = match operation_kind {
+            FeatureProjectedCurveKind::Projected => field.len() >= 3 && field.len() % 2 == 1,
+            FeatureProjectedCurveKind::Combined => matches!(field.len(), 10 | 68),
+        };
+        if !complete_count
             || field
                 .iter()
                 .enumerate()
@@ -229,6 +243,16 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
                 complete = false;
                 break;
             };
+
+            if operation_kind == FeatureProjectedCurveKind::Combined {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(data_blocks.len()),
+                    "deduplicate NX combined projection fragments",
+                )?;
+                if data_blocks.iter().any(|existing| existing == block) {
+                    continue;
+                }
+            }
 
             block_reservation.with_storage(|| {
                 ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs")
@@ -555,14 +579,16 @@ pub(in crate::native) fn feature_surface_construction_references(
     container: &Container,
 ) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::surface_envelope::surface_feature_payload_references(record)
-            .and_then(|field| field.relocate(base))
-            .map(|field| field.references().into_iter().collect())
-            .or_else(|| {
-                crate::om::surface_envelope::thru_curve_payload_references(record)
-                    .and_then(|field| field.relocate(base))
-                    .map(|field| field.references().into_iter().collect())
-            })
+        Ok(
+            crate::om::surface_envelope::surface_feature_payload_references(record)
+                .and_then(|field| field.relocate(base))
+                .map(|field| field.references().into_iter().collect())
+                .or_else(|| {
+                    crate::om::surface_envelope::thru_curve_payload_references(record)
+                        .and_then(|field| field.relocate(base))
+                        .map(|field| field.references().into_iter().collect())
+                }),
+        )
     })?;
     let mut output = Vec::new();
     for reference in references {
@@ -1083,68 +1109,6 @@ pub(in crate::native) fn feature_extrude_payload_headers(
         return Err(error);
     }
     Ok(headers)
-}
-
-/// Decode exact terminal discriminator lanes from bounded operation payloads.
-pub(in crate::native) fn feature_operation_terminal_discriminators(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
-) -> Result<Vec<FeatureOperationTerminalDiscriminator>, cadmpeg_core::CodecError> {
-    let mut lanes = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let frame = match crate::om::terminal_discriminator::operation_terminal_discriminator(
-                ctx,
-                record.payload_view(),
-            ) {
-                Ok(frame) => frame,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
-                return;
-            };
-            let projected = (|| -> Result<(), CodecError> {
-                let id = format_feature_history_id(
-                    ctx,
-                    "operation-terminal-discriminator",
-                    section_key,
-                    operation_ordinal,
-                    None,
-                )?;
-                let operation_label = format_feature_history_id(
-                    ctx,
-                    "operation-label",
-                    section_key,
-                    operation_ordinal,
-                    None,
-                )?;
-                ctx.reserve_vec(&mut lanes, 1, "NX operation terminal discriminators")?;
-                lanes.push(FeatureOperationTerminalDiscriminator {
-                    id,
-                    operation_label,
-                    frame,
-                });
-                Ok(())
-            })();
-            if let Err(error) = projected {
-                failure = Some(error);
-            }
-        },
-    )?;
-    if let Some(error) = failure {
-        Err(error)
-    } else {
-        Ok(lanes)
-    }
 }
 
 /// Decode typed scalar clauses anchored to operation body-reference fields.

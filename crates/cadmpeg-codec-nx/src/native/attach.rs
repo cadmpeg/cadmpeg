@@ -1925,9 +1925,6 @@ fn attach_feature_operations(
     let block_payload_point_groups = features.feature_block_payload_point_groups.as_slice();
     let extrude_32_constructions = features.feature_extrude_32_constructions.as_slice();
     let extrude_payload_headers = features.feature_extrude_payload_headers.as_slice();
-    let operation_terminal_discriminators = features
-        .feature_operation_terminal_discriminators
-        .as_slice();
     let extrude_payload_32_branches = features.feature_extrude_payload_32_branches.as_slice();
     let operation_body_scalar_triples = features.feature_operation_body_scalar_triples.as_slice();
     let operation_body_members = features.feature_operation_body_members.as_slice();
@@ -2781,15 +2778,6 @@ fn attach_feature_operations(
                 .map(|header| (header.operation_label.as_str(), header)),
             "NX last-record index",
         )?;
-    let (
-        operation_terminal_discriminators_by_operation,
-        _operation_terminal_discriminators_by_operation_reservation,
-    ) = ctx.collect_scoped_btree_map(
-        operation_terminal_discriminators
-            .iter()
-            .map(|lane| (lane.operation_label.as_str(), lane)),
-        "NX last-record index",
-    )?;
     let (
         extrude_payload_32_branches_by_operation,
         _extrude_payload_32_branches_by_operation_reservation,
@@ -3863,14 +3851,6 @@ fn attach_feature_operations(
                 &mut source_properties,
                 format_args!("extrude_payload_header"),
                 format_args!("{}", header.id),
-            )?;
-        }
-        if let Some(lane) = operation_terminal_discriminators_by_operation.get(label.id.as_str()) {
-            insert_source_property(
-                ctx,
-                &mut source_properties,
-                format_args!("operation_terminal_discriminator"),
-                format_args!("{}", lane.id),
             )?;
         }
         for (ordinal, branch) in extrude_payload_32_branches_by_operation

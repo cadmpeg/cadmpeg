@@ -2,7 +2,6 @@
 
 use crate::native::features::extrude_32::FeatureExtrudePayload32Branch;
 use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
-use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use crate::native::features::FeatureBlockDimensions;
 use crate::native::features::FeatureBooleanOperation;
 use crate::native::features::FeatureDatumCsysDescriptor;
@@ -38,70 +37,6 @@ fn sketch_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
             "value_source_offsets",
         ],
     );
-}
-
-#[test]
-fn terminal_discriminator_preserves_wire_and_requires_complete_tokens() {
-    check_lane_wire::<FeatureOperationTerminalDiscriminator>(
-        r#"{"id":"lane","operation_label":"operation","type_indices":[7,8],"raw_type_indices":["07","08"],"type_index_source_offsets":[103,104],"flags":"01020304","trailing_indices":[9,10],"raw_trailing_indices":["09","0a"],"trailing_index_source_offsets":[118,119],"source_offset":100}"#,
-        &[
-            "type_indices",
-            "raw_type_indices",
-            "type_index_source_offsets",
-            "trailing_indices",
-            "raw_trailing_indices",
-            "trailing_index_source_offsets",
-        ],
-    );
-}
-
-#[test]
-fn terminal_discriminator_rejects_inconsistent_compact_tokens() {
-    let json = r#"{"id":"lane","operation_label":"operation","type_indices":[4096,8],"raw_type_indices":["9000","08"],"type_index_source_offsets":[103,105],"flags":"01020304","trailing_indices":[9],"raw_trailing_indices":["8009"],"trailing_index_source_offsets":[119],"source_offset":100}"#;
-    check_lane_wire::<FeatureOperationTerminalDiscriminator>(json, &[]);
-    for (field, raw_field, raw) in [
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["900000", "08"]),
-        ),
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["ff", "08"]),
-        ),
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["90", "08"]),
-        ),
-        (
-            "type_indices",
-            "raw_type_indices",
-            serde_json::json!(["07", "08"]),
-        ),
-        (
-            "trailing_indices",
-            "raw_trailing_indices",
-            serde_json::json!(["0a"]),
-        ),
-        (
-            "trailing_indices",
-            "raw_trailing_indices",
-            serde_json::json!(["0900"]),
-        ),
-        (
-            "trailing_indices",
-            "raw_trailing_indices",
-            serde_json::json!(["ff"]),
-        ),
-    ] {
-        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire[raw_field] = raw;
-        let error =
-            serde_json::from_value::<FeatureOperationTerminalDiscriminator>(wire).unwrap_err();
-        assert!(error.to_string().contains(field));
-    }
 }
 
 #[test]

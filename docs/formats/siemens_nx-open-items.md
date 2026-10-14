@@ -529,31 +529,16 @@ those products.
 
 **Conflict.** Arrangement XML has no component-state or expression-reference fields. The current B-rep and feature closure have no arrangement key. Active-name agreement supplies identity without component membership or suppression.
 
-### OM-14. Operation terminal discriminators
-
-**Question.** What does each type index, flag, and trailing index in an operation terminal discriminator lane mean?
-
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" defines the exact terminal discriminator lanes for the admitted operation payloads and retains their serialized order.
-
-**Need.** We must know the field roles to construct termination, direction, draft, and other operation controls.
-
-**Conflict.** The terminal lane supplies two compact indices, four flag bytes,
-and an ordered trailing-index lane. No serialized type definition, operation
-control declaration, or unique relation assigns those fields to a termination,
-direction, draft, or other semantic control. A link to an immediately
-preceding common frame establishes byte ownership only; it does not assign
-field roles.
-
 ### OM-15. `CPROJ` construction-reference roles
 
 **Question.** Which `CPROJ` construction references select the source curve, target surface, direction, and combination controls?
 
-**Known.** `siemens_nx.md` §7.1 "A `CPROJ` payload contains at most one construction-reference field framed as" defines the ordered three-reference graph, block resolution, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "A `CPROJ` construction-reference lane begins with" defines the complete counted reference lane, block resolution, and logical payload.
 
 **Need.** We must know the roles to construct a neutral projected curve.
 
-**Conflict.** The three references use one canonical encoding and resolve only
-to offset-store blocks. The fixed middle and suffix markers delimit the field,
+**Conflict.** The counted lane references use one canonical encoding and resolve only
+to offset-store blocks. The repeated header index and fixed suffix delimit the lane,
 but do not identify a source curve, target surface, direction, or combination
 control. Reconstructed strings remain payload-owned and have no independent
 role relation.
@@ -562,13 +547,13 @@ role relation.
 
 **Question.** Which `CPROJ_CMB` construction references select the source curves, target surfaces, directions, and combination controls?
 
-**Known.** `siemens_nx.md` §7.1 "A `CPROJ_CMB` payload contains at most one construction-reference graph framed as" defines the ordered eight-reference graph, block resolution, and logical payload.
+**Known.** `siemens_nx.md` §7.1 "A `CPROJ_CMB` payload contains at most one construction-reference graph framed as" defines both complete storage graphs, serialized reference occurrences, block resolution, and logical payload.
 
 **Need.** We must know the roles to construct the combined projected curves.
 
 **Conflict.** The branch lanes prove repeated-anchor equality and preserve
-branch order, while the tail preserves two additional references. All eight
-non-repeated references still resolve only to offset-store blocks; no field
+branch order, while the tail preserves two additional references. Repeated references select the same storage fragment. All reference
+occurrences still resolve only to offset-store blocks; no field
 marker assigns curve, surface, direction, or combination semantics.
 
 ### OM-17. `FSET` selection roles

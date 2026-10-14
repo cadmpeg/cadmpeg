@@ -542,9 +542,7 @@ pub(super) fn composed_feature_history_inputs() -> ComposedInputs {
         payload.extend([0; 4]);
         payload
     };
-    let projected_curve =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
-            .to_vec();
+    let projected_curve = projected_curve_payload();
     // SIMPLE HOLE: two identical scalar runs, each followed by two block-reference
     // tokens, then a canonical `Hole_...` template string.
     let simple_hole = {
@@ -1034,5 +1032,19 @@ pub(crate) fn size_framed_om_section_with_repeated_operations(count: usize) -> V
     }
     let payload_len = u32::try_from(bytes.len() - 16).expect("fixture value fits u32");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
+/// One complete N=2 projected storage lane from the byte contract.
+pub(crate) fn projected_curve_payload() -> Vec<u8> {
+    let mut bytes = vec![4, 0, 0, 1, 0, 0, 0];
+    bytes.extend_from_slice(&shifted_f64_bytes(4.0e-5));
+    bytes.extend([0, 0, 0, 1, 2, 0x80, 0x57, 0xff, 1, 2, 5]);
+    bytes.extend([
+        0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 1, 1, 0xff, 0xff, 1, 1, 1, 0, 0,
+    ]);
+    bytes.extend([
+        1, 2, 0xf1, 2, 0xc8, 0xf1, 2, 0xc9, 0x80, 0x57, 0, 2, 1, 0xf1, 2, 0xca, 0xff, 1, 2, 2, 0x7d,
+    ]);
     bytes
 }

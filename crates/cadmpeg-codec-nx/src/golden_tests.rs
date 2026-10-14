@@ -254,7 +254,6 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_operation_tagged_references",
     "feature_operation_records",
     "feature_operation_common_frames",
-    "feature_operation_terminal_discriminators",
     "feature_operation_terminal_frames",
     "feature_operation_state_journal_uses",
     "feature_unlabeled_operation_records",
@@ -1018,7 +1017,7 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 256, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 255, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()

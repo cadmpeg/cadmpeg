@@ -69,13 +69,12 @@ use super::features::construction_records::{
     feature_extrude_payload_headers, feature_extrude_profile_references,
     feature_operation_body_11_continuations, feature_operation_body_members,
     feature_operation_body_operands, feature_operation_body_reference_lanes,
-    feature_operation_body_scalar_triples, feature_operation_terminal_discriminators,
-    feature_point_construction_headers, feature_point_construction_scalar_lanes,
-    feature_projected_curve_construction_payloads, feature_projected_curve_construction_strings,
-    feature_projected_curve_references, feature_surface_construction_payloads,
-    feature_surface_construction_references, feature_surface_construction_scalar_pairs,
-    feature_surface_construction_strings, feature_swp104_leading_branches,
-    feature_thru_curve_construction_envelopes,
+    feature_operation_body_scalar_triples, feature_point_construction_headers,
+    feature_point_construction_scalar_lanes, feature_projected_curve_construction_payloads,
+    feature_projected_curve_construction_strings, feature_projected_curve_references,
+    feature_surface_construction_payloads, feature_surface_construction_references,
+    feature_surface_construction_scalar_pairs, feature_surface_construction_strings,
+    feature_swp104_leading_branches, feature_thru_curve_construction_envelopes,
 };
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
@@ -235,7 +234,6 @@ use crate::native::features::surface_branches::{
     feature_surface_construction_branches, FeatureSurfaceConstructionBranch,
 };
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
-use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use crate::native::features::thru_curve_branches::{
     feature_thru_curve_construction_branch_groups, FeatureThruCurveConstructionBranchGroup,
 };
@@ -377,8 +375,6 @@ pub(in crate::native) struct FeatureRecords {
     pub(super) feature_operation_tagged_references: Vec<FeatureOperationObjectReference>,
     pub(super) feature_operation_data_block_references: Vec<FeatureOperationObjectReference>,
     pub(super) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
-    pub(super) feature_operation_terminal_discriminators:
-        Vec<FeatureOperationTerminalDiscriminator>,
     pub(super) feature_operation_terminal_frames: Vec<FeatureOperationTerminalFrame>,
     pub(super) feature_operation_state_journal_uses: Vec<FeatureOperationStateJournalUse>,
     pub(super) feature_payload_strings: Vec<FeaturePayloadString>,
@@ -897,8 +893,6 @@ impl NativeModel {
             crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
         )?;
         let feature_operation_common_frames = feature_operation_common_frames(ctx, container)?;
-        let feature_operation_terminal_discriminators =
-            feature_operation_terminal_discriminators(ctx, container)?;
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(ctx, container, &feature_operation_common_frames)?;
         let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
@@ -1576,7 +1570,6 @@ impl NativeModel {
                 feature_operation_tagged_references,
                 feature_operation_data_block_references,
                 feature_operation_common_frames,
-                feature_operation_terminal_discriminators,
                 feature_operation_terminal_frames,
                 feature_operation_state_journal_uses,
                 feature_payload_strings,

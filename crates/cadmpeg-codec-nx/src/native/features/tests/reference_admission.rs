@@ -9,7 +9,6 @@ use crate::native::features::construction_records::feature_operation_body_11_con
 use crate::native::features::construction_records::feature_operation_body_members;
 use crate::native::features::construction_records::feature_operation_body_reference_lanes;
 use crate::native::features::construction_records::feature_operation_body_scalar_triples;
-use crate::native::features::construction_records::feature_operation_terminal_discriminators;
 use crate::native::features::construction_records::feature_point_construction_headers;
 use crate::native::features::construction_records::feature_point_construction_scalar_lanes;
 use crate::native::features::construction_records::feature_projected_curve_construction_payloads;
@@ -51,9 +50,7 @@ fn reference_container(
 }
 
 fn projected_curve_container() -> crate::container::Container<'static> {
-    let payload =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
-            .to_vec();
+    let payload = crate::test_support::test_om::projected_curve_payload();
     reference_container("CPROJ", payload)
 }
 
@@ -309,7 +306,6 @@ fn extrude_profile_join_refuses_work_limit() {
 
 #[derive(Clone, Copy)]
 enum OperationLaneRoute {
-    Terminal,
     ScalarTriple,
     BodyMember,
     Continuation,
@@ -322,8 +318,6 @@ fn operation_lane_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let (label, bytes, expected) = match route {
-        OperationLaneRoute::Terminal => ("EXTRUDE",
-            b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00".as_slice(), 1),
         OperationLaneRoute::ScalarTriple => ("TRIM BODY",
             b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00".as_slice(), 2),
         OperationLaneRoute::BodyMember => ("SEW",
@@ -337,9 +331,6 @@ fn operation_lane_refusal(
     };
     let container = reference_container(label, bytes.to_vec());
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
-        OperationLaneRoute::Terminal => {
-            feature_operation_terminal_discriminators(ctx, &container).map(|rows| rows.len())
-        }
         OperationLaneRoute::ScalarTriple => {
             feature_operation_body_scalar_triples(ctx, &container).map(|rows| rows.len())
         }
@@ -401,13 +392,6 @@ macro_rules! operation_lane_limit_tests {
     };
 }
 
-operation_lane_limit_tests!(
-    operation_terminal_refuses_collection_limit,
-    operation_terminal_refuses_retained_limit,
-    operation_terminal_refuses_scoped_limit,
-    operation_terminal_refuses_work_limit,
-    OperationLaneRoute::Terminal
-);
 operation_lane_limit_tests!(
     operation_scalar_triple_refuses_collection_limit,
     operation_scalar_triple_refuses_retained_limit,
@@ -703,9 +687,7 @@ fn point_header_refuses_work_limit() {
 }
 
 fn projected_curve_payload_container() -> crate::container::Container<'static> {
-    let payload =
-        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0"
-            .to_vec();
+    let payload = crate::test_support::test_om::projected_curve_payload();
     let mut store = (0..715).map(|_| b"A".as_slice()).collect::<Vec<_>>();
     store[712] = b"\x66\x32\x03\x05ABC\0";
     let part = crate::test_support::test_om::composed_feature_history_payload(

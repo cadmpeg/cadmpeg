@@ -59,7 +59,6 @@ pub(crate) mod extrude_profile;
 pub(crate) mod simple_hole_references;
 pub(crate) mod surface_branches;
 pub(crate) mod surface_envelope;
-pub(crate) mod terminal_discriminator;
 use branch_items::BranchItems;
 pub(crate) mod binary64_pair;
 pub(crate) mod name_field;

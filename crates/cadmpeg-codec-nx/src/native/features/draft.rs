@@ -676,9 +676,11 @@ pub(in crate::native) fn feature_draft_construction_references(
     container: &Container,
 ) -> Result<Vec<FeatureDraftConstructionReference>, cadmpeg_core::CodecError> {
     let references = resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::draft_references::draft_feature_payload_references(record)
-            .and_then(|field| field.relocate(base))
-            .map(|field| field.references().into_iter().collect())
+        Ok(
+            crate::om::draft_references::draft_feature_payload_references(record)
+                .and_then(|field| field.relocate(base))
+                .map(|field| field.references().into_iter().collect()),
+        )
     })?;
     let mut output = Vec::new();
     for reference in references {
