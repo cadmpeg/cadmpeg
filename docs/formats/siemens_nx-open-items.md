@@ -572,17 +572,13 @@ face or feature set assigns either group a selection role. Compact values that e
 
 ### OM-18. Pattern construction-reference roles
 
-**Question.** Which ordered references in `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` select the seed, transform, and pattern controls?
+**Question.** Which serialized relations assign seed, transform, and control roles within the logical pattern construction payload, separate counted reference lane, and `Geometry Instance` storage field?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the two construction graph framings, logical payload, and counted row forms.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." defines both graphs and their ordered logical payload. `siemens_nx.md` §7.1 "`Pattern Feature` payloads contain at most one counted reference lane." defines the separate counted lane. `siemens_nx.md` §7.1 "A `Geometry Instance` reference addresses one offset-store block." defines its storage target without an instance-record boundary.
 
-**Need.** We must know the roles to construct neutral pattern dependencies and transforms.
+**Need.** Identify the inner field framing, semantic target namespace, and relation to counted rows and operation inputs before constructing neutral pattern dependencies and transforms.
 
-**Conflict.** The graph layouts distinguish framing variants and preserve slot
-order, but every non-null reference uses the same object-index form. Repeated
-anchors, terminal slots, and the `Geometry Instance` one-reference form do not
-identify a seed, transform, or control family. No relation joins a graph slot
-to a transform row or an operation input with that role.
+**Conflict.** Graph slots address storage fragments. Physical block boundaries split inner fields, and a `Geometry Instance` target can begin or end inside a recurring inner frame. Graph slot order, repeated anchors, and terminal slots do not assign seed or transform roles. A counted reference can share an operation-input target without identifying that input as a seed or defining its relation to a transform row.
 
 ### OM-19. Pattern-row scalar roles
 
