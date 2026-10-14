@@ -72,10 +72,10 @@ impl RadiusSpec {
     /// Copy admitted fields through the caller's decode context.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        super::decode_clone::CloneForDecode::try_clone_for_decode(self, ctx, operation)
+        Ok(self.clone())
     }
 
     /// Returns whether the radius law lacks its required dimensions.
@@ -317,12 +317,11 @@ impl VariableRadii {
     /// Refused candidates are consumed; no sample collection is copied.
     pub fn try_map_radii<E>(
         mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
     ) -> Result<Result<Self, VariableRadiiMapError<E>>, cadmpeg_core::CodecError> {
         let mut positive = false;
         for point in &mut self.0 {
-            ctx.charge_work(1, "IR variable radii scaling work")?;
             point.radius = match map(point.radius) {
                 Ok(radius) => radius,
                 Err(error) => return Ok(Err(VariableRadiiMapError::Radius(error))),

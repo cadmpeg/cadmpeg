@@ -23,48 +23,25 @@ impl<'a> NativeEntity<'a> {
 
     /// The string members of this entity's links. A product record parses
     /// them from its text, so they are owned; source links are borrowed.
-    pub(crate) fn links<'ctx>(
-        self,
-        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<
-        impl Iterator<Item = Result<Cow<'a, str>, cadmpeg_core::CodecError>> + 'ctx,
-        cadmpeg_core::CodecError,
-    >
-    where
-        'a: 'ctx,
-    {
+    pub(crate) fn links(self) -> impl Iterator<Item = Cow<'a, str>> {
         let product = match self {
-            Self::Product(record) => {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(record.text_len()),
-                    "native link field lookup",
-                )?;
-                match record.field("links") {
-                    Some(serde_json::Value::Array(links)) => links,
-                    _ => Vec::new(),
-                }
-            }
+            Self::Product(record) => match record.field("links") {
+                Some(serde_json::Value::Array(links)) => links,
+                _ => Vec::new(),
+            },
             Self::Source(_) => Vec::new(),
         };
         let source = match self {
             Self::Source(record) => record.links(),
             Self::Product(_) => &[],
         };
-        Ok(product
+        product
             .into_iter()
-            .filter_map(
-                move |value| match ctx.charge_work(1, "native outgoing link scan") {
-                    Err(error) => Some(Err(error)),
-                    Ok(()) => match value {
-                        serde_json::Value::String(link) => Some(Ok(Cow::Owned(link))),
-                        _ => None,
-                    },
-                },
-            )
-            .chain(source.iter().map(move |text| {
-                ctx.charge_work(1, "native outgoing link scan")?;
-                Ok(Cow::Borrowed(text.as_str()))
-            })))
+            .filter_map(|value| match value {
+                serde_json::Value::String(link) => Some(Cow::Owned(link)),
+                _ => None,
+            })
+            .chain(source.iter().map(|text| Cow::Borrowed(text.as_str())))
     }
 }
 
@@ -112,37 +89,24 @@ impl<'a> NativeView<'a> {
     /// Visit native arenas in map order, replacing one unknown arena by source facts.
     pub(crate) fn visit<E>(
         self,
-        mut work: impl FnMut(usize) -> Result<(), E>,
         mut visit: impl FnMut(&'a str, &'a str, NativeArena<'a>) -> Result<(), E>,
     ) -> Result<(), E> {
         let mut pending = self.unknowns;
         for (format, namespace) in &self.ir.native.0 {
-            work(1)?;
             if let Some((replacement, records, order)) = pending {
-                work(format.len())?;
-                work(replacement.len())?;
                 if replacement < format.as_str() {
                     visit(replacement, "unknowns", NativeArena::Source(records, order))?;
                     pending = None;
                 }
             }
             for (arena, records) in namespace.arenas() {
-                work(1)?;
                 if let Some((replacement, sources, order)) = pending {
-                    work(format.len())?;
-                    work(replacement.len())?;
-                    work(arena.len())?;
-                    work("unknowns".len())?;
                     if replacement == format && "unknowns" <= arena.as_str() {
                         visit(replacement, "unknowns", NativeArena::Source(sources, order))?;
                         pending = None;
                     }
                 }
                 if let Some((replacement, _, _)) = self.unknowns {
-                    work(format.len())?;
-                    work(replacement.len())?;
-                    work(arena.len())?;
-                    work("unknowns".len())?;
                     if replacement == format && arena == "unknowns" {
                         continue;
                     }
@@ -150,8 +114,6 @@ impl<'a> NativeView<'a> {
                 visit(format, arena, NativeArena::Product(records))?;
             }
             if let Some((replacement, sources, order)) = pending {
-                work(format.len())?;
-                work(replacement.len())?;
                 if replacement == format {
                     visit(replacement, "unknowns", NativeArena::Source(sources, order))?;
                     pending = None;

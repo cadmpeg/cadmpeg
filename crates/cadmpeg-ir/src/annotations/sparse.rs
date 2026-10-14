@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transactions that copy only the identities selected for editing.
 
-use super::{
-    admit_identity_work, AnnotationBuilder, Annotations, ExactnessNote, FieldName, NonEmptyMap,
-};
+use super::{AnnotationBuilder, Annotations};
 use crate::provenance::Exactness;
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-/// A sparse copy of selected annotation identities with live temporary storage.
+/// A sparse copy of selected annotation identities.
 /// The base remains borrowed and unchanged until preparation succeeds.
 #[derive(Debug)]
 pub struct SparseAnnotationTransaction<'base, 'ctx> {
     base: &'base Annotations,
     changes: Annotations,
     selected: BTreeSet<String>,
-    storage: ScopedReservation<'ctx>,
     ctx: &'ctx DecodeContext<'ctx>,
 }
 
@@ -32,19 +29,17 @@ impl Annotations {
     pub fn sparse_transaction<'base, 'ctx>(
         &'base self,
         ctx: &'ctx DecodeContext<'ctx>,
-        operation: &'static str,
+        _operation: &'static str,
     ) -> Result<SparseAnnotationTransaction<'base, 'ctx>, CodecError> {
         Ok(SparseAnnotationTransaction {
             base: self,
             changes: Annotations::default(),
             selected: BTreeSet::new(),
-            storage: ctx.reserve_scoped(0, operation)?,
             ctx,
         })
     }
-    /// Admit owned complete replacements without copying the prior tables.
+    /// Prepare owned complete replacements without copying the prior tables.
     /// Entries absent from `changes` remain unchanged.
-    /// The owned storage in `changes` must already be admitted.
     pub fn prepare_overlay<'ctx>(
         &self,
         ctx: &'ctx DecodeContext<'ctx>,
@@ -52,26 +47,9 @@ impl Annotations {
         operation: &'static str,
     ) -> Result<PreparedAnnotationDelta, CodecError> {
         let mut transaction = self.sparse_transaction(ctx, operation)?;
-        transaction.storage.with_storage(|| {
-            for id in changes.provenance.keys().chain(changes.exactness.keys()) {
-                admit_identity_work(
-                    ctx,
-                    transaction.selected.len(),
-                    id.len(),
-                    3,
-                    "sparse annotation selection",
-                )?;
-                if !transaction.selected.contains(id) {
-                    let key = ctx.copy_retained_text(id, "sparse annotation selection")?;
-                    ctx.insert_btree_set(
-                        &mut transaction.selected,
-                        key,
-                        "sparse annotation selection",
-                    )?;
-                }
-            }
-            Ok::<_, CodecError>(())
-        })?;
+        for id in changes.provenance.keys().chain(changes.exactness.keys()) {
+            transaction.selected.insert(id.to_owned());
+        }
         transaction.changes = changes;
         transaction.prepare()
     }
@@ -88,44 +66,25 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
         &self.changes
     }
 
-    /// Copy one identity's annotations once, then edit them in temporary storage.
+    /// Copy one identity's annotations once, then edit them.
     /// The callback may change or remove only entries at `id`.
     fn edit<T, E: From<CodecError>>(
         &mut self,
         id: &str,
         apply: impl FnOnce(&mut Annotations) -> Result<T, E>,
     ) -> Result<T, E> {
-        let ctx = self.ctx;
-        admit_identity_work(
-            ctx,
-            self.selected.len(),
-            id.len(),
-            3,
-            "sparse annotation selection",
-        )?;
-        if !self.selected.contains(id) {
-            self.storage.with_storage(|| {
-                let key = ctx.copy_retained_text(id, "sparse annotation selection")?;
-                ctx.insert_btree_set(&mut self.selected, key, "sparse annotation selection")?;
-                copy_identity(ctx, self.base, &mut self.changes, id)
-            })?;
+        if self.selected.insert(id.to_owned()) {
+            copy_identity(self.base, &mut self.changes, id);
         }
-        self.storage.with_storage(|| apply(&mut self.changes))
+        apply(&mut self.changes)
     }
 
     pub(crate) fn select(&mut self, id: &str) -> Result<(), CodecError> {
         self.edit(id, |_| Ok::<_, CodecError>(()))
     }
 
-    pub(crate) fn selected(&self, id: &str) -> Result<bool, CodecError> {
-        admit_identity_work(
-            self.ctx,
-            self.selected.len(),
-            id.len(),
-            1,
-            "sparse annotation selection",
-        )?;
-        Ok(self.selected.contains(id))
+    pub(crate) fn selected(&self, id: &str) -> bool {
+        self.selected.contains(id)
     }
 
     /// Set a field override without copying other entity annotations.
@@ -165,22 +124,7 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
 
     /// Remove both annotation entries at one selected identity.
     pub fn remove_entity(&mut self, id: &str) -> Result<(), CodecError> {
-        let ctx = self.ctx;
         self.edit(id, |annotations| {
-            admit_identity_work(
-                ctx,
-                annotations.provenance.len(),
-                id.len(),
-                1,
-                "sparse annotation removal",
-            )?;
-            admit_identity_work(
-                ctx,
-                annotations.exactness.len(),
-                id.len(),
-                1,
-                "sparse annotation removal",
-            )?;
             annotations.provenance.remove(id);
             annotations.exactness.remove(id);
             Ok::<_, CodecError>(())
@@ -198,55 +142,8 @@ impl<'base> SparseAnnotationTransaction<'base, '_> {
         })
     }
 
-    /// Admit all destination nodes and retained storage before either table changes.
-    pub fn prepare(mut self) -> Result<PreparedAnnotationDelta, CodecError> {
-        let ctx = self.ctx;
-        let mut provenance_len = self.base.provenance.len();
-        let mut exactness_len = self.base.exactness.len();
-        for id in &self.selected {
-            admit_identity_work(
-                ctx,
-                self.changes.provenance.len(),
-                id.len(),
-                2,
-                "sparse annotation application",
-            )?;
-            admit_identity_work(
-                ctx,
-                self.changes.exactness.len(),
-                id.len(),
-                2,
-                "sparse annotation application",
-            )?;
-            admit_identity_work(
-                ctx,
-                provenance_len,
-                id.len(),
-                2,
-                "sparse annotation application",
-            )?;
-            admit_identity_work(
-                ctx,
-                exactness_len,
-                id.len(),
-                2,
-                "sparse annotation application",
-            )?;
-            self.storage.with_storage(|| {
-                if self.changes.provenance.contains_key(id) && !self.base.provenance.contains_key(id) {
-                    ctx.admit_btree_node_storage::<String, crate::provenance::AnnotationProvenance>(provenance_len, "sparse annotation application")?;
-                    ctx.charge_collection_items(1, "sparse annotation application")?;
-                    provenance_len += 1;
-                }
-                if self.changes.exactness.contains_key(id) && !self.base.exactness.contains_key(id) {
-                    ctx.admit_btree_node_storage::<String, ExactnessNote>(exactness_len, "sparse annotation application")?;
-                    ctx.charge_collection_items(1, "sparse annotation application")?;
-                    exactness_len += 1;
-                }
-                Ok::<_, CodecError>(())
-            })?;
-        }
-        self.storage.commit()?;
+    /// Finish the transaction before either table changes.
+    pub fn prepare(self) -> Result<PreparedAnnotationDelta, CodecError> {
         Ok(PreparedAnnotationDelta {
             changes: self.changes,
             selected: self.selected,
@@ -274,82 +171,13 @@ impl PreparedAnnotationDelta {
     }
 }
 
-fn copy_identity(
-    ctx: &DecodeContext<'_>,
-    base: &Annotations,
-    changes: &mut Annotations,
-    id: &str,
-) -> Result<(), CodecError> {
-    admit_identity_work(
-        ctx,
-        base.provenance.len(),
-        id.len(),
-        1,
-        "sparse annotation provenance lookup",
-    )?;
-    admit_identity_work(
-        ctx,
-        base.exactness.len(),
-        id.len(),
-        1,
-        "sparse annotation exactness lookup",
-    )?;
+fn copy_identity(base: &Annotations, changes: &mut Annotations, id: &str) {
     if let Some(source) = base.provenance.get(id) {
-        admit_identity_work(
-            ctx,
-            changes.provenance.len(),
-            id.len(),
-            2,
-            "sparse annotation provenance insertion",
-        )?;
-        let key = ctx.copy_retained_text(id, "sparse annotation provenance")?;
-        let source = source.try_clone_for_decode(ctx, "sparse annotation provenance")?;
-        ctx.insert_btree_map(
-            &mut changes.provenance,
-            key,
-            source,
-            "sparse annotation provenance",
-        )?;
+        changes.provenance.insert(id.to_owned(), source.clone());
     }
     if let Some(note) = base.exactness.get(id) {
-        admit_identity_work(
-            ctx,
-            changes.exactness.len(),
-            id.len(),
-            2,
-            "sparse annotation exactness insertion",
-        )?;
-        let key = ctx.copy_retained_text(id, "sparse annotation exactness")?;
-        let mut fields = BTreeMap::new();
-        for (field, value) in note.fields() {
-            admit_identity_work(
-                ctx,
-                fields.len(),
-                field.as_str().len(),
-                2,
-                "sparse annotation field insertion",
-            )?;
-            let field =
-                FieldName(ctx.copy_retained_text(field.as_str(), "sparse annotation fields")?);
-            ctx.insert_btree_map(&mut fields, field, *value, "sparse annotation fields")?;
-        }
-        let note = match note {
-            ExactnessNote::Entity { entity, .. } => ExactnessNote::Entity {
-                entity: *entity,
-                fields,
-            },
-            ExactnessNote::Fields { .. } => ExactnessNote::Fields {
-                fields: NonEmptyMap(fields),
-            },
-        };
-        ctx.insert_btree_map(
-            &mut changes.exactness,
-            key,
-            note,
-            "sparse annotation exactness",
-        )?;
+        changes.exactness.insert(id.to_owned(), note.clone());
     }
-    Ok(())
 }
 
 #[cfg(test)]

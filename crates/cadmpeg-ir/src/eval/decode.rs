@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry evaluation with caller-owned decode resource admission.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 use super::admission::{EvaluationAdmission, EvaluationDepthGuard, EvaluationRefusal};
 use super::{CurveDerivative, EvaluationFailure};
@@ -47,12 +47,11 @@ impl<T> std::ops::DerefMut for SupportValues<T> {
     }
 }
 
-/// Scratch admission shared by one evaluation and its recursive calls.
+/// Refusal state shared by one evaluation and its recursive calls.
 pub(super) struct Scratch<'ctx, 'arena> {
     pub(super) admission: EvaluationAdmission<'ctx, 'arena>,
     independent_depth: Cell<usize>,
-    storage: RefCell<Option<ScopedReservation<'ctx>>>,
-    refusal: RefCell<Option<EvaluationRefusal>>,
+    refusal: Cell<Option<EvaluationRefusal>>,
 }
 
 impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
@@ -60,8 +59,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         Self {
             admission: admission.into(),
             independent_depth: Cell::new(0),
-            storage: RefCell::new(None),
-            refusal: RefCell::new(None),
+            refusal: Cell::new(None),
         }
     }
 
@@ -69,28 +67,26 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         match result {
             Ok(value) => Some(value),
             Err(error) => {
-                let mut refusal = self.refusal.borrow_mut();
-                if !matches!(*refusal, Some(EvaluationRefusal::ResourceLimit(_))) {
-                    *refusal = Some(error.into());
+                if !matches!(
+                    self.refusal.get(),
+                    Some(EvaluationRefusal::ResourceLimit(_))
+                ) {
+                    self.refusal.set(Some(error.into()));
                 }
                 None
             }
         }
     }
 
-    /// The refusal recorded by an allocation, charge or evaluation. A session
+    /// The refusal recorded by a step or held by the admission. A session
     /// refusal takes precedence over an exhausted work slice.
     pub(super) fn refused(&self) -> Option<EvaluationRefusal> {
-        let recorded = *self.refusal.borrow();
+        let recorded = self.refusal.get();
         if let Some(EvaluationRefusal::ResourceLimit(limit)) = recorded {
             return Some(EvaluationRefusal::ResourceLimit(limit));
         }
-        let refusal = self
-            .admission
-            .work(0, "observe geometry evaluation refusal")
-            .err()
-            .or(recorded);
-        *self.refusal.borrow_mut() = refusal;
+        let refusal = self.admission.refusal().or(recorded);
+        self.refusal.set(refusal);
         refusal
     }
 
@@ -114,43 +110,22 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
             .map_or(result, |refusal| Err(EvaluationFailure::from(refusal)))
     }
 
-    pub(super) fn filled<T: Clone>(
-        &self,
-        count: usize,
-        value: T,
-        operation: &'static str,
-        work_operation: &'static str,
-    ) -> Option<Vec<T>> {
-        if self.refusal.borrow().is_some() {
-            return None;
-        }
-        let mut values = Vec::new();
-        self.reserve(&mut values, count, operation)?;
-        for _ in 0..count {
-            self.work(1, work_operation)?;
-            values.push(value.clone());
-        }
-        Some(values)
+    /// `count` copies of `value`, one work step each.
+    pub(super) fn filled<T: Clone>(&self, count: usize, value: T) -> Option<Vec<T>> {
+        self.work(count)?;
+        Some((0..count).map(|_| value.clone()).collect())
     }
 
-    pub(super) fn collect<T>(
-        &self,
-        values: impl IntoIterator<Item = Option<T>>,
-        operation: &'static str,
-        work_operation: &'static str,
-    ) -> Option<Vec<T>> {
-        if self.refusal.borrow().is_some() {
-            return None;
-        }
-        self.work(0, work_operation)?;
+    /// Collect present values, one work step per item drawn.
+    pub(super) fn collect<T>(&self, values: impl IntoIterator<Item = Option<T>>) -> Option<Vec<T>> {
+        self.work(0)?;
         let mut values = values.into_iter();
         let mut output = Vec::new();
         while values.size_hint() != (0, Some(0)) {
-            self.work(1, work_operation)?;
+            self.work(1)?;
             let Some(value) = values.next() else {
                 break;
             };
-            self.reserve(&mut output, 1, operation)?;
             output.push(value?);
         }
         Some(output)
@@ -160,107 +135,38 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
     pub(super) fn support_values<T: Copy + Default>(
         &self,
         values: impl ExactSizeIterator<Item = Option<T>>,
-        operation: &'static str,
-        work_operation: &'static str,
     ) -> Option<SupportValues<T>> {
         let len = values.len();
         if len > INLINE_SUPPORT {
-            return self
-                .collect(values, operation, work_operation)
-                .map(SupportValues::Heap);
+            return self.collect(values).map(SupportValues::Heap);
         }
-        self.work(0, work_operation)?;
+        self.work(0)?;
         let mut output = SupportValues::Inline {
             values: [T::default(); INLINE_SUPPORT],
             len,
         };
         for (index, value) in values.enumerate() {
-            self.work(1, work_operation)?;
+            self.work(1)?;
             output[index] = value?;
         }
         Some(output)
     }
 
-    pub(super) fn reserve<T>(
-        &self,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Option<()> {
-        self.work(0, operation)?;
-        match self.admission.context() {
-            Some(context) => {
-                let mut storage = self.storage.borrow_mut();
-                if storage.is_none() {
-                    *storage = Some(self.admit(context.reserve_scoped_limit(0, operation))?);
-                }
-                let reservation = storage.as_mut()?;
-                self.admit(context.reserve_scoped_vec_limit(reservation, values, count, operation))
-            }
-            None => self.admit(crate::geometry::nurbs::scratch::reserve_exact(
-                values, count, operation,
-            )),
-        }
+    /// Copy `source`, one work step per copied byte.
+    pub(super) fn copied<T: Copy>(&self, source: &[T]) -> Option<Vec<T>> {
+        self.work(std::mem::size_of_val(source))?;
+        Some(source.to_vec())
     }
 
-    /// Create exact temporary backing with its reservation held by the caller.
-    pub(super) fn temporary_vec<T>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Option<(Vec<T>, Option<ScopedReservation<'ctx>>)> {
-        self.work(0, operation)?;
-        let mut values = Vec::new();
-        let storage = match self.admission.context() {
-            Some(context) => {
-                Some(self.admit(context.reserve_temporary_vec(&mut values, count, operation))?)
-            }
-            None => {
-                self.admit(crate::geometry::nurbs::scratch::reserve_exact(
-                    &mut values,
-                    count,
-                    operation,
-                ))?;
-                None
-            }
-        };
-        Some((values, storage))
-    }
-
-    /// Copy retained output through the selected allocation and work policy.
-    pub(super) fn retained_copy<T: Copy>(
-        &self,
-        source: &[T],
-        operation: &'static str,
-    ) -> Option<Vec<T>> {
-        self.work(0, operation)?;
-        let mut values = Vec::new();
-        match self.admission.context() {
-            Some(context) => {
-                self.admit(context.reserve_vec_limit(&mut values, source.len(), operation))?;
-            }
-            None => self.admit(crate::geometry::nurbs::scratch::reserve_exact(
-                &mut values,
-                source.len(),
-                operation,
-            ))?,
-        }
-        for value in source {
-            self.work(std::mem::size_of::<T>(), operation)?;
-            values.push(*value);
-        }
-        Some(values)
-    }
-
-    pub(super) fn work(&self, count: usize, operation: &'static str) -> Option<()> {
-        if self.refusal.borrow().is_some() {
+    pub(super) fn work(&self, count: usize) -> Option<()> {
+        if self.refusal.get().is_some() {
             return None;
         }
-        self.admit(self.admission.work(u64_from_index(count), operation))
+        self.admit(self.admission.work(count))
     }
 
     pub(super) fn enter(&self) -> Option<EvaluationDepthGuard<'_>> {
-        if self.refusal.borrow().is_some() {
+        if self.refusal.get().is_some() {
             return None;
         }
         self.admit(self.admission.enter(&self.independent_depth))
@@ -442,42 +348,32 @@ pub fn pcurve_uv<'ctx, 'arena: 'ctx>(
 }
 
 /// Reusable point-evaluation storage for repeated parameters on one NURBS curve.
-/// The basis is admitted once; evaluations mutate that storage and borrow poles.
+/// The basis is allocated once; evaluations mutate that storage and borrow poles.
 pub struct NurbsPointEvaluator<'curve, 'ctx> {
     curve: &'curve NurbsCurve,
     basis: SupportValues<f64>,
-    _storage: Option<ScopedReservation<'ctx>>,
+    _ctx: std::marker::PhantomData<&'ctx ()>,
 }
 
 impl<'curve, 'ctx> NurbsPointEvaluator<'curve, 'ctx> {
-    /// Admit the basis storage before allocating it.
+    /// Allocate the basis storage for `curve`.
     pub fn new(
-        ctx: &'ctx DecodeContext<'_>,
+        _ctx: &'ctx DecodeContext<'_>,
         curve: &'curve NurbsCurve,
     ) -> Result<Self, ResourceLimit> {
         let support = curve.knots().len() - curve.pole_count();
-        let (basis, storage) = if support <= INLINE_SUPPORT {
-            (
-                SupportValues::Inline {
-                    values: [0.0; INLINE_SUPPORT],
-                    len: support,
-                },
-                None,
-            )
-        } else {
-            {
-                let mut basis = Vec::new();
-                let storage =
-                    ctx.reserve_temporary_vec(&mut basis, support, "IR B-spline basis")?;
-                ctx.charge_work_limit(u64_from_index(support), "IR B-spline basis work")?;
-                basis.extend(std::iter::repeat_n(0.0, support));
-                (SupportValues::Heap(basis), Some(storage))
+        let basis = if support <= INLINE_SUPPORT {
+            SupportValues::Inline {
+                values: [0.0; INLINE_SUPPORT],
+                len: support,
             }
+        } else {
+            SupportValues::Heap((0..support).map(|_| 0.0).collect())
         };
         Ok(Self {
             curve,
             basis,
-            _storage: storage,
+            _ctx: std::marker::PhantomData,
         })
     }
 

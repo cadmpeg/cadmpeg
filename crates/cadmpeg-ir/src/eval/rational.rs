@@ -22,7 +22,7 @@ impl<I: Iterator> Iterator for SumTerms<'_, '_, '_, I> {
             return None;
         }
         if self.input_sized {
-            self.scratch.work(1, "IR homogeneous pole traversal")?;
+            self.scratch.work(1)?;
         }
         self.terms.next()
     }
@@ -94,25 +94,24 @@ impl Homogeneous {
         values: &[Self],
     ) -> Result<Option<Vec<f64>>, EvaluationRefusal> {
         let result = (|| {
-            scratch.work(0, "IR homogeneous weight inspection")?;
+            scratch.work(0)?;
             for value in values {
-                scratch.work(1, "IR homogeneous weight inspection")?;
+                scratch.work(1)?;
                 value.values[3]?;
             }
             let mut output = Vec::new();
-            scratch.reserve(&mut output, values.len(), "IR homogeneous output weights")?;
             for value in values {
-                scratch.work(1, "IR homogeneous weight inspection")?;
+                scratch.work(1)?;
                 let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else {
                     break;
                 };
-                scratch.work(std::mem::size_of::<f64>(), "IR homogeneous weight copy")?;
+                scratch.work(std::mem::size_of::<f64>())?;
                 output.push(weight.get());
             }
             if output.len() == values.len() {
                 let mut normal = true;
                 for value in &output {
-                    scratch.work(1, "IR homogeneous weight inspection")?;
+                    scratch.work(1)?;
                     if !value.is_normal() {
                         normal = false;
                         break;
@@ -124,7 +123,7 @@ impl Homogeneous {
             }
             let mut bounds: Option<(i32, i32)> = None;
             for value in values {
-                scratch.work(1, "IR homogeneous weight inspection")?;
+                scratch.work(1)?;
                 let exponent = value.values[3]?.exponent();
                 bounds = Some(match bounds {
                     Some((minimum, maximum)) => (minimum.min(exponent), maximum.max(exponent)),
@@ -152,12 +151,12 @@ impl Homogeneous {
             };
             output.clear();
             for value in values {
-                scratch.work(1, "IR homogeneous weight inspection")?;
+                scratch.work(1)?;
                 let weight = value.values[3]
                     .and_then(|weight| weight.rescale(exponent))
                     .map(FiniteReal::get)
                     .filter(|weight| *weight != 0.0)?;
-                scratch.work(std::mem::size_of::<f64>(), "IR homogeneous weight copy")?;
+                scratch.work(std::mem::size_of::<f64>())?;
                 output.push(weight);
             }
             Some(output)

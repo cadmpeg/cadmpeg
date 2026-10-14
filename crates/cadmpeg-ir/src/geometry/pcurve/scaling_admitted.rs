@@ -42,12 +42,7 @@ impl PcurveGeometry {
     }
 }
 
-fn scale_pole(
-    ctx: &DecodeContext<'_>,
-    point: &mut FinitePoint2,
-    [u_scale, v_scale]: [f64; 2],
-) -> Result<(), ScalingError> {
-    ctx.charge_work(1, "IR pcurve pole coordinate scaling work")?;
+fn scale_pole(point: &mut FinitePoint2, [u_scale, v_scale]: [f64; 2]) -> Result<(), ScalingError> {
     let raw = point.get();
     *point = FinitePoint2::new(Point2::new(raw.u * u_scale, raw.v * v_scale))
         .ok_or("control_points contains a non-finite point")?;
@@ -59,7 +54,6 @@ fn scale_in_place(
     geometry: &mut PcurveGeometry,
     scales: [f64; 2],
 ) -> Result<(), ScalingError> {
-    ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
     let [u_scale, v_scale] = scales;
     let scale = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
     let isotropic = u_scale == v_scale;
@@ -134,12 +128,12 @@ fn scale_in_place(
             match &mut nurbs.poles {
                 PcurveNurbsPoles::Polynomial { points } => {
                     for point in points {
-                        scale_pole(ctx, point, scales)?;
+                        scale_pole(point, scales)?;
                     }
                 }
                 PcurveNurbsPoles::Rational { points } => {
                     for pole in points {
-                        scale_pole(ctx, &mut pole.point, scales)?;
+                        scale_pole(&mut pole.point, scales)?;
                     }
                 }
             }

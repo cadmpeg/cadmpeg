@@ -7,7 +7,7 @@
 //! text.
 
 use super::{canon, replay, NativeConvertError, NativeRecord, MAX_NATIVE_NESTING_DEPTH};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard};
+use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use serde::{ser, Serialize};
 use std::collections::BTreeSet;
 
@@ -41,28 +41,17 @@ impl<'a> Borrowed<'a> {
     }
     /// The members of this object, read in one scan, or `None` when this is
     /// not an object.
-    fn members(self, ctx: &DecodeContext<'_>) -> Result<Option<replay::MemberTexts<'a>>, Error> {
+    fn members(self) -> Option<replay::MemberTexts<'a>> {
         let Self::Text(json) = self else {
-            return Ok(None);
+            return None;
         };
-        let Some(count) = replay::member_count(json) else {
-            return Ok(None);
-        };
-        ctx.charge_work(u64_from_index(count), OPERATION)?;
         let mut members = Vec::new();
-        ctx.reserve_vec(&mut members, count, OPERATION)?;
-        Ok(replay::members(json, &mut members).then_some(members))
+        replay::members(json, &mut members).then_some(members)
     }
     fn elements(self) -> Option<replay::Elements<'a>> {
         match self {
             Self::Text(json) => replay::Elements::of(json),
             Self::Missing => None,
-        }
-    }
-    fn len(self) -> usize {
-        match self {
-            Self::Text(json) => json.len(),
-            Self::Missing => 0,
         }
     }
 }
@@ -91,16 +80,13 @@ pub(super) fn matches<T: Serialize + ?Sized>(
     actual: &NativeRecord,
     expected: &T,
 ) -> Result<bool, NativeConvertError> {
-    let (matched, _storage) = ctx.with_scoped_storage(OPERATION, || {
-        expected
-            .serialize(Matcher {
-                ctx,
-                actual: Borrowed::Text(&actual.json),
-                remaining: MAX_NATIVE_NESTING_DEPTH + 1,
-            })
-            .map_err(|error| error.into_native(ctx))
-    })?;
-    Ok(matched)
+    expected
+        .serialize(Matcher {
+            ctx,
+            actual: Borrowed::Text(&actual.json),
+            remaining: MAX_NATIVE_NESTING_DEPTH + 1,
+        })
+        .map_err(|error| error.into_native(ctx))
 }
 
 #[derive(Clone, Copy)]
@@ -111,7 +97,6 @@ struct Matcher<'a, 'arena> {
 }
 impl<'a, 'arena> Matcher<'a, 'arena> {
     fn container(self) -> Result<DepthGuard<'a>, Error> {
-        self.ctx.charge_work(1, OPERATION)?;
         if self.remaining == 0 {
             return Err(<Error as ser::Error>::custom(
                 super::nests_too_deep_message(),
@@ -131,7 +116,7 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
     }
     fn scalar(self, value: impl Serialize) -> Result<bool, Error> {
         let expected = value
-            .serialize(canon::CanonValue::for_record_with_sink(self.ctx, None))?
+            .serialize(canon::CanonValue::for_record(self.ctx))?
             .into_value();
         Ok(self.actual.renders(&expected))
     }
@@ -157,7 +142,7 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
         parent_matches: bool,
     ) -> Result<Object<'a, 'arena>, Error> {
         let nested = self.container()?;
-        let members = self.actual.members(self.ctx)?;
+        let members = self.actual.members();
         Ok(Object {
             matcher: self,
             matched: parent_matches && members.is_some(),
@@ -171,9 +156,8 @@ impl<'a, 'arena> Matcher<'a, 'arena> {
     }
     fn variant(self, variant: &'static str) -> Result<(Self, DepthGuard<'a>, bool), Error> {
         let outer = self.container()?;
-        self.ctx
-            .charge_work(u64_from_index(variant.len()), OPERATION)?;
-        let members = self.actual.members(self.ctx)?.unwrap_or_default();
+
+        let members = self.actual.members().unwrap_or_default();
         let payload = match members.as_slice() {
             [(key, payload)] if key == variant => Borrowed::Text(payload),
             _ => Borrowed::Missing,
@@ -216,11 +200,6 @@ impl<'a, 'arena> ser::Serializer for Matcher<'a, 'arena> {
         self.serialize_str(value.encode_utf8(&mut [0; 4]))
     }
     fn serialize_str(self, value: &str) -> Result<bool, Error> {
-        let work = u64_from_index(value.len()).checked_add(1).ok_or_else(|| {
-            self.ctx
-                .refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
-        self.ctx.charge_work(work, OPERATION)?;
         Ok(self.actual.renders(value))
     }
     fn serialize_bytes(self, value: &[u8]) -> Result<bool, Error> {
@@ -316,8 +295,7 @@ impl<'a, 'arena> ser::Serializer for Matcher<'a, 'arena> {
         inner.map(Some(outer), matched)
     }
     fn collect_str<T: std::fmt::Display + ?Sized>(self, value: &T) -> Result<bool, Error> {
-        // Canonical display serialization admits its growing string before writing.
-        let expected = canon::CanonValue::for_record_with_sink(self.ctx, None)
+        let expected = canon::CanonValue::for_record(self.ctx)
             .collect_str(value)?
             .into_value();
         Ok(expected.is_string() && self.actual.renders(&expected))
@@ -341,9 +319,7 @@ impl Sequence<'_, '_> {
             .map_or(Borrowed::Missing, Borrowed::Text);
         self.matched &= value
             .serialize(self.matcher.child(actual)?)
-            .map_err(|error| {
-                error.within(self.matcher.ctx, || Ok(canon::Step::Index(self.index)))
-            })?;
+            .map_err(|error| error.within(|| canon::Step::Index(self.index)))?;
         self.index = self
             .index
             .checked_add(1)
@@ -394,48 +370,23 @@ impl Object<'_, '_> {
                 .serialize(canon::CanonValue::within(
                     self.matcher.ctx,
                     self.matcher.remaining,
-                    None,
                 ))?
                 .into_value();
-            self.matcher
-                .ctx
-                .charge_work(u64_from_index(self.matcher.actual.len()), OPERATION)?;
+
             self.matched &= self.matcher.actual.parses_to(&expected);
-            self.matcher
-                .ctx
-                .insert_btree_set(&mut self.seen, key, OPERATION)?;
+            self.seen.insert(key);
             return Ok(());
         }
         let members = self.members.as_deref().unwrap_or_default();
-        let work = u64_from_index(key.len())
-            .checked_add(1)
-            .and_then(|bytes| bytes.checked_mul(u64_from_index(members.len())))
-            .ok_or_else(|| {
-                self.matcher
-                    .ctx
-                    .refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
-        self.matcher.ctx.charge_work(work, OPERATION)?;
+
         let actual = members
             .iter()
             .find(|(member, _)| *member == key)
             .map_or(Borrowed::Missing, |(_, value)| Borrowed::Text(value));
         self.matched &= value
             .serialize(self.matcher.child(actual)?)
-            .map_err(|error| {
-                error.within(self.matcher.ctx, || {
-                    self.matcher
-                        .ctx
-                        .copy_retained_text(&key, OPERATION)
-                        .map(canon::Step::Key)
-                        .map_err(Error::from)
-                })
-            })?;
-        if !self
-            .matcher
-            .ctx
-            .insert_btree_set(&mut self.seen, key, OPERATION)?
-        {
+            .map_err(|error| error.within(|| canon::Step::Key(key.clone())))?;
+        if !self.seen.insert(key) {
             return Err(<Error as ser::Error>::custom(
                 "duplicate native comparison key",
             ));
@@ -463,7 +414,6 @@ impl ser::SerializeMap for Object<'_, '_> {
         }
         self.key = Some(key.serialize(canon::CanonKey {
             ctx: self.matcher.ctx,
-            sink: None,
         })?);
         Ok(())
     }
@@ -484,7 +434,7 @@ macro_rules! objects {
             type Ok = bool;
             type Error = Error;
             fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), Error> {
-                self.field(self.matcher.ctx.copy_retained_text(key, OPERATION)?, value)
+                self.field(key.to_owned(), value)
             }
             fn end(self) -> Result<bool, Error> { self.finish() }
         })*
