@@ -2,9 +2,7 @@
 
 use std::io::{Cursor, Write as _};
 
-use cadmpeg_core::decode::{
-    ByteRange, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use cadmpeg_core::decode::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
 use zip::write::SimpleFileOptions;
@@ -476,7 +474,7 @@ fn local_names_keep_cp437_and_unicode_identity_and_reject_duplicates() {
 }
 
 #[test]
-fn recovery_preserves_nested_root_offsets_and_budget_refusals() {
+fn recovery_preserves_nested_root_offsets() {
     let local = local(b"one", b"first");
     let mut bytes = b"prefix".to_vec();
     bytes.extend_from_slice(&local);
@@ -493,32 +491,4 @@ fn recovery_preserves_nested_root_offsets_and_budget_refusals() {
         b"first"
     );
     assert_partition(&archive, &ctx, local.len());
-    for (dimension, operation) in [
-        (
-            ResourceDimension::CollectionItems,
-            "ZIP recovered name index",
-        ),
-        (ResourceDimension::WorkUnits, "ZIP recovery diagnostic"),
-        (ResourceDimension::RetainedBytes, "ZIP recovery diagnostic"),
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units =
-                    u64::try_from(local.len()).expect("fixture offset fits 64");
-            }
-            _ => policy.limits.max_retained_bytes = 0,
-        }
-        let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&local, &arena, &policy)
-            .expect("fixture fits root policy");
-        // Formatting the recovery diagnostic charges work before the local
-        // walk. The end-record scan exhausts this case's work allowance.
-        let result = ArchiveSnapshot::new(&ctx, root);
-        assert!(
-            matches!(&result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == operation),
-            "{dimension:?} at {operation}: {result:?}"
-        );
-    }
 }

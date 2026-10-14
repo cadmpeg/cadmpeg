@@ -39,9 +39,7 @@ fn zip_members_beyond_the_prefix_resolve_with_or_without_first_frame_damage() {
             }
             let prefix = &bytes[..crate::DETECTION_PREFIX_LEN];
             let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 256 * 1024;
-            policy.limits.max_collection_items = 32;
+            let policy = DecodePolicy::service();
             let (ctx, root) =
                 DecodeContext::from_root_bytes(prefix, &arena, &policy).expect("bounded prefix");
             let mut source = Cursor::new(&bytes);
@@ -68,8 +66,7 @@ fn zip_members_beyond_the_prefix_resolve_with_or_without_first_frame_damage() {
                 source.position(),
                 cadmpeg_core::decode::u64_from_index(prefix.len())
             );
-            ctx.finish_session()
-                .expect("probe preserves the resource policy");
+            ctx.finish_session().expect("session");
         }
     }
 }
@@ -146,7 +143,7 @@ fn directory_probe_reads_metadata_without_scanning_or_copying_a_large_payload() 
         inner: Cursor::new(bytes),
         read_bytes: 0,
     };
-    let (image, storage) = cadmpeg_container::ArchiveSnapshot::detection_image(&ctx, &mut source)
+    let image = cadmpeg_container::ArchiveSnapshot::detection_image(&ctx, &mut source)
         .expect("probe")
         .expect("metadata");
     assert!(image.len() < 1024);
@@ -158,6 +155,5 @@ fn directory_probe_reads_metadata_without_scanning_or_copying_a_large_payload() 
         |name| name == "preview.bin"
     )
     .expect("namespace"));
-    drop((image, storage));
     ctx.finish_session().expect("session");
 }

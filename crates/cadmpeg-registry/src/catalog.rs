@@ -7,7 +7,7 @@
 //! format at once — and it settles nothing about a dialect.
 //! [`crate::resolve_and_inspect_with`] opens the resolved container.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence, FormatId};
 
@@ -84,19 +84,15 @@ pub struct AmbiguousDetection {
 
 impl AmbiguousDetection {
     fn from_tie(
-        ctx: &DecodeContext<'_>,
         confidence: Confidence,
         first: FormatId,
         second: FormatId,
         rest: impl Iterator<Item = FormatId>,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             confidence,
-            candidates: ctx.collect_retained_vec(
-                [first, second].into_iter().chain(rest),
-                "detection tie candidates",
-            )?,
-        })
+            candidates: [first, second].into_iter().chain(rest).collect(),
+        }
     }
 
     /// Returns the confidence shared by the candidates.
@@ -240,36 +236,23 @@ impl InputCatalog {
     /// strongest candidate or tied candidates because loading and inspection
     /// need one resolution tier. The detected outcome retains a strongest-tier
     /// ambiguity.
-    /// Replaces `output`; the caller holds the returned reservation while the
-    /// candidate vector is live.
-    pub fn candidates<'catalog, 'ctx>(
-        &'catalog self,
-        ctx: &'ctx DecodeContext<'_>,
+    pub fn candidates(
+        &self,
+        ctx: &DecodeContext<'_>,
         prefix: View<'_>,
-        output: &mut Vec<(&'catalog dyn Codec, Confidence)>,
-    ) -> Result<ScopedReservation<'ctx>, CodecError> {
-        let (matches, storage) = ctx.with_scoped_storage("detection candidates", || {
-            let mut matches = Vec::new();
-            for descriptor in &self.descriptors {
-                ctx.charge_work(1, "detect catalog entry")?;
-                let Some(codec) = descriptor.codec() else {
-                    continue;
-                };
-                let confidence = codec.detect(ctx, prefix)?;
-                if confidence > Confidence::No {
-                    ctx.push_vec(&mut matches, (codec, confidence), "detection candidates")?;
-                }
+    ) -> Result<Vec<(&dyn Codec, Confidence)>, CodecError> {
+        let mut matches = Vec::new();
+        for descriptor in &self.descriptors {
+            let Some(codec) = descriptor.codec() else {
+                continue;
+            };
+            let confidence = codec.detect(ctx, prefix)?;
+            if confidence > Confidence::No {
+                matches.push((codec, confidence));
             }
-            ctx.stable_sort_by(
-                &mut matches,
-                |(_, left), (_, right)| right.cmp(left),
-                |_| 0,
-                "sort detection candidates",
-            )?;
-            Ok::<_, CodecError>(matches)
-        })?;
-        *output = matches;
-        Ok(storage)
+        }
+        matches.sort_by(|(_, left), (_, right)| right.cmp(left));
+        Ok(matches)
     }
 
     /// Detects a format without hiding equal-confidence ambiguity.
@@ -278,12 +261,7 @@ impl InputCatalog {
         ctx: &DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<DetectionOutcome<'_>, CodecError> {
-        let mut matches = Vec::new();
-        let _storage = self.candidates(ctx, prefix, &mut matches)?;
-        ctx.charge_work(
-            u64_from_index(matches.len()) * 2,
-            "select strongest detection",
-        )?;
+        let mut matches = self.candidates(ctx, prefix)?;
         let Some(best_confidence) = matches.iter().map(|(_, confidence)| *confidence).max() else {
             return Ok(DetectionOutcome::None);
         };
@@ -296,12 +274,11 @@ impl InputCatalog {
             },
             [(first, _), (second, _), rest @ ..] => {
                 DetectionOutcome::Ambiguous(AmbiguousDetection::from_tie(
-                    ctx,
                     best_confidence,
                     first.id(),
                     second.id(),
                     rest.iter().map(|(codec, _)| codec.id()),
-                )?)
+                ))
             }
         })
     }
@@ -340,7 +317,7 @@ impl InputCatalog {
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
             Err(_) => return initial,
         };
-        let Some((image, _storage)) = image else {
+        let Some(image) = image else {
             return initial;
         };
         match self.resolve_source(ctx, View::over_retained(&image), None) {
@@ -359,11 +336,6 @@ impl InputCatalog {
         prefix: View<'_>,
         forced: Option<ForcedInput>,
     ) -> Result<ResolvedSource<'a>, ResolveSourceError> {
-        ctx.charge_work(
-            u64_from_index(self.descriptors.len()),
-            "resolve input source",
-        )?;
-        ctx.charge_work(u64_from_index(prefix.window().len()), "detect CADIR prefix")?;
         match forced {
             Some(ForcedInput::Codec(native)) => {
                 let codec = self
@@ -410,46 +382,6 @@ pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
 mod tests {
     mod seekable;
     use super::{ForcedInput, InputCatalog, ResolvedSource};
-
-    #[test]
-    fn detection_candidates_keep_workspace_and_slot_refusals_typed() {
-        for dimension in [
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        ] {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            if dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes {
-                policy.limits.max_materialized_bytes = 0;
-            } else {
-                policy.limits.max_collection_items = 0;
-            }
-            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                b"PK\x03\x04",
-                &arena,
-                &policy,
-            )
-            .expect("root");
-            let catalog = InputCatalog::with_builtins();
-            let mut candidates = Vec::new();
-            assert!(matches!(catalog.candidates(&ctx, root, &mut candidates),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
-        }
-    }
-
-    #[test]
-    fn detection_propagates_work_refusal_before_catalog_scan() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = 0;
-        let (ctx, root) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(b"PK\x03\x04", &arena, &policy)
-                .expect("root");
-        let catalog = InputCatalog::with_builtins();
-        assert!(
-            matches!(catalog.detect(&ctx, root), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-        );
-    }
 
     fn resolve<'a>(
         catalog: &'a InputCatalog,
