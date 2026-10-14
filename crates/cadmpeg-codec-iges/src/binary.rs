@@ -1302,198 +1302,57 @@ pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn binary_start_text_refuses_retained_limit_before_append() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn parameter_card_refuses_an_unrenderable_directory_sequence() {
+        let mut output = Vec::new();
+        assert!(super::render_parameter_line(&mut output, b"116;", 100_000_000, 1).is_err());
+        assert!(output.is_empty());
+    }
 
+    #[test]
+    fn binary_text_helpers_render_fixed_ascii_fields() {
         let payload = primitive_string(b"ab", lengths());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("valid test fixture");
-        let result = super::normalize_start(&payload, lengths(), &ctx);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0
-                    && limit.additional == 8
-                    && limit.operation == "iges binary start text"
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
         assert_eq!(
-            super::normalize_start(&payload, lengths(), &ctx).expect("valid test fixture"),
+            super::normalize_start(&payload, lengths()).expect("valid test fixture"),
             b"ab"
         );
-    }
-
-    #[test]
-    fn binary_global_text_refuses_retained_limit_before_initial_copy() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let values: [super::BinaryValue; 24] = std::array::from_fn(|_| super::BinaryValue::Default);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
-        let result = super::normalize_global(&values, &ctx);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0
-                    && limit.additional == 8
-                    && limit.operation == "iges binary global text"
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
-        assert!(super::normalize_global(&values, &ctx).is_ok());
-    }
-
-    #[test]
-    fn binary_parameter_text_refuses_retained_limit_before_growth() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 5;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
-        let result = super::parameter_text(116, &[super::BinaryValue::Integer(1)], &ctx);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 3
-                    && limit.additional == 3
-                    && limit.operation == "iges binary parameter text"
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
+        assert!(super::normalize_global(&values).is_ok());
         assert_eq!(
-            super::parameter_text(116, &[super::BinaryValue::Integer(1)], &ctx)
+            super::parameter_text(116, &[super::BinaryValue::Integer(1)])
                 .expect("valid test fixture"),
             b"116,1;"
         );
-    }
-
-    #[test]
-    fn binary_rendered_string_refuses_retained_limit_before_copy() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
         let value = super::BinaryValue::String(b"ab".to_vec());
-        let result = super::render_parameter_value(&value, false, &ctx);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0
-                    && limit.additional == 8
-                    && limit.operation == "iges binary rendered string"
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
         assert_eq!(
-            super::render_parameter_value(&value, false, &ctx).expect("valid test fixture"),
+            super::render_parameter_value(&value, false).expect("valid test fixture"),
             b"2Hab"
         );
-    }
-
-    #[test]
-    fn binary_directory_index_refuses_collection_limit_before_insertion() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let mut values = std::array::from_fn(|_| super::BinaryValue::Default);
-        values[0] = super::BinaryValue::Integer(116);
-        values[1] = super::BinaryValue::Pointer(0);
-        let directory = [super::BinaryDirectory::new(1, values).expect("valid test fixture")];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
-        let result = super::normalize_directory_and_parameters(
-            &mut Vec::new(),
-            &directory,
-            Vec::new(),
-            &ctx,
-        );
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == 0
-                    && limit.additional == 1
-                    && limit.operation == "iges binary normalized directory index"
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
-        assert!(super::normalize_directory_and_parameters(
-            &mut Vec::new(),
-            &directory,
-            Vec::new(),
-            &ctx
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn parameter_card_refuses_an_unrenderable_directory_sequence() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("valid test fixture");
         let mut output = Vec::new();
-        assert!(super::render_parameter_line(&mut output, b"116;", 100_000_000, 1, &ctx).is_err());
-        assert!(output.is_empty());
-    }
-
-    #[test]
-    fn normalized_binary_card_refuses_retained_limit_before_append() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 80;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("valid test fixture");
-        let mut output = Vec::new();
-        let result = super::render_parameter_line(&mut output, b"116;", 1, 1, &ctx);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0
-                    && limit.additional == 81
-                    && limit.operation == "iges binary normalized card"
-        ));
-        assert!(output.is_empty());
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
-        super::render_parameter_line(&mut output, b"116;", 1, 1, &ctx).expect("valid test fixture");
+        super::render_parameter_line(&mut output, b"116;", 1, 1).expect("valid test fixture");
         assert_eq!(output.len(), 81);
+    }
+
+    #[test]
+    fn binary_implicit_repetition_repeats_a_string_value() {
+        let lengths = PrimitiveLengths {
+            single_integer: 8,
+            double_integer: 8,
+            single_exponent: 8,
+            single_fraction: 7,
+            double_exponent: 8,
+            double_fraction: 7,
+        };
+        let mut writer = BitWriter::default();
+        writer.control_repeat(false, 2, 6);
+        writer.string_part(b"ab", false, lengths);
+        let bytes = writer.bytes();
+        let mut stream = ValueStream::new(&bytes, lengths);
+        for _ in 0..2 {
+            assert_eq!(
+                stream.next().expect("valid test fixture"),
+                Some(BinaryValue::String(b"ab".to_vec()))
+            );
+        }
     }
 
     #[test]
@@ -1555,14 +1414,14 @@ mod tests {
 
     use super::{normalize, BinaryValue, PrimitiveLengths, ValueStream};
     use cadmpeg_core::decode::InspectOptions;
-    use cadmpeg_core::CodecError;
+
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
     const EPS_POINT: f64 = 1.0e-12;
 
     fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
-        crate::test_support::with_service_context(source, |ctx| normalize(source, ctx))
+        normalize(source)
     }
 
     #[derive(Debug, Default)]
@@ -1907,11 +1766,6 @@ mod tests {
             physical.integer(value, lengths.single_integer);
         }
         let physical_bytes = physical.bytes();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&physical_bytes, &arena, &policy)
-                .expect("test input fits service policy");
         let mut stream = ValueStream::new(&physical_bytes, lengths);
         assert_eq!(
             stream.next().expect("physical value"),
@@ -1944,127 +1798,6 @@ mod tests {
     }
 
     #[test]
-    fn binary_string_refuses_retained_limit_before_copy() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let lengths = PrimitiveLengths {
-            single_integer: 8,
-            double_integer: 8,
-            single_exponent: 8,
-            single_fraction: 7,
-            double_exponent: 8,
-            double_fraction: 7,
-        };
-        let mut writer = BitWriter::default();
-        writer.control(6);
-        writer.string_part(b"abc", false, lengths);
-        let bytes = writer.bytes();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths);
-        assert!(matches!(
-            stream.next(),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 0
-                    && limit.additional == 8
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths);
-        assert_eq!(
-            stream.next().expect("valid test fixture"),
-            Some(BinaryValue::String(b"abc".to_vec()))
-        );
-    }
-
-    #[test]
-    fn binary_repetition_refuses_collection_limit_before_queue_growth() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let lengths = PrimitiveLengths {
-            single_integer: 8,
-            double_integer: 8,
-            single_exponent: 8,
-            single_fraction: 7,
-            double_exponent: 8,
-            double_fraction: 7,
-        };
-        let mut writer = BitWriter::default();
-        writer.control_repeat(false, 3, 1);
-        writer.integer(7, lengths.single_integer);
-        let bytes = writer.bytes();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths);
-        assert!(matches!(
-            stream.next(),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == 1
-                    && limit.additional == 1
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths);
-        assert_eq!(
-            stream.next().expect("valid test fixture"),
-            Some(BinaryValue::Integer(7))
-        );
-    }
-
-    #[test]
-    fn binary_repeated_string_refuses_retained_limit_before_clone() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let lengths = PrimitiveLengths {
-            single_integer: 8,
-            double_integer: 8,
-            single_exponent: 8,
-            single_fraction: 7,
-            double_exponent: 8,
-            double_fraction: 7,
-        };
-        let mut writer = BitWriter::default();
-        writer.control_repeat(false, 2, 6);
-        writer.string_part(b"ab", false, lengths);
-        let bytes = writer.bytes();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 9;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths);
-        assert!(matches!(
-            stream.next(),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 8
-                    && limit.additional == 2
-                    && limit.operation == "iges binary repeated string"
-        ));
-
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("valid test fixture");
-        let mut stream = ValueStream::new(&bytes, lengths);
-        assert_eq!(
-            stream.next().expect("valid test fixture"),
-            Some(BinaryValue::String(b"ab".to_vec()))
-        );
-    }
-
-    #[test]
     fn binary_primitive_formats_decode_with_padding_and_substrings() {
         let lengths = PrimitiveLengths {
             single_integer: 8,
@@ -2089,11 +1822,6 @@ mod tests {
         writer.string_part(b"de", false, lengths);
         let bytes = writer.bytes();
 
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test input fits service policy");
         let mut stream = ValueStream::new(&bytes, lengths);
         assert_eq!(
             stream.next().expect("default value"),

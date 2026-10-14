@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -55,148 +54,12 @@ fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 }
 
 #[test]
-fn global_layout_card_refuses_retained_limit_before_allocation() {
-    let bytes = b"1H,,1H;,;";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 71;
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let result = crate::global::layout_global_cards(bytes, &ctx);
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0
-                && limit.additional == 72
-                && limit.operation == "iges global layout card bytes"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        crate::global::layout_global_cards(bytes, &ctx)
-            .unwrap()
-            .len(),
-        1
-    );
-}
-
-#[test]
-fn global_d_exponent_refuses_temporary_limit_before_normalization() {
-    let text = "1D+0";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy).unwrap();
-    let result = crate::global::parse_real_text(text, &ctx);
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.used == 0
-                && limit.additional == 4
-                && limit.operation == "iges global numeric text"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(text.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        crate::global::parse_real_text(text, &ctx)
-            .unwrap()
-            .unwrap()
-            .get(),
-        1.0
-    );
-}
-
-#[test]
-fn global_supplied_string_refuses_retained_limit_before_copy() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-    let resolution = crate::global::Resolution {
-        ctx: &ctx,
-        values: vec![crate::global::Value::String(b"abc".to_vec())],
-        losses: Vec::new(),
-    };
-    let result = resolution.supplied_string(0);
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0
-                && limit.additional == 3
-                && limit.operation == "iges global supplied string"
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::service()).unwrap();
-    let resolution = crate::global::Resolution {
-        ctx: &ctx,
-        values: vec![crate::global::Value::String(b"abc".to_vec())],
-        losses: Vec::new(),
-    };
-    assert!(matches!(
-        resolution.supplied_string(0).unwrap(),
-        crate::global::Supplied::Value(value) if value == "abc"
-    ));
-}
-
-#[test]
-fn global_loss_note_refuses_collection_limit_before_push() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut resolution = crate::global::Resolution {
-        ctx: &ctx,
-        values: Vec::new(),
-        losses: Vec::new(),
-    };
-    let result = resolution.charge(
-        IgesLossCode::GlobalMetadataFieldUnusable,
-        2,
-        crate::global::Defect::Malformed,
-        "its value was not transferred",
-    );
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 1
-                && limit.operation == "iges global loss notes"
-    ));
-    assert!(resolution.losses.is_empty());
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let mut resolution = crate::global::Resolution {
-        ctx: &ctx,
-        values: Vec::new(),
-        losses: Vec::new(),
-    };
-    resolution
-        .charge(
-            IgesLossCode::GlobalMetadataFieldUnusable,
-            2,
-            crate::global::Defect::Malformed,
-            "its value was not transferred",
-        )
-        .unwrap();
-    assert_eq!(resolution.losses.len(), 1);
-}
-
-#[test]
 fn global_field_source_locations_follow_72_byte_card_boundaries() {
     let first = [b'A'; CARD_DATA_COLUMNS];
     let second = [b'B'; CARD_DATA_COLUMNS];
     let bytes = fixed_ascii_with_global_cards(&[&first, &second]);
     assert_eq!(
-        crate::test_support::scan(&bytes)
+        crate::card::scan(&bytes)
             .unwrap()
             .section(crate::card::Section::Global)
             .count(),
@@ -217,67 +80,13 @@ fn global_field_source_locations_follow_72_byte_card_boundaries() {
 }
 
 #[test]
-fn global_stream_refuses_retained_limit_before_copy() {
-    let global = format!("{};", valid_global_fields().join(","));
-    let bytes = fixed_ascii_with_global(global.as_bytes());
-    let scan = crate::test_support::scan(&bytes).unwrap();
-    let card_bytes = scan.section(crate::card::Section::Global).count() * CARD_DATA_COLUMNS;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(card_bytes - 1).unwrap();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-
-    let error = crate::global::parse(&scan, &ctx).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
-    );
-
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &service).unwrap();
-    assert!(crate::global::parse(&scan, &ctx).is_ok());
-}
-
-#[test]
-fn global_fields_refuse_collection_limit_before_values() {
-    let global = format!("{};", valid_global_fields().join(","));
-    let bytes = fixed_ascii_with_global(global.as_bytes());
-    let scan = crate::test_support::scan(&bytes).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 25;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-
-    let error = crate::global::parse(&scan, &ctx).unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
 fn global_excess_fields_are_counted_without_retaining_values() {
     let mut fields = valid_global_fields();
     fields.extend(std::iter::repeat_n(String::new(), 1_000));
     let global = format!("{};", fields.join(","));
     let bytes = fixed_ascii_with_global(global.as_bytes());
-    let scan = crate::test_support::scan(&bytes).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 26;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = crate::global::parse(&scan, &ctx);
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 26
-                && limit.additional == 1
-                && limit.operation == "iges global loss notes"
-    ));
-
-    let arena = DecodeArena::new();
-    policy.limits.max_collection_items = 27;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let (_, losses) = crate::global::parse(&scan, &ctx).unwrap();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let (_, losses) = crate::global::parse(&scan).unwrap();
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains("1026 fields")));
@@ -313,7 +122,7 @@ fn global_hollerith_header_split_across_cards_is_a_field_defect() {
     );
     let bytes = fixed_ascii_with_global_chunks(&[b"1H,,1H;,7", tail.as_bytes()]);
     let (parsed, losses) =
-        crate::test_support::parse_global(&crate::test_support::scan(&bytes).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), None);
     assert_eq!(parsed.native_file_name(), Some("part.igs"));
@@ -334,7 +143,7 @@ fn global_numeric_field_and_delimiter_must_share_a_card() {
     global.extend_from_slice(b"1,;");
     let cards = global.chunks(CARD_DATA_COLUMNS).collect::<Vec<_>>();
     let (parsed, losses) = crate::test_support::parse_global(
-        &crate::test_support::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
+        &crate::card::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
     )
     .unwrap();
 
@@ -357,7 +166,7 @@ fn global_card_padding_is_ignored_outside_hollerith_values() {
         b"7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
     let (parsed, _) =
-        crate::test_support::parse_global(&crate::test_support::scan(&bytes).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), Some("product"));
     assert_eq!(parsed.native_file_name(), Some("part.igs"));
@@ -370,7 +179,7 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
         b",8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
     let (parsed, _) =
-        crate::test_support::parse_global(&crate::test_support::scan(&bytes).unwrap()).unwrap();
+        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), Some("ab "));
 }
@@ -506,7 +315,7 @@ fn omitted_delimiter_fields_select_the_specification_defaults() {
         b",1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
     ] {
         let (parsed, losses) =
-            crate::test_support::parse_global(&crate::test_support::scan(&fixed_ascii_with_global(global)).unwrap())
+            crate::test_support::parse_global(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
                 .unwrap();
 
         assert_eq!(parsed.parameter_delimiter, b',');
@@ -621,7 +430,7 @@ fn leading_global_padding_preserves_delimiters_and_field_values() {
             (line[CARD_DATA_COLUMNS] == b'G').then_some(&line[..CARD_DATA_COLUMNS])
         }));
         let (parsed, losses) = crate::test_support::parse_global(
-            &crate::test_support::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
+            &crate::card::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
         )
         .unwrap();
         assert_eq!(parsed.parameter_delimiter, b',');
@@ -674,5 +483,20 @@ fn empty_global_record_retains_independent_directory_and_source() {
     assert_eq!(
         recovered.ir().source.as_ref().unwrap().attributes["record_delimiter"],
         ";"
+    );
+}
+
+#[test]
+fn global_real_accepts_a_d_exponent() {
+    assert_eq!(crate::global::parse_real_text("1D+0").unwrap().get(), 1.0);
+}
+
+#[test]
+fn global_layout_fits_a_short_section_in_one_card() {
+    assert_eq!(
+        crate::global::layout_global_cards(b"1H,,1H;,;")
+            .unwrap()
+            .len(),
+        1
     );
 }
