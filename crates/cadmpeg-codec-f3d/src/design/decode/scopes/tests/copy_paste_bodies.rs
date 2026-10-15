@@ -63,7 +63,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
 }
 
 #[test]
-fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
+fn generated_copy_paste_bodies_decode_parameter_scopes() {
     let archive =
         crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(
             &[],

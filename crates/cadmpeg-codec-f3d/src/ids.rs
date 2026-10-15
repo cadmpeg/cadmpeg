@@ -1178,7 +1178,7 @@ mod tests {
     };
 
     #[test]
-    fn charged_native_id_matches_escaped_identity_bytes() {
+    fn native_scoped_id_matches_escaped_identity_bytes() {
         let scope = "A B:#%\u{2003}é";
         let actual = super::native_scoped_id(scope, "act-guid", 42);
         assert_eq!(actual, super::native_scoped_id(scope, "act-guid", 42));
@@ -1208,7 +1208,7 @@ mod tests {
     }
 
     #[test]
-    fn charged_history_input_ids_match_existing_identity_bytes() {
+    fn history_input_ids_match_composed_identity_bytes() {
         let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
         let prefix = super::history_input_prefix(&feature.key(), -3);
         assert_eq!(
@@ -1306,7 +1306,7 @@ mod tests {
     }
 
     #[test]
-    fn charged_appearance_ids_preserve_identity_text() {
+    fn appearance_ids_preserve_identity_text() {
         let visual = cadmpeg_ir::ids::IdentityKey::try_new("visual").unwrap();
         assert_eq!(
             super::appearance_id_charged(visual.as_str()).unwrap(),

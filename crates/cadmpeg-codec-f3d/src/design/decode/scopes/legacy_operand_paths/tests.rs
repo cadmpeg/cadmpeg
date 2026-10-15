@@ -93,7 +93,7 @@ fn path_fixture() -> Vec<u8> {
 }
 
 #[test]
-fn legacy_path_occurrence_guids_refuse_collection_limit() {
+fn legacy_path_keeps_both_occurrence_guids() {
     let bytes = path_fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = scope();

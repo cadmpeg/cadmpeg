@@ -36,7 +36,7 @@ fn path_bytes() -> Vec<u8> {
 }
 
 #[test]
-fn assembly_path_occurrences_refuse_collection_limit() {
+fn assembly_path_keeps_one_occurrence() {
     let bytes = path_bytes();
     let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link())
         .unwrap()
@@ -79,7 +79,7 @@ fn envelope_bytes(scope_record_index: u32) -> Vec<u8> {
 }
 
 #[test]
-fn assembly_path_spans_refuse_collection_limit() {
+fn assembly_path_span_keeps_its_record_index() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
         DesignFeatureKind::Assemble,

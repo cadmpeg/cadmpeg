@@ -1638,14 +1638,14 @@ fn numerical_0922b_wide_segment_incidence() {
     }
 }
 
-mod arrangement_allocation;
-mod certified_allocation;
+mod arrangement_routes;
+mod certified_boundaries;
+mod circular_regions;
 mod predicates;
-mod region_allocation;
 const EPS_CONTAINMENT_LINEAR: f64 = 1.0e-6;
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
-mod profile_limits;
+mod loop_containment;
 
 #[test]
 fn arrangement_cycle_work_admits_cubic_ring_bound() {

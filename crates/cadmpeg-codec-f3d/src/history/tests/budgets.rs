@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! History resource-budget unit tests.
+//! History binding work-estimate unit tests.
 #![allow(clippy::unwrap_used)]
 
 use crate::history::{

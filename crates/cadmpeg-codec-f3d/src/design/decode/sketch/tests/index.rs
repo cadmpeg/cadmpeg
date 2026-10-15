@@ -12,7 +12,7 @@ fn indexed_header(index: u32) -> [u8; 11] {
 }
 
 #[test]
-fn indexed_record_offsets_charge_each_key_and_offset() {
+fn indexed_record_offsets_list_each_offset_per_key() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&indexed_header(7));
     bytes.extend_from_slice(&indexed_header(7));
@@ -21,7 +21,7 @@ fn indexed_record_offsets_charge_each_key_and_offset() {
 }
 
 #[test]
-fn record_header_stream_charges_emitted_index_output_and_id() {
+fn record_header_stream_emits_one_identified_header() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&indexed_header(7));
     bytes.extend_from_slice(&indexed_header(7));
@@ -37,7 +37,7 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
 }
 
 #[test]
-fn entity_header_meta_scope_and_module_refuse_byte_limits() {
+fn entity_header_meta_scope_follows_the_bulk_stream() {
     let bulk_scope = crate::ids::native_scope("a/BulkStream.dat");
     let expected = crate::ids::native_scope("a/MetaStream.dat");
     let actual = entity_meta_scope(&bulk_scope).unwrap();

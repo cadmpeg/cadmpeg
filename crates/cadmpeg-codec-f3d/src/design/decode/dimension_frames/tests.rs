@@ -777,7 +777,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
 }
 
 #[test]
-fn companion_interval_refuses_foreign_scope_member_limit() {
+fn companion_interval_ends_before_a_foreign_scope_member() {
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
         0,
@@ -839,7 +839,7 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
 }
 
 #[test]
-fn dimension_annotation_interval_refuses_collection_limit() {
+fn dimension_annotation_interval_of_zero_bytes_has_no_frames() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 

@@ -69,7 +69,7 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 }
 
 #[test]
-fn surface_trim_output_refuses_identifier_and_collection_limits() {
+fn surface_trim_output_carries_its_scope_identifier() {
     const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let (bytes, mut scope) = surface_trim_selection_and_cell_table();
     scope.id = format!(

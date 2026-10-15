@@ -8,30 +8,30 @@
 
 mod body_selection;
 mod coil;
-mod direct_face_limits;
+mod direct_face;
 mod dispatcher;
 mod extrude;
-mod extrude_limits;
-mod hole_limits;
-mod loft_limits;
+mod extrude_fallbacks;
+mod hole;
+mod loft;
 mod mirror;
-mod native_scope_definition_limits;
+mod native_scope_definition;
 mod parameter_cycles;
 mod parameters;
 mod pattern;
 mod pipe;
 mod replace_face;
-mod revolve_limits;
-mod scope_properties_limits;
+mod revolve;
+mod scope_properties;
 mod sheet_metal;
 mod spatial_profiles;
 mod split;
 mod surface;
-mod sweep_limits;
+mod sweep;
 mod timeline;
 mod treatments;
-mod work_plane_limits;
-mod work_point_binding_limits;
+mod work_plane;
+mod work_point_binding;
 
 #[test]
 fn audit_regression_near_half_turn_retains_negative_axis() {

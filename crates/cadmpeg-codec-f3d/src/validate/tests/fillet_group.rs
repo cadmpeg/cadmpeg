@@ -7,7 +7,7 @@ fn native() -> crate::native::F3dNative {
             construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
         },
     };
-    let mut native = super::construction_group_limits::native(true, false);
+    let mut native = super::construction_group::native(true, false);
     native.design_parameter_scopes.clear();
     native
         .design_parameter_scopes

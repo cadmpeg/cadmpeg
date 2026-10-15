@@ -80,7 +80,7 @@ fn result_body_frame() -> (Vec<u8>, DesignParameterScope) {
 }
 
 #[test]
-fn base_feature_result_runs_refuse_each_collection_limit() {
+fn base_feature_result_runs_admit_three_bodies() {
     let (bytes, scope) = result_body_frame();
     let result = exact_base_feature_construction(&bytes, &scope)
         .unwrap()
@@ -176,7 +176,7 @@ fn snapshot_frame() -> (Vec<u8>, DesignParameterScope) {
 }
 
 #[test]
-fn base_feature_snapshot_bodies_refuse_collection_limit() {
+fn base_feature_snapshot_admits_two_bodies() {
     let (bytes, scope) = snapshot_frame();
     let result = exact_base_feature_construction(&bytes, &scope)
         .unwrap()

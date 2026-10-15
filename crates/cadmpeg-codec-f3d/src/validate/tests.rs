@@ -26,19 +26,19 @@ use crate::F3dCodec;
 
 mod arithmetic;
 mod component_occurrences;
-mod construction_group_limits;
-mod construction_identity_limits;
-mod edge_identity_limits;
-mod edge_treatment_vertex_limits;
-mod entity_limits;
-mod extrude_group_limits;
-mod extrude_member_limits;
-mod face_group_limits;
-mod face_operand_limits;
-mod fillet_group_limits;
-mod operand_group_carrier_limits;
-mod parameter_scope_limits;
-mod timeline_limits;
+mod construction_group;
+mod construction_identity;
+mod edge_identity;
+mod edge_treatment_vertex;
+mod entity_bindings;
+mod extrude_group;
+mod extrude_member;
+mod face_group;
+mod face_operand;
+mod fillet_group;
+mod operand_group_carrier;
+mod parameter_scope;
+mod timeline;
 
 fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
     crate::records::dimensions::DesignRecipeReference {

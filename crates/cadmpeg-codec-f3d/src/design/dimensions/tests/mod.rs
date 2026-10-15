@@ -48,7 +48,7 @@ fn project_spatial_dimension_constraints(
 mod numerical_ranges;
 mod parameter_iteration;
 
-mod relation_kind_limits;
+mod relation_kinds;
 
 #[test]
 fn planar_dimension_output_keeps_unplaced_constraints() {

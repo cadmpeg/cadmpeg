@@ -7,9 +7,9 @@
 )]
 
 mod construction;
-mod construction_budget;
+mod construction_candidates;
 mod face_sources;
-mod recipe_structure_limits;
+mod recipe_structures;
 mod recipes;
 mod selection;
 mod work_point;
