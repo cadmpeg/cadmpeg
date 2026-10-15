@@ -394,6 +394,11 @@ impl NativeRecord {
         self.id.as_str()
     }
 
+    /// Length of the stored canonical record text.
+    pub(crate) fn text_len(&self) -> usize {
+        self.json.len()
+    }
+
     /// Parse the codec-owned fields, excluding `id`.
     ///
     /// Each call builds a new [`Value`] tree from the stored text. Read one

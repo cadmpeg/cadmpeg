@@ -512,3 +512,48 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         assert_eq!(target, before);
     }
 }
+
+#[test]
+fn attached_unknown_record_retains_its_native_text_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let link = "synthetic:model:point#target";
+    let incoming = UnknownRecord::retained(id("bytes"), 0, vec![1, 2, 3, 4], vec![link.into()]);
+    let native_text = serde_json::to_vec(&serde_json::json!({
+        "id": id("bytes").as_str(),
+        "links": [link],
+    }))
+    .unwrap();
+    let needed = cadmpeg_core::decode::u64_from_index(native_text.len());
+    let attach = |limit: u64| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let mut fidelity = SourceFidelity::default();
+        let mut ir = CadIr::empty();
+        let result = fidelity.attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            vec![incoming.clone()],
+            &ctx,
+        );
+        (result, fidelity, ir)
+    };
+
+    let (result, fidelity, ir) = attach(needed);
+    result.expect("the record text fits the retained ceiling");
+    assert_eq!(fidelity.retained_records().len(), 1);
+    assert_eq!(ir.native_unknowns("synthetic").unwrap().len(), 1);
+
+    let (result, fidelity, ir) = attach(needed - 1);
+    let Err(CodecError::ResourceLimit(limit)) = result else {
+        panic!("a ceiling below the record's bytes must refuse");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "attach native unknown record");
+    assert_eq!(limit.additional, needed);
+    assert_eq!(fidelity, SourceFidelity::default());
+    assert_eq!(ir, CadIr::empty());
+}

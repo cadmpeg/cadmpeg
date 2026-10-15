@@ -15,8 +15,11 @@ use crate::native::NativeConvertError;
 use crate::provenance::SourceOwner;
 use crate::report::decode::DecodeReport;
 use crate::unknown::UnknownRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+
+/// Retained-byte operation for one appended native unknown record.
+const ATTACH_UNKNOWN_RECORD: &str = "attach native unknown record";
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -493,6 +496,15 @@ impl SourceFidelity {
                 "duplicate native unknown record {id}"
             ))
             .into());
+        }
+
+        // The native product text of each appended record bypasses the record
+        // serializer, so count it here, before either destination changes. The
+        // codec that copied the source bytes counted them at the copy.
+        for record in &native_records {
+            if retained.contains_key(record.id()) {
+                ctx.retain_bytes(u64_from_index(record.text_len()), ATTACH_UNKNOWN_RECORD)?;
+            }
         }
 
         let arena_name = "unknowns".to_owned();
