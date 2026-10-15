@@ -3,7 +3,7 @@
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
-use crate::design::feature_project::closed_spatial_sketch_profiles;
+use crate::design::feature_project::{closed_spatial_sketch_profiles, SPATIAL_PROFILE_SEARCH_WORK};
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::native_stream;
 use crate::records::{
@@ -502,6 +502,14 @@ pub(crate) fn project_sketch_design(
     Ok((sketches, entities))
 }
 
+/// Model-space spatial sketches projected from one Design.
+pub(crate) struct SpatialSketchDesign {
+    pub(crate) sketches: Vec<cadmpeg_ir::sketches::SpatialSketch>,
+    pub(crate) entities: Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
+    /// Losses of the projection, such as a capped profile search.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
 /// Project non-planar Design sketch curves into model-space spatial sketches.
 pub(crate) fn project_spatial_sketch_design(
     ctx: &DecodeContext<'_>,
@@ -511,13 +519,7 @@ pub(crate) fn project_spatial_sketch_design(
     surfaces: &[SketchSurface],
     relations: &[SketchRelation],
     linear_tolerance: f64,
-) -> Result<
-    (
-        Vec<cadmpeg_ir::sketches::SpatialSketch>,
-        Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<SpatialSketchDesign, cadmpeg_core::CodecError> {
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{
         SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
@@ -898,12 +900,21 @@ pub(crate) fn project_spatial_sketch_design(
         }
     }
     let mut sketches = Vec::new();
+    let mut capped_profile_searches = 0usize;
     for placement in placements {
         let id = crate::design::identity::neutral_spatial_sketch_id(placement)?;
         if !spatial_ids.contains(&id) {
             continue;
         }
-        let profiles = closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance)?;
+        let budget = cadmpeg_core::decode::WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK);
+        let profiles = if let Some(profiles) =
+            closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance, &budget)?
+        {
+            profiles
+        } else {
+            capped_profile_searches += 1;
+            Vec::new()
+        };
         let name = placement.entity_id.as_str().to_owned();
         let native_ref = placement.id.clone();
         sketches.push(SpatialSketch {
@@ -919,7 +930,17 @@ pub(crate) fn project_spatial_sketch_design(
         });
     }
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok((sketches, entities))
+    let mut losses = Vec::new();
+    if capped_profile_searches != 0 {
+        losses.push(crate::loss::F3dLossCode::SketchProfileSearchCapped.note(format!(
+            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded a local cap."
+        )));
+    }
+    Ok(SpatialSketchDesign {
+        sketches,
+        entities,
+        losses,
+    })
 }
 
 /// Project exact aggregate relations owned by model-space spatial sketches.

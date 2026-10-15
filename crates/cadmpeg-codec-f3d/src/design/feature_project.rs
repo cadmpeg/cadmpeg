@@ -4203,6 +4203,7 @@ fn merge_edge_selections(
             EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. }
         )
     }) {
+        let mut seen = HashSet::new();
         let mut resolved = Vec::new();
         for selection in selections {
             let (EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. }) = selection
@@ -4210,7 +4211,7 @@ fn merge_edge_selections(
                 return native();
             };
             for edge in edges {
-                if resolved.contains(edge) {
+                if !seen.insert(edge) {
                     return native();
                 }
                 resolved.push(edge.clone());
@@ -4227,13 +4228,14 @@ fn merge_edge_selections(
             EdgeSelection::Historical { state: candidate, .. } if candidate == state)
         }) {
             let state = state.clone();
+            let mut seen = HashSet::new();
             let mut resolved = Vec::new();
             for selection in selections {
                 let EdgeSelection::Historical { edges, .. } = selection else {
                     return native();
                 };
                 for edge in edges {
-                    if resolved.contains(edge) {
+                    if !seen.insert(edge) {
                         return native();
                     }
                     resolved.push(edge.clone());
@@ -4397,101 +4399,139 @@ pub(crate) fn direct_face_selection(
     Ok(Some(faces))
 }
 
+/// Local work cap for ordering the parameters of one owner scope.
+///
+/// Each ordering round scans every unresolved parameter and its dependencies,
+/// so a dependency chain makes the ordering quadratic in the scope's
+/// parameter count.
+const PARAMETER_ORDER_WORK: usize = 1 << 22;
+
 fn normalize_parameter_ordinals(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
 ) {
-    {
-        use cadmpeg_ir::features::{FeatureId, ParameterId};
+    let mut groups = HashMap::<Option<cadmpeg_ir::features::FeatureId>, Vec<usize>>::new();
+    for (index, parameter) in parameters.iter().enumerate() {
+        if let Some(indices) = groups.get_mut(&parameter.owner) {
+            indices.push(index);
+        } else {
+            let owner = parameter.owner.clone();
+            let indices = vec![index];
+            // discarded-value: a new owner group has no previous member list.
+            let _ = groups.insert(owner, indices);
+        }
+    }
+    for (owner, indices) in groups {
+        order_parameter_scope(
+            parameters,
+            owners,
+            owner.as_ref(),
+            &indices,
+            &cadmpeg_core::decode::WorkBudget::new(PARAMETER_ORDER_WORK),
+        );
+    }
+}
 
-        let mut groups = HashMap::<Option<FeatureId>, Vec<usize>>::new();
-        for (index, parameter) in parameters.iter().enumerate() {
-            if let Some(indices) = groups.get_mut(&parameter.owner) {
-                indices.push(index);
-            } else {
-                let owner = parameter.owner.clone();
-                let indices = vec![index];
-                // discarded-value: a new owner group has no previous member list.
-                let _ = groups.insert(owner, indices);
+/// Reassign the ordinals of one owner scope so each parameter follows its
+/// same-scope dependencies, breaking cycles at their lowest-ordinal member.
+///
+/// When the ordering exhausts `budget`, the scope keeps its source ordinals
+/// and loses its same-scope dependency edges, so the projection stays valid.
+/// Decode reports the dropped edges as unbound expression symbols.
+fn order_parameter_scope(
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
+    owner: Option<&cadmpeg_ir::features::FeatureId>,
+    indices: &[usize],
+    budget: &cadmpeg_core::decode::WorkBudget,
+) {
+    let mut ordinals = Vec::new();
+    for index in indices {
+        ordinals.push(parameters[*index].ordinal);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    let mut unresolved = HashSet::new();
+    for index in indices {
+        // discarded-value: each parameter index occurs once in its owner group.
+        let _ = unresolved.insert(*index);
+    }
+    let mut resolved = HashSet::<cadmpeg_ir::features::ParameterId>::new();
+    let mut order = Vec::new();
+    while !unresolved.is_empty() {
+        let mut ready = Vec::new();
+        for index in &unresolved {
+            let dependencies = &parameters[*index].dependencies;
+            // The round charge also covers the component search of a
+            // cycle-breaking round, which walks the same graph.
+            if !budget.charge_by(1 + dependencies.len()) {
+                break;
+            }
+            if dependencies.iter().all(|dependency| {
+                owners.get(dependency).map(Option::as_ref) != Some(owner)
+                    || resolved.contains(dependency)
+            }) {
+                ready.push(*index);
             }
         }
-        for (owner, indices) in groups {
-            let mut ordinals = Vec::new();
-            for index in &indices {
-                ordinals.push(parameters[*index].ordinal);
-            }
-            ordinals.sort_unstable_by(Ord::cmp);
-            let mut unresolved = HashSet::new();
+        if budget.exhausted() {
             for index in indices {
-                // discarded-value: each parameter index occurs once in its owner group.
-                let _ = unresolved.insert(index);
+                parameters[*index]
+                    .dependencies
+                    .retain(|dependency| owners.get(dependency).map(Option::as_ref) != Some(owner));
             }
-            let mut resolved = HashSet::<ParameterId>::new();
-            let mut order = Vec::new();
-            while !unresolved.is_empty() {
-                let mut ready = Vec::new();
-                for index in &unresolved {
-                    if parameters[*index].dependencies.iter().all(|dependency| {
-                        owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
-                    }) {
-                        ready.push(*index);
-                    }
-                }
-                ready.sort_by(|a, b| {
-                    let pa = &parameters[*a];
-                    let pb = &parameters[*b];
-                    pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
-                });
-                if ready.is_empty() {
-                    // Every blocked parameter has an unresolved dependency, so the
-                    // remaining graph contains a cycle. Break its lowest-ordinal
-                    // member, then resume ordering before selecting another cycle.
-                    let cycle = cyclic_parameter_components(parameters, &unresolved)
-                        .into_iter()
-                        .map(|(first, remaining)| {
-                            let breaker = remaining.iter().copied().fold(first, |best, index| {
-                                let candidate = &parameters[index];
-                                let current = &parameters[best];
-                                if (candidate.ordinal, &candidate.id)
-                                    < (current.ordinal, &current.id)
-                                {
-                                    index
-                                } else {
-                                    best
-                                }
-                            });
-                            (breaker, first, remaining)
-                        })
-                        .min_by(|(a, _, _), (b, _, _)| {
-                            let a = &parameters[*a];
-                            let b = &parameters[*b];
-                            (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
-                        });
-                    if let Some((breaker, first, remaining)) = cycle {
-                        let mut members = HashSet::new();
-                        for index in std::iter::once(first).chain(remaining) {
-                            let id = parameters[index].id.clone();
-                            // discarded-value: component indices are distinct.
-                            let _ = members.insert(id);
-                        }
-                        parameters[breaker]
-                            .dependencies
-                            .retain(|dependency| !members.contains(dependency));
-                    }
-                    continue;
-                }
-                for index in ready {
-                    unresolved.remove(&index);
-                    let id = parameters[index].id.clone();
-                    // discarded-value: a parameter is resolved once.
-                    let _ = resolved.insert(id);
-                    order.push(index);
-                }
-            }
-            for (index, ordinal) in order.into_iter().zip(ordinals) {
-                parameters[index].ordinal = ordinal;
-            }
+            return;
         }
+        ready.sort_by(|a, b| {
+            let pa = &parameters[*a];
+            let pb = &parameters[*b];
+            pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
+        });
+        if ready.is_empty() {
+            // Every blocked parameter has an unresolved dependency, so the
+            // remaining graph contains a cycle. Break its lowest-ordinal
+            // member, then resume ordering before selecting another cycle.
+            let cycle = cyclic_parameter_components(parameters, &unresolved)
+                .into_iter()
+                .map(|(first, remaining)| {
+                    let breaker = remaining.iter().copied().fold(first, |best, index| {
+                        let candidate = &parameters[index];
+                        let current = &parameters[best];
+                        if (candidate.ordinal, &candidate.id) < (current.ordinal, &current.id) {
+                            index
+                        } else {
+                            best
+                        }
+                    });
+                    (breaker, first, remaining)
+                })
+                .min_by(|(a, _, _), (b, _, _)| {
+                    let a = &parameters[*a];
+                    let b = &parameters[*b];
+                    (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
+                });
+            if let Some((breaker, first, remaining)) = cycle {
+                let mut members = HashSet::new();
+                for index in std::iter::once(first).chain(remaining) {
+                    let id = parameters[index].id.clone();
+                    // discarded-value: component indices are distinct.
+                    let _ = members.insert(id);
+                }
+                parameters[breaker]
+                    .dependencies
+                    .retain(|dependency| !members.contains(dependency));
+            }
+            continue;
+        }
+        for index in ready {
+            unresolved.remove(&index);
+            let id = parameters[index].id.clone();
+            // discarded-value: a parameter is resolved once.
+            let _ = resolved.insert(id);
+            order.push(index);
+        }
+    }
+    for (index, ordinal) in order.into_iter().zip(ordinals) {
+        parameters[index].ordinal = ordinal;
     }
 }
 
@@ -8150,18 +8190,28 @@ fn spatial_sketch_entity_endpoints(
     }
 }
 
+/// Local work cap for the closed-profile chain search of one spatial sketch.
+///
+/// Each chain step scans every unused open edge, so the search is quadratic
+/// in the sketch's open edges. An exhausted cap leaves the sketch with no
+/// derived profiles.
+pub(super) const SPATIAL_PROFILE_SEARCH_WORK: usize = 1 << 24;
+
+/// Closed profiles of one spatial sketch, or `None` when the chain search
+/// exhausts `budget`.
 pub(super) fn closed_spatial_sketch_profiles(
     ctx: &DecodeContext<'_>,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     tolerance: f64,
-) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchProfile>, CodecError> {
+    budget: &cadmpeg_core::decode::WorkBudget,
+) -> Result<Option<Vec<cadmpeg_ir::sketches::SpatialSketchProfile>>, CodecError> {
     use cadmpeg_ir::sketches::{
         SpatialSketchEntityUse, SpatialSketchGeometryDefinition, SpatialSketchProfile,
     };
 
     if !tolerance.is_finite() || tolerance <= 0.0 {
-        return Ok(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     let mut profiles = Vec::new();
     let mut edges = Vec::new();
@@ -8201,16 +8251,25 @@ pub(super) fn closed_spatial_sketch_profiles(
     for index in 0..edges.len() {
         unused.insert(index);
     }
-    while let Some(&first) = unused
-        .iter()
-        .min_by(|a, b| edges[**a].0.id().cmp(edges[**b].0.id()))
-    {
+    loop {
+        if !budget.charge_by(unused.len()) {
+            return Ok(None);
+        }
+        let Some(&first) = unused
+            .iter()
+            .min_by(|a, b| edges[**a].0.id().cmp(edges[**b].0.id()))
+        else {
+            break;
+        };
         unused.remove(&first);
         let mut uses = Vec::new();
         uses.push((first, false));
         let start = edges[first].1[0];
         let mut end = edges[first].1[1];
         while !close(end, start) {
+            if !budget.charge_by(unused.len()) {
+                return Ok(None);
+            }
             let mut candidate = None;
             let mut ambiguous = false;
             for &index in &unused {
@@ -8242,6 +8301,9 @@ pub(super) fn closed_spatial_sketch_profiles(
             } else {
                 edges[next.0].1[1]
             };
+        }
+        if !budget.charge_by(edges.len()) {
+            return Ok(None);
         }
         let start_degree = edges
             .iter()
@@ -8287,7 +8349,7 @@ pub(super) fn closed_spatial_sketch_profiles(
         }
     }
     profiles.sort_by(|a, b| a.boundary()[0].entity.cmp(&b.boundary()[0].entity));
-    Ok(profiles)
+    Ok(Some(profiles))
 }
 
 fn project_coil(
