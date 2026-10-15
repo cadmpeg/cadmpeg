@@ -173,7 +173,8 @@ fn pcurve_containment_finds_a_point_on_a_linear_pcurve() {
             None,
             Point2::new(0.5, 0.),
             0.,
-        ),
+        )
+        .expect("no session refusal"),
         Some(true)
     );
     ctx.finish_session().unwrap();

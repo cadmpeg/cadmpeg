@@ -610,8 +610,9 @@ fn project_all_dimension_constraints(
             if let Some(definition) = counted_definition {
                 return Some(Ok(definition));
             }
-            if let Some(definition) = exact_counted_dimension_relation(&locus_entities) {
-                return Some(Ok(definition));
+            if let Some(definition) = exact_counted_dimension_relation(&locus_entities).transpose()
+            {
+                return Some(definition);
             }
         }
         if let Some(definition) = dimension_resource!(radial_locus_dimension_definition(
@@ -5581,7 +5582,7 @@ const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
 
 fn exact_centered_entity_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
@@ -5609,53 +5610,53 @@ fn exact_centered_entity_relation(
     if let (Some(first_radius), Some(second_radius)) = (first_radius, second_radius) {
         let scale = 1.0 + first_radius.abs().max(second_radius.abs());
         if (first_radius - second_radius).abs() <= EPS_CENTERED_RELATION * scale {
-            return Some(Definition::Coradial {
+            return Some(Ok(Definition::Coradial {
                 first: (first.id()).clone(),
                 second: (second.id()).clone(),
-            });
+            }));
         }
     }
-    Some(Definition::Concentric {
+    Some(Ok(Definition::Concentric {
         first: (first.id()).clone(),
         second: (second.id()).clone(),
-    })
+    }))
 }
 
 fn exact_counted_dimension_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition, SketchLocus,
     };
 
-    if let Some(definition) = exact_centered_entity_relation(entities) {
-        return Some(definition);
+    if let Some(definition) = exact_centered_entity_relation(entities).transpose()? {
+        return Ok(Some(definition));
     }
     if let Some((first, second, axis)) = reflected_symmetry(entities) {
-        return Some(Definition::Symmetric {
+        return Ok(Some(Definition::Symmetric {
             first: SketchLocus::Entity((first.id()).clone()),
             second: SketchLocus::Entity((second.id()).clone()),
             axis: (axis.id()).clone(),
-        });
+        }));
     }
     let [first, second] = entities else {
-        return None;
+        return Ok(None);
     };
     if first.id() == second.id() {
-        return None;
+        return Ok(None);
     }
-    let point_on_geometry =
-        |point: &cadmpeg_ir::sketches::SketchEntity,
-         geometry: &cadmpeg_ir::sketches::SketchEntity| {
-            let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
-                return false;
-            };
-            point_lies_on_sketch_geometry(position.get(), &geometry.geometry)
+    let point_on_geometry = |point: &cadmpeg_ir::sketches::SketchEntity,
+                             geometry: &cadmpeg_ir::sketches::SketchEntity|
+     -> Result<bool, CodecError> {
+        let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
+            return Ok(false);
         };
-    if point_on_geometry(first, second) || point_on_geometry(second, first) {
-        return Some(Definition::Coincident {
+        point_lies_on_sketch_geometry(position.get(), &geometry.geometry)
+    };
+    if point_on_geometry(first, second)? || point_on_geometry(second, first)? {
+        return Ok(Some(Definition::Coincident {
             entities: vec![(first.id()).clone(), (second.id()).clone()],
-        });
+        }));
     }
     let (
         SketchGeometryDefinition::Line {
@@ -5668,7 +5669,7 @@ fn exact_counted_dimension_relation(
         },
     ) = (first.geometry.definition(), second.geometry.definition())
     else {
-        return None;
+        return Ok(None);
     };
     let first_direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let second_direction =
@@ -5680,7 +5681,7 @@ fn exact_counted_dimension_relation(
         || first_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
         || second_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
     {
-        return None;
+        return Ok(None);
     }
     let first_direction = Point2::new(
         first_direction.u / first_length,
@@ -5694,8 +5695,10 @@ fn exact_counted_dimension_relation(
         .u
         .mul_add(second_direction.v, -first_direction.v * second_direction.u);
     if cross.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 {
-        let signed_offset = parallel_line_offset(&first.geometry, &second.geometry)?;
-        return Some(
+        let Some(signed_offset) = parallel_line_offset(&first.geometry, &second.geometry) else {
+            return Ok(None);
+        };
+        return Ok(Some(
             if signed_offset.abs()
                 <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 * (1.0 + first_length)
             {
@@ -5709,28 +5712,30 @@ fn exact_counted_dimension_relation(
                     second: (second.id()).clone(),
                 }
             },
-        );
+        ));
     }
     let dot = first_direction
         .u
         .mul_add(second_direction.u, first_direction.v * second_direction.v);
-    (dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| {
-        Definition::Perpendicular {
-            first: (first.id()).clone(),
-            second: (second.id()).clone(),
-        }
-    })
+    (dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9)
+        .then(|| -> Result<_, CodecError> {
+            Ok(Definition::Perpendicular {
+                first: (first.id()).clone(),
+                second: (second.id()).clone(),
+            })
+        })
+        .transpose()
 }
 
 pub(super) fn point_lies_on_sketch_geometry(
     point: Point2,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
-) -> bool {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() {
         if curve.periodic() {
-            return false;
+            return Ok(false);
         }
         let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
             * (1.0 + point.u.abs().max(point.v.abs()));
@@ -5743,7 +5748,8 @@ pub(super) fn point_lies_on_sketch_geometry(
             point,
             tolerance,
         )
-        .unwrap_or(false);
+        .map(|contained| contained.unwrap_or(false))
+        .map_err(CodecError::ResourceLimit);
     }
 
     let close = |left: f64, right: f64| {
@@ -5753,7 +5759,7 @@ pub(super) fn point_lies_on_sketch_geometry(
                 <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     * (1.0 + left.abs().max(right.abs()))
     };
-    (|| match geometry.definition() {
+    Ok((|| match geometry.definition() {
         SketchGeometryDefinition::Point { position } => sketch_points_close(point, position.get()),
         SketchGeometryDefinition::Line { start, end } => {
             let direction = Point2::new(end.u - start.u, end.v - start.v);
@@ -5878,7 +5884,7 @@ pub(super) fn point_lies_on_sketch_geometry(
         | SketchGeometryDefinition::Text { .. }
         | SketchGeometryDefinition::ExternalReference { .. }
         | SketchGeometryDefinition::Native { .. } => false,
-    })()
+    })())
 }
 
 struct CountedOffset {
