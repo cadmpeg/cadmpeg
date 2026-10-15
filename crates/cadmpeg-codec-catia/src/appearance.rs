@@ -506,7 +506,7 @@ mod tests {
                                 None,
                             )
                         })
-                        .expect("service profile admits appearance transfer");
+                        .expect("transfer the appearance");
                         assert_eq!(
                             result.decoded_packets(),
                             all_face_count + body_packet_count,
@@ -530,7 +530,7 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 None
             ))
-            .expect("service profile admits appearance transfer"),
+            .expect("transfer the appearance"),
             TransferResult::default()
         );
         assert!(ir.model.appearances.is_empty());
@@ -545,7 +545,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -575,7 +575,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -608,7 +608,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -658,7 +658,7 @@ mod tests {
         crate::test_support::with_service_context(|ctx| {
             insert_source_binding(ctx, &mut ir, &packet)
         })
-        .expect("service profile admits appearance transfer");
+        .expect("insert source binding");
         let binding = ir
             .model
             .appearance_bindings
@@ -691,7 +691,7 @@ mod tests {
                 Some(&six_face_brep(rgba)),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -723,7 +723,7 @@ mod tests {
                 Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -756,7 +756,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -788,7 +788,7 @@ mod tests {
                 Some(&six_face_brep(rgba)),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -815,7 +815,7 @@ mod tests {
                 Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -865,7 +865,7 @@ mod tests {
                     Some(&brep),
                 )
             })
-            .expect("service profile admits appearance transfer");
+            .expect("transfer the appearance");
             assert_eq!(
                 (
                     result.decoded_packets(),
@@ -918,7 +918,7 @@ mod tests {
                 Some(&brep),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.decoded_packets(),
@@ -947,7 +947,7 @@ mod tests {
                 Some(&mismatched),
             )
         })
-        .expect("service profile admits appearance transfer");
+        .expect("transfer the appearance");
         assert_eq!(
             (
                 result.transferred_packets,
@@ -984,7 +984,7 @@ mod tests {
                 None,
             )
         })
-        .expect("service profile admits one appearance packet");
+        .expect("transfer the appearance");
         assert_eq!(admitted.decoded_packets(), 1);
     }
 }

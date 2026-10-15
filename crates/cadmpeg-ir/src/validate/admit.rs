@@ -299,7 +299,7 @@ mod tests {
     fn draft_core_agrees_with_full_on_freeze_fixtures() {
         let accepted = fixture(accepted_empty());
         assert!(super::super::validate_neutral(&accepted, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
         assert!(admit(
             &cadmpeg_test_support::service_decode_context(),
@@ -307,12 +307,12 @@ mod tests {
             DRAFT_CORE_CHECKS,
             Vec::new()
         )
-        .expect("resource allocation did not fail")
+        .expect("admit the model")
         .is_ok());
 
         let missing_point = fixture(rejected_missing_point("test:model").expect("valid identity"));
         assert!(!super::super::validate_neutral(&missing_point, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
         assert!(!admit(
             &cadmpeg_test_support::service_decode_context(),
@@ -320,13 +320,13 @@ mod tests {
             DRAFT_CORE_CHECKS,
             Vec::new()
         )
-        .expect("resource allocation did not fail")
+        .expect("admit the model")
         .is_ok());
 
         let missing_region =
             fixture(rejected_missing_region("test:model").expect("valid identity"));
         assert!(!super::super::validate_neutral(&missing_region, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
         assert!(!admit(
             &cadmpeg_test_support::service_decode_context(),
@@ -334,7 +334,7 @@ mod tests {
             DRAFT_CORE_CHECKS,
             Vec::new()
         )
-        .expect("resource allocation did not fail")
+        .expect("admit the model")
         .is_ok());
     }
 
@@ -347,7 +347,7 @@ mod tests {
             &[Check::Identity],
             Vec::new(),
         )
-        .expect("resource allocation did not fail");
+        .expect("admit the model");
         assert!(
             filtered.is_ok(),
             "referential_integrity must not reject under Identity-only set: {filtered:?}"
@@ -405,7 +405,7 @@ mod tests {
                 allowed,
                 Vec::new()
             )
-            .expect("resource allocation did not fail")
+            .expect("admit the model")
             .is_ok());
             assert!(!admit(
                 &cadmpeg_test_support::service_decode_context(),
@@ -413,7 +413,7 @@ mod tests {
                 allowed,
                 Vec::new()
             )
-            .expect("resource allocation did not fail")
+            .expect("admit the model")
             .is_ok());
         }
     }

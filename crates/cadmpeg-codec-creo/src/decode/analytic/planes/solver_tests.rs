@@ -34,7 +34,7 @@ fn orthogonal_planes() -> [CarrierEquation; 3] {
 
 #[test]
 fn carrier_solver_keeps_pair_and_triple_solutions() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         assert_eq!(
             solve_carriers_with_diagnostics(ctx, &tangent_pair())?.0,
             Some([0.0, 0.0, 1.0])

@@ -832,7 +832,7 @@ fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("test zero-entity support runs fit the service profile")
+    .expect("compute the zero entity support runs in range")
 }
 
 /// Decode support runs whose complete record population stays inside `range`.
@@ -2424,7 +2424,7 @@ mod tests {
         crate::test_support::with_service_context(|ctx| {
             model_curve_with_context(ctx, surface, pcurve, uv_endpoints, record, refusal)
         })
-        .expect("test model curve fits the service profile")
+        .expect("compute the model curve")
     }
 
     #[test]

@@ -1326,7 +1326,7 @@ fn a8_external_grid_surface_reads_nine_poles() {
         &header,
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service collection budget")
+    .expect("compute the A8 surface from external grid")
     .expect("unique external pole allocation");
     assert_eq!(surface.geometry.poles().len(), 9);
 }
@@ -1336,7 +1336,7 @@ fn a8_inline_pole_stream_decodes_one_surface() {
     let bytes = a8_surface_stream();
     let surfaces =
         crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
-            .expect("service collection budget");
+            .expect("compute the A8 surfaces");
     assert_eq!(surfaces.len(), 1);
 }
 

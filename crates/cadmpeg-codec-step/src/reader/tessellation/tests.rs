@@ -52,7 +52,7 @@ fn decode_tessellation_under_policy(
         &DecodePolicy::service(),
     )?;
     let geometry = super::super::geometry::decode(&exchange, &mut ir, &topology_ctx)
-        .expect("resource allocation did not fail")
+        .expect("decode the geometry")
         .0
         .value;
     let index = super::super::index::CarrierIndex::from_ir(&ir);
@@ -177,7 +177,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .message
         .contains("does not match transferred tessellation")));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -214,7 +214,7 @@ fn complex_tessellated_face_retains_its_surface_carrier() {
         Some("#7")
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -252,7 +252,7 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
         Some("step:data:body#38")
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -569,7 +569,7 @@ fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_c
         }
         let validation =
             cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
-                .expect("resource allocation did not fail");
+                .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1062,7 +1062,7 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
         Some("#7")
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#79")

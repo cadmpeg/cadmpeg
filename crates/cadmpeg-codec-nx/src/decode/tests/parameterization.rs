@@ -499,7 +499,7 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     );
     assert!(context.sides()[0].pcurve.is_some());
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -542,7 +542,7 @@ fn decode_binds_blend_ball_centre_spine() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -570,7 +570,7 @@ fn decode_resolves_forward_blend_support_reference() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -606,7 +606,7 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
     assert!(context.sides()[0].pcurve.is_some());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -636,7 +636,7 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -672,7 +672,7 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -729,7 +729,7 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     assert!(context.sides().iter().all(|side| side.pcurve.is_some()));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -751,7 +751,7 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     assert!(context.sides()[1].pcurve.is_some());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -1022,7 +1022,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         assert!(context.sides().iter().all(|side| side.pcurve.is_some()));
         assert!(
             cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     });
@@ -1095,7 +1095,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         assert!(context.sides().iter().all(|side| side.pcurve.is_some()));
         assert!(
             cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     });

@@ -92,7 +92,7 @@ fn mixed_round_sample_scan() -> crate::container::ContainerScan<'static> {
 fn mixed_round_samples_keep_family_order_under_service_policy() {
     let scan = mixed_round_sample_scan();
     let rows = scan.surfaces.rows.iter().collect::<Vec<_>>();
-    let samples = crate::decode::with_test_decode_ctx(|ctx| {
+    let samples = crate::decode::with_service_context(|ctx| {
         super::mixed_round_radius_samples(
             ctx,
             &scan,
@@ -101,7 +101,7 @@ fn mixed_round_samples_keep_family_order_under_service_policy() {
             &rows,
         )
     })
-    .expect("service profile admits mixed round samples")
+    .expect("compute the mixed round radius samples")
     .expect("both families resolve");
     assert_eq!(samples.len(), 2);
     assert_eq!(samples[0], 0.5);
@@ -113,7 +113,7 @@ fn round_sample_fixture_keeps_constant_radius_under_service_policy() {
     let scan = round_sample_scan();
     let ir = round_sample_ir();
     let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let (observed, placed, agrees, radius) = crate::decode::with_test_decode_ctx(|ctx| {
+    let (observed, placed, agrees, radius) = crate::decode::with_service_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
             super::round_observed_radii(&scan, 5),
             super::round_placed_cylinder_radii(&scan, &ir, &carriers, 5),
@@ -127,7 +127,7 @@ fn round_sample_fixture_keeps_constant_radius_under_service_policy() {
             super::round_constant_radius(ctx, &scan, &ir, &carriers, 5)?,
         ))
     })
-    .expect("service profile admits round samples");
+    .expect("sample the constant round radius");
     assert_eq!(observed, [0.5]);
     assert_eq!(placed, [0.5]);
     assert!(agrees);
@@ -405,7 +405,7 @@ fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
             ],
         )
     }
-    .expect("service profile admits slot midplanes");
+    .expect("compute the slot fillet cylinder");
 
     assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
     assert_eq!(cylinder.radius, 0.5);
@@ -889,7 +889,7 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+        crate::decode::with_service_context(|ctx| super::round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -957,7 +957,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     }
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+        crate::decode::with_service_context(|ctx| super::round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -985,7 +985,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+        crate::decode::with_service_context(|ctx| super::round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -997,7 +997,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     );
     ir.model.surfaces.pop();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+        crate::decode::with_service_context(|ctx| super::round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -1162,7 +1162,7 @@ fn torus_radius_samples_read_the_torus_radius() {
         });
     let rows = [&scan.surfaces.rows[0]];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::mixed_torus_radius_samples(ctx, &scan, &rows)
         })
         .expect("torus radius samples"),
@@ -1185,7 +1185,7 @@ fn legacy_round_dimension_supplies_constant_radius() {
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+        crate::decode::with_service_context(|ctx| super::round_constant_radius(
             ctx,
             &scan,
             &ir,
@@ -1210,7 +1210,7 @@ fn legacy_variable_round_dimension_withholds_radius() {
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::round_constant_radius(
+        crate::decode::with_service_context(|ctx| super::round_constant_radius(
             ctx,
             &scan,
             &ir,

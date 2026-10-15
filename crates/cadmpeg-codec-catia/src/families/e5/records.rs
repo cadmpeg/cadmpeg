@@ -994,7 +994,11 @@ mod tests {
             (jet.definition())
                 
                 .expect("valid rolling-ball jet fixture"),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().len() == 2 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]));
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet)
+                if jet.degree() == 5
+                && jet.stations().len() == 2
+                && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>()
+                == [6, 6]));
     }
 
     #[test]
@@ -1040,7 +1044,7 @@ mod tests {
             let mut bytes = Vec::new();
             append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
             let surfaces = e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
-                .expect("service resource budget");
+                .expect("compute the E5 surfaces");
             let [surface] = surfaces.as_slice() else {
                 panic!("E7 surface did not decode");
             };
@@ -1065,7 +1069,7 @@ mod tests {
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xe7, 116, &payload);
         assert!(e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
-            .expect("service resource budget")
+            .expect("compute the E5 surfaces")
             .is_empty());
     }
 

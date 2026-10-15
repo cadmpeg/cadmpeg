@@ -585,7 +585,7 @@ mod projected_brep_output_tests {
             &mut entities,
             &mut constraints,
         )
-        .expect("service policy admits the point sketch");
+        .expect("project B-rep");
         assert_eq!(sketches.len(), 1);
         assert_eq!(entities.len(), 1);
         assert_eq!(sketches[0].name.as_deref(), Some("point sketch"));

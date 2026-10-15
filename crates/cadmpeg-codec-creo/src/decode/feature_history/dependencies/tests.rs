@@ -159,7 +159,7 @@ fn reconciliation_ir_for_ordering() -> CadIr {
 fn feature_order_fixture_preserves_parent_before_child() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_for_ordering();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
     })
     .expect("feature ordering");
@@ -193,7 +193,7 @@ fn regeneration_scan() -> crate::container::ContainerScan<'static> {
 fn regeneration_fixture_preserves_parent_relation() {
     let scan = regeneration_scan();
     let mut ir = reconciliation_ir_for_ordering();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
     })
     .expect("regeneration parent");
@@ -206,7 +206,7 @@ fn regeneration_fixture_preserves_parent_relation() {
 fn reconciled_native_dependency_preserves_emitted_parent() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_emitted_parent();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::from([(10, vec![3])]))
     })
     .expect("native dependency reconciliation");

@@ -386,7 +386,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
             && loss.message.contains("2 object-graph field record(s)")
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation
         .findings
         .iter()

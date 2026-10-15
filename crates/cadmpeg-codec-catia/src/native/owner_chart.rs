@@ -666,7 +666,7 @@ mod tests {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace
                 .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-                .expect("service profile admits reference");
+                .expect("store the native arena");
         });
     }
 
@@ -717,7 +717,7 @@ mod tests {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace
                 .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-                .expect("service profile admits chart");
+                .expect("store the native arena");
         });
     }
 

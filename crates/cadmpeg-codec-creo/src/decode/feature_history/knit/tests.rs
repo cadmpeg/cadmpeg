@@ -129,7 +129,7 @@ fn feature_result_topology_emits_one_row_per_result_surface() {
         )),
         native_ref: None,
     });
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         super::emit_feature_result_topologies(ctx, &scan, &mut ir)
     })
     .expect("feature result topologies");
@@ -308,14 +308,14 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     );
     assert_eq!(
         feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
-            .expect("service profile admits the result topology")
+            .expect("compute the feature result topology")
             .expect("complete result topology")
             .faces(),
         vec!["surface#98", "surface#145"]
     );
     assert_eq!(
         feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
-            .expect("service profile admits the result topology")
+            .expect("compute the feature result topology")
             .expect("complete result topology")
             .edges(),
         vec!["curve#77"]

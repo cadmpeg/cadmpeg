@@ -48,10 +48,11 @@ fn endpoint_trail_ordering_stops_when_its_result_limit_is_exceeded() {
     let trails = (0..10).map(|edge| vec![edge]).collect::<Vec<_>>();
     crate::test_support::with_service_context(|ctx| {
         assert!(bounded_oriented_trail_orders(ctx, &trails, 16)
-            .expect("service budget")
+            .expect("compute the bounded oriented trail orders")
             .is_none());
         assert_eq!(
-            bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2).expect("service budget"),
+            bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2)
+                .expect("compute the bounded oriented trail orders"),
             Some(vec![vec![0, 1], vec![1, 0]])
         );
     });
@@ -62,7 +63,8 @@ fn endpoint_cycle_ordering_quotients_rotation_and_reversal() {
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
     crate::test_support::with_service_context(|ctx| {
         assert_eq!(
-            bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4).expect("service budget"),
+            bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
+                .expect("compute the bounded endpoint cycle orders"),
             Some(vec![vec![0, 1, 2]])
         );
     });
@@ -74,7 +76,7 @@ fn endpoint_cycle_ordering_stops_at_its_result_limit() {
     crate::test_support::with_service_context(|ctx| {
         assert!(
             bounded_endpoint_cycle_orders(ctx, &(0..8).collect::<Vec<_>>(), &candidates, 16)
-                .expect("service budget")
+                .expect("compute the bounded endpoint cycle orders")
                 .is_none()
         );
     });
@@ -284,22 +286,22 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
     assert_ne!(left_candidate, right_candidate);
     assert!(
         mesh_candidates_equivalent(&ctx, &left_candidate, &right_candidate, None)
-            .expect("service resource budget")
+            .expect("check mesh candidates equivalent")
     );
     let left = canonicalize_mesh_vertex_labels(&ctx, &left_candidate.0, &left_candidate.1)
-        .expect("service resource budget");
+        .expect("canonicalize mesh vertex labels");
     let right = canonicalize_mesh_vertex_labels(&ctx, &right_candidate.0, &right_candidate.1)
-        .expect("service resource budget");
+        .expect("canonicalize mesh vertex labels");
 
     assert_eq!(left, right);
     assert_eq!(left.expect("canonical topology").1, vec![0, 1]);
 
     let forward = canonicalize_mesh_vertex_labels(&ctx, &topology(0, 1), &[0, 1])
-        .expect("service resource budget");
+        .expect("canonicalize mesh vertex labels");
     let mut reversed = topology(0, 1);
     reversed.faces[0].boundaries[0].coedges[0].reversed = true;
-    let reversed =
-        canonicalize_mesh_vertex_labels(&ctx, &reversed, &[0, 1]).expect("service resource budget");
+    let reversed = canonicalize_mesh_vertex_labels(&ctx, &reversed, &[0, 1])
+        .expect("canonicalize mesh vertex labels");
     assert_eq!(forward, reversed);
 }
 
@@ -341,7 +343,8 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
     let right = (topology, vec![0, 1]);
 
     assert_ne!(left, right);
-    assert!(mesh_candidates_equivalent(&ctx, &left, &right, None).expect("service resource budget"));
+    assert!(mesh_candidates_equivalent(&ctx, &left, &right, None)
+        .expect("check mesh candidates equivalent"));
 }
 
 #[test]
@@ -403,7 +406,8 @@ fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
     let right = (right_topology, vec![0, 1, 2, 3]);
 
     assert_ne!(left, right);
-    assert!(mesh_candidates_equivalent(&ctx, &left, &right, None).expect("service resource budget"));
+    assert!(mesh_candidates_equivalent(&ctx, &left, &right, None)
+        .expect("check mesh candidates equivalent"));
 }
 
 #[test]
@@ -468,9 +472,8 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
     let left = (topology(false), vec![0, 1, 2]);
     let right = (topology(true), vec![0, 1, 2]);
 
-    assert!(
-        !mesh_candidates_equivalent(&ctx, &left, &right, None).expect("service resource budget")
-    );
+    assert!(!mesh_candidates_equivalent(&ctx, &left, &right, None)
+        .expect("check mesh candidates equivalent"));
 }
 
 #[test]
@@ -554,9 +557,8 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     let edge_candidates = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
     let edge_identity_evidence = [false, false];
 
-    assert!(
-        !mesh_candidates_equivalent(&ctx, &left, &right, None).expect("service resource budget")
-    );
+    assert!(!mesh_candidates_equivalent(&ctx, &left, &right, None)
+        .expect("check mesh candidates equivalent"));
     assert!(mesh_candidates_equivalent_with_gauge(
         &ctx,
         &left,
@@ -565,7 +567,7 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
         &edge_candidates,
         &edge_identity_evidence,
     )
-    .expect("service resource budget"));
+    .expect("compute the mesh candidates equivalent with gauge"));
 }
 
 #[test]
@@ -585,7 +587,7 @@ fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
     );
 
     assert!(!mesh_candidates_equivalent(&ctx, &invalid, &invalid, None)
-        .expect("service resource budget"));
+        .expect("check mesh candidates equivalent"));
 }
 
 #[test]
@@ -599,7 +601,7 @@ fn standard_face_population_ignores_shorter_fbb_marker_runs() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
-            .expect("service resource budget"),
+            .expect("compute the standard face count"),
         Some(3)
     );
 }
@@ -609,7 +611,7 @@ fn standard_face_population_accepts_flagged_fbb_rows() {
     let row = [0xb0, 0x04, 0x04, 0xff, 0x99, 0x1f, 0x1a, 0xd1];
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &row.repeat(6)))
-            .expect("service resource budget"),
+            .expect("compute the standard face count"),
         Some(6)
     );
 }
@@ -623,7 +625,7 @@ fn standard_face_population_rejects_equal_largest_fbb_runs() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
-            .expect("service resource budget"),
+            .expect("compute the standard face count"),
         None
     );
 }
@@ -634,7 +636,7 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
 
     let groups = crate::test_support::with_service_context(|ctx| standard_fbb_groups(ctx, &bytes))
-        .expect("service resource budget");
+        .expect("compute the standard FBB groups");
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
         let layout = fbb_population_layouts(&bytes)
@@ -645,19 +647,19 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
         let topology = crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::parse_standard(ctx, spine)
         })
-        .expect("service resource budget")
+        .expect("parse standard")
         .expect("complete group topology");
         group.face_count() == 1 && topology.face_count() == 1 && topology.edge_rows().len() == 4
     }));
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
-            .expect("service resource budget"),
+            .expect("compute the standard face count"),
         None
     );
     assert!(crate::test_support::with_service_context(|ctx| {
         crate::families::standard::fbb::parse_standard(ctx, &bytes)
     })
-    .expect("service resource budget")
+    .expect("parse standard")
     .is_none());
 }
 
@@ -701,19 +703,19 @@ fn standard_helpers_share_the_source_closed_face_population() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_face_count(ctx, &bytes))
-            .expect("service resource budget"),
+            .expect("compute the standard face count"),
         Some(1)
     );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| standard_edge_count(ctx, &bytes))
-            .expect("service resource budget"),
+            .expect("compute the standard edge count"),
         Some(4)
     );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             crate::solve::missing_edge::standard_edge_rows(ctx, &bytes)
         })
-        .expect("service resource budget")
+        .expect("compute the standard edge rows")
         .expect("selected edge table")
         .len(),
         4
@@ -722,7 +724,7 @@ fn standard_helpers_share_the_source_closed_face_population() {
         crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::parse_standard(ctx, &bytes)
         })
-        .expect("service resource budget")
+        .expect("parse standard")
         .expect("selected topology")
         .face_count(),
         1
@@ -780,11 +782,13 @@ fn two_trails_have_two_orders_and_a_triangle_has_one_cycle() {
         bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
     };
     assert_eq!(
-        crate::test_support::with_service_context(trail_run).expect("service budget"),
+        crate::test_support::with_service_context(trail_run)
+            .expect("compute the bounded oriented trail orders"),
         Some(vec![vec![0, 1], vec![1, 0]])
     );
     assert_eq!(
-        crate::test_support::with_service_context(cycle_run).expect("service budget"),
+        crate::test_support::with_service_context(cycle_run)
+            .expect("compute the bounded endpoint cycle orders"),
         Some(vec![vec![0, 1, 2]])
     );
 }

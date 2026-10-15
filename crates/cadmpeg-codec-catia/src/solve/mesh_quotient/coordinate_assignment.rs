@@ -647,7 +647,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 }
                                 affected_faces.insert(face);
                                 for endpoint in [left, right] {
-
                                     let degree = degrees.entry((face, endpoint)).or_default();
                                     let Some(next_degree) = degree.checked_add(1) else {
                                         return Ok(false);
@@ -700,10 +699,29 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 match domain {
                                     MeshFaceBoundaryDomain::Ordered(assignments) => {
                                         Ok(assignments.iter().any(|assignment| {
-                                            partial_ordered_assignment_viable(assignment, local_edge_by_id, edges, domains, assigned, Some((root, *point)), work_budget)
+                                            partial_ordered_assignment_viable(
+                                                assignment,
+                                                local_edge_by_id,
+                                                edges,
+                                                domains,
+                                                assigned,
+                                                Some((root, *point)),
+                                                work_budget,
+                                            )
                                         }))
                                     }
-                                    _ => partial_compact_assignment_viable(ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain, local_edge_by_id, edges, global_edge_count: edge_candidates.len(), assigned, candidate: (root, *point), budget: work_budget }),
+                                    _ => partial_compact_assignment_viable(
+                                        ctx,
+                                        PartialCompactAssignmentViableInputs {
+                                            domain,
+                                            local_edge_by_id,
+                                            edges,
+                                            global_edge_count: edge_candidates.len(),
+                                            assigned,
+                                            candidate: (root, *point),
+                                            budget: work_budget,
+                                        },
+                                    ),
                                 }
                             })?;
                         if !boundaries_viable {
@@ -1612,7 +1630,7 @@ mod tests {
                 },
             )
         })
-        .expect("service budget");
+        .expect("check partial compact assignment viable");
         assert!(viable);
     }
 
@@ -1642,7 +1660,7 @@ mod tests {
                 },
             )
         })
-        .expect("service budget");
+        .expect("check partial compact assignment viable");
         assert!(viable);
     }
 
@@ -1672,8 +1690,19 @@ mod tests {
         let arena = DecodeArena::new();
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
-            .expect("fixture fits the service profile");
-        assert!(partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 2, assigned: &assigned, candidate: (0, 0), budget: None })
-        .expect("service budget"));
+            .expect("build the decode context");
+        assert!(partial_compact_assignment_viable(
+            &ctx,
+            PartialCompactAssignmentViableInputs {
+                domain: &domain,
+                local_edge_by_id: &edge_by_id,
+                edges: &edges,
+                global_edge_count: 2,
+                assigned: &assigned,
+                candidate: (0, 0),
+                budget: None
+            }
+        )
+        .expect("check partial compact assignment viable"));
     }
 }

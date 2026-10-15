@@ -80,7 +80,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     assert_eq!(references, vec![state_id.as_str()]);
 
     assert!(!validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -103,7 +103,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
         *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
     });
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {
@@ -188,7 +188,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert_eq!(
         report
             .findings
@@ -284,7 +284,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         native_ref: None,
     });
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     for fragment in [
         "does not precede",
         "missing output body",
@@ -349,7 +349,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         });
     }
     ir.finalize();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report
         .findings
         .iter()
@@ -414,7 +414,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         });
     }
     let findings = validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(findings
         .iter()
@@ -484,7 +484,7 @@ fn document_parameters_can_feed_feature_parameters() {
     });
     ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .is_empty());
 }
@@ -537,7 +537,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     ));
     ir.finalize();
 
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(!report
         .findings
         .iter()
@@ -552,7 +552,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
                 distance: Length::new(5.0).unwrap(),
             },
         ));
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report
         .findings
         .iter()
@@ -646,7 +646,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
 
     let message = "generated termination vertex is invalid";
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -676,7 +676,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     });
     ir.model.features[1].dependencies.insert(source.clone());
     assert!(!validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -686,7 +686,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source.as_str()
     );
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message == configuration_message));
@@ -697,7 +697,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .expect("configured extrude");
     state.dependencies.insert(source);
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 
@@ -761,14 +761,14 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         seed.as_str()
     );
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message == message));
 
     ir.model.features[1].dependencies.insert(seed);
     assert!(!validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message == message));
@@ -940,7 +940,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     });
 
     let findings = validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .into_iter()
         .map(|finding| finding.message)
@@ -982,7 +982,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         .expect("block-instance state")
         .dependencies
         .insert(block);
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
 
@@ -1059,7 +1059,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         native_ref: None,
     });
 
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.is_empty(), "{:?}", report.findings);
     ir.model.features[1].evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -1075,7 +1075,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         .unwrap();
     });
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message == "generated body selection is invalid"));
@@ -1138,7 +1138,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     });
     ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     assert_eq!(
         serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
@@ -1146,7 +1146,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     );
 
     ir.model.assets.clear();
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message.contains("reference-image asset")
@@ -1199,6 +1199,6 @@ fn decals_require_valid_assets_faces_and_opacity() {
     });
     ir.finalize();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }

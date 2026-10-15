@@ -103,7 +103,7 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     assert_eq!(rational.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(rational.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -162,7 +162,7 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -197,7 +197,7 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
         Some(vec![1.0, 0.5, 1.0, 0.5, 1.0, 1.0])
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -273,7 +273,7 @@ fn deferred_surface_dependencies_resolve_independent_of_record_order() {
         .any(|surface| surface.id.as_str() == "step:data:surface#7"));
     assert_eq!(result.ir().model.bodies.len(), 1);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

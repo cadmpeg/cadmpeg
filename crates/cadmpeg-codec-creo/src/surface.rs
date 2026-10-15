@@ -6882,7 +6882,7 @@ fn complete_plane_local_system_slots(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
-    crate::decode::with_test_decode_ctx(|ctx| complete_plane_local_system(ctx, body, cache))
+    crate::decode::with_service_context(|ctx| complete_plane_local_system(ctx, body, cache))
         .expect("plane local system fits service limits")
         .map(|(slots, _)| slots.get())
 }

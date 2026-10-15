@@ -22,7 +22,7 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         attach_free_vertices(&mut ir, &mut annotations, &mut admission)
     })
-    .expect("service profile admits free vertex owner");
+    .expect("attach free vertices");
     assert_eq!(ir, before);
     assert_eq!(annotations.build(), AnnotationBuilder::new().build());
 }
@@ -33,7 +33,7 @@ fn standard_surface_entity_limit_refuses_before_first_surface_append() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_entities = 1;
@@ -95,7 +95,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         attach_free_vertices(&mut ir, &mut annotations, &mut admission)
     })
-    .expect("service profile admits free vertex owner");
+    .expect("attach free vertices");
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.regions.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
@@ -163,7 +163,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
             &[(0..138).collect()],
         )
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
     assert_eq!(choices[0].len(), 9_453);
     assert_eq!(choices[0].first(), Some(&[0, 1]));
@@ -247,7 +247,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
             &[vec![0, 1, 2, 3]],
         )
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 1]]]);
@@ -315,7 +315,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
     let choices = crate::test_support::with_service_context(|ctx| {
         resolve_standard_endpoint_pairs(ctx, &ir, &bindings, &indices, &[support], &[vec![0, 1]])
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 0], [0, 1], [1, 1]]]);
@@ -396,7 +396,7 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
             &[vec![0, 1, 2, 3], vec![0, 1, 2, 3]],
         )
     })
-    .expect("service budget")
+    .expect("resolve standard endpoint pairs")
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 2], [1, 3]], vec![[0, 2], [1, 3]]]);
@@ -542,7 +542,7 @@ fn free_vertices_attach_to_a_shell() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         attach_free_vertices(&mut ir, &mut AnnotationBuilder::new(), &mut admission)
     })
-    .expect("service context admits the free vertex");
+    .expect("attach free vertices");
     assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
 }
 
@@ -563,7 +563,7 @@ fn extrusion_support_adds_one_surface_and_support_entry() {
             &mut admission,
         )
     })
-    .expect("service context admits support");
+    .expect("compute the standard extrusion support ID");
     assert_eq!(surfaces.len(), 1);
     assert_eq!(supports.len(), 1);
 }
@@ -613,7 +613,7 @@ fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
             &mut admission,
         )
     })
-    .expect("service context admits the standard face");
+    .expect("attach standard faces");
     assert_eq!(ir.model.faces[0].id.as_str(), "catia:standard:face#0");
     assert_eq!(ir.model.bodies[0].id.as_str(), "catia:standard:body#0");
     assert_eq!(ir.model.regions[0].id.as_str(), "catia:standard:region#0-0");
@@ -642,7 +642,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
             &mut admission,
         )
     })
-    .expect("service context admits the initial face");
+    .expect("attach standard faces");
     let mut second = base_ir.model.faces[0].clone();
     second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
     ({
@@ -655,7 +655,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
             cadmpeg_ir::Exactness::ByteExact,
         )
     })
-    .expect("service profile admits second face annotation");
+    .expect("annotate the entity");
     base_ir.model.faces.push(second);
     let components = [vec![0], vec![1]];
     let result = crate::test_support::with_service_context(|ctx| {
@@ -667,7 +667,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
             &mut admission,
         )
     })
-    .expect("service context admits partitioned faces");
+    .expect("partition standard face components");
     assert!(result);
     assert_eq!(base_ir.model.regions.len(), 2);
     assert_eq!(

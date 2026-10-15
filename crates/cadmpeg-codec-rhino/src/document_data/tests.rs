@@ -82,7 +82,7 @@ fn document_metadata_projection_succeeds_under_service_profile() {
     )
     .expect("root bytes admitted");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    install(&ctx, &scan, &mut ir).expect("service profile admits metadata projection");
+    install(&ctx, &scan, &mut ir).expect("install the document metadata");
     let rhino = ir
         .native
         .namespace("rhino")

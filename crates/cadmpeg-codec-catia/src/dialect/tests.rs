@@ -83,7 +83,7 @@ fn fixture_bytes(name: &str) -> Vec<u8> {
 fn classify_service(
     scan: &crate::container::ContainerScan<'_>,
 ) -> cadmpeg_core::dialect::DialectMatch {
-    classify(scan).expect("service budget admits CATIA dialect declaration")
+    classify(scan).expect("classify the dialect")
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
         let scan = crate::test_support::with_service_context(|ctx| {
             container::scan_bytes(ctx, bytes.as_slice())
         })
-        .expect("service resource budget");
+        .expect("scan the container");
         let matched = classify_service(&scan);
 
         assert_eq!(matched.format(), FORMAT, "{}", witness.fixture);
@@ -120,7 +120,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         let scan = crate::test_support::with_service_context(|ctx| {
             container::scan_bytes(ctx, bytes.as_slice())
         })
-        .expect("service resource budget");
+        .expect("scan the container");
         let matched = classify_service(&scan);
         let charged = dialect_loss(&matched).is_some();
 
@@ -179,7 +179,7 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
     let scan = crate::test_support::with_service_context(|ctx| {
         container::scan_bytes(ctx, bytes.as_slice())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     let matched = classify_service(&scan);
 
     assert_eq!(matched.declared()[DECLARED_VERSION], "5");
@@ -201,7 +201,7 @@ fn an_absent_declaration_leaves_the_identity_intact() {
         let scan = crate::test_support::with_service_context(|ctx| {
             container::scan_bytes(ctx, bytes.as_slice())
         })
-        .expect("service resource budget");
+        .expect("scan the container");
         let matched = classify_service(&scan);
         assert_eq!(
             matched.declared().is_empty(),
@@ -223,7 +223,7 @@ fn outer_body_catpart_declares_version_5() {
     let scan = crate::test_support::with_service_context(|ctx| {
         container::scan_bytes(ctx, bytes.as_slice())
     })
-    .expect("service budget admits version fixture");
+    .expect("scan the container");
     let matched = classify_service(&scan);
     assert_eq!(matched.declared()[DECLARED_VERSION], "5");
 }

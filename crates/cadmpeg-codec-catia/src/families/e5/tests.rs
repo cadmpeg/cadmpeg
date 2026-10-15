@@ -47,7 +47,7 @@ fn e5_circle_parser_reads_framed_carrier() {
     }
     let surfaces =
         crate::families::e5::records::e5_surfaces(&stream, &mut crate::nurbs::LaneRefusals::new())
-            .expect("service resource budget");
+            .expect("compute the E5 surfaces");
     assert!(
         matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.5 })
     );
@@ -59,7 +59,7 @@ fn e5_circle_parser_reads_framed_carrier() {
         &small,
         &mut crate::nurbs::LaneRefusals::new()
     )
-    .expect("service resource budget")
+    .expect("compute the E5 surfaces")
     .is_empty());
 
     let mut zero = e5_circle_stream();
@@ -69,7 +69,7 @@ fn e5_circle_parser_reads_framed_carrier() {
         &zero,
         &mut crate::nurbs::LaneRefusals::new()
     )
-    .expect("service resource budget")
+    .expect("compute the E5 surfaces")
     .is_empty());
 }
 
@@ -326,7 +326,7 @@ fn e5_surface_parser_reads_framed_torus() {
         &e5_torus_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service resource budget");
+    .expect("compute the E5 surfaces");
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -349,13 +349,15 @@ fn e5_surface_parser_reads_framed_torus() {
     let mut large = e5_torus_stream();
     large[110..118].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[118..126].copy_from_slice(&1_500_000.0_f64.to_le_bytes());
-    assert!(
-        matches!(crate::families::e5::records::e5_surfaces(&large, &mut crate::nurbs::LaneRefusals::new()).expect("service resource budget")[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-        if {
-            (torus_surface.major_radius().get() == 2_000_000.0)
-                && (torus_surface.minor_radius().get() == 1_500_000.0)
-        })
-    );
+    assert!(matches!(
+        crate::families::e5::records::e5_surfaces(
+            &large, &mut crate::nurbs::LaneRefusals::new()
+        ).expect("compute the E5 surfaces")[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
+    if {
+        (torus_surface.major_radius().get() == 2_000_000.0)
+            && (torus_surface.minor_radius().get() == 1_500_000.0)
+    }));
 
     let mut tiny = e5_torus_stream();
     tiny[110..118].copy_from_slice(&f64::from_bits(1).to_le_bytes());
@@ -364,7 +366,7 @@ fn e5_surface_parser_reads_framed_torus() {
         &tiny,
         &mut crate::nurbs::LaneRefusals::new()
     )
-    .expect("service resource budget")
+    .expect("compute the E5 surfaces")
     .is_empty());
 }
 
@@ -448,7 +450,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, e5_catpart())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::E5Stream);
     let mut cur = Cursor::new(e5_catpart());
     let result = CatiaCodec
@@ -470,7 +472,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
         .iter()
         .any(|link| link.as_str() == "catia:e5:surf#0"));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -502,7 +504,10 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     ));
     assert!(matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == [2.0, 5.0]
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet)
+            if jet.degree() == 5
+            && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>()
+            == [2.0, 5.0]
             && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
             && jet.stations().len() == 2));
     assert!(result.report().losses.iter().any(|loss| {
@@ -523,7 +528,7 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     assert!(point.z.abs() < TEST_TOLERANCE);
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -586,7 +591,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
             ctx,
             file.clone()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::E5Stream
     );
@@ -639,7 +644,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     }));
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -670,7 +675,7 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, file.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.variant, Variant::E5Stream);
 
     let result = CatiaCodec

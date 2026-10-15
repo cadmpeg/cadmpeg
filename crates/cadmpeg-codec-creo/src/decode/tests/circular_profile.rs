@@ -292,14 +292,14 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     ]);
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices"),
+        .expect("compute the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
@@ -318,14 +318,14 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     })
     .expect("valid test fixture");
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices"),
+        .expect("compute the connected sketch profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
@@ -344,14 +344,14 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     })
     .expect("valid test fixture");
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+        crate::decode::with_service_context(|ctx| connected_sketch_profile_vertices(
             ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
         )
         .map(std::iter::Iterator::collect::<Vec<_>>))
-        .expect("service profile vertices")
+        .expect("compute the connected sketch profile vertices")
         .is_empty()
     );
 }
@@ -452,7 +452,14 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
                 && cylinder.radius().get() == 0.75
     ));
     assert!(matches!(
-        cylinder_from_single_cap_outline(CapOutline { surface_id: 46, origin: [0.0, 16.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]] }),
+        cylinder_from_single_cap_outline(
+            CapOutline {
+                surface_id: 46,
+                origin: [0.0, 16.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                corners: [[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]]
+            }
+        ),
         Some(cylinder)
             if *cylinder.origin() == Point3::new(0.0, 16.0, 0.0)
                 && *cylinder.frame().axis().as_raw() == Vector3::new(0.0, 1.0, 0.0)

@@ -606,7 +606,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
             .added,
         ["sldprt:test:configuration#0"]
     );
-    let report = validate_neutral(&right, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&right, Vec::new()).expect("validate the neutral model");
     assert_eq!(report.entity_counts["native.f3d.act_guids"], 1);
     assert_eq!(report.entity_counts["native.sldprt.configurations"], 1);
     assert!(report.is_ok(), "{:?}", report.findings);
@@ -623,7 +623,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     .expect("valid native identity");
     right.native.finalize();
     assert!(validate_neutral(&right, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message == "entity id is not globally unique"));

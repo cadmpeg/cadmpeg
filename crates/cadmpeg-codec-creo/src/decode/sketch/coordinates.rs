@@ -1081,7 +1081,7 @@ mod tests {
     fn incomplete_segment_definition_resolves_point_coordinates() {
         let definition = incomplete_segment_definition();
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&2),
             Some(&[2.0, 3.0])
@@ -1092,7 +1092,7 @@ mod tests {
     fn incomplete_unique_ordinary_rows_supply_coincidence_point_ids() {
         let definition = incomplete_segment_definition();
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&2),
             Some(&[2.0, 3.0])
@@ -1120,7 +1120,7 @@ mod tests {
                 },
             ));
         assert!(
-            !crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+            !crate::decode::with_service_context(|ctx| resolved_section_points(
                 ctx,
                 &duplicate_ordinary
             ))
@@ -1142,7 +1142,7 @@ mod tests {
                 },
             ));
         assert!(
-            !crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+            !crate::decode::with_service_context(|ctx| resolved_section_points(
                 ctx,
                 &duplicate_family
             ))
@@ -1351,7 +1351,7 @@ mod tests {
         };
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&30),
             Some(&[5.0, 5.0])
@@ -1446,7 +1446,7 @@ mod tests {
         };
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&30),
             Some(&[0.0, 4.0])
@@ -1542,7 +1542,7 @@ mod tests {
         };
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&40),
             Some(&[4.0, 0.0])
@@ -1619,7 +1619,7 @@ mod tests {
         };
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&30),
             Some(&[2.0, 3.0])
@@ -1703,7 +1703,7 @@ mod tests {
         };
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&40),
             Some(&[5.0, 1.0])
@@ -1797,7 +1797,7 @@ mod tests {
             crate::feature::definitions::ScalarLane::DimensionDriven;
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&40),
             Some(&[3.0, 1.0])
@@ -1897,13 +1897,13 @@ mod tests {
         };
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
+            crate::decode::with_service_context(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
                 .get(&40),
             Some(&[3.0, 1.0])
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+            crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
                 ctx,
                 &definition
             ))

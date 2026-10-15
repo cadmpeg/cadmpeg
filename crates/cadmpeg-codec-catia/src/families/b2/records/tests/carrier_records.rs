@@ -535,7 +535,7 @@ fn b2_offset_support_binds_to_the_a5_surface_carrier() {
         &a5_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service profile admits surface");
+    .expect("compute the A5 surfaces");
     let service = crate::families::b2::records::offset_support_carriers(&offsets, &carriers);
     assert_eq!(service.len(), 1);
 }

@@ -38,7 +38,7 @@ fn line(periodic: bool) -> CurveGeometry {
 #[test]
 fn nonperiodic_endpoint_recovery_reads_both_endpoints() {
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))
         })
         .expect("endpoint recovery"),
@@ -49,7 +49,7 @@ fn nonperiodic_endpoint_recovery_reads_both_endpoints() {
 #[test]
 fn periodic_range_recovery_spans_the_unit_interval() {
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::full_periodic_nurbs_edge_parameter_range(ctx, &line(true), [0.0, 0.0, 0.0])
         })
         .expect("periodic range recovery"),
@@ -76,11 +76,15 @@ fn degree_one_parameter_search_propagates_evaluator_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(
-        matches!(super::degree_one_nurbs_point_parameter(&ctx, &geometry, nurbs, [0.5, 0.0, 0.0], [0.0, 1.0], super::EPS_AGREE), Err(CodecError::ResourceLimit(resource)) if resource.operation == "geometry evaluation nesting")
-    );
+    assert!(matches!(
+        super::degree_one_nurbs_point_parameter(
+            &ctx, &geometry, nurbs, [0.5, 0.0, 0.0], [0.0, 1.0], super::EPS_AGREE
+        ),
+        Err(CodecError::ResourceLimit(resource))
+            if resource.operation == "geometry evaluation nesting"
+    ));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::degree_one_nurbs_point_parameter(
+        crate::decode::with_service_context(|ctx| super::degree_one_nurbs_point_parameter(
             ctx,
             &geometry,
             nurbs,

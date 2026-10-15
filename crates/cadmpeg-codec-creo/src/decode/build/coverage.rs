@@ -686,7 +686,10 @@ pub(super) fn collect_feature_coverage(
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_FEATURE_COUNT,
         unresolved_fillet_radius_feature_count,
     );
-    coverage.record(crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT, unresolved_fillet_radius_without_generated_surface_feature_count);
+    coverage.record(
+        crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITHOUT_GENERATED_SURFACE_FEATURE_COUNT,
+        unresolved_fillet_radius_without_generated_surface_feature_count
+    );
     coverage.record(
         crate::coverage::TRANSFERRED_UNRESOLVED_FILLET_RADIUS_WITH_GENERATED_SURFACE_FEATURE_COUNT,
         unresolved_fillet_radius_with_generated_surface_feature_count,

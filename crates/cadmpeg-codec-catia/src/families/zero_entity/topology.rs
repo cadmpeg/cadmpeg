@@ -542,7 +542,7 @@ mod tests {
                 &cadmpeg_core::decode::WorkBudget::new(100),
             )
         })
-        .expect("service budget");
+        .expect("compute the endpoint match graph");
         assert!(result.is_none());
     }
 
@@ -557,7 +557,7 @@ mod tests {
                 &cadmpeg_core::decode::WorkBudget::new(100),
             )
         })
-        .expect("service budget");
+        .expect("compute the endpoint match graph");
         assert!(result.is_none());
     }
 
@@ -577,7 +577,7 @@ mod tests {
                 &cadmpeg_core::decode::WorkBudget::new(100),
             )
         })
-        .expect("service budget");
+        .expect("compute the endpoint locus candidates");
         assert!(result.is_none());
     }
 
@@ -597,7 +597,7 @@ mod tests {
                 &cadmpeg_core::decode::WorkBudget::new(100),
             )
         })
-        .expect("service budget");
+        .expect("compute the endpoint locus candidates");
         assert!(result.is_none());
     }
 
@@ -619,7 +619,7 @@ mod tests {
 
         let candidates =
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("test endpoint pairs fit the service profile");
+                .expect("check pairs within bound");
         assert_eq!(
             candidates
                 .iter()
@@ -630,7 +630,7 @@ mod tests {
         assert!(crate::test_support::with_service_context(|ctx| {
             pairs_within_bound(ctx, &occurrences[..4])
         })
-        .expect("test endpoint pairs fit the service profile")
+        .expect("check pairs within bound")
         .is_empty());
     }
 
@@ -646,7 +646,7 @@ mod tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("test endpoint pairs fit the service profile")
+                .expect("check pairs within bound")
                 .iter()
                 .map(|candidate| candidate.support_record_ordinals)
                 .collect::<Vec<_>>(),
@@ -676,7 +676,7 @@ mod tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("test endpoint pairs fit the service profile")[0]
+                .expect("check pairs within bound")[0]
                 .support_record_ordinals,
             [1, 2]
         );
@@ -748,7 +748,7 @@ mod tests {
 
         assert!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("test endpoint pairs fit the service profile")
+                .expect("check pairs within bound")
                 .is_empty()
         );
     }
@@ -765,7 +765,7 @@ mod tests {
 
         assert_eq!(
             crate::test_support::with_service_context(|ctx| pairs_within_bound(ctx, &occurrences))
-                .expect("test endpoint pairs fit the service profile")
+                .expect("check pairs within bound")
                 .iter()
                 .map(|candidate| candidate.support_record_ordinals)
                 .collect::<Vec<_>>(),
@@ -796,7 +796,7 @@ mod tests {
 
         let candidates =
             crate::test_support::with_service_context(|ctx| loci_within_bound(ctx, &pairs))
-                .expect("test endpoint loci fit the service profile");
+                .expect("check loci within bound");
         assert_eq!(candidates.len(), 3);
         assert_eq!(
             candidates[0]
@@ -824,7 +824,7 @@ mod tests {
         ];
         let candidates =
             crate::test_support::with_service_context(|ctx| loci_within_bound(ctx, &ambiguous))
-                .expect("test endpoint loci fit the service profile");
+                .expect("check loci within bound");
         assert_eq!(candidates.len(), 3);
         assert!(candidates
             .iter()

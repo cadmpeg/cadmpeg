@@ -92,7 +92,7 @@ fn section_solver_projected_arc_and_mixed_constraints() {
         .expect("skamp header")
         .declared_count = 1;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &point_row_symmetry
         ))
@@ -133,7 +133,7 @@ fn section_solver_projected_arc_and_mixed_constraints() {
         .items[1]
         .entity_id = 21;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &circle_center_symmetry
         ))
@@ -208,7 +208,7 @@ fn section_solver_projected_arc_and_mixed_constraints() {
         ),
     ]);
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_skamp_constraints_for_geometry(
+        crate::decode::with_service_context(|ctx| section_skamp_constraints_for_geometry(
             ctx,
             &projected_copy,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -602,7 +602,7 @@ fn section_solver_projected_arc_and_mixed_constraints() {
                 .expect("nonempty source identity"),
         ),
     )]);
-    let emitted_type_33_constraints = crate::decode::with_test_decode_ctx(|ctx| {
+    let emitted_type_33_constraints = crate::decode::with_service_context(|ctx| {
         section_skamp_constraints_for_geometry(
             ctx,
             &type_33_bounded_curve,

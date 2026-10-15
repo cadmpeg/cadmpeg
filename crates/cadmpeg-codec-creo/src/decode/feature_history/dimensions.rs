@@ -16,8 +16,6 @@ use crate::container::ContainerScan;
 use crate::feature::definitions::SolverSubtable;
 
 use super::super::native::annotate;
-#[cfg(test)]
-use super::super::sketch_ids::sketch_identity_key;
 use super::super::sketch_ids::{
     feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
     sketch_identity_scope,
@@ -69,37 +67,7 @@ fn push_feature_source_parameter(
         .map_err(cadmpeg_core::CodecError::from)
 }
 
-#[cfg(test)]
-pub(in super::super) fn feature_dimension_parameter_id(
-    sketch: &SketchId,
-    external_id: u32,
-) -> Option<ParameterId> {
-    Some(ParameterId::compose(
-        &crate::identity::FEATDEFS_PARAMETER,
-        sketch_identity_key(sketch)?.colon(external_id),
-    ))
-}
-
-#[cfg(test)]
 pub(in super::super) fn feature_dimension_parameter_row_id(
-    sketch: &SketchId,
-    external_id: u32,
-    occurrence: Option<usize>,
-) -> Option<ParameterId> {
-    occurrence.map_or_else(
-        || feature_dimension_parameter_id(sketch, external_id),
-        |occurrence| {
-            Some(ParameterId::compose(
-                &crate::identity::FEATDEFS_PARAMETER,
-                sketch_identity_key(sketch)?
-                    .colon(external_id)
-                    .colon(occurrence + 1),
-            ))
-        },
-    )
-}
-
-fn feature_dimension_parameter_row_id_admitted(
     sketch: &SketchId,
     external_id: u32,
     occurrence: Option<usize>,
@@ -121,31 +89,7 @@ fn feature_dimension_parameter_row_id_admitted(
     Ok(ParameterId::try_from(text).ok())
 }
 
-#[cfg(test)]
 pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
-    sketch: &SketchId,
-    table: &'a crate::feature::definitions::FeatureDimensionTable,
-    ordinal: usize,
-) -> Option<(
-    &'a crate::feature::definitions::FeatureDimension,
-    ParameterId,
-)> {
-    feature_dimension_table_complete(table).then_some(())?;
-    let dimension = table.rows.get(ordinal)?;
-    (table
-        .rows
-        .iter()
-        .filter(|candidate| candidate.external_id == dimension.external_id)
-        .count()
-        == 1)
-        .then_some(())?;
-    Some((
-        dimension,
-        feature_dimension_parameter_id(sketch, dimension.external_id)?,
-    ))
-}
-
-pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
     sketch: &SketchId,
     table: &'a crate::feature::definitions::FeatureDimensionTable,
     ordinal: usize,
@@ -172,7 +116,7 @@ pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
         return Ok(None);
     }
     Ok(
-        feature_dimension_parameter_row_id_admitted(sketch, dimension.external_id, None)?
+        feature_dimension_parameter_row_id(sketch, dimension.external_id, None)?
             .map(|parameter| (dimension, parameter)),
     )
 }
@@ -367,11 +311,8 @@ pub(in super::super) fn transfer_feature_dimensions(
         else {
             continue;
         };
-        let Some(id) = feature_dimension_parameter_row_id_admitted(
-            &sketch,
-            dimension.external_id,
-            occurrence,
-        )?
+        let Some(id) =
+            feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence)?
         else {
             continue;
         };

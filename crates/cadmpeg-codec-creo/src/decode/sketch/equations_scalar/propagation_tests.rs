@@ -123,7 +123,7 @@ fn axis_distance_values(
         .ambiguous;
     section_equation_function_forty_three_axis_distance_values(
         definition,
-        &crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, definition))
+        &crate::decode::with_service_context(|ctx| resolved_section_coordinates(ctx, definition))
             .expect("test section solve"),
         &ambiguous_point_ids,
     )
@@ -540,7 +540,7 @@ fn scalar_equality_propagation_rejects_derived_value_after_finite_row_conflict()
         Some(&None)
     );
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(ctx, &definition))
+        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(ctx, &definition))
             .expect("test section solve")
             .is_empty()
     );
@@ -666,7 +666,7 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
         Some(&Some(5.0))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &dimension_driven
         ))
@@ -676,7 +676,7 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
         Some(5.0)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_scalar_values(
+        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
             ctx,
             &dimension_driven
         ))

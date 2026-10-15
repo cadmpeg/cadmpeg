@@ -595,7 +595,7 @@ mod tests {
             },
         ]);
 
-        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let transferred = crate::decode::with_service_context(|ctx| {
             transfer_carrier_intersection_curves(
                 ctx,
                 &scan,
@@ -737,7 +737,7 @@ mod tests {
     #[test]
     fn nurbs_boundary_transfer_records_one_curve_and_endpoint_witness() {
         let (scan, mut ir) = nurbs_boundary_fixture(false);
-        let service = crate::decode::with_test_decode_ctx(|ctx| {
+        let service = crate::decode::with_service_context(|ctx| {
             transfer_nurbs_boundary_curves(
                 ctx,
                 &scan,

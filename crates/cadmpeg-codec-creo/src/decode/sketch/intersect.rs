@@ -769,7 +769,7 @@ mod tests {
         };
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
                 Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
                     &definition,
@@ -809,7 +809,7 @@ mod tests {
                 offset: 0,
             });
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 let radii =
                     crate::decode::sketch::radii::resolved_section_radii(ctx, &shared_point)?;
                 Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
@@ -881,7 +881,7 @@ mod tests {
         };
         let trim_vertices = BTreeMap::from([(3, [0.0, 4.0]), (4, [7.0, 4.0])]);
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
                 Ok::<_, cadmpeg_core::CodecError>(
                     trimmed_section_segment_geometry_with_missing_line(
@@ -914,7 +914,7 @@ mod tests {
             ),
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| {
+            crate::decode::with_service_context(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &duplicate)?;
                 Ok::<_, cadmpeg_core::CodecError>(
                     trimmed_section_segment_geometry_with_missing_line(

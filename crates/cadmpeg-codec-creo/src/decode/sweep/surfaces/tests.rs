@@ -174,7 +174,7 @@ fn malformed_saved_spline_reports_transfer_loss() {
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_saved_spline_curves(
+        crate::decode::with_service_context(|ctx| transfer_saved_spline_curves(
             ctx,
             &scan,
             &mut ir,
@@ -315,7 +315,7 @@ fn saved_spline_extrusion_transfers_one_surface() {
             offset: 0,
         });
     }
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::transfer_feature_extrusion_surfaces(
             ctx,
             &scan,

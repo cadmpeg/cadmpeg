@@ -114,7 +114,7 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
     assert!(result.report().geometry_transferred());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -154,7 +154,7 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
             result.ir(),
             result.report().losses.clone()
         )
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     }
 }
@@ -305,7 +305,7 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
             result.ir(),
             result.report().losses.clone()
         )
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     }
 }
@@ -464,7 +464,7 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .all(|record| !record.links.is_empty()));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -518,7 +518,7 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
                 result.ir(),
                 result.report().losses.clone()
             )
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
         }
     }
@@ -650,7 +650,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
             result.ir(),
             result.report().losses.clone()
         )
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     }
 
@@ -662,7 +662,7 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
     assert_eq!(result.ir().model.pcurves.len(), 4);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -702,7 +702,7 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
     assert_eq!(result.ir().model.points.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -714,7 +714,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("Brep fixture fits service profile");
+        .expect("build the decode context");
     crate::brep::parse(
         &ctx,
         &payload,
@@ -787,7 +787,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         && loss.message.contains("decoded 1/1 Rhino object records")));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -813,7 +813,7 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(valid.ir(), valid.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 
@@ -834,7 +834,7 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         malformed.ir(),
         malformed.report().losses.clone()
     )
-    .expect("resource allocation did not fail")
+    .expect("validate the neutral model")
     .is_ok());
 }
 
@@ -875,7 +875,7 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -945,7 +945,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             result.ir(),
             result.report().losses.clone()
         )
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     }
 }
@@ -974,7 +974,7 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     }));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

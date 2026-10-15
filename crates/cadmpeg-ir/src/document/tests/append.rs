@@ -130,7 +130,7 @@ fn actual_admission_rejects_duplicate_identity_without_changing_the_document() {
             crate::DRAFT_CORE_CHECKS,
             Vec::new(),
         )
-        .expect("resource allocation did not fail");
+        .expect("admit the model");
         if report.is_ok() {
             Ok(Ok(()))
         } else {

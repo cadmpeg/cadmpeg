@@ -20,7 +20,7 @@ fn polygon_curve(points: &[[f64; 2]]) -> ProfileEntity {
         false,
     )
     .expect("curve");
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         ProfileEntity::new(ctx, SketchGeometry::nurbs(curve), false)
     })
     .expect("admission")
@@ -31,8 +31,8 @@ fn polygon_curve(points: &[[f64; 2]]) -> ProfileEntity {
 fn single_nurbs_crossing_spans_cannot_mint_validated_profile() {
     let entity = polygon_curve(&[[0.0, 0.0], [3.0, 3.0], [0.0, 3.0], [2.0, 0.0], [0.0, 0.0]]);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| ValidatedProfile::new(ctx, vec![entity]))
-            .expect("profile resources")
+        crate::decode::with_service_context(|ctx| ValidatedProfile::new(ctx, vec![entity]))
+            .expect("construct the validated profile")
             .is_none()
     );
 }
@@ -41,8 +41,8 @@ fn single_nurbs_crossing_spans_cannot_mint_validated_profile() {
 fn single_nurbs_simple_polygon_keeps_area() {
     let entity = polygon_curve(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]]);
     let profile =
-        crate::decode::with_test_decode_ctx(|ctx| ValidatedProfile::new(ctx, vec![entity]))
-            .expect("profile resources")
+        crate::decode::with_service_context(|ctx| ValidatedProfile::new(ctx, vec![entity]))
+            .expect("construct the validated profile")
             .expect("simple profile");
     assert!((profile.area() - 9.0).abs() < f64::EPSILON * 64.0);
 }
@@ -52,11 +52,11 @@ fn adjacent_nurbs_entities_cannot_cross_away_from_shared_endpoints() {
     let first = polygon_curve(&[[0.0, 0.0], [3.0, 3.0], [0.0, 3.0]]);
     let second = polygon_curve(&[[0.0, 3.0], [2.0, 0.0], [0.0, 0.0]]);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::ordered_extrusion_profiles(
+        crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(
             ctx,
             vec![vec![first, second]]
         ))
-        .expect("profile resources")
+        .expect("compute the ordered extrusion profiles")
         .is_none()
     );
 }
@@ -65,11 +65,11 @@ fn adjacent_nurbs_entities_cannot_cross_away_from_shared_endpoints() {
 fn empty_extrusion_profile_is_withheld_before_containment() {
     let entity = polygon_curve(&[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 3.0], [0.0, 0.0]]);
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::ordered_extrusion_profiles(
+        crate::decode::with_service_context(|ctx| super::ordered_extrusion_profiles(
             ctx,
             vec![vec![], vec![entity]]
         ))
-        .expect("profile resources")
+        .expect("compute the ordered extrusion profiles")
         .is_none()
     );
 }
@@ -85,19 +85,19 @@ fn singular_nurbs_is_excluded_before_profile_intersection() {
     )
     .expect("structural curve");
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| ProfileEntity::new(
+        crate::decode::with_service_context(|ctx| ProfileEntity::new(
             ctx,
             SketchGeometry::nurbs(curve),
             false
         ))
-        .expect("resources")
+        .expect("construct the profile entity")
         .is_none()
     );
 }
 
 #[test]
 fn circular_profile_contains_point_outside_quadrant_diamond() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let circle = |center: Point2, radius, reversed| {
             ProfileEntity::new(
                 ctx,
@@ -108,14 +108,14 @@ fn circular_profile_contains_point_outside_quadrant_diamond() {
                 .expect("circle"),
                 reversed,
             )
-            .expect("resources")
+            .expect("construct the profile entity")
             .expect("finite ends")
         };
         let outer = vec![circle(Point2::new(0.0, 0.0), 1.0, false)];
         assert!(super::profile_strictly_contains(ctx, &outer, [0.7, 0.7]).expect("containment"));
         let hole = vec![circle(Point2::new(0.7, 0.7), 0.001, true)];
         assert!(super::ordered_extrusion_profiles(ctx, vec![outer, hole])
-            .expect("resources")
+            .expect("compute the ordered extrusion profiles")
             .is_some());
     });
 }
@@ -135,12 +135,12 @@ fn profile_entity_rejects_overflowed_circle_and_arc_endpoints() {
         },
     ] {
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| ProfileEntity::new(
+            crate::decode::with_service_context(|ctx| ProfileEntity::new(
                 ctx,
                 SketchGeometry::try_from(definition).expect("finite inputs"),
                 false
             ))
-            .expect("resources")
+            .expect("construct the profile entity")
             .is_none()
         );
     }

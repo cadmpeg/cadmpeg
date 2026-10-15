@@ -350,7 +350,7 @@ mod tests {
             };
             assert_eq!(
                 decode_instances_from(ctx, &archive, payload)
-                    .expect("service profile decodes instance")
+                    .expect("decode the instances")
                     .len(),
                 1
             );

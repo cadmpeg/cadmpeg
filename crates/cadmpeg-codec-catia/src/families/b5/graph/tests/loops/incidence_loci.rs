@@ -291,7 +291,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             &geometry,
         )
     })
-    .expect("service budget");
+    .expect("compute the incidence vertex coordinates");
 
     assert_eq!(coordinates.len(), 1);
     assert!(
@@ -325,7 +325,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             &geometry,
         )
     })
-    .expect("service budget");
+    .expect("compute the incidence vertex coordinates");
     assert!(conflicting.is_empty());
 
     drop(conflicting_by_id);
@@ -350,7 +350,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             &geometry,
         )
     })
-    .expect("service budget");
+    .expect("compute the incidence vertex coordinates");
     assert!(out_of_domain.is_empty());
 }
 

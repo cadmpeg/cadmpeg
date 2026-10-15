@@ -4,7 +4,7 @@ fn standard_topology_entity_limit_propagates_before_fallback() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // One retained carrier, four surfaces, four points, four vertices,

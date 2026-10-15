@@ -23,19 +23,19 @@ use crate::variant::Variant;
 use crate::CatiaCodec;
 
 fn summarize_service(scan: &ContainerScan<'_>) -> cadmpeg_ir::ContainerSummary {
-    summarize(scan).expect("service budget admits container summary")
+    summarize(scan).expect("summarize the inspection")
 }
 
 fn brep_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
     crate::test_support::with_service_context(|ctx| {
         super::brep_stream(ctx, data, dir).map(|streams| streams.0)
     })
-    .expect("service budget admits BREP stream")
+    .expect("parse the B-rep stream")
 }
 
 fn main_data_stream_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
     crate::test_support::with_service_context(|ctx| super::main_data_stream(ctx, data, dir))
-        .expect("service budget admits main stream")
+        .expect("parse the main data stream")
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn fbb_only_tables_with_shared_delimiter() -> Vec<u8> {
 #[test]
 fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
-        .expect("service resource budget");
+        .expect("scan the container");
     assert_eq!(
         crate::test_support::with_service_context(|ctx| identify_variant(
             ctx,
@@ -122,7 +122,7 @@ fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
             &scan.census,
             true,
         ))
-        .expect("service resource budget"),
+        .expect("identify variant"),
         Variant::StandardNested
     );
 }
@@ -137,7 +137,7 @@ fn coherent_e5_stream_overrides_zero_entity_markers() {
         crate::test_support::with_service_context(|ctx| identify_variant(
             ctx, None, None, None, &census, true
         ))
-        .expect("service resource budget"),
+        .expect("identify variant"),
         Variant::E5Stream
     );
 }
@@ -151,7 +151,7 @@ fn scan_selects_a_coherent_e5_walk_over_a_zero_entity_record() {
     let scan = crate::test_support::with_service_context(|ctx| {
         scan_bytes(ctx, outer_with_preamble(&body))
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::E5Stream);
 }
@@ -171,7 +171,7 @@ fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
             &Census::default(),
             true
         ))
-        .expect("service resource budget"),
+        .expect("identify variant"),
         Variant::E5Stream
     );
 }
@@ -193,7 +193,7 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
         crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::standard_edge_count(ctx, &brep)
         })
-        .expect("service resource budget"),
+        .expect("compute the standard edge count"),
         None
     );
     assert_eq!(
@@ -209,7 +209,7 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
             &census,
             false
         ))
-        .expect("service resource budget"),
+        .expect("identify variant"),
         Variant::FbbOnly
     );
 }
@@ -232,7 +232,7 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
         crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::standard_edge_count(ctx, &brep)
         })
-        .expect("service resource budget"),
+        .expect("compute the standard edge count"),
         None
     );
     assert_eq!(
@@ -248,7 +248,7 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
             &census,
             false
         ))
-        .expect("service resource budget"),
+        .expect("identify variant"),
         Variant::Unknown
     );
 
@@ -266,7 +266,7 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
             &no_vertex_census,
             false,
         ))
-        .expect("service resource budget"),
+        .expect("identify variant"),
         Variant::Unknown
     );
 }
@@ -293,7 +293,7 @@ fn coherent_e5_stream_precedes_a_partial_fbb_spine() {
             &census,
             true
         ))
-        .expect("service resource budget"),
+        .expect("identify variant"),
         Variant::E5Stream
     );
 }
@@ -356,7 +356,7 @@ fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
 
     assert!(super::e5_record_stream(&bytes).is_none());
     let scan = crate::test_support::with_service_context(|ctx| super::scan_bytes(ctx, bytes))
-        .expect("service resource budget");
+        .expect("scan the container");
     assert!(scan.finjpl_segments.is_empty());
     assert_eq!(scan.census.e5_markers, 0);
 }
@@ -807,7 +807,7 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         &crate::test_support::with_service_context(|ctx| {
             crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
         })
-        .expect("service resource budget"),
+        .expect("scan the container"),
     );
     assert!(summary.entries.iter().any(|entry| {
         entry.role == ContainerRole::FinjplSegment && entry.name == "CATSummaryInformation"
@@ -864,7 +864,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     let summary = summarize_service(&scan);
     assert_eq!(
         summary
@@ -951,7 +951,7 @@ fn scan_parses_directory_and_identifies_standard() {
     let f = standard_catpart();
     let scan =
         crate::test_support::with_service_context(|ctx| crate::container::scan_bytes(ctx, f))
-            .expect("service resource budget");
+            .expect("scan the container");
     assert_eq!(scan.variant, Variant::StandardNested);
     let dir = scan.inner.expect("inner directory");
     assert!(dir.descriptors.iter().any(|d| d.name == "MainDataStream"));
@@ -978,7 +978,7 @@ fn scan_parses_outer_directory_with_absolute_extents() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, bytes.clone())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     let outer = scan.outer.as_ref().expect("outer directory");
     assert_eq!(outer.inner, 0);
     assert_eq!(outer.descriptors.len(), 1);
@@ -1055,7 +1055,7 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, standard_catpart())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     let inner = scan.inner.as_ref().expect("inner stream directory");
     let expected = inner
         .descriptors
@@ -1120,7 +1120,7 @@ fn fbb_census_separates_groups_from_face_rows() {
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, standard_catpart())
     })
-    .expect("service resource budget");
+    .expect("scan the container");
     assert_eq!(scan.census.fbb_runs, 1);
     assert_eq!(scan.census.fbb_face_rows, 2);
 }
@@ -1250,10 +1250,10 @@ fn canonical_record_streams_reuse_the_brep_storage() {
 fn outer_directory_catpart_yields_one_logical_record_stream() {
     let bytes = outer_directory_catpart();
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
-        .expect("service budget admits outer directory");
+        .expect("scan the container");
     let streams =
         crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
-            .expect("service budget admits logical streams");
+            .expect("parse the logical record streams");
     assert_eq!(streams.len(), 1);
 }
 
@@ -1267,14 +1267,14 @@ fn fbb_run_ranges_cover_one_complete_run() {
 #[test]
 fn standard_catpart_summary_has_entries() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
-        .expect("service resource budget");
+        .expect("scan the container");
     assert!(!summarize_service(&scan).entries.is_empty());
 }
 
 #[test]
 fn standard_catpart_scan_reports_notes() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
-        .expect("service resource budget");
+        .expect("scan the container");
     let notes = super::notes(&scan);
     assert!(!notes.is_empty());
 }
@@ -1283,7 +1283,7 @@ fn standard_catpart_scan_reports_notes() {
 fn outer_container_declares_one_stream() {
     let (bytes, _) = crate::test_support::test_container::outer_container_catpart(b"graph");
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
-        .expect("service budget admits outer container");
+        .expect("scan the container");
     let outer = scan.outer.as_ref().expect("outer directory");
     assert_eq!(outer_container_declarations(&scan.data, outer).len(), 1);
 }
@@ -1292,7 +1292,7 @@ fn outer_container_declares_one_stream() {
 fn outer_directory_catpart_yields_one_record_source() {
     let bytes = outer_directory_catpart();
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
-        .expect("service budget admits outer directory");
+        .expect("scan the container");
     assert_eq!(super::consolidated_record_sources(&scan).len(), 1);
 }
 

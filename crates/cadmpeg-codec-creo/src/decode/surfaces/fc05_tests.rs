@@ -63,7 +63,7 @@ fn one_fc05_cap_scan() -> crate::container::ContainerScan<'static> {
 
 fn service_fc05_ir() -> CadIr {
     let scan = one_fc05_cap_scan();
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         let mut ir = CadIr::empty();
         transfer_fc05_cap_circles(
             ctx,

@@ -69,7 +69,7 @@ pub(crate) fn rewrite_entry(
 
 pub(crate) fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
     let errors = cadmpeg_ir::validate_neutral(ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .into_iter()
         .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)

@@ -439,7 +439,13 @@ fn generated_sketch_curve(
         SketchGeometryDefinition::Circle { center, radius } => {
             let point = offset_point(center.get(), Point2::new(radius.get(), 0.0));
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(center.get()), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(
+                    SolvedCurveGeometry::Circle(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            lift(center.get()), normal, u_axis, radius.get()
+                        ).map_err(cadmpeg_core::CodecError::malformed)?
+                    )
+                ),
                 start: point,
                 end: point,
                 param_range: [0.0, std::f64::consts::TAU],
@@ -451,7 +457,13 @@ fn generated_sketch_curve(
             start_angle,
             end_angle,
         } => Ok(GeneratedSketchCurve {
-            curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(center.get()), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+            curve: CurveGeometry::Solved(
+                SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        lift(center.get()), normal, u_axis, radius.get()
+                    ).map_err(cadmpeg_core::CodecError::malformed)?
+                )
+            ),
             start: offset_point(center.get(), polar(radius.get(), start_angle.get())),
             end: offset_point(center.get(), polar(radius.get(), end_angle.get())),
             param_range: [start_angle.get(), end_angle.get()],

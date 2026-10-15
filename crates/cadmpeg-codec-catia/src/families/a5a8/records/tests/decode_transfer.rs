@@ -39,7 +39,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("generated A8 topology");
     assert!(graph.complete);
     assert_eq!(graph.faces.len(), 1);
@@ -94,7 +94,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -116,7 +116,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
             ctx,
             file.clone()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::FloatPackedInnerNoFbb
     );

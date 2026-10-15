@@ -2548,7 +2548,11 @@ pub(in super::super) fn transfer_native_brep(
                                 parameter_range,
                                 None,
                             );
-                            let pcurve = crate::identity::compose_checked::<PcurveId>(&crate::identity::VISIBGEOM_PCURVE, format_args!("{}:{face_id}", half_edge.curve_id))?;
+                            let pcurve
+                                = crate::identity::compose_checked::<PcurveId>(
+                                    &crate::identity::VISIBGEOM_PCURVE,
+                                    format_args!("{}:{face_id}", half_edge.curve_id)
+                                )?;
                             if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
                                 annotate(annotations, &pcurve, "VisibGeom", cadmpeg_core::decode::u64_from_index(offset), tag, Exactness::Derived)?;
                                 ctx.charge_entities(1, "admit Creo model pcurves")?;

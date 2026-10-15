@@ -781,6 +781,8 @@ fn collect_legacy_parameters(
         .filter(|run| outer_container_in_scope(run.outer_container.as_ref(), modeling_scope))
     {
         let types = LegacyTypes::new(&run.type_descriptors);
+        let evaluated_names =
+            crate::native::LegacyEvaluatedValueNames::new(&run.role_selectors, &run.text_fields);
         let mut parameters_by_entity = HashMap::<u32, Vec<ParameterId>>::new();
         let mut parameters_by_name = HashMap::<String, Vec<ParameterId>>::new();
         for scalar in &run.scalar_values {
@@ -858,8 +860,8 @@ fn collect_legacy_parameters(
                 continue;
             };
             let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
-                run,
                 &types,
+                &evaluated_names,
                 string.entity_id,
                 string.byte_offset,
                 string.name_field,
@@ -917,8 +919,8 @@ fn collect_legacy_parameters(
                 continue;
             };
             let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
-                run,
                 &types,
+                &evaluated_names,
                 integer.entity_id,
                 integer.byte_offset,
                 integer.name_field,
@@ -1061,20 +1063,19 @@ fn legacy_relation_evaluation<'a>(
         _ => return Ok(None),
     };
     let symbols = if relation.inputs.is_empty() {
-        None
+        Vec::new()
     } else {
-        Some(crate::native::relation_symbols(&relation.expression))
+        crate::native::relation_symbols(&relation.expression)
     };
+    let symbol_inputs = symbols
+        .iter()
+        .flat_map(|(_, symbol)| legacy_symbol_input_forms(symbol))
+        .collect::<HashSet<_>>();
     let mut bindings = BTreeMap::new();
     let mut dependencies = Vec::new();
+    let mut dependency_set = HashSet::new();
     for input in &relation.inputs {
-        let Some(symbols) = symbols.as_ref() else {
-            return Ok(None);
-        };
-        if !symbols
-            .iter()
-            .any(|(_, symbol)| legacy_symbol_matches_input(symbol, &input.parameter))
-        {
+        if !symbol_inputs.contains(input.parameter.as_str()) {
             return Ok(None);
         }
         let [parameter_id] = parameters_by_name
@@ -1084,7 +1085,7 @@ fn legacy_relation_evaluation<'a>(
         else {
             return Ok(None);
         };
-        if dependencies.contains(parameter_id) {
+        if !dependency_set.insert(parameter_id) {
             return Ok(None);
         }
         let Some(candidate) = candidates.get(parameter_id) else {
@@ -1122,15 +1123,28 @@ fn legacy_relation_evaluation<'a>(
         }))
 }
 
-fn legacy_symbol_matches_input(symbol: &str, input: &str) -> bool {
-    let Some(suffix) = symbol.strip_prefix(input) else {
-        return false;
+/// Every relation input name that `symbol` binds.
+///
+/// An input binds a symbol that is the input followed by optional ASCII
+/// whitespace and an optional `/<digits>` ordinal.
+fn legacy_symbol_input_forms(symbol: &str) -> Vec<&str> {
+    let mut forms = Vec::new();
+    let mut push_whitespace_prefixes = |end: usize| {
+        let start = symbol[..end]
+            .trim_end_matches(|character: char| character.is_ascii_whitespace())
+            .len();
+        for form_end in start..=end {
+            forms.push(&symbol[..form_end]);
+        }
     };
-    let suffix = suffix.trim_start_matches(|character: char| character.is_ascii_whitespace());
-    suffix.is_empty()
-        || suffix.strip_prefix('/').is_some_and(|ordinal| {
-            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-        })
+    push_whitespace_prefixes(symbol.len());
+    if let Some(slash) = symbol.rfind('/') {
+        let ordinal = &symbol[slash + 1..];
+        if !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit()) {
+            push_whitespace_prefixes(slash);
+        }
+    }
+    forms
 }
 
 fn legacy_output_assignment_expression<'a>(
@@ -1224,8 +1238,8 @@ impl<'a> LegacyTypes<'a> {
 }
 
 fn resolved_or_intrinsic_legacy_type<'a>(
-    run: &'a crate::native::CatiaLegacyEntityRun,
     types: &LegacyTypes<'a>,
+    evaluated_names: &crate::native::LegacyEvaluatedValueNames<'_>,
     entity_id: u32,
     value_offset: u64,
     name_field: Option<u64>,
@@ -1239,14 +1253,10 @@ fn resolved_or_intrinsic_legacy_type<'a>(
         return None;
     }
     let name_field = name_field?;
-    crate::native::legacy_evaluated_value_name(
-        &run.role_selectors,
-        &run.text_fields,
-        entity_id,
-        value_offset,
-    )
-    .is_some_and(|field| field.byte_offset == name_field && field.value == name)
-    .then_some((intrinsic_type, false))
+    evaluated_names
+        .get(entity_id, value_offset)
+        .is_some_and(|field| field.byte_offset == name_field && field.value == name)
+        .then_some((intrinsic_type, false))
 }
 
 struct FormulaParameterCandidate {
@@ -3718,7 +3728,7 @@ fn evaluate_formula_expression<'a>(
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
 ) -> Option<EvaluatedFormulaValue> {
     crate::test_support::with_service_context(|ctx| parse_formula_expression(ctx, source, bindings))
-        .expect("service profile admits formula parser fixture")
+        .expect("parse formula expression")
 }
 
 #[cfg(test)]
@@ -3730,7 +3740,7 @@ fn evaluate_formula_expression_with_mode<'a>(
     crate::test_support::with_service_context(|ctx| {
         parse_formula_expression_with_mode(ctx, source, bindings, evaluate)
     })
-    .expect("service profile admits formula parser fixture")
+    .expect("parse formula expression with mode")
 }
 
 fn static_formula_value(parameter_type: FormulaParameterType) -> EvaluatedFormulaValue {
@@ -4641,8 +4651,7 @@ mod parser_tests {
             cadmpeg_core::nonblank_literal!("source"),
             "value".to_string(),
         );
-        let admitted = super::copy_design_parameter(&parameter)
-            .expect("service profile admits parameter copy");
+        let admitted = super::copy_design_parameter(&parameter).expect("copy design parameter");
         assert_eq!(admitted, parameter);
     }
 
@@ -4655,14 +4664,14 @@ mod parser_tests {
             &mut std::collections::BTreeSet::new(),
             candidate,
         )
-        .expect("service profile admits candidate");
+        .expect("merge formula parameter candidate");
         assert_eq!(candidates.len(), 1);
     }
 
     #[test]
     fn parameter_properties_record_value_type_and_binding() {
         let properties = super::parameter_properties("String", Some("source-binding"))
-            .expect("service profile admits properties");
+            .expect("compute the parameter properties");
         assert_eq!(properties["value_type"], "String");
         assert_eq!(properties["catia_binding"], "source-binding");
     }

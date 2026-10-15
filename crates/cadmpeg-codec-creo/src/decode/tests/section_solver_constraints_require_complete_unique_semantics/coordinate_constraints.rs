@@ -55,7 +55,7 @@ fn section_solver_same_coordinates_and_point_coincidence_preserve_semantics() {
         .expect("second same-coordinate point")
         .value = ScalarLane::Undefined;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &propagated_same_coordinate
         ))
@@ -228,7 +228,7 @@ fn section_solver_same_coordinates_and_point_coincidence_preserve_semantics() {
         },
     ];
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &point_coincidence_definition
         ))

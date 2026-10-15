@@ -72,7 +72,7 @@ fn relation_local_nesting_ceiling_leaves_the_expression_unevaluated() {
 
 #[test]
 fn affine_single_row_system_solves() {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         assert_eq!(
             solve_unique_affine_system(
                 ctx,
@@ -193,7 +193,7 @@ fn relation_local_function_nesting_ceiling_leaves_the_expression_unevaluated() {
 
 #[test]
 fn affine_two_row_system_solves() {
-    let solution = crate::decode::with_test_decode_ctx(|ctx| {
+    let solution = crate::decode::with_service_context(|ctx| {
         solve_unique_affine_system(
             ctx,
             &mut [
@@ -215,7 +215,7 @@ fn affine_two_row_system_solves() {
 
 #[test]
 fn relation_operators_evaluate_with_precedence() {
-    let value = crate::decode::with_test_decode_ctx(|ctx| {
+    let value = crate::decode::with_service_context(|ctx| {
         parse_relation_expression::<CurveExpressionValue>(
             ctx,
             "1+2*3",

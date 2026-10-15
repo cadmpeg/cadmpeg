@@ -64,7 +64,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
     });
 
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &incidence_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -87,7 +87,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         }
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &incidence_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -110,7 +110,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
     assert!(joined_relation_incidence(&inactive_incidence, 8).is_some());
     assert!(relation_incidence(&inactive_incidence, 8).is_none());
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &inactive_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -121,7 +121,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         Some(false)
     );
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &inactive_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -146,7 +146,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
             sense: 2,
         });
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &inactive_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -225,7 +225,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         .items[0]
         .sense = 2;
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &incidence_distance,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -259,7 +259,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         .items[1]
         .entity_id = 999;
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &solver_only_incidence,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -333,7 +333,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         offset: 89,
     });
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &angular_dimension,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -358,7 +358,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         .expect("order table")
         .declared_count = 3;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &incomplete_angle_order,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -387,7 +387,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         .expect("order table")
         .declared_count = 3;
     assert!(matches!(
-        crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &ambiguous_angle,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture")
@@ -398,7 +398,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
             .kind(),
         SketchConstraintDefinitionInput::Native { .. }
     ));
-    let relations = crate::decode::with_test_decode_ctx(|ctx| {
+    let relations = crate::decode::with_service_context(|ctx| {
         section_dimension_constraints(
             ctx,
             &definition,
@@ -437,7 +437,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         [None; 4],
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
-    let vector_relation = crate::decode::with_test_decode_ctx(|ctx| {
+    let vector_relation = crate::decode::with_service_context(|ctx| {
         section_dimension_constraints(
             ctx,
             &vector_native,
@@ -525,7 +525,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
     assert_eq!(
-        *(crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
+        *(crate::decode::with_service_context(|ctx| section_dimension_constraints(
             ctx,
             &special_endpoint_dimension,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
@@ -548,7 +548,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         }
     );
     vector_native.relations.as_mut().expect("relations").rows[0].used = 34;
-    let stored_state = crate::decode::with_test_decode_ctx(|ctx| {
+    let stored_state = crate::decode::with_service_context(|ctx| {
         section_dimension_constraints(
             ctx,
             &vector_native,

@@ -326,7 +326,7 @@ mod tests {
                 .expect("section extent")
                 .section,
         );
-        let records = crate::decode::with_test_decode_ctx(|ctx| {
+        let records = crate::decode::with_service_context(|ctx| {
             preserve_passthrough_sections(ctx, &scan, &mut cadmpeg_ir::AnnotationBuilder::new())
         })
         .expect("service records");

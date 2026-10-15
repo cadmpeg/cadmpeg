@@ -46,7 +46,7 @@ use crate::decode::sketch_transfer::constraints::{
 };
 use crate::decode::sketch_transfer::identity::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
-    opaque_section_segment_identity_suffix_admitted, section_segment_identity_suffix_admitted,
+    opaque_section_segment_identity_suffix, section_segment_identity_suffix,
     unique_saved_section_internal_ids, unique_section_segment_external_ids,
 };
 use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
@@ -552,7 +552,7 @@ pub(in super::super) fn transfer_sketches(
             if segment.vertical_horizontal.is_none() {
                 continue;
             }
-            let suffix = section_segment_identity_suffix_admitted(&unique_segment_ids, segment);
+            let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
             let Some(entity) = sketch_entity_id_admitted(&sketch_id, &suffix) else {
                 continue;
             };
@@ -671,8 +671,7 @@ pub(in super::super) fn transfer_sketches(
             let Some(verhor) = segment.vertical_horizontal else {
                 continue;
             };
-            let suffix =
-                opaque_section_segment_identity_suffix_admitted(&unique_segment_ids, segment);
+            let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
             let Some(entity) = sketch_entity_id_admitted(&sketch_id, &suffix) else {
                 continue;
             };

@@ -27,7 +27,7 @@ fn datum_cylinder_array_decodes_one_active_cylinder() {
         0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f, 0x43, 0x00,
         0x2a, 0xe8, 0x00,
     ]);
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         cylinders(ctx, &data).map(|records| records.len())
     })
     .expect("datum cylinders decode");
@@ -497,7 +497,7 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
         let policy = cadmpeg_core::decode::DecodePolicy::desktop();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
             .expect("datum fixture is admitted");
-        let decoded = cylinders(&ctx, &data).expect("datum fixture stays within resource limits");
+        let decoded = cylinders(&ctx, &data).expect("collect the cylinders");
         let [cylinder] = decoded.as_slice() else {
             panic!("one complete active-datum cylinder expected");
         };
@@ -651,7 +651,7 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
         0
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

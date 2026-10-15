@@ -67,7 +67,7 @@ fn two_chart_mapping_maps_degree_sixteen_endpoints() {
         samples: vec![[[0.0, 0.0]; 2], [[1.0, 0.0]; 2]],
         offset: 0,
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         super::mapped_two_chart_endpoint_sets(
             ctx,
             &scan,
@@ -83,7 +83,7 @@ fn two_chart_mapping_maps_degree_sixteen_endpoints() {
 #[test]
 fn native_midpoint_evaluates_a_degree_sixteen_plane() {
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::native_pcurve_midpoint(ctx, &plane(), ENDPOINTS, POINTS)
         })
         .expect("service"),
@@ -94,7 +94,7 @@ fn native_midpoint_evaluates_a_degree_sixteen_plane() {
 #[test]
 fn native_endpoint_orientation_keeps_matching_endpoints() {
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::oriented_native_pcurve_endpoints(ctx, &plane(), ENDPOINTS, POINTS)
         })
         .expect("service"),
@@ -105,7 +105,7 @@ fn native_endpoint_orientation_keeps_matching_endpoints() {
 #[test]
 fn native_pcurve_selection_picks_the_unique_candidate() {
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::with_service_context(|ctx| {
             super::unique_oriented_native_pcurve(ctx, &plane(), &[(ENDPOINTS, 4)], POINTS)
                 .map(|result| result.map(|candidate| (candidate.endpoints, candidate.offset)))
         })

@@ -527,7 +527,18 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern: admitted_pattern })
-            if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular) } if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))])
+            if matches!(
+                admitted_pattern.definition(),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
+                }
+                    if seeds
+                    == &[
+                        PatternSeed::Feature(
+                            FeatureId::mint("synthetic:test:id#seed").expect("identity grammar")
+                        )
+                    ]
+            )
     ));
 }
 

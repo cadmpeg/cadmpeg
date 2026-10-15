@@ -19,7 +19,7 @@ fn curve_expression_frame_admits_only_finite_local_origin() {
     assert!(cadmpeg_ir::units::FiniteVector::new(nonfinite).is_none());
 
     let helix =
-        crate::decode::with_test_decode_ctx(|ctx| crate::curve::expression_helix(ctx, &record))
+        crate::decode::with_service_context(|ctx| crate::curve::expression_helix(ctx, &record))
             .expect("service helix admission")
             .expect("affine helix");
     assert!(super::curve_expression_helix_definition(&record, &helix).is_some());
@@ -39,10 +39,10 @@ fn curve_expression_parameter_order_orders_a_dependent_assignment() {
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
-        .expect("service profile admits input");
+        .expect("build the decode context");
     assert!(
         super::curve_expression_parameter_order(&ctx, &record, &unique_assignment_indices)
-            .expect("service profile admits dependency rows")
+            .expect("compute the curve expression parameter order")
             .is_some()
     );
 }
@@ -60,10 +60,10 @@ fn curve_expression_parameter_order_resolves_a_unique_dependency() {
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
-        .expect("service profile admits input");
+        .expect("build the decode context");
     assert!(
         super::curve_expression_parameter_order(&ctx, &record, &unique_assignment_indices)
-            .expect("service profile admits dependency indices")
+            .expect("compute the curve expression parameter order")
             .is_some()
     );
 }
@@ -83,7 +83,7 @@ fn curve_expression_parameter_order_looks_up_named_dependencies() {
         .expect("service input fits");
     assert!(
         super::curve_expression_parameter_order(&ctx, &record, &indices)
-            .expect("service profile admits lookup")
+            .expect("compute the curve expression parameter order")
             .is_some()
     );
 }
@@ -91,10 +91,10 @@ fn curve_expression_parameter_order_looks_up_named_dependencies() {
 #[test]
 fn curve_expression_dependency_walk_reaches_a_direct_dependency() {
     let dependencies = [vec![1], vec![]];
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         super::expression_dependency_reaches(ctx, &dependencies, 0, 1)
     })
-    .expect("service profile admits graph walk"));
+    .expect("check expression dependency reaches"));
 }
 
 #[test]
@@ -105,10 +105,10 @@ fn curve_expression_parameter_order_admits_cyclic_dependencies() {
         .pop()
         .expect("complete curve expression");
     let indices = std::collections::BTreeMap::from([("a".to_owned(), 0), ("b".to_owned(), 1)]);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         super::curve_expression_parameter_order(ctx, &record, &indices)
     })
-    .expect("service profile admits cyclic dependencies")
+    .expect("compute the curve expression parameter order")
     .is_some());
 }
 
@@ -120,10 +120,10 @@ fn curve_expression_parameter_order_assigns_independent_ordinals() {
         .pop()
         .expect("complete curve expression");
     let indices = std::collections::BTreeMap::new();
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         super::curve_expression_parameter_order(ctx, &record, &indices)
     })
-    .expect("service profile admits ordinal assignment")
+    .expect("compute the curve expression parameter order")
     .is_some());
 }
 
@@ -135,7 +135,7 @@ fn curve_expression_unique_name_keeps_its_spelling() {
         .pop()
         .expect("complete curve expression");
     let names = { super::curve_expression_parameter_names(&record.assignments) }
-        .expect("service profile admits names");
+        .expect("compute the curve expression parameter names");
     assert_eq!(names, vec![Some("a".to_owned())]);
 }
 
@@ -147,7 +147,7 @@ fn curve_expression_repeated_names_get_occurrence_suffixes() {
         .pop()
         .expect("complete curve expression");
     let names = { super::curve_expression_parameter_names(&record.assignments) }
-        .expect("service profile admits duplicate names");
+        .expect("compute the curve expression parameter names");
     assert_eq!(names, vec![Some("a#1".to_owned()), Some("a#2".to_owned())]);
 }
 
@@ -172,7 +172,7 @@ fn curve_expression_emitted_ordinals_follow_assignment_order() {
         .pop()
         .expect("complete curve expression");
     let emitted = { super::curve_expression_emitted_ordinals(&record, &[0, 1]) }
-        .expect("service profile admits emitted ordinals");
+        .expect("compute the curve expression emitted ordinals");
     assert_eq!(emitted.get(&0), Some(&0));
     assert_eq!(emitted.get(&1), Some(&1));
 }
@@ -205,7 +205,7 @@ fn curve_expression_transfer_emits_one_feature() {
         )
     };
     assert_eq!(
-        run(DecodePolicy::service()).expect("service profile admits the feature"),
+        run(DecodePolicy::service()).expect("transfer curve expression features"),
         1
     );
 }
@@ -264,8 +264,7 @@ fn quantity_property_result() -> Result<
 
 #[test]
 fn curve_expression_quantity_properties_keep_value_and_dimension() {
-    let properties =
-        quantity_property_result().expect("service resources admit quantity properties");
+    let properties = quantity_property_result().expect("compute the quantity property result");
     assert_eq!(properties.len(), 4);
     assert_eq!(
         properties[&cadmpeg_core::nonblank_literal!("evaluated_canonical_value")],
@@ -280,7 +279,7 @@ fn curve_expression_quantity_properties_keep_value_and_dimension() {
 #[test]
 fn curve_expression_native_fallback_keeps_kind_and_values() {
     let definition = super::native_curve_expression_definition(7, 1)
-        .expect("service resources admit native definition");
+        .expect("compute the native curve expression definition");
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Native { kind, parameters },
     ) = definition
@@ -344,7 +343,7 @@ fn curve_expression_named_properties_build_both_maps() {
             &dimensions,
             &edges,
         ))
-        .expect("service profile admits both property maps")
+        .expect("compute the curve expression properties")
         .len(),
         2
     );

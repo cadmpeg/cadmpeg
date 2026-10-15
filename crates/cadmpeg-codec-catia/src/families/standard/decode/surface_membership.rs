@@ -329,7 +329,7 @@ mod tests {
                 cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_partials(
                     ctx, &surface, 0.0, 0.0
                 ))
-                .expect("derivative evaluation remains within its resource allowance")
+                .expect("check the value is finite")
                 .is_none()
             );
             assert_eq!(
@@ -340,7 +340,7 @@ mod tests {
                     Point2::new(0.0, 0.0),
                     [[0.0, 1.0]; 2],
                 )
-                .expect("point evaluation remains within its resource allowance"),
+                .expect("refine NURBS surface point"),
                 Some(0.0)
             );
         });

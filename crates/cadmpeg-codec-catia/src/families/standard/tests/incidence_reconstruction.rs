@@ -33,7 +33,7 @@ fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
     let edge_faces = [[0, 1], [0, 2], [0, 3], [1, 3], [1, 2], [2, 3]];
     let edge_points = [[0, 1], [1, 2], [2, 0], [0, 3], [3, 1], [2, 3]];
     let topology = reconstruct_incidence(&ctx, rows, points, &edge_faces, &edge_points, 4)
-        .expect("service resource budget")
+        .expect("reconstruct incidence")
         .expect("closed oriented incidence");
     assert_eq!(topology.face_count(), 4);
     assert!(topology

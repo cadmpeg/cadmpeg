@@ -1376,10 +1376,10 @@ mod tests {
         let arena = DecodeArena::new();
         let (service_ctx, service_root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                .expect("archive fits service profile");
+                .expect("build the decode context");
         assert_eq!(
             ArchiveSnapshot::new(&service_ctx, service_root)
-                .expect("directory fits service profile")
+                .expect("construct the archive snapshot")
                 .entries()
                 .len(),
             3
@@ -1412,7 +1412,7 @@ mod tests {
         let bytes = writer.finish().expect("ZIP finishes").into_inner();
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("archive fits service profile");
+            .expect("build the decode context");
         assert_eq!(
             ArchiveSnapshot::new(&ctx, root)
                 .expect("directory remains readable")
@@ -1445,7 +1445,7 @@ mod tests {
         );
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("archive fits service profile");
+            .expect("build the decode context");
         assert_eq!(
             ArchiveSnapshot::new(&ctx, root)
                 .expect("directory remains readable")
@@ -1481,7 +1481,7 @@ mod tests {
         );
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("archive fits service profile");
+            .expect("build the decode context");
         assert_eq!(
             ArchiveSnapshot::new(&ctx, root)
                 .expect("valid end record selects the directory")
@@ -1512,7 +1512,7 @@ mod tests {
         );
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("archive fits service profile");
+            .expect("build the decode context");
         assert_eq!(
             ArchiveSnapshot::new(&ctx, root)
                 .expect("directory remains readable")
@@ -1526,7 +1526,7 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("signed archive fits service profile");
+            .expect("build the decode context");
         assert_eq!(
             ArchiveSnapshot::new(&ctx, root)
                 .expect("declared directory size includes its digital signature")
@@ -1645,7 +1645,7 @@ mod tests {
             let arena = DecodeArena::new();
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-                    .expect("archive fits service profile");
+                    .expect("build the decode context");
             ArchiveSnapshot::new(&ctx, root)
                 .expect("original directory is valid")
                 .entry("deflated.bin")
@@ -1674,7 +1674,7 @@ mod tests {
 
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-            .expect("patched archive fits service profile");
+            .expect("build the decode context");
         let archive = ArchiveSnapshot::new(&ctx, root).expect("patched directory is valid");
         assert!(matches!(
             archive.open(&ctx, "deflated.bin"),

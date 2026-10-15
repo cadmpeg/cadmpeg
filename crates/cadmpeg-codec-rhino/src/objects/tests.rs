@@ -32,7 +32,7 @@ fn parse_attributes(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("test attributes fit the service profile");
+    .expect("build the decode context");
     crate::objects::parse_attributes(
         &ctx,
         bytes,
@@ -613,7 +613,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     )))];
     let mut warnings = Diagnostics::new();
     let material = crate::objects::resolve_identities(material, &metadata, &mut warnings)
-        .expect("service profile admits material identity");
+        .expect("resolve identities");
     assert_eq!(
         material[0]
             .identity()
@@ -639,7 +639,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     attributes.object_mode = 0xf3;
     let parent = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 20)))];
     let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings)
-        .expect("service profile admits parent identity");
+        .expect("resolve identities");
     assert_eq!(
         parent[0]
             .identity()
@@ -688,7 +688,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         &settings::DocumentMetadata::default(),
         &mut warnings,
     )
-    .expect("service profile admits object identities");
+    .expect("resolve identities");
     assert_ne!(
         objects[0].identity().expect("required invariant").source_id,
         objects[2].identity().expect("required invariant").source_id
@@ -719,7 +719,7 @@ fn degraded_object_record_resolves_to_one_identity() {
         &settings::DocumentMetadata::default(),
         &mut Diagnostics::new(),
     )
-    .expect("service profile admits resolved records");
+    .expect("resolve identities");
     assert_eq!(resolved.len(), 1);
 }
 
@@ -733,7 +733,7 @@ fn malformed_attribute_userdata_adds_one_warning() {
         ArchiveVersion::V5,
         &mut warnings,
     )
-    .expect("service profile retains malformed userdata warning");
+    .expect("parse attribute userdata");
     assert_eq!(warnings.iter().count(), 1);
 }
 
@@ -1058,7 +1058,7 @@ fn class_uuid_checksum_mismatch_adds_one_warning() {
     let wrapper = long_chunk(archive, 0x0002_7ffa, &uuid);
     let mut warnings = Diagnostics::new();
     crate::objects::parse_class_wrapper(&wrapper, 0..wrapper.len(), archive, &mut warnings)
-        .expect("service profile retains checksum diagnostic");
+        .expect("parse class wrapper");
     assert_eq!(warnings.iter().count(), 1);
 }
 
@@ -1091,7 +1091,7 @@ fn class_wrapper_retains_userdata_only_on_request() {
         archive,
         &mut Diagnostics::new(),
     )
-    .expect("service profile retains userdata");
+    .expect("parse class wrapper with userdata");
     assert_eq!(class.class_uuid, Uuid::from_wire([1; 16]));
     assert_eq!(retained.len(), 1);
 }

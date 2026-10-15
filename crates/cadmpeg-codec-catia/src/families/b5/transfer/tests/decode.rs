@@ -64,7 +64,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("generated B5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
@@ -72,7 +72,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
             ctx,
             file.clone()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::FloatPackedInnerNoFbb
     );
@@ -181,7 +181,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -191,7 +191,7 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("generated B5 topology");
     assert!(graph.complete);
     assert_eq!(graph.vertex_incidence_links.len(), 3);
@@ -235,7 +235,7 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -260,7 +260,7 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
     crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
-    .expect("service resource budget")
+    .expect("parse the graph")
     .expect("generated B5 topology");
 
     let result = CatiaCodec
@@ -295,7 +295,7 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

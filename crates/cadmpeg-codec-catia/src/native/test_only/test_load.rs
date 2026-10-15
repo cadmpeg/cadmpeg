@@ -65,7 +65,7 @@ impl CatiaNative {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
-        .expect("test source fits the service profile");
+        .expect("build the decode context");
         let consolidated_records = crate::wire::records::consolidated_records(bytes);
         Self::decode_with_records(
             &ctx,
@@ -73,7 +73,7 @@ impl CatiaNative {
             &consolidated_records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("test native records fit the service profile")
+        .expect("decode the records")
     }
 
     /// Load the typed CATIA namespace from generic native arenas.

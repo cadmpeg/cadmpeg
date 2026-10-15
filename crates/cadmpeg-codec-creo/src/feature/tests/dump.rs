@@ -65,7 +65,10 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
+            },
+            ..
         }])
     ));
 
@@ -139,7 +142,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -191,7 +194,7 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -518,7 +521,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         ]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -871,7 +874,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
             )
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -940,7 +943,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
             ))
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

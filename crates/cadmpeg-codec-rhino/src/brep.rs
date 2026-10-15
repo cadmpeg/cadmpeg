@@ -3041,7 +3041,7 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("test input fits service profile");
+            .expect("build the decode context");
         super::parse(&ctx, bytes, range, archive, writer_version, userdata)
     }
 
@@ -3052,7 +3052,7 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("test input fits service profile");
+            .expect("build the decode context");
         f(&ctx)
     }
 

@@ -7799,32 +7799,68 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
     converted
 }
 
-pub(crate) fn legacy_evaluated_value_name<'a>(
-    roles: &[CatiaLegacyRoleSelector],
-    fields: &'a [CatiaLegacyTextField],
-    entity_id: u32,
-    value_offset: u64,
-) -> Option<&'a CatiaLegacyTextField> {
-    let mut evaluation_roles = roles.iter().filter(|role| {
-        role.entity_id == entity_id
-            && role.field_code == Some(0x17c4)
-            && role.end_offset().and_then(|offset| offset.checked_add(6)) == Some(value_offset)
-    });
-    let evaluation_role = evaluation_roles.next()?;
-    if evaluation_roles.next().is_some() {
-        return None;
+/// The name field of each evaluated legacy value in one run.
+///
+/// A value at `value_offset` is evaluated when exactly one `0x17C4` role of
+/// its entity ends six bytes before it. Its name is the only identifier field
+/// of that entity with a `0x1200` role that starts before that role.
+pub(crate) struct LegacyEvaluatedValueNames<'a> {
+    /// Offset of the evaluation role per (entity, value offset), or `None`
+    /// when several evaluation roles end at the same value.
+    evaluation_roles: HashMap<(u32, u64), Option<u64>>,
+    /// Identifier fields with a `0x1200` role per entity, sorted by offset.
+    names: HashMap<u32, Vec<&'a CatiaLegacyTextField>>,
+}
+
+impl<'a> LegacyEvaluatedValueNames<'a> {
+    pub(crate) fn new(
+        roles: &[CatiaLegacyRoleSelector],
+        fields: &'a [CatiaLegacyTextField],
+    ) -> Self {
+        let mut evaluation_roles = HashMap::new();
+        for role in roles {
+            if role.field_code != Some(0x17c4) {
+                continue;
+            }
+            let Some(value_offset) = role.end_offset().and_then(|offset| offset.checked_add(6))
+            else {
+                continue;
+            };
+            evaluation_roles
+                .entry((role.entity_id, value_offset))
+                .and_modify(|offset| *offset = None)
+                .or_insert(Some(role.byte_offset));
+        }
+        let mut names = HashMap::<u32, Vec<&CatiaLegacyTextField>>::new();
+        for field in fields {
+            if legacy_entity::valid_identifier(&field.value)
+                && field
+                    .role
+                    .as_ref()
+                    .is_some_and(|role| role.field_code == Some(0x1200))
+            {
+                names.entry(field.entity_id).or_default().push(field);
+            }
+        }
+        for fields in names.values_mut() {
+            fields.sort_by_key(|field| field.byte_offset);
+        }
+        Self {
+            evaluation_roles,
+            names,
+        }
     }
-    let mut names = fields.iter().filter(|field| {
-        field.entity_id == entity_id
-            && field.byte_offset < evaluation_role.byte_offset
-            && legacy_entity::valid_identifier(&field.value)
-            && field
-                .role
-                .as_ref()
-                .is_some_and(|role| role.field_code == Some(0x1200))
-    });
-    let name = names.next()?;
-    names.next().is_none().then_some(name)
+
+    pub(crate) fn get(
+        &self,
+        entity_id: u32,
+        value_offset: u64,
+    ) -> Option<&'a CatiaLegacyTextField> {
+        let role_offset = (*self.evaluation_roles.get(&(entity_id, value_offset))?)?;
+        let names = self.names.get(&entity_id)?;
+        let before_role = names.partition_point(|field| field.byte_offset < role_offset);
+        (before_role == 1).then(|| names.first().copied()).flatten()
+    }
 }
 
 fn consolidated_class61_records(
@@ -8614,7 +8650,7 @@ impl CatiaNative {
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
-        .expect("test record source fits the service profile");
+        .expect("build the decode context");
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
         Self::decode_with_records(
@@ -8623,7 +8659,7 @@ impl CatiaNative {
             &consolidated_records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
-        .expect("test native records fit the service profile")
+        .expect("decode the records")
     }
 
     /// Decode CATIA-native records from descriptor-scoped logical sources.

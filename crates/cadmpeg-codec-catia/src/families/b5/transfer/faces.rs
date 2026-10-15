@@ -836,7 +836,7 @@ mod tests {
                 )]),
                 &pcurve_uses
             ))
-            .expect("service context admits B5 face loops"),
+            .expect("compute the B5 face loops"),
             cadmpeg_ir::topology::FaceLoops::classified(
                 LoopId::mint("catia:b5:loop#2".to_string()).expect("identity grammar"),
                 vec![LoopId::mint("catia:b5:loop#3".to_string()).expect("identity grammar")]

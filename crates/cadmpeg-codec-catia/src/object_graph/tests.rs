@@ -61,7 +61,7 @@ fn payload_field_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(&record))
-            .expect("service profile admits field");
+            .expect("store the native arena");
     });
 }
 use crate::test_support::test_container::surface_alias_stream;

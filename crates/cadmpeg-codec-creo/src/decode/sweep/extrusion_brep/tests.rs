@@ -186,7 +186,7 @@ fn closed_extrusion_reaches_brep_admission() {
     let definition = &scan.features.definitions[0];
     let transform = &scan.features.section_transforms[0];
     let sketch_id = super::model_sketch_id(&scan, definition).expect("sketch ID admitted");
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         assert!(super::resolved_feature_extrusion_span(
             &scan,
             &ir,
@@ -194,7 +194,7 @@ fn closed_extrusion_reaches_brep_admission() {
             definition,
             transform
         )
-        .expect("span resources")
+        .expect("compute the resolved feature extrusion span")
         .is_some());
         assert!(super::sketch_profiles_cover_generated_extrusion_sides(
             &scan,
@@ -209,14 +209,14 @@ fn closed_extrusion_reaches_brep_admission() {
             &sketch_id,
             1,
         )
-        .expect("profile resources")
+        .expect("compute the resolved sketch profiles")
         .expect("profile geometry");
         assert!(super::ordered_extrusion_profiles(ctx, profiles)
-            .expect("service ordering resources")
+            .expect("compute the ordered extrusion profiles")
             .is_some());
     });
     let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
-    let count = crate::decode::with_test_decode_ctx(|ctx| {
+    let count = crate::decode::with_service_context(|ctx| {
         super::transfer_resolved_extrusion_breps(
             ctx,
             &scan,

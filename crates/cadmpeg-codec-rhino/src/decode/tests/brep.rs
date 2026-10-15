@@ -30,8 +30,7 @@ fn plane_pcurve_scaling_keeps_the_plane_surface() {
         source_object: None,
     });
     let scale = crate::test_support::millimeter_scale(25.4);
-    super::super::scale_plane_pcurves(&mut staged, scale)
-        .expect("service profile admits plane lookup");
+    super::super::scale_plane_pcurves(&mut staged, scale).expect("scale plane pcurves");
     assert_eq!(staged.draft.model().surfaces[0].id, surface_id);
 }
 
@@ -186,7 +185,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         vec![curve_id.to_string()]
     );
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -319,7 +318,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .expect("commit staged plane B-rep");
     append_record_links(&mut candidate, &unknown, &links);
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -394,7 +393,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         .unwrap()
         .expect("commit Brep with an isolated vertex");
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "{report:?}");
 }
 
@@ -478,7 +477,7 @@ fn face_components_label_an_isolated_face() {
     };
     assert_eq!(
         with_expand_bytes(&[], |expand| face_components(expand.ctx(), &resolved))
-            .expect("service profile admits face components"),
+            .expect("compute the face components"),
         vec![0]
     );
 }
@@ -516,7 +515,7 @@ fn face_components_label_a_connected_face() {
     let resolved = connected_face_fixture();
     assert_eq!(
         with_expand_bytes(&[], |expand| face_components(expand.ctx(), &resolved))
-            .expect("service profile admits one connected face"),
+            .expect("compute the face components"),
         vec![0]
     );
 }
@@ -535,7 +534,7 @@ fn brep_free_vertex_indices_list_an_isolated_vertex() {
             expand.ctx(),
             &resolved
         ))
-        .expect("service profile admits one flag"),
+        .expect("compute the B-rep free vertex indices"),
         vec![0]
     );
 }
@@ -631,7 +630,7 @@ fn reused_brep_c2_curve_decodes_every_pcurve() {
             &std::collections::HashMap::new(),
         )
     })
-    .expect("shared C2 slot decodes under the service profile");
+    .expect("decode pcurves");
     assert_eq!(success.values.len(), 3);
 }
 

@@ -346,7 +346,7 @@ mod tests {
             &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             0.5,
         )
-        .expect("evaluation fits resource limits")
+        .expect("evaluate the point")
         .expect("valid NURBS parameter");
         assert!((point.x - 20.0 / 3.0).abs() < 1.0e-12);
     }
@@ -370,7 +370,7 @@ mod tests {
                     &curve,
                     0.75 * d
                 )
-                .expect("evaluation fits resource limits"),
+                .expect("evaluate the point"),
                 Some(Point3::new(0.75, 0., 0.))
             );
             assert!(point_at(
@@ -378,7 +378,7 @@ mod tests {
                 &curve,
                 2. * d
             )
-            .expect("evaluation fits resource limits")
+            .expect("evaluate the point")
             .is_none());
         }
     }

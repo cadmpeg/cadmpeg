@@ -3859,7 +3859,22 @@ where
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices, edge_faces, face_count, point_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, solution_valid, visitor, search_budget: &budget })
+    visit_component_incidence_pair_solutions_with_coordinate_root_policy(
+        ctx,
+        VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs {
+            choices,
+            edge_faces,
+            face_count,
+            point_count,
+            mesh_assignments,
+            mesh_quotient,
+            coordinate_root_policy: CoordinateRootPolicy::RequireUnique,
+            partial_solution_valid,
+            solution_valid,
+            visitor,
+            search_budget: &budget,
+        },
+    )
 }
 
 struct VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs<
@@ -4937,7 +4952,23 @@ where
         visitor,
     } = inputs;
 
-    visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs { edge_rows, vertex_points, edge_faces, edge_candidates, face_count, mesh_assignments, mesh_quotient, coordinate_root_policy: CoordinateRootPolicy::RequireUnique, partial_solution_valid, complete_solution_budget, solution_valid, visitor })
+    visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
+        ctx,
+        VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs {
+            edge_rows,
+            vertex_points,
+            edge_faces,
+            edge_candidates,
+            face_count,
+            mesh_assignments,
+            mesh_quotient,
+            coordinate_root_policy: CoordinateRootPolicy::RequireUnique,
+            partial_solution_valid,
+            complete_solution_budget,
+            solution_valid,
+            visitor,
+        },
+    )
 }
 
 pub(super) struct VisitIncidenceEndpointPairSolutionsWithCoordinateRootPolicyInputs<
@@ -5073,7 +5104,22 @@ where
     };
     let fallback_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search_budget = complete_solution_budget.unwrap_or(&fallback_budget);
-    let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(ctx, crate::solve::incidence::VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs { choices: &choices, edge_faces, face_count, point_count: vertex_points.len(), mesh_assignments, mesh_quotient, coordinate_root_policy, partial_solution_valid, solution_valid: &complete_valid, visitor: &mut budgeted_visitor, search_budget })?;
+    let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(
+        ctx,
+        VisitComponentIncidencePairSolutionsWithCoordinateRootPolicyInputs {
+            choices: &choices,
+            edge_faces,
+            face_count,
+            point_count: vertex_points.len(),
+            mesh_assignments,
+            mesh_quotient,
+            coordinate_root_policy,
+            partial_solution_valid,
+            solution_valid: &complete_valid,
+            visitor: &mut budgeted_visitor,
+            search_budget,
+        },
+    )?;
     if complete_solution_budget.is_some_and(WorkBudget::exhausted) {
         Ok(IncidenceSolve::Exhausted)
     } else {

@@ -23,7 +23,7 @@ fn pcurve_normalization_scales_owned_nurbs_coordinates() {
         .geometry
         .try_scale_coordinates([2.0, 3.0])
         .expect("reference");
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         SourceUnitCarriers::push_pcurve(ctx, &mut ir, pcurve, Some([2.0, 3.0]))
     })
     .expect("service");

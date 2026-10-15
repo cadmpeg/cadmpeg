@@ -194,7 +194,7 @@ fn native_parameter_loop_polygon_service(
     native_pcurves: &super::NativePcurveCandidates,
     typed_nonlinear_curve_ids: &BTreeSet<u32>,
 ) -> Option<Vec<[f64; 2]>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         native_parameter_loop_polygon(
             ctx,
             lp,
@@ -217,7 +217,7 @@ fn ordered_native_parameter_face_loops_service<'a>(
     native_pcurves: &super::NativePcurveCandidates,
     curve_evidence: NativeCurveEvidence<'_>,
 ) -> Option<Vec<&'a crate::topology::Loop>> {
-    crate::decode::with_test_decode_ctx(|ctx| {
+    crate::decode::with_service_context(|ctx| {
         ordered_native_parameter_face_loops(
             ctx,
             loops,
@@ -1026,7 +1026,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         ir.model.curves.extend([curve.clone(), curve]);
     }
 
-    let counts = crate::decode::with_test_decode_ctx(|ctx| {
+    let counts = crate::decode::with_service_context(|ctx| {
         transfer_native_brep(
             ctx,
             &scan,
@@ -1119,7 +1119,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         source_object: None,
     });
 
-    let counts = crate::decode::with_test_decode_ctx(|ctx| {
+    let counts = crate::decode::with_service_context(|ctx| {
         transfer_native_brep(
             ctx,
             &scan,

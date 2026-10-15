@@ -200,7 +200,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         section_line_fixed_coordinate(&coincident_definition, related_line),
         Some(crate::decode::sketch::axis::SectionAxis::U)
     );
-    let coincident_points = crate::decode::with_test_decode_ctx(|ctx| {
+    let coincident_points = crate::decode::with_service_context(|ctx| {
         resolved_section_points(ctx, &coincident_definition)
     })
     .expect("test section solve");
@@ -221,7 +221,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         skamp.status = 34;
     }
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &disabled_incidences
         ))
@@ -239,7 +239,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         vec![duplicate],
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &ambiguous_definition
         ))
@@ -258,7 +258,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         .expect("duplicate point");
     complementary.value = ScalarLane::Value(3.0);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &ambiguous_definition
         ))
@@ -281,7 +281,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         vec![conflicting],
     );
     assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
+        !crate::decode::with_service_context(|ctx| resolved_section_points(
             ctx,
             &conflicting_definition
         ))
@@ -365,7 +365,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         Some((1, 7, crate::decode::sketch::axis::SectionAxis::V))
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(
+        crate::decode::with_service_context(|ctx| resolved_section_coordinates(
             ctx,
             &point_row_type_nine
         ))

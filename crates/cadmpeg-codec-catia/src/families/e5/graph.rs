@@ -2458,7 +2458,7 @@ mod tests {
         let bytes = crate::test_support::test_e5::e5_torus_topology_stream();
         assert!(
             crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes))
-                .expect("service resource budget")
+                .expect("parse topology")
                 .is_some()
         );
     }
@@ -2499,7 +2499,7 @@ mod tests {
         }];
         e5_test_context!(service_ctx);
         assert!(solve_absolute_orientation(&service_ctx, &mut faces.clone())
-            .expect("orientation fits the service profile"));
+            .expect("solve absolute orientation"));
     }
 
     #[test]

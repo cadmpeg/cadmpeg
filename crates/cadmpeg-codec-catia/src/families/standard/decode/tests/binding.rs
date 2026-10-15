@@ -90,7 +90,7 @@ fn standard_pcurve_geometry(
             refusal,
         )
     })
-    .expect("service budget admits standard pcurve")
+    .expect("compute the standard pcurve geometry")
 }
 
 fn standard_endpoint_pair_supports_topology(
@@ -106,7 +106,7 @@ fn standard_endpoint_pair_supports_topology(
             ctx, surface, support, start, end, witness, refusal,
         )
     })
-    .expect("service budget admits endpoint topology")
+    .expect("compute the standard endpoint pair supports topology")
 }
 
 fn unit_square_surface() -> NurbsSurface {
@@ -263,7 +263,7 @@ fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("binding fixture fits the service profile");
+    .expect("build the decode context");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![7]), (2, vec![7])],
         vec![(0, vec![7]), (1, vec![7])],
@@ -271,7 +271,7 @@ fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
 
     assert_eq!(
         invariant_face_carrier_bindings(&ctx, &domains, 3, None)
-            .expect("binding fits the service profile"),
+            .expect("compute the invariant face carrier bindings"),
         Some(vec![Some(7), Some(7)])
     );
 }
@@ -284,7 +284,7 @@ fn owner_face_matching_withholds_carrier_labels_that_change_under_a_swap() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("binding fixture fits the service profile");
+    .expect("build the decode context");
     let domains = vec![
         vec![(0, vec![7]), (1, vec![9])],
         vec![(0, vec![9]), (1, vec![7])],
@@ -292,7 +292,7 @@ fn owner_face_matching_withholds_carrier_labels_that_change_under_a_swap() {
 
     assert_eq!(
         invariant_face_carrier_bindings(&ctx, &domains, 2, None)
-            .expect("binding fits the service profile"),
+            .expect("compute the invariant face carrier bindings"),
         Some(vec![None, None])
     );
 }
@@ -305,12 +305,12 @@ fn owner_face_matching_removes_labels_outside_every_complete_matching() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("binding fixture fits the service profile");
+    .expect("build the decode context");
     let domains = vec![vec![(0, vec![7]), (1, vec![99])], vec![(1, vec![11])]];
 
     assert_eq!(
         invariant_face_carrier_bindings(&ctx, &domains, 2, None)
-            .expect("binding fits the service profile"),
+            .expect("compute the invariant face carrier bindings"),
         Some(vec![Some(7), Some(11)])
     );
 }
@@ -323,12 +323,12 @@ fn owner_face_matching_requires_every_face_to_have_a_distinct_owner() {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("binding fixture fits the service profile");
+    .expect("build the decode context");
     let domains = vec![vec![(0, vec![7])], Vec::new()];
 
     assert_eq!(
         invariant_face_carrier_bindings(&ctx, &domains, 2, None)
-            .expect("binding fits the service profile"),
+            .expect("compute the invariant face carrier bindings"),
         None
     );
 }
@@ -463,7 +463,7 @@ fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
     ];
     assert_eq!(
         standard_circle_endpoint_candidates(&ctx, &points, Point3::new(0.0, 0.0, 7.0), 5.0, None,)
-            .expect("service budget"),
+            .expect("compute the standard circle endpoint candidates"),
         [0]
     );
 }
@@ -506,7 +506,7 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
             5.0,
             Some([(&left, None), (&right, None)]),
         )
-        .expect("service budget"),
+        .expect("compute the standard circle endpoint candidates"),
         [0]
     );
 }
@@ -560,7 +560,7 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
             5.0,
             Some([(&surface, Some(bounds)), (&surface, Some(bounds))]),
         )
-        .expect("service budget"),
+        .expect("compute the standard circle endpoint candidates"),
         [0]
     );
 }
@@ -855,7 +855,7 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
         &stream,
         &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("service resource budget");
+    .expect("associate standard freeform E5 surfaces");
     assert!(matches!(
         associated.get(&7),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
@@ -902,7 +902,12 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
             carrier_object_id: 42,
             source: StandardRollingBallSource::E5D8,
             definition,
-    }) if matches!(definition.as_ref(), ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == vec![2.0, 5.0]
+    }) if matches!(
+        definition.as_ref(),
+        ProceduralSurfaceDefinition::RollingBallJet(jet)
+            if jet.degree() == 5
+            && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>()
+            == vec![2.0, 5.0]
             && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
             && jet.stations().len() == 2)));
 
@@ -1407,7 +1412,7 @@ fn invariant_face_carrier_binding_selects_a_sole_candidate() {
         crate::test_support::with_service_context(|ctx| {
             invariant_face_carrier_bindings(ctx, &domains, 1, None)
         })
-        .expect("service context admits one owner domain"),
+        .expect("compute the invariant face carrier bindings"),
         Some(vec![Some(7)])
     );
 }
@@ -1423,7 +1428,7 @@ fn face_boundary_witnesses_are_empty_without_faces() {
     assert!(crate::test_support::with_service_context(|ctx| {
         standard_face_boundary_witnesses(ctx, &ir)
     })
-    .expect("service context admits witness index")
+    .expect("compute the standard face boundary witnesses")
     .is_empty());
 }
 
@@ -1477,7 +1482,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
         })
-        .expect("service context admits owner search"),
+        .expect("bind standard A5 owner surfaces"),
         0
     );
 }

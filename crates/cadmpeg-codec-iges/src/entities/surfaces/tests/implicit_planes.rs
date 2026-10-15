@@ -34,7 +34,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         Ok(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

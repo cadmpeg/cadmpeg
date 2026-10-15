@@ -52,7 +52,7 @@ fn solve_program_indexes_executable_solve_lines() {
 #[test]
 fn expression_program_evaluates_one_assignment() {
     let lines = expression_lines(&["a=1"]);
-    let evaluation = crate::decode::with_test_decode_ctx(|ctx| {
+    let evaluation = crate::decode::with_service_context(|ctx| {
         super::super::evaluate_expression_program_details(
             ctx,
             &lines,
@@ -60,13 +60,14 @@ fn expression_program_evaluates_one_assignment() {
             &super::super::ExternalRelationSymbols::default(),
         )
     })
-    .expect("service profile");
+    .expect("evaluate expression program details");
     assert_eq!(evaluation.assignments.len(), 1);
 }
 
 #[test]
 fn solve_unknowns_parse_names_and_reject_case_insensitive_duplicates() {
-    let service = super::super::curve_expression_solve_unknowns("x, Y").expect("service profile");
+    let service = super::super::curve_expression_solve_unknowns("x, Y")
+        .expect("compute the curve expression solve unknowns");
     assert_eq!(
         service
             .iter()
@@ -90,27 +91,27 @@ fn curve_expression_record_with_local_system_parses() {
 #[test]
 fn curve_parameter_scalar_cache_alone_yields_no_records() {
     let payload = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         super::super::parameter_records_with_face_ids(ctx, &payload, None)
     })
-    .expect("service admits scalar image")
+    .expect("compute the parameter records with face IDs")
     .is_empty());
 }
 
 #[test]
 fn depdb_curve_scalar_cache_alone_yields_no_rows() {
     let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x46\x08\0\0\0\0\0\0";
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         super::super::depdb_cross_section_rows(ctx, payload)
     })
-    .expect("service admits scalar image")
+    .expect("compute the DEPDB cross section rows")
     .is_empty());
 }
 
 #[test]
 fn curve_parameter_records_parse_one_row() {
     let payload = b"topol_ref_data\0\x07\x08\x04\x01\xf6\xff\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3";
-    let records = crate::decode::with_test_decode_ctx(|ctx| {
+    let records = crate::decode::with_service_context(|ctx| {
         super::super::parameter_records_with_face_ids(ctx, payload, None)
     })
     .expect("row is admitted");
@@ -147,7 +148,7 @@ fn nested_conditional_frame_ends_with_its_parent_activation() {
 #[test]
 fn depdb_segment_unique_candidates_parse_one_row() {
     let segment = [7, 8, 4, 1, 0xf6, 0, 9, 10, 0];
-    let row = crate::decode::with_test_decode_ctx(|ctx| {
+    let row = crate::decode::with_service_context(|ctx| {
         super::super::parse_depdb_curve_segment(
             ctx,
             &segment,
@@ -164,7 +165,7 @@ fn depdb_segment_unique_candidates_parse_one_row() {
 #[test]
 fn depdb_segment_distinct_prefixes_remain_ambiguous() {
     let segment = [7, 8, 4, 1, 0xf6, 8, 8, 4, 1, 0xf6, 0, 9, 10, 0];
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+    assert!(crate::decode::with_service_context(|ctx| {
         super::super::parse_depdb_curve_segment(
             ctx,
             &segment,
@@ -233,7 +234,7 @@ fn expression_helix_without_helix_outputs_is_none() {
     .pop()
     .expect("record");
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::super::expression_helix(ctx, &record))
+        crate::decode::with_service_context(|ctx| super::super::expression_helix(ctx, &record))
             .expect("service")
             .is_none()
     );

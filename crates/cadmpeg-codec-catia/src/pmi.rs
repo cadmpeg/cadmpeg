@@ -276,7 +276,7 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
             )
-            .expect("service profile admits the source dimensions")),
+            .expect("transfer dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());
@@ -301,7 +301,7 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
             )
-            .expect("service profile admits two dimensions")),
+            .expect("transfer dimensions")),
             2
         );
         let dimensions = ir
@@ -433,7 +433,7 @@ mod tests {
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new()
             )
-            .expect("service profile admits the source dimensions")),
+            .expect("transfer dimensions")),
             0
         );
         assert!(ir.model.pmi.is_empty());
@@ -477,7 +477,7 @@ mod tests {
                 &HashSet::new(),
             )
         })
-        .expect("service profile admits dimension");
+        .expect("transfer dimensions");
         assert_eq!(admitted, 1);
         assert_eq!(
             ir.model.pmi[0].id.as_str(),

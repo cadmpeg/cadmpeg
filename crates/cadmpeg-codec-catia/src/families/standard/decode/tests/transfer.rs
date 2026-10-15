@@ -15,6 +15,16 @@ use cadmpeg_ir::geometry::{
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::coverage::{
+    STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT,
+    STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT,
+};
 use crate::test_support::test_a5_bound::{a5_native_edge_run_stream, a5_nurbs_bound_edge_stream};
 use crate::test_support::test_a5a8::{
     a5_freeform_curve_stream, a5_guide_curve_stream, a5_native_edge_identity_stream,
@@ -331,22 +341,45 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             <= 1
     );
     assert_eq!(
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()),
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT.as_str())
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT
+                .as_str()
+        )
     );
     assert_eq!(
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()),
-        wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str())
-            + wire::coverage_count(result.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str())
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            result.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str()
+        )
     );
 
     // The produced IR validates (free carriers, no dangling references).
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -529,17 +562,40 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         0
     );
     assert_eq!(
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()),
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT.as_str())
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT
+                .as_str()
+        )
     );
     assert_eq!(
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()),
-        wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str())
-            + wire::coverage_count(decoded.report(), crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str())
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT.as_str()
+        ) + wire::coverage_count(
+            decoded.report(),
+            STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT.as_str()
+        )
     );
 }
 
@@ -550,7 +606,7 @@ fn decode_fbb_only_without_parseable_counted_table_transfers_only_carriers() {
             ctx,
             fbb_only_catpart()
         ))
-        .expect("service resource budget")
+        .expect("scan the container")
         .variant,
         Variant::FbbOnly
     );
@@ -1041,7 +1097,7 @@ fn population_scope_prefixes_rewritten_body_ids() {
         }
         .rewrite(body)
     })
-    .expect("service profile admits rewrite");
+    .expect("rewrite the body into the population scope");
     assert_eq!(admitted.id.as_str(), "catia:standard:population-1/body#0");
 }
 
@@ -1063,7 +1119,7 @@ fn standard_catpart_decodes_as_a_standard_population() {
         )
     };
     assert!(crate::test_support::with_service_context(decode)
-        .expect("service budget")
+        .expect("decode standard population")
         .is_some());
 }
 
@@ -1089,6 +1145,7 @@ fn copying_a_revolution_procedure_preserves_it() {
             parameter_interval: [0.0, 1.0],
         },
     ));
-    let service = ({ super::super::copy_standard_procedure(&procedure) }).expect("service budget");
+    let service =
+        ({ super::super::copy_standard_procedure(&procedure) }).expect("copy standard procedure");
     assert!(service == procedure);
 }

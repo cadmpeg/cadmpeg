@@ -307,7 +307,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         start_seed,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS curve parameter near point")
     .expect("start witness")
     .get();
     let start_seed_end = nurbs_curve_parameter_near_point(
@@ -317,7 +317,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         start,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS curve parameter near point")
     .expect("unanchored end witness")
     .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
@@ -329,7 +329,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         EPS_ENDPOINT_WITNESS,
         end_seed,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS curve parameter near point")
     .expect("end witness")
     .get();
 
@@ -985,7 +985,7 @@ ENDSEC;END-ISO-10303-21;",
         0,
         &ctx
     )
-    .expect("no resource refusal")
+    .expect("decode pcurve geometry")
     .is_none());
     assert!(active.is_empty());
     assert!(decode_pcurve_geometry(
@@ -1003,7 +1003,7 @@ ENDSEC;END-ISO-10303-21;",
         0,
         &ctx
     )
-    .expect("no resource refusal")
+    .expect("decode pcurve geometry")
     .is_none());
     assert!(active.is_empty());
 }

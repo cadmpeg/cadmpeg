@@ -1037,7 +1037,8 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::NewBody,
             ..
-        }) if ( ((value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == 4.0) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+        }) if ( ((value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == 4.0)
+        && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),

@@ -807,7 +807,7 @@ mod tests {
     ) -> T {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
-            .expect("fixture fits service profile");
+            .expect("build the decode context");
         use_context(&ctx)
     }
 
@@ -871,7 +871,7 @@ mod tests {
             DecodeContext::from_root_bytes(&protein, &arena, &DecodePolicy::service())
                 .expect("ZIP fits service input limit");
         assert!(super::SchemaCatalog::load(&ctx, root)
-            .expect("schema fits service profile")
+            .expect("load the schema catalog")
             .is_some());
     }
 
@@ -899,7 +899,7 @@ mod tests {
         ));
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("fixture fits service profile");
+            .expect("build the decode context");
         assert!(super::resolve_inheritance(
             &ctx,
             &schemas,
@@ -1075,7 +1075,7 @@ mod tests {
         let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
-            .expect("stream fits service profile");
+            .expect("build the decode context");
         let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
             .expect("a capped record is rejected, not refused");
         assert_eq!(outcome.records.len(), 1);
@@ -1098,7 +1098,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
-            .expect("stream fits service profile");
+            .expect("build the decode context");
         assert_eq!(
             super::decode_frames_admitted(&ctx, &mut catalog, &frames)
                 .expect("an absent schema rejects only its record")

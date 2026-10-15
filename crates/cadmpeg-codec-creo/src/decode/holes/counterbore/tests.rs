@@ -362,7 +362,7 @@ fn counterbore_source_corner_envelopes_pair_type24_terminals() {
         let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
         payload.extend(replay);
         payload.push(0xe3);
-        let mut records = crate::decode::with_test_decode_ctx(|ctx| {
+        let mut records = crate::decode::with_service_context(|ctx| {
             crate::surface::parameter_records(ctx, &payload)
         })
         .expect("parameter record fixture");
@@ -386,7 +386,7 @@ fn counterbore_source_corner_envelopes_pair_type24_terminals() {
     let sources = [vec![10, 11]];
     assert_eq!(
         super::counterbore_source_corner_envelopes(&scan, &sources)
-            .expect("service resources")
+            .expect("compute the counterbore source corner envelopes")
             .len(),
         1
     );
@@ -482,7 +482,7 @@ fn counterbore_patch_rows_cover_each_source_row() {
         .surfaces
         .extend([model_cylinder(1), model_cylinder(2)]);
     let service = ({ super::counterbore_patch_geometries(&scan, &ir, 40) })
-        .expect("service resources")
+        .expect("compute the counterbore patch geometries")
         .expect("source patches");
     assert_eq!(
         service.iter().map(|(row, _)| row.id).collect::<Vec<_>>(),

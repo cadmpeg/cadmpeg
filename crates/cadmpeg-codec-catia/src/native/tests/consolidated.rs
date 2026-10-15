@@ -428,7 +428,7 @@ fn consolidated_circle_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(circle))
-            .expect("service profile admits circle");
+            .expect("store the native arena");
     });
 }
 
@@ -467,7 +467,7 @@ fn consolidated_parameter_point_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(point))
-            .expect("service profile admits parameter point");
+            .expect("store the native arena");
     });
 }
 
@@ -506,7 +506,7 @@ fn consolidated_plane_carrier_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(carrier))
-            .expect("service profile admits plane carrier");
+            .expect("store the native arena");
     });
 }
 
@@ -543,7 +543,7 @@ fn consolidated_cylinder_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(cylinder))
-            .expect("service profile admits cylinder");
+            .expect("store the native arena");
     });
 }
 
@@ -587,7 +587,7 @@ fn consolidated_owner_packet_retained_limit_refuses_json_record() {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         namespace
             .set_arena(ctx, arena_name, std::slice::from_ref(packet))
-            .expect("service profile admits owner packet");
+            .expect("store the native arena");
     });
 }
 
@@ -928,12 +928,20 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     }));
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
     assert!(match revolution.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
-            matches!((matched_payload.angular_interval().endpoints(), &matched_payload.parameter_interval().map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),), (angular_interval, Some([-4.0, 9.0]),) if angular_interval == [0.5, 0.5 + std::f64::consts::TAU]),
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+            (
+                matched_payload.angular_interval().endpoints(),
+                &matched_payload.parameter_interval().map(
+                    cadmpeg_ir::topology::IncreasingParameterInterval::endpoints
+                ),
+            ),
+            (angular_interval, Some([-4.0, 9.0]),)
+                if angular_interval == [0.5, 0.5 + std::f64::consts::TAU]
+        ),
         _ => false,
     });
     assert_eq!(
@@ -1800,6 +1808,6 @@ fn b2_owner_packet_stream_projects_one_owner_packet() {
     let packets = crate::test_support::with_service_context(|ctx| {
         super::super::projection::consolidated_owner_packets(ctx, &bytes, &records)
     })
-    .expect("service context admits the fixed owner packet");
+    .expect("parse the consolidated owner packets");
     assert_eq!(packets.len(), 1);
 }

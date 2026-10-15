@@ -106,7 +106,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         }));
         assert!(
             cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     });
@@ -187,7 +187,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
 
         assert!(
             cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                .expect("resource allocation did not fail")
+                .expect("validate the neutral model")
                 .is_ok()
         );
     });
