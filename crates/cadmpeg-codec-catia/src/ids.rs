@@ -30,12 +30,10 @@ mod tests {
 
     #[test]
     fn history_kind_replacement_preserves_colon_keys() {
-        let result = {
-            neutral_history_id(
-                "catia:graph:object#owner:child",
-                &cadmpeg_ir::identity_component!("feature"),
-            )
-        };
+        let result = neutral_history_id(
+            "catia:graph:object#owner:child",
+            &cadmpeg_ir::identity_component!("feature"),
+        );
         assert_eq!(
             result.expect("valid native identity").as_str(),
             "catia:graph:feature#owner:child"

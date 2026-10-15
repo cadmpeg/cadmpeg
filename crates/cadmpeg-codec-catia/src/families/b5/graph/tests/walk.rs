@@ -536,7 +536,7 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
     bytes.extend_from_slice(&7u32.to_le_bytes());
 
     assert_eq!(topology_root_run_ranges(&bytes), vec![0..bytes.len()]);
-    let selection = { select_object_stream_population(&[bytes], None) };
+    let selection = select_object_stream_population(&[bytes], None);
     assert!(selection.selected());
     assert!(!selection.source().is_empty());
 }
@@ -616,7 +616,7 @@ fn budgeted_dependency_admission_matches_one_shot_records() {
     let expected = records_from_frames(&bytes, &frames);
     let budget = cadmpeg_core::decode::WorkBudget::new(10_000);
 
-    let actual = { records_from_frames_budgeted(&bytes, &frames, Some(&budget)) };
+    let actual = records_from_frames_budgeted(&bytes, &frames, Some(&budget));
 
     assert_eq!(actual, expected);
     assert!(!budget.exhausted());
@@ -625,7 +625,7 @@ fn budgeted_dependency_admission_matches_one_shot_records() {
 #[test]
 fn indexed_population_selection_preserves_records_and_census() {
     let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let expected = { select_object_stream_population(std::slice::from_ref(&topology), None) };
+    let expected = select_object_stream_population(std::slice::from_ref(&topology), None);
     let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
     let actual =
         { select_object_stream_population(std::slice::from_ref(&topology), Some(&budget)) };

@@ -226,9 +226,6 @@ pub(in crate::families) fn copy_rolling_ball_definition(
     ))
 }
 
-#[cfg(test)]
-mod carrier_resource_tests {}
-
 pub(super) fn revolution_surface(
     ctx: &DecodeContext<'_>,
     profile: Option<&B5Profile>,

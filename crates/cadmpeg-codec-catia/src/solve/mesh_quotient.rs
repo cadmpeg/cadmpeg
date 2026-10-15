@@ -8837,13 +8837,11 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     let face_configurations = vec![Some(vec![vec![(0, [0, 0])]]), None];
     let mut covered = vec![false];
 
-    let choices = {
-        collect_endpoint_relation_face_choices(
-            &face_assignments,
-            &face_configurations,
-            &mut covered,
-        )
-    }
+    let choices = collect_endpoint_relation_face_choices(
+        &face_assignments,
+        &face_configurations,
+        &mut covered,
+    )
     .expect("well-formed endpoint relation choices");
 
     assert!(covered[0]);

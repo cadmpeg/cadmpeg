@@ -424,15 +424,13 @@ fn parameter_incidence_retains_aligned_compact_controls() {
     payload.push(0x15);
     payload.extend_from_slice(&2.5f64.to_le_bytes());
     payload.push(0x2d);
-    let incidence = {
-        parameter_incidence(&B5Record {
-            offset: 0,
-            family: 0xb5,
-            class: 0x06,
-            object_id: 17,
-            payload,
-        })
-    }
+    let incidence = parameter_incidence(&B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x06,
+        object_id: 17,
+        payload,
+    })
     .expect("parameter incidence");
 
     assert_eq!(incidence.object_id, 17);

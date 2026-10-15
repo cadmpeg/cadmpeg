@@ -100,15 +100,7 @@ fn transfer_vertex_tolerances(
     .expect("service budget")
 }
 
-fn referenced_surface_ids(
-    roots: impl IntoIterator<Item = u32>,
-    offsets: &BTreeMap<u32, B5OffsetSurface>,
-    supported: &BTreeMap<u32, B5SupportedSurface>,
-    extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
-    aliases: &BTreeMap<u32, u32>,
-) -> HashSet<u32> {
-    super::super::referenced_surface_ids(roots, offsets, supported, extrusions, aliases)
-}
+use super::super::referenced_surface_ids;
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {

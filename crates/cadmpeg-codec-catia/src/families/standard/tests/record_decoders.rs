@@ -1128,12 +1128,10 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
             .expect("service resource budget")
             .is_none()
     );
-    let one = {
-        crate::families::standard::records::pair_standard_populations(
-            &layouts[..1],
-            &populations[..1],
-        )
-    }
+    let one = crate::families::standard::records::pair_standard_populations(
+        &layouts[..1],
+        &populations[..1],
+    )
     .expect("service resource budget")
     .expect("single source-closed population");
     assert!(one.rest.is_empty());
@@ -1245,7 +1243,7 @@ fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
             crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
         ),
     ]);
-    let planes = { crate::families::standard::records::plane_params(&bytes, &normals) };
+    let planes = crate::families::standard::records::plane_params(&bytes, &normals);
 
     assert_eq!(planes.len(), 3);
     assert_eq!(planes[0].target, 0x0001_0203);
@@ -1335,7 +1333,7 @@ fn plane_bounds_withhold_duplicates_and_excessive_containment_error() {
         ),
     ]);
 
-    let planes = { crate::families::standard::records::plane_params(&bytes, &normals) };
+    let planes = crate::families::standard::records::plane_params(&bytes, &normals);
 
     assert_eq!(planes.len(), 2);
     assert_eq!(planes[0].target, valid_tag);

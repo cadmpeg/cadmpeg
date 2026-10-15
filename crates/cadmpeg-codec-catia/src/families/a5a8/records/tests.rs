@@ -50,22 +50,6 @@ use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-fn parsed_a5_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5FreeformCurve> {
-    crate::families::a5a8::records::a5_freeform_curves(data)
-}
-
-fn parsed_a8_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8FreeformCurve> {
-    crate::families::a5a8::records::a8_freeform_curves(data)
-}
-
-fn parsed_a8_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurve> {
-    crate::families::a5a8::records::a8_pcurves(data)
-}
-
-fn parsed_object_stream_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurve> {
-    crate::families::a5a8::records::object_stream_pcurves(data)
-}
-
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
     let surfaces = crate::test_support::with_service_context(|ctx| {
@@ -475,10 +459,9 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
 
 #[test]
 fn a8_surface_header_retains_an_inline_parameter_tail() {
-    let headers = {
+    let headers =
         crate::families::a5a8::records::a8_surface_headers(&a8_inline_tail_surface_stream())
-            .collect::<Vec<_>>()
-    };
+            .collect::<Vec<_>>();
     let [header] = headers.as_slice() else {
         panic!("one inline-tail header");
     };
@@ -718,7 +701,7 @@ fn a8_elided_surface_requires_a_length_closed_successor_frame() {
 
 #[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
-    let pcurves = parsed_a8_pcurves(&a8_pcurve_stream());
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
         (pcurves[0].object_id, pcurves[0].support_id),
@@ -732,26 +715,26 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     assert_eq!(pcurves[0].mode, 0x01);
     let mut wrong_degree = a8_pcurve_stream();
     wrong_degree[15] = 17;
-    assert!(parsed_a8_pcurves(&wrong_degree).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_degree).is_empty());
 
     let mut repeated_knot = a8_pcurve_stream();
     repeated_knot[28..36].copy_from_slice(&le_f64(0.0));
-    assert!(parsed_a8_pcurves(&repeated_knot).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&repeated_knot).is_empty());
 
     let mut wrong_endpoint_multiplicity = a8_pcurve_stream();
     wrong_endpoint_multiplicity[36] = 21;
-    assert!(parsed_a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
 
     let mut trailing_byte = a8_pcurve_stream();
     trailing_byte.push(0);
     let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
     trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(parsed_a8_pcurves(&trailing_byte).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
 }
 
 #[test]
 fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
-    let pcurves = parsed_a8_pcurves(&a8_pcurve_stream_with_count(8193));
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream_with_count(8193));
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].knots().len(), 8193);
     assert_eq!(pcurves[0].points().len(), 8193);
@@ -761,18 +744,20 @@ fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
 fn a8_pcurve_parser_accepts_finite_large_jet_values() {
     let mut bytes = a8_pcurve_stream();
     bytes[40..48].copy_from_slice(&le_f64(2e12));
-    let [pcurve] = parsed_a8_pcurves(&bytes).try_into().expect("one pcurve");
+    let [pcurve] = crate::families::a5a8::records::a8_pcurves(&bytes)
+        .try_into()
+        .expect("one pcurve");
     assert_eq!(pcurve.points()[0][0], 2e12);
 
     bytes[40..48].copy_from_slice(&le_f64(f64::NAN));
-    assert!(parsed_a8_pcurves(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a8_pcurves(&bytes).is_empty());
 }
 
 #[test]
 fn a8_pcurve_parser_retains_mode_five_uv_jet() {
     let mut bytes = a8_pcurve_stream();
     bytes[39] = 0x05;
-    let pcurves = parsed_a8_pcurves(&bytes);
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&bytes);
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].mode, 0x05);
     assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
@@ -786,7 +771,7 @@ fn b5_pcurve_parser_reads_degree5_uv_jet() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(payload);
 
-    let pcurves = parsed_object_stream_pcurves(&b5);
+    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
@@ -812,7 +797,7 @@ fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
         ];
         stream.extend_from_slice(&0x5678u32.to_le_bytes());
         stream.extend_from_slice(payload);
-        let [pcurve] = parsed_object_stream_pcurves(&stream)
+        let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&stream)
             .try_into()
             .expect("one pcurve");
         assert_eq!(pcurve.object_id, 0x5678);
@@ -820,7 +805,7 @@ fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8;
     malformed[1] = 0x23;
-    assert!(parsed_object_stream_pcurves(&malformed).is_empty());
+    assert!(crate::families::a5a8::records::object_stream_pcurves(&malformed).is_empty());
 }
 
 #[test]
@@ -836,7 +821,7 @@ fn object_stream_pcurve_parser_walks_nested_b5_records_inside_a8() {
     let payload_len = u32::try_from(wrapper.len() - 11).unwrap();
     wrapper[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [pcurve] = parsed_object_stream_pcurves(&wrapper)
+    let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&wrapper)
         .try_into()
         .expect("one nested pcurve");
     assert_eq!(pcurve.object_id, 0x9abc);
@@ -851,7 +836,7 @@ fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(&payload);
 
-    let pcurves = parsed_object_stream_pcurves(&b5);
+    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x0012_0034);
@@ -1361,7 +1346,7 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     for header_token in [5, 9, 13, 29, 17] {
         let mut bytes = a5_freeform_curve_stream();
         bytes[7] = header_token;
-        let curves = parsed_a5_freeform_curves(&bytes);
+        let curves = crate::families::a5a8::records::a5_freeform_curves(&bytes);
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[0].header_token, u32::from(header_token));
         assert_eq!(curves[0].knots(), vec![0.0, 1.0]);
@@ -1370,11 +1355,11 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
 
     let mut wrong_degree = a5_freeform_curve_stream();
     wrong_degree[9] = 17;
-    assert!(parsed_a5_freeform_curves(&wrong_degree).is_empty());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
 
     let mut invalid_header_token = a5_freeform_curve_stream();
     invalid_header_token[7] = 18;
-    assert!(parsed_a5_freeform_curves(&invalid_header_token).is_empty());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_header_token).is_empty());
 }
 
 #[test]
@@ -1386,7 +1371,7 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
     let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [curve] = parsed_a5_freeform_curves(&bytes)
+    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
         .try_into()
         .expect("one compact-marker rolling-ball jet");
     assert_eq!(curve.header_token, 17);
@@ -1394,7 +1379,7 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
 
     let mut invalid_marker = bytes;
     invalid_marker[12] = 0x12;
-    assert!(parsed_a5_freeform_curves(&invalid_marker).is_empty());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_marker).is_empty());
 }
 
 #[test]
@@ -1404,7 +1389,7 @@ fn a5_curve_parser_accepts_frame_bounded_continuation() {
     let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [curve] = parsed_a5_freeform_curves(&bytes)
+    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
         .try_into()
         .expect("one rolling-ball jet");
     assert_eq!(curve.knots(), [0.0, 1.0]);
@@ -1413,7 +1398,9 @@ fn a5_curve_parser_accepts_frame_bounded_continuation() {
 
 #[test]
 fn a5_curve_parser_accepts_frame_bounded_site_count() {
-    let curves = parsed_a5_freeform_curves(&a5_freeform_curve_stream_with_count(4097));
+    let curves = crate::families::a5a8::records::a5_freeform_curves(
+        &a5_freeform_curve_stream_with_count(4097),
+    );
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].knots().len(), 4097);
     assert_eq!(curves[0].sites.len(), 4097);
@@ -1425,7 +1412,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits input limit");
-    let [jet] = parsed_a5_freeform_curves(&a5_freeform_curve_stream())
+    let [jet] = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream())
         .try_into()
         .expect("one rolling-ball jet");
     for second_limit in [false, true] {

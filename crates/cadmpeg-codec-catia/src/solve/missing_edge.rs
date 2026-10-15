@@ -715,12 +715,11 @@ fn repeated_edge_face_handle_candidates_from_sets(
         if faces[0] != faces[1] || row.handles().len() < 2 {
             continue;
         }
-        let unique_handles = {
-            row.handles()
-                .iter()
-                .copied()
-                .collect::<std::collections::HashSet<_>>()
-        };
+        let unique_handles = row
+            .handles()
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
         let counts = {
             let mut counts = HashMap::<usize, usize>::new();
             for handle in &unique_handles {

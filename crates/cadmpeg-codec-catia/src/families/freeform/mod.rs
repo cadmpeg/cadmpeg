@@ -3788,9 +3788,8 @@ mod tests {
     fn consolidated_revolution_entity_limit_refuses_before_directrix_append() {
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let resolved = {
-            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records)
-        };
+        let resolved =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
         assert_eq!(resolved.len(), 1);
         crate::test_support::with_entity_limit(0, |ctx| {
             let mut ir = CadIr::empty();
@@ -3882,12 +3881,10 @@ mod tests {
         unrelated.extend_from_slice(&99u32.to_le_bytes());
         unrelated.push(0x00);
 
-        let selection = {
-            crate::families::b5::graph::select_object_stream_population(
-                &[unrelated, topology.clone()],
-                None,
-            )
-        };
+        let selection = crate::families::b5::graph::select_object_stream_population(
+            &[unrelated, topology.clone()],
+            None,
+        );
         assert_eq!(selection.run_count(), 2);
         assert!(selection.selected());
         assert_eq!(selection.source(), topology);
@@ -3896,12 +3893,10 @@ mod tests {
     #[test]
     fn object_stream_selection_refuses_multiple_topology_root_runs() {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
-        let selection = {
-            crate::families::b5::graph::select_object_stream_population(
-                &[topology.clone(), topology],
-                None,
-            )
-        };
+        let selection = crate::families::b5::graph::select_object_stream_population(
+            &[topology.clone(), topology],
+            None,
+        );
 
         assert_eq!(selection.run_count(), 2);
         assert!(!selection.selected());
@@ -3913,9 +3908,8 @@ mod tests {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
         let budget = cadmpeg_core::decode::WorkBudget::new(1);
 
-        let selection = {
-            crate::families::b5::graph::select_object_stream_population(&[topology], Some(&budget))
-        };
+        let selection =
+            crate::families::b5::graph::select_object_stream_population(&[topology], Some(&budget));
 
         assert_eq!(selection.run_count(), 1);
         assert!(!selection.selected());
@@ -4012,10 +4006,9 @@ mod tests {
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::test_b2::b2_line_profile_stream();
-        let profiles = {
+        let profiles =
             consolidated_line_profiles(&bytes, &crate::wire::records::consolidated_records(&bytes))
-        }
-        .expect("service profile admits line profiles");
+                .expect("service profile admits line profiles");
         let wires = profiles
             .iter()
             .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))

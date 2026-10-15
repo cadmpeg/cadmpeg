@@ -10,8 +10,8 @@ use super::{
     a6_freeform_curve_stream, a8_catpart, a8_elided_surface_stream,
     a8_elided_surface_stream_with_native_vertex_chain, a8_freeform_curve_stream,
     a8_freeform_curve_stream_with_count, a8_pcurve_stream, inner_no_directory_a8_catpart, le_f64,
-    object_main_catpart, parsed_a5_freeform_curves, parsed_a8_freeform_curves, CatiaCodec, Cursor,
-    DecodeOptions, EditableDecodeResult, Point3, SolvedSurfaceGeometry, SurfaceGeometry, Variant,
+    object_main_catpart, CatiaCodec, Cursor, DecodeOptions, EditableDecodeResult, Point3,
+    SolvedSurfaceGeometry, SurfaceGeometry, Variant,
 };
 
 #[test]
@@ -20,7 +20,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let mut a5 = a5_freeform_curve_stream();
         a5[28..36].copy_from_slice(&le_f64(radius));
         a5[60..68].copy_from_slice(&le_f64(radius));
-        let [curve] = parsed_a5_freeform_curves(&a5)
+        let [curve] = crate::families::a5a8::records::a5_freeform_curves(&a5)
             .try_into()
             .expect("one consolidated rolling-ball jet");
         assert_eq!(curve.sites[0].site.radius(), radius);
@@ -28,7 +28,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let mut a8 = a8_freeform_curve_stream();
         a8[36..44].copy_from_slice(&le_f64(radius));
         a8[68..76].copy_from_slice(&le_f64(radius));
-        let [curve] = parsed_a8_freeform_curves(&a8)
+        let [curve] = crate::families::a5a8::records::a8_freeform_curves(&a8)
             .try_into()
             .expect("one common-form rolling-ball jet");
         assert_eq!(curve.sites[0].site.radius(), radius);
@@ -42,12 +42,12 @@ fn rolling_ball_parsers_reject_scale_relative_radius_disagreement() {
     bytes[28..36].copy_from_slice(&le_f64(tiny));
     bytes[60..68].copy_from_slice(&le_f64(2.0 * tiny));
     bytes[100..108].copy_from_slice(&le_f64(std::f64::consts::PI));
-    assert!(parsed_a5_freeform_curves(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
 }
 
 #[test]
 fn consolidated_curve_parser_reads_width2_frame() {
-    let curves = parsed_a5_freeform_curves(&a6_freeform_curve_stream());
+    let curves = crate::families::a5a8::records::a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].knots().len(), 2);
     assert_eq!(curves[0].sites[1].site.radius(), 2.0);
@@ -55,7 +55,7 @@ fn consolidated_curve_parser_reads_width2_frame() {
 
 #[test]
 fn guide_curve_parser_reads_position_and_unit_direction_jet() {
-    let curves = { crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream()) };
+    let curves = crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].sites[0].point.get(), [0.0, 0.0, 0.0]);
@@ -94,9 +94,8 @@ fn guide_curve_parser_refuses_nonunit_site_direction() {
 
 #[test]
 fn guide_curve_parser_accepts_frame_bounded_site_count() {
-    let curves = {
-        crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream_with_count(4097))
-    };
+    let curves =
+        crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream_with_count(4097));
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].knots().len(), 4097);
     assert_eq!(curves[0].sites.len(), 4097);
@@ -120,7 +119,7 @@ fn guide_curve_parser_rejects_nonfinite_jet_channels() {
 
 #[test]
 fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
-    let curves = parsed_a8_freeform_curves(&a8_freeform_curve_stream());
+    let curves = crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].object_id, 0x1234_5678);
     assert_eq!(curves[0].multiplicities(), vec![6, 6]);
@@ -128,16 +127,21 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
 
     let mut repeated_knot = a8_freeform_curve_stream();
     repeated_knot[26..34].copy_from_slice(&le_f64(0.0));
-    assert!(parsed_a8_freeform_curves(&repeated_knot).is_empty());
+    assert!(crate::families::a5a8::records::a8_freeform_curves(&repeated_knot).is_empty());
 
     let mut invalid_endpoint_multiplicity = a8_freeform_curve_stream();
     invalid_endpoint_multiplicity[34] = 21;
-    assert!(parsed_a8_freeform_curves(&invalid_endpoint_multiplicity).is_empty());
+    assert!(
+        crate::families::a5a8::records::a8_freeform_curves(&invalid_endpoint_multiplicity)
+            .is_empty()
+    );
 }
 
 #[test]
 fn a8_curve_parser_accepts_frame_bounded_site_count() {
-    let curves = parsed_a8_freeform_curves(&a8_freeform_curve_stream_with_count(8193));
+    let curves = crate::families::a5a8::records::a8_freeform_curves(
+        &a8_freeform_curve_stream_with_count(8193),
+    );
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].sites.len(), 8193);
 }
@@ -148,7 +152,7 @@ fn a8_curve_parser_accepts_each_object_frame_flag() {
         let mut bytes = a8_freeform_curve_stream();
         bytes[1] = flag;
         assert_eq!(
-            parsed_a8_freeform_curves(&bytes).len(),
+            crate::families::a5a8::records::a8_freeform_curves(&bytes).len(),
             1,
             "flag {flag:#04x}"
         );
@@ -156,14 +160,14 @@ fn a8_curve_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8_freeform_curve_stream();
     malformed[1] = 0x23;
-    assert!(parsed_a8_freeform_curves(&malformed).is_empty());
+    assert!(crate::families::a5a8::records::a8_freeform_curves(&malformed).is_empty());
 }
 
 #[test]
 fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let freeform = a5_freeform_curve_stream();
     let records = crate::wire::records::consolidated_records(&freeform);
-    let one_shot = parsed_a5_freeform_curves(&freeform);
+    let one_shot = crate::families::a5a8::records::a5_freeform_curves(&freeform);
     let indexed =
         { crate::families::a5a8::records::a5_freeform_curves_from_records(&freeform, &records) };
     assert_eq!(one_shot.len(), indexed.len());
@@ -175,7 +179,7 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
 
     let guide = a5_guide_curve_stream();
     let records = crate::wire::records::consolidated_records(&guide);
-    let one_shot = { crate::families::a5a8::records::a5_guide_curves(&guide) };
+    let one_shot = crate::families::a5a8::records::a5_guide_curves(&guide);
     let indexed =
         { crate::families::a5a8::records::a5_guide_curves_from_records(&guide, &records) };
     assert_eq!(one_shot.len(), indexed.len());

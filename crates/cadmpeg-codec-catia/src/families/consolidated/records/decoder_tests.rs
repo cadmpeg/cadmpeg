@@ -736,11 +736,9 @@ fn compact_owner_ordinal_selects_the_owned_edge_node() {
         0x07, 0x0b, 0x21,
     ];
     let records = crate::wire::records::consolidated_records(&bytes);
-    let owned = {
-        crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-            &bytes, &records,
-        )
-    };
+    let owned = crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+        &bytes, &records,
+    );
     let [owned] = owned.as_slice() else {
         panic!("one owner-selected edge node")
     };

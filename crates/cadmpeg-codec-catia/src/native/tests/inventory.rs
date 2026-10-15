@@ -659,18 +659,15 @@ fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
 
 #[test]
 fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
-    fn read_tags(bytes: &[u8]) -> std::collections::HashMap<u32, Option<u32>> {
-        crate::object_graph::surface_alias_tag_map(bytes)
-    }
     let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
     bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
 
-    let tags = read_tags(&bytes);
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
     assert_eq!(tags.get(&0x1234), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
 
     bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
-    let tags = read_tags(&bytes);
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
     assert_eq!(tags.get(&0x1234), Some(&None));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x9abc), Some(&Some(0x9abc)));

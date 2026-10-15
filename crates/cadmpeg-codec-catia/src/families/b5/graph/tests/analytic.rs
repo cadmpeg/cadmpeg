@@ -17,17 +17,11 @@ fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     .expect("service budget")
 }
 
-fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    super::super::parse_line_pcurve(record)
-}
+use super::super::parse_line_pcurve;
 
-fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    super::super::parse_circle_pcurve(record)
-}
+use super::super::parse_circle_pcurve;
 
-fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    super::super::parse_class_1a_pcurve(record)
-}
+use super::super::parse_class_1a_pcurve;
 
 #[allow(clippy::too_many_arguments)]
 fn rational_arc_pcurve(
@@ -52,9 +46,7 @@ fn rational_arc_pcurve(
     })
 }
 
-fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
-    super::super::parse_opaque_pcurve(record)
-}
+use super::super::parse_opaque_pcurve;
 
 #[test]
 fn circle_pcurve_rejects_unbounded_subdivision_counts() {

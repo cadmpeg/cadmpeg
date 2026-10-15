@@ -3,8 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use crate::legacy_entity::parse_runs as parse_runs_charged;
-use crate::legacy_entity::parse_runs_with_directory_offset as parse_runs_with_directory_offset_charged;
+use crate::legacy_entity::parse_runs;
+use crate::legacy_entity::parse_runs_with_directory_offset;
 use crate::legacy_entity::LegacyRoleName;
 use crate::legacy_entity::LegacyRoleSelector;
 use crate::legacy_entity::LegacyRoleSelectorEncoding;
@@ -22,17 +22,6 @@ mod identity;
 mod transfer;
 
 use crate::container;
-
-fn parse_runs(data: &[u8]) -> Vec<super::LegacyEntityRun> {
-    parse_runs_charged(data)
-}
-
-fn parse_runs_with_directory_offset(
-    data: &[u8],
-    directory_offset: Option<usize>,
-) -> Vec<super::LegacyEntityRun> {
-    parse_runs_with_directory_offset_charged(data, directory_offset)
-}
 
 fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
     identity_with_lead(bytes, entity_id, 0x81);
