@@ -214,7 +214,8 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
             Some(&weights),
             *interior.as_raw(),
             1.0e-9,
-        ),
+        )
+        .expect("resource allocation did not fail"),
         Some(true)
     );
     assert_eq!(
@@ -225,7 +226,8 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
             Some(&weights),
             Point2::new(4.0, 4.0),
             1.0e-6,
-        ),
+        )
+        .expect("resource allocation did not fail"),
         Some(false)
     );
 }

@@ -281,7 +281,8 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
                 None,
                 Point2::new(0.5, 0.),
                 CHORD_BOUND_TOLERANCE,
-            ),
+            )
+            .expect("resource allocation did not fail"),
             Some(true)
         );
         assert_eq!(
@@ -292,7 +293,8 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
                 None,
                 Point2::new(0.5, 2.),
                 CHORD_BOUND_TOLERANCE,
-            ),
+            )
+            .expect("resource allocation did not fail"),
             Some(false)
         );
     }
