@@ -9,8 +9,9 @@ use crate::nurbs::blend::{
 use crate::nurbs::core::{curve_block, surface_block};
 use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end};
 use crate::nurbs::proc_curve::{
-    embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
-    optional_embedded_surface_with_bounds, optional_helix_revision,
+    embedded_base_curve_resolving_refs, embedded_support, embedded_surface,
+    embedded_surface_with_ranges, optional_embedded_surface_with_bounds, optional_helix_revision,
+    EmbeddedSupport,
 };
 use crate::nurbs::reader::{normalized, take_native_ident, Nullable, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
@@ -674,12 +675,17 @@ pub(super) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<Pcu
     Some(Nullable::Value(pcurve))
 }
 
-fn g2_side(cur: &mut Cur<'_>) -> Option<EmbeddedG2Side> {
+pub(super) fn g2_side(cur: &mut Cur<'_>) -> Option<EmbeddedG2Side> {
     let label = cur.take_str()?.to_owned();
-    let surface = embedded_surface(cur)?;
+    let EmbeddedSupport { surface, chart, .. } = embedded_support(cur)?;
     let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
     cur.set_pos(curve_end);
-    let first = nullable_embedded_pcurve(cur)?.value();
+    // The first pcurve is the contact track in the support chart, as the
+    // primary pcurve of a rolling-ball side is.
+    let mut first = nullable_embedded_pcurve(cur)?.value();
+    if let Some(pcurve) = &mut first {
+        chart.normalize(pcurve)?;
+    }
     let direction = cur.take_vector3()?;
     let second = nullable_embedded_pcurve(cur)?.value();
     Some(EmbeddedG2Side {
@@ -1767,13 +1773,16 @@ fn revision_loft_profile_data(
         Some(type_code) => {
             let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
                 surface,
+                chart,
                 bounds: support_bounds,
-                ..
             } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
                 Ok(surface) => surface,
                 Err(error) => return Some(Err(error)),
             };
-            let pcurve = nullable_embedded_pcurve(cur)?.value();
+            let mut pcurve = nullable_embedded_pcurve(cur)?.value();
+            if let Some(pcurve) = &mut pcurve {
+                chart.normalize(pcurve)?;
+            }
             let first_flag = cur.take_bool()?;
             let (asm_extension, subdata, direction) = propagate_resource!(tail(cur)?);
             Some(Ok(LoftProfileData::RevisionSupport {
@@ -1956,15 +1965,19 @@ fn loft_subdata_form(
     }
 }
 
-fn loft_profile_data(cur: &mut Cur<'_>, type_code: i64) -> Option<ClassicLoftProfileData> {
-    let surface = embedded_surface(cur)?;
+pub(super) fn loft_profile_data(
+    cur: &mut Cur<'_>,
+    type_code: i64,
+) -> Option<ClassicLoftProfileData> {
+    let EmbeddedSupport { surface, chart, .. } = embedded_support(cur)?;
     let saved = cur.pos();
     let pcurve = if cur.take_ident() == Some("nullbs") {
         None
     } else {
         cur.set_pos(saved);
-        let (pcurve, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+        let (mut pcurve, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
         cur.set_pos(end);
+        chart.normalize(&mut pcurve)?;
         Some(pcurve)
     };
     let first_flag = cur.take_bool()?;
@@ -3420,8 +3433,8 @@ fn taper_spl_sur(
         let revision = PositiveI64::new(cur.take_long()?)?;
         let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
             surface: support,
+            chart,
             bounds: support_bounds,
-            ..
         } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
             Ok(support) => support,
             Err(error) => return Some(Err(error)),
@@ -3432,7 +3445,10 @@ fn taper_spl_sur(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        let pcurve = nullable_embedded_pcurve(&mut cur)?.value();
+        let mut pcurve = nullable_embedded_pcurve(&mut cur)?.value();
+        if let Some(pcurve) = &mut pcurve {
+            chart.normalize(pcurve)?;
+        }
         let parameter = cur.take_f64()?;
         let RevisionSurfaceTail {
             cache,
@@ -3465,7 +3481,11 @@ fn taper_spl_sur(
             },
         )));
     }
-    let support = embedded_surface(&mut cur)?;
+    let EmbeddedSupport {
+        surface: support,
+        chart,
+        ..
+    } = embedded_support(&mut cur)?;
     let (reference, reference_end) = curve_block(span, cur.pos())?;
     cur.set_pos(reference_end);
     let saved = cur.pos();
@@ -3473,8 +3493,9 @@ fn taper_spl_sur(
         None
     } else {
         cur.set_pos(saved);
-        let (pcurve, end) = pcurve_block_with_end(span, cur.pos())?;
+        let (mut pcurve, end) = pcurve_block_with_end(span, cur.pos())?;
         cur.set_pos(end);
+        chart.normalize(&mut pcurve)?;
         Some(pcurve)
     };
     let parameter = cur.take_f64()?;
