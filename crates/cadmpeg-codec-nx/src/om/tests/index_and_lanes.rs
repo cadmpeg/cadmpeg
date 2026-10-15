@@ -36,6 +36,7 @@ fn draft_construction_identity_frames_test(
 use crate::om::hole_package_construction_group_lane;
 use crate::om::indexed_sections;
 use crate::om::offset_store_named_point;
+use crate::om::tests::section_budget;
 
 fn construction_payload_scalar_fields_test(
     bytes: &[u8],
@@ -133,7 +134,7 @@ fn simple_hole_references_test(
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
-    let sections = indexed_sections(&bytes).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 8);
     let records = sections[0].as_fixed().expect("fixed store");

@@ -491,7 +491,45 @@ fn overlapping_extref_candidates_are_rejected() {
             .copy_from_slice(&u16::try_from(32_768 - marker).unwrap().to_le_bytes());
     }
     *bytes.last_mut().unwrap() = 0;
-    assert_eq!(super::locate_extref_string_table(&bytes), None);
+    assert_eq!(
+        super::locate_extref_string_table(&bytes),
+        super::ExtrefStringTableSearch::Absent
+    );
+}
+
+#[test]
+fn overlapping_extref_candidates_skip_the_search_at_its_work_bound() {
+    // Every eighth byte starts a one-entry table whose string runs to the
+    // payload end, so the candidates declare about 2^28 string bytes.
+    let mut bytes = vec![b'A'; 65_543];
+    for marker in (8..bytes.len() - 8).step_by(8) {
+        bytes[marker] = 1;
+        bytes[marker + 1..marker + 5].copy_from_slice(&1_u32.to_le_bytes());
+        let length = u16::try_from(bytes.len() - marker - 7).unwrap();
+        bytes[marker + 5..marker + 7].copy_from_slice(&length.to_le_bytes());
+    }
+    *bytes.last_mut().unwrap() = 0;
+    assert_eq!(
+        super::locate_extref_string_table(&bytes),
+        super::ExtrefStringTableSearch::Bounded
+    );
+
+    let file = prt_with_named_payloads(&[("/Root/ExternalReferences", bytes)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let bounded = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(bounded.len(), 1);
+    assert!(bounded[0].message.contains("/Root/ExternalReferences"));
+    assert!(result.ir().source.as_ref().is_some_and(|source| !source
+        .attributes
+        .keys()
+        .any(|key| key.as_str().starts_with("external_reference"))));
 }
 
 #[test]

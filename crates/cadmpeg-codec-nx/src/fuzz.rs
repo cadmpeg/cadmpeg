@@ -45,7 +45,9 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     while let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) {
         at += token.raw().len();
     }
-    for section in crate::om::indexed_sections(data)? {
+    let budget =
+        cadmpeg_core::decode::WorkBudget::new(crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK);
+    for section in crate::om::indexed_sections(data, &budget)? {
         drop(section.numeric_expressions());
     }
     for section in crate::om::sections(data)? {

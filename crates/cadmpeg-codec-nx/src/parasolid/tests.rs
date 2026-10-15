@@ -88,7 +88,7 @@ fn parasolid_entity_51_records_retain_layout_selected_references() {
     }
     bytes.extend_from_slice(&[0xaa, 0xbb]);
 
-    let records = crate::parasolid::entity_51_records(&bytes).records;
+    let records = crate::parasolid::entity_51_records(&bytes);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 0);
     assert_eq!(records[0].byte_len, 26);
@@ -191,7 +191,7 @@ fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
         0xaa, 0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
         0xbb,
     ];
-    let records = crate::parasolid::field_names_records(&bytes).records;
+    let records = crate::parasolid::field_names_records(&bytes);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
     assert_eq!(records[0].byte_len, 14);
@@ -209,9 +209,7 @@ fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     assert!(crate::parasolid::field_names_record_at(&bytes[..14], 1).is_none());
 
     let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
-    assert!(crate::parasolid::field_names_records(&empty)
-        .records
-        .is_empty());
+    assert!(crate::parasolid::field_names_records(&empty).is_empty());
 }
 
 #[test]
@@ -223,7 +221,7 @@ fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
         0x00, 0x63, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00, 0x30, 0x00, 0x00, 0x40,
     ]);
 
-    let records = crate::parasolid::field_names_records(&bytes).records;
+    let records = crate::parasolid::field_names_records(&bytes);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 0);
     assert_eq!(
@@ -266,7 +264,7 @@ fn partition_values_require_a_unique_entity_reference() {
 fn partition_character_values_can_be_owned_by_a_field_name_list() {
     {
         let mut bytes = parasolid_entity_records_stream();
-        let definition_offset = crate::parasolid::attribute_definitions(&bytes).records[0].offset;
+        let definition_offset = crate::parasolid::attribute_definitions(&bytes).unwrap()[0].offset;
         bytes[definition_offset + 24..definition_offset + 26].copy_from_slice(&34u16.to_be_bytes());
         bytes.extend_from_slice(&[0, 0x63]);
         bytes.extend_from_slice(&1u32.to_be_bytes());
@@ -565,4 +563,36 @@ fn attribute_owner_grouping_retains_trailing_references() {
     }
     let references = super::referenced_value_xmts(&bytes, super::ValueMultiplicity::UniqueSnapshot);
     assert!(references.contains(&8));
+}
+
+#[test]
+fn overlapping_attribute_identifiers_skip_the_definition_scan_at_its_work_bound() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    // Every sixteenth byte starts a type-79 identifier whose name runs to the
+    // stream end, so the candidates declare about 2^27 name bytes.
+    let header = b"PS\0\0 (partition) SCH_TEST_1_9999";
+    let first = header.len();
+    let mut stream = vec![b'.'; 1 << 16];
+    stream[..first].copy_from_slice(header);
+    for offset in (first..stream.len() - 8).step_by(16) {
+        let name_len = u32::try_from(stream.len() - offset - 8).unwrap();
+        stream[offset..offset + 2].copy_from_slice(&[0x00, 0x4f]);
+        stream[offset + 2..offset + 6].copy_from_slice(&name_len.to_be_bytes());
+        stream[offset + 6..offset + 8].copy_from_slice(&2_u16.to_be_bytes());
+    }
+    assert!(parasolid::attribute_definitions(&stream).is_none());
+
+    let file = crate::test_support::test_prt::prt_with_partition(&stream);
+    let result = crate::NxCodec
+        .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let bounded = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::NxLossCode::SourceScanBounded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(bounded.len(), 1);
+    assert!(bounded[0].message.contains("Parasolid stream #0"));
 }

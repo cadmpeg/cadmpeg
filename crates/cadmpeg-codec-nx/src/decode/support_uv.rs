@@ -80,11 +80,13 @@ const MAX_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 262_144;
 
 pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
     chart_count
-        .saturating_mul(SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART)
-        .clamp(
-            MIN_SUPPORT_UV_COMPLETION_SAMPLES,
-            MAX_SUPPORT_UV_COMPLETION_SAMPLES,
-        )
+        .checked_mul(SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART)
+        .map_or(MAX_SUPPORT_UV_COMPLETION_SAMPLES, |samples| {
+            samples.clamp(
+                MIN_SUPPORT_UV_COMPLETION_SAMPLES,
+                MAX_SUPPORT_UV_COMPLETION_SAMPLES,
+            )
+        })
 }
 
 type SupportUvBudget<'a> = WorkBudget<'a>;
@@ -95,11 +97,13 @@ pub(super) fn support_uv_budget_exhausted(budget: &SupportUvBudget<'_>) -> bool 
 
 fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) -> usize {
     sample_count
-        .saturating_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
-        .clamp(
-            MIN_SUPPORT_UV_LANE_GEOMETRY_WORK,
-            MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
-        )
+        .checked_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
+        .map_or(MAX_SUPPORT_UV_LANE_GEOMETRY_WORK, |work| {
+            work.clamp(
+                MIN_SUPPORT_UV_LANE_GEOMETRY_WORK,
+                MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
+            )
+        })
         .min(remaining)
 }
 
@@ -1944,7 +1948,10 @@ fn complete_coupled_support_uv(
             continue;
         }
         let missing_lanes = missing.iter().filter(|missing| **missing).count();
-        let sample_work = points.len().saturating_mul(missing_lanes);
+        let Some(sample_work) = points.len().checked_mul(missing_lanes) else {
+            coupled_support_budget.exhaust();
+            break;
+        };
         if !coupled_support_budget.charge_by(work_units(sample_work)) {
             break;
         }
@@ -2953,7 +2960,7 @@ mod tests {
     }
 
     #[test]
-    fn support_uv_completion_count_saturates_at_the_model_ceiling() {
+    fn support_uv_completion_count_overflow_caps_at_the_model_ceiling() {
         assert_eq!(
             super::support_uv_completion_budget_limit(usize::MAX),
             super::MAX_SUPPORT_UV_COMPLETION_SAMPLES
@@ -2961,7 +2968,7 @@ mod tests {
     }
 
     #[test]
-    fn support_uv_lane_count_saturates_at_the_lane_ceiling() {
+    fn support_uv_lane_count_overflow_caps_at_the_lane_ceiling() {
         assert_eq!(
             support_uv_lane_geometry_work_limit(usize::MAX, usize::MAX),
             MAX_SUPPORT_UV_LANE_GEOMETRY_WORK

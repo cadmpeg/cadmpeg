@@ -5,6 +5,7 @@ use crate::test_support::test_om::indexed_om_section;
 
 use crate::om::color_tables;
 use crate::om::indexed_sections;
+use crate::om::tests::section_budget;
 use crate::om::ExpressionUnit;
 
 fn sample_color_table_bytes() -> Vec<u8> {
@@ -96,7 +97,7 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
 fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     let mut bytes = indexed_om_section();
     bytes.extend_from_slice(b"\x10UGS::PayloadText");
-    let sections = indexed_sections(&bytes).unwrap();
+    let sections = indexed_sections(&bytes, &section_budget()).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
     assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
@@ -107,7 +108,9 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
 #[test]
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let bytes = indexed_om_section();
-    let section = indexed_sections(&bytes).unwrap().remove(0);
+    let section = indexed_sections(&bytes, &section_budget())
+        .unwrap()
+        .remove(0);
     let expression_records = section.numeric_expression_records();
     assert_eq!(expression_records[0].0, 1);
     let expressions = expression_records
