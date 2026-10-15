@@ -12,6 +12,7 @@ mod direct_face;
 mod dispatcher;
 mod extrude;
 mod extrude_fallbacks;
+mod fixed_extrude;
 mod hole;
 mod loft;
 mod mirror;
