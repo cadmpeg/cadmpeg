@@ -44,7 +44,7 @@ fn required_component_roots(roots: NonZeroUsize, merge_capacity: usize) -> usize
 use super::mesh_gauge::{
     build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
     canonicalize_endpoint_relation_state, canonicalize_mesh_candidate_for_output,
-    mesh_candidates_equivalent_with_context, MeshCandidateGauge, MeshEdgeGeometry,
+    mesh_candidates_equivalent, MeshCandidateGauge, MeshEdgeGeometry,
 };
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
 #[cfg(test)]
@@ -6556,12 +6556,8 @@ fn resolve_endpoint_configuration_relation_streaming(
                 }
                 let candidate = (topology, assignment);
                 if let Some(previous) = &resolved {
-                    let equivalent = mesh_candidates_equivalent_with_context(
-                        ctx,
-                        previous,
-                        &candidate,
-                        candidate_gauge,
-                    )?;
+                    let equivalent =
+                        mesh_candidates_equivalent(ctx, previous, &candidate, candidate_gauge)?;
                     if !equivalent {
                         ambiguous = true;
                         return Ok(true);
@@ -7302,12 +7298,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
                 MeshSolve::Solved((topology, assignment)) => {
                     let candidate = (topology, assignment);
                     let equivalent = if let SearchOutcome::Solved(previous) = &*outcome {
-                        mesh_candidates_equivalent_with_context(
-                            ctx,
-                            previous,
-                            &candidate,
-                            candidate_gauge,
-                        )?
+                        mesh_candidates_equivalent(ctx, previous, &candidate, candidate_gauge)?
                     } else {
                         false
                     };
@@ -8234,7 +8225,7 @@ where
         };
         match &incidence_solution {
             Some(stored) => {
-                if !mesh_candidates_equivalent_with_context(
+                if !mesh_candidates_equivalent(
                     ctx,
                     stored,
                     &candidate,

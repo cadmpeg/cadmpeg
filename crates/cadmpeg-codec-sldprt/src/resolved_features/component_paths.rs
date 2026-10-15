@@ -374,12 +374,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         }
         if let Some(&profile_index) = neutral_indices.get(*profile) {
             let reference = features[profile_index].id.clone();
-            if !features[index]
-                .dependencies
-                .contains(&features[profile_index].id)
-            {
-                features[index].dependencies.insert(reference.clone());
-            }
+            features[index].dependencies.insert(reference.clone());
             features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
                     definition
@@ -595,9 +590,7 @@ pub(crate) fn project_dissected_sketches(
             feature
                 .dependencies
                 .retain(|dependency| dependency != &child);
-            if !feature.dependencies.contains(&owner) {
-                feature.dependencies.insert(owner);
-            }
+            feature.dependencies.insert(owner);
         }
     }
 }

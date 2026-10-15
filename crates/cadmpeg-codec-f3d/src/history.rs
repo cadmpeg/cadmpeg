@@ -1181,7 +1181,7 @@ pub(crate) fn bind_feature_body_selections(
         inputs.construction_recipes,
         inputs.persistent_design_links,
     );
-    bind_pattern_body_selections(features, inputs, &mut body_candidates)?;
+    bind_pattern_body_selections(features, inputs, &mut body_candidates);
     let mut pattern_body_slots = HashMap::new();
     'pattern: for feature in features.iter() {
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
@@ -1257,7 +1257,7 @@ pub(crate) fn bind_feature_body_selections(
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    edit_result = bind_body_recipe_body_selection(
+                    bind_body_recipe_body_selection(
                         tools,
                         feature_id,
                         previous_state_id,
@@ -1266,8 +1266,7 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                     for cell in cells {
-                        if edit_result.is_err() { break; }
-                        edit_result = bind_body_recipe_body_selection(
+                        bind_body_recipe_body_selection(
                             cell,
                             feature_id,
                             previous_state_id,
@@ -1289,14 +1288,6 @@ pub(crate) fn bind_feature_body_selections(
             {
                 let edit = operands
                     .try_edit(|target, tools| {
-                        macro_rules! admitted {
-                            ($value:expr) => {
-                                match $value {
-                                    Ok(value) => value,
-                                    Err(error) => { edit_result = Err(error); return; }
-                                }
-                            };
-                        }
                         let (Some(state_id), Some(previous_state_id)) =
                             (scope.history_state_id(), scope.previous_history_state_id())
                         else {
@@ -1327,11 +1318,12 @@ pub(crate) fn bind_feature_body_selections(
                         let Some(body) = singleton_revised_input_body_across_state_chain(state, previous_state_id, &history_states) else {
                             return;
                         };
-                        let input_state = admitted!(crate::ids::history_input_state_id_charged(feature_id, previous_state_id));
-                        let body_id = admitted!(crate::ids::history_input_body_id_charged(feature_id, previous_state_id, body));
+                        let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+                        let input_state = crate::ids::history_input_state_id(&prefix);
+                        let body_id = crate::ids::history_input_body_id(&prefix, body);
                         let native_id = native.to_owned();
                         let target_bodies = vec![body_id];
-                        if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(admitted!(crate::ids::history_input_state_id_charged(feature_id, previous_state_id)), target_bodies, native_id) {
+                        if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(crate::ids::history_input_state_id(&prefix), target_bodies, native_id) {
                             *target = historical;
                         }
                         let Some(stream) = crate::ids::native_stream(&scope.id) else {
@@ -1369,7 +1361,7 @@ pub(crate) fn bind_feature_body_selections(
                                 break;
                             }
                             if let Some(body) = operand.resolved_body_slot {
-                                let body = admitted!(crate::ids::history_input_body_id_charged(feature_id, previous_state_id, body));
+                                let body = crate::ids::history_input_body_id(&prefix, body);
                                 let repeated = historical_tool_rows
                                     .iter()
                                     .any(|row: &BodyMember<_>| row.body() == &body);
@@ -1432,7 +1424,7 @@ pub(crate) fn bind_feature_body_selections(
                                 if tool_slots.len() != native_tools.len() {
                                     return;
                                 }
-                                let Some(rows) = admitted!(combine_historical_rows(feature_id, previous_state_id, tool_slots, native_tools)) else {
+                                let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
                                     return;
                                 };
                                 let Ok(members) =
@@ -1455,7 +1447,7 @@ pub(crate) fn bind_feature_body_selections(
                                     if tool_slots.len() != native_tools.len() {
                                         return;
                                     }
-                                    let Some(rows) = admitted!(combine_historical_rows(feature_id, previous_state_id, tool_slots, native_tools)) else {
+                                    let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
                                         return;
                                     };
                                     let Ok(members) =
@@ -1483,7 +1475,7 @@ pub(crate) fn bind_feature_body_selections(
             }) = definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    edit_result = bind_body_recipe_body_selection(
+                    bind_body_recipe_body_selection(
                         targets,
                         feature_id,
                         previous_state_id,
@@ -1500,7 +1492,7 @@ pub(crate) fn bind_feature_body_selections(
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    edit_result = bind_body_recipe_body_selection(
+                    bind_body_recipe_body_selection(
                         bodies,
                         feature_id,
                         previous_state_id,
@@ -1517,7 +1509,7 @@ pub(crate) fn bind_feature_body_selections(
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    edit_result = bind_body_recipe_body_selection(
+                    bind_body_recipe_body_selection(
                         bodies,
                         feature_id,
                         previous_state_id,
@@ -1525,7 +1517,7 @@ pub(crate) fn bind_feature_body_selections(
                         groups,
                         body_recipe_operands,
                     );
-                    if edit_result.is_ok() && matches!(bodies, BodySelection::Native(_)) {
+                    if matches!(bodies, BodySelection::Native(_)) {
                         bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
                     }
                 } else {
@@ -1585,16 +1577,10 @@ pub(crate) fn bind_feature_body_selections(
             let Some(body) = body else {
                 break 'feature_edit;
             };
-            let state_id = crate::ids::history_input_state_id_charged(feature_id, previous_state_id);
-            let body_id = crate::ids::history_input_body_id_charged(feature_id, previous_state_id, body);
-            let native = Ok(group_id.to_owned());
-            let (state_id, body_id, native) = match (state_id, body_id, native) {
-                (Ok(state_id), Ok(body_id), Ok(native)) => (state_id, body_id, native),
-                (Err(error), _, _) | (_, Err(error), _) | (_, _, Err(error)) => {
-                    edit_result = Err(error);
-                    break 'feature_edit;
-                }
-            };
+            let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+            let state_id = crate::ids::history_input_state_id(&prefix);
+            let body_id = crate::ids::history_input_body_id(&prefix, body);
+            let native = group_id.to_owned();
             let selected = vec![body_id];
             if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(state_id, selected, native) {
                 *bodies = historical;
@@ -1608,24 +1594,18 @@ pub(crate) fn bind_feature_body_selections(
 }
 
 fn combine_historical_rows(
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
     slots: Vec<i64>,
     native_tools: Vec<String>,
-) -> Result<
-    Option<Vec<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>>,
-    cadmpeg_core::CodecError,
-> {
+) -> Option<Vec<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>> {
     let mut rows = Vec::new();
     for (slot, native) in slots.into_iter().zip(native_tools) {
-        let body = crate::ids::history_input_body_id_charged(feature_id, previous_state_id, slot)?;
-        let Some(row) = body_member(body, native) else {
-            return Ok(None);
-        };
+        let body = crate::ids::history_input_body_id(prefix, slot);
+        let row = body_member(body, native)?;
 
         rows.push(row);
     }
-    Ok(Some(rows))
+    Some(rows)
 }
 
 fn pattern_combine_tool_slots(
@@ -1818,7 +1798,7 @@ fn bind_pattern_body_selections<'a>(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
@@ -1862,7 +1842,6 @@ fn bind_pattern_body_selections<'a>(
             None
         };
         let feature_id = &feature.id;
-        let mut reserve_error = None;
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = definition
             else {
@@ -1875,24 +1854,19 @@ fn bind_pattern_body_selections<'a>(
                 return;
             };
             if let Some(previous_state_id) = scope.previous_history_state_id() {
-                reserve_error = bind_body_recipe_body_selection(
+                bind_body_recipe_body_selection(
                     selection,
                     feature_id,
                     previous_state_id,
                     scope,
                     groups,
                     body_recipe_operands,
-                )
-                .err();
+                );
             } else {
                 bind_direct_body_recipe_body_selection(selection, scope, inputs, body_candidates);
             }
         });
-        if let Some(error) = reserve_error {
-            return Err(error);
-        }
     }
-    Ok(())
 }
 
 fn bind_body_recipe_body_selection(
@@ -1902,11 +1876,11 @@ fn bind_body_recipe_body_selection(
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::BodySelection;
 
     let BodySelection::Native(group_id) = selection else {
-        return Ok(());
+        return;
     };
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
@@ -1921,10 +1895,10 @@ fn bind_body_recipe_body_selection(
             && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
-        return Ok(());
+        return;
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return Ok(());
+        return;
     }
     let mut body_slots = Vec::new();
     for (ordinal, record_index) in group
@@ -1934,7 +1908,7 @@ fn bind_body_recipe_body_selection(
         .enumerate()
     {
         let Ok(ordinal) = u32::try_from(ordinal) else {
-            return Ok(());
+            return;
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.owner.group() == Some((group.record_index, ordinal))
@@ -1942,35 +1916,31 @@ fn bind_body_recipe_body_selection(
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
-            return Ok(());
+            return;
         };
         if matching_operands.next().is_some() {
-            return Ok(());
+            return;
         }
         let Some(body_slot) = operand.resolved_body_slot else {
-            return Ok(());
+            return;
         };
         if !body_slots.contains(&body_slot) {
             body_slots.push(body_slot);
         }
     }
 
+    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
     let mut body_ids = Vec::new();
 
     for slot in body_slots {
-        body_ids.push(crate::ids::history_input_body_id_charged(
-            feature_id,
-            previous_state_id,
-            slot,
-        )?);
+        body_ids.push(crate::ids::history_input_body_id(&prefix, slot));
     }
-    let state = crate::ids::history_input_state_id_charged(feature_id, previous_state_id)?;
+    let state = crate::ids::history_input_state_id(&prefix);
     let native = group.id.clone();
     if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(state, body_ids, native)
     {
         *selection = historical;
     }
-    Ok(())
 }
 
 fn bind_direct_body_recipe_body_selection<'a>(
@@ -2306,18 +2276,18 @@ pub(crate) fn bind_feature_face_selections(
                                 operands,
                                 &transition.topology.faces.updated,
                             ));
-                            admitted!(bind_entity_face_selection(
+                            bind_entity_face_selection(
                                 face,
                                 FaceSelectionBinding {
                                     feature_id,
                                     previous_state_id,
                                     operation_history_id: &history.id,
                                     scope,
-                                    input_topologies: &mut *input_topologies
+                                    input_topologies: &mut *input_topologies,
                                 },
                                 groups,
                                 entity_operands,
-                            ));
+                            );
                         }
                         let sides = match extent {
                             cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
@@ -2356,18 +2326,18 @@ pub(crate) fn bind_feature_face_selections(
                                 operands,
                                 &transition.topology.faces.updated,
                             ));
-                            admitted!(bind_entity_face_selection(
+                            bind_entity_face_selection(
                                 faces,
                                 FaceSelectionBinding {
                                     feature_id,
                                     previous_state_id,
                                     operation_history_id: &history.id,
                                     scope,
-                                    input_topologies: &mut *input_topologies
+                                    input_topologies: &mut *input_topologies,
                                 },
                                 groups,
                                 entity_operands,
-                            ));
+                            );
                         }
                     }
                     cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2391,30 +2361,30 @@ pub(crate) fn bind_feature_face_selections(
                             operands,
                             &transition.topology.faces.updated,
                         ));
-                        admitted!(selection::bind_body_recipe_face_selection(
+                        selection::bind_body_recipe_face_selection(
                             faces,
                             feature_id,
                             previous_state_id,
                             scope,
                             groups,
                             body_recipe_operands,
-                        ));
+                        );
                     }
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
                     ) => {
-                        admitted!(bind_surface_stitch_face_selection(
+                        bind_surface_stitch_face_selection(
                             faces,
                             FaceSelectionBinding {
                                 feature_id,
                                 previous_state_id,
                                 operation_history_id: &history.id,
                                 scope,
-                                input_topologies: &mut *input_topologies
+                                input_topologies: &mut *input_topologies,
                             },
                             groups,
                             entity_operands,
-                        ));
+                        );
                     }
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
@@ -2432,16 +2402,16 @@ pub(crate) fn bind_feature_face_selections(
                             face: Some(face), ..
                         },
                     ) => {
-                        admitted!(bind_hole_face_selection(
+                        bind_hole_face_selection(
                             face,
                             FaceSelectionBinding {
                                 feature_id,
                                 previous_state_id,
                                 operation_history_id: &history.id,
                                 scope,
-                                input_topologies: &mut *input_topologies
+                                input_topologies: &mut *input_topologies,
                             },
-                        ));
+                        );
                     }
                     _ => {}
                 }
@@ -2465,7 +2435,7 @@ fn bind_entity_face_selection(
     input: FaceSelectionBinding<'_>,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::FaceSelection;
     let FaceSelectionBinding {
         feature_id,
@@ -2477,7 +2447,7 @@ fn bind_entity_face_selection(
 
     let group_id = match selection {
         FaceSelection::Native(group_id) => group_id.as_str(),
-        _ => return Ok(()),
+        _ => return,
     };
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
@@ -2486,10 +2456,10 @@ fn bind_entity_face_selection(
             && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
-        return Ok(());
+        return;
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return Ok(());
+        return;
     }
     bind_entity_face_groups(
         selection,
@@ -2503,7 +2473,7 @@ fn bind_entity_face_selection(
         },
         std::slice::from_ref(&group),
         operands,
-    )
+    );
 }
 
 // Keep the serialized-selection context explicit at this boundary so every
@@ -2513,7 +2483,7 @@ fn bind_surface_stitch_face_selection(
     input: FaceSelectionBinding<'_>,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let FaceSelectionBinding {
         feature_id,
         previous_state_id,
@@ -2523,16 +2493,16 @@ fn bind_surface_stitch_face_selection(
     } = input;
     let native_id = match selection {
         cadmpeg_ir::features::FaceSelection::Native(native_id) => native_id.as_str(),
-        _ => return Ok(()),
+        _ => return,
     };
     if native_id != scope.id {
-        return Ok(());
+        return;
     }
     let Some(input_end) = scope.reference_members().len().checked_sub(2) else {
-        return Ok(());
+        return;
     };
     if input_end == 0 || !input_end.is_multiple_of(2) {
-        return Ok(());
+        return;
     }
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups
@@ -2567,7 +2537,7 @@ fn bind_surface_stitch_face_selection(
                         .eq([*member_reference])
             })
     {
-        return Ok(());
+        return;
     }
     bind_entity_face_groups(
         selection,
@@ -2581,7 +2551,7 @@ fn bind_surface_stitch_face_selection(
         },
         &matching_groups,
         operands,
-    )
+    );
 }
 
 // Keep the shared selection-binding inputs explicit; this helper is the
@@ -2592,7 +2562,7 @@ fn bind_entity_face_groups(
     input: FaceSelectionBinding<'_>,
     groups: &[&crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let FaceSelectionBinding {
         feature_id,
         previous_state_id,
@@ -2602,13 +2572,13 @@ fn bind_entity_face_groups(
     } = input;
 
     if groups.is_empty() {
-        return Ok(());
+        return;
     }
     let mut selected = Vec::<(&str, i64, bool)>::new();
     let stream = crate::ids::native_stream(&scope.id);
     for group in groups {
         if group.members().is_empty() {
-            return Ok(());
+            return;
         }
         for (ordinal, record_index) in group
             .members()
@@ -2617,7 +2587,7 @@ fn bind_entity_face_groups(
             .enumerate()
         {
             let Ok(ordinal) = u32::try_from(ordinal) else {
-                return Ok(());
+                return;
             };
             let mut matches = operands.iter().filter(|operand| {
                 operand.scope_record_index == scope.record_index
@@ -2627,48 +2597,48 @@ fn bind_entity_face_groups(
                     && crate::ids::native_stream(&operand.id) == stream
             });
             let Some(operand) = matches.next() else {
-                return Ok(());
+                return;
             };
             let [candidate] = operand.historical_face_candidates.as_slice() else {
-                return Ok(());
+                return;
             };
             if matches.next().is_some() {
-                return Ok(());
+                return;
             }
             let local = candidate.history_id == operation_history_id
                 && candidate.historical.state_ids.contains(&previous_state_id);
             let Some(source) = historical_brep_source(&candidate.history_id) else {
-                return Ok(());
+                return;
             };
             if !selected.contains(&(source, candidate.face_slot, local)) {
                 selected.push((source, candidate.face_slot, local));
             }
         }
     }
-    let state_id = crate::ids::history_input_state_id_charged(feature_id, previous_state_id)?;
+    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let state_id = crate::ids::history_input_state_id(&prefix);
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
     let Some(topology) = topologies.next() else {
-        return Ok(());
+        return;
     };
     if topologies.next().is_some() {
-        return Ok(());
+        return;
     }
     let mut faces = Vec::new();
     for (source, face, local) in selected {
-        if !local && (source.contains('#') || source.chars().any(char::is_whitespace)) {
-            return Ok(());
-        }
-        let id = if local {
-            crate::ids::history_input_face_id_charged(feature_id, previous_state_id, face)?
+        let slot = if local {
+            cadmpeg_ir::ids::IdentityKey::from(face)
         } else {
-            crate::ids::history_input_face_id_charged(
-                feature_id,
-                previous_state_id,
-                format_args!("{}:{source}:{face}", source.len()),
-            )?
+            let Ok(slot) =
+                cadmpeg_ir::ids::IdentityKey::try_new(format!("{}:{source}:{face}", source.len()))
+            else {
+                return;
+            };
+            slot
         };
+        let id = crate::ids::history_input_face_id(&prefix, slot);
 
         faces.push(id);
     }
@@ -2683,13 +2653,12 @@ fn bind_entity_face_groups(
     {
         *selection = historical;
     }
-    Ok(())
 }
 
 fn bind_hole_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     input: FaceSelectionBinding<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::FaceSelection;
     let FaceSelectionBinding {
         feature_id,
@@ -2700,48 +2669,46 @@ fn bind_hole_face_selection(
     } = input;
 
     let FaceSelection::Native(native_id) = selection else {
-        return Ok(());
+        return;
     };
     let Some(construction) = scope.hole_construction() else {
-        return Ok(());
+        return;
     };
     let Some(face_selection) = &construction.face_selection else {
-        return Ok(());
+        return;
     };
     let [candidate] = face_selection.historical_face_candidates.as_slice() else {
-        return Ok(());
+        return;
     };
     let local = candidate.history_id == operation_history_id
         && candidate.historical.state_ids.contains(&previous_state_id);
     let Some(source) = historical_brep_source(&candidate.history_id) else {
-        return Ok(());
+        return;
     };
-    let state_id = crate::ids::history_input_state_id_charged(feature_id, previous_state_id)?;
+    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
+    let state_id = crate::ids::history_input_state_id(&prefix);
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
     let Some(topology) = topologies.next() else {
-        return Ok(());
+        return;
     };
     if topologies.next().is_some() {
-        return Ok(());
+        return;
     }
-    if !local && (source.contains('#') || source.chars().any(char::is_whitespace)) {
-        return Ok(());
-    }
-    let face = if local {
-        crate::ids::history_input_face_id_charged(
-            feature_id,
-            previous_state_id,
-            candidate.face_slot,
-        )?
+    let slot = if local {
+        cadmpeg_ir::ids::IdentityKey::from(candidate.face_slot)
     } else {
-        crate::ids::history_input_face_id_charged(
-            feature_id,
-            previous_state_id,
-            format_args!("{}:{source}:{}", source.len(), candidate.face_slot),
-        )?
+        let Ok(slot) = cadmpeg_ir::ids::IdentityKey::try_new(format!(
+            "{}:{source}:{}",
+            source.len(),
+            candidate.face_slot
+        )) else {
+            return;
+        };
+        slot
     };
+    let face = crate::ids::history_input_face_id(&prefix, slot);
     if !topology.faces.contains(&face) {
         let retained = face.clone();
         topology.faces.insert(retained);
@@ -2753,7 +2720,6 @@ fn bind_hole_face_selection(
     {
         *selection = historical;
     }
-    Ok(())
 }
 
 pub(crate) fn bind_feature_path_selections(
@@ -2761,13 +2727,12 @@ pub(crate) fn bind_feature_path_selections(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceBoundary};
 
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
-        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| 'feature_edit: {
             let Some(native_ref) = native_ref else {
                 break 'feature_edit;
@@ -2787,7 +2752,7 @@ pub(crate) fn bind_feature_path_selections(
                     boundary: SurfaceBoundary::Path(path),
                     ..
                 }) => {
-                    edit_result = bind_entity_selection_path(
+                    bind_entity_selection_path(
                         path,
                         feature_id,
                         previous_state_id,
@@ -2804,7 +2769,7 @@ pub(crate) fn bind_feature_path_selections(
                         }
                     };
                     for path in paths {
-                        edit_result = bind_entity_selection_path(
+                        bind_entity_selection_path(
                             path,
                             feature_id,
                             previous_state_id,
@@ -2812,16 +2777,13 @@ pub(crate) fn bind_feature_path_selections(
                             groups,
                             operands,
                         );
-                        if edit_result.is_err() {
-                            break;
-                        }
                     }
                 }
                 FeatureDefinition::Operation(FeatureOperation::Sweep {
                     path, guide_rail, ..
                 }) => {
                     if let Some(path) = path {
-                        edit_result = bind_entity_selection_path(
+                        bind_entity_selection_path(
                             path,
                             feature_id,
                             previous_state_id,
@@ -2829,12 +2791,9 @@ pub(crate) fn bind_feature_path_selections(
                             groups,
                             operands,
                         );
-                        if edit_result.is_err() {
-                            break 'feature_edit;
-                        }
                     }
                     if let Some(guide_rail) = guide_rail {
-                        edit_result = bind_entity_selection_path(
+                        bind_entity_selection_path(
                             &mut guide_rail.path,
                             feature_id,
                             previous_state_id,
@@ -2847,9 +2806,7 @@ pub(crate) fn bind_feature_path_selections(
                 _ => {}
             }
         });
-        edit_result?;
     }
-    Ok(())
 }
 
 fn bind_entity_selection_path(
@@ -2859,11 +2816,11 @@ fn bind_entity_selection_path(
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::PathRef;
 
     let PathRef::Native(group_id) = path else {
-        return Ok(());
+        return;
     };
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
@@ -2872,10 +2829,10 @@ fn bind_entity_selection_path(
             && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
-        return Ok(());
+        return;
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return Ok(());
+        return;
     }
 
     let mut edge_slots = Vec::new();
@@ -2887,7 +2844,7 @@ fn bind_entity_selection_path(
         .enumerate()
     {
         let Ok(ordinal) = u32::try_from(ordinal) else {
-            return Ok(());
+            return;
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.group_record_index == group.record_index
@@ -2896,32 +2853,28 @@ fn bind_entity_selection_path(
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
-            return Ok(());
+            return;
         };
         if matching_operands.next().is_some() {
-            return Ok(());
+            return;
         }
         let Some(edge_slot) = operand.resolved_edge_slot else {
-            return Ok(());
+            return;
         };
         edge_slots.push(edge_slot);
     }
 
+    let prefix = crate::ids::history_input_prefix(&feature_id.key(), previous_state_id);
     let mut edge_ids = Vec::new();
 
     for slot in edge_slots {
-        edge_ids.push(crate::ids::history_input_edge_id_charged(
-            feature_id,
-            previous_state_id,
-            slot,
-        )?);
+        edge_ids.push(crate::ids::history_input_edge_id(&prefix, slot));
     }
-    let state = crate::ids::history_input_state_id_charged(feature_id, previous_state_id)?;
+    let state = crate::ids::history_input_state_id(&prefix);
     let native = group.id.clone();
     if let Ok(historical) = PathRef::historical_edges(state, edge_ids, native) {
         *path = historical;
     }
-    Ok(())
 }
 
 pub(crate) fn project_feature_input_topologies(
@@ -2930,7 +2883,7 @@ pub(crate) fn project_feature_input_topologies(
     histories: &[AsmHistory],
     edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
     scope_histories: &HashMap<String, String>,
-) -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
+) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
     use cadmpeg_ir::features::FeatureInputTopology;
 
     let mut projected = Vec::new();
@@ -2979,31 +2932,28 @@ pub(crate) fn project_feature_input_topologies(
         let Some(topology) = state.topology() else {
             continue;
         };
+        let prefix = crate::ids::history_input_prefix(&feature.id.key(), previous_state_id);
         let Some(bodies) = project_input_members(&topology.bodies, |slot| {
-            crate::ids::history_input_body_id_charged(&feature.id, previous_state_id, slot)
-        })?
-        else {
+            crate::ids::history_input_body_id(&prefix, slot)
+        }) else {
             continue;
         };
         let Some(faces) = project_input_members(&topology.faces, |slot| {
-            crate::ids::history_input_face_id_charged(&feature.id, previous_state_id, slot)
-        })?
-        else {
+            crate::ids::history_input_face_id(&prefix, slot)
+        }) else {
             continue;
         };
         let Some(edges) = project_input_members(&topology.edges, |slot| {
-            crate::ids::history_input_edge_id_charged(&feature.id, previous_state_id, slot)
-        })?
-        else {
+            crate::ids::history_input_edge_id(&prefix, slot)
+        }) else {
             continue;
         };
         let Some(vertices) = project_input_members(&topology.vertices, |slot| {
-            crate::ids::history_input_vertex_id_charged(&feature.id, previous_state_id, slot)
-        })?
-        else {
+            crate::ids::history_input_vertex_id(&prefix, slot)
+        }) else {
             continue;
         };
-        let id = crate::ids::history_input_state_id_charged(&feature.id, previous_state_id)?;
+        let id = crate::ids::history_input_state_id(&prefix);
         let input_of = feature.id.clone();
         let native_ref = state.id.clone();
 
@@ -3017,19 +2967,15 @@ pub(crate) fn project_feature_input_topologies(
             native_ref: Some(native_ref),
         });
     }
-    Ok(projected)
+    projected
 }
 
 fn project_input_members<T: Eq + std::hash::Hash>(
     slots: &[i64],
-    mut id: impl FnMut(i64) -> Result<T, cadmpeg_core::CodecError>,
-) -> Result<Option<cadmpeg_ir::features::DistinctMembers<T>>, cadmpeg_core::CodecError> {
-    let mut members = Vec::new();
-
-    for &slot in slots {
-        members.push(id(slot)?);
-    }
-    Ok(cadmpeg_ir::features::DistinctMembers::try_from(members).ok())
+    id: impl FnMut(i64) -> T,
+) -> Option<cadmpeg_ir::features::DistinctMembers<T>> {
+    let members = slots.iter().copied().map(id).collect::<Vec<_>>();
+    cadmpeg_ir::features::DistinctMembers::try_from(members).ok()
 }
 
 /// Resolve persistent vertex recipes in the last history-bearing feature state

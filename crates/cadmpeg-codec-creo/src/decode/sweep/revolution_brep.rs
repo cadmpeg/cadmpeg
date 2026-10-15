@@ -155,8 +155,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 &axis,
                 &format_args!("revolution feature {feature_id} profile segment {index}"),
                 &mut refusal,
-            )?
-            else {
+            ) else {
                 complete = false;
                 break;
             };

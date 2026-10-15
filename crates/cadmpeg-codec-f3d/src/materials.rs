@@ -665,7 +665,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
             out.push(Appearance {
-                id: crate::ids::appearance_id_charged(&assignment.visual_guid)?,
+                id: crate::ids::appearance_id(assignment.visual_guid.identity_key()),
                 name: (assignment
                     .visual_preset
                     .as_ref()
@@ -719,10 +719,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
             continue;
         };
         bindings.push(AppearanceBinding {
-            id: crate::ids::body_appearance_binding_id_charged(
+            id: crate::ids::body_appearance_binding_id(
                 over.entity_suffix,
-                &over.visual_guid,
-            )?,
+                over.visual_guid.identity_key(),
+            ),
             target: AppearanceTarget::Body(over.body.clone()),
             appearance: appearance.id.clone(),
             source_entity_id: None,
@@ -811,7 +811,7 @@ fn appearances_from_schema_records(
         });
         let base_color = appearance_base_color(record);
         let appearance = Appearance {
-            id: crate::ids::appearance_id_charged(&record.guid)?,
+            id: crate::ids::appearance_id(appearance_key(&record.guid)?),
             name: Some(record.base.clone()),
             asset_guid: Some(record.guid.clone()),
             library_id: library_id(&record.asset_lib_id),
@@ -1453,6 +1453,13 @@ fn body_node_candidate(
     first
 }
 
+/// Admit an appearance asset GUID as an appearance identity key.
+fn appearance_key(guid: &str) -> Result<cadmpeg_ir::ids::IdentityKey, CodecError> {
+    cadmpeg_ir::ids::IdentityKey::try_new(guid).map_err(|error| {
+        CodecError::malformed(format_args!("F3D appearance identity is invalid: {error}"))
+    })
+}
+
 fn bind_bodies(
     appearances: &[Appearance],
     assignments: &[DesignMaterialAssignment],
@@ -1477,10 +1484,15 @@ fn bind_bodies(
             continue;
         };
         out.push(AppearanceBinding {
-            id: crate::ids::assignment_appearance_binding_id_charged(
+            id: crate::ids::assignment_appearance_binding_id(
                 assignment.entity_id.as_str(),
-                &assignment.visual_guid,
-            )?,
+                assignment.visual_guid.identity_key(),
+            )
+            .map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "F3D appearance binding identity is invalid: {error}"
+                ))
+            })?,
             target: AppearanceTarget::Body(body),
             appearance: appearance.id.clone(),
             source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
@@ -2036,7 +2048,7 @@ fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> 
         properties,
     )?;
     Ok(Some(Appearance {
-        id: crate::ids::appearance_id_charged(&guid)?,
+        id: crate::ids::appearance_id(appearance_key(&guid)?),
         name: Some(base),
         asset_guid: Some(guid.clone()),
         library_id: library_id(&asset_lib_id),

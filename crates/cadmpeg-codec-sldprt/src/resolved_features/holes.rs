@@ -1698,10 +1698,7 @@ pub(crate) fn project_hole_position_sketches(
                     *placements = Some(resolved);
                 }
             });
-            if !feature.dependencies.contains(dependency) {
-                let dependency = dependency.clone();
-                feature.dependencies.insert(dependency);
-            }
+            feature.dependencies.insert(dependency.clone());
         }
     }
     Ok(())

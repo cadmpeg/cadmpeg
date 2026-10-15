@@ -565,7 +565,7 @@ pub(in super::super) fn interpolation_spline_surface(
 pub(in super::super) fn placed_section_nurbs(
     transform: &crate::placement::FeatureSectionTransform,
     nurbs: &NurbsCurve,
-) -> Result<Option<NurbsCurve>, CodecError> {
+) -> Option<NurbsCurve> {
     nurbs.map_control_points(|point| {
         Point3::from(section_xyz_in_model(transform, [point.x, point.y, point.z]))
     })
@@ -574,7 +574,7 @@ pub(in super::super) fn placed_section_nurbs(
 pub(super) fn translated_nurbs_curve(
     curve: &NurbsCurve,
     translation: [f64; 3],
-) -> Result<Option<NurbsCurve>, CodecError> {
+) -> Option<NurbsCurve> {
     curve.map_control_points(|point| {
         Point3::new(
             point.x + translation[0],
@@ -777,34 +777,25 @@ pub(in super::super) fn extrusion_brep_side_surface(
     endpoints: [[f64; 2]; 2],
     span: ExtrusionSpan,
     diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
-) -> Result<Option<SurfaceGeometry>, CodecError> {
+) -> Option<SurfaceGeometry> {
     let [start, end] = endpoints;
 
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let Some(directrix) = oriented_sketch_nurbs_curve(geometry, reversed) else {
-            return Ok(None);
-        };
+        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
         let lower_translation = transform.normal().map(|value| value * span.lower());
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        let Some(placed) = placed_section_nurbs(transform, &directrix)? else {
-            return Ok(None);
-        };
-        let Some(translated) = translated_nurbs_curve(&placed, lower_translation)? else {
-            return Ok(None);
-        };
-        let Some(surface) =
-            extruded_nurbs_surface(&translated, sweep, diagnostics.record, diagnostics.refusals)
-        else {
-            return Ok(None);
-        };
-        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        let placed = placed_section_nurbs(transform, &directrix)?;
+        let translated = translated_nurbs_curve(&placed, lower_translation)?;
+        let surface =
+            extruded_nurbs_surface(&translated, sweep, diagnostics.record, diagnostics.refusals)?;
+        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             surface,
-        ))));
+        )));
     }
     let surface = match geometry.definition() {
         SketchGeometryDefinition::Line { .. } => {
@@ -812,13 +803,13 @@ pub(in super::super) fn extrusion_brep_side_surface(
                 start: Point2::new(start[0], start[1]),
                 end: Point2::new(end[0], end[1]),
             }) else {
-                return Ok(None);
+                return None;
             };
             extruded_geometry_surface(transform, &line)
         }
         _ => extruded_geometry_surface(transform, geometry),
     };
-    Ok(surface)
+    surface
 }
 
 pub(in super::super) fn signed_unit_chart(
@@ -1183,9 +1174,7 @@ mod tests {
         )
         .expect("finite NURBS fixture");
 
-        assert!(({ translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]) })
-            .expect("translation resources")
-            .is_none());
+        assert!(translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]).is_none());
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
 
@@ -1208,9 +1197,7 @@ mod tests {
             0,
         )
         .expect("section frame");
-        assert!(({ placed_section_nurbs(&transform, &curve) })
-            .expect("service resources")
-            .is_some());
+        assert!(placed_section_nurbs(&transform, &curve).is_some());
     }
 
     #[test]
@@ -1224,8 +1211,7 @@ mod tests {
         )
         .expect("finite curve");
         assert_eq!(
-            ({ translated_nurbs_curve(&curve, [0.0, 0.0, 2.0]) })
-                .expect("service resources")
+            translated_nurbs_curve(&curve, [0.0, 0.0, 2.0])
                 .expect("finite translation")
                 .control_points(),
             vec![Point3::new(1.0, 2.0, 2.0), Point3::new(3.0, 4.0, 2.0)]

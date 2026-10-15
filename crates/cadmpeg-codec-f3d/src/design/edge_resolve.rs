@@ -1371,7 +1371,7 @@ fn unique_edge_group_assignment(
         };
         candidate_sets.push(candidates);
     }
-    unique_edge_assignment_with_context(&candidate_sets, ctx)
+    unique_edge_assignment(&candidate_sets, ctx)
 }
 
 pub(super) fn changed_reference_edge_group_candidates(
@@ -1583,7 +1583,7 @@ fn radius_edge_identity_group_candidates(
     (!chain.is_empty()).then_some(chain)
 }
 
-fn unique_edge_assignment_with_context(
+fn unique_edge_assignment(
     candidate_sets: &[EdgeAssignmentCandidates],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {

@@ -66,8 +66,7 @@ fn write_seekable(
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
-    let mut written_graph =
-        crate::persistence::parse_with_context(&document_xml, schema_version, &ctx)?;
+    let mut written_graph = crate::persistence::parse(&document_xml, schema_version, &ctx)?;
     validate_declarations(
         &objects,
         &extensions,

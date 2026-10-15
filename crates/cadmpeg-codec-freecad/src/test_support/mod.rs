@@ -43,7 +43,7 @@ pub(crate) fn with_service_context<T>(
     use_context(&ctx)
 }
 
-/// Builds a checked entry with charged digest storage for synthetic fixtures.
+/// Builds a checked entry with its content digest for synthetic fixtures.
 pub(crate) fn entry_record(
     id: String,
     name: String,

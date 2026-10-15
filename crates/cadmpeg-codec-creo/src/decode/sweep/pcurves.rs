@@ -262,25 +262,19 @@ pub(in super::super) fn revolved_brep_surface(
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
+) -> Option<SurfaceGeometry> {
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let Some(directrix) = oriented_sketch_nurbs_curve(geometry, reversed) else {
-            return Ok(None);
-        };
-        let Some(placed_directrix) = placed_section_nurbs(transform, &directrix)? else {
-            return Ok(None);
-        };
-        let Some(surface) = revolved_nurbs_surface(&placed_directrix, axis, record, refusal) else {
-            return Ok(None);
-        };
-        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
+        let placed_directrix = placed_section_nurbs(transform, &directrix)?;
+        let surface = revolved_nurbs_surface(&placed_directrix, axis, record, refusal)?;
+        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             surface,
-        ))));
+        )));
     }
-    Ok(revolved_section_surface(transform, geometry, axis))
+    revolved_section_surface(transform, geometry, axis)
 }
 
 /// An endpoint boundary of a revolved profile segment.

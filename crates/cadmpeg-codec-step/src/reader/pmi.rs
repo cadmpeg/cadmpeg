@@ -22,7 +22,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text;
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -86,7 +86,7 @@ pub(super) fn decode(
     for (id, record) in exchange.entities("DATUM") {
         let identification = named_parameter(record, "DATUM", 0)
             .and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -101,7 +101,7 @@ pub(super) fn decode(
             id,
             AnnotationDraft {
                 name: shape_aspect_parameter(record, 0).and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         &mut losses,
@@ -124,7 +124,7 @@ pub(super) fn decode(
         };
         let form = shape_aspect_parameter(record, 1)
             .and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -136,7 +136,7 @@ pub(super) fn decode(
             .unwrap_or_default();
         let identification = datum_target_identification_parameter(record)
             .and_then(|value| {
-                decode_text_charged(
+                decode_text(
                     exchange,
                     value,
                     &mut losses,
@@ -151,7 +151,7 @@ pub(super) fn decode(
             id,
             AnnotationDraft {
                 name: shape_aspect_parameter(record, 0).and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         &mut losses,
@@ -213,7 +213,7 @@ pub(super) fn decode(
             id,
             AnnotationDraft {
                 name: shape_aspect_parameter(record, 0).and_then(|value| {
-                    decode_text_charged(
+                    decode_text(
                         exchange,
                         value,
                         &mut losses,
@@ -255,7 +255,7 @@ pub(super) fn decode(
             .iter()
             .flat_map(|partial| &partial.parameters)
         {
-            if let Some(text) = decode_text_charged(
+            if let Some(text) = decode_text(
                 exchange,
                 value,
                 &mut losses,
@@ -277,7 +277,7 @@ pub(super) fn decode(
                     .into_iter()
                     .flat_map(|partial| partial.parameters.iter().rev())
                 {
-                    if let Some(text) = decode_text_charged(
+                    if let Some(text) = decode_text(
                         exchange,
                         value,
                         &mut losses,
@@ -350,7 +350,7 @@ pub(super) fn decode(
                                 form_variance: record
                                     .parameter(0)
                                     .and_then(|value| {
-                                        decode_text_charged(
+                                        decode_text(
                                             exchange,
                                             value,
                                             &mut losses,
@@ -363,7 +363,7 @@ pub(super) fn decode(
                                 zone_variance: record
                                     .parameter(1)
                                     .and_then(|value| {
-                                        decode_text_charged(
+                                        decode_text(
                                             exchange,
                                             value,
                                             &mut losses,
@@ -376,7 +376,7 @@ pub(super) fn decode(
                                 grade: record
                                     .parameter(2)
                                     .and_then(|value| {
-                                        decode_text_charged(
+                                        decode_text(
                                             exchange,
                                             value,
                                             &mut losses,
@@ -389,7 +389,7 @@ pub(super) fn decode(
                                 source: record
                                     .parameter(3)
                                     .and_then(|value| {
-                                        decode_text_charged(
+                                        decode_text(
                                             exchange,
                                             value,
                                             &mut losses,
@@ -585,7 +585,7 @@ pub(super) fn decode(
                 name: named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
                     .or_else(|| record.parameter(0))
                     .and_then(|value| {
-                        decode_text_charged(
+                        decode_text(
                             exchange,
                             value,
                             &mut losses,
@@ -724,7 +724,7 @@ pub(super) fn decode(
                     .or_else(|| named_parameter(record, "REPRESENTATION_ITEM", 0))
                     .or_else(|| record.parameter(0))
                     .and_then(|value| {
-                        decode_text_charged(
+                        decode_text(
                             exchange,
                             value,
                             &mut losses,
@@ -1385,7 +1385,7 @@ fn collect_annotation_text(
     if let Some(value) = named_parameter(record, "TEXT_LITERAL", 0)
         .or_else(|| named_parameter(record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0))
     {
-        if let Some(text) = decode_text_charged(
+        if let Some(text) = decode_text(
             exchange,
             value,
             losses,
@@ -2032,7 +2032,7 @@ fn measure_item_name(
                 .and_then(|partial| partial.parameters.first())
         })
         .and_then(|value| {
-            decode_text_charged(
+            decode_text(
                 exchange,
                 value,
                 losses,

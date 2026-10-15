@@ -21,7 +21,7 @@ use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 use super::claims::SourceClaims;
 use super::representation;
 use super::ValueExt;
-use super::{decode_text_charged, opaque_record_id, record_targets, StageOutcome};
+use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
     "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
@@ -1052,7 +1052,7 @@ fn value_text(
             format!(".{value}.")
         }
         Value::String(_) => {
-            return Ok(decode_text_charged(
+            return Ok(decode_text(
                 exchange,
                 value,
                 losses,

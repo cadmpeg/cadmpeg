@@ -319,8 +319,7 @@ pub(crate) fn looks_like_sldprt(
     prefix: &[u8],
 ) -> Result<bool, CodecError> {
     if prefix.starts_with(&COMPOUND_FILE_MAGIC) {
-        let (probe, _storage) =
-            CompoundPrefixProbe::inspect_with_context(ctx, View::over_retained(prefix))?;
+        let probe = CompoundPrefixProbe::inspect(ctx, View::over_retained(prefix))?;
         if let Some(paths) = probe.paths() {
             for path in paths {
                 if path

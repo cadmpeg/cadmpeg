@@ -25,7 +25,7 @@ fn parameter_local_depth_omits_the_record() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 1024;
         with_policy_context(source.as_bytes(), &policy, |source, ctx| {
-            let (exchange, diagnostics) = crate::parse::parse_with_context(source, ctx)
+            let (exchange, diagnostics) = crate::parse::parse(source, ctx)
                 .expect("an over-deep record is omitted");
             assert!(exchange.records().is_empty());
             assert!(diagnostics.iter().any(|diagnostic| {
@@ -181,8 +181,8 @@ fn value_node_count_nodes_are_malformed() {
 fn unknown_record_omits_non_finite_real_at_lex_admission() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1.E9999);ENDSEC;END-ISO-10303-21;";
     with_service_context(SOURCE, |source, ctx| {
-        let (exchange, diagnostics) = crate::parse::parse_with_context(source, ctx)
-            .expect("literal failure has a bounded record");
+        let (exchange, diagnostics) =
+            crate::parse::parse(source, ctx).expect("literal failure has a bounded record");
         assert!(exchange.records().is_empty());
         assert!(diagnostics.iter().any(|diagnostic| {
             diagnostic.kind == crate::parse::ParseDiagnosticKind::RecordOmitted

@@ -1021,16 +1021,9 @@ pub enum CompoundPrefixProbe {
 }
 
 impl CompoundPrefixProbe {
-    /// Parses complete prefix structures. The unit second field keeps the
-    /// former two-field shape for callers.
-    pub fn inspect_with_context(
-        ctx: &DecodeContext<'_>,
-        prefix: View<'_>,
-    ) -> Result<(Self, ()), CodecError> {
-        Ok((
-            Self::inspect_input(ctx, &mut ProbeInput::Borrowed(prefix.window()))?,
-            (),
-        ))
+    /// Parses complete prefix structures.
+    pub fn inspect(ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Self, CodecError> {
+        Self::inspect_input(ctx, &mut ProbeInput::Borrowed(prefix.window()))
     }
 
     fn inspect_input(
@@ -1811,8 +1804,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
             .expect("probe root");
-        let (probe, ()) = CompoundPrefixProbe::inspect_with_context(&ctx, root).expect("probe");
-        probe
+        CompoundPrefixProbe::inspect(&ctx, root).expect("probe")
     }
 
     #[test]
@@ -2009,11 +2001,9 @@ mod tests {
             source.position(),
             u64::try_from(file.len()).expect("fixture size")
         );
-        let (evidence, ()) = CompoundPrefixProbe::inspect_with_context(
-            &ctx,
-            cadmpeg_core::decode::View::over_retained(&prefix),
-        )
-        .expect("probe reaches the directory");
+        let evidence =
+            CompoundPrefixProbe::inspect(&ctx, cadmpeg_core::decode::View::over_retained(&prefix))
+                .expect("probe reaches the directory");
         assert_eq!(evidence.paths(), Some(["Payload".to_owned()].as_slice()));
         ctx.finish_session().expect("session");
     }

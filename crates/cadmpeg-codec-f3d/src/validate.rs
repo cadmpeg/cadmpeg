@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic validation of the Fusion `f3d` native namespace.
 //!
-//! [`validate_native_charged`] loads the `f3d` native namespace from a decoded
+//! [`validate_native`] loads the `f3d` native namespace from a decoded
 //! [`CadIr`] and checks the settled byte frames and cross-record relationships
 //! of every Fusion Design record family: body maps and bounds, parameter
 //! scopes and their feature operands, sketch geometry and relations, dimension
@@ -755,15 +755,15 @@ impl<'a, 'd> Ctx<'a, 'd> {
     }
 }
 
-/// Validate native records using the source decode budget.
-pub(crate) fn validate_native_charged(
+/// Validate the `f3d` native namespace of `ir` against its decoded IR.
+pub(crate) fn validate_native(
     decode: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<Vec<Finding>, CodecError> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    let native = match native::F3dNative::load_charged(decode, namespace) {
+    let native = match native::F3dNative::load_inner(decode, namespace).map_err(CodecError::from) {
         Ok(native) => native,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -3997,7 +3997,7 @@ fn valid_vertex_recipe(
         vertex.recipe_prefix_offset(),
     );
     for reference in &mut expected_references {
-        design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+        design::decode::dimension_frames::bind_recipe_reference_candidates(
             reference,
             &native.persistent_subentity_tags,
             Some(&scope.id),
@@ -6437,7 +6437,7 @@ fn validate_edge_operands<'a>(
         );
         if !historical_candidates_retained {
             for reference in &mut expected_references {
-                design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+                design::decode::dimension_frames::bind_recipe_reference_candidates(
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
@@ -6494,7 +6494,7 @@ fn validate_edge_operands<'a>(
                     && recipe.byte_offset > operand.recipe_record_byte_offset()
                     && recipe.byte_offset < operand.next_byte_offset()
             })
-            && design::decode::operands::edge_recipe_structure_with_context(
+            && design::decode::operands::edge_recipe_structure(
                 ctx.decode,
                 &operand.recipe_program,
             )? == operand.recipe_structure
@@ -6531,7 +6531,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
     >(decode, ctx.ir, "design_edge_treatment_vertex_operands")?;
     for operand in &mut expected {
         for reference in &mut operand.recipe.recipe_references {
-            design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+            design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
                 Some(&operand.id),
@@ -6710,7 +6710,7 @@ fn validate_face_operands<'a>(
         );
         if !historical_candidates_retained {
             for reference in &mut expected_references {
-                design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+                design::decode::dimension_frames::bind_recipe_reference_candidates(
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
@@ -6770,19 +6770,31 @@ fn validate_face_operands<'a>(
                 }
                 Some(design::decode::operands::FaceRecipeProgramKind::Counted { .. }) => {
                     operand.recipe_nodes.len() == expected_nodes.len()
-                        && operand.recipe_nodes.iter().zip(expected_nodes).try_fold(true,
+                        && operand.recipe_nodes.iter().zip(expected_nodes).try_fold(
+                            true,
                             |valid, (node, (start, end))| -> Result<bool, CodecError> {
- if !valid { return Ok(false); }
- Ok(
-                                node.byte_offset == start
+                                if !valid {
+                                    return Ok(false);
+                                }
+                                Ok(node.byte_offset == start
                                     && node.end_byte_offset == end
                                     && node.program.get(0..3) == Some(&[-1, -1, 2])
                                     && node.recipe_structure
-                                        == node.program.get(3..).map(
-                                            |program| design::decode::operands::face_recipe_structure_with_context(ctx.decode, program),
-                                        ).transpose()?.flatten()
-                                    && u64_from_index(node.program.len()).checked_mul(4).and_then(|delta| start.checked_add(delta)).is_some_and(|expected_offset| expected_offset == end)
-                            )},
+                                        == node
+                                            .program
+                                            .get(3..)
+                                            .map(|program| {
+                                                design::decode::operands::face_recipe_structure(
+                                                    ctx.decode, program,
+                                                )
+                                            })
+                                            .transpose()?
+                                            .flatten()
+                                    && u64_from_index(node.program.len())
+                                        .checked_mul(4)
+                                        .and_then(|delta| start.checked_add(delta))
+                                        .is_some_and(|expected_offset| expected_offset == end))
+                            },
                         )?
                         && operand.recipe_nodes.first().is_none_or(|first_node| {
                             first_node
@@ -7419,7 +7431,7 @@ fn validate_dimension_recipe_records<'a>(
             record.prefix_offset,
         );
         for reference in &mut decoded_references {
-            design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+            design::decode::dimension_frames::bind_recipe_reference_candidates(
                 reference,
                 &native.persistent_subentity_tags,
                 Some(&record.id),

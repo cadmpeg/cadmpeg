@@ -37,7 +37,7 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
             "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
         );
         let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
-            super::parse_with_context(document.as_bytes(), "4", ctx)
+            super::parse(document.as_bytes(), "4", ctx)
         })
         .expect("bounded invalid link");
         assert!(matches!(
@@ -87,7 +87,7 @@ fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::Co
             }
             error => error,
         })?;
-    super::parse_with_context(document.as_bytes(), &schema_version, &ctx)
+    super::parse(document.as_bytes(), &schema_version, &ctx)
 }
 
 #[test]

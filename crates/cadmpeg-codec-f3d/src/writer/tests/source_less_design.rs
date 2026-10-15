@@ -1045,8 +1045,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         ]
     );
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, round_trip.ir())
-            .expect("service native validation")
+        crate::validate::validate_native(ctx, round_trip.ir()).expect("service native validation")
     })
     .is_empty());
 
@@ -1102,7 +1101,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         }
     );
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, extended_round_trip.ir())
+        crate::validate::validate_native(ctx, extended_round_trip.ir())
             .expect("service native validation")
     })
     .is_empty());
@@ -1119,8 +1118,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         })
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::validate::validate_native_charged(ctx, &inconsistent)
-            .expect("service native validation")
+        crate::validate::validate_native(ctx, &inconsistent).expect("service native validation")
     })
     .iter()
     .any(|finding| {
