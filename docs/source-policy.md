@@ -82,7 +82,8 @@ refusal branch.
 
 ## Checked arithmetic
 
-Production `saturating_*` calls fail with `saturating_arithmetic`. Use checked
+Production `saturating_*` calls and path values such as
+`fold(0, usize::saturating_add)` fail with `saturating_arithmetic`. Use checked
 arithmetic. In decode code, the overflow branch of arithmetic over file-derived
 values returns a structured malformed error (`CodecError::malformed`) or the
 codec's parse error. A session ceiling keeps its own refusal. Elsewhere, the

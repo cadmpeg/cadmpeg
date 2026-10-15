@@ -5698,7 +5698,7 @@ pub(crate) fn store(
             .cloned()
             .unwrap_or_default();
     }
-    let native_entity_count = [
+    let Some(native_entity_count) = [
         directions.len(),
         flashes.len(),
         transforms.len(),
@@ -5747,7 +5747,11 @@ pub(crate) fn store(
     ]
     .into_iter()
     .map(u64_from_index)
-    .fold(0_u64, u64::saturating_add);
+    .try_fold(0_u64, u64::checked_add) else {
+        return Err(CodecError::malformed(
+            "IGES native entity count exceeds u64",
+        ));
+    };
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;

@@ -170,12 +170,14 @@ impl MeshSelectionSearch<'_, '_> {
             let mut independent_face_capacity = 0usize;
             for choice in &self.possible_face_choices[face] {
                 let reductions = choice_component_reductions(choice, quotient, &mut possible)?;
-                independent_face_capacity = independent_face_capacity.max(
-                    reductions
-                        .values()
-                        .copied()
-                        .fold(0usize, usize::saturating_add),
-                );
+                // A capacity past usize exceeds every bound it is compared with.
+                let Some(choice_capacity) = reductions
+                    .values()
+                    .try_fold(0usize, |total, reduction| total.checked_add(*reduction))
+                else {
+                    return Ok(None);
+                };
+                independent_face_capacity = independent_face_capacity.max(choice_capacity);
                 for (component, reduction) in reductions {
                     face_capacity
                         .entry(component)
