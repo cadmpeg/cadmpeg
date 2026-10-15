@@ -1369,6 +1369,148 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     assert_eq!(spatial_entities.len(), 1);
 }
 
+/// Two split pieces of one Fusion sketch line keep one `(primary, secondary)`
+/// identity pair. Each piece projects to its own neutral entity, and a curve
+/// with an unshared pair keeps its identity-derived key.
+#[test]
+fn shared_curve_identity_pairs_project_distinct_entities() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            100,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
+        id: "f3d:Design/BulkStream.dat:placement#100".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        record_index: 100,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
+    };
+    let line = |record_index: u32,
+                primary_id: u64,
+                start: Point3,
+                end: Point3,
+                direction: Vector3,
+                normal: Vector3| {
+        SketchCurveIdentity {
+            id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
+            record_index,
+            owner_reference: Some(42),
+            class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned())
+                .unwrap(),
+            byte_offset: u64::from(record_index),
+            geometry_offset: 133,
+            entity_genesis: None,
+            primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
+            secondary_id: 0,
+            geometry: Some(SketchCurveGeometry::line(start, end, direction, normal).unwrap()),
+        }
+    };
+    let planar_curves = vec![
+        line(
+            101,
+            5,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        line(
+            102,
+            5,
+            Point3::new(0.0, 3.0, 0.0),
+            Point3::new(0.0, 5.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+        line(
+            103,
+            6,
+            Point3::new(0.0, 5.0, 0.0),
+            Point3::new(4.0, 5.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ),
+    ];
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(
+            decode_ctx,
+            &[placement.clone()],
+            &[],
+            &planar_curves,
+            &[],
+            &[],
+            EPS_POINT_PROJECTION,
+        )
+    })
+    .expect("planar sketch projects");
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(entities.len(), 3);
+    let planar_ids = entities
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(planar_ids.len(), 3);
+    assert!(planar_ids.contains(&neutral_sketch_curve_id(&sketches[0].id, 6, 0)));
+    assert!(!planar_ids.contains(&neutral_sketch_curve_id(&sketches[0].id, 5, 0)));
+
+    let mut spatial_curves = planar_curves;
+    spatial_curves.push(line(
+        104,
+        7,
+        Point3::new(4.0, 5.0, 0.0),
+        Point3::new(4.0, 5.0, 3.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    ));
+    let (spatial_sketches, spatial_entities) =
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project_spatial_sketch_design(
+                decode_ctx,
+                &[placement],
+                &[],
+                &spatial_curves,
+                &[],
+                &[],
+                EPS_POINT_PROJECTION,
+            )
+        })
+        .expect("spatial sketch projects");
+    assert_eq!(spatial_sketches.len(), 1);
+    assert_eq!(spatial_entities.len(), 4);
+    let spatial_ids = spatial_entities
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(spatial_ids.len(), 4);
+    assert!(
+        spatial_ids.contains(&crate::ids::neutral_spatial_sketch_curve_id(
+            &spatial_sketches[0].id,
+            6,
+            0
+        ))
+    );
+    assert!(
+        !spatial_ids.contains(&crate::ids::neutral_spatial_sketch_curve_id(
+            &spatial_sketches[0].id,
+            5,
+            0
+        ))
+    );
+}
+
 const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
 
 mod spline_projection;
