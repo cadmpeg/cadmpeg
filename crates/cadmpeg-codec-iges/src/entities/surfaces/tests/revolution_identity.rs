@@ -122,6 +122,8 @@ fn exact_curve_identity(bytes: &[u8], placed: bool) {
             assert_eq!(first.operation, "iges source object layer");
             assert_eq!(first.additional, 1);
             assert_eq!(first.limit, first.used);
+            assert_eq!(ctx.resource_refusal(), Some(first));
+            assert_eq!(ir.model.curves, fixture.model.curves);
             assert!(ir.model.surfaces.is_empty());
             assert!(ir.model.procedural_surfaces.is_empty());
             let refused_model = ir.model.clone();
@@ -203,6 +205,90 @@ fn exact_revolution_moves_the_unplaced_generatrix_identity() {
 #[test]
 fn exact_revolution_mints_only_the_placed_generatrix_identity() {
     exact_curve_identity(&placed_hyperbola_surface_of_revolution_file(), true);
+}
+
+#[test]
+fn exact_placed_revolution_records_surface_layer_refusal_after_curve_insertion() {
+    let (fixture, directory, parameters, global) =
+        prepared(&placed_hyperbola_surface_of_revolution_file());
+    let mut cap = 0;
+    loop {
+        let mut ir = fixture.clone();
+        ir.model.surfaces.reserve_exact(1);
+        ir.model.procedural_surfaces.reserve_exact(1);
+        ir.model.curves.reserve_exact(1);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut sequences = SourceSequences::new(&ctx).expect("sequence storage");
+        let error = super::super::project(
+            &mut ir,
+            &directory,
+            &parameters,
+            &global,
+            &ctx,
+            &mut sequences,
+        )
+        .err()
+        .expect("surface layer boundary must precede successful projection");
+        let CodecError::ResourceLimit(first) = error else {
+            panic!("expected resource refusal: {error:?}");
+        };
+        assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(ctx.resource_refusal(), Some(first));
+        let need = first
+            .used
+            .checked_add(first.additional)
+            .expect("retained need");
+        assert!(need > cap);
+        // Both layer charges have the same operation and amount. Admit each
+        // measured need until the placed curve distinguishes the second one.
+        if first.operation != "iges source object layer"
+            || ir.model.curves.len() == fixture.model.curves.len()
+        {
+            cap = need;
+            continue;
+        }
+        assert_eq!(first.additional, 1);
+        assert_eq!(first.limit, first.used);
+        assert!(ir.model.surfaces.is_empty());
+        assert!(ir.model.procedural_surfaces.is_empty());
+        assert_eq!(ir.model.curves.len(), fixture.model.curves.len() + 1);
+        assert_eq!(
+            &ir.model.curves[..fixture.model.curves.len()],
+            fixture.model.curves.as_slice()
+        );
+        let curve = ir.model.curves.last().expect("placed generatrix");
+        assert_eq!(curve.id.as_str(), "iges:model:curve#D7-placed-generatrix");
+        assert!(matches!(
+            curve.geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Transformed(_)
+            )
+        ));
+        assert_eq!(
+            curve
+                .source_object
+                .as_ref()
+                .expect("curve source")
+                .layer
+                .as_deref(),
+            Some("0")
+        );
+        let refused_model = ir.model.clone();
+        for _ in 0..64 {
+            assert!(matches!(super::super::project(
+                &mut ir, &directory, &parameters, &global, &ctx, &mut sequences,
+            ), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(ir.model, refused_model);
+            assert_eq!(ctx.resource_refusal(), Some(first));
+        }
+        drop(sequences);
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(last)) if last == first));
+        break;
+    }
 }
 
 fn nurbs_carrier_identity(bytes: &[u8], directrix: &str, curve_count: usize) {
