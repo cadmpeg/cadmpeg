@@ -47,12 +47,15 @@ fn scene_node_paths_resolve_a_root_shape_node() {
         compressed_elements: &[compressed],
     };
 
+    let elements = crate::native::display_jt::first_by_key(inputs.compressed_elements, |element| {
+        element.id.as_str()
+    });
+    let scene_graph = crate::native::display_jt::JtSceneGraph::new("scene", &inputs, &elements)
+        .expect("scene node graph");
     let paths = crate::test_support::with_decode_context(|ctx| {
-        crate::native::display_jt::display_jt_node_paths(
+        scene_graph.node_paths(
             ctx,
-            "scene",
             7,
-            &inputs,
             &cadmpeg_core::decode::WorkBudget::new(
                 crate::native::display_jt::MAX_JT_NODE_PATH_VISITS,
             ),
@@ -66,7 +69,7 @@ fn scene_node_paths_resolve_a_root_shape_node() {
 
 #[test]
 fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
 
     let base = crate::native::display_jt::DisplayJtBaseNodeData {
         id: "base".into(),
@@ -80,16 +83,12 @@ fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
         family_data_sha256: "00".repeat(32).try_into().expect("valid digest"),
         source_offset: 0,
     };
-    let mut by_object = BTreeMap::new();
-    by_object.insert(7, &base);
-    let parents = BTreeMap::new();
-    let instance_ids = BTreeMap::new();
-    let lookup = crate::native::display_jt::JtPathLookup {
-        by_object: &by_object,
-        parents: &parents,
-        instance_ids: &instance_ids,
-        transforms: &[],
-        materials: &[],
+    let lookup = crate::native::display_jt::JtSceneGraph {
+        by_object: BTreeMap::from([(7, &base)]),
+        parents: BTreeMap::new(),
+        instance_ids: BTreeMap::new(),
+        transforms: HashMap::new(),
+        materials: HashMap::new(),
     };
 
     crate::test_support::with_decode_context_over(
@@ -121,7 +120,7 @@ fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
 
 #[test]
 fn jt_node_path_skips_after_the_visit_bound() {
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
 
     let base = crate::native::display_jt::DisplayJtBaseNodeData {
         id: "base".into(),
@@ -135,16 +134,12 @@ fn jt_node_path_skips_after_the_visit_bound() {
         family_data_sha256: "00".repeat(32).try_into().expect("valid digest"),
         source_offset: 0,
     };
-    let mut by_object = BTreeMap::new();
-    by_object.insert(7, &base);
-    let parents = BTreeMap::new();
-    let instance_ids = BTreeMap::new();
-    let lookup = crate::native::display_jt::JtPathLookup {
-        by_object: &by_object,
-        parents: &parents,
-        instance_ids: &instance_ids,
-        transforms: &[],
-        materials: &[],
+    let lookup = crate::native::display_jt::JtSceneGraph {
+        by_object: BTreeMap::from([(7, &base)]),
+        parents: BTreeMap::new(),
+        instance_ids: BTreeMap::new(),
+        transforms: HashMap::new(),
+        materials: HashMap::new(),
     };
 
     crate::test_support::with_decode_context(|ctx| {
@@ -335,4 +330,18 @@ fn jt_tessellations_report_the_visit_bound_as_a_scan_loss() {
         losses[0].code,
         crate::loss::NxLossCode::SourceScanBounded.kind()
     );
+}
+
+#[test]
+fn keyed_inputs_keep_the_first_record_and_mark_repeats() {
+    let records = [("a", 1), ("b", 2), ("a", 3)];
+
+    let first = crate::native::display_jt::first_by_key(&records, |record| record.0);
+    assert_eq!(first.get("a"), Some(&&("a", 1)));
+    assert_eq!(first.get("b"), Some(&&("b", 2)));
+
+    let unique = crate::native::display_jt::unique_by_key(&records, |record| record.0);
+    assert_eq!(unique.get("a"), Some(&None));
+    assert_eq!(unique.get("b"), Some(&Some(&("b", 2))));
+    assert_eq!(unique.get("c"), None);
 }
