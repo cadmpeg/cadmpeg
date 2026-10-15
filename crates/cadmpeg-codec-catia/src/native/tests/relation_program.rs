@@ -351,6 +351,38 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
 }
 
 #[test]
+fn relation_input_index_matches_parameter_with_optional_ordinal() {
+    let input = |parameter: &str| crate::native::CatiaRelationTypeInput {
+        parameter: parameter.to_string(),
+        input_type: "Real".to_string(),
+    };
+    let inputs = [input("#1_"), input("#12_"), input("#1_"), input("#3_ ")];
+    let index = crate::native::RelationInputIndex::new(&inputs);
+    let matches = |symbol: &str| {
+        let dependency = crate::native::CatiaRelationParameterDependency {
+            source_offset: 0,
+            symbol: symbol.to_string(),
+            candidates: Vec::new(),
+        };
+        let mut matched = index.matches(&dependency).collect::<Vec<_>>();
+        matched.sort_unstable();
+        matched
+    };
+    assert_eq!(matches("#1_"), [0, 2]);
+    assert_eq!(matches("#1_  "), [0, 2]);
+    assert_eq!(matches("#1_/2"), [0, 2]);
+    assert_eq!(matches("#1_ \t/27"), [0, 2]);
+    assert_eq!(matches("#12_ /3"), [1]);
+    assert_eq!(matches("#3_ "), [3]);
+    assert_eq!(matches("#3_  /4"), [3]);
+    assert!(matches("#1_/").is_empty());
+    assert!(matches("#1_ /2x").is_empty());
+    assert!(matches("#1_x").is_empty());
+    assert!(matches("#1").is_empty());
+    assert!(matches("#3_").is_empty());
+}
+
+#[test]
 fn complete_relation_program_inputs_transfer_typed_parameters() {
     use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 

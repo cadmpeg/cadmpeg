@@ -10,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::checked::extents_overlap;
-use crate::object_graph::extent_contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -3959,7 +3958,7 @@ pub(crate) enum CatiaObjectRecordReferenceSource {
 }
 
 /// One exact schema class retained on a grouped design object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct CatiaDesignClass {
     /// Selected source-schema entry.
     pub(crate) entry: String,
@@ -4456,6 +4455,7 @@ fn design_objects(
             .enumerate()
             .filter_map(|(index, record)| Some((record.entity_id()?, index)))
             .collect::<std::collections::HashMap<_, _>>();
+        let terminal_null_entity_id = terminal_null_entity_id(&record_indices);
         let mut fields = Vec::<(u32, Vec<&CatiaObjectRecord>)>::new();
         let mut owner_indices = HashMap::<u32, usize>::new();
         for record in &graph.records {
@@ -4490,13 +4490,14 @@ fn design_objects(
             };
             let mut field_ids = Vec::new();
             let mut field_classes = Vec::new();
+            let mut distinct_field_classes = HashSet::new();
             let mut definition_values = Vec::new();
             let mut definition_chain_values = Vec::new();
             let mut relations = Vec::new();
             for record in &records {
                 field_ids.push(record.id.clone());
                 if let Some(class) = design_class(record) {
-                    if !field_classes.contains(&class) {
+                    if distinct_field_classes.insert(class.clone()) {
                         field_classes.push(class);
                     }
                 }
@@ -4556,8 +4557,12 @@ fn design_objects(
                     relations.push(relation);
                 }
             }
-            let parallel_reference_table =
-                design_parallel_reference_table(&records, graph, &record_indices);
+            let parallel_reference_table = design_parallel_reference_table(
+                &records,
+                graph,
+                &record_indices,
+                terminal_null_entity_id,
+            );
             let object = CatiaDesignObject {
                 id,
                 parent: graph.id.clone(),
@@ -4587,6 +4592,7 @@ fn design_parallel_reference_table(
     records: &[&CatiaObjectRecord],
     graph: &CatiaObjectGraph,
     record_indices: &HashMap<u32, usize>,
+    terminal_null_entity_id: Option<u32>,
 ) -> Option<CatiaDesignParallelReferenceTable> {
     if records.len() < 2 {
         return None;
@@ -4624,7 +4630,6 @@ fn design_parallel_reference_table(
     }
     let (_, first_items) = columns.first()?;
     let row_count = first_items.len();
-    let terminal_null_entity_id = terminal_null_entity_id(record_indices);
     if columns
         .iter()
         .any(|(_, references)| references.len() != row_count)
@@ -4666,11 +4671,10 @@ fn design_parallel_reference_table(
                         && cell.field().is_some()
                         && cell.field_class() == column.field_class.as_ref()
                         && cell.design_object() == Some(*member)
-                }) && cells.iter().enumerate().all(|(index, cell)| {
-                    !cells[..index]
-                        .iter()
-                        .any(|prior| prior.field() == cell.field())
-                })
+                }) && {
+                    let mut fields = HashSet::new();
+                    cells.iter().all(|cell| fields.insert(cell.field()))
+                }
             })
             .map(std::borrow::ToOwned::to_owned);
         let reference_row = CatiaDesignReferenceRow {
@@ -4952,7 +4956,7 @@ fn copy_definition_schema(
 
 fn value_production(
     entity: &CatiaEntityRecord,
-    records: &[CatiaObjectRecord],
+    incidences: &EntityIncidenceIndex<'_>,
     value_fields: &[value_block::ValueField],
 ) -> Option<CatiaEntityValueProduction> {
     if let Some(relation) = relation_expression(
@@ -4972,8 +4976,7 @@ fn value_production(
         entity.lead,
         &entity.value_schema_selections,
         entity.suffix_value(),
-        records,
-        &entity.object_graph,
+        incidences,
         entity.entity_id,
     ) {
         return Some(CatiaEntityValueProduction::ConstraintRange(range));
@@ -5249,47 +5252,85 @@ fn incidence_source_entity(record: &CatiaObjectRecord) -> Option<CatiaEntityRefe
     ))
 }
 
-fn entity_incidences(
-    records: &[CatiaObjectRecord],
-    graph_id: &str,
-    entity_id: u32,
-) -> (
-    Vec<CatiaEntityIncomingReference>,
-    Vec<CatiaEntityIncomingStorageReference>,
-) {
-    let mut incoming_references = Vec::new();
-    let mut incoming_storage_references = Vec::new();
-    for record in records.iter().filter(|record| record.parent == graph_id) {
-        for reference in record
-            .references
-            .iter()
-            .filter(|reference| reference.entity_id() == entity_id)
-        {
-            let incidence = CatiaEntityIncomingReference {
-                object_record: record.id.clone(),
-                source_entity: incidence_source_entity(record),
-                payload_offset: reference.payload_offset(),
-                source: reference.source().clone(),
-            };
-            incoming_references.push(incidence);
+/// The references and storage references that the records of one object
+/// graph hold to each entity, in record order and then reference order.
+pub(super) struct EntityIncidenceIndex<'a> {
+    records: &'a [CatiaObjectRecord],
+    references: HashMap<u32, Vec<(usize, usize)>>,
+    storage: HashMap<u32, Vec<usize>>,
+}
+
+impl<'a> EntityIncidenceIndex<'a> {
+    /// Indexes the records of `records` whose parent is `graph_id`.
+    pub(super) fn new(records: &'a [CatiaObjectRecord], graph_id: &str) -> Self {
+        let mut references = HashMap::<u32, Vec<(usize, usize)>>::new();
+        let mut storage = HashMap::<u32, Vec<usize>>::new();
+        for (record_index, record) in records.iter().enumerate() {
+            if record.parent != graph_id {
+                continue;
+            }
+            for (reference_index, reference) in record.references.iter().enumerate() {
+                references
+                    .entry(reference.entity_id())
+                    .or_default()
+                    .push((record_index, reference_index));
+            }
+            if let Some(entity_id) = record.storage_ref() {
+                storage.entry(entity_id).or_default().push(record_index);
+            }
         }
-        if record.storage_ref() == Some(entity_id) {
-            let incidence = CatiaEntityIncomingStorageReference {
-                object_record: record.id.clone(),
-                source_entity: incidence_source_entity(record),
-            };
-            incoming_storage_references.push(incidence);
+        Self {
+            records,
+            references,
+            storage,
         }
     }
-    (incoming_references, incoming_storage_references)
+
+    pub(super) fn incidences(
+        &self,
+        entity_id: u32,
+    ) -> (
+        Vec<CatiaEntityIncomingReference>,
+        Vec<CatiaEntityIncomingStorageReference>,
+    ) {
+        let incoming_references = self
+            .references
+            .get(&entity_id)
+            .into_iter()
+            .flatten()
+            .map(|&(record_index, reference_index)| {
+                let record = &self.records[record_index];
+                let reference = &record.references[reference_index];
+                CatiaEntityIncomingReference {
+                    object_record: record.id.clone(),
+                    source_entity: incidence_source_entity(record),
+                    payload_offset: reference.payload_offset(),
+                    source: reference.source().clone(),
+                }
+            })
+            .collect();
+        let incoming_storage_references = self
+            .storage
+            .get(&entity_id)
+            .into_iter()
+            .flatten()
+            .map(|&record_index| {
+                let record = &self.records[record_index];
+                CatiaEntityIncomingStorageReference {
+                    object_record: record.id.clone(),
+                    source_entity: incidence_source_entity(record),
+                }
+            })
+            .collect();
+        (incoming_references, incoming_storage_references)
+    }
 }
 
 fn range_interval(
     payload: &[u8],
     values: &[CatiaEntityValueSchemaSelection],
     suffix_value: Option<&CatiaEntitySuffixValue>,
-    records: &[CatiaObjectRecord],
-    graph_id: &str,
+    incidences: &EntityIncidenceIndex<'_>,
     entity_id: u32,
 ) -> Option<CatiaRangeInterval> {
     let mut matches = values
@@ -5313,8 +5354,7 @@ fn range_interval(
         None => payload.len(),
     };
     let interval = entity_table::parse_range_interval(payload, start, end)?;
-    let (incoming_references, incoming_storage_references) =
-        entity_incidences(records, graph_id, entity_id);
+    let (incoming_references, incoming_storage_references) = incidences.incidences(entity_id);
     Some(CatiaRangeInterval {
         range: copy_value_schema(range),
         interval,
@@ -5355,13 +5395,12 @@ fn resolved_constraint_range(
     lead: u8,
     values: &[CatiaEntityValueSchemaSelection],
     suffix_value: Option<&CatiaEntitySuffixValue>,
-    records: &[CatiaObjectRecord],
-    graph_id: &str,
+    incidences: &EntityIncidenceIndex<'_>,
     entity_id: u32,
 ) -> Option<CatiaConstraintRange> {
     let mut range = constraint_range(lead, values, suffix_value)?;
     (range.incoming_references, range.incoming_storage_references) =
-        entity_incidences(records, graph_id, entity_id);
+        incidences.incidences(entity_id);
     Some(range)
 }
 
@@ -6304,46 +6343,71 @@ fn relation_parameter_dependencies(
     dependencies
 }
 
-pub(crate) fn dependency_matches_input(
-    dependency: &CatiaRelationParameterDependency,
-    input: &CatiaRelationTypeInput,
-) -> bool {
-    dependency
-        .symbol
-        .strip_prefix(&input.parameter)
-        .is_some_and(|suffix| {
-            let suffix =
-                suffix.trim_start_matches(|character: char| character.is_ascii_whitespace());
-            suffix.is_empty()
-                || suffix.strip_prefix('/').is_some_and(|ordinal| {
-                    !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-                })
-        })
+/// Signature inputs keyed by parameter name.
+///
+/// A dependency symbol matches an input when the symbol is the input's
+/// parameter followed by optional ASCII whitespace and either nothing or a
+/// `/` and one or more ASCII digits.
+pub(crate) struct RelationInputIndex<'a> {
+    by_parameter: HashMap<&'a str, Vec<usize>>,
+}
+
+impl<'a> RelationInputIndex<'a> {
+    pub(crate) fn new(inputs: &'a [CatiaRelationTypeInput]) -> Self {
+        let mut by_parameter = HashMap::<&str, Vec<usize>>::new();
+        for (index, input) in inputs.iter().enumerate() {
+            by_parameter
+                .entry(input.parameter.as_str())
+                .or_default()
+                .push(index);
+        }
+        Self { by_parameter }
+    }
+
+    /// Indices of the inputs `dependency` matches, unordered.
+    pub(crate) fn matches<'s>(
+        &'s self,
+        dependency: &'s CatiaRelationParameterDependency,
+    ) -> impl Iterator<Item = usize> + 's {
+        let symbol = dependency.symbol.as_str();
+        let is_space = |character: char| character.is_ascii_whitespace();
+        // A parameter ends where the rest of the symbol is whitespace ...
+        let trailing_space = symbol.trim_end_matches(is_space).len()..=symbol.len();
+        // ... or whitespace and then a final `/` ordinal.
+        let before_ordinal = symbol
+            .rfind('/')
+            .filter(|&slash| {
+                let ordinal = &symbol[slash + 1..];
+                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+            })
+            .map(|slash| symbol[..slash].trim_end_matches(is_space).len()..=slash);
+        trailing_space
+            .chain(before_ordinal.into_iter().flatten())
+            .filter_map(move |end| self.by_parameter.get(&symbol[..end]))
+            .flatten()
+            .copied()
+    }
 }
 
 fn resolved_relation_program_inputs(
     signature: &CatiaRelationTypeSignature,
     dependencies: &[CatiaRelationParameterDependency],
 ) -> Option<Vec<CatiaRelationProgramInput>> {
-    if dependencies.iter().any(|dependency| {
-        signature
-            .inputs
-            .iter()
-            .filter(|input| dependency_matches_input(dependency, input))
-            .count()
-            != 1
-    }) {
-        return None;
+    let index = RelationInputIndex::new(&signature.inputs);
+    let mut dependencies_by_input = vec![Vec::new(); signature.inputs.len()];
+    for dependency in dependencies {
+        let mut matches = index.matches(dependency);
+        let (Some(input), None) = (matches.next(), matches.next()) else {
+            return None;
+        };
+        dependencies_by_input[input].push(dependency);
     }
     let mut entity_ids = HashSet::new();
     let mut inputs = Vec::new();
-    for input in &signature.inputs {
+    for (input, matching) in signature.inputs.iter().zip(&dependencies_by_input) {
         let mut selected = None::<&CatiaEntityReference>;
         let mut occurrence_count = 0usize;
-        for dependency in dependencies
-            .iter()
-            .filter(|dependency| dependency_matches_input(dependency, input))
-        {
+        for dependency in matching {
             occurrence_count += 1;
             let [candidate] = dependency.candidates.as_slice() else {
                 return None;
@@ -8666,12 +8730,23 @@ impl CatiaNative {
             entity_records.append(&mut entities);
             object_graphs.push(graph);
         }
+        let mut catalogs_by_offset = HashMap::new();
+        for catalog in &catalogs {
+            catalogs_by_offset
+                .entry(catalog.byte_offset)
+                .or_insert(catalog);
+        }
+        let mut entities_by_graph = HashMap::<String, Vec<usize>>::new();
+        for (index, entity) in entity_records.iter().enumerate() {
+            entities_by_graph
+                .entry(entity.object_graph.clone())
+                .or_default()
+                .push(index);
+        }
         for graph in &mut object_graphs {
-            let catalog = graph.catalog_byte_offset.and_then(|offset| {
-                catalogs
-                    .iter()
-                    .find(|catalog| catalog.byte_offset == offset)
-            });
+            let catalog = graph
+                .catalog_byte_offset
+                .and_then(|offset| catalogs_by_offset.get(&offset).copied());
             graph.catalog = catalog.map(|catalog| catalog.id.clone());
             for record in &mut graph.records {
                 if let Some(class) = &mut record.class {
@@ -8689,10 +8764,9 @@ impl CatiaNative {
                     catalog,
                 );
             }
-            for entity in entity_records
-                .iter_mut()
-                .filter(|entity| entity.object_graph == graph.id)
-            {
+            let incidences = EntityIncidenceIndex::new(&graph.records, &graph.id);
+            for &index in entities_by_graph.get(&graph.id).into_iter().flatten() {
+                let entity = &mut entity_records[index];
                 entity.definition_schema_selections = definition_schema_selections(
                     &entity_table::parse_definition_schema_selectors(entity.definition_prefix()),
                     catalog,
@@ -8704,13 +8778,12 @@ impl CatiaNative {
                 entity.parse_suffix();
                 entity.suffix_schema_selection =
                     entity_suffix_schema_selection(entity.suffix_value(), catalog);
-                entity.value_production = value_production(entity, &graph.records, &value_fields);
+                entity.value_production = value_production(entity, &incidences, &value_fields);
                 entity.range_interval = range_interval(
                     entity.value_payload(),
                     &entity.value_schema_selections,
                     entity.suffix_value(),
-                    &graph.records,
-                    &graph.id,
+                    &incidences,
                     entity.entity_id,
                 );
             }
@@ -8729,6 +8802,19 @@ impl CatiaNative {
             classes: &entity_classes_by_graph_identity,
             terminal_nulls: &terminal_nulls_by_graph,
         };
+        // The first graph with an id owns it, and within that graph the first
+        // record with an id, as front-to-back searches resolve them.
+        let mut object_records = HashMap::<&str, HashMap<&str, &CatiaObjectRecord>>::new();
+        for graph in &object_graphs {
+            if let std::collections::hash_map::Entry::Vacant(slot) =
+                object_records.entry(graph.id.as_str())
+            {
+                let records = slot.insert(HashMap::new());
+                for record in &graph.records {
+                    records.entry(record.id.as_str()).or_insert(record);
+                }
+            }
+        }
         for entity in &mut entity_records {
             if let Some(signature) = entity.reference_signature.take() {
                 entity.reference_signature = Some(reference_signature(
@@ -8737,15 +8823,9 @@ impl CatiaNative {
                     &entity_references,
                 ));
             }
-            let Some(object) = object_graphs
-                .iter()
-                .find(|graph| graph.id == entity.object_graph)
-                .and_then(|graph| {
-                    graph
-                        .records
-                        .iter()
-                        .find(|record| record.id == entity.object_record)
-                })
+            let Some(object) = object_records
+                .get(entity.object_graph.as_str())
+                .and_then(|records| records.get(entity.object_record.as_str()).copied())
             else {
                 continue;
             };
@@ -8900,20 +8980,19 @@ impl CatiaNative {
                 zero_entity_range.clone(),
                 refusal,
             )?;
-        let parsed_zero_entity_endpoint_pairs =
-            crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
+        let endpoint_candidates =
+            crate::families::zero_entity::topology::bounded_endpoint_candidates(
                 ctx,
                 &parsed_zero_entity_support_runs,
+                crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS,
             )?;
+        if endpoint_candidates.bounded {
+            refusal.push_zero_entity_candidates_bounded();
+        }
         let zero_entity_endpoint_pair_candidates =
-            zero_entity_endpoint_pair_candidates(parsed_zero_entity_endpoint_pairs.clone());
-        let parsed_zero_entity_endpoint_loci =
-            crate::families::zero_entity::topology::endpoint_locus_candidates(
-                ctx,
-                &parsed_zero_entity_endpoint_pairs,
-            )?;
+            zero_entity_endpoint_pair_candidates(endpoint_candidates.pairs);
         let zero_entity_endpoint_locus_candidates =
-            zero_entity_endpoint_locus_candidates(parsed_zero_entity_endpoint_loci)?;
+            zero_entity_endpoint_locus_candidates(endpoint_candidates.loci)?;
         let zero_entity_support_runs =
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
@@ -8993,23 +9072,54 @@ fn filter_nested_inventory(
     blocks: &mut Vec<value_block::ValueBlock>,
     catalogs: &mut Vec<catalog::Catalog>,
 ) {
-    blocks.retain(|block| {
-        !graphs
-            .iter()
-            .any(|graph| extent_contains(graph.pos, graph.total_len, block.pos, block.total_len()))
-    });
-    graphs.retain(|graph| {
-        !blocks
-            .iter()
-            .any(|block| extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len))
-    });
+    let graph_owners = ExtentOwners::new(graphs.iter().map(|graph| (graph.pos, graph.total_len)));
+    blocks.retain(|block| !graph_owners.contains(block.pos, block.total_len()));
+    let block_owners = ExtentOwners::new(blocks.iter().map(|block| (block.pos, block.total_len())));
+    graphs.retain(|graph| !block_owners.contains(graph.pos, graph.total_len));
+    let graph_owners = ExtentOwners::new(graphs.iter().map(|graph| (graph.pos, graph.total_len)));
     catalogs.retain(|catalog| {
-        !graphs.iter().any(|graph| {
-            extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
-        }) && !blocks.iter().any(|block| {
-            extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
-        })
+        !graph_owners.contains(catalog.pos, catalog.total_len)
+            && !block_owners.contains(catalog.pos, catalog.total_len)
     });
+}
+
+/// Owner extents sorted by start, answering whether any owner contains a
+/// candidate extent as [`crate::object_graph::extent_contains`] defines it.
+struct ExtentOwners {
+    /// Owner start and end, ascending by start; an owner whose end overflows
+    /// contains nothing and is left out.
+    owners: Vec<(usize, usize)>,
+    /// The largest owner end among `owners[..=index]`.
+    max_end: Vec<usize>,
+}
+
+impl ExtentOwners {
+    fn new(extents: impl IntoIterator<Item = (usize, usize)>) -> Self {
+        let mut owners = extents
+            .into_iter()
+            .filter_map(|(start, len)| Some((start, start.checked_add(len)?)))
+            .collect::<Vec<_>>();
+        owners.sort_unstable();
+        let mut max_end = Vec::new();
+        for &(_, end) in &owners {
+            max_end.push(
+                max_end
+                    .last()
+                    .map_or(end, |&previous: &usize| previous.max(end)),
+            );
+        }
+        Self { owners, max_end }
+    }
+
+    fn contains(&self, start: usize, len: usize) -> bool {
+        let Some(end) = start.checked_add(len) else {
+            return false;
+        };
+        let before = self.owners.partition_point(|&(owner, _)| owner < start);
+        before
+            .checked_sub(1)
+            .is_some_and(|last| self.max_end[last] >= end)
+    }
 }
 
 #[cfg(test)]

@@ -79,6 +79,18 @@ impl LaneRefusals {
             .push(crate::loss::CatiaLossCode::SourceAnnotationCollision.note(format!("{error}")));
     }
 
+    /// Record that the zero-entity endpoint-pair and endpoint-locus candidate
+    /// search reached its work bound.
+    pub(crate) fn push_zero_entity_candidates_bounded(&mut self) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyZeroEntityCandidatesBounded.note(format!(
+                "The zero-entity endpoint candidate search reached its bound of {} operations; \
+                 the endpoint-pair or endpoint-locus candidates it cut short are not retained.",
+                crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS
+            )),
+        );
+    }
+
     /// Record one refusal against the record that stated it.
     fn push(
         &mut self,

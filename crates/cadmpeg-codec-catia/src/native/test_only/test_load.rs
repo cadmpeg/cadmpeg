@@ -50,7 +50,7 @@ use crate::native::{
     CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
     CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
     CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
-    CatiaZeroEntityVertexIncidence,
+    CatiaZeroEntityVertexIncidence, EntityIncidenceIndex,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -222,6 +222,7 @@ impl CatiaNative {
                 .catalog
                 .as_ref()
                 .and_then(|catalog_id| catalogs.iter().find(|catalog| catalog.id == *catalog_id));
+            let incidences = EntityIncidenceIndex::new(&graph.records, &graph.id);
             if !graph_entities.is_empty()
                 && (graph_entities.len() != graph.records.len()
                     || graph_entities
@@ -265,7 +266,7 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         let fields = entity.value_fields();
-                        entity.value_production != value_production(entity, &graph.records, &fields)
+                        entity.value_production != value_production(entity, &incidences, &fields)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value()
@@ -285,8 +286,7 @@ impl CatiaNative {
                                 entity.value_payload(),
                                 &entity.value_schema_selections,
                                 entity.suffix_value(),
-                                &graph.records,
-                                &graph.id,
+                                &incidences,
                                 entity.entity_id,
                             )
                     })
