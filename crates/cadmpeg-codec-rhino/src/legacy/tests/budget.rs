@@ -932,7 +932,7 @@ fn unavailable_v1_source_digest_keeps_hex_and_retained_admission() {
     let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
     for retained in [0, 64] {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 256;
+        policy.limits.max_work_units = u64::try_from(data.len()).unwrap();
         policy.limits.max_retained_bytes = retained;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
@@ -961,6 +961,29 @@ fn unavailable_v1_source_digest_keeps_hex_and_retained_admission() {
             ctx.finish_session().unwrap();
         }
     }
+}
+
+#[test]
+fn unavailable_v1_source_digest_refuses_unadmitted_byte_work() {
+    let data = super::chunk(0x1234, &[0x5a; 4096]);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(data.len() - 1).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut retained_bytes = crate::decode::RETAINED_DOCUMENT_CAP;
+    let error = super::super::retain_v1_record(&ctx, &data, &chunk, &mut retained_bytes)
+        .expect_err("unavailable source hashing must admit every input byte");
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("hashing must preserve the work refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(refusal.operation, "Rhino V1 source digest text");
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, u64::try_from(data.len()).unwrap());
+    assert_eq!(retained_bytes, crate::decode::RETAINED_DOCUMENT_CAP);
+    assert!(matches!(ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }
 
 #[test]

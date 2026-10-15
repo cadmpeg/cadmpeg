@@ -4,6 +4,7 @@
 use crate::loss::ScratchVec;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::Serialize;
 use std::ops::Range;
@@ -581,11 +582,9 @@ fn retained_sha256(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let digest = cadmpeg_ir::hash::sha256(bytes);
-    ctx.format_retained(
-        format_args!("{}", cadmpeg_ir::hash::LowerHex(&digest)),
-        operation,
-    )
+    Ok(String::from(Sha256Digest::digest_for_decode(
+        ctx, bytes, operation,
+    )?))
 }
 
 /// Installs complete typed document-level metadata and named setting records.
