@@ -278,8 +278,16 @@ fn styles_without_bindings_skip_visibility_walk() {
         // An external target without a local record emits a warning. An empty
         // set emits no callback. Neither route evaluates binding visibility.
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-            let result = super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx)
-                .expect("unused visibility fits depth");
+            let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+            let result = super::super::decode(
+                &exchange,
+                &topology,
+                &mut ir,
+                &BTreeMap::new(),
+                ctx,
+                &mut admitted,
+            )
+            .expect("unused visibility fits depth");
             assert!(ir.model.appearance_bindings.is_empty());
             assert_eq!(
                 result.losses.len(),
@@ -307,8 +315,16 @@ fn binding_visibility_keeps_its_independent_recursion_boundary() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 3;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        super::super::decode(&exchange, &topology, &mut ir, &BTreeMap::new(), ctx)
-            .expect("independent visibility depth");
+        let mut admitted = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
+        super::super::decode(
+            &exchange,
+            &topology,
+            &mut ir,
+            &BTreeMap::new(),
+            ctx,
+            &mut admitted,
+        )
+        .expect("independent visibility depth");
         assert_eq!(ir.model.appearance_bindings.len(), 1);
         assert_eq!(ir.model.appearance_bindings[0].visible, None);
     });
