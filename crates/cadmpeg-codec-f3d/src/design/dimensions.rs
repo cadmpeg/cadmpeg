@@ -176,7 +176,7 @@ pub(crate) fn container_only_dimension_companions<'a>(
     annotation_frames: &'a [DesignDimensionAnnotationFrame],
     groups: &'a [DesignDimensionLocusGroup],
     recipe_records: &'a [DesignDimensionRecipeRecord],
-) -> Result<HashSet<(&'a str, u32)>, CodecError> {
+) -> HashSet<(&'a str, u32)> {
     let physical_entries =
         pairs
             .iter()
@@ -234,7 +234,7 @@ pub(crate) fn container_only_dimension_companions<'a>(
     for entry in physical.difference(&governed) {
         container_only.insert(*entry);
     }
-    Ok(container_only)
+    container_only
 }
 
 /// Project dimensional parameter companions into parameter-backed sketch
@@ -1358,7 +1358,7 @@ fn project_all_dimension_constraints(
         }
     }
     for records in recipes_by_companion.values_mut() {
-        records.sort_by(|left, right| left.recipe_ordinal.cmp(&right.recipe_ordinal));
+        records.sort_by_key(|left| left.recipe_ordinal);
     }
     for ((scope, companion_record_index), records) in recipes_by_companion {
         let Some(companion) = companions_by_key.get(&(scope, companion_record_index)) else {
@@ -1491,7 +1491,7 @@ fn project_all_dimension_constraints(
         annotation_frames,
         groups,
         recipe_records,
-    )?;
+    );
     for companion in companions {
         let projected = (|| {
             let scope = native_stream(companion.id())?;
@@ -2287,7 +2287,6 @@ fn concentric_circle_dimension_definition(
                     SketchGeometryDefinition::Circle { .. }
                 )
         })
-        .into_iter()
         .collect::<Vec<_>>();
     let mut pairs = Vec::new();
     let mut paired_entities = HashSet::new();
@@ -2503,7 +2502,6 @@ fn owner_scoped_parallel_line_set_dimension_definition(
                     SketchGeometryDefinition::Line { .. }
                 )
         })
-        .into_iter()
         .collect::<Vec<_>>();
     let collinear = |first: &cadmpeg_ir::sketches::SketchEntity,
                      second: &cadmpeg_ir::sketches::SketchEntity| {
@@ -2520,12 +2518,10 @@ fn owner_scoped_parallel_line_set_dimension_definition(
                     .all(|member| collinear(member, line))
                     .then_some(index)
             })
-            .into_iter()
             .collect::<Vec<_>>();
         match matches.as_slice() {
             [] => {
-                let mut carrier = Vec::new();
-                carrier.push(line);
+                let carrier = vec![line];
                 carriers.push(carrier);
             }
             [index] => carriers[*index].push(line),
@@ -2609,7 +2605,6 @@ fn owner_scoped_line_length_dimension_definition(
             );
             (measured - expected.abs()).abs() <= tolerance
         })
-        .into_iter()
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [] => None,
@@ -2662,7 +2657,6 @@ fn unique_point_class_dimension_definition(
             SketchGeometryDefinition::Point { position } => Some((entity, position.get())),
             _ => None,
         })
-        .into_iter()
         .collect::<Vec<_>>();
     let coincident = |first: Point2, second: Point2| {
         let scale = 1.0
@@ -2686,11 +2680,9 @@ fn unique_point_class_dimension_definition(
                     .any(|member| coincident(member.1, point.1))
                     .then_some(index)
             })
-            .into_iter()
             .collect::<Vec<_>>();
         let Some((&first, rest)) = matches.split_first() else {
-            let mut class = Vec::new();
-            class.push(point);
+            let class = vec![point];
             classes.push(class);
             continue;
         };
@@ -3539,7 +3531,6 @@ fn unique_spatial_parallel_line_dimension_definition(
                     SpatialSketchGeometryDefinition::Line { .. }
                 )
         })
-        .into_iter()
         .collect::<Vec<_>>();
     let mut matched = None;
     for first in 0..lines.len() {
@@ -3677,7 +3668,6 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
                     SpatialSketchGeometryDefinition::Line { .. }
                 )
         })
-        .into_iter()
         .collect::<Vec<_>>();
     let collinear = |first: &cadmpeg_ir::sketches::SpatialSketchEntity,
                      second: &cadmpeg_ir::sketches::SpatialSketchEntity| {
@@ -3695,12 +3685,10 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
                     .all(|member| collinear(member, line))
                     .then_some(index)
             })
-            .into_iter()
             .collect::<Vec<_>>();
         match matches.as_slice() {
             [] => {
-                let mut carrier = Vec::new();
-                carrier.push(line);
+                let carrier = vec![line];
                 carriers.push(carrier);
             }
             [index] => carriers[*index].push(line),
@@ -4654,7 +4642,7 @@ pub(crate) fn remove_dimension_frame_relations(
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
     null_pairs: &[DesignDimensionLocusPair],
-) -> Result<(), CodecError> {
+) {
     let mut dimension_frames = HashSet::new();
     let frames = pairs
         .iter()
@@ -4676,7 +4664,6 @@ pub(crate) fn remove_dimension_frame_relations(
         native_stream(&relation.id)
             .is_none_or(|scope| !dimension_frames.contains(&(scope, relation.byte_offset)))
     });
-    Ok(())
 }
 
 #[derive(Clone, Copy)]

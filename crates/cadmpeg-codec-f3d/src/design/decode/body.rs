@@ -485,14 +485,14 @@ fn local_reference_candidates(
             candidates.push(LocalReferenceCandidate {
                 target,
                 end,
-                inline_type_guid: inline_type_guid.map(|guid| guid.to_owned()),
+                inline_type_guid: inline_type_guid.map(std::borrow::ToOwned::to_owned),
                 padding: ReferencePadding::TwoZeros,
             });
             if allow_extra_zero && bytes.get(end) == Some(&0) {
                 candidates.push(LocalReferenceCandidate {
                     target,
                     end: end + 1,
-                    inline_type_guid: inline_type_guid.map(|guid| guid.to_owned()),
+                    inline_type_guid: inline_type_guid.map(std::borrow::ToOwned::to_owned),
                     padding: ReferencePadding::TwoZeros,
                 });
             }
@@ -895,7 +895,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
                 if let Some(count) = carrier_counts.get_mut(&record.blob_name) {
                     *count += 1;
                 } else {
-                    let name = record.blob_name.to_owned();
+                    let name = record.blob_name.clone();
 
                     carrier_counts.insert(name, 1);
                 }
@@ -910,7 +910,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
             .iter()
             .filter(|record| !record.blob_name.is_empty())
         {
-            let name = record.blob_name.to_owned();
+            let name = record.blob_name.clone();
 
             model_names.push(name);
         }
@@ -1113,14 +1113,14 @@ pub(crate) fn decode_design_body_bindings(
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id,
-                        stream: entry.name.to_owned(),
+                        stream: entry.name.clone(),
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
                         asm_body_key_offset: u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
                         entity_suffix_offset: u64_from_index(binding.entity_suffix_offset()),
-                        blob_name: record.blob_name.to_owned(),
+                        blob_name: record.blob_name.clone(),
                         blob_name_offset: u64_from_index(record.blob_name_offset),
                         body: body
                             .map(|id| (id).try_clone_for_decode(ctx, "copy F3D BREP body ID"))
@@ -1206,8 +1206,8 @@ pub(crate) fn decode_all_body_visibility(
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
                     continue;
                 };
-                let key = record.blob_name.to_owned();
-                let stream = entry.name.to_owned();
+                let key = record.blob_name.clone();
+                let stream = entry.name.clone();
                 out.insert(
                     (key, binding.asm_key),
                     DecodedBodyVisibility {

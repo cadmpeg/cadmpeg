@@ -167,7 +167,7 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
@@ -242,7 +242,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
         {
@@ -345,7 +345,7 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes)?;
+        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
         let scope_record_index = scope.record_index;
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
@@ -516,7 +516,7 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes)?;
+        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
         let Some([placement_record_index, first, second, third, extra_offset]) =
             scope.reference_members().values_array()
         else {
@@ -859,7 +859,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         for (group_member_index, record_index) in group
             .members()
             .iter()
@@ -942,7 +942,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         let legacy_as_built = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
@@ -1027,7 +1027,7 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
@@ -1265,9 +1265,7 @@ fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
 }
 
 /// Index recipes by their final record for each native recipe identity.
-fn indexed_operand_recipes<'a>(
-    recipes: &'a [ConstructionRecipe],
-) -> HashMap<&'a str, &'a ConstructionRecipe> {
+fn indexed_operand_recipes(recipes: &[ConstructionRecipe]) -> HashMap<&str, &ConstructionRecipe> {
     let mut indexed = HashMap::new();
     for recipe in recipes {
         indexed.insert(recipe.id.as_str(), recipe);
@@ -1275,9 +1273,9 @@ fn indexed_operand_recipes<'a>(
     indexed
 }
 
-fn indexed_operand_headers<'a>(
-    headers: &'a [DesignRecordHeader],
-) -> HashMap<(&'a str, u32), &'a DesignRecordHeader> {
+fn indexed_operand_headers(
+    headers: &[DesignRecordHeader],
+) -> HashMap<(&str, u32), &DesignRecordHeader> {
     let mut indexed = HashMap::new();
     for header in headers {
         let Some(stream) = native_stream(&header.id) else {
@@ -1289,10 +1287,10 @@ fn indexed_operand_headers<'a>(
     indexed
 }
 
-fn referenced_operand_faces<'a>(
-    references: &'a [crate::records::dimensions::DesignRecipeReference],
+fn referenced_operand_faces(
+    references: &[crate::records::dimensions::DesignRecipeReference],
     design_reference: i64,
-) -> HashSet<&'a cadmpeg_ir::ids::FaceId> {
+) -> HashSet<&cadmpeg_ir::ids::FaceId> {
     let mut referenced = HashSet::new();
     for face in references
         .iter()
@@ -1898,7 +1896,7 @@ pub(crate) fn decode_fillet_radius_groups(
     groups: &[DesignConstructionOperandGroup],
     owners: &[DesignParameterOwner],
     parameters: &[DesignParameter],
-) -> Result<Vec<DesignFilletRadiusGroup>, CodecError> {
+) -> Vec<DesignFilletRadiusGroup> {
     let mut parameter_index = HashMap::new();
     for parameter in parameters {
         let Some(stream) = native_stream(&parameter.id) else {
@@ -2082,7 +2080,7 @@ pub(crate) fn decode_fillet_radius_groups(
         );
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
+    out
 }
 
 /// Remove fixed Fillet interpretations of frames that are indexed parameter owners.
@@ -3814,7 +3812,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -3855,7 +3853,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes)?;
+        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
         let operation = scope.combine_operation();
         let record_indexes = operation
             .into_iter()
@@ -4173,7 +4171,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
     scopes: &[DesignParameterScope],
-) -> Result<(), CodecError> {
+) {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut recipes_by_id = HashMap::<_, Option<&ConstructionRecipe>>::new();
@@ -4227,7 +4225,6 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             reference.candidate_faces.dedup();
         }
     }
-    Ok(())
 }
 
 /// Resolve selection-member local identities against persistent point and
@@ -4996,13 +4993,10 @@ fn parse_edge_operand(
     };
     let surface_patch_recipe_structure =
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
-            match surface_patch_recipe_structure_with_context(
+            surface_patch_recipe_structure_with_context(
                 &parsed.recipe_program,
                 parsed.recipe_references.len(),
-            ) {
-                Ok(structure) => structure,
-                Err(error) => return Some(Err(error)),
-            }
+            )
         } else {
             None
         };
@@ -5084,76 +5078,51 @@ pub(crate) fn edge_recipe_structure_with_context(
 pub(crate) fn surface_patch_recipe_structure_with_context(
     program: &[i32],
     reference_count: usize,
-) -> Result<
-    Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure>,
-    CodecError,
-> {
-    let Some(mut remaining) = program.get(7..) else {
-        return Ok(None);
-    };
-    let Some((&root, tail)) = remaining.split_first() else {
-        return Ok(None);
-    };
+) -> Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure> {
+    let mut remaining = program.get(7..)?;
+    let (&root, tail) = remaining.split_first()?;
     if root != 2 {
-        return Ok(None);
+        return None;
     }
     remaining = tail;
     let mut clauses = Vec::new();
     for _ in 0..2 {
         let mut fields = Vec::new();
         for _ in 0..6 {
-            let Some(delimiter_at) = remaining.iter().position(|word| *word == -1) else {
-                return Ok(None);
-            };
+            let delimiter_at = remaining.iter().position(|word| *word == -1)?;
             if delimiter_at > 2 {
-                return Ok(None);
+                return None;
             }
-            let Some(field) = remaining.get(..delimiter_at) else {
-                return Ok(None);
-            };
-            let field = field.iter().copied().collect::<Vec<_>>();
+            let field = remaining.get(..delimiter_at)?;
+            let field = field.to_vec();
             if field.is_empty() || field.iter().any(|word| *word < 0) {
-                return Ok(None);
+                return None;
             }
-            let Some(tail) = remaining.get(delimiter_at + 1..) else {
-                return Ok(None);
-            };
+            let tail = remaining.get(delimiter_at + 1..)?;
             remaining = tail;
             fields.push(field);
         }
-        let Some((&payload_entry_count, tail)) = remaining.split_first() else {
-            return Ok(None);
-        };
+        let (&payload_entry_count, tail) = remaining.split_first()?;
         let Ok(payload_entry_count) = u32::try_from(payload_entry_count) else {
-            return Ok(None);
+            return None;
         };
-        let Some(payload_word_count) = usize::try_from(payload_entry_count)
+        let payload_word_count = usize::try_from(payload_entry_count)
             .ok()
-            .and_then(|count| count.checked_mul(8))
-        else {
-            return Ok(None);
-        };
-        let Some(payload) = tail.get(..payload_word_count) else {
-            return Ok(None);
-        };
-        let Some(entries) = edge_recipe_entries(payload) else {
-            return Ok(None);
-        };
+            .and_then(|count| count.checked_mul(8))?;
+        let payload = tail.get(..payload_word_count)?;
+        let entries = edge_recipe_entries(payload)?;
         if u32::try_from(entries.len()).ok() != Some(payload_entry_count) {
-            return Ok(None);
+            return None;
         }
-        let Some((&delimiter, tail)) = tail
+        let (&delimiter, tail) = tail
             .get(payload_word_count..)
-            .and_then(|tail| tail.split_first())
-        else {
-            return Ok(None);
-        };
+            .and_then(|tail| tail.split_first())?;
         if delimiter != -1 {
-            return Ok(None);
+            return None;
         }
         remaining = tail;
         let [first, second, third, fourth, fifth, sixth] = fields.as_slice() else {
-            return Ok(None);
+            return None;
         };
         if !(first.len() == 1 || first.len() == 2 && first[0] == 2)
             || second.len() != 1
@@ -5163,21 +5132,15 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
             || fifth.len() != 1
             || sixth.as_slice() != [0, 0]
         {
-            return Ok(None);
+            return None;
         }
         let ordinal = |field: &[i32], position: usize| {
             let ordinal = usize::try_from(*field.get(position)?).ok()?;
             (ordinal < reference_count).then_some(u32::try_from(ordinal).ok()?)
         };
-        let Some(face_reference_ordinals) =
-            (|| Some([ordinal(first, first.len() - 1)?, ordinal(second, 0)?]))()
-        else {
-            return Ok(None);
-        };
-        let Some(edge_reference_ordinals) = (|| Some([ordinal(third, 1)?, ordinal(fifth, 0)?]))()
-        else {
-            return Ok(None);
-        };
+        let face_reference_ordinals =
+            (|| Some([ordinal(first, first.len() - 1)?, ordinal(second, 0)?]))()?;
+        let edge_reference_ordinals = (|| Some([ordinal(third, 1)?, ordinal(fifth, 0)?]))()?;
         clauses.push(
             crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
                 fields,
@@ -5189,16 +5152,16 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
     }
     if let Some(&delimiter) = remaining.first() {
         if delimiter != 0 {
-            return Ok(None);
+            return None;
         }
         remaining = &remaining[1..];
     }
     if !remaining.is_empty() {
-        return Ok(None);
+        return None;
     }
-    Ok(clauses.try_into().ok().map(|clauses| {
+    clauses.try_into().ok().map(|clauses| {
         crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure { clauses }
-    }))
+    })
 }
 
 fn edge_recipe_local_topology_references(
@@ -5326,9 +5289,7 @@ fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
     field_count > 0
 }
 
-fn edge_recipe_counted_side_candidates<'w>(
-    words: &'w [i32],
-) -> Vec<(DesignTopologyRecipeSide, &'w [i32])> {
+fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyRecipeSide, &[i32])> {
     let Some(field_count) = words
         .first()
         .and_then(|word| u32::try_from(*word).ok())
@@ -5552,7 +5513,7 @@ fn topology_recipe_references(
 fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
     let mut entries = Vec::new();
     for entry in words.chunks_exact(8) {
-        let Some(parsed) = (|| {
+        let parsed = (|| {
             let selector = entry[0];
             if selector < 0 {
                 return None;
@@ -5570,9 +5531,7 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> 
                     boundary_edge_count,
                     topology_triplets,
                 })
-        })() else {
-            return None;
-        };
+        })()?;
         if entries
             .last()
             .is_some_and(|last: &DesignTopologyRecipeEntry| last.selector >= parsed.selector)

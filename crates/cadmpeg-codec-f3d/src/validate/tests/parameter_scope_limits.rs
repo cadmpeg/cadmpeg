@@ -17,7 +17,7 @@ fn invalid_parameter_scope_preserves_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = native();
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);

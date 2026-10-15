@@ -384,7 +384,7 @@ pub(crate) fn project_sketch_design(
                     .weights()
                     .next()
                     .is_some()
-                    .then(|| poles.weights().into_iter().collect::<Vec<_>>());
+                    .then(|| poles.weights().collect::<Vec<_>>());
                 SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     ctx,
                     geometry.degree(),
@@ -716,7 +716,7 @@ pub(crate) fn project_spatial_sketch_design(
                             .weights()
                             .next()
                             .is_some()
-                            .then(|| poles.weights().into_iter().collect::<Vec<_>>());
+                            .then(|| poles.weights().collect::<Vec<_>>());
                         let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                             ctx,
                             geometry.degree(),

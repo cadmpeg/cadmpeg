@@ -3574,7 +3574,7 @@ pub(crate) fn hem_geometry_semantics(
     scope: &crate::records::feature::scope::DesignParameterScope,
     edge_slot: i64,
     histories: &[AsmHistory],
-) -> Result<HemGeometrySemantics, cadmpeg_core::CodecError> {
+) -> HemGeometrySemantics {
     let unresolved = HemGeometrySemantics {
         direction: None,
         gap_length_form: None,
@@ -3583,20 +3583,20 @@ pub(crate) fn hem_geometry_semantics(
         scope.history_state_id(),
         effective_scope_previous_history_state_id(scope, histories),
     ) else {
-        return Ok(unresolved);
+        return unresolved;
     };
     let Some((_, state, previous)) =
         unique_history_state_pair(histories, state_id, previous_state_id)
     else {
-        return Ok(unresolved);
+        return unresolved;
     };
     let (Some(previous_topology), Some(transition)) =
         (previous.topology(), state.transition.as_ref())
     else {
-        return Ok(unresolved);
+        return unresolved;
     };
     let Some(current_topology) = state.topology() else {
-        return Ok(unresolved);
+        return unresolved;
     };
     let inserted_surfaces = &transition.topology.surfaces.inserted;
     if !current_topology
@@ -3604,10 +3604,10 @@ pub(crate) fn hem_geometry_semantics(
         .iter()
         .any(|cylinder| inserted_surfaces.contains(&cylinder.surface))
     {
-        return Ok(unresolved);
+        return unresolved;
     }
     let edge_direction =
-        historical_edge_axis(edge_slot, previous_topology)?.map(|(_, direction)| direction);
+        historical_edge_axis(edge_slot, previous_topology).map(|(_, direction)| direction);
     let cylinders = || {
         current_topology
             .surface_cylinders
@@ -3619,17 +3619,17 @@ pub(crate) fn hem_geometry_semantics(
             })
     };
     if cylinders().next().is_none() {
-        return Ok(unresolved);
+        return unresolved;
     }
-    Ok(HemGeometrySemantics {
+    HemGeometrySemantics {
         direction: hem_direction_from_transition(
             edge_slot,
             &cylinders(),
             previous_topology,
             transition,
-        )?,
+        ),
         gap_length_form: hem_gap_length_form(cylinders()),
-    })
+    }
 }
 
 fn hem_gap_length_form<'a>(
@@ -3667,11 +3667,9 @@ fn hem_direction_from_transition<'a>(
     cylinders: &(impl Iterator<Item = &'a AsmHistoricalCylinder> + Clone),
     previous: &AsmHistoricalTopology,
     transition: &AsmHistoricalTransition,
-) -> Result<Option<cadmpeg_ir::features::SheetMetalHemDirection>, cadmpeg_core::CodecError> {
-    if (*cylinders).clone().next().is_none() {
-        return Ok(None);
-    }
-    let edge_context = selection::historical_edge_context(edge_slot, previous)?;
+) -> Option<cadmpeg_ir::features::SheetMetalHemDirection> {
+    (*cylinders).clone().next()?;
+    let edge_context = selection::historical_edge_context(edge_slot, previous);
     let mut candidate = None;
     for (ordinal, incident) in edge_context.incident_loops.iter().enumerate() {
         let face = incident.face_slot;
@@ -3738,17 +3736,15 @@ fn hem_direction_from_transition<'a>(
             continue;
         }
         if candidate.replace(first.is_sign_positive()).is_some() {
-            return Ok(None);
+            return None;
         }
     }
-    let Some(candidate) = candidate else {
-        return Ok(None);
-    };
-    Ok(Some(if candidate {
+    let candidate = candidate?;
+    Some(if candidate {
         cadmpeg_ir::features::SheetMetalHemDirection::Forward
     } else {
         cadmpeg_ir::features::SheetMetalHemDirection::Reverse
-    }))
+    })
 }
 
 fn parallel_directions(left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math::Vector3) -> bool {
@@ -3838,7 +3834,7 @@ pub(crate) fn bind_scope_histories(
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
-) -> Result<HashMap<String, String>, cadmpeg_core::CodecError> {
+) -> HashMap<String, String> {
     let mut candidates = Vec::new();
     for scope in scopes {
         let Some(state_id) = scope.history_state_id() else {
@@ -4007,7 +4003,7 @@ pub(crate) fn bind_scope_histories(
             }
         }
     }
-    Ok(resolved)
+    resolved
 }
 
 fn history_state_reaches(
@@ -4403,7 +4399,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             topology,
             &changed_faces,
             &mut topology_queries,
-        )?;
+        );
         if direct_face_candidates.is_some() {
             operand.resolved_face_slots = operand
                 .preceding_candidate_faces
@@ -4465,11 +4461,11 @@ pub(crate) fn bind_face_operand_history_candidates(
                     } else {
                         crate::design::face_resolve::resolve_bounded_face_history_candidates(
                             operand,
-                        )?
+                        )
                         .unwrap_or_default()
                     }
                 } else if let Some(bounded) =
-                    crate::design::face_resolve::resolve_bounded_face_history_candidates(operand)?
+                    crate::design::face_resolve::resolve_bounded_face_history_candidates(operand)
                 {
                     bounded
                 } else {
@@ -4482,7 +4478,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                                 topology,
                                 result,
                                 &changed_faces,
-                            )?
+                            )
                         } else {
                             None
                         }
@@ -4749,7 +4745,7 @@ fn resolve_pattern_face_by_surface_radius(
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
-) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+) -> Option<i64> {
     let mut candidate_faces = HashSet::new();
     for face in candidates
         .iter()
@@ -4758,7 +4754,7 @@ fn resolve_pattern_face_by_surface_radius(
         candidate_faces.insert(face);
     }
     if candidate_faces.is_empty() {
-        return Ok(None);
+        return None;
     }
     let mut result_radius = None;
     let mut bound_candidates = HashSet::new();
@@ -4768,30 +4764,26 @@ fn resolve_pattern_face_by_surface_radius(
         .filter(|binding| candidate_faces.contains(&binding.entity))
     {
         if !bound_candidates.insert(binding.entity) {
-            return Ok(None);
+            return None;
         }
         let mut radii = result
             .surface_radii
             .iter()
             .filter(|radius| radius.surface == binding.carrier);
-        let Some(radius) = radii.next().map(|radius| radius.radius) else {
-            return Ok(None);
-        };
+        let radius = radii.next().map(|radius| radius.radius)?;
         if radii.next().is_some() || !radius.is_finite() || radius <= 0.0 {
-            return Ok(None);
+            return None;
         }
         match result_radius {
             None => result_radius = Some(radius.to_bits()),
             Some(expected) if expected == radius.to_bits() => {}
-            Some(_) => return Ok(None),
+            Some(_) => return None,
         }
     }
     if bound_candidates != candidate_faces {
-        return Ok(None);
+        return None;
     }
-    let Some(result_radius) = result_radius else {
-        return Ok(None);
-    };
+    let result_radius = result_radius?;
     let mut matches = preceding
         .face_surfaces
         .iter()
@@ -4805,10 +4797,8 @@ fn resolve_pattern_face_by_surface_radius(
             (radii.next().is_none() && radius.radius.to_bits() == result_radius)
                 .then_some(binding.entity)
         });
-    let Some(face) = matches.next() else {
-        return Ok(None);
-    };
-    Ok(matches.next().is_none().then_some(face))
+    let face = matches.next()?;
+    matches.next().is_none().then_some(face)
 }
 
 fn resolve_split_tool_face(
@@ -5027,7 +5017,7 @@ fn resolve_bounded_face_recipe_target<'a>(
         Option<(usize, Vec<cadmpeg_ir::math::Point3>)>,
         cadmpeg_core::CodecError,
     > {
-        let contexts = face_boundary_contexts_for_slots(&[face], topology, topology_queries)?;
+        let contexts = face_boundary_contexts_for_slots(&[face], topology, topology_queries);
         let [context] = contexts.as_slice() else {
             return Ok(None);
         };
@@ -5696,10 +5686,7 @@ fn historical_face_support_contexts<'a>(
     preceding_topology: &'a AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
     topology_queries: &mut TopologyQueryCache<'a>,
-) -> Result<
-    Vec<crate::records::topology::historical_context::DesignHistoricalFaceSupportContext>,
-    cadmpeg_core::CodecError,
-> {
+) -> Vec<crate::records::topology::historical_context::DesignHistoricalFaceSupportContext> {
     let mut preceding_faces = HashSet::new();
     for face in &preceding_topology.faces {
         preceding_faces.insert(*face);
@@ -5762,7 +5749,7 @@ fn historical_face_support_contexts<'a>(
             &preceding_face_slots,
             preceding_topology,
             topology_queries,
-        )?;
+        );
 
         contexts.push(
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
@@ -5774,7 +5761,7 @@ fn historical_face_support_contexts<'a>(
             },
         );
     }
-    Ok(contexts)
+    contexts
 }
 
 fn face_boundary_edges<'a>(
@@ -5817,10 +5804,7 @@ fn face_boundary_contexts<'a>(
     faces: &[cadmpeg_ir::ids::FaceId],
     topology: &'a AsmHistoricalTopology,
     topology_queries: &mut TopologyQueryCache<'a>,
-) -> Result<
-    Vec<crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>,
-    cadmpeg_core::CodecError,
-> {
+) -> Vec<crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext> {
     let face_slots = faces
         .iter()
         .filter_map(|face| stable_ref(face.as_str()))
@@ -5832,10 +5816,7 @@ fn face_boundary_contexts_for_slots<'a>(
     face_slots: &[i64],
     topology: &'a AsmHistoricalTopology,
     topology_queries: &mut TopologyQueryCache<'a>,
-) -> Result<
-    Vec<crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>,
-    cadmpeg_core::CodecError,
-> {
+) -> Vec<crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext> {
     let index = topology_queries.loops.get(topology, LoopIndex::new);
     let edge_endpoints = topology_queries
         .endpoints
@@ -5863,7 +5844,7 @@ fn face_boundary_contexts_for_slots<'a>(
                     },
                 );
             }
-            let boundary = historical_loop_boundary(coedges, index, edge_endpoints)?;
+            let boundary = historical_loop_boundary(coedges, index, edge_endpoints);
 
             loops.push(
                 crate::records::topology::historical_context::DesignHistoricalFaceLoopContext {
@@ -5880,17 +5861,14 @@ fn face_boundary_contexts_for_slots<'a>(
             },
         );
     }
-    Ok(contexts)
+    contexts
 }
 
 fn historical_loop_boundary(
     coedges: Vec<crate::records::topology::historical_context::DesignHistoricalLoopCoedge>,
     index: &LoopIndex<'_>,
     edge_endpoints: &topology_cache::EdgeEndpoints,
-) -> Result<
-    crate::records::topology::historical_context::DesignHistoricalLoopBoundary,
-    cadmpeg_core::CodecError,
-> {
+) -> crate::records::topology::historical_context::DesignHistoricalLoopBoundary {
     use crate::records::topology::{
         historical_context::DesignHistoricalLoopBoundary,
         historical_context::DesignHistoricalLoopPoint,
@@ -5904,16 +5882,16 @@ fn historical_loop_boundary(
         let endpoints = |slot| edge_endpoints.get(&slot).copied().flatten();
         let (Some(previous), Some(current)) = (endpoints(previous), endpoints(coedge.edge_slot))
         else {
-            return Ok(DesignHistoricalLoopBoundary::Coedges(coedges));
+            return DesignHistoricalLoopBoundary::Coedges(coedges);
         };
         let mut shared = previous
             .into_iter()
             .filter(|vertex| current.contains(vertex));
         let Some(vertex_slot) = shared.next() else {
-            return Ok(DesignHistoricalLoopBoundary::Coedges(coedges));
+            return DesignHistoricalLoopBoundary::Coedges(coedges);
         };
         if shared.any(|vertex| vertex != vertex_slot) {
-            return Ok(DesignHistoricalLoopBoundary::Coedges(coedges));
+            return DesignHistoricalLoopBoundary::Coedges(coedges);
         }
 
         vertices.push(DesignHistoricalLoopVertex {
@@ -5922,7 +5900,7 @@ fn historical_loop_boundary(
         });
     }
     if vertices.is_empty() {
-        return Ok(DesignHistoricalLoopBoundary::Coedges(coedges));
+        return DesignHistoricalLoopBoundary::Coedges(coedges);
     }
     let mut points = Vec::new();
     for vertex in &vertices {
@@ -5932,7 +5910,7 @@ fn historical_loop_boundary(
             .copied()
             .flatten()
         else {
-            return Ok(DesignHistoricalLoopBoundary::Vertices(vertices));
+            return DesignHistoricalLoopBoundary::Vertices(vertices);
         };
 
         points.push(DesignHistoricalLoopPoint {
@@ -5943,7 +5921,7 @@ fn historical_loop_boundary(
     let mut positions = Vec::new();
     for point in &points {
         let Some(position) = index.positions.get(&point.point_slot).copied().flatten() else {
-            return Ok(DesignHistoricalLoopBoundary::Points(points));
+            return DesignHistoricalLoopBoundary::Points(points);
         };
 
         positions.push(DesignHistoricalLoopPosition {
@@ -5951,7 +5929,7 @@ fn historical_loop_boundary(
             position,
         });
     }
-    Ok(DesignHistoricalLoopBoundary::Positions(positions))
+    DesignHistoricalLoopBoundary::Positions(positions)
 }
 
 fn preceding_support_face_slots(
@@ -6016,7 +5994,7 @@ fn edge_recipe_reference_context<'a>(
     };
     let result_faces = selection::faces_in_topology(decode, candidate_faces, result.topology)?;
     let result_face_boundaries =
-        face_boundary_contexts(&result_faces, result.topology, topology_queries)?;
+        face_boundary_contexts(&result_faces, result.topology, topology_queries);
     let result_edges = face_boundary_edges(&result_faces, result.topology, topology_queries);
     let result_shared_edge_slots = result
         .boundary_edges
@@ -6027,14 +6005,14 @@ fn edge_recipe_reference_context<'a>(
     let preceding_faces =
         selection::faces_in_topology(decode, candidate_faces, preceding.topology)?;
     let preceding_face_boundaries =
-        face_boundary_contexts(&preceding_faces, preceding.topology, topology_queries)?;
+        face_boundary_contexts(&preceding_faces, preceding.topology, topology_queries);
     let preceding_support_face_slots =
         preceding_support_face_slots(&result_faces, result.topology, preceding.topology);
     let preceding_support_face_boundaries = face_boundary_contexts_for_slots(
         &preceding_support_face_slots,
         preceding.topology,
         topology_queries,
-    )?;
+    );
     let preceding_edges =
         face_boundary_edges(&preceding_faces, preceding.topology, topology_queries);
     let shared_edge_slots = preceding
@@ -6339,13 +6317,13 @@ pub(crate) fn bind_edge_operand_history_candidates(
             topology,
             &deleted_edges,
             &mut treatment_cache,
-        )?;
+        );
         operand.changed_boundary_edge_contexts = operand
             .changed_boundary_edge_slots
             .iter()
             .copied()
             .map(|edge| selection::historical_edge_context(edge, topology))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         let mut reference_contexts = Vec::new();
         for (ordinal, reference) in operand.recipe_references.iter().enumerate() {
             let Ok(reference_ordinal) = u32::try_from(ordinal) else {
@@ -6403,11 +6381,9 @@ pub(crate) fn bind_edge_operand_history_candidates(
             let contexts = candidate_edges
                 .into_iter()
                 .map(|edge| selection::historical_edge_context(edge, topology))
-                .collect::<Result<Vec<_>, _>>()?;
-            operand.recipe_selectors = selection::recipe_selector_candidates(
-                operand.recipe_structure.as_ref(),
-                &contexts,
-            )?;
+                .collect::<Vec<_>>();
+            operand.recipe_selectors =
+                selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
             operand.resolved_edge_slot =
                 crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces(
                     &operand.recipe_selectors,
@@ -6436,18 +6412,16 @@ pub(crate) fn bind_edge_operand_history_candidates(
             let contexts = candidate_edges
                 .into_iter()
                 .map(|edge| selection::historical_edge_context(edge, topology))
-                .collect::<Result<Vec<_>, _>>()?;
-            operand.recipe_selectors = selection::recipe_selector_candidates(
-                operand.recipe_structure.as_ref(),
-                &contexts,
-            )?;
+                .collect::<Vec<_>>();
+            operand.recipe_selectors =
+                selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
             operand.resolved_edge_slot =
                 crate::design::edge_resolve::resolved_edge_candidate_intersection(
                     &operand.recipe_selectors,
                     reference_edge_sets.iter().map(Vec::as_slice),
                 );
             let resolved_axis = if let Some(edge) = operand.resolved_edge_slot {
-                historical_edge_axis(edge, topology)?
+                historical_edge_axis(edge, topology)
                     .and_then(|(origin, direction)| design_axis(origin, direction))
             } else {
                 None
@@ -6463,11 +6437,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .copied()
             .filter(|edge| changed_edges.contains(edge))
             .map(|edge| selection::historical_edge_context(edge, topology))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         operand.recipe_selectors = selection::recipe_selector_candidates(
             operand.recipe_structure.as_ref(),
             &changed_edge_contexts,
-        )?;
+        );
         operand.resolved_edge_slot = side_one_recipe_edge(
             operand.recipe_structure.as_ref(),
             &operand.recipe_reference_contexts,
@@ -6492,8 +6466,7 @@ fn design_axis(
 fn historical_edge_axis(
     edge: i64,
     topology: &AsmHistoricalTopology,
-) -> Result<Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>, cadmpeg_core::CodecError>
-{
+) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
     if let Some(axis) = topology
         .edge_curves
         .iter()
@@ -6501,10 +6474,10 @@ fn historical_edge_axis(
         .and_then(|binding| binding.carrier)
         .and_then(|curve| topology.curve_axes.iter().find(|axis| axis.curve == curve))
     {
-        return Ok(Some((axis.origin, axis.direction)));
+        return Some((axis.origin, axis.direction));
     }
     let mut support_surfaces = HashSet::new();
-    for carrier in selection::historical_edge_context(edge, topology)?
+    for carrier in selection::historical_edge_context(edge, topology)
         .incident_loops
         .into_iter()
         .filter_map(|context| {
@@ -6523,12 +6496,9 @@ fn historical_edge_axis(
         .iter()
         .filter(|axis| support_surfaces.contains(&axis.surface))
         .map(|axis| (axis.origin, axis.direction));
-    let Some(first) = axes.next() else {
-        return Ok(None);
-    };
-    Ok(axes
-        .all(|axis| same_axis_line(first, axis))
-        .then_some(first))
+    let first = axes.next()?;
+    axes.all(|axis| same_axis_line(first, axis))
+        .then_some(first)
 }
 
 fn bind_active_edge_operand_for_scope<'a>(
@@ -6579,7 +6549,7 @@ fn bind_active_edge_operand_for_scope<'a>(
         });
         let resolved_axis = if let Some((edge, topology)) = operand.resolved_edge_slot.zip(topology)
         {
-            historical_edge_axis(edge, topology)?
+            historical_edge_axis(edge, topology)
                 .and_then(|(origin, direction)| design_axis(origin, direction))
         } else {
             None
@@ -6684,9 +6654,9 @@ fn bind_active_edge_operand_candidates<'a>(
             .iter()
             .copied()
             .map(|edge| selection::historical_edge_context(edge, topology))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
         let selectors =
-            selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts)?;
+            selection::recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
         let reference_edge_sets =
             collect_reference_edge_sets(decode, &reference_faces, topology, topology_queries)?;
         let all_reference_edge_sets =
@@ -6788,19 +6758,16 @@ fn treatment_radius_candidates<'a>(
     preceding: &'a AsmHistoricalTopology,
     deleted_edges: &[i64],
     treatment_cache: &mut TreatmentCache<'a>,
-) -> Result<
-    Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate>,
-    cadmpeg_core::CodecError,
-> {
-    Ok(treatment_edge_candidates(
+) -> Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate> {
+    treatment_edge_candidates(
         result_candidate_faces,
         inserted_faces,
         result,
         preceding,
         deleted_edges,
         treatment_cache,
-    )?
-    .0)
+    )
+    .0
 }
 
 fn treatment_edge_candidates<'a>(
@@ -6810,13 +6777,10 @@ fn treatment_edge_candidates<'a>(
     preceding: &'a AsmHistoricalTopology,
     deleted_edges: &[i64],
     treatment_cache: &mut TreatmentCache<'a>,
-) -> Result<
-    (
-        Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate>,
-        Vec<i64>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> (
+    Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate>,
+    Vec<i64>,
+) {
     let index = treatment_cache.get(result, preceding);
     let result_boundaries = &index.result_boundaries;
     let preceding_boundaries = &index.preceding_boundaries;
@@ -6890,7 +6854,7 @@ fn treatment_edge_candidates<'a>(
         .dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
     transitions_out.sort_unstable_by(Ord::cmp);
     transitions_out.dedup();
-    Ok((radii_out, transitions_out))
+    (radii_out, transitions_out)
 }
 
 fn treatment_face_supports(

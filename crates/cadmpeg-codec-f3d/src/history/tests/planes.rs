@@ -24,7 +24,6 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
     {
         let unique = |primary: Vec<_>, persistent: Vec<_>| {
             super::super::selection::unique_mirror_plane_candidate(primary, persistent)
-                .expect("candidate sorts are admitted")
         };
         let primary = candidate("history-a", 10);
         assert_eq!(
@@ -168,9 +167,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             &[],
             &[],
             std::slice::from_ref(&history),
-        )
-    }
-    .unwrap();
+        );
+    };
 
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
@@ -192,9 +190,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             &[],
             &[],
             std::slice::from_ref(&history),
-        )
-    }
-    .unwrap();
+        );
+    };
 
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
@@ -350,7 +347,6 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
     };
 
     let plane = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
-        .unwrap()
         .expect("stable selected-face plane");
     assert_eq!(
         plane.origin,
@@ -360,39 +356,21 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
             z: 3.0
         }
     );
-    assert!(
-        historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history))
-            .unwrap()
-            .is_some()
-    );
+    assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
     history.states[0].topology_mut().unwrap().surface_planes[0]
         .normal
         .z = -1.0;
-    assert!(
-        historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
-            .unwrap()
-            .is_some()
-    );
-    assert!(
-        historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history))
-            .unwrap()
-            .is_some()
-    );
+    assert!(historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history)).is_some());
+    assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_some());
     history.states[0].topology_mut().unwrap().surface_planes[0]
         .origin
         .z = 4.0;
-    assert!(
-        historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history))
-            .unwrap()
-            .is_none()
-    );
+    assert!(historical_mirror_plane(&candidate, 3, std::slice::from_ref(&history)).is_none());
     let duplicate = history.states[1].topology().unwrap().face_surfaces[0].clone();
     history.states[1]
         .topology_mut()
         .unwrap()
         .face_surfaces
         .push(duplicate);
-    assert!(historical_mirror_plane(&candidate, 1, &[history])
-        .unwrap()
-        .is_none());
+    assert!(historical_mirror_plane(&candidate, 1, &[history]).is_none());
 }

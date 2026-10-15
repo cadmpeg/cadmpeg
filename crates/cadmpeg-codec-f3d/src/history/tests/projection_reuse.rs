@@ -140,8 +140,7 @@ fn loop_and_vertex_queries_share_the_endpoint_index() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cache = TopologyQueryCache::default();
     assert_eq!(common_face_vertex(&[10], &topology, &mut cache), Some(40));
-    let contexts =
-        crate::history::face_boundary_contexts_for_slots(&[10], &topology, &mut cache).unwrap();
+    let contexts = crate::history::face_boundary_contexts_for_slots(&[10], &topology, &mut cache);
     assert_eq!(contexts.len(), 1);
     assert!(
         matches!(&contexts[0].loops[0].boundary, crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) if rows.len() == 1 && rows[0].vertex_slot == 40)

@@ -88,7 +88,7 @@ fn operand_group_missing_member_preserves_finding_text() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = native(false);
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_operand_group_carriers(
             &ctx,
@@ -112,7 +112,7 @@ fn operand_group_exact_identity_member_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = native_with_identity();
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         let exact_members = HashSet::from([("f3d:Design/BulkStream.dat", 101)]);
         super::super::validate_operand_group_carriers(

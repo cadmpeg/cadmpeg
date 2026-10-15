@@ -185,7 +185,7 @@ pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecEr
             "invalid native record id {id}"
         )));
     };
-    crate::ids::decode_identity_key_component(stream)?
+    crate::ids::decode_identity_key_component(stream)
         .ok_or_else(|| CodecError::malformed(format_args!("invalid native record id {id}")))
 }
 

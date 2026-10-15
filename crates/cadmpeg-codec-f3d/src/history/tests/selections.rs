@@ -118,7 +118,7 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     );
 
     assert_eq!(
-        entity_selection_face_candidates(18044, &[unrelated, selected]).unwrap(),
+        entity_selection_face_candidates(18044, &[unrelated, selected]),
         [
             crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
@@ -349,16 +349,13 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         states: vec![current, previous],
     };
 
-    {
-        bind_edge_identity_history(
-            &mut operands,
-            &[],
-            std::slice::from_ref(&scope),
-            std::slice::from_ref(&history),
-            &HashMap::from([(scope.id.clone(), history.id.clone())]),
-        )
-    }
-    .unwrap();
+    bind_edge_identity_history(
+        &mut operands,
+        &[],
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&history),
+        &HashMap::from([(scope.id.clone(), history.id.clone())]),
+    );
 
     assert_eq!(operands[0].transition_edge_candidates, [17, 19]);
     assert_eq!(operands[1].transition_edge_candidates, [17, 19]);

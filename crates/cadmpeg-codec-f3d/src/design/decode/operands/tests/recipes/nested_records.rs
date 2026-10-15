@@ -1025,7 +1025,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             ],
             4,
         )
-        .expect("recipe structure")
         .expect("SurfacePatch two-clause recipe structure");
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
@@ -1045,7 +1044,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             ],
             3,
         )
-        .expect("recipe structure")
         .is_none()
     );
     assert!(
@@ -1057,7 +1055,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             ],
             4,
         )
-        .expect("recipe structure")
         .is_none()
     );
     let mut surface_patch_operand = edge_operand.clone();

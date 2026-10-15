@@ -68,8 +68,7 @@ fn reads_owned_cage_objects() {
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             2196,
             2190
-        )
-        .unwrap(),
+        ),
         Some(vec![8300, 8303])
     );
     let mut alternate_pair = bytes.clone();
@@ -80,8 +79,7 @@ fn reads_owned_cage_objects() {
             &crate::design::test_support::indexed_record_offsets_for_test(&alternate_pair),
             2196,
             2190
-        )
-        .unwrap(),
+        ),
         Some(vec![8300, 8303])
     );
 
@@ -104,8 +102,7 @@ fn reads_owned_cage_objects() {
             &crate::design::test_support::indexed_record_offsets_for_test(&empty),
             2196,
             2190
-        )
-        .unwrap(),
+        ),
         Some(Vec::new())
     );
 }
@@ -128,8 +125,7 @@ fn reads_single_cage_list_with_opaque_tail() {
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             2196,
             2190
-        )
-        .unwrap(),
+        ),
         Some(vec![8300])
     );
 }

@@ -587,7 +587,7 @@ fn bind_occurrences(
                 });
             }
             let selected =
-                occurrence_transforms_with_precedence(direct, placements, &reference.neutron_role)?;
+                occurrence_transforms_with_precedence(direct, placements, &reference.neutron_role);
 
             occurrences.extend(selected);
         }
@@ -680,11 +680,11 @@ fn occurrence_transforms_with_precedence(
     direct: Vec<[[f64; 4]; 4]>,
     placements: &[OccurrencePlacement],
     role: &str,
-) -> Result<Vec<Option<[[f64; 4]; 4]>>, CodecError> {
+) -> Vec<Option<[[f64; 4]; 4]>> {
     if direct.is_empty() {
-        Ok(occurrence_transforms(placements, role))
+        occurrence_transforms(placements, role)
     } else {
-        Ok(direct.into_iter().map(Some).collect::<Vec<_>>())
+        direct.into_iter().map(Some).collect::<Vec<_>>()
     }
 }
 
@@ -853,7 +853,7 @@ fn occurrence_placements_with_failures(
         };
         if let Some(placement) = occurrence_placement(body, serializer_magic)? {
             placements.push(placement);
-        } else if let Some((link_names, _)) = occurrence_path(body)? {
+        } else if let Some((link_names, _)) = occurrence_path(body) {
             failures.push(OccurrencePlacementFailure { link_names });
         } else if let Some(link_name) = legacy_occurrence_role(body) {
             let link_name = link_name.to_string();
@@ -882,7 +882,7 @@ fn occurrence_placement(
     if let Some(placement) = repeated_target_occurrence_placement(body)? {
         return Ok(Some(placement));
     }
-    if let Some(placement) = modern_occurrence_placement(body, serializer_magic)? {
+    if let Some(placement) = modern_occurrence_placement(body, serializer_magic) {
         return Ok(Some(placement));
     }
     let Some(record_index) = View::u32_le_at(body, 7) else {
@@ -932,7 +932,7 @@ fn repeated_target_occurrence_placement_details(
     body: &[u8],
 ) -> Result<Option<RepeatedTargetPlacementDetails>, CodecError> {
     const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
-    let (link_names, mut at) = xref_some!(occurrence_path(body)?);
+    let (link_names, mut at) = xref_some!(occurrence_path(body));
     if !matches!(xref_some!(View::u32_le_at(body, at)), 1..=6) {
         return Ok(None);
     }
@@ -1268,10 +1268,8 @@ fn grouped_component_insert_identity_with_layout<'a>(
 fn modern_occurrence_placement(
     body: &[u8],
     serializer_magic: Option<u32>,
-) -> Result<Option<OccurrencePlacement>, CodecError> {
-    let Some((link_names, at)) = occurrence_path(body)? else {
-        return Ok(None);
-    };
+) -> Option<OccurrencePlacement> {
+    let (link_names, at) = occurrence_path(body)?;
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
@@ -1298,14 +1296,14 @@ fn modern_occurrence_placement(
             cursor += 128;
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
-            return Ok(Some(OccurrencePlacement {
+            return Some(OccurrencePlacement {
                 link_names,
 
                 transform,
-            }));
+            });
         }
     }
-    Ok(None)
+    None
 }
 
 /// Parse the legacy typed placement envelope.
@@ -1437,39 +1435,28 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
 }
 
 /// Parse the target-path prefix shared by every occurrence-placement form.
-fn occurrence_path(body: &[u8]) -> Result<Option<(Vec<String>, usize)>, CodecError> {
+fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, usize)> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
     let class_tag = lp_ascii_strict_charged(body, 0, 3..=3);
-    let Some((_, after_tag)) = class_tag else {
-        return Ok(None);
-    };
-    let Some(mut at) = after_tag.checked_add(8) else {
-        return Ok(None);
-    };
+    let (_, after_tag) = class_tag?;
+    let mut at = after_tag.checked_add(8)?;
     let name = lp_ascii_strict_charged(body, at, 0..=256);
-    let Some((_, after_name)) = name else {
-        return Ok(None);
-    };
+    let (_, after_name) = name?;
     at = after_name;
     if body.get(at) != Some(&1) {
-        return Ok(None);
+        return None;
     }
     at += 1;
-    let Some(count) = View::u32_le_at(body, at).and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
+    let count = View::u32_le_at(body, at).and_then(|count| usize::try_from(count).ok())?;
     if count == 0 || count > 4096 {
-        return Ok(None);
+        return None;
     }
     at += 4;
     let mut link_names = Vec::new();
     for _ in 0..count {
         let element = take_reference_charged(body, &mut at);
-        let Some(element) = element else {
-            return Ok(None);
-        };
+        let element = element?;
         if let Some(link_name) = element.link_name() {
             let name = {
                 {
@@ -1479,16 +1466,14 @@ fn occurrence_path(body: &[u8]) -> Result<Option<(Vec<String>, usize)>, CodecErr
             {}
             link_names.push(name);
         }
-        if View::u32_le_at(body, at).is_none() {
-            return Ok(None);
-        }
+        View::u32_le_at(body, at)?;
         at += 4;
     }
     if body.get(at) != Some(&0) {
-        return Ok(None);
+        return None;
     }
     at += 1;
-    Ok(Some((link_names, at)))
+    Some((link_names, at))
 }
 
 /// Consume the three reference runs that close a placement, returning `Some`

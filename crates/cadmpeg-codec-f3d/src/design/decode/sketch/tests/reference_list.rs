@@ -20,9 +20,7 @@ fn reference_list_bytes() -> Vec<u8> {
 #[test]
 fn sketch_header_reference_run_preserves_count_and_offsets() {
     let bytes = reference_list_bytes();
-    let list = decode_reference_list(&bytes, 0)
-        .expect("reference run admission")
-        .expect("two references");
+    let list = decode_reference_list(&bytes, 0).expect("two references");
     assert_eq!(list.record_reference.value, Some(31));
     assert_eq!(
         list.references

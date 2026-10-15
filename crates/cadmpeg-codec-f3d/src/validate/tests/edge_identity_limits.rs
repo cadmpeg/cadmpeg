@@ -36,7 +36,7 @@ fn edge_identity_valid_slot_has_no_finding() {
                 ir.native.namespace_mut("f3d"),
             )
             .unwrap();
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         let records = crate::test_support::with_decode_context(|decode_ctx| {
             super::super::validate_edge_identity_operands(decode_ctx, &ctx, &mut findings, &[])

@@ -94,7 +94,7 @@ fn body_bounds_valid_binding_order_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = validation_body_bounds(true);
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_body_bounds(&ctx, &mut findings);
         assert!(findings.is_empty());
@@ -106,7 +106,7 @@ fn body_binding_valid_group_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = validation_body_bounds(true);
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
@@ -165,7 +165,7 @@ fn placement_contiguous_visibility_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = placement_native(validation_placement(None, Some(1), true));
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_sketch_placements(&ctx, &mut findings);
         assert!(findings.is_empty());

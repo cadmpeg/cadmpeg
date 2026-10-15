@@ -84,7 +84,7 @@ pub(crate) fn decode_parameter_scopes(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = crate::ids::native_scope(&entry.name);
-        let records = IndexedRecordOffsets::build(bytes)?;
+        let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
@@ -279,7 +279,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_surface_extend_operation(bytes, &records, &scope)?;
+                let construction = exact_surface_extend_operation(bytes, &records, &scope);
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -360,7 +360,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_thread_construction(bytes, &scope)?;
+                let construction = exact_thread_construction(bytes, &scope);
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -501,9 +501,7 @@ fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {
     for at in memchr::memchr_iter(1, frame) {
         if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
             if let Some(suffix) = View::u32_le_at(frame, at + 1) {
-                if !first_at.contains_key(&suffix) {
-                    first_at.insert(suffix, at);
-                }
+                first_at.entry(suffix).or_insert(at);
             }
         }
     }
@@ -861,11 +859,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 && tail_length.is_multiple_of(2)
                 && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
             let named_tail = if named_tail_possible {
-                match named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length) {
-                    Ok(Some(valid)) => valid,
-                    Ok(None) => false,
-                    Err(error) => return Some(Err(error)),
-                }
+                named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
+                    .unwrap_or_default()
             } else {
                 false
             };
@@ -1186,14 +1181,10 @@ fn named_parameter_scope_tail_is_valid(
     kind_end: usize,
     paired_at: usize,
     tail_length: usize,
-) -> Result<Option<bool>, CodecError> {
-    let Some(label_at) = kind_end.checked_add(8) else {
-        return Ok(None);
-    };
-    let Some((label, label_end)) = lp_utf16_bounded(bytes, label_at, 0..=256) else {
-        return Ok(None);
-    };
-    Ok((|| {
+) -> Option<bool> {
+    let label_at = kind_end.checked_add(8)?;
+    let (label, label_end) = lp_utf16_bounded(bytes, label_at, 0..=256)?;
+    (|| {
         let label_code_units = label.encode_utf16().count();
         if tail_length != 78usize.checked_add(label_code_units.checked_mul(2)?)?
             || label_end.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
@@ -1231,7 +1222,7 @@ fn named_parameter_scope_tail_is_valid(
                     .is_some_and(|field_id| *field_id != 0)
                 && bytes.get(marker + 56..marker + 59)? == [0; 3],
         )
-    })())
+    })()
 }
 
 pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {

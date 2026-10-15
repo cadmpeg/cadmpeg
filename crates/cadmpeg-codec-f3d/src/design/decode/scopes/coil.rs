@@ -451,7 +451,7 @@ fn exact_coil_face_selection(
 ) -> Result<Option<DesignCoilSelection>, CodecError> {
     (|| {
         let prefix = parse_entity_selection_prefix(bytes, selection_start, selection_record_index)?;
-        let id = scope.id.to_owned();
+        let id = scope.id.clone();
         let header = DesignRecordHeader {
             id,
             byte_offset: u64::try_from(selection_start).ok()?,
@@ -479,7 +479,7 @@ fn exact_coil_face_selection(
             return None;
         }
         let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
-        let recipe_id = recipe.id.to_owned();
+        let recipe_id = recipe.id.clone();
         Some(Ok(DesignCoilSelection::FaceRecipe {
             asset_id: prefix.asset_id.try_into().ok()?,
             context_id: prefix.context_id.try_into().ok()?,
@@ -751,7 +751,7 @@ pub(super) fn bind_coil_extent_from_parameters(
         sorted[count] = kind;
         count += 1;
     }
-    sorted[..count].sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    sorted[..count].sort_unstable_by_key(|left| left.0);
     let mut kinds = [""; 5];
     for (index, (_, source_kind)) in sorted[..count].iter().enumerate() {
         kinds[index] = source_kind;

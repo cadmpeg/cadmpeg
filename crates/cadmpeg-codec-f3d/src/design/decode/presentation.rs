@@ -256,9 +256,9 @@ pub(crate) fn body_presentations(
     Ok(out)
 }
 
-fn entity_types<'a>(
-    meta: &'a crate::metastream::MetaStream,
-) -> Result<HashMap<u64, (&'a str, u32)>, CodecError> {
+fn entity_types(
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<u64, (&str, u32)>, CodecError> {
     let mut out = HashMap::new();
     for design_type in &meta.types {
         for &entity_id in design_type.entities.values() {

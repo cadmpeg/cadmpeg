@@ -356,7 +356,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
     let mut group = group;
     group.id = "f3d:native:design-dimension-locus-group#0".into();
-    remove_dimension_frame_relations(&mut relations, &[], &[group], &[]).unwrap();
+    remove_dimension_frame_relations(&mut relations, &[], &[group], &[]);
     assert_eq!(relations.len(), 1);
     assert!(relations[0].id.starts_with("f3d:other:"));
 
