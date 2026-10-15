@@ -120,7 +120,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
                 SurfaceParameterAxis::U,
                 0.5,
             )
-            .expect("resource allocation did not fail")
+            .expect("compute the NURBS surface isocurve")
             .unwrap();
             assert_eq!(
                 curve.control_points(),
@@ -140,7 +140,7 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
         SurfaceParameterAxis::U,
         0.5,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface isocurve")
     .unwrap();
     assert_eq!(
         curve.control_points(),
@@ -154,7 +154,7 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
         SurfaceParameterAxis::U,
         0.5,
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface isocurve")
     .unwrap();
     for point in curve.control_points() {
         assert!((point.x / 1.0e-308 - 1.0).abs() <= 8.0 * f64::EPSILON);
@@ -464,7 +464,7 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
         None,
         &cadmpeg_core::decode::WorkBudget::new(1_000_000),
     )
-    .expect("resource allocation did not fail")
+    .expect("compute the NURBS surface closest parameter")
     .unwrap();
     let point = crate::eval::decode::nurbs_surface_point(
         crate::eval::admission::EvaluationAdmission::Standard,

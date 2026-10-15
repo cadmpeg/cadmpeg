@@ -40,7 +40,7 @@ fn face_on_unknown_surface_validates_clean() {
     .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),
         "a face on an unknown surface is legal, got: {:?}",
@@ -59,7 +59,7 @@ fn face_on_unknown_surface_validates_clean() {
 fn unknown_surface_without_record_is_legal() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     make_first_face_surface_unknown(&mut ir, None);
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),
         "an unknown surface need not preserve bytes, got: {:?}",
@@ -79,7 +79,7 @@ fn unknown_surface_dangling_record_is_flagged() {
         &mut ir,
         Some(UnknownId::mint("test:model:entity#missing").expect("valid identity")),
     );
-    let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity
             && finding
@@ -95,7 +95,7 @@ fn orphan_carrier_is_flagged() {
     orphan.id = CurveId::mint("test:model:entity#zz:orphan").expect("valid identity");
     ir.model.curves.push(orphan);
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::CarrierReachability));
@@ -116,7 +116,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     ]}});
     let parsed = crate::CadIr::from_json(&wire.to_string()).unwrap();
     let findings = validate_neutral(&parsed, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(findings
         .iter()
@@ -133,7 +133,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     wire["native"]["test"]["unknowns"][0]["links"] = serde_json::json!([]);
     let orphan = crate::CadIr::from_json(&wire.to_string()).unwrap();
     assert!(validate_neutral(&orphan, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::CarrierReachability
@@ -162,7 +162,7 @@ fn periodic_curve_parameter_domain_is_checked() {
         crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.0, 7.0]))
             .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -173,7 +173,7 @@ fn periodic_curve_parameter_domain_is_checked() {
     )
     .unwrap();
     assert!(!validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -201,7 +201,7 @@ fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
     ir.model.edges[0].carrier =
         crate::topology::EdgeCarrier::new(Some(curve_id), Some([-f64::MAX, f64::MAX])).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
@@ -299,7 +299,7 @@ fn cube_with_one_coedge_pcurve(
 
 fn coedge_pcurve_range_reported(ir: &crate::document::CadIr) -> bool {
     validate_neutral(ir, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| {

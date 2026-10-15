@@ -49,7 +49,7 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
         let before = ir.to_canonical_json().unwrap();
         assert_eq!(CadIr::from_json(&before).unwrap(), ir);
         assert!(validate_neutral(&ir, Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok());
         match mutation {
             "missing parent" => {
@@ -78,7 +78,7 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
         assert!(serde_json::to_value(&ir.model).is_err(), "{mutation}");
         assert!(serde_json::to_value(&ir).is_err(), "{mutation}");
         assert!(ir.to_canonical_json().is_err(), "{mutation}");
-        let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(
             report.findings.iter().any(|finding| {
                 finding.check == crate::report::check::Check::ReferentialIntegrity

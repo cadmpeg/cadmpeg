@@ -45,7 +45,7 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
             crate::scalar::FiniteReal::ZERO,
             EPS_POINT,
         )
-        .expect("resource allocation did not fail")
+        .expect("compute the mapped pcurve parameter near point")
         .unwrap()
         .get();
         assert!(
