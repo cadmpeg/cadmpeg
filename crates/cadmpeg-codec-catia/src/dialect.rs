@@ -80,7 +80,7 @@ impl Variant {
 /// How this codec admitted a document identified as `variant`.
 ///
 /// The one admission predicate in this crate. Both [`classify`] and
-/// [`dialect_loss`] read it, so a report's `admission` and its charged loss
+/// [`dialect_loss`] read it, so a report's `admission` and its recorded loss
 /// cannot disagree.
 ///
 /// Each of the six decoding families has at least one applicable route in
@@ -105,7 +105,7 @@ fn matched(variant: Variant) -> DialectMatch {
     }
 }
 
-/// The dialect-unverified loss, charged exactly on [`Admission::Residual`].
+/// The dialect-unverified loss, recorded exactly on [`Admission::Residual`].
 ///
 /// `None` exactly when the classified match is [`Admission::Admitted`]. The
 /// loss reads the admission already built by [`classify`] and does not
@@ -116,26 +116,19 @@ fn matched(variant: Variant) -> DialectMatch {
 /// [`CatiaLossCode::TopologyGraphNotBuilt`], which state what was not
 /// transferred out of an identified layout. This one states that the layout was
 /// never identified.
-pub(crate) fn dialect_loss(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    matched: &DialectMatch,
-) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
+pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     if !matches!(matched.admission(), Admission::Residual) {
-        return Ok(None);
+        return None;
     }
-    let message = ctx.format_retained(format_args!(
-            "This container matched no CATIA V5 storage family's structural invariants, so it \
-             is `{}`. No decode route declares a grammar for that row, and no declared \
-             dialect grammar was substituted; the file was admitted under the metadata-IR \
-             fallback, which enumerates the container and retains the source bytes without applying \
-             any family's record grammar.",
-            matched.dialect()
-        ), "catia_dialect_unverified_message")?;
-    Ok(Some(CatiaLossCode::SourceDialectUnverified.note_charged(
-        ctx,
-        message,
-        "catia_dialect_unverified_loss",
-    )?))
+    let message = format!(
+        "This container matched no CATIA V5 storage family's structural invariants, so it \
+     is `{}`. No decode route declares a grammar for that row, and no declared \
+     dialect grammar was substituted; the file was admitted under the metadata-IR \
+     fallback, which enumerates the container and retains the source bytes without applying \
+     any family's record grammar.",
+        matched.dialect()
+    );
+    Some(CatiaLossCode::SourceDialectUnverified.note(message))
 }
 
 /// The `LastSaveVersion` tuple the summary-information record declared.
@@ -147,45 +140,34 @@ pub(crate) fn dialect_loss(
 /// string it is. Nothing here branches on the tuple; it is provenance recorded
 /// as evidence.
 fn declared(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
     let mut declared = BTreeMap::new();
     if let Some(version) = &scan.last_save_version {
         resource::source_attribute(
-            ctx,
             &mut declared,
             format_args!("{DECLARED_VERSION}"),
             format_args!("{}", version.version),
-            "catia_dialect_declared",
         )?;
         resource::source_attribute(
-            ctx,
             &mut declared,
             format_args!("{DECLARED_RELEASE}"),
             format_args!("{}", version.release),
-            "catia_dialect_declared",
         )?;
         resource::source_attribute(
-            ctx,
             &mut declared,
             format_args!("{DECLARED_SERVICE_PACK}"),
             format_args!("{}", version.service_pack),
-            "catia_dialect_declared",
         )?;
         resource::source_attribute(
-            ctx,
             &mut declared,
             format_args!("{DECLARED_HOT_FIX}"),
             format_args!("{}", version.hot_fix),
-            "catia_dialect_declared",
         )?;
         resource::source_attribute(
-            ctx,
             &mut declared,
             format_args!("{DECLARED_BUILD_DATE}"),
             format_args!("{}", version.build_date),
-            "catia_dialect_declared",
         )?;
     }
     Ok(declared)
@@ -197,11 +179,8 @@ fn declared(
 ///
 /// Identity and admission both come from [`ContainerScan::variant`], the
 /// structural family the scan resolved, through [`matched`].
-pub(crate) fn classify(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<DialectMatch, cadmpeg_core::CodecError> {
-    Ok(matched(scan.variant).with_declared(declared(ctx, scan)?))
+pub(crate) fn classify(scan: &ContainerScan) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    Ok(matched(scan.variant).with_declared(declared(scan)?))
 }
 
 #[cfg(test)]

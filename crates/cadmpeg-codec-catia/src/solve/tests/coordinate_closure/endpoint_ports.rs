@@ -26,44 +26,13 @@ fn duplicate_face_assignment_visitor_reports_the_bound() {
 }
 
 #[test]
-fn duplicate_face_visitor_refuses_before_assignment_and_choice_storage() {
-    let serialized = [[0usize, 0]];
-    let allowed = [vec![0usize, 1]];
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        visit_duplicate_face_assignments(ctx, &serialized, &allowed, 2, 4, |_| Ok(true))
-    };
-    assert_eq!(
-        crate::test_support::with_service_context(run).expect("service budget"),
-        Some(DuplicateFaceAssignmentVisit::Complete)
-    );
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..=32 {
-        match crate::test_support::with_collection_limit(limit, run) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
-                operations.insert(error.operation);
-            }
-            Ok(Some(DuplicateFaceAssignmentVisit::Complete)) => break,
-            outcome => panic!("unexpected duplicate visit outcome: {outcome:?}"),
-        }
-    }
-    for operation in [
-        "catia_duplicate_visit_assignment",
-        "catia_duplicate_visit_choices",
-        "catia_duplicate_visit_branches",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn one_admitted_alternate_does_not_force_a_second_face() {
     const EDGE_COUNT: usize = 8;
-    catia_test_context!(ctx);
     let serialized = vec![[0, 0]; EDGE_COUNT];
     let allowed = vec![vec![1, 1]; EDGE_COUNT];
 
     assert!(
-        unique_duplicate_face_assignment(&ctx, &serialized, &allowed, 2, |_| Ok(true))
+        unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| Ok(true))
             .expect("service resource budget")
             .is_none()
     );
@@ -431,5 +400,18 @@ fn distinct_coordinate_bijections_remain_ambiguous() {
         unique_coordinate_bijection(&ctx, &domains, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
             .expect("bijection fits the service profile"),
         None
+    );
+}
+
+#[test]
+fn duplicate_face_visitor_result() {
+    let serialized = [[0usize, 0]];
+    let allowed = [vec![0usize, 1]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        visit_duplicate_face_assignments(ctx, &serialized, &allowed, 2, 4, |_| Ok(true))
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(DuplicateFaceAssignmentVisit::Complete)
     );
 }

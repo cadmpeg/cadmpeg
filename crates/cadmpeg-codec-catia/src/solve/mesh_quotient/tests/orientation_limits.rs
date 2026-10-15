@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource admission for mesh orientation and edge-domain search.
 
-use super::super::MeshQuotient;
-use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-use std::collections::HashSet;
-use std::sync::Arc;
+use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+
+use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+
+use crate::solve::mesh_quotient::MeshQuotient;
 
 #[test]
-fn mesh_orientation_options_refuse_collection_limit_before_declining() {
+fn mesh_orientation_options_result() {
+    use cadmpeg_core::decode::DecodeContext;
+
+    use std::collections::HashSet;
+    use std::sync::Arc;
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -30,46 +33,25 @@ fn mesh_orientation_options_refuse_collection_limit_before_declining() {
     };
     catia_test_context!(service_ctx);
     assert!(run(&service_ctx).expect("service resource budget"));
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let Err(CodecError::ResourceLimit(error)) = run(&limited_ctx) else {
-        panic!("orientation allocation must refuse the limit");
-    };
-    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(error.operation, "catia_orientation_plan_rows");
 }
 
 #[test]
-fn quotient_edge_domains_refuse_materialized_limit_before_declining() {
-    catia_test_context!(service_ctx);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
-    let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
+fn quotient_edge_domains_result() {
+    use std::sync::Arc;
+
     let mut quotient = MeshQuotient::new(
         [vec![0], vec![1]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
     );
     assert!(!quotient
-        .edge_domains_viable(&service_ctx, &[vec![[2, 3]]])
+        .edge_domains_viable(&[vec![[2, 3]]])
         .expect("service resource budget"));
-
-    let Err(CodecError::ResourceLimit(error)) =
-        quotient.edge_domains_viable(&limited_ctx, &[vec![[2, 3]]])
-    else {
-        panic!("edge domain allocation must refuse the limit");
-    };
-    assert_eq!(error.dimension, ResourceDimension::MaterializedBytes);
 }
 
 #[test]
-fn fixed_mesh_directions_refuse_scoped_limit_before_declining() {
+fn fixed_mesh_directions_result() {
+    use std::sync::Arc;
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -84,28 +66,15 @@ fn fixed_mesh_directions_refuse_scoped_limit_before_declining() {
             .into(),
     );
     let options = vec![vec![vec![false]]];
-    catia_test_context!(service_ctx);
     assert!(quotient
-        .assignment_options_for_directions(&service_ctx, &assignment, &options, 1, None)
+        .assignment_options_for_directions(&assignment, &options, 1, None)
         .expect("service resource budget")
         .is_empty());
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
-    let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let Err(CodecError::ResourceLimit(error)) =
-        quotient.assignment_options_for_directions(&limited_ctx, &assignment, &options, 1, None)
-    else {
-        panic!("fixed direction allocation must refuse the limit");
-    };
-    assert_eq!(error.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(error.operation, "catia_quotient_clone_union");
 }
 
 #[test]
-fn label_directions_refuse_collection_limit_before_declining() {
+fn label_directions_result() {
+    use std::sync::Arc;
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -114,37 +83,14 @@ fn label_directions_refuse_collection_limit_before_declining() {
             reversed: Some(false),
         }]],
     };
-    catia_test_context!(service_ctx);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited_ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
+
     let mut quotient = MeshQuotient::new(
         [vec![0], vec![1]]
             .map(|domain| Arc::new(domain.into_iter().collect()))
             .into(),
     );
     assert!(quotient
-        .merge_label_directions_in_place(
-            &service_ctx,
-            &assignment,
-            &[vec![false]],
-            &[Some(false)],
-            None,
-        )
+        .merge_label_directions_in_place(&assignment, &[vec![false]], &[Some(false)], None,)
         .expect("service resource budget")
         .is_none());
-
-    let Err(CodecError::ResourceLimit(error)) = quotient.merge_label_directions_in_place(
-        &limited_ctx,
-        &assignment,
-        &[vec![false]],
-        &[Some(false)],
-        None,
-    ) else {
-        panic!("label direction allocation must refuse the limit");
-    };
-    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(error.operation, "catia_label_direction_rows");
 }
