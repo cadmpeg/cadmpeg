@@ -27,8 +27,10 @@ pub(super) struct FaceColorVersion {
     pub(super) stream_order: usize,
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct Facts<'ctx> {
+/// Facts scanned from one stream. Each vector shell has its own temporary
+/// storage owner until it is merged or consumed.
+#[derive(Debug)]
+pub(crate) struct FactsSource<'ctx> {
     /// Number of framed top-level model entity records in the stream.
     pub(super) entity_count: usize,
     /// Face-color links whose current framed records conflict.
@@ -40,12 +42,6 @@ pub(crate) struct Facts<'ctx> {
     face_atoms: Vec<super::attrib::RawFaceAtom<'ctx>>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     body_modifiers: Vec<super::attrib::BodyModifier>,
-}
-
-/// Facts scanned from one stream, with the temporary storage for their vector
-/// shells held until they are merged or consumed.
-pub(crate) struct FactsSource<'ctx> {
-    facts: Facts<'ctx>,
     face_color_storage: Option<ScopedReservation<'ctx>>,
     face_color_version_storage: Option<ScopedReservation<'ctx>>,
     face_atom_storage: Option<ScopedReservation<'ctx>>,
@@ -55,7 +51,12 @@ pub(crate) struct FactsSource<'ctx> {
 impl<'ctx> FactsSource<'ctx> {
     pub(crate) fn empty(ctx: &'ctx DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
-            facts: Facts::default(),
+            entity_count: 0,
+            unresolved_face_colors: 0,
+            face_color_versions: Vec::new(),
+            face_colors: Vec::new(),
+            face_atoms: Vec::new(),
+            body_modifiers: Vec::new(),
             face_color_storage: Some(ctx.reserve_scoped(0, "hold Parasolid face color slots")?),
             face_color_version_storage: Some(
                 ctx.reserve_scoped(0, "hold Parasolid face color version slots")?,
@@ -72,15 +73,14 @@ impl<'ctx> FactsSource<'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         mut source: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let target = &mut self.facts;
         {
             let storage = self
                 .face_color_storage
                 .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid face color slots")?);
             storage.with_storage(|| {
                 ctx.append_vec(
-                    &mut target.face_colors,
-                    &mut source.facts.face_colors,
+                    &mut self.face_colors,
+                    &mut source.face_colors,
                     "merge Parasolid face colors",
                 )
             })?;
@@ -91,8 +91,8 @@ impl<'ctx> FactsSource<'ctx> {
                 .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid face color version slots")?);
             storage.with_storage(|| {
                 ctx.append_vec(
-                    &mut target.face_color_versions,
-                    &mut source.facts.face_color_versions,
+                    &mut self.face_color_versions,
+                    &mut source.face_color_versions,
                     "merge Parasolid face color versions",
                 )
             })?;
@@ -103,8 +103,8 @@ impl<'ctx> FactsSource<'ctx> {
                 .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid face atom slots")?);
             storage.with_storage(|| {
                 ctx.append_vec(
-                    &mut target.face_atoms,
-                    &mut source.facts.face_atoms,
+                    &mut self.face_atoms,
+                    &mut source.face_atoms,
                     "merge Parasolid face atoms",
                 )
             })?;
@@ -115,29 +115,29 @@ impl<'ctx> FactsSource<'ctx> {
                 .get_or_insert(ctx.reserve_scoped(0, "hold Parasolid body modifier slots")?);
             storage.with_storage(|| {
                 ctx.append_vec(
-                    &mut target.body_modifiers,
-                    &mut source.facts.body_modifiers,
+                    &mut self.body_modifiers,
+                    &mut source.body_modifiers,
                     "merge Parasolid body modifiers",
                 )
             })?;
         }
-        target.entity_count += source.facts.entity_count;
-        target.unresolved_face_colors += source.facts.unresolved_face_colors;
+        self.entity_count += source.entity_count;
+        self.unresolved_face_colors += source.unresolved_face_colors;
         drop(source);
         Ok(())
     }
 
     pub(super) fn face_colors_mut(&mut self) -> &mut [FaceColor] {
-        &mut self.facts.face_colors
+        &mut self.face_colors
     }
 
     pub(super) fn face_color_versions_mut(&mut self) -> &mut [FaceColorVersion] {
-        &mut self.facts.face_color_versions
+        &mut self.face_color_versions
     }
 
     pub(super) fn take_face_colors(&mut self) -> (Vec<FaceColor>, Option<ScopedReservation<'ctx>>) {
         (
-            std::mem::take(&mut self.facts.face_colors),
+            std::mem::take(&mut self.face_colors),
             self.face_color_storage.take(),
         )
     }
@@ -146,7 +146,7 @@ impl<'ctx> FactsSource<'ctx> {
         &mut self,
     ) -> (Vec<FaceColorVersion>, Option<ScopedReservation<'ctx>>) {
         (
-            std::mem::take(&mut self.facts.face_color_versions),
+            std::mem::take(&mut self.face_color_versions),
             self.face_color_version_storage.take(),
         )
     }
@@ -158,7 +158,7 @@ impl<'ctx> FactsSource<'ctx> {
         Option<ScopedReservation<'ctx>>,
     ) {
         (
-            std::mem::take(&mut self.facts.face_atoms),
+            std::mem::take(&mut self.face_atoms),
             self.face_atom_storage.take(),
         )
     }
@@ -170,23 +170,9 @@ impl<'ctx> FactsSource<'ctx> {
         Option<ScopedReservation<'ctx>>,
     ) {
         (
-            std::mem::take(&mut self.facts.body_modifiers),
+            std::mem::take(&mut self.body_modifiers),
             self.body_modifier_storage.take(),
         )
-    }
-}
-
-impl<'ctx> std::ops::Deref for FactsSource<'ctx> {
-    type Target = Facts<'ctx>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.facts
-    }
-}
-
-impl std::ops::DerefMut for FactsSource<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.facts
     }
 }
 
@@ -770,14 +756,12 @@ pub(crate) fn scan_metadata<'ctx>(
     }
     let bindings = super::attrib::bindings(ctx, body, &dictionary)?;
     Ok(FactsSource {
-        facts: Facts {
-            entity_count: entities.len(),
-            unresolved_face_colors,
-            face_color_versions,
-            face_colors,
-            face_atoms: bindings.face_atoms,
-            body_modifiers: bindings.body_modifiers,
-        },
+        entity_count: entities.len(),
+        unresolved_face_colors,
+        face_color_versions,
+        face_colors,
+        face_atoms: bindings.face_atoms,
+        body_modifiers: bindings.body_modifiers,
         face_color_storage: Some(face_color_storage),
         face_color_version_storage: Some(face_color_version_storage),
         face_atom_storage: bindings.face_atom_storage,
