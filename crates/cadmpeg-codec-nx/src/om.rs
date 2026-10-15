@@ -31,6 +31,7 @@ pub(crate) mod block_construction;
 pub(crate) mod body_write;
 pub(crate) mod common_frame;
 pub(crate) mod direct_reference;
+pub(crate) mod move_face;
 use body_write::{BodyWriteFrame, BodyWriteIndex};
 use common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 pub(crate) mod instances;

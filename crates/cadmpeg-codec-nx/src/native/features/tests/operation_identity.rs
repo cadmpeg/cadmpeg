@@ -1713,6 +1713,7 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"record-sha256"),
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-sha256"),
         stable_identity: None,
+        move_face_core: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
             .unwrap(),
     }

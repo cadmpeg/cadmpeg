@@ -44,7 +44,13 @@ pub(crate) struct BodyWriteFrame<O> {
     group_node: BodyWriteIndex,
     endpoint_class_index: NonZeroU8,
     body_image: BodyWriteIndex,
-    offset: O,
+    position: BodyWritePosition<O>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BodyWritePosition<O> {
+    Nested(O),
+    Listed { body: O, image: O, byte_len: u32 },
 }
 
 impl<O> BodyWriteFrame<O> {
@@ -66,23 +72,35 @@ impl<O> BodyWriteFrame<O> {
     pub(crate) fn body_image(&self) -> BodyWriteIndex {
         self.body_image
     }
-    pub(crate) fn byte_len(&self) -> u8 {
-        9 + self.group_node.0.byte_len() + self.body_image.0.byte_len()
+    pub(crate) fn byte_len(&self) -> u32 {
+        match self.position {
+            BodyWritePosition::Nested(_) => {
+                u32::from(9 + self.group_node.0.byte_len() + self.body_image.0.byte_len())
+            }
+            BodyWritePosition::Listed { byte_len, .. } => byte_len,
+        }
     }
 }
 
 impl<O: Copy + Add<Output = O> + From<u8>> BodyWriteFrame<O> {
     pub(crate) fn offset(&self) -> O {
-        self.offset
+        match self.position {
+            BodyWritePosition::Nested(offset) => offset,
+            BodyWritePosition::Listed { body, .. } => body,
+        }
     }
     pub(crate) fn group_node_offset(&self) -> O {
-        self.offset + O::from(3)
+        self.offset()
+            + O::from(match self.position {
+                BodyWritePosition::Nested(_) => 3,
+                BodyWritePosition::Listed { .. } => 1,
+            })
     }
     pub(crate) fn body_image_offset(&self) -> O {
-        self.offset + O::from(8 + self.group_node.0.byte_len())
-    }
-    pub(super) fn end_offset(&self) -> O {
-        self.offset + O::from(self.byte_len())
+        match self.position {
+            BodyWritePosition::Nested(offset) => offset + O::from(8 + self.group_node.0.byte_len()),
+            BodyWritePosition::Listed { image, .. } => image,
+        }
     }
 }
 
@@ -101,16 +119,78 @@ macro_rules! positioned_frame {
                     group_node,
                     endpoint_class_index,
                     body_image,
-                    offset,
+                    position: BodyWritePosition::Nested(offset),
                 };
-                offset.checked_add(<$offset>::from(frame.byte_len()))?;
+                offset.checked_add(<$offset>::try_from(frame.byte_len()).ok()?)?;
                 Some(frame)
+            }
+            /// One pair from a fully validated ordered result list. Its two
+            /// tokens need not be adjacent; the span ends after the image's ff.
+            pub(crate) fn listed(
+                body_identity: u8,
+                group_node: BodyWriteIndex,
+                endpoint_class_index: NonZeroU8,
+                body_image: BodyWriteIndex,
+                body: $offset,
+                image: $offset,
+            ) -> Option<Self> {
+                let minimum = body.checked_add(<$offset>::from(6 + group_node.0.byte_len()))?;
+                if image < minimum {
+                    return None;
+                }
+                let end = image.checked_add(<$offset>::from(1 + body_image.0.byte_len()))?;
+                let byte_len = u32::try_from(end.checked_sub(body)?).ok()?;
+                Some(Self {
+                    body_identity,
+                    group_node,
+                    endpoint_class_index,
+                    body_image,
+                    position: BodyWritePosition::Listed {
+                        body,
+                        image,
+                        byte_len,
+                    },
+                })
             }
         }
     };
 }
 positioned_frame!(usize);
 positioned_frame!(u64);
+
+impl BodyWriteFrame<usize> {
+    pub(super) fn end_offset(&self) -> usize {
+        match self.position {
+            BodyWritePosition::Nested(offset) => {
+                offset
+                    + usize::from(9 + self.group_node.0.byte_len() + self.body_image.0.byte_len())
+            }
+            BodyWritePosition::Listed { image, .. } => {
+                image + usize::from(1 + self.body_image.0.byte_len())
+            }
+        }
+    }
+    pub(crate) fn relocated(self, base: u64) -> Option<BodyWriteFrame<u64>> {
+        let offset = base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset()))?;
+        match self.position {
+            BodyWritePosition::Nested(_) => BodyWriteFrame::<u64>::new(
+                self.body_identity,
+                self.group_node,
+                self.endpoint_class_index,
+                self.body_image,
+                offset,
+            ),
+            BodyWritePosition::Listed { image, .. } => BodyWriteFrame::<u64>::listed(
+                self.body_identity,
+                self.group_node,
+                self.endpoint_class_index,
+                self.body_image,
+                offset,
+                base.checked_add(cadmpeg_core::decode::u64_from_index(image))?,
+            ),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

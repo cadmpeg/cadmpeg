@@ -224,9 +224,11 @@ one parameter-use relation. Binding identities and source offsets remain in
 ascending source-offset order. Multiple input slots may witness the same use;
 they do not create multiple operation-expression relations.
 
-The fixed marker begins an operation record. A record extends through the byte
-before the next validated operation marker; the final record extends through
-the feature-history record-area boundary. The four object-index slots are part
+The fixed marker begins an operation record. Without a complete family-specific
+boundary, the record extends through the byte before the next validated
+operation marker; the final record extends through the feature-history
+record-area boundary. The complete `MOVE_FACE` core below supplies such a
+boundary and excludes a following registry-selected object lane. The four object-index slots are part
 of the header. A complete `03` label frame after those slots labels the record.
 A validated header without that frame is an unlabeled operation record and
 still bounds both adjacent records. Its payload begins after the fourth header
@@ -286,7 +288,8 @@ bridge defined for its body image. Zero or multiple direct fields do not assign
 that selection.
 
 Nested body-write frames define outputs independently of direct primary-body
-fields. Operations sharing one body identity form one ordered write lineage.
+fields. Ordered `MOVE_FACE` result-list entries use the same body-identity
+lineage and output rules. Operations sharing one body identity form one ordered write lineage.
 Each operation depends on the preceding operation in every body lineage that it
 writes. A Boolean additionally depends on the preceding operation in each
 target and tool lineage, preserving tool order and omitting duplicate
@@ -1658,7 +1661,7 @@ A zero-prefixed offset-store control block begins with an ordered class-selectio
 
 A printable OM string value is framed as `66 32 03, declared_len:u8, text[declared_len-2], 00`. The text is non-empty printable ASCII. The marker, declared length, text, and null terminator lie within one externally bounded record.
 
-A labeled feature-history operation record begins at the fixed operation-header marker and ends at the next validated operation header or the record-area boundary. Its label is `03, declared_len:u8, printable_name[declared_len-2], 00`. The operation payload begins immediately after that null terminator and extends through the operation-record boundary. Payload strings use `04, declared_len:u8, utf8_text[declared_len-2], 00`; the text is non-empty valid UTF-8 and contains no control characters.
+A labeled feature-history operation record begins at the fixed operation-header marker and ends at its complete family-specific boundary, or otherwise at the next validated operation header or the record-area boundary. Its label is `03, declared_len:u8, printable_name[declared_len-2], 00`. The operation payload begins immediately after that null terminator and extends through the operation-record boundary. Payload strings use `04, declared_len:u8, utf8_text[declared_len-2], 00`; the text is non-empty valid UTF-8 and contains no control characters.
 
 Within one feature-history record area, operation records are stored in reverse
 construction order. Exact native records and labels retain source order.
@@ -2545,8 +2548,48 @@ The source-hole, fill, continuity, and healing roles remain unresolved until a
 serialized relation establishes the complete construction.
 
 The `MOVE_FACE` operation label identifies a body-affecting direct face-motion
-construction. Its selected faces and motion law remain unresolved until the
-serialized construction roles establish a complete operation.
+construction. A complete core begins with three class-selected components:
+`UGS::ModlDirectDB::AdmMoveFaceParms`, `UGS::ModlDirect::FaceRecognition`, and
+`UGS::ModlUtils::OrientXpress`, in that order. Each selector is a nonzero
+one-based ordinal in the owning section's registry. The first component has one
+feature reference, and the other two have two canonical `f0`/`f1` references
+each. The first frame is `class, 00 00 01 00, reference, 00 ff ff`; the second
+is `class, reference, 00, reference`. The third begins `class, 01 01, control`.
+Control `06` precedes `ff, reference, ff, 00 00 00, reference`; control `05`
+precedes `reference, ff ff, 00 00 00, reference`. Both forms end with one zero,
+nine `ff` bytes, and four zero bytes. The control changes framing only; it
+does not assign a motion mode. The references address their selected offset
+store and do not identify typed faces, vectors, axes, or transforms.
+
+The result list is `01, count`, followed by `count - 1` ordered entries
+`body_identity:u8, group_node:relation_object, 97 75`, then the repeated
+`01, count`. The count is at least two. Each corresponding image entry is
+`endpoint_class_index:u8, body_image:relation_object, ff,
+00 00 00 0b 00 f0 01 02 02, association:feature_reference, 01`.
+Each endpoint class resolves to `UGS::CM_BREF_DATA` in the owning registry.
+The body/GROUP and image entries pair in serialized order. An association
+reference is retained without assigning an input or result-object role.
+Each pair is one body write. For a list with multiple entries, its retained
+source span starts at that entry's body-identity byte and ends after its image
+terminator; its GROUP and image tokens retain their distinct absolute offsets.
+Duplicated entries remain distinct native occurrences.
+
+Six zero bytes follow the list. The inherited frame is
+`0d 01 02 01 00 00 00, journal:feature_reference, 01 01 01 01 02,
+triplet[3], triplet[3], 01 00 00 ff 00 ff, control:u8,
+c0 1f ff ff 01 00 00, reference[2], 01 03 02, state[9]`.
+The two triplets are byte-identical. The terminal frame is one feature
+reference repeated byte-for-byte, then one terminal feature reference. A zero
+can terminate the core. If a nonzero byte follows the terminal frame, it is a
+one-based selector for `UGS::CM_object`; that lane is outside the core. A
+complete native core retains its exact bytes and ends the operation record.
+Incomplete or inconsistent framing does not establish a core boundary or a
+complete ordered result list.
+
+The component frames assign no scalar motion slot. Result GROUP membership
+identifies result topology and does not establish the authored face selection.
+Its selected faces and motion law remain unresolved until a serialized
+relation establishes the complete construction.
 
 The `MOVE_OBJECT` operation label identifies a body-affecting object-motion
 construction. Its selected objects, translation, rotation, and copy count remain

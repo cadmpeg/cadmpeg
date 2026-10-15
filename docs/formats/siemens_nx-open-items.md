@@ -778,13 +778,13 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-46. `MOVE_FACE` construction roles
 
-**Question.** Which serialized face selection and motion fields define a `MOVE_FACE` operation?
+**Question.** Which logical face-recognition and motion relations establish the authored face selection and motion law of a `MOVE_FACE` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `MOVE_FACE` operation label identifies" defines the body-affecting direct face-motion family. A resolved body-write frame identifies a body-affecting result. The four operation-header object-index slots can be null, and the neutral face selection and motion law remain unresolved.
+**Known.** `siemens_nx.md` §7.1 "The `MOVE_FACE` operation label identifies" defines the three owning component classes, exact core framing, ordered body/GROUP/image result list, and following-lane boundary. Component references select column fragments when their offset store resolves; an unjoined reference is not null. Result GROUP members belong to result topology.
 
-**Need.** We must identify the selected faces, offset or translation law, rotation axis, and motion magnitude to construct a complete neutral operation and bind its result body.
+**Need.** Reconstruct the logical component rows across physical chunks, establish the motion representation and its values, and join authored source faces to independently identified pre/post topology. Assign move, heal, paste, and step options through serialized relations.
 
-**Conflict.** The operation label and body-write relation identify the family, but the object-index slots and bounded payload do not assign a unique face selection or motion law.
+**Conflict.** Selected chunk boundaries split identifiers, framed rows, and duplicated tokens. Serialized body/image order establishes result lineage, not an authored source selection. Local control 5/6 changes framing without an independent motion-mode assignment. Nearby expressions and matching list lengths do not bind a motion magnitude. A following `CM_object` lane is outside the complete core and is not motion data.
 
 ### OM-47. `CYLINDER` construction roles
 

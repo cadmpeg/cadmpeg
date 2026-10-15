@@ -297,6 +297,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"00"),
         payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"11"),
         stable_identity: None,
+        move_face_core: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(700, 733, 140)
             .unwrap(),
     };

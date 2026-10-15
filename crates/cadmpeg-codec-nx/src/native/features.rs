@@ -162,7 +162,7 @@ pub(super) fn feature_operation_chronological_labels<'a>(
     Ok(ordered)
 }
 
-/// Exact body-write frame retained from one feature operation.
+/// A checked body-write frame or serialized ordered-list pair.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "body_write_wire::BodyWriteWire")]
 pub(super) struct FeatureOperationBodyWrite {
@@ -3576,6 +3576,15 @@ fn visit_feature_history_operation_records(
 ) -> Result<(), CodecError> {
     visit_feature_history_sections(ctx, container, |section, key, entry_offset| {
         for (ordinal, record) in section.operation_records_with_label_ordinals(ctx)? {
+            let record = if let Some(core) =
+                crate::om::move_face::core_for_decode(ctx, record.payload_view(), &section.types)?
+            {
+                record
+                    .bound_payload(core.byte_len)
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX move-face core bound", 0, 1))?
+            } else {
+                record
+            };
             visit(section, key, entry_offset, ordinal, record);
         }
         Ok(())
@@ -3997,7 +4006,7 @@ pub(super) fn feature_operation_records(
     visit_feature_history_operation_records(
         ctx,
         container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
+        |section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() {
                 return;
             }
@@ -4085,6 +4094,13 @@ pub(super) fn feature_operation_records(
                     )?,
                     stable_identity,
                     span,
+                    move_face_core: crate::om::move_face::core_for_decode(
+                        ctx,
+                        record.payload_view(),
+                        &section.types,
+                    )?
+                    .map(|core| core.retain(ctx))
+                    .transpose()?,
                 })
             })();
             let item = match item {
@@ -4184,18 +4200,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                 .filter(|write| write.selects_body_image_class(&section.types))
                 .enumerate()
             {
-                let Some(offset) =
-                    entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
-                else {
-                    continue;
-                };
-                let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
-                    write.body_identity(),
-                    write.group_node(),
-                    write.endpoint_class_index(),
-                    write.body_image(),
-                    offset,
-                ) else {
+                let Some(frame) = write.relocated(entry_offset) else {
                     continue;
                 };
                 let id = format_feature_history_id(
@@ -4250,7 +4255,17 @@ pub(super) fn feature_operation_body_writes(
             if failure.is_some() {
                 return;
             }
-            let decoded = match crate::om::operation_body_write_frames(ctx, record.payload_view()) {
+            let decoded = match (|| {
+                if let Some(core) = crate::om::move_face::core_for_decode(
+                    ctx,
+                    record.payload_view(),
+                    &section.types,
+                )? {
+                    core.writes(ctx, record.payload_offset())
+                } else {
+                    crate::om::operation_body_write_frames(ctx, record.payload_view())
+                }
+            })() {
                 Ok(decoded) => decoded,
                 Err(error) => {
                     failure = Some(error);
@@ -4278,18 +4293,7 @@ pub(super) fn feature_operation_body_writes(
                 .filter(|write| write.selects_body_image_class(&section.types))
                 .enumerate()
             {
-                let Some(offset) =
-                    entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
-                else {
-                    continue;
-                };
-                let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
-                    write.body_identity(),
-                    write.group_node(),
-                    write.endpoint_class_index(),
-                    write.body_image(),
-                    offset,
-                ) else {
+                let Some(frame) = write.relocated(entry_offset) else {
                     continue;
                 };
                 let item = (|| -> Result<FeatureOperationBodyWrite, CodecError> {

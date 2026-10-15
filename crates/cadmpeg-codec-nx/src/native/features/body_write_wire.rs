@@ -7,7 +7,7 @@ use super::FeatureOperationBodyWrite;
 use crate::om::body_write::{BodyWriteFrame, BodyWriteIndex};
 use serde::{Deserialize, Serialize};
 
-/// Exact body-write frame retained from one feature operation.
+/// A nested body-write frame or one ordered-list body/image pair.
 #[derive(Serialize, Deserialize)]
 pub(super) struct BodyWriteWire {
     /// Globally unique relation identity.
@@ -46,9 +46,9 @@ pub(super) struct BodyWriteWire {
     raw_body_image_object_index: NativeBytes<Vec<u8>>,
     /// Absolute offset of the body-image object token.
     body_image_object_index_source_offset: u64,
-    /// Exact serialized frame byte length.
+    /// Span from the opening nested marker or listed body identity through the image ff.
     byte_len: u64,
-    /// Absolute offset of the opening `01 02` marker.
+    /// Absolute offset of the nested `01 02` marker or listed body identity.
     source_offset: u64,
 }
 
@@ -131,15 +131,29 @@ impl TryFrom<BodyWriteWire> for FeatureOperationBodyWrite {
             &wire.raw_body_image_object_index,
         )
         .map_err(|error| format!("body_image_object_index/raw_body_image_object_index: {error}"))?;
-        let frame = BodyWriteFrame::<u64>::new(
-            wire.body_identity,
-            group,
-            std::num::NonZeroU8::new(wire.endpoint_class_index)
-                .ok_or("endpoint_class_index must be nonzero")?,
-            image,
-            wire.source_offset,
-        )
-        .ok_or("source_offset: body-write frame end overflows")?;
+        let frame = if wire.source_offset.checked_add(3) == Some(wire.group_node_source_offset) {
+            BodyWriteFrame::<u64>::new(
+                wire.body_identity,
+                group,
+                std::num::NonZeroU8::new(wire.endpoint_class_index)
+                    .ok_or("endpoint_class_index must be nonzero")?,
+                image,
+                wire.source_offset,
+            )
+        } else if wire.source_offset.checked_add(1) == Some(wire.group_node_source_offset) {
+            BodyWriteFrame::<u64>::listed(
+                wire.body_identity,
+                group,
+                std::num::NonZeroU8::new(wire.endpoint_class_index)
+                    .ok_or("endpoint_class_index must be nonzero")?,
+                image,
+                wire.source_offset,
+                wire.body_image_object_index_source_offset,
+            )
+        } else {
+            return Err("group_node_source_offset disagrees with body-write frame".into());
+        }
+        .ok_or("source_offset: body-write frame end overflows or positions are reversed")?;
         if wire.byte_len != u64::from(frame.byte_len()) {
             return Err("byte_len disagrees with body-write frame".into());
         }
@@ -188,6 +202,30 @@ mod tests {
             &record,
             serde_json::from_str::<serde_json::Value>(&json).unwrap(),
         );
+    }
+
+    #[test]
+    fn body_write_listed_positions_admit_only_ordered_nonoverlapping_tokens() {
+        let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
+        wire["id"] = serde_json::json!("nx:feature:body-write#0");
+        wire["group_node_source_offset"] = serde_json::json!(101);
+        wire["body_image_object_index_source_offset"] = serde_json::json!(120);
+        wire["byte_len"] = serde_json::json!(24);
+        let write: FeatureOperationBodyWrite = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(write.frame.group_node_offset(), 101);
+        assert_eq!(write.frame.body_image_offset(), 120);
+        assert_eq!(serde_json::to_value(&write).unwrap(), wire);
+        cadmpeg_test_support::native_serialization::assert_native_limit(&write, wire.clone());
+        for (field, value) in [
+            ("group_node_source_offset", 102),
+            ("body_image_object_index_source_offset", 105),
+            ("byte_len", 23),
+            ("source_offset", u64::MAX),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field] = serde_json::json!(value);
+            assert!(serde_json::from_value::<FeatureOperationBodyWrite>(invalid).is_err());
+        }
     }
 
     #[test]
