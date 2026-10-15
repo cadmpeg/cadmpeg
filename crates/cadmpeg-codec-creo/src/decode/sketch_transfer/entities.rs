@@ -14,8 +14,8 @@ use super::super::sweep::nurbs::saved_spline_sketch_geometry;
 use super::super::sweep::surfaces::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::{
-    opaque_section_segment_identity_suffix_admitted, saved_section_external_id,
-    section_segment_identity_suffix_admitted, semantic_saved_section_entities,
+    opaque_section_segment_identity_suffix, saved_section_external_id,
+    section_segment_identity_suffix, semantic_saved_section_entities,
     unresolved_saved_section_entity,
 };
 use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
@@ -171,7 +171,7 @@ pub(super) fn transfer_section_entities(
         let Some(geometry) = segment_geometry(segment)? else {
             continue;
         };
-        let suffix = section_segment_identity_suffix_admitted(unique_segment_ids, segment);
+        let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
         let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
             continue;
         };
@@ -247,7 +247,7 @@ pub(super) fn transfer_section_entities(
                 .and_then(Option::as_ref)
                 .is_none()
     }) {
-        let suffix = section_segment_identity_suffix_admitted(unique_segment_ids, segment);
+        let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
         let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
             continue;
         };
@@ -593,7 +593,7 @@ pub(super) fn transfer_section_entities(
         {
             continue;
         }
-        let suffix = opaque_section_segment_identity_suffix_admitted(unique_segment_ids, segment);
+        let suffix = opaque_section_segment_identity_suffix(unique_segment_ids, segment);
         let Some(id) = sketch_entity_id_admitted(sketch_id, &suffix) else {
             continue;
         };
@@ -859,7 +859,7 @@ pub(super) fn transfer_section_entities(
             let Some(geometry) = placed_section_geometry_curve(transform, section_geometry) else {
                 continue;
             };
-            let suffix = section_segment_identity_suffix_admitted(unique_segment_ids, segment);
+            let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
             let Some(id) = typed_sketch_section_curve_id_admitted(sketch_id, &suffix) else {
                 continue;
             };

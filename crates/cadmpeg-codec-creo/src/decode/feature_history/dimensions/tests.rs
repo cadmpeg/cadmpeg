@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::dimensions::{
-    dimension_expression, feature_dimension_parameter_row_id_admitted, insert_dimension_property,
+    dimension_expression, feature_dimension_parameter_row_id, insert_dimension_property,
     planned_feature_dimension_parameter_ids, push_feature_source_parameter,
     transfer_feature_dimensions, HexToken,
 };
@@ -24,7 +24,7 @@ fn layout_key() -> cadmpeg_ir::sketches::SketchId {
 fn dimension_row_identity_appends_occurrence_suffix() {
     let sketch = layout_key();
     assert_eq!(
-        feature_dimension_parameter_row_id_admitted(&sketch, 3, Some(1))
+        feature_dimension_parameter_row_id(&sketch, 3, Some(1))
             .expect("service ID")
             .expect("valid ID")
             .as_str(),
