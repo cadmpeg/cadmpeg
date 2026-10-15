@@ -313,7 +313,6 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         &scope,
         &HashMap::from([(100_u64, (HOLE_FACE_SELECTION_TYPE_GUID, 1))]),
     )
-    .expect("direct Hole face selection decode")
     .expect("direct Hole face selection");
 
     assert_eq!(selection.record_index, 100);

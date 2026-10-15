@@ -104,7 +104,6 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
     )
-    .unwrap()
     .expect("exact SurfaceTrim cell carrier");
 
     assert_eq!(operation.selection_record_index, 811);
@@ -159,7 +158,6 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope
     )
-    .unwrap()
     .is_none());
 }
 
@@ -177,6 +175,5 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope
     )
-    .unwrap()
     .is_none());
 }

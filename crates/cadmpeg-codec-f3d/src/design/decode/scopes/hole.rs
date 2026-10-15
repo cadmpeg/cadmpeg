@@ -61,10 +61,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
         if &scope.kind() != required_scope_kind {
             return None;
         }
-        let face_selection = match exact_hole_face_selection(bytes, records, scope, stream_types) {
-            Ok(face_selection) => face_selection,
-            Err(error) => return Some(Err(error)),
-        };
+        let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
         let mut candidate = None;
         for record_index in scope.reference_members().values() {
             let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
@@ -118,7 +115,7 @@ fn exact_hole_face_selection(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Result<Option<DesignHoleFaceSelection>, CodecError> {
+) -> Option<DesignHoleFaceSelection> {
     let mut candidate = None;
     for record_index in scope.reference_members().values() {
         if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
@@ -138,16 +135,14 @@ fn exact_hole_face_selection(
                 continue;
             }
             let Ok(start_offset) = u64::try_from(start) else {
-                return Ok(None);
+                return None;
             };
             let Some(frame) = parse_entity_selection_frame(
                 bytes,
                 *record_index,
                 start_offset,
                 class_tag.as_str(),
-            )
-            .transpose()?
-            else {
+            ) else {
                 continue;
             };
             let Ok(asset_id) =
@@ -178,11 +173,11 @@ fn exact_hole_face_selection(
                 next_byte_offset: frame.next_byte_offset,
             };
             if candidate.replace(next).is_some() {
-                return Ok(None);
+                return None;
             }
         }
     }
-    Ok(candidate)
+    candidate
 }
 
 fn hole_construction_frame_at(

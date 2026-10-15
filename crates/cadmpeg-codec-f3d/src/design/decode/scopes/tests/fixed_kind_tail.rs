@@ -308,7 +308,6 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             &crate::design::test_support::indexed_record_offsets_for_test(&operation_bytes),
             &operation_scope,
         )
-        .expect("operation decode resources")
         .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
     assert_eq!(

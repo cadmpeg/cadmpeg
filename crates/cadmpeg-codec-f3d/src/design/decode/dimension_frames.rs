@@ -1347,7 +1347,7 @@ pub(crate) fn decode_dimension_annotation_frames(
                 let Some(at) = at.filter(|at| *at < end) else {
                     break;
                 };
-                if let Some(parsed) = parse_dimension_annotation_frame(
+                if let Some(mut frame) = parse_dimension_annotation_frame(
                     bytes,
                     at,
                     containing_companion_record_index,
@@ -1355,7 +1355,6 @@ pub(crate) fn decode_dimension_annotation_frames(
                     &geometry_indices,
                     &sketch_entities,
                 ) {
-                    let mut frame = parsed?;
                     if frame.paired_byte_offset() >= u64_from_index(end) {
                         position = at + 1;
                         continue;
@@ -1394,7 +1393,7 @@ fn parse_dimension_annotation_frame(
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
-) -> Option<Result<DesignDimensionAnnotationFrame, CodecError>> {
+) -> Option<DesignDimensionAnnotationFrame> {
     let (class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
@@ -1571,11 +1570,7 @@ fn parse_dimension_annotation_frame(
         owner_reference,
         owner_reference_offset: u64_from_index(paired_byte_offset + 20),
     };
-    match DesignDimensionAnnotationFrame::try_new(draft) {
-        Ok(frame) => Some(Ok(frame)),
-        Err(error @ CodecError::ResourceLimit(_)) => Some(Err(error)),
-        Err(_) => None,
-    }
+    DesignDimensionAnnotationFrame::try_new(draft).ok()
 }
 
 /// Stable Fusion type whose indexed records carry the older direct dimension
