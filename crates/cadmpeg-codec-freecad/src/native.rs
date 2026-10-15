@@ -4416,11 +4416,11 @@ impl EntryRecord {
         referenced_by: Vec<String>,
         data: Vec<u8>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(id.len()),
+        let id = match cadmpeg_ir::ids::Identity::new_for_decode(
+            ctx,
+            id,
             "FreeCAD entry identity validation",
-        )?;
-        let id = match cadmpeg_ir::ids::Identity::new(id) {
+        )? {
             Ok(id) => id,
             Err(error) => {
                 return Err(CodecError::Malformed(ctx.format_retained(
