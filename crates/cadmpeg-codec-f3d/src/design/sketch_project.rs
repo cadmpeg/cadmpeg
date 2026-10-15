@@ -54,6 +54,23 @@ fn distinct_return_member_indices(
     true
 }
 
+/// Curve identity pairs that more than one curve record of one owning Sketch
+/// carries. Such a pair names no single curve record.
+fn shared_curve_identities(curves: &[SketchCurveIdentity]) -> HashSet<(&str, u32, u64, u64)> {
+    let mut seen = HashSet::new();
+    let mut shared = HashSet::new();
+    for curve in curves {
+        let (Some(scope), Some(owner)) = (native_stream(&curve.id), curve.owner_reference) else {
+            continue;
+        };
+        let key = (scope, owner, curve.primary_id.get(), curve.secondary_id);
+        if !seen.insert(key) {
+            shared.insert(key);
+        }
+    }
+    shared
+}
+
 fn spatial_geometry_owners<'a>(
     points: &'a [SketchPoint],
     curves: &'a [SketchCurveIdentity],
@@ -251,6 +268,7 @@ pub(crate) fn project_sketch_design(
     }
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
 
+    let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();
     for point in points {
         let Some(owner) = point.owner_reference else {
@@ -398,18 +416,24 @@ pub(crate) fn project_sketch_design(
         };
         let sketch = crate::design::identity::neutral_sketch_id(placement)?;
         let native_ref = curve.id.clone();
+        let entity_id = if shared_identities.contains(&(
+            scope,
+            owner,
+            curve.primary_id.get(),
+            curve.secondary_id,
+        )) {
+            crate::design::identity::neutral_sketch_record_id(&sketch, curve.record_index)?
+        } else {
+            crate::design::identity::neutral_sketch_curve_id(
+                &sketch,
+                curve.primary_id.get(),
+                curve.secondary_id,
+            )?
+        };
         entities.push(
-            SketchEntity::new(
-                crate::design::identity::neutral_sketch_curve_id(
-                    &sketch,
-                    curve.primary_id.get(),
-                    curve.secondary_id,
-                )?,
-                sketch,
-                geometry,
-            )
-            .with_construction(text_frame_curves.contains(&(scope, curve.record_index)))
-            .with_native_ref(Some(native_ref)),
+            SketchEntity::new(entity_id, sketch, geometry)
+                .with_construction(text_frame_curves.contains(&(scope, curve.record_index)))
+                .with_native_ref(Some(native_ref)),
         );
     }
     for text in texts {
@@ -623,6 +647,7 @@ pub(crate) fn project_spatial_sketch_design(
         )
     };
 
+    let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();
     for curve in curves {
         let Some(scope) = native_stream(&curve.id) else {
@@ -739,17 +764,22 @@ pub(crate) fn project_spatial_sketch_design(
             };
         let sketch = crate::design::identity::neutral_spatial_sketch_id(placement)?;
         let native_ref = curve.id.clone();
+        let entity_id = if shared_identities.contains(&(
+            scope,
+            owner,
+            curve.primary_id.get(),
+            curve.secondary_id,
+        )) {
+            crate::design::identity::neutral_spatial_sketch_record_id(&sketch, curve.record_index)?
+        } else {
+            crate::design::identity::neutral_spatial_sketch_curve_id(
+                &sketch,
+                curve.primary_id.get(),
+                curve.secondary_id,
+            )?
+        };
         entities.push(
-            SpatialSketchEntity::new(
-                crate::design::identity::neutral_spatial_sketch_curve_id(
-                    &sketch,
-                    curve.primary_id.get(),
-                    curve.secondary_id,
-                )?,
-                sketch,
-                geometry,
-            )
-            .with_native_ref(Some(native_ref)),
+            SpatialSketchEntity::new(entity_id, sketch, geometry).with_native_ref(Some(native_ref)),
         );
     }
     for point in points {

@@ -1043,8 +1043,10 @@ fn validation_checks_pipe_path_group_roles() {
     assert_eq!(group_native_finding_count(&ir), 2);
 }
 
+/// A sketch point identity is unique within its Sketch. Distinct curve records
+/// of one Sketch can carry one `(primary, secondary)` identity pair.
 #[test]
-fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
+fn validation_rejects_shared_point_identities_and_accepts_shared_curve_identities() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1087,7 +1089,7 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
             && finding.entity.as_deref() == Some(point_id.as_str())
             && finding.message.contains("persistent identity")
     }));
-    assert!(findings.iter().any(|finding| {
+    assert!(!findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding.message.contains("persistent identity")
