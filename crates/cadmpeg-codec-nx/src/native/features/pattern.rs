@@ -1124,7 +1124,12 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             continue;
         }
         let Some(content) = source_text_storage.with_storage(|| {
-            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+            FeaturePayloadContent::from_scoped_source_bounded::<10>(
+                ctx,
+                data_blocks,
+                blocks,
+                source_id_storage,
+            )
         })?
         else {
             continue;
