@@ -871,8 +871,6 @@ fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -934,9 +932,7 @@ mod tests {
         assert!(e5_torus(&bytes, 0).is_none());
     }
 
-    fn decoded_jets(bytes: &[u8]) -> Result<Vec<super::E5RollingBallJet>, CodecError> {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())?;
+    fn decoded_jets(bytes: &[u8]) -> Vec<super::E5RollingBallJet> {
         e5_rolling_ball_jets(bytes)
     }
 
@@ -970,7 +966,7 @@ mod tests {
     fn d8_record_decodes_the_quintic_rolling_ball_jet() {
         let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
 
-        let jets = decoded_jets(&bytes).expect("service profile admits two stations");
+        let jets = decoded_jets(&bytes);
         assert_eq!(jets.len(), 1);
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
@@ -1018,9 +1014,7 @@ mod tests {
         let mut payload = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
         let last = payload.len() - 3;
         payload[last] = 0;
-        assert!(decoded_jets(&payload)
-            .expect("service profile admits two stations")
-            .is_empty());
+        assert!(decoded_jets(&payload).is_empty());
     }
 
     fn nurbs_surface_payload(mode: u16) -> Vec<u8> {
@@ -1112,8 +1106,7 @@ mod tests {
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xf1, 0x0102_0305, &payload);
 
-        let wrappers = crate::test_support::with_service_context(|ctx| e5_surface_wrappers(&bytes))
-            .expect("service resource budget");
+        let wrappers = e5_surface_wrappers(&bytes);
         assert_eq!(wrappers.len(), 1);
         assert_eq!(wrappers[0].record_id, 0x0102_0305);
         assert_eq!(
@@ -1132,10 +1125,6 @@ mod tests {
         let mut wrong_tail = vec![0x85, 0x81, 0x82, 0x83, 0x84, 0x85];
         wrong_tail.extend_from_slice(&[0; 27]);
         append_e5_record(&mut bytes, 0xf1, 2, &wrong_tail);
-        assert!(
-            crate::test_support::with_service_context(|ctx| e5_surface_wrappers(&bytes))
-                .expect("service resource budget")
-                .is_empty()
-        );
+        assert!(e5_surface_wrappers(&bytes).is_empty());
     }
 }

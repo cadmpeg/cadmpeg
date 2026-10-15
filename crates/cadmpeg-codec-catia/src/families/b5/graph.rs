@@ -861,7 +861,7 @@ fn topology_runs(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<(Range<usize>, B5Graph)>, CodecError> {
-    let runs = object_stream_run_ranges(bytes)?;
+    let runs = object_stream_run_ranges(bytes);
     let root_runs = topology_root_run_ranges_from_runs(bytes, &runs);
     let candidates = if root_runs.is_empty() {
         &runs
@@ -1838,10 +1838,7 @@ fn edge_support_pcurve_references(
     edge_ids: &HashSet<u32>,
 ) -> BTreeMap<u32, [u32; 2]> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    crate::test_support::with_service_context(|ctx| {
-        edge_support_pcurve_references_from_frames(bytes, edge_ids, &frames)
-    })
-    .expect("service budget")
+    edge_support_pcurve_references_from_frames(bytes, edge_ids, &frames)
 }
 
 pub(in crate::families) fn edge_support_pcurve_references_from_frames(
@@ -5221,8 +5218,7 @@ fn parse_line_pcurve_fields(
 #[cfg(test)]
 fn records(bytes: &[u8]) -> Vec<B5Record> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-        .expect("service budget")
+    records_from_frames(bytes, &frames)
 }
 
 fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
@@ -5496,10 +5492,7 @@ fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
             class,
             object_id,
         };
-        let Some(record) =
-            crate::test_support::with_service_context(|ctx| record_from_frame(bytes, &frame))
-                .expect("service budget")
-        else {
+        let Some(record) = record_from_frame(bytes, &frame) else {
             continue;
         };
         if seen
@@ -5619,8 +5612,8 @@ pub(in crate::families) fn collect_object_stream_frames(bytes: &[u8]) -> Vec<Obj
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs.
-fn object_stream_run_ranges(bytes: &[u8]) -> Result<Vec<Range<usize>>, CodecError> {
-    let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(bytes)?;
+fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+    let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(bytes);
     let mut ranges = Vec::new();
     let mut position = 0usize;
     while position + 8 <= bytes.len() {
@@ -5656,13 +5649,13 @@ fn object_stream_run_ranges(bytes: &[u8]) -> Result<Vec<Range<usize>>, CodecErro
         }
         ranges.push(start..position);
     }
-    Ok(ranges)
+    ranges
 }
 
 /// Return runs that declare at least one face or loop topology root.
 #[cfg(test)]
-fn topology_root_run_ranges(bytes: &[u8]) -> Result<Vec<Range<usize>>, CodecError> {
-    let runs = object_stream_run_ranges(bytes)?;
+fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+    let runs = object_stream_run_ranges(bytes);
     topology_root_run_ranges_from_runs(bytes, &runs)
 }
 
@@ -5684,8 +5677,8 @@ fn is_topology_root_frame(frame: ObjectFrame) -> bool {
 /// Partition one logical stream into independently resolved object populations.
 pub(in crate::families) fn object_stream_populations(
     stream: &[u8],
-) -> Result<Vec<std::borrow::Cow<'_, [u8]>>, CodecError> {
-    let runs = object_stream_run_ranges(stream)?;
+) -> Vec<std::borrow::Cow<'_, [u8]>> {
+    let runs = object_stream_run_ranges(stream);
     let topology_runs = topology_root_run_ranges_from_runs(stream, &runs);
     let mut owned_populations = HashMap::new();
     let mut claimed_isolated_ids = HashSet::new();
@@ -5721,7 +5714,7 @@ pub(in crate::families) fn object_stream_populations(
             populations.push(population);
         }
     }
-    Ok(populations)
+    populations
 }
 
 /// Unique object population selected across reconstructed logical streams.
@@ -5807,11 +5800,11 @@ struct IndexedObjectRun {
 pub(in crate::families) fn select_object_stream_population(
     streams: &[impl AsRef<[u8]>],
     budget: Option<&WorkBudget<'_>>,
-) -> Result<ObjectStreamSelection, CodecError> {
+) -> ObjectStreamSelection {
     let mut stream_ranges = Vec::new();
     for stream in streams {
         let stream = stream.as_ref();
-        stream_ranges.push(object_stream_run_ranges(stream)?);
+        stream_ranges.push(object_stream_run_ranges(stream));
     }
     let run_count = stream_ranges.iter().map(Vec::len).sum();
     let exhausted = || ObjectStreamSelection::Exhausted { run_count };
@@ -5822,7 +5815,7 @@ pub(in crate::families) fn select_object_stream_population(
         let stream = stream.as_ref();
         let frames = collect_object_stream_frames(stream);
         if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
-            return Ok(exhausted());
+            return exhausted();
         }
         let mut frame_cursor = 0;
         for range in ranges {
@@ -5865,15 +5858,15 @@ pub(in crate::families) fn select_object_stream_population(
             let records =
                 records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget);
             if budget.is_some_and(WorkBudget::exhausted) {
-                return Ok(exhausted());
+                return exhausted();
             }
 
             census_records.extend(records);
         }
-        return Ok(ObjectStreamSelection::Unselected {
+        return ObjectStreamSelection::Unselected {
             run_count,
             census_records,
-        });
+        };
     };
     let selected = &runs[selected_index];
     let selected_stream = streams[selected.stream_index].as_ref();
@@ -5881,7 +5874,7 @@ pub(in crate::families) fn select_object_stream_population(
     let Some(selected_records) =
         records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)
     else {
-        return Ok(exhausted());
+        return exhausted();
     };
     let mut census_records = Vec::new();
     for record in &selected_records {
@@ -5902,7 +5895,7 @@ pub(in crate::families) fn select_object_stream_population(
         let records =
             records_from_frames_budgeted(streams[run.stream_index].as_ref(), frames, budget);
         if budget.is_some_and(WorkBudget::exhausted) {
-            return Ok(exhausted());
+            return exhausted();
         }
 
         census_records.extend(records);
@@ -5984,13 +5977,13 @@ pub(in crate::families) fn select_object_stream_population(
             records = records_from_frames(&source, &frames);
         }
     }
-    Ok(ObjectStreamSelection::Selected {
+    ObjectStreamSelection::Selected {
         source,
         frames,
         records,
         census_records,
         run_count,
-    })
+    }
 }
 
 /// Build one topology population from its owning run and uniquely referenced
@@ -6220,12 +6213,8 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
 #[cfg(test)]
 fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-            .expect("service budget");
-    crate::test_support::with_service_context(|ctx| {
-        typed_face_records_from_records(&records).expect("service decode")
-    })
+    let records = records_from_frames(bytes, &frames);
+    typed_face_records_from_records(&records)
 }
 
 pub(in crate::families) fn typed_face_records_from_records(
@@ -6245,12 +6234,8 @@ pub(in crate::families) fn typed_face_records_from_records(
 #[cfg(test)]
 fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-            .expect("service budget");
-    crate::test_support::with_service_context(|ctx| {
-        typed_loop_records_from_records(&records).expect("service decode")
-    })
+    let records = records_from_frames(bytes, &frames);
+    typed_loop_records_from_records(&records)
 }
 
 pub(in crate::families) fn typed_loop_records_from_records(
@@ -6270,10 +6255,8 @@ pub(in crate::families) fn typed_loop_records_from_records(
 #[cfg(test)]
 fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-            .expect("service budget");
-    crate::test_support::with_service_context(|ctx| typed_edge_records_from_records(&records))
+    let records = records_from_frames(bytes, &frames);
+    typed_edge_records_from_records(&records)
 }
 
 pub(in crate::families) fn typed_edge_records_from_records(
@@ -6293,12 +6276,8 @@ pub(in crate::families) fn typed_edge_records_from_records(
 #[cfg(test)]
 fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-            .expect("service budget");
-    crate::test_support::with_service_context(|ctx| {
-        typed_vertex_incidence_links_from_records(&records)
-    })
+    let records = records_from_frames(bytes, &frames);
+    typed_vertex_incidence_links_from_records(&records)
 }
 
 pub(in crate::families) fn typed_vertex_incidence_links_from_records(
@@ -6318,11 +6297,8 @@ pub(in crate::families) fn typed_vertex_incidence_links_from_records(
 #[cfg(test)]
 fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-            .expect("service budget");
-    crate::test_support::with_service_context(|ctx| typed_class_21_pcurves_from_records(&records))
-        .expect("service budget")
+    let records = records_from_frames(bytes, &frames);
+    typed_class_21_pcurves_from_records(&records)
 }
 
 pub(in crate::families) fn typed_class_21_pcurves_from_records(
@@ -6342,12 +6318,8 @@ pub(in crate::families) fn typed_class_21_pcurves_from_records(
 #[cfg(test)]
 fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-            .expect("service budget");
-    crate::test_support::with_service_context(|ctx| {
-        typed_parameter_incidences_from_records(&records).expect("service decode")
-    })
+    let records = records_from_frames(bytes, &frames);
+    typed_parameter_incidences_from_records(&records)
 }
 
 pub(in crate::families) fn typed_parameter_incidences_from_records(
@@ -6367,12 +6339,8 @@ pub(in crate::families) fn typed_parameter_incidences_from_records(
 #[cfg(test)]
 fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records =
-        crate::test_support::with_service_context(|ctx| records_from_frames(bytes, &frames))
-            .expect("service budget");
-    crate::test_support::with_service_context(|ctx| {
-        typed_vertex_incidence_rosters_from_records(&records).expect("service decode")
-    })
+    let records = records_from_frames(bytes, &frames);
+    typed_vertex_incidence_rosters_from_records(&records)
 }
 
 pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
@@ -6391,10 +6359,7 @@ pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
 #[cfg(test)]
 fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    crate::test_support::with_service_context(|ctx| {
-        face_surface_references_from_frames(bytes, &frames)
-    })
-    .expect("service budget")
+    face_surface_references_from_frames(bytes, &frames)
 }
 
 pub(in crate::families) fn face_surface_references_from_frames(
@@ -6508,11 +6473,7 @@ fn parse_loop_record(record: &B5Record) -> Option<B5Loop> {
 
 #[cfg(test)]
 fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
-    crate::test_support::with_service_context(|ctx| {
-        loop_references_and_metadata(record)
-            .expect("service decode")
-            .map(|(references, _, _)| references)
-    })
+    loop_references_and_metadata(record).map(|(references, _, _)| references)
 }
 
 fn loop_references_and_metadata(record: &B5Record) -> LoopReferencesOutput {
@@ -6633,6 +6594,4 @@ fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
 mod tests;
 
 #[cfg(test)]
-mod nested_frame_work_tests {
-    use cadmpeg_core::CodecError;
-}
+mod nested_frame_work_tests {}

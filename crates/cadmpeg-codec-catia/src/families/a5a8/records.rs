@@ -468,10 +468,7 @@ impl A8Pcurve {
 #[cfg(test)]
 fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::A)
-            .expect("service decode")
-    })
+    crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::A)
 }
 
 /// One knot-site value in an `a5 03 32` rolling-ball program.
@@ -789,7 +786,7 @@ fn parse_a5_nurbs_curve(
 
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[cfg(test)]
-fn a5_guide_curves(data: &[u8]) -> Result<Vec<A5GuideCurve>, CodecError> {
+fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
     let records = consolidated_records(data);
     a5_guide_curves_from_records(data, &records)
 }
@@ -1113,7 +1110,7 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
 
 /// Decode framed `a5 03 32` rolling-ball jet records.
 #[cfg(test)]
-fn a5_freeform_curves(data: &[u8]) -> Result<Vec<A5FreeformCurve>, CodecError> {
+fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
     let records = consolidated_records(data);
     a5_freeform_curves_from_records(data, &records)
 }
@@ -1434,16 +1431,10 @@ pub(in crate::families) fn resolved_a8_surfaces(
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
 /// records whose pole representation is not inline.
 #[cfg(test)]
-fn a8_surface_headers<'a>(
-    data: &'a [u8],
-) -> Result<impl Iterator<Item = Result<A8SurfaceHeader, CodecError>> + 'a, CodecError> {
-    Ok(a8_frames(data, 0x34).filter_map(move |frame| {
-        match a8_surface_header_from_object_frame(data, frame.pos, frame.end, frame.object_id) {
-            Ok(Some(header)) => Some(Ok(header)),
-            Ok(None) => None,
-            Err(error) => Some(Err(error)),
-        }
-    }))
+fn a8_surface_headers(data: &[u8]) -> impl Iterator<Item = A8SurfaceHeader> + '_ {
+    a8_frames(data, 0x34).filter_map(move |frame| {
+        a8_surface_header_from_object_frame(data, frame.pos, frame.end, frame.object_id)
+    })
 }
 
 /// Decode one selected `a8 <flag> 34` frame's parameter lattice.
@@ -1489,10 +1480,10 @@ fn a8_surface_from_external_grid(
         return Ok(None);
     };
     let mut ranges = a8_external_grid_candidate_ranges(data, need);
-    let Some(range) = ranges.next().transpose()? else {
+    let Some(range) = ranges.next() else {
         return Ok(None);
     };
-    if ranges.next().transpose()?.is_some() {
+    if ranges.next().is_some() {
         return Ok(None);
     }
     let Some(ExternalGridCandidate {
@@ -1548,9 +1539,7 @@ fn a8_surface_from_external_grid(
 }
 
 /// Return every complete support-bound external A8 pole allocation.
-pub(in crate::families) fn a8_external_grid_ranges(
-    data: &[u8],
-) -> Result<Vec<Range<usize>>, CodecError> {
+pub(in crate::families) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
     for frame in a8_frames(data, 0x34) {
         if data.get(frame.payload..frame.end).is_none() {
@@ -1564,12 +1553,12 @@ pub(in crate::families) fn a8_external_grid_ranges(
             data,
             ExternalGridNeed::from_layout(frame.object_id, &layout),
         ) {
-            ranges.push(range?);
+            ranges.push(range);
         }
     }
     ranges.sort_unstable_by_key(|left| (left.start, left.end));
     ranges.dedup();
-    Ok(ranges)
+    ranges
 }
 
 struct ExternalGridCandidate {
@@ -1614,7 +1603,7 @@ impl ExternalGridNeed {
 fn a8_external_grid_candidate_ranges(
     data: &[u8],
     need: ExternalGridNeed,
-) -> impl Iterator<Item = Result<Range<usize>, CodecError>> + '_ {
+) -> impl Iterator<Item = Range<usize>> + '_ {
     let layout = (|| {
         if need.pole_storage != PoleStorage::Elided {
             return None;
@@ -1645,34 +1634,22 @@ fn a8_external_grid_candidate_ranges(
             object_stream_reference(data, &mut at) == Some(need.object_id)
         })
         .filter_map(move |frame| {
-            (|| -> Result<Option<Range<usize>>, CodecError> {
-                let Some((poles, grid_bytes)) = layout else {
-                    return Ok(None);
-                };
-                let start = frame.end;
-                let Some(end) = start.checked_add(grid_bytes) else {
-                    return Ok(None);
-                };
-                if object_stream_frame(data, end).is_none() {
-                    return Ok(None);
+            let (poles, grid_bytes) = layout?;
+            let start = frame.end;
+            let end = start.checked_add(grid_bytes)?;
+            object_stream_frame(data, end)?;
+            let mut at = start;
+            for _ in 0..poles {
+                f64_point(data, at)?;
+                at += 24;
+            }
+            if need.rational {
+                for _ in 0..poles {
+                    NonZeroReal::new(f64_le(data, at)?.get())?;
+                    at += 8;
                 }
-
-                Ok((|| {
-                    let mut at = start;
-                    for _ in 0..poles {
-                        f64_point(data, at)?;
-                        at += 24;
-                    }
-                    if need.rational {
-                        for _ in 0..poles {
-                            NonZeroReal::new(f64_le(data, at)?.get())?;
-                            at += 8;
-                        }
-                    }
-                    (at == end).then_some(start..end)
-                })())
-            })()
-            .transpose()
+            }
+            (at == end).then_some(start..end)
         })
 }
 

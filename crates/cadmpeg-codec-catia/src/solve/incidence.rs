@@ -1979,9 +1979,7 @@ pub(super) fn compact_boundary_domains_jointly_viable<'a>(
     quotient: &MeshQuotient,
     budget: &WorkBudget<'_>,
 ) -> Result<bool, CodecError> {
-    let mut initial = Vec::new();
-
-    initial.push((quotient.clone(), HashSet::new()));
+    let initial = vec![(quotient.clone(), HashSet::new())];
     Ok(matches!(
         advance_compact_boundary_domains(
             ctx, domains, choices, assignment, selected, initial, budget,

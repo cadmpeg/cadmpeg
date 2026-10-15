@@ -253,10 +253,9 @@ pub(super) fn nurbs_surface_witness_distance(
 #[cfg(test)]
 mod tests {
     use super::{
-        nurbs_surface_point_distance, nurbs_surface_witness_distance, refine_nurbs_surface_point,
-        NurbsSurface, Point2, Point3,
+        nurbs_surface_witness_distance, refine_nurbs_surface_point, NurbsSurface, Point2, Point3,
     };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
     use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 
     fn surface() -> NurbsSurface {

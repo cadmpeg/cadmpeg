@@ -932,9 +932,7 @@ mod consolidated_analytic_refinement_tests {
         records: &[crate::wire::records::ConsolidatedRecord],
         surfaces: &mut [Option<SurfaceGeometry>],
     ) -> std::collections::HashMap<usize, usize> {
-        crate::test_support::with_service_context(|ctx| {
-            refine_consolidated_analytic_surfaces(bytes, records, surfaces)
-        })
+        refine_consolidated_analytic_surfaces(bytes, records, surfaces)
     }
 
     #[test]
@@ -1702,7 +1700,7 @@ fn standard_population_selections(
         return Ok(None);
     };
     let standard_spine = scan.main_data_stream().unwrap_or(brep);
-    let layouts = fbb::fbb_population_layouts(standard_spine)?;
+    let layouts = fbb::fbb_population_layouts(standard_spine);
     let populations = crate::families::standard::records::standard_surface_populations(ctx, brep)?;
     let Some(pairs) =
         crate::families::standard::records::pair_standard_populations(&layouts, &populations)?
@@ -1714,7 +1712,7 @@ fn standard_population_selections(
         crate::families::standard::records::StandardSurfacePopulation,
     )|
      -> Result<Option<StandardPopulationSelection>, CodecError> {
-        let Some(spine) = fbb::population_spine(standard_spine, &layout)? else {
+        let Some(spine) = fbb::population_spine(standard_spine, &layout) else {
             return Ok(None);
         };
         Ok(Some(StandardPopulationSelection {
@@ -3652,7 +3650,7 @@ pub(super) fn standard_object_evidence_from_streams(
             &records,
             refusal,
         )?;
-        for population in crate::families::b5::graph::object_stream_populations(stream)? {
+        for population in crate::families::b5::graph::object_stream_populations(stream) {
             populations.push(population);
         }
     }
@@ -9020,13 +9018,10 @@ fn standard_line_pair_solution_is_simple_cached(
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
-    crate::test_support::with_service_context(|ctx| {
-        let constraint = StandardLinePairConstraint::new(points, supports, endpoint_options)
-            .expect("service budget admits line constraint");
-        constraint
-            .edge_pairs(pairs)
-            .is_some_and(|pairs| constraint.is_simple(&pairs))
-    })
+    let constraint = StandardLinePairConstraint::new(points, supports, endpoint_options);
+    constraint
+        .edge_pairs(pairs)
+        .is_some_and(|pairs| constraint.is_simple(&pairs))
 }
 
 #[cfg(test)]

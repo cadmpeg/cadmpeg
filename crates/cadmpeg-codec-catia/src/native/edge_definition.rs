@@ -173,10 +173,7 @@ mod tests {
             .expect("checked frame"),
             class: ConsolidatedEdgeDefinitionClass::Class24,
         };
-        let value = crate::test_support::with_service_context(|ctx| {
-            CatiaConsolidatedEdgeDefinition::from_source(source)
-        })
-        .expect("admitted definition");
+        let value = { CatiaConsolidatedEdgeDefinition::from_source(source) };
         let data = value.data().expect("compact data");
         assert!(std::ptr::eq(data, value.data().expect("same data")));
         assert_eq!(
@@ -213,7 +210,7 @@ mod tests {
         };
         let arena_name = "edge_definitions";
         let json_len = serde_json::to_vec(&record).expect("definition JSON").len();
-        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))

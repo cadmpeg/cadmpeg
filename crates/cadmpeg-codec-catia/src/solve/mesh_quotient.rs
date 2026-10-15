@@ -8,8 +8,6 @@ use cadmpeg_core::decode::index_from_u32;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
-#[cfg(test)]
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::CodecError;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -511,9 +509,7 @@ impl MeshImplicitEdgeCandidates {
                 left_root,
                 right_root,
                 ..
-            } => domains[*left_root]
-                .len()
-                .saturating_mul(domains[*right_root].len()),
+            } => domains[*left_root].len() * domains[*right_root].len(),
             MeshImplicitEdgeCandidateSource::Required { remaining, .. } => *remaining,
         }
     }
@@ -1107,12 +1103,14 @@ fn complete_mesh_endpoint_candidates_from_quotient(
                 pair_count = pair_count.checked_add(candidates.len())?;
                 return (pair_count <= max_pairs_total).then(|| candidates.clone());
             }
-            let left =
-                crate::test_support::with_service_context(|ctx| quotient.union.find(edge * 2))
-                    .expect("service forest traversal");
-            let right =
-                crate::test_support::with_service_context(|ctx| quotient.union.find(edge * 2 + 1))
-                    .expect("service forest traversal");
+            let left = quotient
+                .union
+                .find(edge * 2)
+                .expect("service forest traversal");
+            let right = quotient
+                .union
+                .find(edge * 2 + 1)
+                .expect("service forest traversal");
             let relation_count = if left == right {
                 quotient.domains[left].len()
             } else {
@@ -2007,10 +2005,34 @@ impl MeshQuotient {
                     return;
                 }
                 if let Some(reversed) = boundary[at].reversed {
-                    advance(boundary, at, reversed, directions, quotient, output);
+                    advance(
+                        (ctx, edge_candidates),
+                        boundary,
+                        at,
+                        reversed,
+                        directions,
+                        quotient,
+                        output,
+                    );
                 } else {
-                    advance(boundary, at, false, directions, quotient.clone(), output);
-                    advance(boundary, at, true, directions, quotient, output);
+                    advance(
+                        (ctx, edge_candidates),
+                        boundary,
+                        at,
+                        false,
+                        directions,
+                        quotient.clone(),
+                        output,
+                    );
+                    advance(
+                        (ctx, edge_candidates),
+                        boundary,
+                        at,
+                        true,
+                        directions,
+                        quotient,
+                        output,
+                    );
                 }
             }
 
@@ -2122,7 +2144,7 @@ impl MeshQuotient {
             }
             if boundary_index == boundaries.len() {
                 if admit_orientation_option(seen, output, directions, &quotient)? {
-                    output.push((directions.to_vec(), quotient));
+                    output.push((directions.clone(), quotient));
                 }
                 return Ok(());
             }
@@ -2446,7 +2468,7 @@ impl MeshQuotient {
                 continue;
             }
             if admit_orientation_option(&mut seen, &output, directions, &quotient)? {
-                output.push((directions.to_vec(), quotient));
+                output.push((directions.clone(), quotient));
             }
         }
         Ok(output)
@@ -2929,7 +2951,6 @@ impl MeshQuotient {
 fn quotient_merge_preserves_shared_snapshot_members() {
     let domain = Arc::new(HashSet::from([0usize]));
     let quotient = MeshQuotient::new(vec![domain; 3]);
-    catia_test_context!(ctx);
     let mut copy = quotient.clone();
     assert_eq!(copy.merge(0, 1).expect("merge storage"), Some(0));
     assert_eq!(copy.members(0), &[0, 1]);
@@ -5080,11 +5101,8 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> bool {
-    crate::test_support::with_service_context(|ctx| {
-        mesh_assignment_endpoint_cycles_viable_with(assignment, edge_candidates, None, None)
-            .expect("service resource budget")
-            .unwrap_or(true)
-    })
+    mesh_assignment_endpoint_cycles_viable_with(assignment, edge_candidates, None, None)
+        .unwrap_or(true)
 }
 
 pub(super) fn mesh_face_endpoint_configurations(
@@ -6809,8 +6827,6 @@ mod face_domain_support_tests {
     use crate::solve::missing_edge::MeshDeferredFaceBoundary;
     use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
     use crate::solve::missing_edge::MeshFaceBoundaryDomain;
-    use cadmpeg_core::CodecError;
-    use std::collections::HashSet;
 
     fn assignment(edge: usize) -> MeshFaceBoundaryAssignment {
         MeshFaceBoundaryAssignment {
@@ -6913,25 +6929,17 @@ mod face_domain_support_tests {
     #[test]
     fn unique_candidate_restores_endpoint_pair_orientation() {
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| {
-                restore_unique_endpoint_pair_orientations(
-                    &[[0, 1], [2, 3], [4, 5]],
-                    &[vec![[1, 0]], vec![[2, 3], [3, 2]], Vec::new()],
-                )
-            })
-            .expect("service resource budget"),
+            restore_unique_endpoint_pair_orientations(
+                &[[0, 1], [2, 3], [4, 5]],
+                &[vec![[1, 0]], vec![[2, 3], [3, 2]], Vec::new()],
+            ),
             Some(vec![[1, 0], [2, 3], [4, 5]])
         );
-        assert!(crate::test_support::with_service_context(|ctx| {
-            restore_unique_endpoint_pair_orientations(&[[0, 1]], &[vec![[2, 3]]])
-        })
-        .expect("service resource budget")
-        .is_none());
+        assert!(restore_unique_endpoint_pair_orientations(&[[0, 1]], &[vec![[2, 3]]]).is_none());
     }
 
     #[test]
     fn complete_endpoint_pairs_materialize_deferred_boundaries() {
-        catia_test_context!(ctx);
         let domains = [MeshFaceBoundaryDomain::DeferredValidation(
             MeshDeferredFaceBoundary {
                 cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
@@ -6966,7 +6974,6 @@ mod face_domain_support_tests {
 
     #[test]
     fn complete_endpoint_pairs_materialize_unordered_cycle() {
-        catia_test_context!(ctx);
         let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2])];
         let assignments = materialize_boundary_domains(&domains, &[[0, 1], [1, 2], [2, 0]])
             .expect("service resource budget")
@@ -7992,7 +7999,7 @@ where
             };
             let face_count = face_run.face_count();
             let after_faces = face_run.after_faces();
-            let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces)? else {
+            let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
                 return Ok(None);
             };
             let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
@@ -8490,7 +8497,6 @@ where
 
 #[test]
 fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
-    catia_test_context!(ctx);
     let base_candidates = vec![vec![[0, 1], [0, 2]], vec![[1, 2]]];
     let domains = vec![
         vec![MeshEndpointRelationChoice {
@@ -8831,14 +8837,13 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     let face_configurations = vec![Some(vec![vec![(0, [0, 0])]]), None];
     let mut covered = vec![false];
 
-    let choices = crate::test_support::with_service_context(|ctx| {
+    let choices = {
         collect_endpoint_relation_face_choices(
             &face_assignments,
             &face_configurations,
             &mut covered,
         )
-    })
-    .expect("service resource budget")
+    }
     .expect("well-formed endpoint relation choices");
 
     assert!(covered[0]);
@@ -8852,7 +8857,6 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
 
 #[test]
 fn raw_endpoint_relation_state_signature_ignores_local_order() {
-    catia_test_context!(ctx);
     let left = vec![
         vec![
             MeshEndpointRelationChoice {
@@ -8907,10 +8911,8 @@ fn raw_endpoint_relation_state_signature_ignores_local_order() {
     let right_assigned = vec![Some([2, 3]), None, Some([4, 5])];
 
     assert_eq!(
-        raw_endpoint_relation_state_signature(&left, &left_assigned)
-            .expect("service resource budget"),
-        raw_endpoint_relation_state_signature(&right, &right_assigned)
-            .expect("service resource budget"),
+        raw_endpoint_relation_state_signature(&left, &left_assigned),
+        raw_endpoint_relation_state_signature(&right, &right_assigned),
     );
 }
 
@@ -9063,15 +9065,14 @@ fn endpoint_configurations_do_not_duplicate_closed_point_transitions() {
     let candidates = vec![vec![[0, 0]], vec![[0, 0]], vec![[0, 0]]];
     let budget = WorkBudget::new(4);
 
-    let configurations = crate::test_support::with_service_context(|ctx| {
+    let configurations = {
         mesh_face_endpoint_configurations(
             std::slice::from_ref(&assignment),
             &candidates,
             &[None; 3],
             &budget,
         )
-    })
-    .expect("service resource budget")
+    }
     .expect("closed-point transitions should be deduplicated");
 
     assert_eq!(configurations.len(), 1);
@@ -9127,7 +9128,6 @@ fn endpoint_configuration_unresolved_boundary_reversal_is_a_gauge() {
 
 #[test]
 fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
-    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -9157,8 +9157,7 @@ fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
                 ))
             },
             |_, _| true
-        )
-        .expect("service resource budget"),
+        ),
         None
     );
     assert!(budget.exhausted());
@@ -9223,10 +9222,12 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
                 .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
                 .collect(),
         );
-        crate::test_support::with_service_context(|ctx| quotient.merge(0, 2))
+        quotient
+            .merge(0, 2)
             .expect("service merge")
             .expect("shared left endpoint");
-        crate::test_support::with_service_context(|ctx| quotient.merge(1, 3))
+        quotient
+            .merge(1, 3)
             .expect("service merge")
             .expect("shared right endpoint");
         quotient
@@ -9297,10 +9298,12 @@ fn coordinate_root_closure_refuses_recursive_walk_depth() {
             .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
             .collect(),
     );
-    crate::test_support::with_service_context(|ctx| quotient.merge(0, 2))
+    quotient
+        .merge(0, 2)
         .expect("service merge")
         .expect("shared left endpoint");
-    crate::test_support::with_service_context(|ctx| quotient.merge(1, 3))
+    quotient
+        .merge(1, 3)
         .expect("service merge")
         .expect("shared right endpoint");
     let result = quotient.coordinate_root_closure_outcome(
@@ -9334,10 +9337,12 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
     for component in 0..COMPONENT_COUNT {
         let node = component * 6;
         let point = component * 3;
-        crate::test_support::with_service_context(|ctx| quotient.merge(node + 1, node + 2))
+        quotient
+            .merge(node + 1, node + 2)
             .expect("service merge")
             .expect("disjoint coordinate roots merge");
-        crate::test_support::with_service_context(|ctx| quotient.merge(node + 3, node + 4))
+        quotient
+            .merge(node + 3, node + 4)
             .expect("service merge")
             .expect("disjoint coordinate roots merge");
         candidates.extend([

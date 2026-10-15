@@ -3,14 +3,9 @@
 use crate::families::e5::decode::{
     fit_e5_plane_axes, fit_rank_one_e5_plane_axes, EPS_E5_DECODE_EXACT_GEOMETRY,
 };
-use crate::families::e5::graph::{
-    E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
-};
-use crate::families::e5::records::E5Surface;
+use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
 use crate::families::e5::tests::e5_loop_members;
-use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point};
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::math::Point3;
+use crate::test_support::test_b5::{finite_pair, point};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;

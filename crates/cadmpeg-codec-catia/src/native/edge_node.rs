@@ -393,7 +393,7 @@ mod tests {
             incident_edge_nodes: Vec::new(),
         }];
         let index = super::identity_index(&identities);
-        assert_eq!(super::joined_vertex(&node, 0, &index), "");
+        assert_eq!(super::joined_vertices(&node, &index)[0], "");
     }
 
     #[test]
@@ -403,10 +403,7 @@ mod tests {
         node.endpoint_records = None;
         node.allocation = Some(("allocation-owner".to_owned(), 0));
         assert!(node.uses.is_some());
-        let expected = crate::test_support::with_service_context(|ctx| {
-            super::consolidated_vertex_identities(std::slice::from_ref(&node))
-        })
-        .expect("single node identities");
+        let expected = { super::consolidated_vertex_identities(std::slice::from_ref(&node)) };
         let nodes = (0..64).map(|_| node.clone()).collect::<Vec<_>>();
         assert_eq!(super::consolidated_vertex_identities(&nodes), expected);
     }

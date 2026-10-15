@@ -855,13 +855,12 @@ mod tests {
 
         let mut refusal = LaneRefusals::new();
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
+            canonical_model_curve_range(
                 &geometry,
                 [-DOMAIN_ROUNDING, 1.0 + DOMAIN_ROUNDING],
                 &mut refusal,
                 "test curve"
-            ))
-            .expect("service profile admits range operation"),
+            ),
             Some([0.0, 1.0])
         );
         for (range, expected) in [
@@ -878,36 +877,18 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                    &geometry,
-                    range,
-                    &mut refusal,
-                    "test curve"
-                ))
-                .expect("service profile admits range operation"),
+                canonical_model_curve_range(&geometry, range, &mut refusal, "test curve"),
                 Some(expected)
             );
         }
         for range in [[-1.0e-4, 0.5], [0.5, 1.0 + 1.0e-4]] {
             assert_eq!(
-                crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                    &geometry,
-                    range,
-                    &mut refusal,
-                    "test curve"
-                ))
-                .expect("service profile admits range operation"),
+                canonical_model_curve_range(&geometry, range, &mut refusal, "test curve"),
                 None
             );
         }
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                &geometry,
-                [-1.0e-4, 1.0],
-                &mut refusal,
-                "test curve"
-            ))
-            .expect("service profile admits range operation"),
+            canonical_model_curve_range(&geometry, [-1.0e-4, 1.0], &mut refusal, "test curve"),
             None
         );
         // Domain corrections do not add a refused source range.
@@ -915,13 +896,7 @@ mod tests {
 
         // A source-stated interval that does not increase is a refused record.
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(
-                &geometry,
-                [1.0, 0.0],
-                &mut refusal,
-                "test curve"
-            ))
-            .expect("service profile admits range operation"),
+            canonical_model_curve_range(&geometry, [1.0, 0.0], &mut refusal, "test curve"),
             None
         );
         let notes = refusal.take_notes();
@@ -1089,11 +1064,9 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
         let mut refusal = LaneRefusals::new();
-        let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
-            reverse_helix_definition(&definition, range, &mut refusal, "test helix")
-        })
-        .expect("service profile admits range operation")
-        .expect("reversible helix");
+        let (reversed, reversed_range) =
+            { reverse_helix_definition(&definition, range, &mut refusal, "test helix") }
+                .expect("reversible helix");
         assert!(refusal.take_notes().is_empty());
         let evaluate = |definition: &ProceduralCurveDefinition, angle: f64| {
             let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
@@ -1435,10 +1408,6 @@ mod tests {
 
     #[test]
     fn quintic_jet_rejects_nonfinite_control_net() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
         assert!(quintic_jet_bspline(
             5,
             &[0.0, 10.0],
@@ -1446,7 +1415,6 @@ mod tests {
             &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]]
         )
-        .expect("service resource budget")
         .is_none());
         assert!(quintic_jet_bspline(
             5,
@@ -1455,7 +1423,6 @@ mod tests {
             &[[1.0, 0.0], [1.0, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]]
         )
-        .expect("service resource budget")
         .is_none());
     }
 
@@ -1540,22 +1507,16 @@ mod tests {
             )
             .expect("fixture pcurve construction admission")
         };
-        let first = crate::test_support::with_service_context(|ctx| {
-            super::note_refusal(
-                short_weight_lane(),
-                &mut refusal,
-                "consolidated_a5_03_32 at byte 64",
-            )
-        })
-        .expect("service profile admits NURBS refusal note");
-        let second = crate::test_support::with_service_context(|ctx| {
-            super::note_refusal(
-                short_weight_lane(),
-                &mut refusal,
-                "consolidated_a5_03_32 at byte 128",
-            )
-        })
-        .expect("service profile admits NURBS refusal note");
+        let first = super::note_refusal(
+            short_weight_lane(),
+            &mut refusal,
+            "consolidated_a5_03_32 at byte 64",
+        );
+        let second = super::note_refusal(
+            short_weight_lane(),
+            &mut refusal,
+            "consolidated_a5_03_32 at byte 128",
+        );
         assert!(first.is_none(), "the refused record states no pcurve");
         assert!(second.is_none(), "the refused record states no pcurve");
         let notes = refusal.take_notes();

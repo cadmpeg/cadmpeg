@@ -273,8 +273,8 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
 /// Repeated identical copies collapse to one value; conflicting copies reject
 /// the version instead of selecting by position.
 #[cfg(test)]
-fn last_save_version(data: &[u8]) -> Result<Option<LastSaveVersion>, CodecError> {
-    let segments = finjpl_segments(&BodyExtent::whole(data))?;
+fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
+    let segments = finjpl_segments(&BodyExtent::whole(data));
     last_save_version_in_segments(data, &segments)
 }
 
@@ -489,10 +489,8 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 /// storage type `0x0000_008e` breaking ties. An unresolved tie rejects E5
 /// selection.
 #[cfg(test)]
-pub(crate) fn e5_record_stream(data: &[u8]) -> Result<Option<Range<usize>>, CodecError> {
-    let Some(body) = outer_body_range(data) else {
-        return Ok(None);
-    };
+pub(crate) fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
+    let body = outer_body_range(data)?;
 
     let mut markers = memchr::memmem::find_iter(body.bytes(), FINJPL_MARKER)
         .map(|relative| body.range.start + relative);
@@ -1719,7 +1717,7 @@ pub(crate) fn scan_bytes<'a>(
         Some(range) => {
             crate::families::zero_entity::records::zero_entity_record_inventory_in_range(
                 &data, range,
-            )?
+            )
             .len()
         }
         None => 0,

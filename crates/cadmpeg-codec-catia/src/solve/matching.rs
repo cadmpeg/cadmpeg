@@ -598,7 +598,6 @@ pub(crate) fn unique_coordinate_bijection(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeSet, HashSet};
 
     #[test]
     fn used_up_caller_slice_skips_the_matching_without_fusing_the_session() {
@@ -620,12 +619,11 @@ mod tests {
         });
     }
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::{
         distinct_domain_matching_with_budget, repair_distinct_domain_matching_with_budget,
-        retain_distinct_matching_supports, unique_coordinate_bijection, MatchingEdgeConstraint,
+        retain_distinct_matching_supports, MatchingEdgeConstraint,
     };
 
     #[test]

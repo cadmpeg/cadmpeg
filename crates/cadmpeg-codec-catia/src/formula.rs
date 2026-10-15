@@ -3934,28 +3934,12 @@ mod parser_tests {
     #[test]
     fn string_parameter_expressions_match_literal_grammar() {
         let literal = ParameterValue::String("Cilas Evans".to_string());
-        crate::test_support::with_service_context(|ctx| {
-            assert_eq!(
-                parameter_expression(ctx, &literal).expect("service expression"),
-                "\"Cilas Evans\""
-            );
-            assert!(string_literal_expression(ctx, "")
-                .expect("service literal")
-                .is_some_and(|expression| expression == "\"\""));
-            for value in ["quote\"", "backslash\\", "line\n", "control\u{0085}"] {
-                assert!(
-                    string_literal_expression(ctx, value)
-                        .expect("service literal")
-                        .is_none(),
-                    "{value:?}"
-                );
-                assert!(
-                    parameter_expression(ctx, &ParameterValue::String(value.to_string()))
-                        .expect("service expression")
-                        .is_empty()
-                );
-            }
-        });
+        assert_eq!(parameter_expression(&literal), "\"Cilas Evans\"");
+        assert!(string_literal_expression("").is_some_and(|expression| expression == "\"\""));
+        for value in ["quote\"", "backslash\\", "line\n", "control\u{0085}"] {
+            assert!(string_literal_expression(value).is_none(), "{value:?}");
+            assert!(parameter_expression(&ParameterValue::String(value.to_string())).is_empty());
+        }
         assert_eq!(
             evaluate_formula_expression("\"Cilas Evans\"", &BTreeMap::new())
                 .and_then(EvaluatedFormulaValue::string),

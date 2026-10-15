@@ -657,9 +657,7 @@ struct ConsolidatedCarriers<'a> {
 #[cfg(test)]
 fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_edge_blocks_from_records(data, &records).expect("service decode")
-    })
+    consolidated_edge_blocks_from_records(data, &records)
 }
 
 fn consolidated_edge_blocks_from_records(
@@ -720,9 +718,7 @@ fn consolidated_edge_blocks_from_records(
 #[cfg(test)]
 fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_topology_edge_runs_from_records(data, &records).expect("service decode")
-    })
+    consolidated_topology_edge_runs_from_records(data, &records).expect("service decode")
 }
 
 pub(crate) fn consolidated_topology_edge_runs_from_records(
@@ -775,10 +771,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_analytic_circle_edge_runs(data: &[u8]) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_analytic_circle_edge_runs_from_records(data, &records)
-    })
-    .expect("service decode")
+    consolidated_analytic_circle_edge_runs_from_records(data, &records).expect("service decode")
 }
 
 pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
@@ -865,9 +858,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_class25_edge_runs_from_records(data, &records).expect("service decode")
-    })
+    consolidated_class25_edge_runs_from_records(data, &records).expect("service decode")
 }
 
 pub(crate) fn consolidated_class25_edge_runs_from_records(
@@ -933,9 +924,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
     let records = consolidated_records(data);
-    crate::test_support::with_service_context(|ctx| {
-        consolidated_edge_use_runs_from_records(data, &records).expect("service decode")
-    })
+    consolidated_edge_use_runs_from_records(data, &records).expect("service decode")
 }
 
 pub(crate) fn consolidated_edge_use_runs_from_records(
@@ -2076,7 +2065,7 @@ mod tests {
         };
         let arena_name = "scalar_segments";
         let json_len = serde_json::to_vec(&record).expect("segment JSON").len();
-        let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+        let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
             namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
