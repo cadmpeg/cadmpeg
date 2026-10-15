@@ -140,17 +140,15 @@ Optional side ranges, locations, and other doubles can occur after the actual of
 
 **Note.** The complete decoder and its structured grammar establish conforming records only; they do not establish the layout of a rejected branch.
 
-### GC-33. Cone pcurve chart sign and scale
+### GC-33. Generator scale of a cone pcurve chart
 
-**Question.** What gives the sign and scale of the axial coordinate of a pcurve on a native `cone` support?
+**Question.** On a native `cone` with nonzero `sine`, is the axial distance of a pcurve point the first chart coordinate times `|cosine| × u_scale` or times `u_scale`?
 
-**Known.** `asm.md` §6.2 states that the first cone-chart coordinate is multiplied by `direction * cosine * u_scale`, with `direction` selected by `sine * cosine`. `native_support_chart` and `normalize_pcurve_for_surface_record` in `nurbs/proc_curve.rs` implement that formula.
+**Known.** `asm.md` §6.2 "An embedded or face-bound pcurve on an analytic support" states `d = first × |cosine| × u_scale` along the native axis. Pcurves on circular cylinders with `cosine = 1` and with `cosine = -1` reach their edge vertices with `d = first × u_scale` along the native axis and the azimuth measured toward `axis × x`. The sign of `cosine` therefore does not change the chart. On a cylinder `|cosine| = 1`, so these pcurves do not separate the two scales. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements the stated rule.
 
-**Conflict.** The current rule was written from the implementation change and synthetic token tests; no SAT/SAB witness in the corpus has yet separated this formula from the preceding `direction * u_scale` interpretation. The parse-failure branch also substitutes the canonical chart with no loss.
+**Need.** A pcurve with known edge vertices on a cone with nonzero `sine` separates the two scales. With the wrong scale, every cone pcurve point has the wrong axial distance, and `cadmpeg check` reports the miss at the edge vertices.
 
-**Need.** A cone pcurve with a negative cosine, an offset-derived `u_scale`, and a known surface position would distinguish the chart direction and scale. Without that evidence, the current text is a promotion of the implementation's choice, not proof that the file format uses it.
-
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:79-164`; the synthetic tests are at `:3111-3145`. A test that supplies tokens constructed by the same rule is counter-evidence only for arithmetic consistency, not for the native rule.
+**Note.** The unit tests in `nurbs/support_chart/tests.rs` construct vertices from the stated rule. They test the agreement of the chart conversion with the decoded cone frame for each sign of `sine` and `cosine`; they are not evidence for the native scale.
 
 ### GC-34. Pcurve interval eligibility tolerance
 
@@ -168,13 +166,11 @@ If an endpoint overshoots by less than the hard-coded tolerance, the decoder sil
 
 **Question.** Which member of an embedded blend support gives the surface-normal side of that support?
 
-**Known.** `cadmpeg-ir` defines `BlendSupport.reversed` as selecting the opposite surface-normal side. `emit_blend_surface` writes `reversed: false` at both support construction sites. The embedded support readers in `nurbs/proc_curve.rs` consume and discard a Boolean after analytic support fields: the plane, cone, sphere, and torus branches each read one such Boolean. `asm.md` §6.2 gives the top-level analytic layouts without assigning this trailing Boolean to a support-reversal member.
+**Known.** `cadmpeg-ir` defines `BlendSupport.reversed` as selecting the opposite surface-normal side. `emit_blend_surface` writes `reversed: false` at both support construction sites. The embedded support readers in `nurbs/proc_curve.rs` consume one Boolean after the analytic support fields of a plane, cone, sphere, or torus. `asm.md` §6.2 assigns that Boolean: it is the v-sense logical of a plane, sphere, or torus and the u-sense logical of a cone. It selects a parameter direction, not the surface-normal side. No other embedded support field is known to select the normal side, so `BlendSupport.reversed` has no reader on this path.
 
-If the discarded Boolean is the support reversal, every reversed blend support is emitted on the wrong side. If it is another native field, `BlendSupport.reversed` has no reader and the neutral field is misleading. In both cases the current code selects a meaning without evidence.
+**Need.** A paired support/face specimen or an authoritative field description must give the native member that selects the normal side of an embedded blend support, or show that no such member exists. The answer determines whether the neutral field must be populated or removed from this path.
 
-**Need.** A paired support/face specimen or an authoritative field description must bind the Boolean to surface reversal or to another native member. The answer determines whether the neutral field must be populated or removed from this path.
-
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:2481-2583,2631-2733`, `crates/cadmpeg-asm/src/nurbs/blend.rs:384-440`, and `crates/cadmpeg-asm/src/brep/emit.rs:2441-2483`. The field is structurally consumed, but no current specification paragraph assigns its semantics.
+**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:2481-2583,2631-2733`, `crates/cadmpeg-asm/src/nurbs/blend.rs:384-440`, and `crates/cadmpeg-asm/src/brep/emit.rs:2441-2483`.
 
 ### GC-36. Ownership and width of decoded NURBS cache blocks
 
@@ -210,6 +206,14 @@ identity that does not own the admitted carrier.
 
 **Note.** Do not use first-definition order as construction identity. Reject an ambiguous owner when
 the record grammar does not identify one construction.
+
+### GC-38. Reversed-sense pcurve charts
+
+**Question.** Does a `TRUE` v-sense logical (`reverse_v`) negate the second pcurve chart coordinate of a plane, sphere, or torus, and does a `TRUE` cone u-sense logical (`reversed`) negate the first cone chart coordinate?
+
+**Known.** `asm.md` §6.2 states both negations. The `forward_v` plane, sphere, and torus charts and the `forward` cylinder chart reach their edge vertices. No stream contains a pcurve on a `reverse_v` plane, sphere, or torus, on a `reversed` cone, on a sphere with a negative radius, or on a torus with a negative minor radius. `SupportChart::from_fields` in `nurbs/support_chart.rs` implements the stated rule.
+
+**Need.** A pcurve with known edge vertices on each of these supports confirms the rule. A wrong sign mirrors the pcurve in the support chart, and `cadmpeg check` reports the miss at the edge vertices.
 
 ## 2. Topology
 
