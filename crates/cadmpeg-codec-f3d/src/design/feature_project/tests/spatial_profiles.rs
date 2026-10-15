@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::feature_project::closed_spatial_sketch_profiles;
+use crate::design::feature_project::{closed_spatial_sketch_profiles, SPATIAL_PROFILE_SEARCH_WORK};
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -47,10 +48,29 @@ fn fixture() -> (SpatialSketchId, Vec<SpatialSketchEntity>) {
 fn spatial_profile_closed_loop_and_circle_keep_order() {
     let (sketch, entities) = fixture();
     let profiles = crate::test_support::with_decode_context(|decode_ctx| {
-        closed_spatial_sketch_profiles(decode_ctx, &sketch, &entities, EPS_PROFILE_CLOSE)
+        closed_spatial_sketch_profiles(
+            decode_ctx,
+            &sketch,
+            &entities,
+            EPS_PROFILE_CLOSE,
+            &WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK),
+        )
     })
-    .unwrap();
+    .unwrap()
+    .expect("the search stays within its cap");
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].boundary().len(), 1);
     assert_eq!(profiles[1].boundary().len(), 3);
+}
+
+#[test]
+fn spatial_profile_search_skips_the_sketch_when_its_cap_runs_out() {
+    let (sketch, entities) = fixture();
+    let budget = WorkBudget::new(1);
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_spatial_sketch_profiles(decode_ctx, &sketch, &entities, EPS_PROFILE_CLOSE, &budget)
+    })
+    .unwrap();
+    assert_eq!(profiles, None);
+    assert!(budget.exhausted());
 }

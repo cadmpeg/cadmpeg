@@ -2658,10 +2658,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_texts,
                 self.ir.tolerances.linear.get(),
             )?;
-        (
-            self.ir.model.spatial_sketches,
-            self.ir.model.spatial_sketch_entities,
-        ) = crate::design::sketch_project::project_spatial_sketch_design(
+        let spatial = crate::design::sketch_project::project_spatial_sketch_design(
             self.ctx,
             &self.native.design_sketch_placements,
             &self.native.sketch_points,
@@ -2670,6 +2667,9 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_relations,
             self.ir.tolerances.linear.get(),
         )?;
+        self.ir.model.spatial_sketches = spatial.sketches;
+        self.ir.model.spatial_sketch_entities = spatial.entities;
+        self.report.losses.extend(spatial.losses);
         crate::design::feature_project::bind_work_point_sketch_point_constructions(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
