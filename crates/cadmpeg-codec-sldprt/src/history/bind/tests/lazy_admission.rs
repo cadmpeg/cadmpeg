@@ -333,7 +333,8 @@ fn output_identity_constructor_preserves_copy_refusals() {
         });
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == dimension && limit.operation == OPERATION)
+            if limit.dimension == dimension && limit.operation == OPERATION
+                && limit.additional == u64::try_from("synthetic:test:body#output".len()).unwrap())
         );
     }
 }

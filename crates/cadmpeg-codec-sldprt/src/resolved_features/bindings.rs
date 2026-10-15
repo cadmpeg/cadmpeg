@@ -31,7 +31,7 @@ use super::typed_relations::{
 use super::{classes_within, sorted_classes};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::MetadataIndex;
 use crate::history::literals::parse_positive_angle_rad;
 use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
@@ -59,8 +59,9 @@ pub(super) fn history_metadata_ids<'a>(
     const OPERATION: &str = "scan SLDPRT history metadata identities";
     let mut ids = HashSet::new();
     for history in ctx.admit_iter(histories, OPERATION)? {
+        let metadata = MetadataIndex::new(ctx, &history.features)?;
         for feature in ctx.admit_iter(&history.features, OPERATION)? {
-            if is_history_metadata_record(ctx, feature, &history.features)? {
+            if metadata.is_metadata(ctx, feature)? {
                 ctx.insert_hash_set(&mut ids, feature.id.as_str(), SCALAR_BINDING_INDEX)?;
             }
         }
