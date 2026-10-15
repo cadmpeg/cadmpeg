@@ -178,9 +178,9 @@ pub(crate) enum F3dLossCode {
     SourcePreservedImageUnavailable,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
-    /// The selected write target differs from the same-format source dialect.
     /// Export omits records named by the counted loss message.
     WriterAppearancePropertiesOmitted,
+    /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
