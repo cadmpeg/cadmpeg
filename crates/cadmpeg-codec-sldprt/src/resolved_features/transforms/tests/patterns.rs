@@ -1848,7 +1848,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         &entities,
         std::slice::from_ref(&lane),
     )
-    .expect("transform resource admission");
+    .expect("compute the profile loci by marker");
     for (index, relation) in relations.iter().enumerate() {
         let definition = typed_relation_definition(
             &cadmpeg_test_support::service_decode_context(),

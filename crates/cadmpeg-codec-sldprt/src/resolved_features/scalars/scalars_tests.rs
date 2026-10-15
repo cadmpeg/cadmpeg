@@ -11,7 +11,7 @@ fn decoded_names(payload: &[u8]) -> Vec<crate::records::FeatureInputName> {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("test context");
-    object_names(&ctx, payload, "lane").expect("service profile admits names")
+    object_names(&ctx, payload, "lane").expect("compute the object names")
 }
 
 #[test]

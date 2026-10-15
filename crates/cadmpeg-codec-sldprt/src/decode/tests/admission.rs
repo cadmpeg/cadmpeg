@@ -44,7 +44,7 @@ fn native_loss_validation_admits_history_fixture() {
     };
     SldprtCodec
         .decode(&mut Cursor::new(source), &options)
-        .expect("service profile admits typed native loss validation");
+        .expect("decode the fixture");
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn direct_parasolid_stream_copy_refuses_retained_limit() {
     options.policy = cadmpeg_core::decode::DecodePolicy::service();
     SldprtCodec
         .decode(&mut Cursor::new(source), &options)
-        .expect("service profile admits the direct stream");
+        .expect("decode the fixture");
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn active_site_copy_refuses_retained_limit() {
     options.policy = cadmpeg_core::decode::DecodePolicy::service();
     SldprtCodec
         .decode(&mut Cursor::new(source), &options)
-        .expect("service profile admits the active site");
+        .expect("decode the fixture");
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn display_section_copy_refuses_retained_limit() {
     options.policy = cadmpeg_core::decode::DecodePolicy::service();
     SldprtCodec
         .decode(&mut Cursor::new(source), &options)
-        .expect("service profile admits the display section");
+        .expect("decode the fixture");
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn neutral_brep_constructor_refuses_entity_limit_before_insertion() {
     options.policy = cadmpeg_core::decode::DecodePolicy::service();
     SldprtCodec
         .decode(&mut Cursor::new(source), &options)
-        .expect("service profile admits neutral B-rep entities");
+        .expect("decode the fixture");
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn whole_source_copy_refuses_retained_limit_before_unknown_record() {
     options.policy = cadmpeg_core::decode::DecodePolicy::service();
     SldprtCodec
         .decode(&mut Cursor::new(source), &options)
-        .expect("service profile admits a small source image");
+        .expect("decode the fixture");
 }
 
 #[test]
@@ -386,12 +386,12 @@ fn phase5_freeze_export_precondition_admissibility_fixtures() {
     // Empty IR has no B-rep; writer refuses later for missing B-rep, but the
     // :50 precondition is full validate — empty passes validate.
     assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
     let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("sldprt:test")
         .expect("fixture identities are valid");
     assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .is_ok());
 }
 

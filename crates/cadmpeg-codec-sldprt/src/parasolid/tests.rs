@@ -210,7 +210,7 @@ fn chained_parasolid_concatenation_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).expect("root");
     let streams = crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
-        .expect("service profile admits concatenation");
+        .expect("extract streams with offsets");
     assert_eq!(streams[0].payload, stream);
 }
 

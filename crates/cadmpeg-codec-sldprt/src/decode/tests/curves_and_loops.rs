@@ -79,7 +79,7 @@ fn edge_uses_decoded_line_curve() {
         .iter()
         .any(|coedge| !coedge.pcurves.is_empty()));
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -249,7 +249,7 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
     assert_eq!(result.ir().model.points.len(), 3);
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

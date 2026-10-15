@@ -436,7 +436,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
     let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(findings.is_empty(), "{findings:#?}");
 

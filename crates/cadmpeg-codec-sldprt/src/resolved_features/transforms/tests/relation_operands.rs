@@ -749,7 +749,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
 
     assert_eq!(
         profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane])
-            .expect("transform resource admission")["line"],
+            .expect("compute the profile loci by marker")["line"],
         vec![SketchLocus::Entity(line_id)]
     );
 }
@@ -828,7 +828,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
 
     assert_eq!(
         profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane])
-            .expect("transform resource admission")["circle-marker"],
+            .expect("compute the profile loci by marker")["circle-marker"],
         vec![SketchLocus::Center(circle_id)]
     );
 }
@@ -948,7 +948,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         &[first, second],
         std::slice::from_ref(&lane),
     )
-    .expect("transform resource admission");
+    .expect("compute the profile loci by marker");
 
     assert_eq!(
         loci["shared"],

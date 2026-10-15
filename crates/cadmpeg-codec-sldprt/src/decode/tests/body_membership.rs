@@ -60,7 +60,7 @@ fn decode_builds_valid_topology_and_plane() {
     assert!(xs.contains(&1000.0));
 
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
     assert_eq!(result.ir().model.loops[0].coedges().len(), 3);
     assert!(result
