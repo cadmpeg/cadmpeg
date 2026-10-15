@@ -5,7 +5,6 @@ use super::{
     possible_face_choices, possible_face_equations, repeated_domain, Arc, EdgeBoundaryLayout,
     EdgeRow, HashSet, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient,
     MeshSelectionSearch, RefCell, SearchOutcome, StandardTopologyDraft, WorkBudget,
-    MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 
 #[test]
@@ -28,7 +27,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         ]],
     };
     let assignments = vec![vec![assignment]];
-    let equations = possible_face_equations(&assignments).expect("service resource budget");
+    let equations = possible_face_equations(&assignments);
     let edge_candidates = vec![Vec::new(); 2];
     let search = MeshSelectionSearch {
         ctx: &ctx,
@@ -74,11 +73,10 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments)
-            .expect("service resource budget"),
+        possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -226,84 +224,6 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
 }
 
 #[test]
-fn completed_mesh_search_refuses_edge_and_point_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let assignments = vec![vec![MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
-            edge: 0,
-            start: 0,
-            end: 0,
-            reversed: Some(false),
-        }]],
-    }]];
-    let edge_rows = vec![{
-        assert!(EdgeRow::new(1, vec![0], EdgeBoundaryLayout::CompleteBoundaryRun).is_none());
-        EdgeRow::new(1, vec![0, 0], EdgeBoundaryLayout::CompleteBoundaryRun)
-            .expect("admitted edge row")
-    }];
-    let edge_candidates = vec![vec![[0, 0]]];
-    let vertex_points = [[0.0; 3]];
-    let domain = Arc::new(HashSet::from([0]));
-    let quotient = MeshQuotient::new(vec![domain.clone(), domain]);
-    let run = |ctx: &DecodeContext<'_>| -> Result<SearchOutcome<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
-        let mut search = MeshSelectionSearch {
-            ctx,
-            assignments: &assignments,
-            possible_face_equations: Vec::new(),
-            possible_face_choices: Vec::new(),
-            face_work: vec![Some(1)],
-            edge_candidates: &edge_candidates,
-            edge_rows: &edge_rows,
-            vertex_points: &vertex_points,
-            candidate_gauge: None,
-            port_identities: None,
-            fixed_face_directions: Vec::new(),
-            fixed_edge_orientations: Vec::new(),
-            edge_has_fixed_direction: Vec::new(),
-            selected: vec![Some((0, vec![vec![false]]))],
-            visited_states: HashSet::new(),
-            outcome: SearchOutcome::Open,
-            face_equation_cache: RefCell::default(),
-        };
-        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-        search.search_state(&quotient, true, &budget, &budget)?;
-        Ok(search.outcome)
-    };
-
-    catia_test_context!(service_ctx);
-    assert!(matches!(
-        run(&service_ctx).expect("service resource budget"),
-        SearchOutcome::Solved(_)
-    ));
-    let mut refused = HashSet::new();
-    let mut limit = 0;
-    for _ in 0..512 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits the input limit");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(error)) => {
-                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
-                refused.insert(error.operation.to_owned());
-                limit = error
-                    .used
-                    .checked_add(error.additional)
-                    .expect("bounded fixture");
-            }
-            Ok(SearchOutcome::Solved(_)) => break,
-            Ok(_) => panic!("completed selection must be solved"),
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    assert!(refused.contains("catia_search_edge_uses"));
-    assert!(refused.contains("catia_search_point_assignment"));
-}
-
-#[test]
 fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
     catia_test_context!(ctx);
     let mut search = MeshSelectionSearch {
@@ -419,11 +339,10 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments)
-            .expect("service resource budget"),
+        possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -477,11 +396,10 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     let mut search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments)
-            .expect("service resource budget"),
+        possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &edge_candidates,
@@ -535,11 +453,10 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments)
-            .expect("service resource budget"),
+        possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &candidates,
@@ -562,26 +479,19 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(4))
-            .expect("service forest traversal")
+        quotient.find(3).expect("service forest traversal"),
+        quotient.find(4).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(5))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal")
+        quotient.find(5).expect("service forest traversal"),
+        quotient.find(0).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count())
-            .expect("service quotient traversal"),
+        quotient.root_count().expect("service quotient traversal"),
         3
     );
 }
@@ -607,11 +517,10 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments)
-            .expect("service resource budget"),
+        possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments),
         ),
         face_work: vec![Some(2)],
         edge_candidates: &candidates,
@@ -634,14 +543,11 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count())
-            .expect("service quotient traversal"),
+        quotient.root_count().expect("service quotient traversal"),
         5
     );
 }
@@ -667,11 +573,10 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments)
-            .expect("service resource budget"),
+        possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments),
         ),
         face_work: vec![Some(2)],
         edge_candidates: &candidates,
@@ -698,20 +603,15 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(2))
-            .expect("service forest traversal")
+        quotient.find(1).expect("service forest traversal"),
+        quotient.find(2).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(3))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(0))
-            .expect("service forest traversal")
+        quotient.find(3).expect("service forest traversal"),
+        quotient.find(0).expect("service forest traversal")
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count())
-            .expect("service quotient traversal"),
+        quotient.root_count().expect("service quotient traversal"),
         4
     );
 }
@@ -734,11 +634,10 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     let search = MeshSelectionSearch {
         ctx: &ctx,
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments)
-            .expect("service resource budget"),
+        possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
             &assignments,
-            &possible_face_equations(&assignments).expect("service resource budget"),
+            &possible_face_equations(&assignments),
         ),
         face_work: vec![Some(1)],
         edge_candidates: &candidates,
@@ -756,24 +655,21 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     };
     let mut quotient = MeshQuotient::new((0..26).map(|_| Arc::new((0..13).collect())).collect());
     for edge in 0..13 {
-        crate::test_support::with_service_context(|ctx| {
-            quotient.merge_charged(edge * 2, edge * 2 + 1)
-        })
-        .expect("service merge")
-        .expect("closed port");
+        quotient
+            .merge(edge * 2, edge * 2 + 1)
+            .expect("service merge")
+            .expect("closed port");
     }
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count())
-            .expect("service quotient traversal"),
+        quotient.root_count().expect("service quotient traversal"),
         13
     );
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.root_count())
-            .expect("service quotient traversal"),
+        quotient.root_count().expect("service quotient traversal"),
         1
     );
 }

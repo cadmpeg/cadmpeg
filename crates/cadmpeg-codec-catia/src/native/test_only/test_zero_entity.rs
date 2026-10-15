@@ -134,16 +134,12 @@ pub(super) fn validate_zero_entity_support_runs(
                                             })
                                             .collect::<Vec<_>>();
                                         let expected =
-                                            crate::test_support::with_service_context(|ctx| {
-                                                crate::families::zero_entity::records::
-                                                    oriented_closed_model_endpoints(
-                                                        ctx,
-                                                        &endpoints,
-                                                        &loop_record.forward_senses,
-                                                    )
-                                            })
-                                            .expect("native test endpoints fit the service profile")
-                                            .unwrap_or_default();
+                                            crate::families::zero_entity::records::
+                                                oriented_closed_model_endpoints(
+                                                    &endpoints,
+                                                    &loop_record.forward_senses,
+                                                )
+                                                .unwrap_or_default();
                                         loop_record.oriented_model_endpoints == expected
                                     }
                                     && loop_record.terminal_id == *terminal
@@ -392,10 +388,8 @@ pub(super) fn validate_zero_entity_endpoint_pair_candidates(
     endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let expected = crate::test_support::with_service_context(|ctx| {
-        zero_entity_endpoint_pair_candidates(ctx, derived_zero_entity_endpoint_pairs(runs))
-    })
-    .expect("test endpoint pairs fit the service profile");
+    let expected =
+        { zero_entity_endpoint_pair_candidates(derived_zero_entity_endpoint_pairs(runs)) };
     if endpoint_pairs != expected {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "zero-entity endpoint-pair candidates disagree with their radial support occurrences"

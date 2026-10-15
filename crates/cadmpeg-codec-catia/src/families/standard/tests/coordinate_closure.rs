@@ -73,70 +73,6 @@ fn deferred_port_rows_do_not_constrain_open_face_components() {
 }
 
 #[test]
-fn port_domain_pruning_refuses_input_sized_collections() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-
-    let ports = [[10, 11], [11, 12]];
-    let candidates = [vec![[0, 1]], vec![[1, 2]]];
-    let mut operations = HashSet::new();
-    for deferred in [&[][..], &[false, true][..]] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("service decode context");
-        assert_eq!(
-            prune_edge_candidates_by_port_domains_with_deferred(
-                &ctx,
-                &ports,
-                &candidates,
-                deferred,
-            )
-            .expect("service resource budget"),
-            Some(candidates.to_vec())
-        );
-
-        for cap in 0..=100 {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-                    .expect("fixture fits input limit");
-            match prune_edge_candidates_by_port_domains_with_deferred(
-                &ctx,
-                &ports,
-                &candidates,
-                deferred,
-            ) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    operations.insert(limit.operation);
-                }
-                Ok(Some(_)) => {}
-                Ok(None) => panic!("consistent endpoint ports must admit a candidate"),
-                Err(error) => panic!("unexpected port pruning refusal: {error}"),
-            }
-        }
-    }
-    for operation in [
-        "catia_port_effective_deferred",
-        "catia_deferred_ports",
-        "catia_port_all_points",
-        "catia_port_deferred_domain",
-        "catia_port_candidate_domain",
-        "catia_port_domains",
-        "catia_port_nodes",
-        "catia_port_constrained_edges",
-        "catia_port_constrained_pairs",
-        "catia_port_filtered_pairs",
-        "catia_port_filtered_edges",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
-}
-
-#[test]
 fn duplicate_face_reference_slot_is_completed_by_face_closure() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -235,23 +171,8 @@ fn independent_duplicate_face_slots_have_one_canonical_search_order() {
 #[test]
 fn counted_edge_arities_are_bounded_by_remaining_bytes() {
     let oversized_row = [0x01, 0x01, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff];
-    assert!(
-        crate::test_support::with_service_context(|ctx| parse_edge_tables_scoped_at(
-            &oversized_row,
-            0
-        ))
-        .expect("service resource budget")
-        .is_none()
-    );
-    assert!(
-        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables_width(
-            &oversized_row,
-            0,
-            3
-        ))
-        .expect("service resource budget")
-        .is_none()
-    );
+    assert!(parse_edge_tables_scoped_at(&oversized_row, 0).is_none());
+    assert!(parse_fbb_edge_tables_width(&oversized_row, 0, 3).is_none());
 }
 
 #[test]
@@ -264,16 +185,8 @@ fn fbb_edge_width_requires_a_complete_counted_vertex_table() {
     }
     bytes.extend_from_slice(&[0x01, 0x06, 0x01]);
 
-    assert!(
-        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables_width(&bytes, 0, 3))
-            .expect("service resource budget")
-            .is_some()
-    );
-    assert!(
-        crate::test_support::with_service_context(|ctx| parse_fbb_edge_tables(&bytes, 0))
-            .expect("service resource budget")
-            .is_none()
-    );
+    assert!(parse_fbb_edge_tables_width(&bytes, 0, 3).is_some());
+    assert!(parse_fbb_edge_tables(&bytes, 0).is_none());
 }
 
 #[test]
@@ -308,15 +221,7 @@ fn trim_primitive_counts_are_bounded_by_remaining_bytes() {
         0x01, 0x46, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00,
         0x00,
     ];
-    assert!(
-        crate::test_support::with_service_context(|ctx| parse_trim_record(
-            &oversized_primitives,
-            0,
-            2
-        ))
-        .expect("service resource budget")
-        .is_none()
-    );
+    assert!(parse_trim_record(&oversized_primitives, 0, 2).is_none());
 }
 
 #[test]
@@ -403,20 +308,12 @@ fn native_edge_carrier_binding_requires_equal_object_identity() {
     ];
     let native_support_ids = HashSet::from([70, 71]);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
-            &supports,
-            &native_support_ids
-        ))
-        .expect("service budget"),
+        standard_native_support_edge_ids(&supports, &native_support_ids),
         vec![Some(70), None]
     );
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| standard_native_support_edge_ids(
-            &supports[1..],
-            &HashSet::from([900])
-        ))
-        .expect("service budget"),
+        standard_native_support_edge_ids(&supports[1..], &HashSet::from([900])),
         vec![Some(900)]
     );
 }

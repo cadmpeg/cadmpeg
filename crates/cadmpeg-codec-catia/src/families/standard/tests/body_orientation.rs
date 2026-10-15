@@ -99,10 +99,6 @@ fn radial_orientation_solves_each_face_boundary_independently() {
 
 #[test]
 fn open_standard_edge_incidence_classifies_a_sheet_body() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
     let mut topology = StandardTopologyDraft {
         faces: vec![FaceTopologyDraft {
             boundaries: vec![BoundaryDraft::new(vec![CoedgeUse {
@@ -136,10 +132,6 @@ fn open_standard_edge_incidence_classifies_a_sheet_body() {
 
 #[test]
 fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("service decode context");
     let use_ = |edge_row| CoedgeUse {
         edge_row,
         reversed: false,

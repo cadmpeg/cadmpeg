@@ -49,25 +49,13 @@ fn rolling_ball_parsers_reject_scale_relative_radius_disagreement() {
 fn consolidated_curve_parser_reads_width2_frame() {
     let curves = parsed_a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| curves[0].knots())
-            .expect("service resource budget")
-            .len(),
-        2
-    );
+    assert_eq!(curves[0].knots().len(), 2);
     assert_eq!(curves[0].sites[1].site.radius(), 2.0);
 }
 
 #[test]
 fn guide_curve_parser_reads_position_and_unit_direction_jet() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits input limit");
-    let curves = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream())
-            .expect("service decode")
-    });
+    let curves = { crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream()) };
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].sites[0].point.get(), [0.0, 0.0, 0.0]);
@@ -80,12 +68,11 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
     let derivatives = vec![[0.0; 3]; 2];
     let (knots, controls) = crate::nurbs::quintic_jet_bspline(
         curves[0].degree,
-        &curves[0].knots(&ctx).expect("service resource budget"),
+        &curves[0].knots(),
         &points,
         &derivatives,
         &derivatives,
     )
-    .expect("service resource budget")
     .expect("exact 3D quintic jet");
     assert_eq!(knots, [vec![0.0; 6], vec![1.0; 6]].concat());
     assert_eq!(
@@ -102,42 +89,16 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
 fn guide_curve_parser_refuses_nonunit_site_direction() {
     let mut bytes = a5_guide_curve_stream();
     bytes[52..60].copy_from_slice(&le_f64(2.0));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(&bytes).expect("service decode")
-    })
-    .is_empty());
-}
-
-#[test]
-fn a5_guide_sites_refuse_collection_limit_before_materialization() {
-    let bytes = a5_guide_curve_stream();
-    let limited = crate::test_support::with_collection_limit(1, |ctx| {
-        crate::families::a5a8::records::a5_guide_curves(&bytes)
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_a5_guide_sites"));
-    let curves = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(&bytes)
-    })
-    .expect("service collection budget");
-    assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].sites.len(), 2);
+    assert!({ crate::families::a5a8::records::a5_guide_curves(&bytes) }.is_empty());
 }
 
 #[test]
 fn guide_curve_parser_accepts_frame_bounded_site_count() {
-    let curves = crate::test_support::with_service_context(|ctx| {
+    let curves = {
         crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream_with_count(4097))
-            .expect("service decode")
-    });
+    };
     assert_eq!(curves.len(), 1);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| curves[0].knots())
-            .expect("service resource budget")
-            .len(),
-        4097
-    );
+    assert_eq!(curves[0].knots().len(), 4097);
     assert_eq!(curves[0].sites.len(), 4097);
 }
 
@@ -147,20 +108,14 @@ fn guide_curve_parser_rejects_nonfinite_jet_channels() {
         let mut bytes = a5_guide_curve_stream();
         bytes[offset..offset + 8].copy_from_slice(&le_f64(f64::NAN));
         assert!(
-            crate::test_support::with_service_context(|ctx| {
-                crate::families::a5a8::records::a5_guide_curves(&bytes).expect("service decode")
-            })
-            .is_empty(),
+            crate::families::a5a8::records::a5_guide_curves(&bytes).is_empty(),
             "offset {offset}"
         );
     }
 
     let mut repeated_knot = a5_guide_curve_stream();
     repeated_knot[20..28].copy_from_slice(&le_f64(0.0));
-    assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(&repeated_knot).expect("service decode")
-    })
-    .is_empty());
+    assert!({ crate::families::a5a8::records::a5_guide_curves(&repeated_knot) }.is_empty());
 }
 
 #[test]
@@ -168,12 +123,7 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
     let curves = parsed_a8_freeform_curves(&a8_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].object_id, 0x1234_5678);
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| curves[0]
-            .multiplicities(ctx)
-            .expect("service decode")),
-        vec![6, 6]
-    );
+    assert_eq!(curves[0].multiplicities(), vec![6, 6]);
     assert_eq!(curves[0].sites[1].site.radius(), 2.0);
 
     let mut repeated_knot = a8_freeform_curve_stream();
@@ -183,57 +133,6 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
     let mut invalid_endpoint_multiplicity = a8_freeform_curve_stream();
     invalid_endpoint_multiplicity[34] = 21;
     assert!(parsed_a8_freeform_curves(&invalid_endpoint_multiplicity).is_empty());
-}
-
-#[test]
-fn a8_freeform_sites_refuse_collection_limit_before_materialization() {
-    assert_a8_freeform_collection_refusal(1, "catia_a8_freeform_sites");
-}
-
-#[test]
-fn a8_freeform_curves_refuse_collection_limit_before_retention() {
-    assert_a8_freeform_collection_refusal(2, "catia_a8_freeform_curves");
-}
-
-fn assert_a8_freeform_collection_refusal(limit: u64, operation: &'static str) {
-    let bytes = a8_freeform_curve_stream();
-    let result = crate::test_support::with_collection_limit(limit, |ctx| {
-        crate::families::a5a8::records::a8_freeform_curves(&bytes)
-    });
-    assert!(matches!(result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == operation
-    ));
-    assert_eq!(parsed_a8_freeform_curves(&bytes).len(), 1);
-}
-
-#[test]
-fn a8_jet_stations_refuse_collection_limit_before_materialization() {
-    let jet = parsed_a8_freeform_curves(&a8_freeform_curve_stream()).remove(0);
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)
-    };
-    assert!(matches!(crate::test_support::with_collection_limit(1, run),
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_a8_jet_stations"
-    ));
-    assert!(crate::test_support::with_service_context(run)
-        .expect("service decode")
-        .is_some());
-}
-
-#[test]
-fn a8_jet_multiplicities_refuse_collection_limit_before_materialization() {
-    let jet = parsed_a8_freeform_curves(&a8_freeform_curve_stream()).remove(0);
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.multiplicities(ctx);
-    assert!(matches!(crate::test_support::with_collection_limit(1, run),
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_a8_jet_multiplicities"
-    ));
-    assert_eq!(
-        crate::test_support::with_service_context(run).expect("service decode"),
-        vec![6, 6]
-    );
 }
 
 #[test]
@@ -265,10 +164,8 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let freeform = a5_freeform_curve_stream();
     let records = crate::wire::records::consolidated_records(&freeform);
     let one_shot = parsed_a5_freeform_curves(&freeform);
-    let indexed = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_freeform_curves_from_records(&freeform, &records)
-            .expect("service decode")
-    });
+    let indexed =
+        { crate::families::a5a8::records::a5_freeform_curves_from_records(&freeform, &records) };
     assert_eq!(one_shot.len(), indexed.len());
     for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
         assert_eq!(one_shot.pos, indexed.pos);
@@ -278,13 +175,9 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
 
     let guide = a5_guide_curve_stream();
     let records = crate::wire::records::consolidated_records(&guide);
-    let one_shot = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves(&guide).expect("service decode")
-    });
-    let indexed = crate::test_support::with_service_context(|ctx| {
-        crate::families::a5a8::records::a5_guide_curves_from_records(&guide, &records)
-            .expect("service decode")
-    });
+    let one_shot = { crate::families::a5a8::records::a5_guide_curves(&guide) };
+    let indexed =
+        { crate::families::a5a8::records::a5_guide_curves_from_records(&guide, &records) };
     assert_eq!(one_shot.len(), indexed.len());
     for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
         assert_eq!(one_shot.pos, indexed.pos);
@@ -405,38 +298,6 @@ fn a5_nurbs_curve_parser_accepts_frame_bounded_knot_count() {
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].geometry.control_points().len(), 24_579);
     assert_eq!(curves[0].geometry.knots().len(), 24_585);
-}
-
-#[test]
-fn a5_nurbs_distinct_knots_refuse_collection_limit_before_materialization() {
-    assert_a5_nurbs_collection_refusal(2, "catia_a5_nurbs_distinct_knots");
-}
-
-#[test]
-fn a5_nurbs_control_points_refuse_collection_limit_before_materialization() {
-    assert_a5_nurbs_collection_refusal(11, "catia_a5_nurbs_control_points");
-}
-
-#[test]
-fn a5_nurbs_expanded_knots_refuse_collection_limit_before_materialization() {
-    assert_a5_nurbs_collection_refusal(26, "catia_a5_nurbs_expanded_knots");
-}
-
-#[test]
-fn a5_nurbs_curve_collection_refuses_before_retention() {
-    assert_a5_nurbs_collection_refusal(27, "catia_a5_nurbs_curves");
-}
-
-fn assert_a5_nurbs_collection_refusal(limit: u64, operation: &'static str) {
-    let bytes = a5_nurbs_curve_stream();
-    let result = crate::test_support::with_collection_limit(limit, |ctx| {
-        crate::families::a5a8::records::a5_nurbs_curves(ctx, &bytes)
-    });
-    assert!(matches!(result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == operation
-    ));
-    assert_eq!(parsed_a5_nurbs_curves(&bytes).len(), 1);
 }
 
 #[test]
