@@ -66,10 +66,8 @@ fuzz_target!(|data: &[u8]| {
                 if coedges.len() >= 2 {
                     coedges.swap(0, 1);
                     let vertex_uses = loop_.anchored_vertex_uses().to_vec();
-                    match loop_.replace_ring(coedges, vertex_uses) {
-                        Ok(()) | Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {}
-                        Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(_)) => return,
-                    }
+                    // A refused ring leaves the loop unchanged.
+                    let _ = loop_.replace_ring(coedges, vertex_uses);
                 }
             }
             if ctx.finish_session().is_err() {

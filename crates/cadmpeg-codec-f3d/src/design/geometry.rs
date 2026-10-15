@@ -89,7 +89,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance) {
                     on_boundary = true;
                     break;
                 }
@@ -119,7 +119,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance) {
                     on_boundary = true;
                     break;
                 }
@@ -1408,21 +1408,20 @@ fn sketch_geometry_point(
 }
 
 fn point_on_profile_boundary_use(
-    ctx: &DecodeContext<'_>,
     point: Point2,
     use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Result<bool, CodecError> {
+) -> bool {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
-        return Ok(false);
+        return false;
     };
-    if !point_on_sketch_entity(ctx, point, entity, tolerance)? {
-        return Ok(false);
+    if !point_on_sketch_entity(point, entity, tolerance) {
+        return false;
     }
-    Ok(match entity.geometry.definition() {
+    match entity.geometry.definition() {
         SketchGeometryDefinition::Circle { center, radius }
         | SketchGeometryDefinition::Arc { center, radius, .. } => {
             let angle = (point.v - center.v).atan2(point.u - center.u);
@@ -1437,7 +1436,7 @@ fn point_on_profile_boundary_use(
             })
         }
         _ => true,
-    })
+    }
 }
 
 fn signed_polygon_area(vertices: &[Point2]) -> f64 {
@@ -1485,7 +1484,7 @@ pub(super) fn region_containing_points(
                 else {
                     continue;
                 };
-                if point_on_sketch_entity(ctx, *point, entity, tolerance)? {
+                if point_on_sketch_entity(*point, entity, tolerance) {
                     incident.insert(index);
                     break;
                 }
@@ -2761,20 +2760,18 @@ pub(super) fn project_to_sketch(
 }
 
 pub(super) fn point_on_sketch_entity(
-    ctx: &DecodeContext<'_>,
     point: Point2,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     tolerance: f64,
-) -> Result<bool, CodecError> {
+) -> bool {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() {
         if curve.periodic() {
-            return Ok(false);
+            return false;
         }
         let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
-            ctx,
             curve.degree(),
             curve.knots(),
             lanes.points(),
@@ -2782,10 +2779,9 @@ pub(super) fn point_on_sketch_entity(
             point,
             tolerance,
         )
-        .map(|contained| contained.unwrap_or(false))
-        .map_err(CodecError::ResourceLimit);
+        .unwrap_or(false);
     }
-    Ok((|| match entity.geometry.definition() {
+    (|| match entity.geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             let dx = end.u - start.u;
             let dy = end.v - start.v;
@@ -2854,7 +2850,7 @@ pub(super) fn point_on_sketch_entity(
             }
         }
         _ => false,
-    })())
+    })()
 }
 
 pub(super) fn angle_in_sweep(angle: f64, start: f64, end: f64, tolerance: f64) -> bool {
