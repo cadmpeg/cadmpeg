@@ -1,0 +1,558 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Work admission of native collector sources.
+
+use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+fn assert_source_work_refusal<T>(
+    operation: &'static str,
+    mut run: impl FnMut(&DecodeContext<'_>) -> Result<T, CodecError>,
+    populated: impl Fn(&T) -> bool,
+) {
+    let service_output = crate::test_support::with_service_context(|ctx| run(ctx))
+        .expect("service source fixture decodes");
+    assert!(populated(&service_output), "service output is nonempty");
+    let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+        let result = run(ctx);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
+    assert!(matches!(refused,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == operation));
+}
+
+fn decoded_native(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Result<crate::native::CatiaNative, CodecError> {
+    crate::native::CatiaNative::decode_with_records(
+        ctx,
+        bytes,
+        records,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+}
+
+fn converted_zero_support_runs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<crate::native::CatiaZeroEntitySupportRun>, CodecError> {
+    let range = 0..bytes.len();
+    let records = crate::native::zero_entity_records(ctx, bytes, range.clone())?;
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let runs = crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+        ctx,
+        bytes,
+        range,
+        &mut refusal,
+    )?;
+    crate::native::zero_entity_support_runs(ctx, runs, &records)
+}
+
+#[test]
+fn native_relation_dependencies_collector_preserves_work_refusal() {
+    let candidate = crate::native::CatiaParameterBinding {
+        entity_id: 10,
+        entity: "entity-10",
+        class_name: Some("parameter"),
+    };
+    let bindings = std::collections::HashMap::from([(
+        "graph",
+        std::collections::HashMap::from([("#1_", vec![candidate])]),
+    )]);
+    assert_source_work_refusal(
+        "catia_native_dependencies",
+        |ctx| {
+            crate::native::relation_parameter_dependencies(ctx, "#1_", "graph", &bindings)
+                .map(|rows| rows.len())
+        },
+        |count| *count == 1,
+    );
+}
+
+#[test]
+fn native_legacy_runs_collector_preserves_work_refusal() {
+    let mut bytes = vec![0xea];
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x81, 0xfd, 0x8c]);
+    bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+    assert_source_work_refusal(
+        "catia_native_legacy_runs",
+        |ctx| crate::native::legacy_entity_runs(ctx, &bytes).map(|rows| rows.len()),
+        |count| *count == 1,
+    );
+}
+
+#[test]
+fn native_class61_records_collector_preserves_work_refusal() {
+    let mut bytes = crate::test_support::test_b2::b2_counted_61_stream();
+    bytes.extend_from_slice(&crate::test_support::test_b2::b2_long_61_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_class61_records",
+        |ctx| {
+            crate::native::consolidated_class61_records(ctx, &bytes, &records)
+                .map(|rows| rows.len())
+        },
+        |count| *count == 2,
+    );
+}
+
+#[test]
+fn native_class5b5c_records_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_b2::b2_class5b5c_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_class5b5c_records",
+        |ctx| {
+            crate::native::consolidated_class5b5c_records(ctx, &bytes, &records)
+                .map(|rows| rows.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_cone_faces_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_b2::b2_cone_face_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_cone_faces",
+        |ctx| {
+            crate::native::consolidated_cone_faces(ctx, &bytes, &records, &[])
+                .map(|rows| rows.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_plane_carriers_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_b2::b2_plane_carrier_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_plane_carriers",
+        |ctx| {
+            crate::native::projection::consolidated_plane_carriers(ctx, &bytes, &records)
+                .map(|rows| rows.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_reference_lists_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_b2::b2_reference_list_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_reference_lists",
+        |ctx| {
+            crate::native::projection::consolidated_reference_lists(ctx, &bytes, &records)
+                .map(|rows| rows.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_pcurves_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_pcurves",
+        |ctx| crate::native::consolidated_pcurves(ctx, &bytes, &records).map(|rows| rows.len()),
+        |count| *count == 1,
+    );
+}
+
+#[test]
+fn native_zero_support_runs_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_zero_entity::zero_entity_support_stream();
+    assert_source_work_refusal(
+        "catia_native_zero_support_runs",
+        |ctx| converted_zero_support_runs(ctx, &bytes).map(|rows| rows.len()),
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_zero_face_loops_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_zero_entity::zero_entity_face_loop_support_stream();
+    assert_source_work_refusal(
+        "catia_native_zero_face_loops",
+        |ctx| {
+            converted_zero_support_runs(ctx, &bytes).map(|rows| {
+                rows.iter()
+                    .any(|run| run.face.as_ref().is_some_and(|face| !face.loops.is_empty()))
+            })
+        },
+        |has_loops| *has_loops,
+    );
+}
+
+#[test]
+fn native_zero_support_occurrences_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_zero_entity::zero_entity_support_stream();
+    assert_source_work_refusal(
+        "catia_native_zero_support_occurrences",
+        |ctx| {
+            converted_zero_support_runs(ctx, &bytes)
+                .map(|runs| runs.iter().any(|run| !run.supports.is_empty()))
+        },
+        |has_supports| *has_supports,
+    );
+}
+
+#[test]
+fn native_zero_ownership_roots_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_zero_entity::zero_entity_ownership_stream(1);
+    assert_source_work_refusal(
+        "catia_native_zero_ownership_roots",
+        |ctx| {
+            crate::native::zero_entity_ownership_roots(ctx, &bytes, 0..bytes.len())
+                .map(|rows| rows.len())
+        },
+        |count| *count == 1,
+    );
+}
+
+#[test]
+fn native_edge_wires_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_a5_bound::a5_native_edge_run_stream(6, 139, 142);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let nodes = native.consolidated_edge_nodes.clone();
+    let identities = native.consolidated_vertex_identities.clone();
+    assert_source_work_refusal(
+        "catia_native_edge_wires",
+        |ctx| {
+            crate::native::edge_node::edge_node_wires_charged(ctx, nodes.clone(), &identities)
+                .map(|rows| rows.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_owner_packets_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_b2::b2_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_owner_packet_output",
+        |ctx| {
+            crate::native::projection::consolidated_owner_packets(ctx, &bytes, &records)
+                .map(|rows| rows.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+fn record(class: u8, payload: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        class,
+        u8::try_from(payload.len()).expect("fixture payload fits u8"),
+        0x05,
+    ];
+    bytes.extend_from_slice(payload);
+    bytes
+}
+
+fn class25_edge_run() -> Vec<u8> {
+    let mut descriptor = vec![0x08, 0x34, 0x12, 0x02];
+    descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
+    descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
+    let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
+    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0, 1.0, 5.0, 0.001] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut bytes = record(0x18, &descriptor);
+    bytes.extend_from_slice(&record(0x25, &definition));
+    bytes.extend_from_slice(
+        &crate::test_support::test_a5a8::a5_native_edge_identity_stream(6, 139, 142),
+    );
+    bytes
+}
+
+#[test]
+fn native_class25_edge_descriptors_collector_preserves_work_refusal() {
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_class25_edge_descriptors",
+        |ctx| {
+            crate::native::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+                .map(|rows| rows.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_class25_final_values_preserve_work_refusal() {
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_class25_descriptor_values",
+        |ctx| crate::native::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[]),
+        |nodes| {
+            nodes.first().is_some_and(|node| {
+                node.class25_descriptor.as_ref().is_some_and(|descriptor| {
+                    cadmpeg_ir::scalar::FiniteReal::raw_lane(&descriptor.values) == [3.0, 7.0]
+                })
+            })
+        },
+    );
+}
+
+#[test]
+fn native_class25_final_values_preserve_retained_refusal() {
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let result = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_native_class25_descriptor_values",
+        |ctx| {
+            let result =
+                crate::native::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[]);
+            if let Err(CodecError::ResourceLimit(error)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(error));
+            }
+            result
+        },
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(error))
+        if error.operation == "catia_native_class25_descriptor_values"
+            && error.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_class25_orphan_descriptor_does_not_allocate_final_values() {
+    let bytes = class25_edge_run();
+    let descriptor_end = 5 + usize::from(bytes[3]);
+    let bytes = &bytes[..descriptor_end];
+    let records = crate::wire::records::consolidated_records(bytes);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_native_class25_descriptor_values",
+        None,
+    );
+    let nodes = crate::test_support::with_service_context(|ctx| {
+        let result = crate::native::projection::consolidated_edge_nodes(ctx, bytes, &records, &[]);
+        assert!(ctx.resource_refusal().is_none());
+        result
+    })
+    .expect("an orphan descriptor does not copy a final scalar lane");
+    assert!(nodes.is_empty());
+}
+
+#[test]
+fn native_class25_final_values_transfer_to_live_parent() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+    const MATERIALIZED_LIMIT: u64 = 16_384;
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = MATERIALIZED_LIMIT;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("fixture root");
+    let nodes = ctx
+        .with_scoped_storage("test class25 parent", || {
+            crate::native::projection::consolidated_edge_nodes(&ctx, &bytes, &records, &[])
+        })
+        .expect("final descriptor transfers to its actual parent");
+    let [node] = nodes.0.as_slice() else {
+        panic!("one native edge node")
+    };
+    let descriptor = node
+        .class25_descriptor
+        .as_ref()
+        .expect("class25 descriptor");
+    assert_eq!(descriptor.record_id, 0x1234);
+    assert_eq!(
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(&descriptor.values),
+        [3.0, 7.0]
+    );
+    drop(nodes.0);
+    drop(nodes.1);
+    let available = ctx
+        .reserve_scoped(MATERIALIZED_LIMIT, "test released class25 parent")
+        .expect("all backing releases after its actual native output");
+    drop(available);
+}
+
+#[test]
+fn native_class25_final_values_have_no_unscoped_materialized_gate() {
+    let bytes = class25_edge_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "catia_native_class25_descriptor_values",
+        None,
+    );
+    let nodes = crate::test_support::with_materialized_limit(u64::MAX, |ctx| {
+        let nodes = crate::native::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])?;
+        assert_eq!(ctx.resource_refusal(), None);
+        Ok::<_, CodecError>(nodes)
+    })
+    .expect("selected output uses retained storage directly");
+    let descriptor = nodes[0]
+        .class25_descriptor
+        .as_ref()
+        .expect("selected descriptor");
+    assert_eq!(descriptor.record_id, 0x1234);
+    assert_eq!(
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(&descriptor.values),
+        [3.0, 7.0]
+    );
+}
+
+#[test]
+fn native_catalog_entries_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_object_graph::catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "schema",
+    ]);
+    assert_source_work_refusal(
+        "catia_native_catalog_entries",
+        |ctx| {
+            let mut catalogs = crate::native::catalog::parse(ctx, &bytes)?.into_iter();
+            let Some(catalog) = catalogs.next() else {
+                return Ok(0);
+            };
+            crate::native::CatiaCatalog::from_source(ctx, catalog)
+                .map(|catalog| catalog.entries.len())
+        },
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_finjpl_segments_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_container::summary_preview_segment();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_finjpl_segments",
+        |ctx| decoded_native(ctx, &bytes, &records).map(|native| native.finjpl_segments.len()),
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_alias_rows_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_container::surface_alias_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_alias_rows",
+        |ctx| decoded_native(ctx, &bytes, &records).map(|native| native.alias_rows.len()),
+        |count| *count > 0,
+    );
+}
+
+#[test]
+fn native_catalogs_collector_preserves_work_refusal() {
+    let bytes = crate::test_support::test_object_graph::catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "schema",
+    ]);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_source_work_refusal(
+        "catia_native_catalogs",
+        |ctx| decoded_native(ctx, &bytes, &records).map(|native| native.catalogs.len()),
+        |count| *count > 0,
+    );
+}
+
+fn native_sort_positions(
+    ctx: &DecodeContext<'_>,
+    kind: usize,
+    bytes: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Result<Vec<u64>, CodecError> {
+    Ok(match kind {
+        0 => crate::native::consolidated_class61_records(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.byte_offset)
+            .collect(),
+        1 => crate::native::consolidated_class5b5c_records(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.source_offset)
+            .collect(),
+        2 => crate::native::consolidated_pcurves(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.byte_offset)
+            .collect(),
+        _ => crate::native::projection::consolidated_owner_packets(ctx, bytes, records)?
+            .into_iter()
+            .map(|value| value.byte_offset)
+            .collect(),
+    })
+}
+
+#[test]
+fn native_collector_small_numeric_sorts_skip_constant_work() {
+    let control_bytes = crate::test_support::test_b2::b2_class5b5c_stream();
+    let control_records = crate::wire::records::consolidated_records(&control_bytes);
+    let control =
+        control_bytes[control_records[0].range().expect("control source extent")].to_vec();
+    let sources = [
+        (
+            crate::test_support::test_b2::b2_counted_61_stream(),
+            "catia_native_class61_sort",
+        ),
+        (control, "catia_native_class5b5c_sort"),
+        (
+            crate::test_support::test_a5a8::a5_pcurve_stream(),
+            "catia_native_pcurve_sort",
+        ),
+        (
+            crate::test_support::test_b2::b2_owner_packet_stream(),
+            "catia_native_owner_packet_sort",
+        ),
+    ];
+    for (kind, (source, operation)) in sources.iter().enumerate() {
+        for count in 0..=2 {
+            let bytes = source.repeat(count);
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                operation,
+                None,
+            );
+            let positions = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+                let positions = native_sort_positions(ctx, kind, &bytes, &records)?;
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok::<_, CodecError>(positions)
+            })
+            .expect("small numeric keys need no general sort");
+            assert_eq!(positions.len(), count);
+            assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        }
+        let bytes = source.repeat(3);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let positions = crate::test_support::with_service_context(|ctx| {
+            native_sort_positions(ctx, kind, &bytes, &records)
+        })
+        .expect("larger ordered output");
+        assert_eq!(positions.len(), 3);
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        let error = crate::test_support::with_work_refusal(operation, |ctx| {
+            native_sort_positions(ctx, kind, &bytes, &records)
+        })
+        .expect_err("larger sources keep the charged sort");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == *operation));
+    }
+}

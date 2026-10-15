@@ -754,8 +754,10 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
 
-    let groups = crate::test_support::with_service_context(|ctx| standard_fbb_groups(ctx, &bytes))
-        .expect("service resource budget");
+    let groups = crate::test_support::with_service_context(|ctx| {
+        standard_fbb_groups(ctx, &bytes, &crate::container::fbb_run_ranges(ctx, &bytes)?)
+    })
+    .expect("service resource budget");
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
         let layout =
@@ -866,12 +868,13 @@ fn standard_helpers_share_the_source_closed_face_population() {
 
 fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
     TrimRecord {
-        packet: crate::families::standard::trim_packet::TrimPacket::try_from((
-            0,
-            vec![handles.len()],
-            Vec::new(),
-            handles.to_vec(),
-        ))
+        packet: crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::trim_packet::TrimPacket::try_from(
+                ctx,
+                (0, vec![handles.len()], Vec::new(), handles.to_vec()),
+            )
+        })
+        .expect("service resource budget")
         .expect("complete trim handle partition"),
         frame_vector: None,
         kind,

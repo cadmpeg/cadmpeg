@@ -28,7 +28,7 @@ use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 
 fn curve_on_parameter_range(
     curve: CurveGeometry,
@@ -68,7 +68,7 @@ fn rational_arc(
 
 fn b5_edge_support_definition(
     supports: &[super::super::B5Support],
-    surface_ids: &HashMap<u32, SurfaceId>,
+    surface_ids: &BTreeMap<u32, SurfaceId>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
     solved_parameter_range: Option<[f64; 2]>,
 ) -> Option<(
@@ -88,118 +88,6 @@ fn b5_edge_support_definition(
     .expect("service resource budget")
 }
 
-#[test]
-fn edge_support_pcurve_copy_refuses_collection_limit() {
-    let surfaces = HashMap::from([(
-        10,
-        SurfaceId::mint("catia:b5:surface#10".to_string()).expect("identity grammar"),
-    )]);
-    let pcurves = BTreeMap::from([(
-        20,
-        (
-            PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                    None,
-                    false,
-                )
-                .expect("fixture pcurve construction admission")
-                .expect("valid pcurve"),
-            },
-            false,
-            crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-        ),
-    )]);
-    let supports = [(
-        10,
-        20,
-        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
-    )];
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        charged_b5_edge_support_definition(ctx, &supports, &surfaces, &pcurves, None)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_support_pcurve")
-    );
-    assert!(b5_edge_support_definition(&supports, &surfaces, &pcurves, None).is_some());
-}
-
-#[test]
-fn rational_arc_refuses_collection_limit_before_control_net() {
-    let refused = crate::test_support::with_collection_limit(4, |ctx| {
-        charged_rational_arc(
-            ctx,
-            [0.0; 3],
-            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            1.0,
-            [0.0, std::f64::consts::FRAC_PI_2],
-            &"arc",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(matches!(
-        refused,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    assert!(rational_arc(
-        [0.0; 3],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        1.0,
-        [0.0, std::f64::consts::FRAC_PI_2],
-        &"arc",
-        &mut crate::nurbs::LaneRefusals::new()
-    )
-    .is_some());
-}
-
-#[test]
-fn reparameterized_nurbs_knots_refuse_collection_limit_below_need() {
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![10.0, 10.0, 20.0, 20.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
-            false,
-        )
-        .expect("fixture constructor admission")
-        .expect("valid curve"),
-    ));
-    let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
-    let refused = crate::test_support::with_collection_limit(3, |ctx| {
-        charged_curve_on_parameter_range(
-            ctx,
-            curve.clone(),
-            [10.0, 20.0],
-            target,
-            &"curve",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    });
-    assert!(matches!(
-        refused,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        charged_curve_on_parameter_range(
-            ctx,
-            curve,
-            [10.0, 20.0],
-            target,
-            &"curve",
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-    })
-    .expect("service budget");
-    assert!(admitted.is_some());
-}
-
 fn transfer_vertex_tolerances(
     graph: &B5Graph,
     supports: &super::super::B5SupportPlan,
@@ -213,14 +101,22 @@ fn transfer_vertex_tolerances(
 }
 
 fn referenced_surface_ids(
-    roots: impl IntoIterator<Item = u32>,
+    roots: [u32; 1],
     offsets: &BTreeMap<u32, B5OffsetSurface>,
     supported: &BTreeMap<u32, B5SupportedSurface>,
     extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
     aliases: &BTreeMap<u32, u32>,
-) -> HashSet<u32> {
+) -> std::collections::BTreeSet<u32> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::referenced_surface_ids(ctx, roots, offsets, supported, extrusions, aliases)
+        super::super::referenced_surface_ids(
+            ctx,
+            &roots,
+            |id| *id,
+            offsets,
+            supported,
+            extrusions,
+            aliases,
+        )
     })
     .expect("service budget")
 }
@@ -426,16 +322,22 @@ fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
         lifted_endpoints: None,
     };
     assert_eq!(
-        pcurve_parameter_domain(&pcurve),
+        crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service pcurve domain budget"),
         Some(crate::test_support::test_b5::finite_pair([2.0, 8.0]))
     );
     pcurve.parameter_range = None;
     assert_eq!(
-        pcurve_parameter_domain(&pcurve),
+        crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service pcurve domain budget"),
         Some(crate::test_support::test_b5::finite_pair([0.0, 10.0]))
     );
     pcurve.parameter_range = Some(crate::test_support::test_b5::finite_pair([-1.0, 8.0]));
-    assert_eq!(pcurve_parameter_domain(&pcurve), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| pcurve_parameter_domain(ctx, &pcurve))
+            .expect("service pcurve domain budget"),
+        None
+    );
 }
 
 #[test]
@@ -498,7 +400,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &supported, &extrusions, &BTreeMap::new(),),
-        HashSet::from([10, 20, 30, 31, 40, 50, 90, 100])
+        std::collections::BTreeSet::from([10, 20, 30, 31, 40, 50, 90, 100])
     );
 }
 
@@ -523,7 +425,8 @@ fn surface_closure_follows_aliases_to_native_constructions() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::referenced_surface_ids(
             ctx,
-            [10],
+            &[10],
+            |id| *id,
             &offsets,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -537,7 +440,7 @@ fn surface_closure_follows_aliases_to_native_constructions() {
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
-        HashSet::from([10, 30, 40])
+        std::collections::BTreeSet::from([10, 30, 40])
     );
 }
 
@@ -641,14 +544,18 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            vec![B5LogicalVertex {
-                object_id: 50,
-                point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            }],
-            BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                vec![B5LogicalVertex {
+                    object_id: 50,
+                    point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+                }],
+                BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
@@ -656,12 +563,18 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
     };
 
     assert_eq!(
-        edge_pcurve_parameters(&graph, 30, 20),
+        crate::test_support::with_service_context(|ctx| edge_pcurve_parameters(
+            ctx, &graph, 30, 20
+        ))
+        .expect("service edge-parameter work budget"),
         Some(crate::test_support::test_b5::finite_pair([0.0, 1.0]))
     );
     graph.edge_parameter_incidences.insert(30, [41, 40]);
     assert_eq!(
-        edge_pcurve_parameters(&graph, 30, 20),
+        crate::test_support::with_service_context(|ctx| edge_pcurve_parameters(
+            ctx, &graph, 30, 20
+        ))
+        .expect("service edge-parameter work budget"),
         Some(crate::test_support::test_b5::finite_pair([1.0, 0.0]))
     );
 }
@@ -755,28 +668,32 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            vec![
-                B5LogicalVertex {
-                    object_id: 50,
-                    point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-                },
-                B5LogicalVertex {
-                    object_id: 51,
-                    point: crate::test_support::test_b5::point([0.5, 0.0, 0.0]),
-                },
-                B5LogicalVertex {
-                    object_id: 52,
-                    point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
-                },
-            ],
-            BTreeMap::from([
-                (30, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)]),
-                (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
-                (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
-            ]),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                vec![
+                    B5LogicalVertex {
+                        object_id: 50,
+                        point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+                    },
+                    B5LogicalVertex {
+                        object_id: 51,
+                        point: crate::test_support::test_b5::point([0.5, 0.0, 0.0]),
+                    },
+                    B5LogicalVertex {
+                        object_id: 52,
+                        point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
+                    },
+                ],
+                BTreeMap::from([
+                    (30, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)]),
+                    (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
+                    (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
+                ]),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
@@ -821,8 +738,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         .any(|surface| surface.id.as_str().contains("#11")));
 }
 
-#[test]
-fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
+pub(super) fn repeated_source_pcurve_graph() -> B5Graph {
     let mut graph = B5Graph {
         complete: true,
         faces: vec![B5Face {
@@ -913,34 +829,44 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            vec![
-                B5LogicalVertex {
-                    object_id: 50,
-                    point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-                },
-                B5LogicalVertex {
-                    object_id: 51,
-                    point: crate::test_support::test_b5::point([0.5, 0.0, 0.0]),
-                },
-                B5LogicalVertex {
-                    object_id: 52,
-                    point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
-                },
-            ],
-            BTreeMap::from([
-                (30, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)]),
-                (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
-                (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
-            ]),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                vec![
+                    B5LogicalVertex {
+                        object_id: 50,
+                        point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+                    },
+                    B5LogicalVertex {
+                        object_id: 51,
+                        point: crate::test_support::test_b5::point([0.5, 0.0, 0.0]),
+                    },
+                    B5LogicalVertex {
+                        object_id: 52,
+                        point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
+                    },
+                ],
+                BTreeMap::from([
+                    (30, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)]),
+                    (31, [B5VertexRef::Logical(1), B5VertexRef::Logical(2)]),
+                    (32, [B5VertexRef::Logical(2), B5VertexRef::Logical(0)]),
+                ]),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
     graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
+    graph
+}
+
+#[test]
+fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
+    let graph = repeated_source_pcurve_graph();
     let mut ir = CadIr::empty();
 
     crate::test_support::with_service_context(|ctx| {
@@ -1034,7 +960,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
 
 #[test]
 fn edge_supports_preserve_one_sided_and_intersection_constructions() {
-    let surfaces = HashMap::from([
+    let surfaces = BTreeMap::from([
         (
             10,
             SurfaceId::mint("catia:test:surface#surface-10".to_string()).expect("identity grammar"),
@@ -1455,14 +1381,18 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            vec![[0.0; 3], [1.0, 0.0, 0.0]]
-                .into_iter()
-                .map(crate::test_support::test_b5::point)
-                .collect(),
-            Vec::new(),
-            BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])]),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                vec![[0.0; 3], [1.0, 0.0, 0.0]]
+                    .into_iter()
+                    .map(crate::test_support::test_b5::point)
+                    .collect(),
+                Vec::new(),
+                BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])]),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1604,11 +1534,15 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         parameter_incidences: BTreeMap::new(),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            Vec::new(),
-            BTreeMap::new(),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::new(),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1622,9 +1556,18 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
     )
     .expect("service decode")
     .expect("required invariant");
-    assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
     assert_eq!(
-        orientation[&2].member_order().collect::<Vec<_>>(),
+        orientation[&1]
+            .member_order(&ctx)
+            .expect("service member-order budget")
+            .collect::<Vec<_>>(),
+        vec![0]
+    );
+    assert_eq!(
+        orientation[&2]
+            .member_order(&ctx)
+            .expect("service member-order budget")
+            .collect::<Vec<_>>(),
         vec![2, 1, 0]
     );
     assert_eq!(
@@ -1727,20 +1670,24 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         ]),
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
-        vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            Vec::new(),
-            vec![
-                B5LogicalVertex {
-                    object_id: 10,
-                    point: crate::test_support::test_b5::point([0.25, 0.0, 1e-4]),
-                },
-                B5LogicalVertex {
-                    object_id: 11,
-                    point: crate::test_support::test_b5::point([0.75, 0.0, 0.0]),
-                },
-            ],
-            BTreeMap::from([(3, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)])]),
-        )
+        vertices: crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
+                ctx,
+                Vec::new(),
+                vec![
+                    B5LogicalVertex {
+                        object_id: 10,
+                        point: crate::test_support::test_b5::point([0.25, 0.0, 1e-4]),
+                    },
+                    B5LogicalVertex {
+                        object_id: 11,
+                        point: crate::test_support::test_b5::point([0.75, 0.0, 0.0]),
+                    },
+                ],
+                BTreeMap::from([(3, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)])]),
+            )
+        })
+        .expect("service vertex admission budget")
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::from([(3, [20, 21])]),
         vertex_tolerances: BTreeMap::new(),
@@ -1779,7 +1726,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
             procedure: None,
         },
     )]);
-    let supports = HashMap::from([(
+    let supports = BTreeMap::from([(
         3,
         vec![(
             4,
@@ -1909,3 +1856,5 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
         .expect("evaluator allocation succeeds")
     );
 }
+
+mod work_admission;

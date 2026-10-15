@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C02` UTF-8 string catalogs.
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
@@ -31,16 +32,32 @@ pub(crate) struct CatalogEntry {
     pub(crate) value: String,
 }
 
+impl DecodeCost for CatalogEntry {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.ordinal, &self.pos, &self.value).decode_cost(ctx, operation)
+    }
+}
+
+impl DecodeCost for Catalog {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (&self.pos, &self.total_len, &self.entries).decode_cost(ctx, operation)
+    }
+}
+
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
 pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Catalog>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "catia_catalog_scan",
-    )?;
     let mut catalogs = Vec::<Catalog>::new();
     let mut enclosing_end = 0usize;
-    for pos in memchr::memchr_iter(0x7c, bytes) {
-        ctx.charge_work(1, "catia_catalog_candidate")?;
+    let mut markers = ctx.find_bytes_iter(bytes, &[0x7c], "catia_catalog_scan")?;
+    while let Some(pos) = ctx.next_charged(&mut markers, "catia_catalog_candidate")? {
         let Some(marker_tail) = pos.checked_add(1) else {
             continue;
         };
@@ -71,71 +88,80 @@ fn parse_candidate(
     bytes: &[u8],
     pos: usize,
 ) -> Result<Option<Catalog>, CodecError> {
-    (|| -> Option<Result<Catalog, CodecError>> {
-        macro_rules! admitted {
-            ($result:expr) => {
-                match $result {
-                    Ok(value) => value,
-                    Err(error) => return Some(Err(error)),
-                }
-            };
-        }
-        let total_len = usize::try_from(View::u32_le_at(bytes, pos + 2)?).ok()?;
-        let end = pos.checked_add(total_len)?;
-        if total_len < 8 || end > bytes.len() {
-            return None;
-        }
-        let work = admitted!(cadmpeg_core::decode::u64_from_index(total_len)
-            .checked_mul(2)
-            .ok_or_else(|| ctx.refuse_codec_limit("catia_catalog_candidate", u64::MAX, u64::MAX)));
-        admitted!(ctx.charge_work(work, "catia_catalog_candidate"));
-        let (declared_count, mut at) = compact_atom(bytes, pos + 6)?;
-        let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
-        if entry_count > end.checked_sub(at)? {
-            return None;
-        }
-        let mut entries = Vec::new();
-        admitted!(ctx.reserve_vec(&mut entries, entry_count, "catia_catalog_entries"));
-        for ordinal in 0..entry_count {
-            let (value_len, header_len) = match *bytes.get(at)? {
-                0 => (
-                    usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?,
-                    5usize,
-                ),
-                len => (usize::from(len).checked_sub(1)?, 1usize),
-            };
-            let value_start = at.checked_add(header_len)?;
-            let next = value_start.checked_add(value_len)?;
-            if next > end {
+    let mut storage = ctx.reserve_scoped(0, "catia_catalog_candidate_storage")?;
+    let parsed = storage.with_storage(|| {
+        (|| -> Option<Result<Catalog, CodecError>> {
+            macro_rules! admitted {
+                ($result:expr) => {
+                    match $result {
+                        Ok(value) => value,
+                        Err(error) => return Some(Err(error)),
+                    }
+                };
+            }
+            let total_len = usize::try_from(View::u32_le_at(bytes, pos + 2)?).ok()?;
+            let end = pos.checked_add(total_len)?;
+            if total_len < 8 || end > bytes.len() {
                 return None;
             }
-            let raw = &bytes[value_start..next];
-            let value = admitted!(
-                ctx.copy_retained_text(std::str::from_utf8(raw).ok()?, "catia_catalog_entry_value")
-            );
-            entries.push(CatalogEntry {
-                ordinal: u32::try_from(ordinal).ok()?,
-                pos: at,
-                value,
-            });
-            at = next;
-        }
-        if at != end
-            || entries
-                .iter()
-                .take(PREFIX.len())
-                .map(|entry| entry.value.as_str())
-                .ne(PREFIX)
-        {
-            return None;
-        }
-        Some(Ok(Catalog {
-            pos,
-            total_len,
-            entries,
-        }))
-    })()
-    .transpose()
+            let (declared_count, mut at) = compact_atom(bytes, pos + 6)?;
+            let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
+            if entry_count < PREFIX.len() || entry_count > end.checked_sub(at)? {
+                return None;
+            }
+            let mut entries = Vec::new();
+            let mut ordinals = 0..entry_count;
+            while let Some(ordinal) =
+                admitted!(ctx.next_charged(&mut ordinals, "catia_catalog_entry_visits"))
+            {
+                let (value_len, header_len) = match *bytes.get(at)? {
+                    0 => (
+                        usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?,
+                        5usize,
+                    ),
+                    len => (usize::from(len).checked_sub(1)?, 1usize),
+                };
+                let value_start = at.checked_add(header_len)?;
+                let next = value_start.checked_add(value_len)?;
+                if next > end {
+                    return None;
+                }
+                let raw = &bytes[value_start..next];
+                if let Some(prefix) = PREFIX.get(ordinal) {
+                    if raw != prefix.as_bytes() {
+                        return None;
+                    }
+                }
+                let value = admitted!(ctx.copy_retained_text(
+                    admitted!(ctx.validate_utf8(raw, "catia_catalog_entry_utf8")).ok()?,
+                    "catia_catalog_entry_value"
+                ));
+                admitted!(ctx.push_vec(
+                    &mut entries,
+                    CatalogEntry {
+                        ordinal: u32::try_from(ordinal).ok()?,
+                        pos: at,
+                        value,
+                    },
+                    "catia_catalog_entries"
+                ));
+                at = next;
+            }
+            if at != end {
+                return None;
+            }
+            Some(Ok(Catalog {
+                pos,
+                total_len,
+                entries,
+            }))
+        })()
+        .transpose()
+    })?;
+    match parsed {
+        Some(catalog) => storage.commit_value(catalog).map(Some),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
