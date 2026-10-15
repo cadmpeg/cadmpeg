@@ -104,7 +104,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
             },
         ));
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings
         .iter()
         .any(|finding| finding.message.contains("source feature")));

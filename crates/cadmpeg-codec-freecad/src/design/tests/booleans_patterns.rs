@@ -42,7 +42,7 @@ fn uniform_pattern_intervals_yield_one_location_per_occurrence() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("context");
     let admitted =
         crate::design::pattern_locations(&ctx, &properties, "", 4, 0, ("Length", "Offset"), &[])
-            .expect("service profile")
+            .expect("compute the pattern locations")
             .expect("uniform locations");
     assert_eq!(admitted.len(), 4);
 }
@@ -432,7 +432,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             && record.neutral()
     }));
     let baseline_findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail")
+        .expect("validate the neutral model")
         .findings;
     assert!(
         baseline_findings
