@@ -2358,24 +2358,18 @@ fn nurbs_pcurve_differential_unsettled(
 /// midpoint distance minus the maximum possible travel exceeds tolerance are
 /// discarded. `None` denotes invalid input or exhaustion of the bounded search.
 pub fn nurbs_pcurve_contains_point(
-    ctx: &DecodeContext<'_>,
     degree: u32,
     knots: &[f64],
     control_points: &[Point2],
     weights: Option<&[f64]>,
     point: Point2,
     tolerance: f64,
-) -> Result<Option<bool>, ResourceLimit> {
-    let Some(degree_usize) = usize::try_from(degree).ok() else {
-        return Ok(None);
-    };
+) -> Option<bool> {
+    let degree_usize = usize::try_from(degree).ok()?;
     let count = control_points.len();
-    let Some(required_knots) = count
+    let required_knots = count
         .checked_add(degree_usize)
-        .and_then(|value| value.checked_add(1))
-    else {
-        return Ok(None);
-    };
+        .and_then(|value| value.checked_add(1))?;
     if degree_usize == 0
         || count <= degree_usize
         || knots.len() < required_knots
@@ -2383,14 +2377,14 @@ pub fn nurbs_pcurve_contains_point(
         || tolerance < 0.0
         || !point.is_finite()
     {
-        return Ok(None);
+        return None;
     }
     let weights = match weights {
         Some(weights) if weights.len() == count => Some(weights),
-        Some(_) => return Ok(None),
+        Some(_) => return None,
         None => None,
     };
-    let Some(speed_bound) = speed_bound_by(
+    let speed_bound = speed_bound_by(
         degree,
         knots,
         control_points.len(),
@@ -2398,13 +2392,11 @@ pub fn nurbs_pcurve_contains_point(
         |index| weights.map_or(1.0, |weights| weights[index]),
         [point.u, point.v],
     )
-    .map(FiniteReal::get) else {
-        return Ok(None);
-    };
+    .map(FiniteReal::get)?;
 
     let domain = [knots[degree_usize], knots[count]];
     if domain[0] > domain[1] {
-        return Ok(None);
+        return None;
     }
     let mut search = bounded_tail_intervals(&knots[degree_usize..=count]);
     if search.intervals.is_empty() {
@@ -2417,10 +2409,10 @@ pub fn nurbs_pcurve_contains_point(
         };
         examined += 1;
         if examined > NURBS_SEARCH_MAX_INTERVALS {
-            return Ok(None);
+            return None;
         }
         let middle = start.midpoint(end);
-        let scratch = decode::Scratch::new(ctx);
+        let scratch = decode::Scratch::new(admission::EvaluationAdmission::Standard);
         let evaluation = FiniteReal::new(middle)
             .ok_or(EvaluationFailure::NoValue)
             .and_then(|middle| {
@@ -2435,18 +2427,14 @@ pub fn nurbs_pcurve_contains_point(
                 )
                 .map(|differential| differential.point)
             });
-        let curve_uv = match scratch.finish_evaluation(evaluation)? {
-            Ok(value) => Point2::from(value),
-            Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
-            Err(
-                EvaluationFailure::NoValue
-                | EvaluationFailure::NonFinite(_)
-                | EvaluationFailure::WorkExhausted,
-            ) => return Ok(None),
+        // The standard admission refuses nothing, so a failed evaluation has no value.
+        let Ok(Ok(curve_uv)) = scratch.finish_evaluation(evaluation) else {
+            return None;
         };
+        let curve_uv = Point2::from(curve_uv);
         let distance = (curve_uv.u - point.u).hypot(curve_uv.v - point.v);
         if distance <= tolerance {
-            return Ok(Some(true));
+            return Some(true);
         }
         let travel_bound = speed_bound * (end - middle).max(middle - start);
         if distance - travel_bound > tolerance {
@@ -2459,7 +2447,7 @@ pub fn nurbs_pcurve_contains_point(
         search.intervals.push([start, middle]);
         search.intervals.push([middle, end]);
     }
-    Ok((!search.truncated).then_some(false))
+    (!search.truncated).then_some(false)
 }
 
 /// A tensor-product NURBS surface at a parameter: its spans, its bases and

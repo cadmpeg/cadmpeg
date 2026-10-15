@@ -167,15 +167,13 @@ fn pcurve_containment_finds_a_point_on_a_linear_pcurve() {
     let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
         super::super::nurbs_pcurve_contains_point(
-            &ctx,
             1,
             &[0., 0., 1., 1.],
             &[Point2::new(0., 0.), Point2::new(1., 0.)],
             None,
             Point2::new(0.5, 0.),
-            0.
-        )
-        .expect("no session refusal"),
+            0.,
+        ),
         Some(true)
     );
     ctx.finish_session().unwrap();

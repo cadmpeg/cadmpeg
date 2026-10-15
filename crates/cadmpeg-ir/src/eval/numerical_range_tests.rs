@@ -275,28 +275,24 @@ fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
         let points = [Point2::new(0., 0.), Point2::new(1., 0.)];
         assert_eq!(
             nurbs_pcurve_contains_point(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 &knots,
                 &points,
                 None,
                 Point2::new(0.5, 0.),
-                CHORD_BOUND_TOLERANCE
-            )
-            .expect("resource allocation did not fail"),
+                CHORD_BOUND_TOLERANCE,
+            ),
             Some(true)
         );
         assert_eq!(
             nurbs_pcurve_contains_point(
-                &cadmpeg_test_support::service_decode_context(),
                 1,
                 &knots,
                 &points,
                 None,
                 Point2::new(0.5, 2.),
-                CHORD_BOUND_TOLERANCE
-            )
-            .expect("resource allocation did not fail"),
+                CHORD_BOUND_TOLERANCE,
+            ),
             Some(false)
         );
     }
