@@ -12,11 +12,13 @@ use std::io::Write;
 use crate::codec::FormatId;
 use crate::document::CadIr;
 use crate::report::{
+    check::{Finding, ValidationReport},
     export::{
         CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
         SynthesisFidelity, WritePath as ReportWritePath,
     },
     loss::LossNote,
+    Severity,
 };
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::target::TargetCatalog;
@@ -27,6 +29,7 @@ mod coverage;
 mod loss;
 pub mod target;
 
+use carried::{EntityLocation, FindingLocator, FindingScope};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
@@ -112,7 +115,12 @@ impl<E: EncoderBackend> Encoder for E {
             None => ExportReport::cadir(census, write_path, losses, notes),
             Some(target) => ExportReport::native(target, census, write_path, losses, notes),
         };
-        Ok(ExportPlan { report, bytes })
+        Ok(ExportPlan {
+            report,
+            bytes,
+            format: E::FORMAT,
+            coverage,
+        })
     }
 }
 
@@ -283,6 +291,8 @@ impl ExportBody {
 /// artifact store; [`Self::write_to`] also supports non-file sinks.
 #[derive(Debug)]
 pub struct ExportPlan {
+    format: FormatId,
+    coverage: ArenaCoverage,
     report: ExportReport,
     bytes: Vec<u8>,
 }
@@ -291,6 +301,45 @@ impl ExportPlan {
     /// Returns the complete plan-time export report.
     pub fn report(&self) -> &ExportReport {
         &self.report
+    }
+
+    /// The error findings of `report` that name something this payload may carry.
+    ///
+    /// `ir` is the document this plan was built from. Only findings at or above
+    /// `Severity::Error` are considered. Findings with no resolved entity are
+    /// carried because they cannot be shown to be outside the output. A located
+    /// finding is carried if any entity or message location is carried. Model
+    /// locations follow the plan's arena coverage. Native locations are carried
+    /// by complete coverage or by their own format's encoder; a backend reads
+    /// no native namespace other than its own format's.
+    pub fn carried_errors<'r>(&self, ir: &CadIr, report: &'r ValidationReport) -> Vec<&'r Finding> {
+        let errors: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|finding| finding.severity >= Severity::Error)
+            .collect();
+        if errors.is_empty() {
+            return errors;
+        }
+        let locator = FindingLocator::new(ir, errors.iter().copied());
+        errors
+            .into_iter()
+            .filter(|finding| match locator.scope(finding) {
+                FindingScope::Unlocated => true,
+                FindingScope::Located(locations) => locations
+                    .into_iter()
+                    .any(|location| self.carries_location(location)),
+            })
+            .collect()
+    }
+
+    fn carries_location(&self, location: EntityLocation<'_>) -> bool {
+        match location {
+            EntityLocation::Model(kind) => self.coverage.carries(kind),
+            EntityLocation::Native(namespace) => {
+                self.coverage == ArenaCoverage::Complete || namespace == self.format.as_str()
+            }
+        }
     }
 
     /// Writes the planned payload and returns the unchanged plan-time report.

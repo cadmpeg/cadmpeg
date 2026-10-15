@@ -11,10 +11,6 @@ use crate::schema::{EntityKind, EntitySchema};
 
 /// Where a document holds one identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "used by the convert gate in the next unit")
-)]
 pub(crate) enum EntityLocation<'ir> {
     /// A neutral model arena of this kind.
     Model(EntityKind),
@@ -24,10 +20,6 @@ pub(crate) enum EntityLocation<'ir> {
 
 /// What one finding names in a document.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "used by the convert gate in the next unit")
-)]
 pub(crate) enum FindingScope<'ir> {
     /// The finding names no entity, or its entity resolves nowhere in the document.
     Unlocated,
@@ -36,18 +28,10 @@ pub(crate) enum FindingScope<'ir> {
 }
 
 /// Document locations of the identities a set of findings names.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "used by the convert gate in the next unit")
-)]
 pub(crate) struct FindingLocator<'ir, 'r> {
     locations: HashMap<&'r str, Vec<EntityLocation<'ir>>>,
 }
 
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "used by the convert gate in the next unit")
-)]
 impl<'ir, 'r> FindingLocator<'ir, 'r> {
     /// Indexes the identities named by `findings` in one pass over `ir`.
     pub(crate) fn new(ir: &'ir CadIr, findings: impl IntoIterator<Item = &'r Finding>) -> Self {
