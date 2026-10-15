@@ -10,7 +10,7 @@ fn with_jt_context<T>(
 fn high_degree_lane_count(representation: &[u8], bindings: u64) -> Option<usize> {
     crate::test_support::with_decode_context(|ctx| {
         super::jt9_topology_high_degree_lane_count(ctx, representation, bindings)
-            .expect("service JT budget")
+            .expect("compute the JT9 topology high degree lane count")
     })
 }
 
@@ -1777,7 +1777,8 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
     }];
 
     let sequences = crate::test_support::with_decode_context(|ctx| {
-        display_jt_topology_packet_sequences(ctx, &container, &elements).expect("service JT budget")
+        display_jt_topology_packet_sequences(ctx, &container, &elements)
+            .expect("compute the display JT topology packet sequences")
     })
     .sequences;
     assert_eq!(sequences.len(), 1);

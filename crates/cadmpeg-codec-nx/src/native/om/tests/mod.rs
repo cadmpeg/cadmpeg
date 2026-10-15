@@ -719,7 +719,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     ));
     assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -1003,7 +1003,7 @@ fn decode_retains_nx_arrangement_configurations() {
     duplicate.push(attributes[0].clone());
     assert!(super::configuration_attribute_uses(&configurations, &duplicate).is_empty());
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

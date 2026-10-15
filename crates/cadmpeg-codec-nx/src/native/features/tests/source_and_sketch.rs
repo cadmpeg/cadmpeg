@@ -612,7 +612,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     )));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }

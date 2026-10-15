@@ -304,7 +304,7 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
     assert_eq!(result.ir().model.coedges.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -343,7 +343,7 @@ fn decode_aliases_partner_closed_null_vertex_fin_to_edge_start() {
     assert_eq!(result.ir().model.coedges.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -530,7 +530,7 @@ fn decode_does_not_attach_unreferenced_point_to_solid_topology() {
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -561,7 +561,7 @@ fn decode_retains_connected_topology_with_unknown_surface_carrier() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -595,7 +595,7 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
     ));
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -645,7 +645,7 @@ fn decode_retains_native_carrierless_edge() {
     assert_eq!(edge.param_range(), None);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -688,7 +688,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(
         validation.findings.is_empty(),
         "findings: {:?}",
@@ -726,7 +726,7 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -751,7 +751,7 @@ fn decode_omits_surface_curve_missing_tolerance_sentinel() {
     assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), None);
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -773,7 +773,7 @@ fn decode_rejects_overflowing_pcurve_parameter_conversion() {
     assert!(result.ir().model.coedges[0].pcurves.is_empty());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-            .expect("resource allocation did not fail")
+            .expect("validate the neutral model")
             .is_ok()
     );
 }
@@ -792,7 +792,7 @@ fn decode_preserves_multiple_shells_in_one_region() {
     assert_eq!(result.ir().model.regions[0].shells.len(), 2);
     assert_eq!(result.ir().model.bodies[0].regions.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -905,7 +905,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     );
 
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
@@ -976,7 +976,7 @@ fn decode_emits_connected_primitive_brep() {
             && loss.message.contains("Assembly occurrence placements")
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-        .expect("resource allocation did not fail");
+        .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
