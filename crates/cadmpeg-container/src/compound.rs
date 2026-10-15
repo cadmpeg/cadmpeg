@@ -1783,7 +1783,7 @@ mod tests {
     ) -> T {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, policy)
-            .expect("fixture fits service profile");
+            .expect("build the decode context");
         use_context(&ctx)
     }
 
