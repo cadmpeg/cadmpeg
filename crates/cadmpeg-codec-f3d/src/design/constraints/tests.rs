@@ -459,16 +459,13 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
     };
     let members = [&center, &seed, &middle, &last];
     let returned = [&seed, &middle, &last, &center];
-    let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
-        exact_circular_pattern(
-            &relation(std::f64::consts::PI),
-            "native",
-            &[],
-            &members,
-            &returned,
-        )
-        .unwrap()
-    else {
+    let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) = exact_circular_pattern(
+        &relation(std::f64::consts::PI),
+        "native",
+        &[],
+        &members,
+        &returned,
+    ) else {
         panic!("partial circular pattern did not resolve");
     };
     assert_eq!(pattern.center(), center.id());
@@ -503,7 +500,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
     let full_members = [&center, &seed, &full_middle, &full_last];
     let full_returned = [&seed, &full_middle, &full_last, &center];
     assert!(matches!(
-        exact_circular_pattern(&relation(std::f64::consts::TAU), "native", &[], &full_members, &full_returned).unwrap(),
+        exact_circular_pattern(&relation(std::f64::consts::TAU), "native", &[], &full_members, &full_returned),
         Some(SketchConstraintDefinitionInput::CircularPattern { ref pattern })
             if scalar_close(pattern.instances()[0].angle.get(), std::f64::consts::TAU / 3.0)
     ));
@@ -595,7 +592,7 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
     let members = [&center, &seed, &middle, &last];
     let returned = [&seed, &middle, &last, &center];
     let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
-        exact_circular_pattern(&relation, "native", &[], &members, &returned).unwrap()
+        exact_circular_pattern(&relation, "native", &[], &members, &returned)
     else {
         panic!("role-agnostic circular pattern did not resolve");
     };

@@ -53,7 +53,7 @@ fn work_plane_projects_three_point_vertex_recipes() {
     }
     let transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.into();
     let FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { points, .. }) =
-        super::super::project_work_plane(&plane, transform).unwrap()
+        super::super::project_work_plane(&plane, transform)
     else {
         panic!("expected a three-point datum plane");
     };

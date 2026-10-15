@@ -1242,8 +1242,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         &curves,
         &surfaces,
         &entities,
-    )
-    .unwrap();
+    );
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),

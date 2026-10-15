@@ -149,7 +149,6 @@ fn circular_pattern_seed_role_selects_body_or_face() {
         ),
     ] {
         let definition = project_circular_pattern(&circular_scope(), &[group(10, 20, role)], &[])
-            .unwrap()
             .expect("circular pattern");
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
         else {
@@ -189,7 +188,6 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
     let body_scope = rectangular_scope();
     let body_group = group(10, 20, DesignOperandRole::BODIES_B);
     let body_definition = project_rectangular_pattern_scalars(&body_scope, &[body_group], &[])
-        .unwrap()
         .expect("body rectangular pattern");
     assert_linear_seed(
         body_definition,
@@ -201,7 +199,6 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
     let face_scope = rectangular_scope();
     let face_group = group(10, 30, DesignOperandRole::BODIES_A);
     let face_definition = project_rectangular_pattern_scalars(&face_scope, &[face_group], &[])
-        .unwrap()
         .expect("face rectangular pattern");
     assert_linear_seed(
         face_definition,

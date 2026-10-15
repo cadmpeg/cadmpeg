@@ -1773,7 +1773,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_context.changed_candidate_faces.clear();
     assert!(matches!(
         resolved_historical_split_face_target_group(&split_scope, split_scope.previous_history_state_id(), &split_group, &[split_selected.clone(), split_context.clone()]),
-        Ok(Some(FaceSelection::Historical { state, faces, native }))
+        Some(FaceSelection::Historical { state, faces, native })
             if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&split_scope), 49)
                 && faces.len() == 1
                 && faces[0].as_str().ends_with(":49:50")
@@ -1796,7 +1796,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             &[split_selected.clone(), candidate_context],
         )
     }
-    .unwrap()
     .is_some());
     let mut unresolved_context = split_context;
     for reference in &mut unresolved_context.recipe_references {
@@ -1811,6 +1810,5 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             &[split_selected, unresolved_context],
         )
     }
-    .unwrap()
     .is_none());
 }
